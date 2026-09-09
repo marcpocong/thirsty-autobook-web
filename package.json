@@ -1,0 +1,32 @@
+{
+  "name": "thirsty-autobook-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "chrome": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-onda-chrome.ps1",
+    "inspect": "tsx src/index.ts inspect",
+    "practice": "tsx src/index.ts practice",
+    "release:observe": "tsx src/index.ts release:observe",
+    "race:dry": "tsx src/index.ts race:dry",
+    "race": "tsx src/index.ts race",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "luxon": "^3.7.2",
+    "playwright": "^1.63.0",
+    "zod": "^4.6.0"
+  },
+  "devDependencies": {
+    "@types/luxon": "^3.7.5",
+    "@types/node": "^22.20.2",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.0"
+  }
+}

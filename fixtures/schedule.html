@@ -1,0 +1,31 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Synthetic schedule — offline only</title>
+<h1 data-testid="public-booking-hero-title">Thirsty Pickle | SM Seaside</h1>
+<h3 data-testid="booking-selected-date-label">Thu, September 10</h3>
+<button aria-label="Previous day" disabled>Previous</button><button aria-label="Next day">Next</button>
+<div data-testid="booking-slot-legend"><span data-slot-state="selected">Selected legend</span></div>
+<div data-testid="booking-grid-body"></div>
+<script>
+function hour(h) { return `${h % 12 || 12} ${h % 24 < 12 ? 'AM' : 'PM'}`; }
+function render(date) {
+  const grid = document.querySelector('[data-testid="booking-grid-body"]'); grid.replaceChildren();
+  for(let h=8;h<24;h++) {
+    const row=document.createElement('div'); row.dataset.scheduleGridRowDate=date; row.dataset.scheduleGridRowTime=`${String(h).padStart(2,'0')}:00`;
+    for(let court=1;court<=7;court++) {
+      const button=document.createElement('button'); button.dataset.testid='court-schedule-slot-cell';
+      const base=`Court ${court}: Mango Wing ${hour(h)} to ${hour((h+1)%24)}`;
+      const state=court===3?'unavailable':'available'; button.disabled=state==='unavailable';
+      button.setAttribute('aria-label',`${base} ${state}`);
+      const span=document.createElement('span'); span.dataset.slotState=state; span.textContent=state; button.append(span);
+      button.onclick=()=>{const next=span.dataset.slotState==='selected'?'available':'selected';span.dataset.slotState=next;span.textContent=next;button.setAttribute('aria-label',`${base} ${next}`);};
+      row.append(button);
+    } grid.append(row);
+  }
+}
+render('2026-09-10');
+document.querySelector('[aria-label="Next day"]').onclick=()=>{
+  // Deliberately worse than the observed live UI: heading changes while stale rows remain.
+  document.querySelector('h3').textContent='Fri, September 11';
+  document.querySelector('[aria-label="Next day"]').disabled=true;
+  // Test explicitly commits new rows after proving stale rows are rejected.
+};
+</script></html>
