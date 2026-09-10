@@ -14,6 +14,11 @@ const errors: Record<string, string> = {
   LOCK_SELECTED_SLOTS:'SELECTED SLOTS STILL PRESENT. Inspect and clear them manually, then Review Lock again.',
   LOCK_PAYMENT_HOLD_ACTIVE:'PAYMENT HOLD ACTIVE. Complete payment, cancel manually if appropriate, or wait for expiry; then return to a clean schedule and Review Lock.',
   LOCK_BROWSER_STATE_UNKNOWN:'Browser state is unknown or not a clean schedule. Manual review required.',
+  PRACTICE_RESET_HOLD_ACTIVE:'A QR/payment hold is still recorded. Complete, cancel, or let that hold expire in Chrome before resetting practice.',
+  PRACTICE_RESET_FAILED:'The dedicated practice browser could not be reset safely. Check Chrome manually and try again.',
+  PRACTICE_RESET_UNAVAILABLE:'Practice reset is unavailable in this build.',
+  DEDICATED_CHROME_NOT_IDENTIFIED:'The CDP port belongs to an unidentified Chrome process. Close it manually before resetting practice.',
+  DEDICATED_CHROME_CLOSE_TIMEOUT:'Dedicated Chrome did not close in time. Check it manually before resetting practice.',
   PRACTICE_TARGET_UNAVAILABLE:'PRACTICE TARGET NOT AVAILABLE. No alternative court or time will be selected.',
   PRACTICE_DATE_UNAVAILABLE:'This date is not available through the normal Onda calendar.',
   TERMS_AUTHORIZATION_REQUIRED:'Authorize accepting Onda Terms for this run first.',
@@ -44,6 +49,8 @@ export interface Dependencies {
   reviewLock?(owned:boolean):Promise<LockReview>;
   clearLock?(fingerprint:string,owned:()=>boolean):Promise<void>;
   confirmClear?(review:LockReview):Promise<boolean>;
+  resetPractice?():Promise<void>;
+  confirmReset?():Promise<boolean>;
   confirmPractice?(input:FullPracticeInput):Promise<boolean>;
   handoff?():Promise<Dashboard['handoff']>;
 }
@@ -244,6 +251,13 @@ export class Controller {
     await this.deps.clearLock(review.fingerprint,()=>!!this.active||gen!==this.generation);
     this.state.lockReview=null;this.state.handoff=null;this.state.selection=null;
     this.state.headline='Verified stale lock cleared';this.state.detail='Prepare again before booking.';
+  });}
+  resetPractice(){return this.operation('resetting',async gen=>{
+    if(!this.deps.resetPractice||!this.deps.confirmReset)throw Error('PRACTICE_RESET_UNAVAILABLE');
+    if(!await this.deps.confirmReset()||gen!==this.generation){this.state.headline='Practice reset cancelled';this.state.detail='No browser or lock state was changed.';return;}
+    await this.deps.resetPractice();
+    this.state.lock=await this.deps.lock();this.state.cdp=await this.deps.cdp();this.state.lockReview=null;this.state.handoff=null;this.state.selection=null;this.state.inspection=null;this.state.ready=false;
+    this.state.headline='Practice session reset';this.state.detail='Dedicated Chrome was restarted and the local practice lock was cleared. Set the exact target and run Full Flow Practice again.';
   });}
   runFullPractice(input:unknown){return this.operation('confirming',async gen=>{
     if(!input||typeof input!=='object'||!('authorizeTerms' in input)||input.authorizeTerms!==true)throw Error('TERMS_AUTHORIZATION_REQUIRED');

@@ -120,7 +120,7 @@ The countdown is informational and shows the next release after today's cutoff. 
 
 The activity log streams opt-in validated `THIRSTY_EVENT` messages and sanitized child output. Periodic checks only read local CDP reachability and lock existence; they do not poll Onda. No player fields or environment editor are exposed. A reachable CDP endpoint alone does not prove the correct profile; explicit Inspect/Prepare uses the existing profile/tab validation.
 
-Locks are deliberately read-only in the UI. An aborted or failed command retains `.local/automation.lock`. Follow the manual lock-check instructions above; the panel provides no Delete Lock action. A development abort test does not authorize silently clearing another run’s lock.
+Locks are deliberately retained after an aborted or failed command. For a dedicated Full Flow Practice run, use **Reset Practice Session** in the practice panel: it refuses a recorded QR/payment hold, selected slots, or an active worker, closes and reopens only the project Chrome profile, and clears local practice page state. Normal booking locks still require Review Lock and verified manual clearing. A development abort test does not authorize silently clearing another run’s lock.
 
 Current implementation and validation details are in [FULL_BOOKING_REPORT.md](FULL_BOOKING_REPORT.md). Earlier reports are historical checkpoints.
 

@@ -6,6 +6,7 @@ import { Controller } from './controller.js';
 import { createRunner } from './processes.js';
 import { readLock, readHandoff, probeCdp, readClock } from './status.js';
 import { readBooking, saveBooking, describePlan } from './booking.js';
+import { resetPracticeSession } from './practice-reset.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 process.chdir(root);
@@ -19,6 +20,8 @@ let exiting = false;
 const controller = new Controller({ runner: createRunner(root, node), lock: () => readLock(root), cdp: probeCdp, clock: readClock,
   reviewLock:owned=>reviewLock(root,owned,browserProbe(root,node)),
   clearLock:(fingerprint,owned)=>clearVerifiedLock(root,fingerprint,owned,browserProbe(root,node)),
+  resetPractice:()=>resetPracticeSession(root,()=>reviewLock(root,false,browserProbe(root,node)),browserProbe(root,node),probeCdp),
+  confirmReset:async()=> (await dialog.showMessageBox(window,{type:'question',title:'Reset practice session?',message:'RESET PRACTICE SESSION?',detail:'This closes and reopens only the dedicated Thirsty Bot Chrome, then clears local practice state. Review Booking and Payment Summary page state may be discarded. It will not cancel an Onda payment hold; a detected QR hold, selected slot, or active worker blocks the reset.',buttons:['Cancel','Reset Practice'],defaultId:0,cancelId:0})).response===1,
   confirmClear:async()=> (await dialog.showMessageBox(window,{type:'question',title:'Clear verified stale lock?',message:'CLEAR VERIFIED STALE LOCK?',detail:'PID is no longer running.\nOnda schedule page is clean.\nSelected slots: 0.\nNo checkout hold detected.\nSafety checks will run again before removal.',buttons:['Cancel','Clear Lock'],defaultId:0,cancelId:0})).response===1,
   confirmPractice:async input=>(await dialog.showMessageBox(window,{type:'question',title:'Run Full Flow Practice to QR?',message:'RUN FULL FLOW PRACTICE TO QR?',detail:`Date: ${input.target.date}\nCourt: ${input.target.court}\nStart: ${input.target.start}\nDuration: ${input.target.duration} hours\nMaximum: PHP ${input.maximum}\nPlayer information: Configured\nTerms authorization: YES\n\nThis continues until Onda displays the QR payment page. Payment itself will NOT be performed.`,buttons:['Cancel','Run Practice'],defaultId:0,cancelId:0})).response===1,
   booking:readBooking, saveBooking, handoff:()=>readHandoff(root),
@@ -43,7 +46,7 @@ else {
   window.webContents.on('will-navigate', event => event.preventDefault());
   window.webContents.on('will-attach-webview', event => event.preventDefault());
   const actions = {
-    reviewLock:()=>controller.reviewLock(),clearLock:()=>controller.clearLock(),
+    reviewLock:()=>controller.reviewLock(),clearLock:()=>controller.clearLock(),resetPractice:()=>controller.resetPractice(),
     startChrome: () => controller.startChrome(), inspectOnda: () => controller.inspectOnda(), prepare: () => controller.prepare(),
     armObservation: () => controller.armObservation(), abortAutomation: () => controller.abortAutomation(), getStatus: () => structuredClone(controller.state),
     armSelection: () => controller.armSelection(), dryRace: () => controller.dryRace(),

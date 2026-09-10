@@ -10,7 +10,7 @@ export type Inspection = Extract<UiEvent, { type: 'inspection' }>;
 export interface Activity { at: string; text: string; level: 'info' | 'error' }
 export interface Dashboard {
   lockReview?:LockReview|null;
-  operation: 'idle' | 'chrome' | 'inspect' | 'prepare' | 'confirming' | 'observe' | 'selection' | 'full' | 'dry' | 'practice' | 'stopping' | 'saving' | 'reviewing' | 'clearing' | 'fullPractice';
+  operation: 'idle' | 'chrome' | 'inspect' | 'prepare' | 'confirming' | 'observe' | 'selection' | 'full' | 'dry' | 'practice' | 'stopping' | 'saving' | 'reviewing' | 'clearing' | 'resetting' | 'fullPractice';
   headline: string; detail: string; ready: boolean; cdp: boolean; lock: boolean;
   inspection: Inspection | null; clock: ReturnType<typeof clockStatus> | null;
   plan: Extract<UiEvent, { type: 'plan' }> | null; logs: Activity[]; liveRace: boolean;
@@ -20,7 +20,7 @@ export interface Dashboard {
   mode:'selection'|'full'; handoff:Extract<UiEvent,{type:'handoff'}>|null;
 }
 export interface Bridge {
-  reviewLock():Promise<void>; clearLock():Promise<void>; runFullPractice(input:FullPracticeInput):Promise<void>;
+  reviewLock():Promise<void>; clearLock():Promise<void>; resetPractice():Promise<void>; runFullPractice(input:FullPracticeInput):Promise<void>;
   startChrome(): Promise<void>; inspectOnda(): Promise<void>; prepare(): Promise<void>;
   armObservation(): Promise<void>; abortAutomation(): Promise<void>; getStatus(): Promise<Dashboard>;
   saveBooking(input: BookingSetup): Promise<void>; armSelection(): Promise<void>; dryRace(): Promise<void>; runPractice(input:PracticeInput): Promise<void>;

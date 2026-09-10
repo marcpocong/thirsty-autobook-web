@@ -3,6 +3,7 @@ import type { Dashboard, Bridge } from './types.js';
 const bridge: Bridge = {
   reviewLock:()=>ipcRenderer.invoke('thirsty:reviewLock'),
   clearLock:()=>ipcRenderer.invoke('thirsty:clearLock'),
+  resetPractice:()=>ipcRenderer.invoke('thirsty:resetPractice'),
   runFullPractice:input=>ipcRenderer.invoke('thirsty:runFullPractice',input),
   startChrome: () => ipcRenderer.invoke('thirsty:startChrome'),
   inspectOnda: () => ipcRenderer.invoke('thirsty:inspectOnda'),

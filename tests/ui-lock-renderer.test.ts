@@ -15,14 +15,14 @@ const plan=bookingView(ConfigSchema.parse({...defaultSetup,PLAYER_FULL_NAME:'Fix
 async function renderer(old=false){
  const page=await browser.newPage();const html=(old?execFileSync('git',['show','2edebd0:ui/renderer/index.html'],{encoding:'utf8'}):await readFile('ui/renderer/index.html','utf8')).replace(/<meta http-equiv="Content-Security-Policy"[^>]*>/,'').replace(/<script[^>]*src="app.js"[^>]*><\/script>/,'');await page.setContent(html);
  const state={operation:'idle',headline:'Test retained lock',detail:'',ready:false,cdp:true,lock:true,inspection:null,clock:null,plan:null,logs:[],liveRace:true,booking:plan,termsAuthorized:false,capabilities:{selectionReady:true,checkoutReady:true,paymentBoundaryReady:true},selection:null,mode:'full',handoff:null};
- await page.evaluate(state=>{(window as any).thirsty={getStatus:async()=>state,onStatus:()=>()=>{},authorizeTerms:async()=>{},saveBooking:async(input:any)=>{state.booking.setup=input;state.booking.fingerprint='saved';state.headline='Booking plan saved';}};},state);
+ await page.evaluate(state=>{(window as any).thirsty={getStatus:async()=>state,onStatus:()=>()=>{},authorizeTerms:async()=>{},resetPractice:async()=>{},saveBooking:async(input:any)=>{state.booking.setup=input;state.booking.fingerprint='saved';state.headline='Booking plan saved';}};},state);
  const source=old?execFileSync('git',['show','2edebd0:ui/renderer/app.ts'],{encoding:'utf8'}):await readFile('ui/renderer/app.ts','utf8');
  await page.addScriptTag({type:'module',content:stripTypeScriptTypes(source)});
  await page.waitForFunction(()=>document.getElementById('headline')?.textContent==='Test retained lock');return page;
 }
 it('reproduces the previous retained-lock editor and Save disabling in the actual renderer',async()=>{const p=await renderer(true);expect(await p.locator('#duration').isDisabled()).toBe(true);expect(await p.locator('#save-booking').isDisabled()).toBe(true);await p.close();});
 it('actual renderer keeps all setup controls, Save, Review and Stop enabled while booking actions remain blocked',async()=>{
- const p=await renderer();for(const id of ['start-time','duration','maximum','attempts','fallback-time','save-booking','review-lock','stop'])expect(await p.locator('#'+id).isEnabled(),id).toBe(true);
+ const p=await renderer();for(const id of ['start-time','duration','maximum','attempts','fallback-time','save-booking','review-lock','reset-practice','stop'])expect(await p.locator('#'+id).isEnabled(),id).toBe(true);
  expect(await p.locator('#court-order button').nth(1).isEnabled()).toBe(true);
  for(const id of ['arm','prepare','dry','observe','practice','full-practice'])expect(await p.locator('#'+id).isDisabled(),id).toBe(true);
  expect(await p.locator('#chrome').isEnabled()).toBe(true);
