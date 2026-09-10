@@ -1,3 +1,4 @@
+import {FullPracticeSchema} from '../src/full-practice.js';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { resolve } from 'node:path';
 import { UiEventSchema, type UiEvent } from '../src/ui-events.js';
@@ -17,6 +18,11 @@ export function sanitizeLine(text: string): string {
 }
 export function commandSpec(command: Command, root: string, node: string) {
   if (typeof command === 'object' && command !== null) {
+    if(command.kind==='fullPractice'){
+      const {input}=z.object({kind:z.literal('fullPractice'),input:FullPracticeSchema}).strict().parse(command);
+      requireCapability('practice:full');const t=input.target;
+      return {executable:node,args:['--import','tsx',resolve(root,'src/index.ts'),'practice:full','--armed','--authorize-terms','--date',t.date,'--court',String(t.court),'--start',t.start,'--duration',String(t.duration),'--maximum',String(input.maximum)],automation:true};
+    }
     if(command.kind==='full'){
       const c=z.object({kind:z.literal('full'),planHash:z.string().regex(/^[a-f0-9]{64}$/),authorizeTerms:z.literal(true)}).strict().parse(command);
       requireCapability('race');

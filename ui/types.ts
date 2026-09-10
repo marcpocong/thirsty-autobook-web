@@ -1,13 +1,16 @@
+import type {FullPracticeInput} from '../src/full-practice.js';
+import type {LockReview} from './locks.js';
 import type { UiEvent } from '../src/ui-events.js';
 import type { clockStatus } from './status.js';
 import type { BookingView } from './booking.js';
 import type { BookingSetup } from '../src/config.js';
 import type { PracticeInput } from '../src/practice.js';
-export type Command = 'chrome' | 'inspect' | 'observe' | { kind:'selection' | 'dry'; planHash:string } | {kind:'full';planHash:string;authorizeTerms:true} | { kind:'practice'; input:PracticeInput };
+export type Command = {kind:'fullPractice';input:FullPracticeInput} | 'chrome' | 'inspect' | 'observe' | { kind:'selection' | 'dry'; planHash:string } | {kind:'full';planHash:string;authorizeTerms:true} | { kind:'practice'; input:PracticeInput };
 export type Inspection = Extract<UiEvent, { type: 'inspection' }>;
 export interface Activity { at: string; text: string; level: 'info' | 'error' }
 export interface Dashboard {
-  operation: 'idle' | 'chrome' | 'inspect' | 'prepare' | 'confirming' | 'observe' | 'selection' | 'full' | 'dry' | 'practice' | 'stopping' | 'saving';
+  lockReview?:LockReview|null;
+  operation: 'idle' | 'chrome' | 'inspect' | 'prepare' | 'confirming' | 'observe' | 'selection' | 'full' | 'dry' | 'practice' | 'stopping' | 'saving' | 'reviewing' | 'clearing' | 'fullPractice';
   headline: string; detail: string; ready: boolean; cdp: boolean; lock: boolean;
   inspection: Inspection | null; clock: ReturnType<typeof clockStatus> | null;
   plan: Extract<UiEvent, { type: 'plan' }> | null; logs: Activity[]; liveRace: boolean;
@@ -17,6 +20,7 @@ export interface Dashboard {
   mode:'selection'|'full'; handoff:Extract<UiEvent,{type:'handoff'}>|null;
 }
 export interface Bridge {
+  reviewLock():Promise<void>; clearLock():Promise<void>; runFullPractice(input:FullPracticeInput):Promise<void>;
   startChrome(): Promise<void>; inspectOnda(): Promise<void>; prepare(): Promise<void>;
   armObservation(): Promise<void>; abortAutomation(): Promise<void>; getStatus(): Promise<Dashboard>;
   saveBooking(input: BookingSetup): Promise<void>; armSelection(): Promise<void>; dryRace(): Promise<void>; runPractice(input:PracticeInput): Promise<void>;

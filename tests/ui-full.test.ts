@@ -18,7 +18,7 @@ function harness(success=true,confirmed=true){
   return {controller,calls,confirm};
 }
 it('requires fresh terms before full confirmation or worker launch',async()=>{
-  const h=harness();await h.controller.armFullBooking();expect(h.calls).toEqual([]);expect(h.confirm).not.toHaveBeenCalled();expect(h.controller.state.detail).toBe('TERMS_AUTHORIZATION_REQUIRED');
+  const h=harness();await h.controller.armFullBooking();expect(h.calls).toEqual([]);expect(h.confirm).not.toHaveBeenCalled();expect(h.controller.state.detail).toBe('Authorize accepting Onda Terms for this run first.');
 });
 it('launches the confirmed full plan and shows verified handoff with retained lock and consumed terms',async()=>{
   const h=harness();await h.controller.authorizeTerms(true);await h.controller.armFullBooking();

@@ -7,5 +7,5 @@ export const capabilities:Readonly<Capabilities> = Object.freeze({ selectionRead
 export function fullBookingReady(gates=capabilities){return gates.selectionReady&&gates.checkoutReady&&gates.paymentBoundaryReady;}
 export function requireCapability(mode: string,gates=capabilities) {
   if (mode === 'selection:armed' && !gates.selectionReady) throw new Error('SELECTION_NOT_READY');
-  if (mode === 'race' && !fullBookingReady(gates)) throw new Error('LIVE_RACE_BLOCKED');
+  if (['race','practice:full'].includes(mode) && !fullBookingReady(gates)) throw new Error('LIVE_RACE_BLOCKED');
 }

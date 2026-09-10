@@ -1,3 +1,4 @@
+import {FullPracticeSchema,selectExactPractice} from './full-practice.js';
 import { writeFileSync } from 'node:fs';
 import { mkdir as mkdirAsync, open as openAsync, unlink as unlinkAsync,writeFile as writeFileAsync } from 'node:fs/promises';
 import { Safety, requireArmed } from './safety.js';
@@ -47,17 +48,18 @@ if (process.stdin.isTTY) {
 }
 try {
   const [mode, ...args] = process.argv.slice(2);
-  if (!mode || !['inspect', 'practice', 'release:observe', 'race:dry', 'race', 'selection:armed','handoff:test'].includes(mode)) throw new Error('MODE_REQUIRED');
-  const allowed = new Set(mode === 'practice' ? ['--date', '--court', '--start', '--duration'] : mode==='handoff:test'?['--date','--court','--start','--duration','--armed','--authorize-terms','--noncompetitive']:['--armed', '--authorize-terms', '--plan-hash']);
+  if (!mode || !['inspect', 'practice', 'release:observe', 'race:dry', 'race', 'selection:armed','handoff:test','practice:full'].includes(mode)) throw new Error('MODE_REQUIRED');
+  const allowed = new Set(mode === 'practice' ? ['--date', '--court', '--start', '--duration'] : ['handoff:test','practice:full'].includes(mode)?['--maximum','--date','--court','--start','--duration','--armed','--authorize-terms','--noncompetitive']:['--armed', '--authorize-terms', '--plan-hash']);
   for (const arg of args.filter(a => a.startsWith('--'))) if (!allowed.has(arg)) throw new Error('UNKNOWN_ARGUMENT');
   requireArmed(mode, args.includes('--armed'));
   requireCapability(mode);
-  if(['race','handoff:test'].includes(mode)&&!args.includes('--authorize-terms'))throw new Error('TERMS_AUTHORIZATION_REQUIRED');
+  if(['race','handoff:test','practice:full'].includes(mode)&&!args.includes('--authorize-terms'))throw new Error('TERMS_AUTHORIZATION_REQUIRED');
   if(mode==='handoff:test'&&!args.includes('--noncompetitive'))throw new Error('NONCOMPETITIVE_TARGET_REQUIRED');
-  const config: Config | ReleaseSettings | undefined = mode === 'release:observe' ? loadObservationConfig() : ['race:dry','selection:armed','race','handoff:test'].includes(mode) ? loadConfig() : undefined;
+  const config: Config | ReleaseSettings | undefined = mode === 'release:observe' ? loadObservationConfig() : ['race:dry','selection:armed','race','handoff:test','practice:full'].includes(mode) ? loadConfig() : undefined;
   const value = (flag: string) => { const i = args.indexOf(flag); return i < 0 ? undefined : args[i + 1]; };
   if (args.includes('--plan-hash') && (!config || !('MAX_PRICE' in config) || planFingerprint(config as Config) !== value('--plan-hash'))) throw new Error('BOOKING_PLAN_CHANGED');
   const practiceInput = mode === 'practice' ? PracticeSchema.parse({ date: value('--date'), court: value('--court'), start: value('--start'), duration: value('--duration') }) : undefined;
+  const fullPractice=mode==='practice:full'?FullPracticeSchema.parse({target:{date:value('--date'),court:value('--court'),start:value('--start'),duration:value('--duration')},maximum:Number(value('--maximum')),authorizeTerms:args.includes('--authorize-terms')}):undefined;
   const handoffInput=mode==='handoff:test'?PracticeSchema.parse({date:value('--date'),court:value('--court'),start:value('--start'),duration:value('--duration')}):undefined;
   await mkdirAsync('.local', { recursive: true }); await mkdirAsync('DiagnosticsLocal', { recursive: true });
   const lock = await openAsync(lockPath, 'wx').catch(() => { throw new Error('AUTOMATION_LOCK_EXISTS: verify no bot is running and selections are clean before removing .local/automation.lock'); });
@@ -65,6 +67,13 @@ try {
   const { page } = await attach(safety); telemetry.mark('chromeConnected'); telemetry.mark('ondaTabResolved');
   if (mode === 'inspect') await inspect(page);
   else if (practiceInput) await practice(page, practiceInput, safety, telemetry);
+  else if(fullPractice&&config){
+    const booking=config as Config;
+    const result=await selectExactPractice(page,fullPractice,safety,telemetry);
+    retainSelection=true;emitUiEvent({type:'selection',...result});
+    const hold=await fullBookingToQr(page,result,{fullName:booking.PLAYER_FULL_NAME,phone:booking.PLAYER_PHONE,email:booking.PLAYER_EMAIL},fullPractice.maximum,true,booking.PAYMENT_HANDOFF_VERIFY_TIMEOUT_MS,safety,telemetry,booking.PAYMENT_SUMMARY_READY_TIMEOUT_MS);
+    await writeFileAsync(lockPath,JSON.stringify({pid:process.pid,runID:telemetry.runID,handoff:{type:'handoff',date:result.date,court:result.court,hours:result.hours,...hold}}));
+  }
   else if(handoffInput&&config){
     const booking=config as Config;
     if((await snapshot(page)).cells.some(c=>c.state==='selected'))throw new Error('PREEXISTING_SELECTION');

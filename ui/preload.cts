@@ -1,6 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { Dashboard, Bridge } from './types.js';
 const bridge: Bridge = {
+  reviewLock:()=>ipcRenderer.invoke('thirsty:reviewLock'),
+  clearLock:()=>ipcRenderer.invoke('thirsty:clearLock'),
+  runFullPractice:input=>ipcRenderer.invoke('thirsty:runFullPractice',input),
   startChrome: () => ipcRenderer.invoke('thirsty:startChrome'),
   inspectOnda: () => ipcRenderer.invoke('thirsty:inspectOnda'),
   prepare: () => ipcRenderer.invoke('thirsty:prepare'),

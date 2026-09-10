@@ -1,3 +1,4 @@
+import {selectExactPractice} from '../src/full-practice.js';
 import {beforeAll,beforeEach,afterAll,it,expect,vi} from 'vitest';
 import {chromium,type Browser,type Page} from 'playwright';
 import {readFile} from 'node:fs/promises';
@@ -44,4 +45,29 @@ it('Full Booking without terms authorization never clicks the first Proceed',asy
 it('Emergency Stop before checkout prevents every subsequent action',async()=>{
   const s=new Safety(),t=new Telemetry();const selected=await selectResolvedPreference(selectionPort(page,s),'2026-09-11',await snapshot(page),[{court:7,hours:['10:00','11:00']}],1200,3,s,t);s.stop('USER_ABORT');
   await expect(fullBookingToQr(page,selected,player,1200,true,1000,s,t)).rejects.toThrow('USER_ABORT');expect(await page.evaluate(()=>(window as unknown as {actions:string[]}).actions)).toEqual([]);
+});
+
+async function practiceCalendar(){
+ await page.evaluate(()=>{
+  const filter=document.createElement('span');filter.dataset.testid='booking-court-filter-label';filter.textContent='All Courts';document.body.append(filter);
+  const picker=document.createElement('button');picker.setAttribute('aria-label','Select booking date');picker.setAttribute('aria-expanded','false');picker.onclick=()=>picker.setAttribute('aria-expanded',picker.getAttribute('aria-expanded')==='true'?'false':'true');document.body.append(picker);
+  const day=document.createElement('button');day.dataset.day='9/11/2026';day.textContent='September 11';day.onclick=()=>picker.setAttribute('aria-expanded','false');document.body.append(day);
+ });
+}
+it('exact practice reuses both production Proceeds, Review/player validation, Terms, final action and passive QR stop',async()=>{
+ await practiceCalendar();const s=new Safety(),t=new Telemetry();
+ const selected=await selectExactPractice(page,{target:{date:'2026-09-11',court:7,start:'10:00',duration:2},maximum:1200,authorizeTerms:true},s,t);
+ expect(selected).toMatchObject({court:7,hours:['10:00','11:00'],attempts:1});
+ const hold=await fullBookingToQr(page,selected,player,1200,true,1000,s,t);
+ expect(hold).toMatchObject({status:'Pending',amount:1200});expect(s.locked&&s.boundary).toBe(true);
+ expect(await page.evaluate(()=>(window as unknown as {actions:string[]}).actions)).toEqual(['bookingProceed','Full Name','Phone Number','Email Address','playerProceed','terms','final']);
+ expect(t.events.some(e=>['armed','releaseTriggerFired','fallbackResolved'].includes(e.event))).toBe(false);
+});
+it('unavailable exact practice court stops without falling back to open courts',async()=>{
+ await practiceCalendar();await expect(selectExactPractice(page,{target:{date:'2026-09-11',court:3,start:'10:00',duration:2},maximum:1200,authorizeTerms:true},new Safety(),new Telemetry())).rejects.toThrow('PRACTICE_TARGET_UNAVAILABLE');
+ expect((await snapshot(page)).cells.some(c=>c.state==='selected')).toBe(false);
+});
+it('practice refuses a disabled normal calendar date',async()=>{
+ await practiceCalendar();await page.locator('[data-day]').evaluate(e=>(e as HTMLButtonElement).disabled=true);
+ await expect(selectExactPractice(page,{target:{date:'2026-09-11',court:7,start:'10:00',duration:2},maximum:1200,authorizeTerms:true},new Safety(),new Telemetry())).rejects.toThrow('PRACTICE_DATE_UNAVAILABLE');
 });

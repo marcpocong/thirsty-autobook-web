@@ -1,3 +1,5 @@
+import {FullPracticeSchema,type FullPracticeInput} from '../src/full-practice.js';
+import type {LockReview} from './locks.js';
 import type { UiEvent } from '../src/ui-events.js';
 import type { Runner, RunningCommand } from './processes.js';
 import type { Command, Dashboard } from './types.js';
@@ -8,7 +10,16 @@ import { BookingSetupSchema } from '../src/config.js';
 import { capabilities,fullBookingReady } from '../src/capabilities.js';
 
 const errors: Record<string, string> = {
-  AUTOMATION_LOCK_EXISTS: 'Automation lock exists. Verify no bot is running and Chrome has no active selection before clearing it manually.',
+  LOCK_PID_RUNNING:'The recorded process or a UI-owned worker is still running. Lock cannot be cleared.',
+  LOCK_SELECTED_SLOTS:'SELECTED SLOTS STILL PRESENT. Inspect and clear them manually, then Review Lock again.',
+  LOCK_PAYMENT_HOLD_ACTIVE:'PAYMENT HOLD ACTIVE. Complete payment, cancel manually if appropriate, or wait for expiry; then return to a clean schedule and Review Lock.',
+  LOCK_BROWSER_STATE_UNKNOWN:'Browser state is unknown or not a clean schedule. Manual review required.',
+  PRACTICE_TARGET_UNAVAILABLE:'PRACTICE TARGET NOT AVAILABLE. No alternative court or time will be selected.',
+  PRACTICE_DATE_UNAVAILABLE:'This date is not available through the normal Onda calendar.',
+  TERMS_AUTHORIZATION_REQUIRED:'Authorize accepting Onda Terms for this run first.',
+  PLAYER_INFO_MISSING:'Player information is missing or invalid. Configure local player information first.',
+  QR_HANDOFF_FAILED:'QR handoff could not be verified. Inspect Chrome manually; the lock remains active.',
+  AUTOMATION_LOCK_EXISTS: 'Automation lock exists. Use Review Lock. Booking actions are blocked; local booking settings can still be edited and saved.',
   CDP_PROFILE_OR_BIND_UNVERIFIED: 'Chrome/CDP unavailable or dedicated profile not verified. Use Start / Attach Chrome.',
   WRONG_CHROME_PROFILE: 'Port 9222 belongs to a different Chrome profile.',
   ONDA_TAB_AMBIGUOUS_OR_MISSING: 'Leave exactly one Thirsty Pickle booking tab open in dedicated Chrome.',
@@ -27,6 +38,10 @@ export interface Dependencies {
   runner: Runner; lock(): Promise<boolean>; cdp(): Promise<boolean>; clock: typeof readClock;
   confirm(kind?: 'observe'|'selection'|'dry'|'full', plan?:BookingView): Promise<boolean>; publish(status: Dashboard): void;
   booking(): BookingView; saveBooking(input:unknown): BookingView;
+  reviewLock?(owned:boolean):Promise<LockReview>;
+  clearLock?(fingerprint:string,owned:()=>boolean):Promise<void>;
+  confirmClear?(review:LockReview):Promise<boolean>;
+  confirmPractice?(input:FullPracticeInput):Promise<boolean>;
   handoff?():Promise<Dashboard['handoff']>;
 }
 export class Controller {
@@ -71,7 +86,7 @@ export class Controller {
     } finally { this.polling = false; }
   }
   private event = (event: UiEvent) => {
-    if (event.type === 'selection') { this.state.selection=event; this.state.headline='SLOTS SELECTED'; this.state.detail=this.state.operation==='full'?'Continuing to Review Booking. Selection is not yet a reservation.':'AUTOMATION STOPPED BEFORE PROCEED. USER CONTROL RESTORED. Selection is not a reservation; the lock remains active.'; this.publish(); }
+    if (event.type === 'selection') { this.state.selection=event; this.state.headline='SLOTS SELECTED'; this.state.detail=['full','fullPractice'].includes(this.state.operation)?'Continuing to Review Booking. Selection is not yet a reservation.':'AUTOMATION STOPPED BEFORE PROCEED. USER CONTROL RESTORED. Selection is not a reservation; the lock remains active.'; this.publish(); }
     if(event.type==='handoff'){this.state.handoff=event;this.state.headline='PAYMENT HOLD ACTIVE';this.state.detail='FULL BOOKING COMPLETE TO PAYMENT HANDOFF. AUTOMATION STOPPED. Complete payment manually in Chrome. AUTOMATION LOCK RETAINED.';this.publish();}
     if (event.type === 'inspection') { this.state.inspection = event; this.log('Onda URL and venue verified. Inspection results received.'); }
     if (event.type === 'plan') { this.state.plan = event; this.publish(); }
@@ -84,7 +99,7 @@ export class Controller {
       const labels: Record<string, string> = { chromeConnected: 'Dedicated Chrome and Onda tab verified', preflightStarted: 'Preflight started', preflightCompleted: 'Preflight passed',
         armed: 'ARMED — final preflight passed', releaseTriggerFired: 'Release trigger fired', reloadStarted: 'Reload started', reloadCommitted: 'Reload committed', targetGridReady: 'Target grid verified', gridSnapshotCompleted: 'Availability snapshot completed', automationStopped: 'Command completed' };
       this.log(labels[event.event] ?? event.event);
-      if(this.state.operation==='full'){
+      if(['full','fullPractice'].includes(this.state.operation)){
         const stages:Record<string,string>={armed:'Full Booking armed',reviewValidated:'BOOKING REVIEWED',playerFillCompleted:'PLAYER INFORMATION VERIFIED',paymentSummaryValidated:'READY TO CREATE PAYMENT HOLD',finalOndaActionStarted:'Creating payment hold',finalOndaButtonClicked:'Checking QR handoff — read only'};
         if(stages[event.event])this.state.headline=stages[event.event]!;
         this.publish();
@@ -167,8 +182,8 @@ export class Controller {
     this.state.headline = 'Observation complete'; this.state.detail = 'No court slots were selected. Review activity and local telemetry.';
   }); }
   saveBooking(input: unknown) { return this.operation('saving', async () => {
-    await this.noLock(); const setup=BookingSetupSchema.parse(input);
-    this.state.booking=this.deps.saveBooking(setup); this.state.selection=null;
+    const setup=BookingSetupSchema.parse(input);
+    this.state.booking=this.deps.saveBooking(setup);
     this.state.headline='Booking plan saved'; this.state.detail='Review the compiled plan, then Prepare Booking. Terms authorization is off.';
   }); }
   armSelection() { return this.armBooking('selection'); }
@@ -208,6 +223,35 @@ export class Controller {
     else if(kind==='full'&&!this.state.handoff)throw new Error('HANDOFF_STATUS_UNKNOWN');
     else if(kind==='selection'&&!this.state.selection)throw new Error('SELECTION_RESULT_MISSING');
   }); }
+  reviewLock(){return this.operation('reviewing',async()=>{
+    if(!this.deps.reviewLock)throw Error('LOCK_BROWSER_STATE_UNKNOWN');
+    this.state.lockReview=await this.deps.reviewLock(!!this.active);
+    this.state.headline=this.state.lockReview.canClear?'VERIFIED STALE LOCK':'AUTOMATION LOCK ACTIVE';
+    this.state.detail=errors[this.state.lockReview.reason]??'PID is dead, schedule is clean, selected slots: 0. Safe clearing is available after confirmation.';
+  });}
+  clearLock(){return this.operation('clearing',async gen=>{
+    if(!this.deps.reviewLock||!this.deps.clearLock||!this.deps.confirmClear)throw Error('LOCK_BROWSER_STATE_UNKNOWN');
+    const review=await this.deps.reviewLock(!!this.active);this.state.lockReview=review;this.publish();
+    if(!review.canClear)throw Error(review.reason);
+    if(!await this.deps.confirmClear(review)||gen!==this.generation)return;
+    await this.deps.clearLock(review.fingerprint,()=>!!this.active||gen!==this.generation);
+    this.state.lockReview=null;this.state.handoff=null;this.state.selection=null;
+    this.state.headline='Verified stale lock cleared';this.state.detail='Prepare again before booking.';
+  });}
+  runFullPractice(input:unknown){return this.operation('confirming',async gen=>{
+    if(!input||typeof input!=='object'||!('authorizeTerms' in input)||input.authorizeTerms!==true)throw Error('TERMS_AUTHORIZATION_REQUIRED');
+    const parsed=FullPracticeSchema.parse(input);
+    if(!fullBookingReady(this.state.capabilities))throw Error('LIVE_RACE_BLOCKED');
+    await this.noLock();if(!await this.deps.cdp())throw Error('CDP_PROFILE_OR_BIND_UNVERIFIED');
+    try{if(!this.deps.booking().playerConfigured)throw Error();}catch{throw Error('PLAYER_INFO_MISSING');}
+    if(!this.deps.confirmPractice||!await this.deps.confirmPractice(parsed)||gen!==this.generation)return;
+    await this.noLock();
+    this.state.operation='fullPractice';this.state.handoff=null;this.state.selection=null;this.state.inspection=null;
+    this.state.headline='Full Flow Practice running';this.state.detail='Exact target, immediate start. Automation stops at QR Checkout.';this.publish();
+    await this.run({kind:'fullPractice',input:parsed},gen);
+    if(!this.state.handoff)throw Error('QR_HANDOFF_FAILED');
+    this.state.headline='FULL FLOW PRACTICE COMPLETE';this.state.detail='PAYMENT HOLD ACTIVE. AUTOMATION STOPPED. DO NOT PAY UNLESS YOU ACTUALLY WANT THIS PRACTICE BOOKING. Lock retained.';
+  });}
   runPractice(input:unknown) { return this.operation('practice', async gen => {
     const parsed=PracticeSchema.parse(input); await this.noLock();this.state.selection=null;this.state.inspection=null;
     this.state.headline='Safe practice running';this.state.detail='Select → verify → deselect → verify clean. Never Proceed.';
