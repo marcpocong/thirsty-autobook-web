@@ -7,6 +7,7 @@ import { attach } from './browser.js';
 import { inspect } from './inspector.js';
 import { practice, PracticeSchema } from './practice.js';
 import { observeRelease } from './release.js';
+import { emitUiEvent } from './ui-events.js';
 
 const safety = new Safety();
 const telemetry = new Telemetry();
@@ -17,6 +18,7 @@ const lockPath = '.local/automation.lock';
 // Exiting the Playwright-owning process cancels its outstanding local action tasks.
 // Never close Chrome/context/page; an already-dispatched click cannot be undone.
 const stopNow = (code: string) => {
+  emitUiEvent({ type: 'error', code: /^[A-Z_]{1,80}$/.test(code) ? code : 'OPERATION_FAILED' });
   telemetry.mark(code === 'USER_ABORT' ? 'aborted' : 'failed');
   try { writeFileSync(`DiagnosticsLocal/${telemetry.runID}.json`, JSON.stringify({ runID: telemetry.runID, events: telemetry.events })); } catch {}
   console.error(code === 'USER_ABORT' ? 'AUTOMATION ABORTED — USER CONTROL RESTORED' : code);
@@ -27,6 +29,13 @@ const stopNow = (code: string) => {
 safety.signal.addEventListener('abort', () => stopNow(safety.signal.reason instanceof Error ? safety.signal.reason.message : 'ABORTED'), { once: true });
 process.once('SIGINT', () => safety.stop('USER_ABORT'));
 process.once('SIGTERM', () => safety.stop('USER_ABORT'));
+// UI runs this CLI directly with Node --import tsx (no npm/tsx worker process).
+// IPC abort uses exactly the same Safety path as Q/Ctrl+C. Parent loss also stops it.
+if (process.env.THIRSTY_UI_EVENTS === '1' && process.env.THIRSTY_UI_PARENT_PID && !process.connected) safety.stop('USER_ABORT');
+if (process.env.THIRSTY_UI_EVENTS === '1' && process.connected) {
+  process.on('message', message => { if (message && typeof message === 'object' && 'type' in message && message.type === 'abort') safety.stop('USER_ABORT'); });
+  process.once('disconnect', () => safety.stop('USER_ABORT'));
+}
 if (process.stdin.isTTY) {
   process.stdin.setRawMode(true); process.stdin.resume();
   process.stdin.on('data', chunk => { if (/[qQ\u0003]/.test(chunk.toString())) safety.stop('USER_ABORT'); });
@@ -53,6 +62,7 @@ try {
   exitCode = 1; telemetry.mark('failed');
   // Zod input exceptions may contain values: print only issue paths.
   const e = error as { name?: string; issues?: { path: unknown[] }[]; message?: string };
+  emitUiEvent({ type: 'error', code: /^[A-Z_]{1,80}(?=:|$)/.exec(e.message ?? '')?.[0] ?? 'OPERATION_FAILED' });
   console.error(e.name === 'ZodError' ? `INVALID_PRACTICE_ARGUMENTS: ${e.issues?.map(i => i.path.join('.')).join(', ')}` : e.message?.startsWith('CONFIG_INVALID') || /^[A-Z_]+(?::|$)/.test(e.message ?? '') ? e.message : 'OPERATION_FAILED — no automatic recovery. Check the browser manually.');
 } finally {
   await telemetry.flush();

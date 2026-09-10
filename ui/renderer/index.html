@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Thirsty Bot · Onda Booking Control</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+<header><div class="brand"><span class="mark" aria-hidden="true">T</span><div><h1>THIRSTY BOT</h1><p>Onda Booking Control</p></div></div><span class="mode">OBSERVATION MODE <span class="dot"></span></span></header>
+<main>
+  <section class="hero" aria-label="Release clock"><div><p class="eyebrow">ASIA / MANILA</p><div id="clock" class="clock">--:--:--</div><p id="clock-date" class="muted">Reading local clock…</p></div><div class="countdown-block"><p class="eyebrow" id="countdown-label">NEXT RELEASE IN</p><div id="countdown" class="countdown">--:--:--</div><p class="muted"><span id="release-time">08:00:00</span> <span id="release-zone">Asia/Manila</span></p></div></section>
+  <div class="content">
+    <section class="panel session"><div class="section-title"><h2>Session status</h2><span id="checked-at" class="small">Not inspected</span></div>
+      <dl>
+        <div><dt>Chrome / CDP</dt><dd id="cdp" data-tone="muted">Checking…</dd></div>
+        <div><dt>Onda page</dt><dd id="onda" data-tone="muted">Not inspected</dd></div>
+        <div><dt>Venue</dt><dd id="venue" data-tone="muted">Not verified</dd></div>
+        <div><dt>Court filter</dt><dd id="filter" data-tone="muted">Unknown</dd></div>
+        <div><dt>Displayed date</dt><dd id="displayed-date" data-tone="muted">Unknown</dd></div>
+        <div><dt>Selected slots</dt><dd id="selected" data-tone="muted">Unknown</dd></div>
+        <div><dt>Automation lock</dt><dd id="lock" data-tone="muted">Checking…</dd></div>
+      </dl>
+      <div class="target"><p class="eyebrow">TARGET BOOKING DATE</p><strong id="target-date">Calculating…</strong><p class="small" id="safe-config">Release settings loading</p></div>
+    </section>
+    <section class="panel controls"><div class="section-title"><h2>Release operations</h2><span class="small">01 / PREPARE & OBSERVE</span></div>
+      <div class="button-row"><button id="chrome" class="secondary">Start / Attach Chrome</button><button id="inspect" class="secondary">Inspect Onda</button></div>
+      <button id="prepare" class="prepare">Prepare for 8:00 <span aria-hidden="true">→</span></button>
+      <div class="readiness" id="readiness" role="status"><strong id="headline">Prepare your session</strong><p id="detail">Start dedicated Chrome, then verify the page before arming.</p></div>
+      <button id="arm" class="arm">Arm Release Observation</button>
+      <p class="small hint">Confirmation required · refresh and date navigation only</p>
+      <div class="locked"><div><strong>Live race</strong><p>Release and checkout verification incomplete.</p></div><button disabled title="Release and checkout verification incomplete">LOCKED / NOT READY</button></div>
+    </section>
+  </div>
+  <section class="panel activity"><div class="section-title"><h2>Activity</h2><span class="small" id="activity-state">LOCAL PROCESS OUTPUT</span></div><div id="log" role="log" aria-live="polite" aria-label="Activity log"><p class="empty">Activity will appear here as commands run.</p></div></section>
+  <footer><div><span class="dot"></span><span>Manual payment only. Live booking stays locked.</span></div><button id="stop" class="stop">■ &nbsp; Emergency Stop</button></footer>
+</main><script type="module" src="app.js"></script></body></html>

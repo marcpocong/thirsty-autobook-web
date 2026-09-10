@@ -1,0 +1,16 @@
+import { contextBridge, ipcRenderer } from 'electron';
+import type { Dashboard, Bridge } from './types.js';
+const bridge: Bridge = {
+  startChrome: () => ipcRenderer.invoke('thirsty:startChrome'),
+  inspectOnda: () => ipcRenderer.invoke('thirsty:inspectOnda'),
+  prepare: () => ipcRenderer.invoke('thirsty:prepare'),
+  armObservation: () => ipcRenderer.invoke('thirsty:armObservation'),
+  abortAutomation: () => ipcRenderer.invoke('thirsty:abortAutomation'),
+  getStatus: () => ipcRenderer.invoke('thirsty:getStatus'),
+  onStatus: callback => {
+    const listener = (_event: Electron.IpcRendererEvent, status: Dashboard) => callback(status);
+    ipcRenderer.on('thirsty:status', listener);
+    return () => ipcRenderer.removeListener('thirsty:status', listener);
+  },
+};
+contextBridge.exposeInMainWorld('thirsty', bridge);

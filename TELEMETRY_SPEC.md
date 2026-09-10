@@ -4,6 +4,8 @@ Events are buffered in memory as `{event, wall, monoMs, value?}`; wall is UTC IS
 
 Normal completion/failure flushes asynchronously. Abort/disconnection flushes once synchronously after stopping, then exits the Playwright-owning process. No critical-path disk writes. An abrupt kill may lose buffered telemetry. CLI uses no screenshots or tracing.
 
+Desktop phase 1 adds optional `THIRSTY_UI_EVENTS=1` stdout streaming. It emits `THIRSTY_EVENT <JSON>` for validated telemetry, inspection, release plan and error-code messages. The UI consumes this protocol and does not interpret arbitrary DOM/config output as status. Without this environment flag, existing CLI behavior and buffering are unchanged. Streaming is enabled only for the UI's safe inspect/observation commands; there is no UI live-race route.
+
 | Event | Exact timestamp meaning |
 |---|---|
 | processStarted | After CLI startup and telemetry construction |

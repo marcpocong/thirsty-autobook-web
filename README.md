@@ -88,4 +88,29 @@ Respect Onda's applicable terms and venue rules. Do not defeat restrictions. No 
 
 Tests use test-owned Chrome/Chromium and minimal synthetic HTML with all external requests blocked. `browser.close()` exists only for that test-owned browser, never the user's Chrome. CI runs install/typecheck/offline tests, never the CLI against Onda. On Linux test hosts run `npx playwright install --with-deps chromium` first.
 
-GitHub CLI was not authenticated during setup; private repository creation/push remains pending. After `gh auth login`, inspect tracked files for secrets, then create/use PRIVATE `thirsty-autobook-web` on main. Diagnostics, profile, env files and logs are ignored.
+The repository is private at [marcpocong/thirsty-autobook-web](https://github.com/marcpocong/thirsty-autobook-web), on main. Diagnostics, profile, env files and logs are ignored.
+
+## Desktop control panel
+
+```powershell
+npm run ui
+```
+
+The Electron desktop window uses the existing CLI engine. The first launch may download the Electron runtime; subsequent launches build the small TypeScript UI and open it directly. No installer or additional terminal is needed.
+
+1. **Start / Attach Chrome** reuses the existing PowerShell launcher and checks local CDP.
+2. **Prepare for 8:00** starts/reuses Chrome, runs inspection, and verifies today’s actual grid, All Courts, visibility, zero selected cells and a clear lock. It never arms or selects anything. The label follows the configured release time.
+3. Review the session statuses, Manila time, target date and countdown. Onda statuses show their inspection time; they are not continuously re-read. Readiness expires after one minute, on disconnection, an unexpected lock, or the preflight cutoff.
+4. **Arm Release Observation** opens a native Cancel/Arm confirmation for this run. The existing observer is launched only after Arm. Initial preflight appears as **Observation scheduled**; **Release observation armed** appears only after the engine’s final preflight actually passes.
+5. Leave dedicated Chrome and the control panel open, with the Onda tab active. Conflicting controls stay disabled while a command runs.
+6. **Emergency Stop** stops only the UI-owned command. Chrome remains open; the panel makes no recovery clicks, deselection or refresh. Closing the panel also stops its command. External CLI runs must be stopped in their own terminal.
+
+**Release Observation does not book a court. Live Race remains locked.** Practice, Dry Race, booking preferences and checkout UI are deferred; their existing CLI behavior is unchanged.
+
+The countdown is informational and uses the existing release-calendar rules. After today’s cutoff, arming is disabled and the display shows the next calendar release/target; the panel does not schedule tomorrow’s observer automatically. Restart before the intended day’s release. If you edit `.env.local` externally, restart the panel so the UI and child share the refreshed configuration.
+
+The activity log streams opt-in validated `THIRSTY_EVENT` messages and sanitized child output. Periodic checks only read local CDP reachability and lock existence; they do not poll Onda. No player fields or environment editor are exposed. A reachable CDP endpoint alone does not prove the correct profile; explicit Inspect/Prepare uses the existing profile/tab validation.
+
+Locks are deliberately read-only in the UI. An aborted or failed command retains `.local/automation.lock`. Follow the manual lock-check instructions above; the panel provides no Delete Lock action. A development abort test does not authorize silently clearing another run’s lock.
+
+Implementation and validation details are in [UI_PHASE1_REPORT.md](UI_PHASE1_REPORT.md).
