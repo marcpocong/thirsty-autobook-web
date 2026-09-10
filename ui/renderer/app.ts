@@ -39,9 +39,12 @@ function render(state: Dashboard) {
   byId('arm').textContent=full?'Arm Full Booking':'Arm Booking Selection';
   byId('arm-description').textContent=full?'Per-run terms + confirmation required · stops at QR Checkout · payment stays manual':'Explicit confirmation · leaves selected slots · stops before Proceed';
   byId('full-gate').textContent=fullReady?'VERIFIED / AVAILABLE':'LOCKED / NOT READY';
-  for (const id of ['chrome', 'inspect', 'prepare', 'arm','dry','observe']) (byId(id) as HTMLButtonElement).disabled = busy || state.lock;
+  for (const id of ['inspect', 'prepare', 'arm','dry','observe']) (byId(id) as HTMLButtonElement).disabled = busy || state.lock;
+  (byId('chrome') as HTMLButtonElement).disabled = busy;
   (byId('setup-fields') as HTMLFieldSetElement).disabled=busy;
-  for(const id of ['practice-fields','full-practice-fields']) (byId(id) as HTMLFieldSetElement).disabled=busy||state.lock;
+  // A retained lock blocks browser-changing practice actions, but operators can
+  // still prepare the next exact target and its one-run Terms authorization.
+  for(const id of ['practice-fields','full-practice-fields']) (byId(id) as HTMLFieldSetElement).disabled=busy;
   byId('lock-card').hidden=!state.lock;
   (byId('review-lock') as HTMLButtonElement).disabled=busy;
   byId('clear-lock').hidden=!state.lockReview?.canClear;
@@ -50,8 +53,10 @@ function render(state: Dashboard) {
   byId('lock-review').textContent=review?`Run ID: ${review.runID}\nPID: ${review.pid??'Unknown'}\nProcess: ${review.alive===null?'Unknown':review.alive?'Running':'Not running'}\nUI-owned worker: ${review.owned?'Running':'None'}\nBrowser state: ${review.canClear?'Safe at last review':'Needs verification'}\nCurrent page: ${review.page}\nSelected slots: ${review.selected??'Unknown'}\nPayment hold: ${review.hold}\nReason: ${review.reason}\nChecked: ${review.verifiedAt}`:'Browser state: Needs verification. Use Review Lock.';
   const reason=busy?'An operation is running.':state.lock?'Blocked because an automation lock exists. Use Review Lock.':dirty?'Blocked because booking plan has unsaved changes.':!state.booking?'Player information or booking configuration is invalid.':!state.cdp?'Blocked because Chrome is not prepared.':!state.clock?.canArmToday?"Blocked because today?s 08:00 release has passed or preflight time is too short.":full&&!state.termsAuthorized?'Terms authorization is required for Full Booking.':'';
   byId('blocked-reason').textContent=reason;
-  for(const id of ['chrome','inspect','prepare','arm','dry','observe'])byId(id).title=reason;
+  for(const id of ['inspect','prepare','arm','dry','observe'])byId(id).title=reason;
+  byId('chrome').title=state.lock?'Starts or reuses dedicated Chrome for read-only lock review.':'Starts or reuses dedicated Chrome.';
   (byId('full-practice') as HTMLButtonElement).disabled=busy||state.lock||!state.cdp||!state.booking?.playerConfigured||!fullReady||!input('full-terms').checked;
+  (byId('practice') as HTMLButtonElement).disabled=busy||state.lock||!state.cdp;
   byId('practice-blocked').textContent=state.lock?'Blocked because an automation lock exists. Use Review Lock.':!state.cdp?'Start / Attach Chrome first.':!state.booking?.playerConfigured?'Player information is missing.':!fullReady?'Full Booking capability is not verified.':!input('full-terms').checked?'Terms authorization is required for this practice run.':'';
   (byId('prepare') as HTMLButtonElement).disabled=busy||state.lock||dirty||!state.booking;
   (byId('arm') as HTMLButtonElement).disabled = busy || dirty || state.lock || !state.booking || !state.capabilities.selectionReady || !state.cdp || !state.clock?.canArmToday || (full&&(!fullReady||!state.termsAuthorized));

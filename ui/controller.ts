@@ -144,7 +144,11 @@ export class Controller {
   }
   private async noLock() { this.state.lock = await this.deps.lock(); if (this.state.lock) throw new Error('AUTOMATION_LOCK_EXISTS'); }
   startChrome() { return this.operation('chrome', async gen => {
-    await this.noLock(); this.log('Starting / reusing dedicated Chrome'); await this.run('chrome', gen);
+    // The launcher only starts or reuses the dedicated browser; it does not
+    // attach a booking worker. Allow it while a retained lock is under review
+    // so the operator can make Chrome available for read-only verification.
+    if (this.active) throw new Error('OPERATION_ALREADY_RUNNING');
+    this.log(this.state.lock ? 'Starting / reusing dedicated Chrome for lock review' : 'Starting / reusing dedicated Chrome'); await this.run('chrome', gen);
     this.state.cdp = await this.deps.cdp(); if (!this.state.cdp) throw new Error('CDP_PROFILE_OR_BIND_UNVERIFIED');
     if (gen !== this.generation) return;
     this.state.headline = 'Chrome is reachable'; this.state.detail = 'Run Prepare to verify the booking page and session.';

@@ -25,6 +25,9 @@ it('actual renderer keeps all setup controls, Save, Review and Stop enabled whil
  const p=await renderer();for(const id of ['start-time','duration','maximum','attempts','fallback-time','save-booking','review-lock','stop'])expect(await p.locator('#'+id).isEnabled(),id).toBe(true);
  expect(await p.locator('#court-order button').nth(1).isEnabled()).toBe(true);
  for(const id of ['arm','prepare','dry','observe','practice','full-practice'])expect(await p.locator('#'+id).isDisabled(),id).toBe(true);
+ expect(await p.locator('#chrome').isEnabled()).toBe(true);
+ expect(await p.locator('#full-terms').isEnabled()).toBe(true);
+ expect(await p.locator('#full-date').isEnabled()).toBe(true);
  await p.locator('#duration').fill('3');await p.locator('#maximum').fill('1800');await p.locator('#start-time').selectOption('10:00');await p.locator('#save-booking').click();await p.waitForFunction(()=>document.getElementById('edit-status')?.textContent==='BOOKING PLAN SAVED');expect(await p.locator('#duration').inputValue()).toBe('3');await p.close();
 });
 it('real config save/reload persists duration, price, start, attempts, courts and fallback into engine config under a retained lock',async()=>{
