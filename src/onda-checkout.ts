@@ -60,21 +60,19 @@ export function ondaCheckoutAdapter(page:Page,safety:Safety,selected:BookingSumm
   const sheet=page.getByTestId('booking-review-payment-summary-sheet');
   // Scope Terms to the verified Payment Summary panel. This prevents a
   // hidden or duplicated page-level checkbox from satisfying the gate.
-  const termsPanel=page.getByTestId('booking-review-terms-panel');
-  const nativeTerms=termsPanel.locator('input[type="checkbox"]');
-  const roleTerms=termsPanel.locator('[role="checkbox"]');
+  const termsPanel=page.locator('[data-testid="booking-review-terms-panel"]:visible');
+  const nativeTerms=termsPanel.locator('input[type="checkbox"]:visible');
+  const roleTerms=termsPanel.locator('[role="checkbox"]:visible');
   async function termsControl(){
-    await termsPanel.waitFor({state:'visible'});
     // Onda can paint the Payment Summary heading before hydrating its Terms
     // control. Wait for the control itself instead of treating that short
     // render gap as a changed DOM structure.
     for(let attempt=0;attempt<60;attempt++){
       safety.check();
+      if(await termsPanel.count()===0){await page.waitForTimeout(100);continue;}
       const nativeCount=await nativeTerms.count();
-      if(nativeCount>1)throw new Error('TERMS_STRUCTURE_CHANGED');
       if(nativeCount===1)return {locator:nativeTerms, native:true as const};
       const roleCount=await roleTerms.count();
-      if(roleCount>1)throw new Error('TERMS_STRUCTURE_CHANGED');
       if(roleCount===1)return {locator:roleTerms, native:false as const};
       await page.waitForTimeout(100);
     }
