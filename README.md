@@ -99,6 +99,8 @@ The repository is private at [marcpocong/thirsty-autobook-web](https://github.co
 
 ## Desktop control panel
 
+On Windows, double-click **Thirsty Bot.exe** in the project root to open the panel without a terminal. Build or refresh it with `npm run exe:build` after installing dependencies with `npm ci`. This is a local launcher, not a standalone installer: keep it with the project, installed dependencies and built `dist` folder. It uses the Node.js runtime recorded locally during the build, with PATH as a fallback. It preserves the same local configuration, browser profile, process ownership and retained automation lock. No booking is armed by launching it. The executable is included in Git; the machine-specific runtime path remains ignored. The executable is unsigned.
+
 ```powershell
 npm run ui
 ```

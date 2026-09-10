@@ -18,6 +18,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "ui": "npm run ui:build && node scripts/run-ui.mjs",
+    "exe:build": "npm run ui:build && node scripts/build-exe.mjs",
     "ui:build": "tsc -p tsconfig.ui.json && node scripts/build-ui.mjs"
   },
   "dependencies": {
