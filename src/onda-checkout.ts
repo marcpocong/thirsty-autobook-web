@@ -69,7 +69,7 @@ export function ondaCheckoutAdapter(page:Page,safety:Safety,selected:BookingSumm
     // render gap as a changed DOM structure.
     for(let attempt=0;attempt<60;attempt++){
       safety.check();
-      if(await termsPanel.count()===0){await page.waitForTimeout(100);continue;}
+      if(await termsPanel.count()!==1){await page.waitForTimeout(100);continue;}
       const nativeCount=await nativeTerms.count();
       if(nativeCount===1)return {locator:nativeTerms, native:true as const};
       const roleCount=await roleTerms.count();
