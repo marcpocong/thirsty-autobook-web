@@ -58,7 +58,10 @@ export function ondaCheckoutAdapter(page:Page,safety:Safety,selected:BookingSumm
   const phone=page.getByRole('textbox',{name:'Phone Number',exact:true});
   const email=page.getByRole('textbox',{name:'Email Address',exact:true});
   const sheet=page.getByTestId('booking-review-payment-summary-sheet');
-  const terms=sheet.getByRole('checkbox',{name:'I agree to the Terms and Conditions, Privacy Policy, and Liability Waiver',exact:true});
+  // Scope Terms to the verified Payment Summary panel. This prevents a
+  // hidden or duplicated page-level checkbox from satisfying the gate.
+  const termsPanel=page.getByTestId('booking-review-terms-panel');
+  const terms=termsPanel.locator('input[type="checkbox"]');
   const finalButton=sheet.getByRole('button',{name:'Continue to Payment',exact:true});
   const readPayment=async()=>{
     await guard();await sheet.getByRole('heading',{name:'Payment Summary',exact:true}).waitFor({timeout:paymentSummaryTimeoutMs});safety.check();
@@ -81,7 +84,16 @@ export function ondaCheckoutAdapter(page:Page,safety:Safety,selected:BookingSumm
     },
     async playerProceed(){await guard();await page.getByRole('button',{name:'Proceed',exact:true}).click();safety.check();},
     paymentSummary:readPayment,
-    async acceptTerms(){await guard();await terms.check();safety.check();return terms.isChecked();},
+    async acceptTerms(){
+      await guard();
+      await termsPanel.waitFor({state:'visible'});
+      if(await terms.count()!==1)throw new Error('TERMS_STRUCTURE_CHANGED');
+      if(await terms.isDisabled()||!await terms.isVisible())throw new Error('TERMS_NOT_ACTIONABLE');
+      await terms.check();
+      safety.check();
+      if(!await terms.isChecked())throw new Error('TERMS_NOT_CHECKED');
+      return true;
+    },
     async prepareFinalAction(){
       const payment=await readPayment();safety.check();
       if(!safety.locked||!await terms.isChecked())throw new Error('TERMS_NOT_CHECKED');

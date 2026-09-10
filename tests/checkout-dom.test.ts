@@ -25,6 +25,12 @@ it('checks all review material against expected selection',async()=>{
   await page.getByTestId('booking-review-reservation-date').locator('..').getByText('Court 7: Mango Wing',{exact:true}).evaluate(e=>e.textContent='Court 6: Mango Wing');
   const actual=await ondaCheckoutAdapter(page,new Safety(),expected).review();expect(()=>validateSummary(actual,expected,1200,'REVIEW')).toThrow('MISMATCH');
 });
+it('checks the native Onda Terms checkbox inside Payment Summary before final handoff',async()=>{
+  const safety=new Safety(),t=new Telemetry(),adapter=ondaCheckoutAdapter(page,safety,expected);
+  expect(await checkout(adapter,safety,t,expected,player,1200,true)).toBe('PAYMENT_BOUNDARY_REACHED');
+  expect(await page.getByTestId('booking-review-terms-panel').locator('input[type="checkbox"]').isChecked()).toBe(true);
+  expect(t.events.map(e=>e.event)).toContain('termsChecked');
+});
 it('refuses altered payment amount before accepting terms',async()=>{
   await page.locator('#total').evaluate(e=>e.textContent='₱1,201.00');const safety=new Safety();await expect(checkout(ondaCheckoutAdapter(page,safety,expected),safety,new Telemetry(),expected,player,1500,true)).rejects.toThrow('PAYMENT_PRICE_MISMATCH');expect(await page.getByRole('checkbox').isChecked()).toBe(false);
 });
