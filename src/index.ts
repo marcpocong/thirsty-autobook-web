@@ -1,8 +1,8 @@
 import { writeFileSync } from 'node:fs';
-import { mkdir as mkdirAsync, open as openAsync, unlink as unlinkAsync } from 'node:fs/promises';
+import { mkdir as mkdirAsync, open as openAsync, unlink as unlinkAsync,writeFile as writeFileAsync } from 'node:fs/promises';
 import { Safety, requireArmed } from './safety.js';
 import { Telemetry } from './telemetry.js';
-import { loadConfig, loadObservationConfig, planFingerprint, type Config, type ReleaseSettings } from './config.js';
+import { loadConfig, loadObservationConfig, planFingerprint, expandHours, type Config, type ReleaseSettings } from './config.js';
 import { attach } from './browser.js';
 import { inspect } from './inspector.js';
 import { practice, PracticeSchema } from './practice.js';
@@ -10,7 +10,8 @@ import { observeRelease } from './release.js';
 import { emitUiEvent } from './ui-events.js';
 import { requireCapability } from './capabilities.js';
 import { selectionPort, selectResolvedPreference } from './selection.js';
-import { proceedWithVerifiedSelection } from './booking-checkout.js';
+import { fullBookingToQr } from './booking-checkout.js';
+import {navigateDate,snapshot} from './grid.js';
 
 const safety = new Safety();
 const telemetry = new Telemetry();
@@ -46,21 +47,35 @@ if (process.stdin.isTTY) {
 }
 try {
   const [mode, ...args] = process.argv.slice(2);
-  if (!mode || !['inspect', 'practice', 'release:observe', 'race:dry', 'race', 'selection:armed'].includes(mode)) throw new Error('MODE_REQUIRED');
-  const allowed = new Set(mode === 'practice' ? ['--date', '--court', '--start', '--duration'] : ['--armed', '--authorize-terms', '--plan-hash']);
+  if (!mode || !['inspect', 'practice', 'release:observe', 'race:dry', 'race', 'selection:armed','handoff:test'].includes(mode)) throw new Error('MODE_REQUIRED');
+  const allowed = new Set(mode === 'practice' ? ['--date', '--court', '--start', '--duration'] : mode==='handoff:test'?['--date','--court','--start','--duration','--armed','--authorize-terms','--noncompetitive']:['--armed', '--authorize-terms', '--plan-hash']);
   for (const arg of args.filter(a => a.startsWith('--'))) if (!allowed.has(arg)) throw new Error('UNKNOWN_ARGUMENT');
   requireArmed(mode, args.includes('--armed'));
   requireCapability(mode);
-  const config: Config | ReleaseSettings | undefined = mode === 'release:observe' ? loadObservationConfig() : ['race:dry','selection:armed','race'].includes(mode) ? loadConfig() : undefined;
+  if(['race','handoff:test'].includes(mode)&&!args.includes('--authorize-terms'))throw new Error('TERMS_AUTHORIZATION_REQUIRED');
+  if(mode==='handoff:test'&&!args.includes('--noncompetitive'))throw new Error('NONCOMPETITIVE_TARGET_REQUIRED');
+  const config: Config | ReleaseSettings | undefined = mode === 'release:observe' ? loadObservationConfig() : ['race:dry','selection:armed','race','handoff:test'].includes(mode) ? loadConfig() : undefined;
   const value = (flag: string) => { const i = args.indexOf(flag); return i < 0 ? undefined : args[i + 1]; };
   if (args.includes('--plan-hash') && (!config || !('MAX_PRICE' in config) || planFingerprint(config as Config) !== value('--plan-hash'))) throw new Error('BOOKING_PLAN_CHANGED');
   const practiceInput = mode === 'practice' ? PracticeSchema.parse({ date: value('--date'), court: value('--court'), start: value('--start'), duration: value('--duration') }) : undefined;
+  const handoffInput=mode==='handoff:test'?PracticeSchema.parse({date:value('--date'),court:value('--court'),start:value('--start'),duration:value('--duration')}):undefined;
   await mkdirAsync('.local', { recursive: true }); await mkdirAsync('DiagnosticsLocal', { recursive: true });
   const lock = await openAsync(lockPath, 'wx').catch(() => { throw new Error('AUTOMATION_LOCK_EXISTS: verify no bot is running and selections are clean before removing .local/automation.lock'); });
   ownsLock = true; await lock.writeFile(JSON.stringify({ pid: process.pid, runID: telemetry.runID })); await lock.close();
   const { page } = await attach(safety); telemetry.mark('chromeConnected'); telemetry.mark('ondaTabResolved');
   if (mode === 'inspect') await inspect(page);
   else if (practiceInput) await practice(page, practiceInput, safety, telemetry);
+  else if(handoffInput&&config){
+    const booking=config as Config;
+    if((await snapshot(page)).cells.some(c=>c.state==='selected'))throw new Error('PREEXISTING_SELECTION');
+    await navigateDate(page,handoffInput.date,safety);
+    telemetry.mark('gridSnapshotStarted');const grid=await snapshot(page);telemetry.mark('gridSnapshotCompleted');
+    const result=await selectResolvedPreference(selectionPort(page,safety),handoffInput.date,grid,[{court:handoffInput.court,hours:expandHours(handoffInput.start,handoffInput.duration)}],booking.MAX_PRICE,1,safety,telemetry);
+    retainSelection=true;emitUiEvent({type:'selection',...result});
+    const hold=await fullBookingToQr(page,result,{fullName:booking.PLAYER_FULL_NAME,phone:booking.PLAYER_PHONE,email:booking.PLAYER_EMAIL},booking.MAX_PRICE,true,booking.PAYMENT_HANDOFF_VERIFY_TIMEOUT_MS,safety,telemetry,booking.PAYMENT_SUMMARY_READY_TIMEOUT_MS);
+    await writeFileAsync(lockPath,JSON.stringify({pid:process.pid,runID:telemetry.runID,handoff:{type:'handoff',date:result.date,court:result.court,hours:result.hours,...hold}}));
+    console.log('PAYMENT HOLD ACTIVE — AUTOMATION STOPPED. Complete payment manually in Chrome. AUTOMATION LOCK RETAINED.');
+  }
   else if (config) {
     const selecting = mode === 'selection:armed' || mode === 'race';
     const released = await observeRelease(page, config, safety, telemetry, mode === 'race:dry', selecting);
@@ -69,7 +84,10 @@ try {
       const result = await selectResolvedPreference(selectionPort(page, safety), released.target.targetDate, released.grid, released.preferences, booking.MAX_PRICE, booking.MAX_SELECTION_ATTEMPTS, safety, telemetry);
       retainSelection = true;
       emitUiEvent({ type: 'selection', ...result });
-      if(mode==='race')await proceedWithVerifiedSelection(page,result,{fullName:booking.PLAYER_FULL_NAME,phone:booking.PLAYER_PHONE,email:booking.PLAYER_EMAIL},booking.MAX_PRICE,args.includes('--authorize-terms'),safety,telemetry);
+      if(mode==='race'){
+        const hold=await fullBookingToQr(page,result,{fullName:booking.PLAYER_FULL_NAME,phone:booking.PLAYER_PHONE,email:booking.PLAYER_EMAIL},booking.MAX_PRICE,true,booking.PAYMENT_HANDOFF_VERIFY_TIMEOUT_MS,safety,telemetry,booking.PAYMENT_SUMMARY_READY_TIMEOUT_MS);
+        await writeFileAsync(lockPath,JSON.stringify({pid:process.pid,runID:telemetry.runID,handoff:{type:'handoff',date:result.date,court:result.court,hours:result.hours,...hold}}));
+      }
       else console.log('SLOTS SELECTED — AUTOMATION STOPPED BEFORE PROCEED. USER CONTROL RESTORED. Lock retained; inspect Chrome before clearing manually.');
     }
   }

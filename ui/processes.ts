@@ -4,6 +4,7 @@ import { UiEventSchema, type UiEvent } from '../src/ui-events.js';
 import type { Command } from './types.js';
 import { z } from 'zod';
 import { PracticeSchema } from '../src/practice.js';
+import {requireCapability} from '../src/capabilities.js';
 
 export interface RunningCommand { pid: number | undefined; done: Promise<number>; stop(): Promise<void> }
 export type Runner = (command: Command, onEvent: (event: UiEvent) => void, onLine: (line: string, error: boolean) => void) => RunningCommand;
@@ -16,6 +17,11 @@ export function sanitizeLine(text: string): string {
 }
 export function commandSpec(command: Command, root: string, node: string) {
   if (typeof command === 'object' && command !== null) {
+    if(command.kind==='full'){
+      const c=z.object({kind:z.literal('full'),planHash:z.string().regex(/^[a-f0-9]{64}$/),authorizeTerms:z.literal(true)}).strict().parse(command);
+      requireCapability('race');
+      return {executable:node,args:['--import','tsx',resolve(root,'src/index.ts'),'race','--armed','--authorize-terms','--plan-hash',c.planHash],automation:true};
+    }
     if (command.kind === 'practice') {
       const {input} = z.object({kind:z.literal('practice'),input:PracticeSchema}).strict().parse(command);
       return {executable:node,args:['--import','tsx',resolve(root,'src/index.ts'),'practice','--date',input.date,'--court',String(input.court),'--start',input.start,'--duration',String(input.duration)],automation:true};

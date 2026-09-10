@@ -1,11 +1,16 @@
-import { access } from 'node:fs/promises';
+import { access,readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { DateTime } from 'luxon';
 import { loadObservationConfig, releaseCalendar, type ReleaseSettings } from '../src/config.js';
+import {UiEventSchema} from '../src/ui-events.js';
+import type {Dashboard} from './types.js';
 
 export async function readLock(root: string): Promise<boolean> {
   try { await access(resolve(root, '.local/automation.lock')); return true; }
   catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false; return true; }
+}
+export async function readHandoff(root:string):Promise<Dashboard['handoff']>{
+  try {const lock=JSON.parse(await readFile(resolve(root,'.local/automation.lock'),'utf8'));const event=UiEventSchema.safeParse(lock.handoff);return event.success&&event.data.type==='handoff'?event.data:null;}catch{return null;}
 }
 export async function probeCdp(): Promise<boolean> {
   try {

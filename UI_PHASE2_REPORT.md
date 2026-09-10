@@ -1,3 +1,5 @@
+> Historical checkpoint at 26d5437. Full Booking status is superseded by [FULL_BOOKING_REPORT.md](FULL_BOOKING_REPORT.md).
+
 # Selection-ready booking control panel — September 10, 2026
 
 Selection Only is implemented and verified against live noncompetitive slots. The existing Electron app and release/CDP/grid/safety architecture were extended in place. Review, Player Information and Payment Summary now have an adapter built from inspected DOM. Full Booking stays gated because live terms/final-action handoff was deliberately not exercised.

@@ -5,7 +5,7 @@ import type { readClock } from './status.js';
 import type { BookingView } from './booking.js';
 import { PracticeSchema } from '../src/practice.js';
 import { BookingSetupSchema } from '../src/config.js';
-import { capabilities } from '../src/capabilities.js';
+import { capabilities,fullBookingReady } from '../src/capabilities.js';
 
 const errors: Record<string, string> = {
   AUTOMATION_LOCK_EXISTS: 'Automation lock exists. Verify no bot is running and Chrome has no active selection before clearing it manually.',
@@ -25,12 +25,13 @@ const errors: Record<string, string> = {
 };
 export interface Dependencies {
   runner: Runner; lock(): Promise<boolean>; cdp(): Promise<boolean>; clock: typeof readClock;
-  confirm(kind?: 'observe'|'selection'|'dry', plan?:BookingView): Promise<boolean>; publish(status: Dashboard): void;
+  confirm(kind?: 'observe'|'selection'|'dry'|'full', plan?:BookingView): Promise<boolean>; publish(status: Dashboard): void;
   booking(): BookingView; saveBooking(input:unknown): BookingView;
+  handoff?():Promise<Dashboard['handoff']>;
 }
 export class Controller {
   readonly state: Dashboard = { operation: 'idle', headline: 'Prepare your session', detail: 'Start dedicated Chrome, then verify the page before arming.', ready: false,
-    cdp: false, lock: false, inspection: null, clock: null, plan: null, logs: [], liveRace: false, booking:null, termsAuthorized:false, capabilities, selection:null };
+    cdp: false, lock: false, inspection: null, clock: null, plan: null, logs: [], liveRace: fullBookingReady(), booking:null, termsAuthorized:false, capabilities, selection:null,mode:fullBookingReady()?'full':'selection',handoff:null };
   private active?: RunningCommand;
   private generation = 0;
   private polling = false;
@@ -48,6 +49,10 @@ export class Controller {
       const wasReady = this.state.ready;
       const [lock, cdp] = await Promise.all([this.deps.lock(), this.deps.cdp()]);
       this.state.lock = lock; this.state.cdp = cdp;
+      if(lock&&!this.state.handoff&&this.state.operation==='idle'&&this.deps.handoff){
+        this.state.handoff=await this.deps.handoff();
+        if(this.state.handoff){this.state.headline='Payment handoff recorded';this.state.detail='Automation stopped. Lock retained. Check the last observed hold and complete payment manually in Chrome.';}
+      }
       try { this.state.clock = this.deps.clock(); }
       catch { this.state.clock = null; this.state.ready = false; this.state.detail = errors.CONFIG_INVALID!; }
       if (this.state.operation === 'idle') {
@@ -66,18 +71,24 @@ export class Controller {
     } finally { this.polling = false; }
   }
   private event = (event: UiEvent) => {
-    if (event.type === 'selection') { this.state.selection=event; this.state.headline='SLOTS SELECTED'; this.state.detail='AUTOMATION STOPPED BEFORE PROCEED. USER CONTROL RESTORED. Selection is not a reservation; the lock remains active.'; this.publish(); }
+    if (event.type === 'selection') { this.state.selection=event; this.state.headline='SLOTS SELECTED'; this.state.detail=this.state.operation==='full'?'Continuing to Review Booking. Selection is not yet a reservation.':'AUTOMATION STOPPED BEFORE PROCEED. USER CONTROL RESTORED. Selection is not a reservation; the lock remains active.'; this.publish(); }
+    if(event.type==='handoff'){this.state.handoff=event;this.state.headline='PAYMENT HOLD ACTIVE';this.state.detail='FULL BOOKING COMPLETE TO PAYMENT HANDOFF. AUTOMATION STOPPED. Complete payment manually in Chrome. AUTOMATION LOCK RETAINED.';this.publish();}
     if (event.type === 'inspection') { this.state.inspection = event; this.log('Onda URL and venue verified. Inspection results received.'); }
     if (event.type === 'plan') { this.state.plan = event; this.publish(); }
     if (event.type === 'error') {
       this.state.ready = false;
-      if (event.code !== 'USER_ABORT') { this.state.headline = 'Needs attention'; this.state.detail = errors[event.code] ?? event.code; }
+      if (event.code !== 'USER_ABORT') { this.state.headline = event.code==='HANDOFF_STATUS_UNKNOWN'?'HANDOFF STATUS UNKNOWN':/REVIEW_/.test(event.code)?'REVIEW VALIDATION FAILED':/PLAYER_|PHONE_/.test(event.code)?'PLAYER FORM FAILED':/PAYMENT_/.test(event.code)?'PAYMENT SUMMARY FAILED':/TERMS_|FINAL_BUTTON_/.test(event.code)?'TERMS / FINAL ACTION FAILED':/SELECTION_|CLEANUP_|NO_AVAILABLE/.test(event.code)?'SELECTION FAILED':'Needs attention'; this.state.detail = event.code==='HANDOFF_STATUS_UNKNOWN'?'DO NOT START ANOTHER BOOKING. CHECK CHROME MANUALLY. Lock retained; final action is never retried.':errors[event.code] ?? event.code; }
       this.log(errors[event.code] ?? event.code, true);
     }
     if (event.type === 'telemetry') {
       const labels: Record<string, string> = { chromeConnected: 'Dedicated Chrome and Onda tab verified', preflightStarted: 'Preflight started', preflightCompleted: 'Preflight passed',
         armed: 'ARMED — final preflight passed', releaseTriggerFired: 'Release trigger fired', reloadStarted: 'Reload started', reloadCommitted: 'Reload committed', targetGridReady: 'Target grid verified', gridSnapshotCompleted: 'Availability snapshot completed', automationStopped: 'Command completed' };
       this.log(labels[event.event] ?? event.event);
+      if(this.state.operation==='full'){
+        const stages:Record<string,string>={armed:'Full Booking armed',reviewValidated:'BOOKING REVIEWED',playerFillCompleted:'PLAYER INFORMATION VERIFIED',paymentSummaryValidated:'READY TO CREATE PAYMENT HOLD',finalOndaActionStarted:'Creating payment hold',finalOndaButtonClicked:'Checking QR handoff — read only'};
+        if(stages[event.event])this.state.headline=stages[event.event]!;
+        this.publish();
+      }
       if (this.state.operation === 'observe') {
         if (event.event === 'preflightCompleted') { this.state.headline = 'Observation scheduled'; this.state.detail = 'Initial preflight passed. The existing engine will perform final preflight before release.'; }
         if (event.event === 'armed') { this.state.headline = 'Release observation armed'; this.state.detail = 'Final preflight passed. Waiting for the configured release.'; }
@@ -104,9 +115,11 @@ export class Controller {
     catch (error) {
       if (generation === this.generation) {
         const code = error instanceof Error ? error.message : 'OPERATION_FAILED';
-        const hadSpecificFailure = this.state.headline === 'Needs attention';
-        this.state.headline = 'Needs attention';
-        if (code !== 'COMMAND_FAILED') this.state.detail = errors[code] ?? code;
+        const hadSpecificFailure = this.state.headline === 'Needs attention'||this.state.headline.includes('FAILED')||this.state.headline==='HANDOFF STATUS UNKNOWN';
+        if(code==='HANDOFF_STATUS_UNKNOWN')this.state.headline='HANDOFF STATUS UNKNOWN';
+        else if(!hadSpecificFailure)this.state.headline = 'Needs attention';
+        if(code==='HANDOFF_STATUS_UNKNOWN')this.state.detail='DO NOT START ANOTHER BOOKING. CHECK CHROME MANUALLY. Lock retained; final action is never retried.';
+        else if (code !== 'COMMAND_FAILED') this.state.detail = errors[code] ?? code;
         else if (!hadSpecificFailure) this.state.detail = 'The command failed. See the sanitized process output in Activity.';
         this.log(code, true);
       }
@@ -160,7 +173,25 @@ export class Controller {
   }); }
   armSelection() { return this.armBooking('selection'); }
   dryRace() { return this.armBooking('dry'); }
-  private armBooking(kind:'selection'|'dry') { return this.operation('confirming', async gen => {
+  async setMode(mode:unknown){
+    if(this.state.operation!=='idle')throw new Error('OPERATION_ALREADY_RUNNING');
+    if(mode!=='selection'&&mode!=='full')throw new Error('MODE_NOT_ALLOWED');
+    if(mode==='full'&&!fullBookingReady(this.state.capabilities))throw new Error('LIVE_RACE_BLOCKED');
+    this.state.mode=mode;this.state.ready=false;this.state.termsAuthorized=false;this.publish();
+  }
+  async authorizeTerms(value:unknown){
+    if(typeof value!=='boolean')throw new Error('INVALID_TERMS_AUTHORIZATION');
+    if(this.state.operation!=='idle')throw new Error('OPERATION_ALREADY_RUNNING');
+    if(value&&(this.state.mode!=='full'||!fullBookingReady(this.state.capabilities)||this.state.lock))throw new Error('TERMS_AUTHORIZATION_NOT_ALLOWED');
+    this.state.termsAuthorized=value;this.publish();
+  }
+  armFullBooking(){
+    const authorized=this.state.termsAuthorized;this.state.termsAuthorized=false;
+    return this.armBooking('full',authorized);
+  }
+  private armBooking(kind:'selection'|'dry'|'full',authorized=false) { return this.operation('confirming', async gen => {
+    if(kind==='full'&&(!fullBookingReady(this.state.capabilities)||this.state.mode!=='full'))throw new Error('LIVE_RACE_BLOCKED');
+    if(kind==='full'&&!authorized)throw new Error('TERMS_AUTHORIZATION_REQUIRED');
     await this.noLock(); if (!this.deps.clock().canArmToday) throw new Error('TOO_LATE_FOR_PREFLIGHT');
     if (kind==='selection' && !this.state.capabilities.selectionReady) throw new Error('SELECTION_NOT_READY');
     const plan=this.deps.booking(); this.state.booking=plan; this.state.selection=null;
@@ -170,11 +201,12 @@ export class Controller {
     await this.noLock();
     if(this.deps.booking().fingerprint!==plan.fingerprint)throw new Error('BOOKING_PLAN_CHANGED');
     if(!this.deps.clock().canArmToday)throw new Error('TOO_LATE_FOR_PREFLIGHT');
-    this.state.operation=kind;this.state.inspection=null;this.state.headline=kind==='selection'?'Selection scheduled':'Dry Race scheduled';
-    this.state.detail=kind==='selection'?'At release the engine may select slots. It will stop before Proceed.':'Release, date, grid and preference checks only. No slots will be selected.';this.publish();
-    await this.run({kind,planHash:plan.fingerprint},gen);
+    this.state.operation=kind;this.state.inspection=null;this.state.handoff=null;this.state.headline=kind==='full'?'Full Booking scheduled':kind==='selection'?'Selection scheduled':'Dry Race scheduled';
+    this.state.detail=kind==='full'?'At release the engine continues through Onda to QR Checkout. Payment remains manual.':kind==='selection'?'At release the engine may select slots. It will stop before Proceed.':'Release, date, grid and preference checks only. No slots will be selected.';this.publish();
+    await this.run(kind==='full'?{kind,planHash:plan.fingerprint,authorizeTerms:true}:{kind,planHash:plan.fingerprint},gen);
     if(kind==='dry'){this.state.headline='Dry Race complete';this.state.detail='No slots selected. Review availability and preference events.';}
-    else if(!this.state.selection)throw new Error('SELECTION_RESULT_MISSING');
+    else if(kind==='full'&&!this.state.handoff)throw new Error('HANDOFF_STATUS_UNKNOWN');
+    else if(kind==='selection'&&!this.state.selection)throw new Error('SELECTION_RESULT_MISSING');
   }); }
   runPractice(input:unknown) { return this.operation('practice', async gen => {
     const parsed=PracticeSchema.parse(input); await this.noLock();this.state.selection=null;this.state.inspection=null;

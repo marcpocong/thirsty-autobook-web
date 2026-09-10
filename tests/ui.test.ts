@@ -92,10 +92,10 @@ describe('desktop orchestration', () => {
     expect(commandSpec('observe', process.cwd(), process.execPath).args.slice(-2)).toEqual(['release:observe', '--armed']);
     expect(commandSpec('inspect', process.cwd(), process.execPath).args).not.toContain('--armed');
   });
-  it('keeps live race disabled with no preload bridge to it', async () => {
+  it('keeps full booking gated and exposes only its dedicated validated bridge', async () => {
     const html = await readFile('ui/renderer/index.html', 'utf8');
-    expect(html).toMatch(/<button disabled[^>]*>LOCKED \/ NOT READY<\/button>/);
-    expect(harness().controller.state.liveRace).toBe(false);
+    expect(html).toContain('FULL BOOKING — STOP AT QR PAYMENT');
+    const h=harness();h.controller.state.capabilities={selectionReady:true,checkoutReady:true,paymentBoundaryReady:false};await expect(h.controller.setMode('full')).rejects.toThrow('LIVE_RACE_BLOCKED');
     const preload = await readFile('ui/preload.cts', 'utf8');
     expect(preload).not.toMatch(/exec|spawn|['"]thirsty:race['"]|shell|readFile/);
   });

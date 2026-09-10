@@ -1,6 +1,6 @@
 # Onda evidence — September 10, 2026 (Asia/Manila)
 
-Status: **selection and checkout through Payment Summary verified; real release and final payment handoff unverified**. Phase-2 structural inspection was authorized separately from the original select/deselect-only practice.
+Current status: **selection, checkout and bot-dispatched QR handoff verified; actual 08:00 release unverified**. The earlier sections below preserve the phase-2 observations; the latest handoff evidence is appended. Phase-2 structural inspection was authorized separately from the original select/deselect-only practice.
 
 ## VERIFIED — grid and normal navigation
 Observations made through dedicated visible Chrome 152.0.7977.83, attached with Playwright 1.63.0 over localhost CDP. No backend payloads or private endpoints were inspected. Local evidence is ignored under `DiagnosticsLocal/`.
@@ -64,7 +64,7 @@ After validated player fields, the exact role button `Proceed` appears. Clicking
 
 A same-date calendar selection was observed leaving `aria-expanded=true`; navigation now closes it through the existing picker button before selection. Initial test clicks on a non-visible tab timed out without selecting; keeping the Onda tab visible resolved this. No force click or visibility bypass was added.
 
-## IMPLEMENTED
+## Phase-2 implementation checkpoint (historical)
 
 - Existing release scheduler, strict grid barrier and one-pass snapshot feed the selection engine.
 - Consecutive same-court selection, exact summary verification, 1–5 bounded untried candidate attempts (default 3), proven-owned cleanup, retained selection lock.
@@ -72,8 +72,32 @@ A same-date calendar selection was observed leaving `aria-expanded=true`; naviga
 - Offline DOM tests reproduce inspected Review/Player/Payment structures and exercise the final boundary only in a test-owned browser.
 - Capability state: selectionReady=true, checkoutReady=true, paymentBoundaryReady=false. Full Booking remains blocked before browser attachment.
 
-## UNVERIFIED
+## Phase-2 unverified items (historical; updated below)
 
 1. Actual 08:00 release timing, refresh necessity, horizon enablement and loading under release contention.
 2. Live acceptance of terms and the final Onda action, its navigation/hold behavior and payment-provider handoff. These were deliberately not exercised; a separately authorized boundary test is still needed before Full Booking can be enabled.
 3. Real lost-race contention. Conflict, partial-selection cleanup and bounded fallback are proven by synthetic tests, not manufactured contention against other users.
+
+## VERIFIED — one authorized bot handoff, September 10 at 21:02–21:05 Manila
+
+The single noncompetitive attempt used September 11, Court 7, 12:00–13:00, PHP 600. Read-only availability inspection showed all seven courts open at 12:00. The bot selected one hour, validated it, clicked grid Proceed, validated Review, filled/read back local player fields and clicked player Proceed. The initial 15-second Payment Summary wait timed out. After the same summary appeared, development resumed that same attempt, revalidated the summary and represented player fields, checked Terms and dispatched the final button exactly once. Neither Proceed was repeated.
+
+The final control had no test ID. Its role is `button`, accessible name is exactly `Continue to Payment`, while visible text is exactly `Confirm & Proceed to Payment`. Production uses the exact role/name and independently verifies visible text, enabled/visible state, Terms and the final Payment Summary immediately before sealing the active gate.
+
+The final click reached Checkout. The first passive observer encountered a TypeScript runtime serialization error (`__name`); active interaction remained sealed. The corrected observer passively verified the existing hold at **2026-09-10 21:05:22.928 Asia/Manila**: Pending, **07:24**, PHP 600, QRPH and canvas presence. No additional final click or reservation was attempted. This establishes real bot handoff evidence, but does not establish an uninterrupted end-to-end live run or latency benchmark. The corrected continuous pipeline passes the offline integration test and the observer also passes the production Node/tsx runtime check.
+
+| Checkout evidence | Observed structure used by the passive reader |
+|---|---|
+| Origin | `https://app.onda.fit`; opaque Checkout path is not recorded |
+| Checkout | Visible `h1` with exact text `Checkout` |
+| Hold | Visible `p` exact `Slot reserved for`; sibling `p` contains countdown in the same parent; responsive duplicate values must agree |
+| Countdown | Text like `07:24`; validate positive and at most 10 minutes, never require exactly 10:00 |
+| Status | Visible `span` exact `Pending` |
+| Order summary | Visible `h3` exact `Order summary`; its grandparent contains `span` exact `Total` and sibling PHP amount |
+| Independent total | `[data-testid="checkout-payment-amount-value"]` exact `₱600.00`, matching Order summary and selection |
+| QRPH | Visible `[data-testid="checkout-payment-method-option"]`, text `QRPH`; presence only |
+| QR presence | Exactly one visible positive-size `canvas` within `[data-testid="checkout-payment-amount-panel"]`; layout only |
+
+No QR pixels, images, source URLs, payloads or payment data were extracted or saved. No Save QR Code, Check payment status, payment-method selection, bank/provider action or payment occurred. Chrome remained open. The filesystem lock was retained with safe last-observed metadata. All Onda inspection stopped after proof; subsequent UI checks read only local cached evidence. The displayed countdown has since elapsed; current payment/reservation status requires manual review.
+
+`src/handoff-evidence.ts` records this proof; `paymentBoundaryReady` now derives true from it. Selection and checkout capability remain true. Actual 08:00 release behavior remains independently unverified.

@@ -33,7 +33,7 @@ export function paymentAmount(text:string) {
   if(!/^₱(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2}$/.test(text))throw new Error('PAYMENT_AMOUNT_UNKNOWN');
   return Number(text.slice(1).replaceAll(',',''));
 }
-export function ondaCheckoutAdapter(page:Page,safety:Safety,selected:BookingSummary,t?:Telemetry):CheckoutAdapter {
+export function ondaCheckoutAdapter(page:Page,safety:Safety,selected:BookingSummary,t?:Telemetry,paymentSummaryTimeoutMs=60000):CheckoutAdapter {
   const guard=async()=>{
     safety.check();if(page.url()!==ONDA_URL)throw new Error('WRONG_URL');
     const reason=securityReason(await page.locator('body').innerText());
@@ -58,6 +58,15 @@ export function ondaCheckoutAdapter(page:Page,safety:Safety,selected:BookingSumm
   const phone=page.getByRole('textbox',{name:'Phone Number',exact:true});
   const email=page.getByRole('textbox',{name:'Email Address',exact:true});
   const sheet=page.getByTestId('booking-review-payment-summary-sheet');
+  const terms=sheet.getByRole('checkbox',{name:'I agree to the Terms and Conditions, Privacy Policy, and Liability Waiver',exact:true});
+  const finalButton=sheet.getByRole('button',{name:'Continue to Payment',exact:true});
+  const readPayment=async()=>{
+    await guard();await sheet.getByRole('heading',{name:'Payment Summary',exact:true}).waitFor({timeout:paymentSummaryTimeoutMs});safety.check();
+    const review=await readReview();
+    const total=await sheet.getByText('Total',{exact:true}).evaluate(e=>{
+      const spans=e.parentElement?.querySelectorAll(':scope > span');if(spans?.length!==2)throw new Error('PAYMENT_STRUCTURE_CHANGED');return spans[1]!.textContent?.trim()??'';
+    });safety.check();return {...review,amount:paymentAmount(total)};
+  };
   return {
     review:readReview,
     async fillPlayer(player:Player){
@@ -71,18 +80,20 @@ export function ondaCheckoutAdapter(page:Page,safety:Safety,selected:BookingSumm
       return {...actual,phone:player.phone};
     },
     async playerProceed(){await guard();await page.getByRole('button',{name:'Proceed',exact:true}).click();safety.check();},
-    async paymentSummary(){
-      await guard();await sheet.getByRole('heading',{name:'Payment Summary',exact:true}).waitFor();safety.check();
-      const review=await readReview();
-      const total=await sheet.getByText('Total',{exact:true}).evaluate(e=>{
-        const spans=e.parentElement?.querySelectorAll(':scope > span');if(spans?.length!==2)throw new Error('PAYMENT_STRUCTURE_CHANGED');return spans[1]!.textContent?.trim()??'';
-      });safety.check();return {...review,amount:paymentAmount(total)};
+    paymentSummary:readPayment,
+    async acceptTerms(){await guard();await terms.check();safety.check();return terms.isChecked();},
+    async prepareFinalAction(){
+      const payment=await readPayment();safety.check();
+      if(!safety.locked||!await terms.isChecked())throw new Error('TERMS_NOT_CHECKED');
+      if((await finalButton.innerText()).trim()!=='Confirm & Proceed to Payment')throw new Error('FINAL_BUTTON_UNVERIFIED');
+      if(!await finalButton.isVisible()||!await finalButton.isEnabled())throw new Error('FINAL_BUTTON_NOT_ACTIONABLE');
+      await guard();return payment;
     },
-    async acceptTerms(){await guard();const terms=sheet.getByRole('checkbox',{name:'I agree to the Terms and Conditions, Privacy Policy, and Liability Waiver',exact:true});await terms.check();safety.check();return terms.isChecked();},
     async finalOndaAction(){
       // Only Safety.finalAction can open this one-way dispatch. No post-click DOM reads.
       if(!safety.boundary||!safety.locked||safety.signal.aborted)throw new Error('PAYMENT_GATE_CLOSED');
-      await sheet.getByRole('button',{name:'Continue to Payment',exact:true}).click({noWaitAfter:true});
+      safety.consumeFinalDispatch();
+      await finalButton.click({noWaitAfter:true});
     },
   };
 }

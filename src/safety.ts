@@ -4,15 +4,26 @@ export class Safety {
   readonly controller = new AbortController();
   locked = false;
   boundary = false;
+  private finalDispatchAvailable = false;
   get signal() { return this.controller.signal; }
   check() { this.signal.throwIfAborted(); if (this.boundary) throw new Error('PAYMENT_BOUNDARY_REACHED'); }
   stop(code: string) { if (!this.signal.aborted) this.controller.abort(new Error(code)); }
   lock() { this.check(); this.locked = true; }
   fallback() { this.check(); if (this.locked) throw new Error('BOOKING_LOCKED'); }
+  checkPassiveHandoff() {
+    this.signal.throwIfAborted();
+    if (!this.boundary || !this.locked) throw new Error('HANDOFF_GATE_NOT_SEALED');
+  }
+  consumeFinalDispatch() {
+    this.checkPassiveHandoff();
+    if (!this.finalDispatchAvailable) throw new Error('FINAL_ACTION_ALREADY_DISPATCHED');
+    this.finalDispatchAvailable = false;
+  }
   async finalAction(action: () => Promise<void>) {
     this.check(); this.locked = true; this.boundary = true;
+    this.finalDispatchAvailable = true;
     // Close the gate BEFORE dispatch; ambiguous failure must never retry.
-    await action();
+    try { await action(); } finally { this.finalDispatchAvailable = false; }
   }
 }
 export function securityReason(text: string): string | undefined {
@@ -20,7 +31,7 @@ export function securityReason(text: string): string | undefined {
   if (/captcha|verify (?:that )?you are human|checking your browser|access denied|automated access.*(?:blocked|prohibited)|automation.*(?:blocked|prohibited)|security challenge/i.test(text)) return 'SECURITY_CHALLENGE';
 }
 export function requireArmed(mode: string, armed: boolean) {
-  if (['race', 'release:observe', 'race:dry', 'selection:armed'].includes(mode) && !armed) throw new Error('ARMED_FLAG_REQUIRED');
+  if (['race', 'release:observe', 'race:dry', 'selection:armed', 'handoff:test'].includes(mode) && !armed) throw new Error('ARMED_FLAG_REQUIRED');
 }
 export async function waitUntil(epochMs: number, signal: AbortSignal) {
   const monoTarget = performance.now() + epochMs - Date.now();

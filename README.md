@@ -2,7 +2,7 @@
 
 Windows 11 / Node 24 / TypeScript / Playwright / dedicated Chrome. All files live directly in this project root.
 
-**Selection Only is ready.** Booking setup, scheduled selection, bounded conflict fallback, Practice and Dry Race are available in the desktop panel. Real Review/Player/Payment Summary DOM has been inspected and the adapter validated. **Full Booking remains gated: the final Onda handoff has not been tested live.** An actual 08:00 release still needs observation. See [phase 2 results](UI_PHASE2_REPORT.md) and [verified evidence](VERIFIED_ONDA.md).
+**Full Booking to QR is enabled.** All three capabilities have recorded live evidence. The bot continues from selection through Review, player information, Payment Summary and per-run authorized Terms, dispatches the final Onda button once, verifies QR Checkout passively, then stops. Payment stays manual. The single live test required recovery during development; it is not an uninterrupted latency benchmark. See [full results](FULL_BOOKING_REPORT.md) and [verified evidence](VERIFIED_ONDA.md). Actual 08:00 release behavior remains unobserved.
 
 ## Setup
 
@@ -39,8 +39,7 @@ npm run race:dry -- --armed
 # Same release path, selects and verifies, stops BEFORE Proceed; retains lock
 npm run selection:armed -- --armed
 
-# Refuses before attaching while any Full Booking capability is unverified
-npm run race -- --armed
+# Full Booking requires all three capabilities and explicit per-run terms
 npm run race -- --armed --authorize-terms
 
 npm run typecheck
@@ -65,7 +64,7 @@ Press **Q** or **Ctrl+C** in the terminal. Output: `AUTOMATION ABORTED — USER 
 
 Exact row ISO dates, matching visible heading, complete seven-court hourly coverage, and no busy indicator are required before availability is trusted. A changed date heading alone is insufficient. Missing/contradictory slot states are UNKNOWN, never OPEN. Read [telemetry definitions](TELEMETRY_SPEC.md) before interpreting timings.
 
-Atomic process lock prevents concurrent project commands. Failures, abrupt termination and successful Selection Only preserve `.local/automation.lock`. A verified complete selection also locks out all in-memory fallback. **Only after verifying the recorded PID is no longer running and the browser has no active selection/checkout**, remove that exact lock file:
+Atomic process lock prevents concurrent project commands. Failures, abrupt termination and successful Selection Only and Full Booking preserve `.local/automation.lock`. A verified complete selection also locks out all in-memory fallback. **Only after verifying the recorded PID is no longer running and the browser has no active selection/checkout**, remove that exact lock file:
 
 ```powershell
 Get-Content .local/automation.lock
@@ -75,7 +74,7 @@ Remove-Item -LiteralPath .local/automation.lock
 
 Selection verifies exact date/court/hours/count, summary count, PHP amount and actionable Proceed. A failed candidate may be cleaned up only if the current complete grid proves every selected cell belongs to that attempt. A fresh snapshot resolves an untried candidate, up to `MAX_SELECTION_ATTEMPTS` (default 3, allowed 1–5). Unknown state, changed date, foreign selections, security errors and aborts stop without cleanup. Price/count ambiguity never reaches Proceed.
 
-The evidence-based checkout adapter validates Review, normalizes the local PH mobile number to ten national digits for Onda's separate +63 prefix, fills through normal Playwright controls, and validates the Payment Summary total and still-displayed booking details. Review itself has no price; its amount comes from the verified selection summary until Payment Summary independently confirms it. Terms are explicit per run and remain disabled in the UI while Full Booking is gated. The final action closes the interaction gate before dispatch, including ambiguous failures. GCash, Maya, cards, OTP, PIN and all payment-provider actions remain manual.
+The evidence-based checkout adapter validates Review, normalizes the local PH mobile number to ten national digits for Onda's separate +63 prefix, fills through normal Playwright controls, and validates the Payment Summary total and still-displayed booking details. Review itself has no price; its amount comes from the verified selection summary until Payment Summary independently confirms it. Terms are explicit per run: the UI checkbox defaults OFF and resets on plan changes, completion, cancellation and abort. Full Booking requires this authorization plus a native confirmation of the exact plan. The final action closes the interaction gate before dispatch, including ambiguous failures. GCash, Maya, cards, OTP, PIN and all payment-provider actions remain manual.
 
 ## Pre-release checklist
 
@@ -83,10 +82,10 @@ The evidence-based checkout adapter validates Review, normalizes the local PH mo
 - [ ] Plugged in; sleep prevented; stable network; no heavy downloads or updates.
 - [ ] Dedicated Chrome visible, correct venue/tab, logged in if necessary.
 - [ ] Today selected, All Courts shown, no selections or checkout in progress.
-- [ ] Target/preferences/price/player config reviewed for dry or future live mode.
+- [ ] Target/preferences/price/player config reviewed for dry or Full Booking mode.
 - [ ] Grid selectors verified; release defaults and zero lead reviewed.
 - [ ] Q/Ctrl+C available in the terminal; user present.
-- [ ] `--armed` supplied for scheduled refresh; future terms authorization reviewed per run.
+- [ ] `--armed` supplied for scheduled refresh; terms authorization reviewed per run.
 
 ## Troubleshooting and limitations
 
@@ -113,7 +112,7 @@ The Electron desktop window uses the existing CLI engine. The first launch may d
 5. Leave dedicated Chrome and the control panel open, with the Onda tab active. Conflicting controls stay disabled while a command runs.
 6. **Emergency Stop** stops only the UI-owned command. Chrome remains open; the panel makes no recovery clicks, deselection or refresh. Closing the panel also stops its command. External CLI runs must be stopped in their own terminal.
 
-**Dry Race** uses the same release/grid/preference path without selecting. **Observe Release** preserves the original read-only observer. **Run Safe Practice** accepts an explicit date/court/start/duration and reuses the existing select→verify→deselect→verify engine, never Proceed. Each command has the same process ownership and stop controls. Full Booking is disabled until all capability gates are verified.
+**Dry Race** uses the same release/grid/preference path without selecting. **Observe Release** preserves the original read-only observer. **Run Safe Practice** accepts an explicit date/court/start/duration and reuses the existing select→verify→deselect→verify engine, never Proceed. Each command has the same process ownership and stop controls. Full Booking is now available because all three capability gates have recorded evidence. Select **FULL BOOKING — STOP AT QR PAYMENT**, Prepare, check the terms authorization, then **Arm Full Booking**. Its native confirmation includes the exact plan, terms YES and QR Checkout boundary. Practice and Selection Only retain their distinct stopping points.
 
 The countdown is informational and shows the next release after today's cutoff. The booking target remains **today in the configured timezone + horizon**; it is never silently shifted to tomorrow's plan. Arming is disabled after today's preflight cutoff. Prepare again on the intended release day. Local configuration is re-read before confirmation/launch, and a worker rejects a changed plan hash. External changes cannot modify a running worker's already-loaded configuration.
 
@@ -121,4 +120,12 @@ The activity log streams opt-in validated `THIRSTY_EVENT` messages and sanitized
 
 Locks are deliberately read-only in the UI. An aborted or failed command retains `.local/automation.lock`. Follow the manual lock-check instructions above; the panel provides no Delete Lock action. A development abort test does not authorize silently clearing another run’s lock.
 
-Current implementation and validation details are in [UI_PHASE2_REPORT.md](UI_PHASE2_REPORT.md). Earlier reports are historical checkpoints.
+Current implementation and validation details are in [FULL_BOOKING_REPORT.md](FULL_BOOKING_REPORT.md). Earlier reports are historical checkpoints.
+
+## QR handoff and retained holds
+
+Payment Summary readiness uses its actual heading with a bounded `PAYMENT_SUMMARY_READY_TIMEOUT_MS` (default 60000); it never retries Player Proceed. Final payment-summary/terms/button checks precede a one-use final dispatch. The active interaction gate seals before that click. A separate passive observer has only a read method and a bounded `PAYMENT_HANDOFF_VERIFY_TIMEOUT_MS` (default 10000). It requires Checkout, Slot reserved for, a plausible active countdown, Pending, matching independent PHP totals, QRPH and QR canvas presence. It stops at the first complete proof. It never reads QR pixels, payloads or URLs, or uses payment controls.
+
+A successful hold retains the filesystem lock and records only safe booking/status metadata. The panel displays the last observed countdown and timestamp, and switches to manual review once that observed countdown has elapsed locally. It never polls Onda for payment status or claims payment succeeded. Unknown final results also retain the lock and must be checked manually; never retry the final click.
+
+For a separately authorized noncompetitive development test only, `npm run handoff:test -- --armed --authorize-terms --noncompetitive --date YYYY-MM-DD --court N --start HH:MM --duration N` requires an explicit available target and allows one selection candidate. The one test authorized for this development phase has already been used; no additional test or payment is scheduled.

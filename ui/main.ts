@@ -3,7 +3,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { Controller } from './controller.js';
 import { createRunner } from './processes.js';
-import { readLock, probeCdp, readClock } from './status.js';
+import { readLock, readHandoff, probeCdp, readClock } from './status.js';
 import { readBooking, saveBooking, describePlan } from './booking.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -16,11 +16,11 @@ const indexUrl = pathToFileURL(index).href;
 let window: BrowserWindow;
 let exiting = false;
 const controller = new Controller({ runner: createRunner(root, node), lock: () => readLock(root), cdp: probeCdp, clock: readClock,
-  booking:readBooking, saveBooking,
-  confirm: async (kind='observe',plan) => (await dialog.showMessageBox(window, { type: 'question', title: kind==='selection'?'Arm booking selection?':kind==='dry'?'Arm Dry Race?':'Arm release observation?',
-    message: kind==='selection'?'ARM BOOKING SELECTION?':kind==='dry'?'ARM DRY RACE?':'Arm release observation?',
-    detail: (plan ? describePlan(plan)+'\n\n' : '') + (kind==='selection'?'At release this automation MAY SELECT available court slots.\nSelection Only stops before Proceed. Selection is not a reservation.':'This waits for release and performs read-only refresh/date navigation. No court slots will be selected.'),
-    buttons: ['Cancel', kind==='selection'?'Arm Selection':kind==='dry'?'Arm Dry Race':'Arm observation'], defaultId: 0, cancelId: 0, noLink: true })).response === 1,
+  booking:readBooking, saveBooking, handoff:()=>readHandoff(root),
+  confirm: async (kind='observe',plan) => (await dialog.showMessageBox(window, { type: 'question', title: kind==='full'?'Arm Full Booking to QR?':kind==='selection'?'Arm booking selection?':kind==='dry'?'Arm Dry Race?':'Arm release observation?',
+    message: kind==='full'?'ARM FULL BOOKING?':kind==='selection'?'ARM BOOKING SELECTION?':kind==='dry'?'ARM DRY RACE?':'Arm release observation?',
+    detail: (plan ? describePlan(plan)+'\n\n' : '') + (kind==='full'?'Terms authorization: YES, for this booking only.\nFinal automation boundary: QR Checkout.\nThe bot will continue through Onda until the QR payment page is reached, then stop. Payment itself remains manual.':kind==='selection'?'At release this automation MAY SELECT available court slots.\nSelection Only stops before Proceed. Selection is not a reservation.':'This waits for release and performs read-only refresh/date navigation. No court slots will be selected.'),
+    buttons: ['Cancel', kind==='full'?'Arm Full Booking':kind==='selection'?'Arm Selection':kind==='dry'?'Arm Dry Race':'Arm observation'], defaultId: 0, cancelId: 0, noLink: true })).response === 1,
   publish: status => { if (window && !window.isDestroyed()) window.webContents.send('thirsty:status', status); },
 });
 if (!app.requestSingleInstanceLock()) app.quit();
@@ -41,12 +41,13 @@ else {
     startChrome: () => controller.startChrome(), inspectOnda: () => controller.inspectOnda(), prepare: () => controller.prepare(),
     armObservation: () => controller.armObservation(), abortAutomation: () => controller.abortAutomation(), getStatus: () => structuredClone(controller.state),
     armSelection: () => controller.armSelection(), dryRace: () => controller.dryRace(),
+    armFullBooking:()=>controller.armFullBooking(),
   };
   for (const [name, action] of Object.entries(actions)) ipcMain.handle(`thirsty:${name}`, (event, ...args: unknown[]) => {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== indexUrl || args.length) throw new Error('IPC_NOT_ALLOWED');
     return action();
   });
-  for (const [name,action] of Object.entries({saveBooking:(input:unknown)=>controller.saveBooking(input),runPractice:(input:unknown)=>controller.runPractice(input)})) ipcMain.handle(`thirsty:${name}`,(event,...args:unknown[])=>{
+  for (const [name,action] of Object.entries({saveBooking:(input:unknown)=>controller.saveBooking(input),runPractice:(input:unknown)=>controller.runPractice(input),setMode:(input:unknown)=>controller.setMode(input),authorizeTerms:(input:unknown)=>controller.authorizeTerms(input)})) ipcMain.handle(`thirsty:${name}`,(event,...args:unknown[])=>{
     if(event.sender!==window.webContents||event.senderFrame!==window.webContents.mainFrame||event.senderFrame.url!==indexUrl||args.length!==1)throw new Error('IPC_NOT_ALLOWED');
     return action(args[0]);
   });

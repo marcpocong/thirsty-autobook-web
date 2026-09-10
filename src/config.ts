@@ -19,6 +19,8 @@ export const ConfigSchema = z.object({
   FALLBACK_TIMES: z.array(hour).default([]),
   MAX_PRICE: z.coerce.number().finite().positive(),
   MAX_SELECTION_ATTEMPTS: z.coerce.number().int().min(1).max(5).default(3),
+  PAYMENT_HANDOFF_VERIFY_TIMEOUT_MS: z.coerce.number().int().min(1000).max(30000).default(10000),
+  PAYMENT_SUMMARY_READY_TIMEOUT_MS: z.coerce.number().int().min(3000).max(120000).default(60000),
   PLAYER_FULL_NAME: z.string().trim().min(2),
   PLAYER_PHONE: z.string().trim().regex(/^\+?[0-9][0-9 ()-]{6,19}$/),
   PLAYER_EMAIL: z.email(),

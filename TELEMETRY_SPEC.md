@@ -4,7 +4,7 @@ Events are buffered in memory as `{event, wall, monoMs, value?}`; wall is UTC IS
 
 Normal completion/failure flushes asynchronously. Abort/disconnection flushes once synchronously after stopping, then exits the Playwright-owning process. No critical-path disk writes. An abrupt kill may lose buffered telemetry. CLI uses no screenshots or tracing.
 
-The desktop adds optional `THIRSTY_UI_EVENTS=1` stdout streaming for validated telemetry, inspection, release plan, selection result and error codes. The selection result contains only date/court/hours/amount/attempt count/Proceed readiness. The UI does not interpret arbitrary DOM/config output as status. Inspect, observation, practice, Dry Race and Selection Only share this protocol; there is no UI Full Booking launch route.
+The desktop adds optional `THIRSTY_UI_EVENTS=1` stdout streaming for validated telemetry, inspection, release plan, selection result and error codes. The selection result contains only date/court/hours/amount/attempt count/Proceed readiness. The UI does not interpret arbitrary DOM/config output as status. Inspect, observation, practice, Dry Race and Selection Only share this protocol; Full Booking also uses a dedicated validated command and safe handoff result event.
 
 | Event | Exact timestamp meaning |
 |---|---|
@@ -30,18 +30,21 @@ The desktop adds optional `THIRSTY_UI_EVENTS=1` stdout streaming for validated t
 | slotNClickStarted / slotNClicked | Immediately before / after normal Playwright click resolves, practice mode |
 | practiceSelectionVerified | Full selected set checked against requested same-court hours |
 | practiceCleanStateVerified | Zero selected cells; original requested slots OPEN again |
+| bookingProceedStarted / bookingProceedClicked | Before guarded first Proceed / normal click resolves |
+| checkoutPageDetected / holdStatusDetected | First bounded passive read proving Checkout heading / hold label; these may occur in the same read |
+| qrHandoffVerified | All independent Checkout sentinels, amount and active countdown validated; observer stops |
 | proceedClicked | Normal grid-summary Proceed resolves after the final selection revalidation |
 | reviewDetected / reviewValidated | DOM review extraction completed / exact material summary validation passed |
 | playerFillStarted / playerFillCompleted | Adapter fill begins, including guards / returned represented field values verified |
 | playerFormDetected | Production adapter has actually waited for the Player Information heading |
 | playerProceedStarted / playerProceedClicked | Before guarded normal player Proceed / click promise resolves |
 | paymentSummaryDetected / paymentSummaryValidated | Strong Payment Summary sentinel and DOM read complete / total and material booking fields match |
-| termsChecked | Explicitly authorized adapter reports checked terms (live terms not tested) |
-| finalOndaButtonClicked | Final-action promise resolves (synthetic tests only so far) |
+| termsCheckStarted / termsChecked | Before explicit authorized check / checked state verified |
+| finalOndaActionStarted / finalOndaButtonClicked | Immediately before sealing and one-use dispatch / normal click promise resolves; neither proves Checkout arrival |
 | paymentBoundaryReached | Final action returns; interaction gate was already sealed BEFORE dispatch |
-| automationStopped / failed / aborted | Terminal outcome |
+| automationStopped / failed / aborted | Active automation ended / failure / abort. The legacy automationStopped after final dispatch means the active gate is sealed; only qrHandoffVerified proves success. The bounded passive observer may run between them. |
 
-Selection and checkout through Payment Summary were measured on the live noncompetitive development target. Terms/final-action events remain synthetic-only. See [UI_PHASE2_REPORT.md](UI_PHASE2_REPORT.md) for the measured sample and the original combined player-Proceed/sentinel timing limitation. Production now separates player click completion from the subsequent strong summary wait.
+The September 10 live test recorded selection, both Proceeds, Terms and one final dispatch. A resumed passive observer verified the same hold after a serialization fix. These were separate process segments: cross-segment elapsed time includes engineering interruptions and must not be reported as navigation latency. See [FULL_BOOKING_REPORT.md](FULL_BOOKING_REPORT.md).
 
 Compute elapsed phases from monotonic differences within one run. Missing events mean NOT MEASURED, never zero. Consecutive combined markers must not be reported as independently measured zero-latency phases. Reload retries have repeated event names and must be paired by occurrence.
 
