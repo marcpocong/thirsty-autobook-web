@@ -82,23 +82,31 @@ export function ondaCheckoutAdapter(page:Page,safety:Safety,selected:BookingSumm
     return control.native ? control.locator.isChecked() : (await control.locator.getAttribute('aria-checked')) === 'true';
   }
   async function ensureTermsChecked(){
-    const control=await termsControl();
-    if(control.native){
-      if(await control.locator.isDisabled())throw new Error('TERMS_NOT_ACTIONABLE');
-      if(!await control.locator.isChecked()){
-        try { await control.locator.check(); }
+    for(let attempt=0;attempt<3;attempt++){
+      const control=await termsControl();
+      if(await termsChecked(control))return;
+      if(control.native){
+        if(await control.locator.isDisabled())throw new Error('TERMS_NOT_ACTIONABLE');
+        // Use a plain click so a React change-event rerender cannot make
+        // Playwright's post-check assertion race the replacement node.
+        try { await control.locator.click({noWaitAfter:true}); }
         catch {
           const label=control.locator.locator('xpath=ancestor::label[1]');
           if(await label.count()!==1)throw new Error('TERMS_NOT_ACTIONABLE');
           await label.click();
         }
+      }else{
+        if(await control.locator.getAttribute('aria-disabled')==='true'||!await control.locator.isVisible())throw new Error('TERMS_NOT_ACTIONABLE');
+        await control.locator.click();
       }
-    }else{
-      if(await control.locator.getAttribute('aria-disabled')==='true'||!await control.locator.isVisible())throw new Error('TERMS_NOT_ACTIONABLE');
-      if(!await termsChecked(control))await control.locator.click();
+      safety.check();
+      // The change event can replace the panel immediately after the check.
+      // Reacquire the settled visible control before verifying its state.
+      const verified=await termsControl();
+      if(await termsChecked(verified))return;
+      await page.waitForTimeout(100);
     }
-    safety.check();
-    if(!await termsChecked(control))throw new Error('TERMS_NOT_CHECKED');
+    throw new Error('TERMS_NOT_CHECKED');
   }
   const finalButton=sheet.getByRole('button',{name:'Continue to Payment',exact:true});
   const readPayment=async()=>{

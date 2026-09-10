@@ -50,6 +50,13 @@ it('waits for a transient duplicate Terms panel to settle on one visible control
   expect(await adapter.acceptTerms()).toBe(true);
   expect(await page.locator('[data-testid="booking-review-terms-panel"]:visible input[type="checkbox"]').count()).toBe(1);
 });
+it('reacquires Terms after Onda rerenders the panel on change',async()=>{
+  await page.setContent('<div data-testid="booking-review-terms-panel"><input type="checkbox"></div><script>document.querySelector("input").addEventListener("change",()=>{const p=document.querySelector("[data-testid=booking-review-terms-panel]");p.innerHTML="<input type=checkbox checked><input type=checkbox>";setTimeout(()=>p.querySelectorAll("input")[1].remove(),120)})</script>');
+  const safety=new Safety();safety.lock();const adapter=ondaCheckoutAdapter(page,safety,expected);
+  expect(await adapter.acceptTerms()).toBe(true);
+  expect(await page.locator('[data-testid="booking-review-terms-panel"]:visible input[type="checkbox"]').count()).toBe(1);
+  expect(await page.locator('[data-testid="booking-review-terms-panel"]:visible input[type="checkbox"]').isChecked()).toBe(true);
+});
 it('rechecks Terms immediately before final handoff after a Payment Summary rerender',async()=>{
   const safety=new Safety(),t=new Telemetry(),adapter=ondaCheckoutAdapter(page,safety,expected),accept=adapter.acceptTerms;
   adapter.acceptTerms=async()=>{const result=await accept();await page.getByTestId('booking-review-terms-panel').locator('input[type="checkbox"]').evaluate(e=>(e as HTMLInputElement).checked=false);return result;};
