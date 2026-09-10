@@ -3,7 +3,8 @@ import { DateTime } from 'luxon';
 import { setTimeout as delay } from 'node:timers/promises';
 import { type Config, type ReleaseSettings, releaseCalendar, compilePreferences, VENUE } from './config.js';
 import { assertPage } from './browser.js';
-import { navigateDate, waitForGrid, snapshot, validateSnapshot, resolvePreference } from './grid.js';
+import { snapshot, validateSnapshot, resolvePreference } from './grid.js';
+import { releaseNavigationTarget, waitForBookingShellForRelease, navigateReleasedTargetDate } from './release-navigation.js';
 import { Safety, waitUntil } from './safety.js';
 import { Telemetry } from './telemetry.js';
 import { emitUiEvent } from './ui-events.js';
@@ -20,6 +21,7 @@ export async function boundedRelease<T>(maximum: number, retryDelay: number, sig
 }
 export async function observeRelease(page: Page, c: Config | ReleaseSettings, safety: Safety, t: Telemetry, dry: boolean, selecting = false) {
   const target = releaseCalendar(c);
+  const navigationTarget = releaseNavigationTarget(target.targetDate);
   const preferences = 'START_TIME' in c ? compilePreferences(c) : undefined;
   if (dry && !preferences) throw new Error('DRY_CONFIG_REQUIRED');
   if (Date.now() >= target.releaseMs - c.PREFLIGHT_SECONDS_BEFORE * 1000) throw new Error('TOO_LATE_FOR_PREFLIGHT');
@@ -49,17 +51,10 @@ export async function observeRelease(page: Page, c: Config | ReleaseSettings, sa
   await boundedRelease(c.MAX_RELEASE_RELOADS, c.RELEASE_RETRY_DELAY_MS, safety.signal, async () => {
     safety.check(); t.mark('reloadStarted');
     await page.reload({ waitUntil: 'commit' }); t.mark('reloadCommitted');
-    await page.getByTestId('booking-selected-date-label').waitFor(); t.mark('domReady');
-    // Known reload behavior is reset to today; wait for today's actual grid first.
-    await waitForGrid(page, DateTime.now().setZone(c.TIMEZONE).toISODate()!, safety, c.CRITICAL_STEP_TIMEOUT_MS);
-    await assertPage(page, safety);
-    try {
-      await navigateDate(page, target.targetDate, safety);
-    } catch (error) {
-      if (error instanceof Error && error.message === 'TARGET_DATE_UNAVAILABLE') return undefined;
-      throw error;
-    }
-    t.mark('newDateSignalDetected'); t.mark('targetDateVerified'); t.mark('targetGridSentinelVerified'); t.mark('targetGridReady');
+    await waitForBookingShellForRelease(page, safety, c.CRITICAL_STEP_TIMEOUT_MS);
+    t.mark('releaseShellReady');
+    const result = await navigateReleasedTargetDate(page, navigationTarget, safety, t, c.CRITICAL_STEP_TIMEOUT_MS);
+    if (result === 'TARGET_DATE_NOT_RELEASED') return undefined;
     return true;
   });
   safety.check(); t.mark('gridSnapshotStarted');

@@ -60,9 +60,8 @@ export function resolvePreference(cells: Cell[], preferences: Preference[]): Pre
   const map = new Map(cells.map(c => [`${c.court}/${c.hour}`, c.state]));
   return preferences.find(p => p.hours.every(h => map.get(`${p.court}/${h}`) === 'OPEN'));
 }
-export async function waitForGrid(page: Page, targetDate: string, safety: Safety, timeout = 15000) {
+export async function waitForGrid(page: Page, targetDate: string, safety: Safety, timeout = 15000, label = DateTime.fromISO(targetDate).setLocale('en').toFormat('ccc, LLLL d')) {
   safety.check();
-  const label = DateTime.fromISO(targetDate).setLocale('en').toFormat('ccc, LLLL d');
   await page.waitForFunction(({ s, targetDate, label }) => {
     const grids = document.querySelectorAll(s.grid);
     const rows = [...(grids[0]?.querySelectorAll(s.row) ?? [])];

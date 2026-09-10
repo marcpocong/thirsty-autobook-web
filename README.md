@@ -50,6 +50,8 @@ Practice requires all four explicit target arguments. If either requested slot i
 
 Release observation defaults to Asia/Manila, 08:00, +2 calendar days, zero lead, 15-second final preflight, 15-second per-operation timeout, at most two reloads, and 1-second retry delay. Start before final preflight. Late starts fail rather than silently switching to tomorrow. These are configurable operational defaults, **not measured release guarantees**. The observer requires `--armed` to authorize scheduled refresh/navigation. Today's grid and All Courts must be displayed at initial and final preflight. No slot click occurs in observer or dry mode.
 
+After the release reload commits, the engine waits only for the verified venue and actionable date picker, then selects the target date directly. It does not wait for Today's grid to render. The strict target grid barrier and full snapshot validation still precede preference selection. A visible disabled target permits one bounded retry; missing or ambiguous calendar markup stops. No extra pre-release reload or calendar warm-up is added.
+
 ## Booking configuration
 
 Use **Booking Setup** in the panel for start, duration, court order, fallback starts, PHP maximum and maximum candidate attempts. Saved settings live in ignored `config.local.json`; the CLI loads this same object. Defaults are 08:00, 2 hours, courts 7→1, PHP 1,200 and 3 candidate attempts; review them before arming. Save invalidates readiness. The confirmation and worker compare a plan fingerprint, so a changed plan cannot silently replace the authorized one.

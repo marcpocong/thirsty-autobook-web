@@ -16,8 +16,14 @@ The desktop adds optional `THIRSTY_UI_EVENTS=1` stdout streaming for validated t
 | releaseTriggerFired | After scheduler returns, before release actions; value is wall-clock firing error ms |
 | reloadStarted | Immediately before ordinary page.reload |
 | reloadCommitted | After reload promise resolves at navigation commit |
-| domReady | Selected-date heading is visible; NOT equivalent to DOMContentLoaded or grid ready |
-| newDateSignalDetected / targetDateVerified / targetGridSentinelVerified / targetGridReady | Currently recorded together after calendar navigation AND strict grid barrier. They do not separately measure enablement and navigation. |
+| releaseShellReady | Correct URL/venue and security checks passed; date picker passed normal Playwright trial actionability. No Today grid required. |
+| targetPickerOpened | Normal date-picker click returned, or picker was already expanded; calendar content may still hydrate. |
+| targetDateDetected | Exact target day is visible and the security check passed. Missing/ambiguous markup is a structure failure. |
+| targetDateNotReleased | Visible exact day was observed disabled; permits the single configured reload retry. |
+| targetDateEnabled | Exact visible target day was observed enabled; not a measurement of the server's release instant. |
+| targetDateClickStarted / targetDateClicked | Before normal target-day click (including actionability waits) / after that click returns. |
+| targetHeadingDetected | First observation of the exact target heading after the calendar click returns; rows may still be stale. |
+| targetGridReady | Strict target grid wait completed: target heading, 16 target-date rows, seven cells per row and no busy indicator. Snapshot validation still follows. |
 | gridSnapshotStarted | Immediately before the one-pass DOM evaluation |
 | gridSnapshotCompleted | Matrix returned AND strict local validation completed |
 | preferenceResolved | Initial local ordered preference lookup completed, dry or selection mode |
@@ -48,4 +54,4 @@ The September 10 live test recorded selection, both Proceeds, Terms and one fina
 
 Compute elapsed phases from monotonic differences within one run. Missing events mean NOT MEASURED, never zero. Consecutive combined markers must not be reported as independently measured zero-latency phases. Reload retries have repeated event names and must be paired by occurrence.
 
-Required future metrics: trigger→reload commit; reload→new-date enablement; enablement→target navigation; navigation→strict grid; snapshot; preference; each slot click; slot pair; slot2→Proceed; Proceed→review; player fill; player Proceed→payment summary; summary→final action; trigger→final action. Instrument actual distinct boundaries when the production adapter is implemented.
+Release phase metrics: trigger→reload commit; commit→shell ready; shell→target observed enabled; enabled→click; click→heading→strict grid; grid→snapshot complete; snapshot→preference; preference→first slot→complete selection. Pair repeated markers by reload attempt. These are client observations, not server release timestamps. Historical domReady and combined newDateSignalDetected/targetDateVerified/targetGridSentinelVerified events retain their old meaning and are no longer emitted by the release path.
