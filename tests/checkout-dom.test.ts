@@ -31,6 +31,19 @@ it('checks the native Onda Terms checkbox inside Payment Summary before final ha
   expect(await page.getByTestId('booking-review-terms-panel').locator('input[type="checkbox"]').isChecked()).toBe(true);
   expect(t.events.map(e=>e.event)).toContain('termsChecked');
 });
+it('checks a custom role checkbox when Onda renders Terms without a native input',async()=>{
+  await page.setContent('<div data-testid="booking-review-terms-panel"><div role="checkbox" aria-checked="false" tabindex="0">I agree to the Terms and Conditions, Privacy Policy, and Liability Waiver</div></div>');
+  await page.locator('[role="checkbox"]').evaluate(e=>e.addEventListener('click',()=>e.setAttribute('aria-checked','true')));
+  const safety=new Safety();safety.lock();const adapter=ondaCheckoutAdapter(page,safety,expected);
+  expect(await adapter.acceptTerms()).toBe(true);
+  expect(await page.getByTestId('booking-review-terms-panel').getByRole('checkbox').getAttribute('aria-checked')).toBe('true');
+});
+it('rechecks Terms immediately before final handoff after a Payment Summary rerender',async()=>{
+  const safety=new Safety(),t=new Telemetry(),adapter=ondaCheckoutAdapter(page,safety,expected),accept=adapter.acceptTerms;
+  adapter.acceptTerms=async()=>{const result=await accept();await page.getByTestId('booking-review-terms-panel').locator('input[type="checkbox"]').evaluate(e=>(e as HTMLInputElement).checked=false);return result;};
+  expect(await checkout(adapter,safety,t,expected,player,1200,true)).toBe('PAYMENT_BOUNDARY_REACHED');
+  expect(await page.getByTestId('booking-review-terms-panel').locator('input[type="checkbox"]').isChecked()).toBe(true);
+});
 it('refuses altered payment amount before accepting terms',async()=>{
   await page.locator('#total').evaluate(e=>e.textContent='₱1,201.00');const safety=new Safety();await expect(checkout(ondaCheckoutAdapter(page,safety,expected),safety,new Telemetry(),expected,player,1500,true)).rejects.toThrow('PAYMENT_PRICE_MISMATCH');expect(await page.getByRole('checkbox').isChecked()).toBe(false);
 });
