@@ -82,9 +82,15 @@ export function ondaCheckoutAdapter(page:Page,safety:Safety,selected:BookingSumm
     return control.native ? control.locator.isChecked() : (await control.locator.getAttribute('aria-checked')) === 'true';
   }
   async function ensureTermsChecked(){
-    for(let attempt=0;attempt<3;attempt++){
+    const termsCommitted=async(control:Awaited<ReturnType<typeof termsControl>>)=>{
+      if(!await termsChecked(control))return false;
+      // Onda enables this button from its own controlled Terms state. A DOM
+      // checked property alone can briefly be ahead of that state.
+      return await finalButton.count()===0||await finalButton.isEnabled();
+    };
+    for(let attempt=0;attempt<8;attempt++){
       const control=await termsControl();
-      if(await termsChecked(control))return;
+      if(await termsCommitted(control))return;
       if(control.native){
         if(await control.locator.isDisabled())throw new Error('TERMS_NOT_ACTIONABLE');
         // Use a plain click so a React change-event rerender cannot make
@@ -109,8 +115,8 @@ export function ondaCheckoutAdapter(page:Page,safety:Safety,selected:BookingSumm
       // The change event can replace the panel immediately after the check.
       // Reacquire the settled visible control before verifying its state.
       const verified=await termsControl();
-      if(await termsChecked(verified))return;
-      await page.waitForTimeout(100);
+      if(await termsCommitted(verified))return;
+      await page.waitForTimeout(250);
     }
     throw new Error('TERMS_NOT_CHECKED');
   }

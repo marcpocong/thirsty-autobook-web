@@ -44,6 +44,12 @@ it('waits for the Onda Terms control to hydrate after Payment Summary appears',a
   expect(await adapter.acceptTerms()).toBe(true);
   expect(await page.getByTestId('booking-review-terms-panel').locator('input[type="checkbox"]').isChecked()).toBe(true);
 });
+it('waits for Onda to commit Terms before enabling the final button',async()=>{
+  await page.setContent('<div data-testid="booking-review-payment-summary-sheet"><h3>Payment Summary</h3><button aria-label="Continue to Payment" disabled>Confirm &amp; Proceed to Payment</button></div><div data-testid="booking-review-terms-panel"><input type="checkbox"></div><script>document.querySelector("input").addEventListener("change",()=>setTimeout(()=>document.querySelector("button").disabled=false,180))</script>');
+  const safety=new Safety();safety.lock();const adapter=ondaCheckoutAdapter(page,safety,expected);
+  expect(await adapter.acceptTerms()).toBe(true);
+  expect(await page.getByRole('button',{name:'Continue to Payment',exact:true}).isEnabled()).toBe(true);
+});
 it('waits for a transient duplicate Terms panel to settle on one visible control',async()=>{
   await page.setContent('<div data-testid="booking-review-terms-panel"><input type="checkbox"></div><div data-testid="booking-review-terms-panel"><input type="checkbox"></div><script>setTimeout(()=>document.querySelectorAll("[data-testid=booking-review-terms-panel]")[0].hidden=true,120)</script>');
   const safety=new Safety();safety.lock();const adapter=ondaCheckoutAdapter(page,safety,expected);
