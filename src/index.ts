@@ -18,6 +18,7 @@ const safety = new Safety();
 const telemetry = new Telemetry();
 telemetry.mark('processStarted');
 let exitCode = 0;
+let failureCode: string | undefined;
 let ownsLock = false;
 let retainSelection = false;
 const lockPath = '.local/automation.lock';
@@ -105,10 +106,12 @@ try {
   exitCode = 1; telemetry.mark('failed');
   // Zod input exceptions may contain values: print only issue paths.
   const e = error as { name?: string; issues?: { path: unknown[] }[]; message?: string };
-  emitUiEvent({ type: 'error', code: /^[A-Z_]{1,80}(?=:|$)/.exec(e.message ?? '')?.[0] ?? 'OPERATION_FAILED' });
+  failureCode = /^[A-Z_]{1,80}(?=:|$)/.exec(e.message ?? '')?.[0] ?? 'OPERATION_FAILED';
+  emitUiEvent({ type: 'error', code: failureCode });
   console.error(e.name === 'ZodError' ? `INVALID_PRACTICE_ARGUMENTS: ${e.issues?.map(i => i.path.join('.')).join(', ')}` : e.message?.startsWith('CONFIG_INVALID') || /^[A-Z_]+(?::|$)/.test(e.message ?? '') ? e.message : 'OPERATION_FAILED — no automatic recovery. Check the browser manually.');
 } finally {
   await telemetry.flush();
+  if (failureCode) try { await writeFileAsync(`DiagnosticsLocal/${telemetry.runID}.json`, JSON.stringify({ runID: telemetry.runID, events: telemetry.events, failure: failureCode }, null, 2)); } catch {}
   // Keep lock after failures as selection state can be uncertain.
   if (ownsLock && exitCode === 0 && !retainSelection) await unlinkAsync(lockPath);
   if (process.stdin.isTTY) process.stdin.setRawMode(false);

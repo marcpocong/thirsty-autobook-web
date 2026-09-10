@@ -91,9 +91,15 @@ export function ondaCheckoutAdapter(page:Page,safety:Safety,selected:BookingSumm
         // Playwright's post-check assertion race the replacement node.
         try { await control.locator.click({noWaitAfter:true}); }
         catch {
+          // The click may have dispatched successfully before Onda detached
+          // the input. Reacquire the replacement and let the verification
+          // below decide whether another click is necessary.
+          try {
+            const replacement=await termsControl();
+            if(await termsChecked(replacement))return;
+          } catch { /* retry the bounded loop */ }
           const label=control.locator.locator('xpath=ancestor::label[1]');
-          if(await label.count()!==1)throw new Error('TERMS_NOT_ACTIONABLE');
-          await label.click();
+          if(await label.count()===1)await label.click();
         }
       }else{
         if(await control.locator.getAttribute('aria-disabled')==='true'||!await control.locator.isVisible())throw new Error('TERMS_NOT_ACTIONABLE');
