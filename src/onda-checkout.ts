@@ -65,10 +65,19 @@ export function ondaCheckoutAdapter(page:Page,safety:Safety,selected:BookingSumm
   const roleTerms=termsPanel.locator('[role="checkbox"]');
   async function termsControl(){
     await termsPanel.waitFor({state:'visible'});
-    const nativeCount=await nativeTerms.count();
-    if(nativeCount===1)return {locator:nativeTerms, native:true as const};
-    const roleCount=await roleTerms.count();
-    if(roleCount===1)return {locator:roleTerms, native:false as const};
+    // Onda can paint the Payment Summary heading before hydrating its Terms
+    // control. Wait for the control itself instead of treating that short
+    // render gap as a changed DOM structure.
+    for(let attempt=0;attempt<60;attempt++){
+      safety.check();
+      const nativeCount=await nativeTerms.count();
+      if(nativeCount>1)throw new Error('TERMS_STRUCTURE_CHANGED');
+      if(nativeCount===1)return {locator:nativeTerms, native:true as const};
+      const roleCount=await roleTerms.count();
+      if(roleCount>1)throw new Error('TERMS_STRUCTURE_CHANGED');
+      if(roleCount===1)return {locator:roleTerms, native:false as const};
+      await page.waitForTimeout(100);
+    }
     throw new Error('TERMS_STRUCTURE_CHANGED');
   }
   async function termsChecked(control:Awaited<ReturnType<typeof termsControl>>){

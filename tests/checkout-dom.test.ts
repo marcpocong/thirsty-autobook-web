@@ -38,6 +38,12 @@ it('checks a custom role checkbox when Onda renders Terms without a native input
   expect(await adapter.acceptTerms()).toBe(true);
   expect(await page.getByTestId('booking-review-terms-panel').getByRole('checkbox').getAttribute('aria-checked')).toBe('true');
 });
+it('waits for the Onda Terms control to hydrate after Payment Summary appears',async()=>{
+  await page.setContent('<div data-testid="booking-review-terms-panel"></div><script>setTimeout(()=>{const i=document.createElement("input");i.type="checkbox";document.querySelector("[data-testid=booking-review-terms-panel]").append(i)},120)</script>');
+  const safety=new Safety();safety.lock();const adapter=ondaCheckoutAdapter(page,safety,expected);
+  expect(await adapter.acceptTerms()).toBe(true);
+  expect(await page.getByTestId('booking-review-terms-panel').locator('input[type="checkbox"]').isChecked()).toBe(true);
+});
 it('rechecks Terms immediately before final handoff after a Payment Summary rerender',async()=>{
   const safety=new Safety(),t=new Telemetry(),adapter=ondaCheckoutAdapter(page,safety,expected),accept=adapter.acceptTerms;
   adapter.acceptTerms=async()=>{const result=await accept();await page.getByTestId('booking-review-terms-panel').locator('input[type="checkbox"]').evaluate(e=>(e as HTMLInputElement).checked=false);return result;};
