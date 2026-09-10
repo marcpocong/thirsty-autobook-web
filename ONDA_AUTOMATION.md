@@ -1,5 +1,7 @@
 # Engineering status and next steps
 
+Historical foundation notes. For the current selection-ready architecture, inspected checkout adapter, capability gates and private GitHub status, use [UI_PHASE2_REPORT.md](UI_PHASE2_REPORT.md), [README.md](README.md) and [VERIFIED_ONDA.md](VERIFIED_ONDA.md). The blocked/deferred statements below describe the initial checkpoint only.
+
 This repository is an evidence-first implementation checkpoint, not a production-ready reservation bot.
 
 Completed: empty-root Git initialization on main; dedicated visible Chrome launcher; localhost listener and profile validation; one exact Onda tab; real schedule DOM inspection; authorized select/verify/deselect/clean practice; validated configuration and calendar preferences; one-pass DOM grid parser and strict row-date barrier; read-only release observer/dry engine; process ownership lock; abort/disconnect handling; offline tests; checkout validation/payment-boundary contract; documentation.

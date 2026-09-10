@@ -3,9 +3,22 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Thirsty Bot · Onda Booking Control</title><link rel="stylesheet" href="styles.css"></head>
 <body>
-<header><div class="brand"><span class="mark" aria-hidden="true">T</span><div><h1>THIRSTY BOT</h1><p>Onda Booking Control</p></div></div><span class="mode">OBSERVATION MODE <span class="dot"></span></span></header>
+<header><div class="brand"><span class="mark" aria-hidden="true">T</span><div><h1>THIRSTY BOT</h1><p>Onda Booking Control</p></div></div><span class="mode">SELECTION ONLY <span class="dot"></span></span></header>
 <main>
   <section class="hero" aria-label="Release clock"><div><p class="eyebrow">ASIA / MANILA</p><div id="clock" class="clock">--:--:--</div><p id="clock-date" class="muted">Reading local clock…</p></div><div class="countdown-block"><p class="eyebrow" id="countdown-label">NEXT RELEASE IN</p><div id="countdown" class="countdown">--:--:--</div><p class="muted"><span id="release-time">08:00:00</span> <span id="release-zone">Asia/Manila</span></p></div></section>
+  <section class="panel setup"><div class="section-title"><h2>Booking setup</h2><span id="player-status" class="small">Player information · Checking</span></div>
+    <fieldset id="setup-fields"><div class="setup-grid">
+      <label>Start time<select id="start-time"></select></label>
+      <label>Duration (hours)<input id="duration" type="number" min="1" max="16" value="2"></label>
+      <label>Maximum price (PHP)<input id="maximum" type="number" min="1" step="0.01" value="1200"></label>
+      <label>Maximum candidate attempts<input id="attempts" type="number" min="1" max="5" value="3"></label>
+    </div>
+    <div class="setup-grid editors"><div><h3>Court priority</h3><ol id="court-order"></ol></div><div><h3>Fallback starts · in order</h3><div class="button-row"><select id="fallback-time" aria-label="Add fallback start time"></select><button id="add-fallback" class="secondary">Add</button></div><ol id="fallback-order"></ol><p class="small">Primary time × court order, then each fallback × court order.</p></div></div>
+    <button id="save-booking" class="secondary">Save booking plan</button><span id="edit-status" class="small"></span></fieldset>
+    <pre id="booking-preview" aria-live="polite">Save your booking setup to compile a plan.</pre>
+    <div class="button-row mode-choice"><label><input type="radio" name="mode" checked> Selection Only</label><label><input type="radio" name="mode" disabled> Full Booking to Payment · locked</label></div>
+    <label class="small"><input id="terms" type="checkbox" disabled> I authorize accepting Onda Terms for this run · unavailable until Full Booking is verified</label>
+  </section>
   <div class="content">
     <section class="panel session"><div class="section-title"><h2>Session status</h2><span id="checked-at" class="small">Not inspected</span></div>
       <dl>
@@ -19,15 +32,20 @@
       </dl>
       <div class="target"><p class="eyebrow">TARGET BOOKING DATE</p><strong id="target-date">Calculating…</strong><p class="small" id="safe-config">Release settings loading</p></div>
     </section>
-    <section class="panel controls"><div class="section-title"><h2>Release operations</h2><span class="small">01 / PREPARE & OBSERVE</span></div>
+    <section class="panel controls"><div class="section-title"><h2>Booking operations</h2><span class="small">PREPARE & ARM</span></div>
       <div class="button-row"><button id="chrome" class="secondary">Start / Attach Chrome</button><button id="inspect" class="secondary">Inspect Onda</button></div>
-      <button id="prepare" class="prepare">Prepare for 8:00 <span aria-hidden="true">→</span></button>
+      <button id="prepare" class="prepare">Prepare Booking <span aria-hidden="true">→</span></button>
       <div class="readiness" id="readiness" role="status"><strong id="headline">Prepare your session</strong><p id="detail">Start dedicated Chrome, then verify the page before arming.</p></div>
-      <button id="arm" class="arm">Arm Release Observation</button>
-      <p class="small hint">Confirmation required · refresh and date navigation only</p>
-      <div class="locked"><div><strong>Live race</strong><p>Release and checkout verification incomplete.</p></div><button disabled title="Release and checkout verification incomplete">LOCKED / NOT READY</button></div>
+      <button id="arm" class="arm">Arm Booking Selection</button>
+      <p class="small hint">Explicit confirmation · selects at release · stops before Proceed</p>
+      <div class="button-row"><button id="dry" class="secondary">Dry Race</button><button id="observe" class="secondary">Observe Release</button></div>
+      <div class="locked"><div><strong>Full Booking</strong><p id="capability-status">Checkout and payment handoff evidence required.</p></div><button disabled title="Payment boundary verification incomplete">LOCKED / NOT READY</button></div>
+      <pre id="selection-result" hidden></pre>
     </section>
   </div>
+  <section class="panel practice"><div class="section-title"><h2>Safe practice</h2><span class="small">SELECT → VERIFY → DESELECT → VERIFY CLEAN</span></div>
+    <fieldset id="practice-fields"><div class="setup-grid"><label>Date<input id="practice-date" type="date"></label><label>Court<select id="practice-court"></select></label><label>Start<select id="practice-start"></select></label><label>Duration (hours)<input id="practice-duration" type="number" min="1" max="16" value="2"></label></div><button id="practice" class="secondary">Run Safe Practice</button></fieldset><p class="small">Use an available noncompetitive target. Practice never clicks Proceed.</p>
+  </section>
   <section class="panel activity"><div class="section-title"><h2>Activity</h2><span class="small" id="activity-state">LOCAL PROCESS OUTPUT</span></div><div id="log" role="log" aria-live="polite" aria-label="Activity log"><p class="empty">Activity will appear here as commands run.</p></div></section>
-  <footer><div><span class="dot"></span><span>Manual payment only. Live booking stays locked.</span></div><button id="stop" class="stop">■ &nbsp; Emergency Stop</button></footer>
+  <footer><div><span class="dot"></span><span>Selection is not a reservation. Payment stays manual.</span></div><button id="stop" class="stop">■ &nbsp; Emergency Stop</button></footer>
 </main><script type="module" src="app.js"></script></body></html>

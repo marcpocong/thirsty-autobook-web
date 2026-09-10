@@ -18,7 +18,7 @@ export async function boundedRelease<T>(maximum: number, retryDelay: number, sig
   }
   throw new Error('RELEASE_HORIZON_UNAVAILABLE');
 }
-export async function observeRelease(page: Page, c: Config | ReleaseSettings, safety: Safety, t: Telemetry, dry: boolean) {
+export async function observeRelease(page: Page, c: Config | ReleaseSettings, safety: Safety, t: Telemetry, dry: boolean, selecting = false) {
   const target = releaseCalendar(c);
   const preferences = 'START_TIME' in c ? compilePreferences(c) : undefined;
   if (dry && !preferences) throw new Error('DRY_CONFIG_REQUIRED');
@@ -38,7 +38,7 @@ export async function observeRelease(page: Page, c: Config | ReleaseSettings, sa
     t.mark('preflightCompleted');
   };
   await preflight();
-  console.log(JSON.stringify({ mode: dry ? 'DRY RACE — NO SELECTION' : 'RELEASE OBSERVATION — NO BOOKING', venue: VENUE, targetDate: target.targetDate, preferences, maximumPrice: 'MAX_PRICE' in c ? c.MAX_PRICE : undefined, playerInfoLoaded: 'PLAYER_FULL_NAME' in c, localTime: new Date().toString(), manilaTime: DateTime.now().setZone('Asia/Manila').toISO(), release: target.releaseISO, releaseLeadMs: c.RELEASE_LEAD_MS, maxReloads: c.MAX_RELEASE_RELOADS, secondsRemaining: (target.releaseMs - Date.now()) / 1000, abort: 'Q or Ctrl+C' }, null, 2));
+  console.log(JSON.stringify({ mode: selecting ? 'SELECTION ONLY — STOPS BEFORE PROCEED' : dry ? 'DRY RACE — NO SELECTION' : 'RELEASE OBSERVATION — NO BOOKING', venue: VENUE, targetDate: target.targetDate, preferences, maximumPrice: 'MAX_PRICE' in c ? c.MAX_PRICE : undefined, playerInfoLoaded: 'PLAYER_FULL_NAME' in c, localTime: new Date().toString(), manilaTime: DateTime.now().setZone('Asia/Manila').toISO(), release: target.releaseISO, releaseLeadMs: c.RELEASE_LEAD_MS, maxReloads: c.MAX_RELEASE_RELOADS, secondsRemaining: (target.releaseMs - Date.now()) / 1000, abort: 'Q or Ctrl+C' }, null, 2));
   await waitUntil(target.releaseMs - c.PREFLIGHT_SECONDS_BEFORE * 1000, safety.signal);
   await preflight();
   if (Date.now() >= target.releaseMs) throw new Error('PREFLIGHT_MISSED_RELEASE');
@@ -63,9 +63,11 @@ export async function observeRelease(page: Page, c: Config | ReleaseSettings, sa
     return true;
   });
   safety.check(); t.mark('gridSnapshotStarted');
-  const cells = validateSnapshot(await snapshot(page), target.targetDate);
+  const grid = await snapshot(page);
+  const cells = validateSnapshot(grid, target.targetDate);
   t.mark('gridSnapshotCompleted');
-  const chosen = preferences ? resolvePreference(cells, preferences) : undefined;
-  if (preferences) t.mark('preferenceResolved');
-  console.log(JSON.stringify({ targetDate: target.targetDate, chosen: chosen ?? null, stoppedBeforeAnySelection: true }, null, 2));
+  const chosen = preferences && !selecting ? resolvePreference(cells, preferences) : undefined;
+  if (preferences && !selecting) t.mark('preferenceResolved');
+  if (!selecting) console.log(JSON.stringify({ targetDate: target.targetDate, chosen: chosen ?? null, stoppedBeforeAnySelection: true }, null, 2));
+  return { target, grid, preferences: preferences ?? [] };
 }

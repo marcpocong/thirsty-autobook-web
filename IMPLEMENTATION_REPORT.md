@@ -1,5 +1,7 @@
 # Implementation checkpoint — September 10, 2026
 
+Historical initial checkpoint. Repository creation, private push, selection and checkout-inspection work have since progressed. [UI_PHASE2_REPORT.md](UI_PHASE2_REPORT.md) is the current report; the pending/unverified statements below record the original foundation phase.
+
 **Not production complete.** Authorized live practice succeeded. Review/checkout was not entered, and live race refuses before browser attachment.
 
 | Project | Result |

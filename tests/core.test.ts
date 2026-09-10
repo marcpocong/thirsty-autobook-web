@@ -43,7 +43,7 @@ describe('safety', () => {
   it('does not trigger scheduler early',async()=>{const target=Date.now()+20;await waitUntil(target,new AbortController().signal);expect(Date.now()).toBeGreaterThanOrEqual(target);});
   it('bounds reloads and stops on security error',async()=>{let calls=0;await expect(boundedRelease(2,0,new AbortController().signal,async()=>{calls++;return undefined;})).rejects.toThrow('RELEASE_HORIZON');expect(calls).toBe(2);calls=0;await expect(boundedRelease(2,0,new AbortController().signal,async()=>{calls++;throw Error('RATE_LIMITED');})).rejects.toThrow('RATE_LIMITED');expect(calls).toBe(1);});
   it('recognizes rate limit and human challenges',()=>{expect(securityReason('Too many requests')).toBe('RATE_LIMITED');expect(securityReason('Verify you are human')).toBe('SECURITY_CHALLENGE');expect(securityReason('Court Schedule')).toBeUndefined();});
-  it('requires armed on all scheduled modes',()=>{for(const m of ['race','race:dry','release:observe']){expect(()=>requireArmed(m,false)).toThrow('ARMED_FLAG_REQUIRED');expect(()=>requireArmed(m,true)).not.toThrow();}});
+  it('requires armed on all scheduled modes',()=>{for(const m of ['race','race:dry','release:observe','selection:armed']){expect(()=>requireArmed(m,false)).toThrow('ARMED_FLAG_REQUIRED');expect(()=>requireArmed(m,true)).not.toThrow();}});
   it('records numeric metadata without input objects',()=>{const t=new Telemetry();t.mark('playerFillCompleted',{email:'private@example.invalid'} as unknown as number);expect(JSON.stringify(t.events)).not.toContain('private');expect(()=>t.mark('private@example.invalid')).toThrow();});
 });
 describe('checkout contract — synthetic, no live adapter',()=>{

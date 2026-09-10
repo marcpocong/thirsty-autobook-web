@@ -1,5 +1,7 @@
 # Desktop control panel — phase 1
 
+Historical checkpoint at 9438cdb. See [UI_PHASE2_REPORT.md](UI_PHASE2_REPORT.md) for current capabilities and validation; the deferred-feature and retained-lock statements below describe phase 1 only.
+
 Implemented as a thin layer over the existing automation. No live-race, booking-selection, checkout or payment controls were added.
 
 ## UI and commands

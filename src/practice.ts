@@ -11,7 +11,8 @@ export const PracticeSchema = z.object({
   court: z.coerce.number().int().min(1).max(7),
   start: z.string().regex(/^(0[89]|1[0-9]|2[0-3]):00$/),
   duration: z.coerce.number().int().min(1).max(16),
-});
+}).strict().refine(c => Number(c.start.slice(0,2)) + c.duration <= 24, 'Booking crosses midnight');
+export type PracticeInput = z.infer<typeof PracticeSchema>;
 export async function practice(page: Page, input: z.infer<typeof PracticeSchema>, safety: Safety, t: Telemetry) {
   const preference = { court: input.court, hours: expandHours(input.start, input.duration) };
   await assertPage(page, safety);

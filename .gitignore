@@ -8,6 +8,7 @@ onda-chrome-profile/
 .env.*
 !.env.example
 config.local.json
+config.local.json.tmp
 *.storage.json
 storageState.json
 cookies.json

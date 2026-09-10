@@ -2,18 +2,22 @@ import { writeFileSync } from 'node:fs';
 import { mkdir as mkdirAsync, open as openAsync, unlink as unlinkAsync } from 'node:fs/promises';
 import { Safety, requireArmed } from './safety.js';
 import { Telemetry } from './telemetry.js';
-import { loadConfig, loadObservationConfig } from './config.js';
+import { loadConfig, loadObservationConfig, planFingerprint, type Config, type ReleaseSettings } from './config.js';
 import { attach } from './browser.js';
 import { inspect } from './inspector.js';
 import { practice, PracticeSchema } from './practice.js';
 import { observeRelease } from './release.js';
 import { emitUiEvent } from './ui-events.js';
+import { requireCapability } from './capabilities.js';
+import { selectionPort, selectResolvedPreference } from './selection.js';
+import { proceedWithVerifiedSelection } from './booking-checkout.js';
 
 const safety = new Safety();
 const telemetry = new Telemetry();
 telemetry.mark('processStarted');
 let exitCode = 0;
 let ownsLock = false;
+let retainSelection = false;
 const lockPath = '.local/automation.lock';
 // Exiting the Playwright-owning process cancels its outstanding local action tasks.
 // Never close Chrome/context/page; an already-dispatched click cannot be undone.
@@ -42,13 +46,14 @@ if (process.stdin.isTTY) {
 }
 try {
   const [mode, ...args] = process.argv.slice(2);
-  if (!mode || !['inspect', 'practice', 'release:observe', 'race:dry', 'race'].includes(mode)) throw new Error('MODE_REQUIRED');
-  const allowed = new Set(mode === 'practice' ? ['--date', '--court', '--start', '--duration'] : ['--armed', '--authorize-terms']);
+  if (!mode || !['inspect', 'practice', 'release:observe', 'race:dry', 'race', 'selection:armed'].includes(mode)) throw new Error('MODE_REQUIRED');
+  const allowed = new Set(mode === 'practice' ? ['--date', '--court', '--start', '--duration'] : ['--armed', '--authorize-terms', '--plan-hash']);
   for (const arg of args.filter(a => a.startsWith('--'))) if (!allowed.has(arg)) throw new Error('UNKNOWN_ARGUMENT');
   requireArmed(mode, args.includes('--armed'));
-  if (mode === 'race') throw new Error('LIVE_RACE_BLOCKED: Review Booking, player form and Payment Summary DOM have not been verified. No browser interaction performed.');
-  const config = mode === 'release:observe' ? loadObservationConfig() : mode === 'race:dry' ? loadConfig() : undefined;
+  requireCapability(mode);
+  const config: Config | ReleaseSettings | undefined = mode === 'release:observe' ? loadObservationConfig() : ['race:dry','selection:armed','race'].includes(mode) ? loadConfig() : undefined;
   const value = (flag: string) => { const i = args.indexOf(flag); return i < 0 ? undefined : args[i + 1]; };
+  if (args.includes('--plan-hash') && (!config || !('MAX_PRICE' in config) || planFingerprint(config as Config) !== value('--plan-hash'))) throw new Error('BOOKING_PLAN_CHANGED');
   const practiceInput = mode === 'practice' ? PracticeSchema.parse({ date: value('--date'), court: value('--court'), start: value('--start'), duration: value('--duration') }) : undefined;
   await mkdirAsync('.local', { recursive: true }); await mkdirAsync('DiagnosticsLocal', { recursive: true });
   const lock = await openAsync(lockPath, 'wx').catch(() => { throw new Error('AUTOMATION_LOCK_EXISTS: verify no bot is running and selections are clean before removing .local/automation.lock'); });
@@ -56,7 +61,18 @@ try {
   const { page } = await attach(safety); telemetry.mark('chromeConnected'); telemetry.mark('ondaTabResolved');
   if (mode === 'inspect') await inspect(page);
   else if (practiceInput) await practice(page, practiceInput, safety, telemetry);
-  else if (config) await observeRelease(page, config, safety, telemetry, mode === 'race:dry');
+  else if (config) {
+    const selecting = mode === 'selection:armed' || mode === 'race';
+    const released = await observeRelease(page, config, safety, telemetry, mode === 'race:dry', selecting);
+    if (selecting && 'MAX_PRICE' in config) {
+      const booking = config as Config;
+      const result = await selectResolvedPreference(selectionPort(page, safety), released.target.targetDate, released.grid, released.preferences, booking.MAX_PRICE, booking.MAX_SELECTION_ATTEMPTS, safety, telemetry);
+      retainSelection = true;
+      emitUiEvent({ type: 'selection', ...result });
+      if(mode==='race')await proceedWithVerifiedSelection(page,result,{fullName:booking.PLAYER_FULL_NAME,phone:booking.PLAYER_PHONE,email:booking.PLAYER_EMAIL},booking.MAX_PRICE,args.includes('--authorize-terms'),safety,telemetry);
+      else console.log('SLOTS SELECTED — AUTOMATION STOPPED BEFORE PROCEED. USER CONTROL RESTORED. Lock retained; inspect Chrome before clearing manually.');
+    }
+  }
   telemetry.mark('automationStopped');
 } catch (error) {
   exitCode = 1; telemetry.mark('failed');
@@ -67,7 +83,7 @@ try {
 } finally {
   await telemetry.flush();
   // Keep lock after failures as selection state can be uncertain.
-  if (ownsLock && exitCode === 0) await unlinkAsync(lockPath);
+  if (ownsLock && exitCode === 0 && !retainSelection) await unlinkAsync(lockPath);
   if (process.stdin.isTTY) process.stdin.setRawMode(false);
 }
 process.exit(exitCode);

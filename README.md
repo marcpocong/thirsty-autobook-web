@@ -2,7 +2,7 @@
 
 Windows 11 / Node 24 / TypeScript / Playwright / dedicated Chrome. All files live directly in this project root.
 
-**Current status: inspection and practice work against live Onda. Live booking is blocked because checkout DOM and the 08:00 release have not yet been verified.** The user-authorized September 11 Court 1, 10:00–12:00 practice succeeded with zero selected cells afterward and no Proceed click. See [verified observations](VERIFIED_ONDA.md) and [engineering handoff](ONDA_AUTOMATION.md).
+**Selection Only is ready.** Booking setup, scheduled selection, bounded conflict fallback, Practice and Dry Race are available in the desktop panel. Real Review/Player/Payment Summary DOM has been inspected and the adapter validated. **Full Booking remains gated: the final Onda handoff has not been tested live.** An actual 08:00 release still needs observation. See [phase 2 results](UI_PHASE2_REPORT.md) and [verified evidence](VERIFIED_ONDA.md).
 
 ## Setup
 
@@ -24,8 +24,9 @@ This uses [Playwright CDP attachment](https://playwright.dev/docs/api/class-brow
 # Sanitized local schedule DOM inspection; no selection/navigation
 npm run inspect
 
-# Explicit noncompetitive selection only; never Proceed
-npm run practice -- --date 2026-09-11 --court 1 --start 10:00 --duration 2
+# Explicit noncompetitive select/verify/deselect practice; never Proceed
+# Example only: first check current availability.
+npm run practice -- --date 2026-09-11 --court 7 --start 10:00 --duration 2
 
 # Wait for configured release, at most two normal refreshes, read only
 # Put page on TODAY before starting. No player config required.
@@ -35,7 +36,10 @@ npm run release:observe -- --armed
 # Requires valid .env.local booking/player settings.
 npm run race:dry -- --armed
 
-# Currently refuses before attaching: checkout evidence incomplete
+# Same release path, selects and verifies, stops BEFORE Proceed; retains lock
+npm run selection:armed -- --armed
+
+# Refuses before attaching while any Full Booking capability is unverified
 npm run race -- --armed
 npm run race -- --armed --authorize-terms
 
@@ -49,7 +53,9 @@ Release observation defaults to Asia/Manila, 08:00, +2 calendar days, zero lead,
 
 ## Booking configuration
 
-Copy `.env.example` to `.env.local`, replace all placeholders locally, and edit exact court/time preference order and PHP maximum. Real player fields must not be committed. Zod rejects missing/invalid data before browser attachment in dry mode. Preferences are time-first, preferred courts then fallback courts, preserving configured order. Multi-hour bookings always use consecutive hours on one court. Midnight is allowed as an end boundary; crossing into a further day is rejected.
+Use **Booking Setup** in the panel for start, duration, court order, fallback starts, PHP maximum and maximum candidate attempts. Saved settings live in ignored `config.local.json`; the CLI loads this same object. Defaults are 08:00, 2 hours, courts 7→1, PHP 1,200 and 3 candidate attempts; review them before arming. Save invalidates readiness. The confirmation and worker compare a plan fingerprint, so a changed plan cannot silently replace the authorized one.
+
+Store real player fields only in ignored `.env.local`: `PLAYER_FULL_NAME`, `PLAYER_PHONE`, `PLAYER_EMAIL`. Other release settings may also remain there; `.env.example` contains placeholders only. The dashboard reports **Configured** without sending player values to the renderer. Zod validates booking/player configuration before attachment. Preferences use primary time × court order, then each fallback × court order. Starts range from 08:00 through 23:00, with 1–16 consecutive hours on one court, ending no later than midnight.
 
 The horizon uses timezone calendar arithmetic, not `now + 48 hours`. Nonzero release lead is rejected until justified by measurements. Observation reads only release settings and ignores player data. Example values are illustrations, not live booking authorization.
 
@@ -59,7 +65,7 @@ Press **Q** or **Ctrl+C** in the terminal. Output: `AUTOMATION ABORTED — USER 
 
 Exact row ISO dates, matching visible heading, complete seven-court hourly coverage, and no busy indicator are required before availability is trusted. A changed date heading alone is insufficient. Missing/contradictory slot states are UNKNOWN, never OPEN. Read [telemetry definitions](TELEMETRY_SPEC.md) before interpreting timings.
 
-Atomic process lock prevents concurrent project commands. Failures and abrupt termination preserve `.local/automation.lock`. **Only after verifying the recorded PID is no longer running and the browser has no active selection/checkout**, remove that exact lock file:
+Atomic process lock prevents concurrent project commands. Failures, abrupt termination and successful Selection Only preserve `.local/automation.lock`. A verified complete selection also locks out all in-memory fallback. **Only after verifying the recorded PID is no longer running and the browser has no active selection/checkout**, remove that exact lock file:
 
 ```powershell
 Get-Content .local/automation.lock
@@ -67,7 +73,9 @@ Get-Content .local/automation.lock
 Remove-Item -LiteralPath .local/automation.lock
 ```
 
-The checkout contract tests lock after selection, validate every material summary field and PHP price, verify filled player values, and require per-run terms authorization. The final Onda action seals all future interaction before dispatch, including when the click outcome is ambiguous. Future production flow must stop at Payment Summary without `--authorize-terms`; with it, stop immediately after `Confirm & Proceed to Payment`. GCash, Maya, card entry, OTP, PIN, authentication and all payment-provider actions remain manual. There is currently no live checkout adapter.
+Selection verifies exact date/court/hours/count, summary count, PHP amount and actionable Proceed. A failed candidate may be cleaned up only if the current complete grid proves every selected cell belongs to that attempt. A fresh snapshot resolves an untried candidate, up to `MAX_SELECTION_ATTEMPTS` (default 3, allowed 1–5). Unknown state, changed date, foreign selections, security errors and aborts stop without cleanup. Price/count ambiguity never reaches Proceed.
+
+The evidence-based checkout adapter validates Review, normalizes the local PH mobile number to ten national digits for Onda's separate +63 prefix, fills through normal Playwright controls, and validates the Payment Summary total and still-displayed booking details. Review itself has no price; its amount comes from the verified selection summary until Payment Summary independently confirms it. Terms are explicit per run and remain disabled in the UI while Full Booking is gated. The final action closes the interaction gate before dispatch, including ambiguous failures. GCash, Maya, cards, OTP, PIN and all payment-provider actions remain manual.
 
 ## Pre-release checklist
 
@@ -99,18 +107,18 @@ npm run ui
 The Electron desktop window uses the existing CLI engine. The first launch may download the Electron runtime; subsequent launches build the small TypeScript UI and open it directly. No installer or additional terminal is needed.
 
 1. **Start / Attach Chrome** reuses the existing PowerShell launcher and checks local CDP.
-2. **Prepare for 8:00** starts/reuses Chrome, runs inspection, and verifies today’s actual grid, All Courts, visibility, zero selected cells and a clear lock. It never arms or selects anything. The label follows the configured release time.
+2. Configure and save **Booking Setup**. Review the engine-generated target, exact hourly slots, court order, fallbacks, price and player status. **Prepare Booking** validates this plan and local player fields, starts/reuses Chrome, and verifies today’s actual grid, All Courts, visibility, zero selected cells and clear lock. It never arms or selects anything.
 3. Review the session statuses, Manila time, target date and countdown. Onda statuses show their inspection time; they are not continuously re-read. Readiness expires after one minute, on disconnection, an unexpected lock, or the preflight cutoff.
-4. **Arm Release Observation** opens a native Cancel/Arm confirmation for this run. The existing observer is launched only after Arm. Initial preflight appears as **Observation scheduled**; **Release observation armed** appears only after the engine’s final preflight actually passes.
+4. **Arm Booking Selection** opens a native confirmation with the exact plan. After confirmation the existing release engine performs initial/final preflight, waits for release, uses bounded refresh and target-date navigation, then selects and verifies the best available preference. No new confirmation is needed at 08:00. Selection Only stops before Proceed and displays **SLOTS SELECTED**, never “reservation secured.”
 5. Leave dedicated Chrome and the control panel open, with the Onda tab active. Conflicting controls stay disabled while a command runs.
 6. **Emergency Stop** stops only the UI-owned command. Chrome remains open; the panel makes no recovery clicks, deselection or refresh. Closing the panel also stops its command. External CLI runs must be stopped in their own terminal.
 
-**Release Observation does not book a court. Live Race remains locked.** Practice, Dry Race, booking preferences and checkout UI are deferred; their existing CLI behavior is unchanged.
+**Dry Race** uses the same release/grid/preference path without selecting. **Observe Release** preserves the original read-only observer. **Run Safe Practice** accepts an explicit date/court/start/duration and reuses the existing select→verify→deselect→verify engine, never Proceed. Each command has the same process ownership and stop controls. Full Booking is disabled until all capability gates are verified.
 
-The countdown is informational and uses the existing release-calendar rules. After today’s cutoff, arming is disabled and the display shows the next calendar release/target; the panel does not schedule tomorrow’s observer automatically. Restart before the intended day’s release. If you edit `.env.local` externally, restart the panel so the UI and child share the refreshed configuration.
+The countdown is informational and shows the next release after today's cutoff. The booking target remains **today in the configured timezone + horizon**; it is never silently shifted to tomorrow's plan. Arming is disabled after today's preflight cutoff. Prepare again on the intended release day. Local configuration is re-read before confirmation/launch, and a worker rejects a changed plan hash. External changes cannot modify a running worker's already-loaded configuration.
 
 The activity log streams opt-in validated `THIRSTY_EVENT` messages and sanitized child output. Periodic checks only read local CDP reachability and lock existence; they do not poll Onda. No player fields or environment editor are exposed. A reachable CDP endpoint alone does not prove the correct profile; explicit Inspect/Prepare uses the existing profile/tab validation.
 
 Locks are deliberately read-only in the UI. An aborted or failed command retains `.local/automation.lock`. Follow the manual lock-check instructions above; the panel provides no Delete Lock action. A development abort test does not authorize silently clearing another run’s lock.
 
-Implementation and validation details are in [UI_PHASE1_REPORT.md](UI_PHASE1_REPORT.md).
+Current implementation and validation details are in [UI_PHASE2_REPORT.md](UI_PHASE2_REPORT.md). Earlier reports are historical checkpoints.

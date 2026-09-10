@@ -20,7 +20,7 @@ export function securityReason(text: string): string | undefined {
   if (/captcha|verify (?:that )?you are human|checking your browser|access denied|automated access.*(?:blocked|prohibited)|automation.*(?:blocked|prohibited)|security challenge/i.test(text)) return 'SECURITY_CHALLENGE';
 }
 export function requireArmed(mode: string, armed: boolean) {
-  if (['race', 'release:observe', 'race:dry'].includes(mode) && !armed) throw new Error('ARMED_FLAG_REQUIRED');
+  if (['race', 'release:observe', 'race:dry', 'selection:armed'].includes(mode) && !armed) throw new Error('ARMED_FLAG_REQUIRED');
 }
 export async function waitUntil(epochMs: number, signal: AbortSignal) {
   const monoTarget = performance.now() + epochMs - Date.now();

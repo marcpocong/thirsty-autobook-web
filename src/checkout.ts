@@ -1,8 +1,7 @@
 import { Safety } from './safety.js';
 import { Telemetry } from './telemetry.js';
 
-// Contract only. No production DOM adapter exists until real checkout is inspected.
-// Keeping this independent lets boundary/validation tests run without Onda access.
+// Contract shared by offline boundary tests and the evidence-based Onda DOM adapter.
 export interface BookingSummary {
   venue: string; date: string; court: number; start: string; end: string;
   duration: number; amount: number; currency: string;
@@ -30,7 +29,7 @@ export async function checkout(adapter: CheckoutAdapter, safety: Safety, t: Tele
   const actual = await adapter.fillPlayer(player); safety.check();
   if (actual.fullName !== player.fullName || actual.phone !== player.phone || actual.email !== player.email) throw new Error('PLAYER_VALUES_MISMATCH');
   t.mark('playerFillCompleted');
-  safety.check(); await adapter.playerProceed(); t.mark('playerProceedClicked');
+  safety.check(); t.mark('playerProceedStarted'); await adapter.playerProceed(); safety.check(); t.mark('playerProceedClicked');
   safety.check(); const payment = await adapter.paymentSummary(); safety.check(); t.mark('paymentSummaryDetected');
   validateSummary(payment, review, maximumPrice, 'PAYMENT'); t.mark('paymentSummaryValidated');
   if (!authorizeTerms) { t.mark('automationStopped'); return 'TERMS_NOT_AUTHORIZED' as const; }

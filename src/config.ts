@@ -1,10 +1,12 @@
 import { z } from 'zod';
 import { DateTime, IANAZone } from 'luxon';
-import { config as dotenv } from 'dotenv';
+import { parse as parseEnv } from 'dotenv';
+import { existsSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 
 export const ONDA_URL = 'https://app.onda.fit/book/thirsty-pickle';
 export const VENUE = 'Thirsty Pickle | SM Seaside';
-const hour = z.string().regex(/^(0[0-9]|1[0-9]|2[0-3]):00$/);
+const hour = z.string().regex(/^(0[89]|1[0-9]|2[0-3]):00$/);
 const courts = z.array(z.number().int().min(1).max(7));
 export const ConfigSchema = z.object({
   ONDA_URL: z.literal(ONDA_URL).default(ONDA_URL),
@@ -16,6 +18,7 @@ export const ConfigSchema = z.object({
   PREFERRED_COURTS: courts.min(1), FALLBACK_COURTS: courts.default([]),
   FALLBACK_TIMES: z.array(hour).default([]),
   MAX_PRICE: z.coerce.number().finite().positive(),
+  MAX_SELECTION_ATTEMPTS: z.coerce.number().int().min(1).max(5).default(3),
   PLAYER_FULL_NAME: z.string().trim().min(2),
   PLAYER_PHONE: z.string().trim().regex(/^\+?[0-9][0-9 ()-]{6,19}$/),
   PLAYER_EMAIL: z.email(),
@@ -42,23 +45,38 @@ export const ObservationSchema = z.object({
   CRITICAL_STEP_TIMEOUT_MS: ConfigSchema.shape.CRITICAL_STEP_TIMEOUT_MS,
 });
 export type ReleaseSettings = z.infer<typeof ObservationSchema>;
+function environment() {
+  return { ...process.env, ...(existsSync('.env.local') ? parseEnv(readFileSync('.env.local')) : {}) };
+}
 export function loadObservationConfig(): ReleaseSettings {
-  dotenv({ path: '.env.local', quiet: true });
-  const parsed = ObservationSchema.safeParse(process.env);
+  const parsed = ObservationSchema.safeParse(environment());
   if (!parsed.success) throw new Error(`CONFIG_INVALID: ${parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
   return parsed.data;
 }
 export function loadConfig(): Config {
-  dotenv({ path: '.env.local', quiet: true });
-  const raw: Record<string, unknown> = {};
-  for (const key of Object.keys(ConfigSchema.shape)) if (process.env[key] !== undefined) raw[key] = process.env[key];
+  const env = environment();
+  const raw: Record<string, unknown> = { START_TIME:'08:00', DURATION_HOURS:2, PREFERRED_COURTS:[7,6,5,4,3,2,1], FALLBACK_COURTS:[], FALLBACK_TIMES:[], MAX_PRICE:1200 };
+  for (const key of Object.keys(ConfigSchema.shape)) if (env[key] !== undefined) raw[key] = env[key];
   for (const key of ['PREFERRED_COURTS', 'FALLBACK_COURTS', 'FALLBACK_TIMES']) {
     if (typeof raw[key] === 'string') raw[key] = (raw[key] as string).split(',').map(s => s.trim()).filter(Boolean).map(s => key === 'FALLBACK_TIMES' ? s : Number(s));
   }
+  if (existsSync('config.local.json')) Object.assign(raw, BookingSetupSchema.parse(JSON.parse(readFileSync('config.local.json', 'utf8'))));
   const parsed = ConfigSchema.safeParse(raw);
   if (!parsed.success) throw new Error(`CONFIG_INVALID: ${parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
   return parsed.data;
 }
+// Narrow, PII-free local settings; renderer cannot change URLs, release timing or player data.
+export const BookingSetupSchema = z.object({
+  START_TIME: hour, DURATION_HOURS: z.number().int().min(1).max(16),
+  PREFERRED_COURTS: courts.length(7), FALLBACK_COURTS: z.array(z.never()).default([]),
+  FALLBACK_TIMES: z.array(hour).max(15), MAX_PRICE: z.number().finite().positive(),
+  MAX_SELECTION_ATTEMPTS: z.number().int().min(1).max(5).default(3),
+}).strict().superRefine((c, ctx) => {
+  if (new Set(c.PREFERRED_COURTS).size !== 7) ctx.addIssue({ code: 'custom', message: 'Each court must appear once' });
+  const times = [c.START_TIME, ...c.FALLBACK_TIMES];
+  if (new Set(times).size !== times.length || times.some(t => Number(t.slice(0, 2)) + c.DURATION_HOURS > 24)) ctx.addIssue({ code: 'custom', message: 'Duplicate or out-of-schedule time' });
+});
+export type BookingSetup = z.infer<typeof BookingSetupSchema>;
 export interface Preference { court: number; hours: string[] }
 export function expandHours(start: string, duration: number): string[] {
   if (!/^(0\d|1\d|2[0-3]):00$/.test(start) || !Number.isInteger(duration) || duration < 1 || Number(start.slice(0, 2)) + duration > 24) throw new Error('INVALID_HOURS');
@@ -69,6 +87,9 @@ export function compilePreferences(c: Pick<Config, 'START_TIME' | 'DURATION_HOUR
 }
 export function calculateTarget(c: Pick<Config, 'TIMEZONE' | 'RELEASE_TIME' | 'BOOKING_HORIZON_DAYS' | 'START_TIME' | 'DURATION_HOURS' | 'PREFERRED_COURTS' | 'FALLBACK_COURTS' | 'FALLBACK_TIMES'>, now: DateTime = DateTime.now()) {
   return { ...releaseCalendar(c, now), preferences: compilePreferences(c) };
+}
+export function planFingerprint(c: Config) {
+  return createHash('sha256').update(JSON.stringify({ schedule: ObservationSchema.parse(c), target: calculateTarget(c), maximum:c.MAX_PRICE, attempts:c.MAX_SELECTION_ATTEMPTS })).digest('hex');
 }
 export function releaseCalendar(c: Pick<Config, 'TIMEZONE' | 'RELEASE_TIME' | 'BOOKING_HORIZON_DAYS'>, now: DateTime = DateTime.now()) {
   const local = now.setZone(c.TIMEZONE);

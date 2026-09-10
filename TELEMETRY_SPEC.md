@@ -4,7 +4,7 @@ Events are buffered in memory as `{event, wall, monoMs, value?}`; wall is UTC IS
 
 Normal completion/failure flushes asynchronously. Abort/disconnection flushes once synchronously after stopping, then exits the Playwright-owning process. No critical-path disk writes. An abrupt kill may lose buffered telemetry. CLI uses no screenshots or tracing.
 
-Desktop phase 1 adds optional `THIRSTY_UI_EVENTS=1` stdout streaming. It emits `THIRSTY_EVENT <JSON>` for validated telemetry, inspection, release plan and error-code messages. The UI consumes this protocol and does not interpret arbitrary DOM/config output as status. Without this environment flag, existing CLI behavior and buffering are unchanged. Streaming is enabled only for the UI's safe inspect/observation commands; there is no UI live-race route.
+The desktop adds optional `THIRSTY_UI_EVENTS=1` stdout streaming for validated telemetry, inspection, release plan, selection result and error codes. The selection result contains only date/court/hours/amount/attempt count/Proceed readiness. The UI does not interpret arbitrary DOM/config output as status. Inspect, observation, practice, Dry Race and Selection Only share this protocol; there is no UI Full Booking launch route.
 
 | Event | Exact timestamp meaning |
 |---|---|
@@ -20,20 +20,28 @@ Desktop phase 1 adds optional `THIRSTY_UI_EVENTS=1` stdout streaming. It emits `
 | newDateSignalDetected / targetDateVerified / targetGridSentinelVerified / targetGridReady | Currently recorded together after calendar navigation AND strict grid barrier. They do not separately measure enablement and navigation. |
 | gridSnapshotStarted | Immediately before the one-pass DOM evaluation |
 | gridSnapshotCompleted | Matrix returned AND strict local validation completed |
-| preferenceResolved | Local ordered preference lookup completed (dry mode only) |
+| preferenceResolved | Initial local ordered preference lookup completed, dry or selection mode |
+| selectionAttemptStarted | Candidate chosen and page guard passed; value is 1-based candidate attempt |
+| slotNClickStarted / slotNSelected | Before normal Playwright click (including actionability waits) / target cell state and one-pass snapshot positively verified SELECTED |
+| selectionVerified / proceedActionable | Exact selected set/count/amount/actionability verified and stronger booking lock engaged |
+| selectionConflict | Incomplete/failed selection or non-actionable Proceed; never implies safe cleanup by itself |
+| selectionCleanupVerified | Fresh strict snapshot confirms zero selected cells after proven-owned cleanup |
+| fallbackResolved | Fresh grid yielded the next eligible untried deterministic preference |
 | slotNClickStarted / slotNClicked | Immediately before / after normal Playwright click resolves, practice mode |
 | practiceSelectionVerified | Full selected set checked against requested same-court hours |
 | practiceCleanStateVerified | Zero selected cells; original requested slots OPEN again |
-| reviewDetected / reviewValidated | Synthetic checkout adapter read completed / summary validation passed |
-| playerFillStarted / playerFillCompleted | Synthetic adapter fill starts / returned field values validated |
-| playerProceedClicked | Synthetic adapter player Proceed resolves |
-| paymentSummaryDetected / paymentSummaryValidated | Synthetic adapter summary read resolves / validates against review |
-| termsChecked | Authorized synthetic adapter reports checked terms |
-| finalOndaButtonClicked | Synthetic final-action promise resolves |
-| paymentBoundaryReached | Successful synthetic final action returns; interaction gate was already sealed BEFORE dispatch |
+| proceedClicked | Normal grid-summary Proceed resolves after the final selection revalidation |
+| reviewDetected / reviewValidated | DOM review extraction completed / exact material summary validation passed |
+| playerFillStarted / playerFillCompleted | Adapter fill begins, including guards / returned represented field values verified |
+| playerFormDetected | Production adapter has actually waited for the Player Information heading |
+| playerProceedStarted / playerProceedClicked | Before guarded normal player Proceed / click promise resolves |
+| paymentSummaryDetected / paymentSummaryValidated | Strong Payment Summary sentinel and DOM read complete / total and material booking fields match |
+| termsChecked | Explicitly authorized adapter reports checked terms (live terms not tested) |
+| finalOndaButtonClicked | Final-action promise resolves (synthetic tests only so far) |
+| paymentBoundaryReached | Final action returns; interaction gate was already sealed BEFORE dispatch |
 | automationStopped / failed / aborted | Terminal outcome |
 
-Checkout events are **contract tests only**, not live timing measurements. No production adapter emits them against Onda.
+Selection and checkout through Payment Summary were measured on the live noncompetitive development target. Terms/final-action events remain synthetic-only. See [UI_PHASE2_REPORT.md](UI_PHASE2_REPORT.md) for the measured sample and the original combined player-Proceed/sentinel timing limitation. Production now separates player click completion from the subsequent strong summary wait.
 
 Compute elapsed phases from monotonic differences within one run. Missing events mean NOT MEASURED, never zero. Consecutive combined markers must not be reported as independently measured zero-latency phases. Reload retries have repeated event names and must be paired by occurrence.
 

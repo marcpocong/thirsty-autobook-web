@@ -12,6 +12,7 @@
     "practice": "tsx src/index.ts practice",
     "release:observe": "tsx src/index.ts release:observe",
     "race:dry": "tsx src/index.ts race:dry",
+    "selection:armed": "tsx src/index.ts selection:armed",
     "race": "tsx src/index.ts race",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

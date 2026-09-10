@@ -2,6 +2,8 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { resolve } from 'node:path';
 import { UiEventSchema, type UiEvent } from '../src/ui-events.js';
 import type { Command } from './types.js';
+import { z } from 'zod';
+import { PracticeSchema } from '../src/practice.js';
 
 export interface RunningCommand { pid: number | undefined; done: Promise<number>; stop(): Promise<void> }
 export type Runner = (command: Command, onEvent: (event: UiEvent) => void, onLine: (line: string, error: boolean) => void) => RunningCommand;
@@ -13,6 +15,14 @@ export function sanitizeLine(text: string): string {
     .replace(/((?:PLAYER_[A-Z_]+|cookie|token|password|authorization)\s*[=:]\s*).*/gi, '$1[redacted]').slice(0, 500);
 }
 export function commandSpec(command: Command, root: string, node: string) {
+  if (typeof command === 'object' && command !== null) {
+    if (command.kind === 'practice') {
+      const {input} = z.object({kind:z.literal('practice'),input:PracticeSchema}).strict().parse(command);
+      return {executable:node,args:['--import','tsx',resolve(root,'src/index.ts'),'practice','--date',input.date,'--court',String(input.court),'--start',input.start,'--duration',String(input.duration)],automation:true};
+    }
+    const c = z.object({kind:z.enum(['selection','dry']),planHash:z.string().regex(/^[a-f0-9]{64}$/)}).strict().parse(command);
+    return {executable:node,args:['--import','tsx',resolve(root,'src/index.ts'),c.kind==='selection'?'selection:armed':'race:dry','--armed','--plan-hash',c.planHash],automation:true};
+  }
   switch (command) {
     case 'chrome': return { executable: 'powershell.exe', args: ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', resolve(root, 'scripts/start-onda-chrome.ps1')], automation: false };
     case 'inspect': return { executable: node, args: ['--import', 'tsx', resolve(root, 'src/index.ts'), 'inspect'], automation: true };

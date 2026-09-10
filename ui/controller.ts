@@ -2,6 +2,10 @@ import type { UiEvent } from '../src/ui-events.js';
 import type { Runner, RunningCommand } from './processes.js';
 import type { Command, Dashboard } from './types.js';
 import type { readClock } from './status.js';
+import type { BookingView } from './booking.js';
+import { PracticeSchema } from '../src/practice.js';
+import { BookingSetupSchema } from '../src/config.js';
+import { capabilities } from '../src/capabilities.js';
 
 const errors: Record<string, string> = {
   AUTOMATION_LOCK_EXISTS: 'Automation lock exists. Verify no bot is running and Chrome has no active selection before clearing it manually.',
@@ -16,16 +20,17 @@ const errors: Record<string, string> = {
   PREEXISTING_SELECTION: 'Selected slots are present. Clear them manually in Chrome before preparing.',
   TAB_NOT_VISIBLE: 'Keep the Onda tab visible, active and not minimized.',
   CHROME_DISCONNECTED: 'Chrome disconnected. Automation stopped; prepare a new run manually.',
-  CONFIG_INVALID: 'Release configuration is invalid. Check .env.local, then restart the panel.',
+  CONFIG_INVALID: 'Booking or local player configuration is invalid. Review Booking Setup and the local player fields.',
   COURT_FILTER_NOT_ALL: 'Select All Courts in Chrome, then Prepare again.',
 };
 export interface Dependencies {
   runner: Runner; lock(): Promise<boolean>; cdp(): Promise<boolean>; clock: typeof readClock;
-  confirm(): Promise<boolean>; publish(status: Dashboard): void;
+  confirm(kind?: 'observe'|'selection'|'dry', plan?:BookingView): Promise<boolean>; publish(status: Dashboard): void;
+  booking(): BookingView; saveBooking(input:unknown): BookingView;
 }
 export class Controller {
   readonly state: Dashboard = { operation: 'idle', headline: 'Prepare your session', detail: 'Start dedicated Chrome, then verify the page before arming.', ready: false,
-    cdp: false, lock: false, inspection: null, clock: null, plan: null, logs: [], liveRace: false };
+    cdp: false, lock: false, inspection: null, clock: null, plan: null, logs: [], liveRace: false, booking:null, termsAuthorized:false, capabilities, selection:null };
   private active?: RunningCommand;
   private generation = 0;
   private polling = false;
@@ -45,6 +50,10 @@ export class Controller {
       this.state.lock = lock; this.state.cdp = cdp;
       try { this.state.clock = this.deps.clock(); }
       catch { this.state.clock = null; this.state.ready = false; this.state.detail = errors.CONFIG_INVALID!; }
+      if (this.state.operation === 'idle') {
+        try { const booking=this.deps.booking(); if (this.state.booking?.fingerprint !== booking.fingerprint) { this.state.ready=false; this.state.termsAuthorized=false; } this.state.booking=booking; }
+        catch { this.state.booking=null; this.state.ready=false; }
+      }
       if (!cdp || (lock && this.state.operation === 'idle') || !this.state.clock?.canArmToday) this.state.ready = false;
       const checked = this.state.inspection;
       // Never present an old inspection as current readiness after a long idle period.
@@ -57,6 +66,7 @@ export class Controller {
     } finally { this.polling = false; }
   }
   private event = (event: UiEvent) => {
+    if (event.type === 'selection') { this.state.selection=event; this.state.headline='SLOTS SELECTED'; this.state.detail='AUTOMATION STOPPED BEFORE PROCEED. USER CONTROL RESTORED. Selection is not a reservation; the lock remains active.'; this.publish(); }
     if (event.type === 'inspection') { this.state.inspection = event; this.log('Onda URL and venue verified. Inspection results received.'); }
     if (event.type === 'plan') { this.state.plan = event; this.publish(); }
     if (event.type === 'error') {
@@ -89,7 +99,7 @@ export class Controller {
   private async operation(kind: Dashboard['operation'], work: (generation: number) => Promise<void>) {
     if (this.state.operation !== 'idle') throw new Error('OPERATION_ALREADY_RUNNING');
     const generation = ++this.generation;
-    this.state.operation = kind; this.state.ready = false; this.state.plan = null; this.publish();
+    this.state.operation = kind; this.state.ready = false; this.state.plan = null; this.state.termsAuthorized=false; this.publish();
     try { await work(generation); }
     catch (error) {
       if (generation === this.generation) {
@@ -101,7 +111,7 @@ export class Controller {
         this.log(code, true);
       }
     } finally {
-      if (generation === this.generation) { this.state.operation = 'idle'; await this.refresh(); this.publish(); }
+      if (generation === this.generation) { this.state.operation = 'idle'; this.state.termsAuthorized=false; await this.refresh(); this.publish(); }
     }
   }
   private async noLock() { this.state.lock = await this.deps.lock(); if (this.state.lock) throw new Error('AUTOMATION_LOCK_EXISTS'); }
@@ -116,6 +126,7 @@ export class Controller {
     this.state.headline = 'Inspection complete'; this.state.detail = 'Review the observed status below. Prepare before arming.';
   }); }
   prepare() { return this.operation('prepare', async gen => {
+    this.state.booking=this.deps.booking(); this.state.selection=null;
     await this.noLock(); this.state.inspection = null; this.log('Preparing session — no observation will be armed');
     await this.run('chrome', gen);
     this.state.cdp = await this.deps.cdp(); if (!this.state.cdp) throw new Error('CDP_PROFILE_OR_BIND_UNVERIFIED');
@@ -128,7 +139,7 @@ export class Controller {
     if (!inspection.visible) throw new Error('TAB_NOT_VISIBLE');
     this.state.clock = this.deps.clock(); if (!this.state.clock.canArmToday) throw new Error('TOO_LATE_FOR_PREFLIGHT');
     this.state.ready = true; this.state.headline = `Ready for ${this.state.clock.releaseTime.slice(0, 5)}`;
-    this.state.detail = 'Today’s grid, All Courts, zero selected slots and a clear lock verified. Observation is not armed.';
+    this.state.detail = 'Booking plan and local player information validated. Today’s grid, All Courts, zero selected slots and clear lock verified. Nothing is armed.';
     this.log('READY — preparation completed. Nothing armed.');
   }); }
   armObservation() { return this.operation('confirming', async gen => {
@@ -138,11 +149,41 @@ export class Controller {
     if (gen !== this.generation) return;
     if (!confirmed) { this.state.headline = 'Arming cancelled'; this.state.detail = 'No observation process was launched.'; this.log('Arming cancelled'); return; }
     await this.noLock();
-    this.state.operation = 'observe'; this.state.headline = 'Starting observation'; this.state.detail = 'Waiting for the existing engine to verify preflight.'; this.publish();
+    this.state.operation = 'observe'; this.state.inspection=null; this.state.headline = 'Starting observation'; this.state.detail = 'Waiting for the existing engine to verify preflight.'; this.publish();
     this.log('Observation authorized for this run'); await this.run('observe', gen);
     this.state.headline = 'Observation complete'; this.state.detail = 'No court slots were selected. Review activity and local telemetry.';
   }); }
+  saveBooking(input: unknown) { return this.operation('saving', async () => {
+    await this.noLock(); const setup=BookingSetupSchema.parse(input);
+    this.state.booking=this.deps.saveBooking(setup); this.state.selection=null;
+    this.state.headline='Booking plan saved'; this.state.detail='Review the compiled plan, then Prepare Booking. Terms authorization is off.';
+  }); }
+  armSelection() { return this.armBooking('selection'); }
+  dryRace() { return this.armBooking('dry'); }
+  private armBooking(kind:'selection'|'dry') { return this.operation('confirming', async gen => {
+    await this.noLock(); if (!this.deps.clock().canArmToday) throw new Error('TOO_LATE_FOR_PREFLIGHT');
+    if (kind==='selection' && !this.state.capabilities.selectionReady) throw new Error('SELECTION_NOT_READY');
+    const plan=this.deps.booking(); this.state.booking=plan; this.state.selection=null;
+    const confirmed=await this.deps.confirm(kind,plan);
+    if(gen!==this.generation)return;
+    if(!confirmed){this.state.headline='Arming cancelled';this.state.detail='No booking process was launched.';return;}
+    await this.noLock();
+    if(this.deps.booking().fingerprint!==plan.fingerprint)throw new Error('BOOKING_PLAN_CHANGED');
+    if(!this.deps.clock().canArmToday)throw new Error('TOO_LATE_FOR_PREFLIGHT');
+    this.state.operation=kind;this.state.inspection=null;this.state.headline=kind==='selection'?'Selection scheduled':'Dry Race scheduled';
+    this.state.detail=kind==='selection'?'At release the engine may select slots. It will stop before Proceed.':'Release, date, grid and preference checks only. No slots will be selected.';this.publish();
+    await this.run({kind,planHash:plan.fingerprint},gen);
+    if(kind==='dry'){this.state.headline='Dry Race complete';this.state.detail='No slots selected. Review availability and preference events.';}
+    else if(!this.state.selection)throw new Error('SELECTION_RESULT_MISSING');
+  }); }
+  runPractice(input:unknown) { return this.operation('practice', async gen => {
+    const parsed=PracticeSchema.parse(input); await this.noLock();this.state.selection=null;this.state.inspection=null;
+    this.state.headline='Safe practice running';this.state.detail='Select → verify → deselect → verify clean. Never Proceed.';
+    await this.run({kind:'practice',input:parsed},gen);
+    this.state.headline='Practice complete';this.state.detail='Selection verified and cleared. Proceed was never clicked.';
+  }); }
   async abortAutomation() {
+    this.state.termsAuthorized=false;
     if (this.state.operation === 'idle') { this.log('No UI-launched automation is running. External CLI processes are not controlled by this panel.'); return; }
     ++this.generation; this.state.ready = false; this.state.operation = 'stopping'; this.publish();
     try {

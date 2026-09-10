@@ -5,7 +5,8 @@ import { resolve, sep } from 'node:path';
 import { Controller } from '../ui/controller.js';
 import { commandSpec, createRunner, sanitizeLine, type Runner } from '../ui/processes.js';
 import { clockStatus, readLock } from '../ui/status.js';
-import { ObservationSchema } from '../src/config.js';
+import { ObservationSchema, ConfigSchema } from '../src/config.js';
+import { bookingView, defaultSetup } from '../ui/booking.js';
 import type { Command } from '../ui/types.js';
 
 const settings = ObservationSchema.parse({});
@@ -20,7 +21,8 @@ function harness(confirmed = true) {
     return { pid: 123, done: command === 'observe' ? new Promise<number>(resolveDone => { finish = resolveDone; }) : Promise.resolve(0), stop };
   };
   const confirm = vi.fn(async () => confirmed);
-  const controller = new Controller({ runner, lock: async () => lock, cdp: async () => true, clock, confirm, publish: () => {} });
+  const booking=()=>bookingView(ConfigSchema.parse({...defaultSetup,PLAYER_FULL_NAME:'Test Player',PLAYER_PHONE:'09123456789',PLAYER_EMAIL:'test@example.com'}));
+  const controller = new Controller({ runner, lock: async () => lock, cdp: async () => true, clock, confirm, booking, saveBooking:booking, publish: () => {} });
   return { controller, calls, confirm, stop, setLock: (value: boolean) => { lock = value; } };
 }
 describe('desktop orchestration', () => {
@@ -44,6 +46,47 @@ describe('desktop orchestration', () => {
     const h = harness(); h.setLock(true); await h.controller.prepare(); await h.controller.armObservation();
     expect(h.calls).toEqual([]); expect(h.confirm).not.toHaveBeenCalled(); expect(h.controller.state.ready).toBe(false);
   });
+  it('confirms the compiled selection plan and sends only a validated selection command',async()=>{
+    const h=harness();await h.controller.armSelection();
+    expect(h.confirm).toHaveBeenCalledWith('selection',expect.objectContaining({playerConfigured:true,setup:expect.objectContaining({DURATION_HOURS:2})}));
+    expect(h.calls).toEqual([{kind:'selection',planHash:expect.stringMatching(/^[a-f0-9]{64}$/)}]);
+  });
+  it('cancels selection without launching and refuses it while locked',async()=>{
+    const h=harness(false);await h.controller.armSelection();expect(h.calls).toEqual([]);h.setLock(true);await h.controller.armSelection();expect(h.calls).toEqual([]);
+  });
+  it('runs Dry Race with the same plan fingerprint and practice through its existing engine',async()=>{
+    const h=harness();await h.controller.dryRace();await h.controller.runPractice({date:'2026-09-11',court:7,start:'10:00',duration:2});
+    expect(h.calls[0]).toEqual({kind:'dry',planHash:expect.stringMatching(/^[a-f0-9]{64}$/)});expect(h.calls[1]).toEqual({kind:'practice',input:{date:'2026-09-11',court:7,start:'10:00',duration:2}});
+  });
+  it('resets terms on startup, plan creation, completion and abort',async()=>{
+    const h=harness();expect(h.controller.state.termsAuthorized).toBe(false);
+    h.controller.state.termsAuthorized=true;await h.controller.saveBooking(defaultSetup);expect(h.controller.state.termsAuthorized).toBe(false);
+    h.controller.state.termsAuthorized=true;await h.controller.runPractice({date:'2026-09-11',court:7,start:'10:00',duration:2});expect(h.controller.state.termsAuthorized).toBe(false);
+    h.controller.state.termsAuthorized=true;await h.controller.abortAutomation();expect(h.controller.state.termsAuthorized).toBe(false);
+  });
+  it('rejects malformed practice and booking configuration before any worker starts',async()=>{
+    const h=harness();await h.controller.runPractice({date:'2026-09-11',court:7,start:'23:00',duration:2});await h.controller.saveBooking({...defaultSetup,START_TIME:'23:00',DURATION_HOURS:3});expect(h.calls).toEqual([]);
+  });
+  it('maps selection with arming and exact hash; rejects command payload injection',()=>{
+    const spec=commandSpec({kind:'selection',planHash:'a'.repeat(64)},process.cwd(),process.execPath);expect(spec.args.slice(-4)).toEqual(['selection:armed','--armed','--plan-hash','a'.repeat(64)]);
+    expect(()=>commandSpec({kind:'selection',planHash:';anything'} as Command,process.cwd(),process.execPath)).toThrow();
+    expect(()=>commandSpec({kind:'practice',input:{date:'2026-09-11',court:7,start:'10:00',duration:2,command:'anything'}} as Command,process.cwd(),process.execPath)).toThrow();
+  });
+  it('stops a selection worker through the shared owned-process abort path and blocks simultaneous commands',async()=>{
+    let finish!:(code:number)=>void;const stop=vi.fn(async()=>finish(130));const calls:Command[]=[];
+    const plan=bookingView(ConfigSchema.parse({...defaultSetup,PLAYER_FULL_NAME:'Fixture Player',PLAYER_PHONE:'09123456789',PLAYER_EMAIL:'fixture@example.invalid'}));
+    const runner:Runner=(command)=>{calls.push(command);return {pid:42,done:new Promise<number>(resolve=>{finish=resolve;}),stop};};
+    const controller=new Controller({runner,lock:async()=>false,cdp:async()=>true,clock,confirm:async()=>true,booking:()=>plan,saveBooking:()=>plan,publish:()=>{}});
+    const running=controller.armSelection();await vi.waitFor(()=>expect(calls).toHaveLength(1));
+    await expect(controller.runPractice({date:'2026-09-11',court:7,start:'10:00',duration:2})).rejects.toThrow('ALREADY_RUNNING');await controller.abortAutomation();await running;
+    expect(stop).toHaveBeenCalledOnce();expect(controller.state.headline).toBe('Automation aborted');expect(controller.state.operation).toBe('idle');expect(calls).toHaveLength(1);
+  });
+  it('refuses a changed plan after confirmation rather than launching a different booking',async()=>{
+    let changed=false;const calls:Command[]=[];
+    const make=(start:string)=>bookingView(ConfigSchema.parse({...defaultSetup,START_TIME:start,PLAYER_FULL_NAME:'Fixture Player',PLAYER_PHONE:'09123456789',PLAYER_EMAIL:'fixture@example.invalid'}));
+    const controller=new Controller({runner:command=>{calls.push(command);throw Error('SHOULD_NOT_START');},lock:async()=>false,cdp:async()=>true,clock,confirm:async()=>{changed=true;return true;},booking:()=>make(changed?'10:00':'08:00'),saveBooking:()=>make('08:00'),publish:()=>{}});
+    await controller.armSelection();expect(calls).toEqual([]);expect(controller.state.detail).toBe('BOOKING_PLAN_CHANGED');
+  });
   it('rejects arbitrary commands and never maps live race', () => {
     for (const command of ['race', 'practice', 'powershell -Command anything', '../src/index.ts']) expect(() => commandSpec(command as Command, process.cwd(), process.execPath)).toThrow('COMMAND_NOT_ALLOWED');
     expect(commandSpec('observe', process.cwd(), process.execPath).args.slice(-2)).toEqual(['release:observe', '--armed']);
@@ -54,7 +97,7 @@ describe('desktop orchestration', () => {
     expect(html).toMatch(/<button disabled[^>]*>LOCKED \/ NOT READY<\/button>/);
     expect(harness().controller.state.liveRace).toBe(false);
     const preload = await readFile('ui/preload.cts', 'utf8');
-    expect(preload).not.toMatch(/exec|spawn|race|shell|readFile/);
+    expect(preload).not.toMatch(/exec|spawn|['"]thirsty:race['"]|shell|readFile/);
   });
   it('redacts sensitive output before it reaches renderer', () => {
     const line = sanitizeLine('person@example.com +639123456789 Bearer abcdef token=secret');

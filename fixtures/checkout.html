@@ -1,0 +1,14 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Offline checkout evidence fixture</title>
+<h1>Review Booking</h1><div><h2>Thirsty Pickle | SM Seaside</h2><div><span>Venue address</span></div><div><span>Friday, September 11, 2026</span></div></div>
+<h3>Your Reservations (2)</h3><div><div data-testid="booking-review-reservation-date"><span>Fri, Sep 11</span></div><div><span>Court 7: Mango Wing</span></div><div><div><span>10:00 AM - 11:00 AM</span></div><div><span>11:00 AM - 12:00 PM</span></div></div></div>
+<h3>Player Information</h3><div><input aria-label="Full Name" type="text"></div><div><span>+63</span><input aria-label="Phone Number" type="tel" maxlength="16"></div><div><input aria-label="Email Address" type="email" maxlength="100"></div>
+<button id="proceed">Proceed</button>
+<div data-testid="booking-review-payment-summary-sheet" hidden><h3>Payment Summary</h3><div><span>Court rental (2 × ₱600.00)</span><span>₱1,200.00</span></div><div><span>Total</span><span id="total">₱1,200.00</span></div><div data-testid="booking-review-terms-panel"><input type="checkbox" aria-label="I agree to the Terms and Conditions, Privacy Policy, and Liability Waiver"></div><button aria-label="Continue to Payment" disabled>Confirm &amp; Proceed to Payment</button></div>
+<script>
+window.actions=[];
+for(const name of ['Full Name','Phone Number','Email Address'])document.querySelector(`[aria-label="${name}"]`).addEventListener('input',()=>window.actions.push(name));
+document.querySelector('[type="tel"]').addEventListener('input',e=>{let digits=e.target.value.replace(/\D/g,'').replace(/^0/,'');e.target.value=digits.replace(/^(\d{3})(\d{3})(\d{4})$/,'$1 $2 $3');});
+document.querySelector('#proceed').onclick=()=>{window.actions.push('proceed');document.querySelector('[data-testid="booking-review-payment-summary-sheet"]').hidden=false;};
+document.querySelector('[type="checkbox"]').onchange=e=>{window.actions.push('terms');document.querySelector('[aria-label="Continue to Payment"]').disabled=!e.target.checked;};
+document.querySelector('[aria-label="Continue to Payment"]').onclick=()=>window.actions.push('final');
+</script></html>

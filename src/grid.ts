@@ -80,4 +80,7 @@ export async function navigateDate(page: Page, date: string, safety: Safety) {
   if (await day.count() !== 1 || !await day.isEnabled()) throw new Error('TARGET_DATE_UNAVAILABLE');
   safety.check(); await day.click();
   await waitForGrid(page, date, safety);
+  // Observed: selecting an already displayed day can leave the calendar expanded.
+  if (await picker.getAttribute('aria-expanded') === 'true') { safety.check(); await picker.click(); }
+  safety.check();
 }
