@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { emitUiEvent } from './ui-events.js';
 import type { RateLimitEvidence } from './rate-limit.js';
 import { releasePerformance } from './release-performance.js';
+import { availabilityPerformance } from './availability-performance.js';
 // Closed numeric metadata schema: never accept DOM, URLs, config, error text or PII.
 export class Telemetry {
   readonly runID = randomUUID();
@@ -23,6 +24,7 @@ export class Telemetry {
   }
   document(failure?: string, stopEvidence?: RateLimitEvidence) {
     return { runID: this.runID, events: this.events, releasePerformance: releasePerformance(this.events),
+      availabilityPerformance: availabilityPerformance(this.events),
       ...(failure ? { failure } : {}), ...(stopEvidence ? { stopEvidence } : {}) };
   }
   publishPerformance() {

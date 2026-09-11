@@ -1,10 +1,11 @@
-import { describe,it,expect } from 'vitest';
+import { describe,it,expect,vi } from 'vitest';
 import { selectResolvedPreference, selectionAmount, type SelectionPort, type SelectionSummary } from '../src/selection.js';
 import { type Snapshot } from '../src/grid.js';
 import { Safety } from '../src/safety.js';
 import { Telemetry } from '../src/telemetry.js';
 import { requireCapability } from '../src/capabilities.js';
 import { BookingSetupSchema } from '../src/config.js';
+import type { CandidateDiscovery } from '../src/availability-discovery.js';
 
 const date='2026-09-11';
 const pref=[{court:7,hours:['10:00','11:00']},{court:6,hours:['10:00','11:00']},{court:5,hours:['10:00','11:00']}];
@@ -18,7 +19,7 @@ function harness(){
   const grid=fixture(),safety=new Safety(),t=new Telemetry(),calls:string[]=[];
   const set=(court:number,hour:string,state:string)=>{const c=grid.cells.find(c=>c.hour===hour&&c.label.startsWith(`Court ${court}:`))!;c.state=state;c.label=c.label.replace(/ (available|selected|unavailable)$/,' '+state);c.disabled=state==='unavailable';};
   const port:SelectionPort={guard:async()=>{safety.check();},read:async()=>structuredClone(grid),click:async(_d,c,h,state)=>{calls.push(`${c}/${h}/${state}`);set(c,h,state==='OPEN'?'selected':'available');},summary:async()=>({count:'1 Court • 2 Slots',amount:'₱1,200',actionable:true})};
-  const run=(preferences=pref,max=3)=>selectResolvedPreference(port,date,structuredClone(grid),preferences,1200,max,safety,t);
+  const run=(preferences=pref,max=3,discovery?:CandidateDiscovery)=>selectResolvedPreference(port,date,structuredClone(grid),preferences,1200,max,safety,t,discovery);
   return {grid,safety,t,calls,set,port,run};
 }
 describe('selection-only engine',()=>{
@@ -62,6 +63,21 @@ describe('selection-only engine',()=>{
   it('rejects nonconsecutive hours before clicking',async()=>{const h=harness();await expect(h.run([{court:7,hours:['10:00','12:00']}])).rejects.toThrow('INVALID_PREFERENCE');expect(h.calls).toEqual([]);});
   it('selection is enabled while full booking requires every verified capability',()=>{expect(()=>requireCapability('selection:armed')).not.toThrow();expect(()=>requireCapability('race',{selectionReady:true,checkoutReady:true,paymentBoundaryReady:false})).toThrow('LIVE_RACE_BLOCKED');});
   it('does not expose arbitrary summary text through telemetry',async()=>{const h=harness();h.port.summary=async()=>({count:'a-private-name',amount:'user@example.com',actionable:true});await expect(h.run()).rejects.toThrow();const serialized=JSON.stringify(h.t.events);expect(serialized).not.toContain('a-private-name');expect(serialized).not.toContain('@');});
+  it('refreshes only after verified cleanup, excludes attempts and never trusts a candidate over UI',async()=>{
+    const h=harness(),click=h.port.click;
+    h.port.click=async(...args)=>{if(args[1]===7&&args[2]==='11:00'&&args[3]==='OPEN')throw Error('conflict');await click(...args);};
+    const rank=vi.fn((_cells,preferences)=>preferences);
+    const refresh=vi.fn(()=>{expect(h.t.events.at(-1)?.event).toBe('selectionCleanupVerified');expect(h.grid.cells.some(c=>c.state==='selected')).toBe(false);});
+    const result=await h.run(pref,3,{rank,refresh});
+    expect(result.court).toBe(6);expect(refresh).toHaveBeenCalledOnce();
+    expect(rank.mock.calls[1]![1].some((p:{court:number})=>p.court===7)).toBe(false);
+    expect(h.calls).toContain('7/10:00/SELECTED');
+  });
+  it('never refreshes after unsafe cleanup or the last permitted attempt',async()=>{
+    const h=harness(),refresh=vi.fn();h.port.click=async()=>{throw Error('conflict');};
+    await expect(h.run(pref,1,{rank:(_cells,p)=>p,refresh})).rejects.toThrow('ATTEMPTS_EXHAUSTED');
+    expect(refresh).not.toHaveBeenCalled();
+  });
 });
 it('validates schedule bounds, court permutations and fallback ordering at the settings boundary',()=>{
   const base={START_TIME:'22:00',DURATION_HOURS:2,PREFERRED_COURTS:[7,6,5,4,3,2,1],FALLBACK_TIMES:[],MAX_PRICE:1200};expect(BookingSetupSchema.safeParse(base).success).toBe(true);

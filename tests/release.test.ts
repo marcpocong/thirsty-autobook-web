@@ -7,6 +7,7 @@ import { Telemetry } from '../src/telemetry.js';
 import { observeRelease } from '../src/release.js';
 import { releaseNavigationTarget, waitForBookingShellForRelease, navigateReleasedTargetDate, preopenReleaseCalendar, observePreopenedTarget } from '../src/release-navigation.js';
 import { snapshot, validateSnapshot } from '../src/grid.js';
+import { availabilityFixture } from './availability-fixture.js';
 
 vi.mock('../src/safety.js', async importOriginal => ({
   ...await importOriginal<typeof import('../src/safety.js')>(), waitUntil: vi.fn(),
@@ -245,4 +246,32 @@ it('compiles preferences before the release wait and returns without a diagnosti
     { court: 7, hours: ['10:00', '11:00'] }, { court: 6, hours: ['10:00', '11:00'] },
   ]);
   expect(flush).not.toHaveBeenCalled();
+});
+
+it.each(['fast', 'slow', 'reload'])('hybrid dry release with %s API never waits or selects and preserves the target barrier', async kind => {
+  const config = ConfigSchema.parse({ AVAILABILITY_DISCOVERY_MODE: 'hybrid', RELEASE_PREOPEN_CALENDAR: true,
+    START_TIME: '08:00', DURATION_HOURS: 2, PREFERRED_COURTS: [7, 6], MAX_PRICE: 1200,
+    PLAYER_FULL_NAME: 'Fixture User', PLAYER_PHONE: '0000000000', PLAYER_EMAIL: 'fixture@example.invalid' });
+  await page.locator(target.daySelector).evaluate(e => (e as HTMLButtonElement).disabled = true);
+  let waits = 0, requests = 0, releaseResponse!: () => void;
+  const pending = new Promise<void>(resolve => { releaseResponse = resolve; });
+  await page.route('**/date-availability?*', async route => {
+    requests++;
+    if (kind !== 'fast') await pending;
+    await route.fulfill({ json: availabilityFixture(target.date) }).catch(() => {});
+  });
+  vi.mocked(waitUntil).mockImplementation(async epoch => {
+    vi.mocked(Date.now).mockReturnValue(epoch);
+    if (++waits === 2 && kind !== 'reload') await page.locator(target.daySelector).evaluate(e => (e as HTMLButtonElement).disabled = false);
+  });
+  const t = new Telemetry();
+  try {
+    const result = await observeRelease(page, config, new Safety(), t, true);
+    expect(validateSnapshot(result.grid, target.date)).toHaveLength(112);
+    expect(requests).toBeLessThanOrEqual(1);
+    expect(t.events.filter(e => e.event === 'availabilityRequestStarted')).toHaveLength(1);
+    expect(t.events.map(e => e.event)).toContain(kind === 'fast' ? 'candidateSourceApiUi' : 'candidateSourceUiOnly');
+    expect(t.events.some(e => e.event === 'selectionAttemptStarted')).toBe(false);
+    expect(await page.evaluate(() => (window as any).actions)).not.toContain('SLOT');
+  } finally { releaseResponse(); }
 });

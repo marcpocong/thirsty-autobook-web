@@ -13,6 +13,7 @@
     "release:observe": "tsx src/index.ts release:observe",
     "release:preopen-check": "tsx src/index.ts release:preopen-check",
     "release:reload-profile": "tsx src/index.ts release:reload-profile",
+    "availability:compare": "tsx src/index.ts availability:compare",
     "race:dry": "tsx src/index.ts race:dry",
     "selection:armed": "tsx src/index.ts selection:armed",
     "handoff:test": "tsx src/index.ts handoff:test",

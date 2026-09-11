@@ -4,6 +4,7 @@ import { snapshot, validateSnapshot, resolvePreference, selectors, type Snapshot
 import { assertPage } from './browser.js';
 import { Safety } from './safety.js';
 import { Telemetry } from './telemetry.js';
+import type { CandidateDiscovery } from './availability-discovery.js';
 
 export interface SelectionSummary { count: string; amount: string; actionable: boolean }
 export interface SelectionPort {
@@ -54,7 +55,7 @@ function validatePreference(p: Preference) {
 }
 // The initial snapshot is the exact validated release snapshot; subsequent reads occur only
 // to verify clicks or resolve a bounded conflict. This function never invokes Proceed.
-export async function selectResolvedPreference(port: SelectionPort, targetDate: string, initial: Snapshot, preferences: Preference[], maximumPrice: number, maximumAttempts: number, safety: Safety, t: Telemetry): Promise<SelectionResult> {
+export async function selectResolvedPreference(port: SelectionPort, targetDate: string, initial: Snapshot, preferences: Preference[], maximumPrice: number, maximumAttempts: number, safety: Safety, t: Telemetry, discovery?: CandidateDiscovery): Promise<SelectionResult> {
   if (!Number.isInteger(maximumAttempts) || maximumAttempts < 1 || maximumAttempts > 5 || !Number.isFinite(maximumPrice) || maximumPrice <= 0) throw new Error('INVALID_SELECTION_LIMIT');
   preferences.forEach(validatePreference);
   let cells = validateSnapshot(initial, targetDate);
@@ -63,7 +64,8 @@ export async function selectResolvedPreference(port: SelectionPort, targetDate: 
   const attempted = new Set<string>();
   for (let attempt=1; attempt<=maximumAttempts; attempt++) {
     safety.fallback();
-    const p = resolvePreference(cells, preferences.filter(p => !attempted.has(key(p))));
+    const untried = preferences.filter(p => !attempted.has(key(p)));
+    const p = resolvePreference(cells, discovery?.rank(cells, untried) ?? untried);
     if (!p) throw new Error('NO_AVAILABLE_PREFERENCE');
     attempted.add(key(p)); t.mark(attempt === 1 ? 'preferenceResolved' : 'fallbackResolved');
     await port.guard(); safety.check(); t.mark('selectionAttemptStarted', attempt);
@@ -107,6 +109,13 @@ export async function selectResolvedPreference(port: SelectionPort, targetDate: 
     selected = cells.filter(c => c.state === 'SELECTED');
     if (selected.length) throw new Error('CLEANUP_NOT_VERIFIED');
     t.mark('selectionCleanupVerified');
+    if (discovery && attempt < maximumAttempts) {
+      discovery.refresh();
+      // Re-read UI after verified cleanup; never wait for the optional refresh response.
+      await port.guard(); safety.check();
+      cells = validateSnapshot(await port.read(), targetDate); safety.check(); known(cells);
+      if (cells.some(c => c.state === 'SELECTED')) throw Error('UNOWNED_SELECTION');
+    }
   }
   throw new Error('SELECTION_ATTEMPTS_EXHAUSTED');
 }

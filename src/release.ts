@@ -8,6 +8,7 @@ import { releaseNavigationTarget, waitForBookingShellForRelease, navigateRelease
 import { Safety, waitUntil } from './safety.js';
 import { Telemetry } from './telemetry.js';
 import { emitUiEvent } from './ui-events.js';
+import { AvailabilityDiscovery, browserAvailabilityRequest } from './availability-discovery.js';
 
 export async function boundedRelease<T>(maximum: number, retryDelay: number, signal: AbortSignal, attempt: (n: number) => Promise<T | undefined>): Promise<T> {
   if (!Number.isInteger(maximum) || maximum < 1 || maximum > 2) throw new Error('INVALID_RELOAD_LIMIT');
@@ -23,6 +24,8 @@ export async function observeRelease(page: Page, c: Config | ReleaseSettings, sa
   const target = releaseCalendar(c);
   const navigationTarget = releaseNavigationTarget(target.targetDate);
   const preferences = 'START_TIME' in c ? compilePreferences(c) : undefined;
+  const discovery = c.AVAILABILITY_DISCOVERY_MODE === 'hybrid' && 'MAX_PRICE' in c
+    ? new AvailabilityDiscovery(target.targetDate, c.MAX_PRICE, browserAvailabilityRequest(page, target.targetDate, safety, t), safety, t, preferences) : undefined;
   if (dry && !preferences) throw new Error('DRY_CONFIG_REQUIRED');
   if (Date.now() >= target.releaseMs - c.PREFLIGHT_SECONDS_BEFORE * 1000) throw new Error('TOO_LATE_FOR_PREFLIGHT');
   emitUiEvent({ type: 'plan', targetDate: target.targetDate, releaseMs: target.releaseMs, timezone: c.TIMEZONE });
@@ -49,6 +52,7 @@ export async function observeRelease(page: Page, c: Config | ReleaseSettings, sa
   console.log('ARMED — waiting for release.');
   await waitUntil(target.releaseMs, safety.signal);
   t.mark('releaseTriggerFired', Date.now() - target.releaseMs);
+  discovery?.start();
   let readyWithoutReload = false;
   if (c.RELEASE_PREOPEN_CALENDAR) {
     t.mark('preopenReleaseCheckStarted');
@@ -70,8 +74,15 @@ export async function observeRelease(page: Page, c: Config | ReleaseSettings, sa
   const grid = await snapshot(page);
   const cells = validateSnapshot(grid, target.targetDate);
   t.mark('gridSnapshotCompleted');
-  const chosen = preferences && !selecting ? resolvePreference(cells, preferences) : undefined;
+  discovery?.captureAtGrid();
+  const chosen = preferences && !selecting ? resolvePreference(cells, discovery?.rank(cells, preferences) ?? preferences) : undefined;
   if (preferences && !selecting) t.mark('preferenceResolved');
-  if (!selecting) console.log(JSON.stringify({ targetDate: target.targetDate, chosen: chosen ?? null, stoppedBeforeAnySelection: true }, null, 2));
-  return { target, grid, preferences: preferences ?? [] };
+  if (!selecting) {
+    console.log(JSON.stringify({ targetDate: target.targetDate, chosen: chosen ?? null, stoppedBeforeAnySelection: true,
+      releaseBranch: readyWithoutReload ? 'NO REFRESH' : 'RELOAD', candidateSource: discovery?.source ?? 'UI_ONLY',
+      availability: discovery ? t.events.some(e => e.event === 'availabilityParsed') ? 'SUCCESS' : 'FALLBACK' : 'OFF',
+      apiLatencyMs: t.events.find(e => e.event === 'availabilityResponseReceived')?.value ?? 'NOT MEASURED' }, null, 2));
+    discovery?.finish();
+  }
+  return { target, grid, preferences: preferences ?? [], discovery };
 }

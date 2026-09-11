@@ -1,3 +1,9 @@
+# Phase 4 readiness update
+
+Hybrid implementation is complete; rollout remains **UI ONLY** pending live validation. Local pre-open is currently **ON**, verified without exposing other local settings; lead is **0 ms**. This supersedes the historical local-OFF entries below.
+
+The availability comparison for 2026-09-11 stopped at `CDP_PROFILE_OR_BIND_UNVERIFIED` before any availability GET or booking interaction. The existing failure-lock policy retained the lock. Restore the dedicated Chrome session and use Review Lock before repeating live validation. Live API agreement and live dry race remain unverified; **NEXT 08:00 HYBRID READINESS: NOT READY**. See [Phase 4 report](HYBRID_AVAILABILITY_REPORT.md) for implementation, tests, missing measurements and concrete blockers.
+
 # Next Onda release readiness — September 11, 2026
 
 ## Phase 3 latency hardening update

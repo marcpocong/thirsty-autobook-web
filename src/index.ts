@@ -15,6 +15,8 @@ import { fullBookingToQr } from './booking-checkout.js';
 import {navigateDate,snapshot} from './grid.js';
 import { checkPreopenStability } from './preopen-check.js';
 import { assertReloadProfileTime, profileReload, formatReloadProfile } from './reload-profile.js';
+import { compareCurrentAvailability } from './availability-compare.js';
+import { assertAvailabilityDate } from './onda-availability.js';
 
 const safety = new Safety();
 const telemetry = new Telemetry();
@@ -52,9 +54,9 @@ if (process.stdin.isTTY) {
 }
 try {
   const [mode, ...args] = process.argv.slice(2);
-  if (!mode || !['inspect', 'practice', 'release:observe', 'release:preopen-check', 'release:reload-profile', 'race:dry', 'race', 'selection:armed','handoff:test','practice:full'].includes(mode)) throw new Error('MODE_REQUIRED');
+  if (!mode || !['inspect', 'practice', 'availability:compare', 'release:observe', 'release:preopen-check', 'release:reload-profile', 'race:dry', 'race', 'selection:armed','handoff:test','practice:full'].includes(mode)) throw new Error('MODE_REQUIRED');
   if (mode === 'release:reload-profile') assertReloadProfileTime();
-  const allowed = new Set(mode === 'practice' ? ['--date', '--court', '--start', '--duration'] : ['handoff:test','practice:full'].includes(mode)?['--maximum','--date','--court','--start','--duration','--armed','--authorize-terms','--noncompetitive']:['--armed', '--authorize-terms', '--plan-hash']);
+  const allowed = new Set(mode === 'availability:compare' ? ['--date'] : mode === 'practice' ? ['--date', '--court', '--start', '--duration'] : ['handoff:test','practice:full'].includes(mode)?['--maximum','--date','--court','--start','--duration','--armed','--authorize-terms','--noncompetitive']:['--armed', '--authorize-terms', '--plan-hash']);
   for (const arg of args.filter(a => a.startsWith('--'))) if (!allowed.has(arg)) throw new Error('UNKNOWN_ARGUMENT');
   requireArmed(mode, args.includes('--armed'));
   requireCapability(mode);
@@ -62,6 +64,8 @@ try {
   if(mode==='handoff:test'&&!args.includes('--noncompetitive'))throw new Error('NONCOMPETITIVE_TARGET_REQUIRED');
   const config: Config | ReleaseSettings | undefined = ['release:observe', 'release:preopen-check'].includes(mode) ? loadObservationConfig() : ['race:dry','selection:armed','race','handoff:test','practice:full'].includes(mode) ? loadConfig() : undefined;
   const value = (flag: string) => { const i = args.indexOf(flag); return i < 0 ? undefined : args[i + 1]; };
+  const compareDate = mode === 'availability:compare' ? value('--date') ?? '' : undefined;
+  if (compareDate !== undefined) assertAvailabilityDate(compareDate);
   if (args.includes('--plan-hash') && (!config || !('MAX_PRICE' in config) || planFingerprint(config as Config) !== value('--plan-hash'))) throw new Error('BOOKING_PLAN_CHANGED');
   const practiceInput = mode === 'practice' ? PracticeSchema.parse({ date: value('--date'), court: value('--court'), start: value('--start'), duration: value('--duration') }) : undefined;
   const fullPractice=mode==='practice:full'?FullPracticeSchema.parse({target:{date:value('--date'),court:value('--court'),start:value('--start'),duration:value('--duration')},maximum:Number(value('--maximum')),authorizeTerms:args.includes('--authorize-terms')}):undefined;
@@ -71,6 +75,11 @@ try {
   ownsLock = true; await lock.writeFile(JSON.stringify({ pid: process.pid, runID: telemetry.runID })); await lock.close();
   const { page } = await attach(safety, telemetry); telemetry.mark('chromeConnected'); telemetry.mark('ondaTabResolved');
   if (mode === 'inspect') await inspect(page);
+  else if (compareDate !== undefined) {
+    const result = await compareCurrentAvailability(page, compareDate, safety, telemetry);
+    await writeFileAsync(`DiagnosticsLocal/availability-compare-${telemetry.runID}.json`, JSON.stringify(result, null, 2));
+    console.log(JSON.stringify(result, null, 2));
+  }
   else if (mode === 'release:reload-profile') {
     const result = await profileReload(page, safety, telemetry);
     await writeFileAsync(`DiagnosticsLocal/reload-profile-${telemetry.runID}.json`, JSON.stringify(result, null, 2));
@@ -105,7 +114,8 @@ try {
     const released = await observeRelease(page, config, safety, telemetry, mode === 'race:dry', selecting);
     if (selecting && 'MAX_PRICE' in config) {
       const booking = config as Config;
-      const result = await selectResolvedPreference(selectionPort(page, safety), released.target.targetDate, released.grid, released.preferences, booking.MAX_PRICE, booking.MAX_SELECTION_ATTEMPTS, safety, telemetry);
+      const result = await selectResolvedPreference(selectionPort(page, safety), released.target.targetDate, released.grid, released.preferences, booking.MAX_PRICE, booking.MAX_SELECTION_ATTEMPTS, safety, telemetry, released.discovery)
+        .finally(() => released.discovery?.finish());
       retainSelection = true;
       emitUiEvent({ type: 'selection', ...result });
       if(mode==='race'){

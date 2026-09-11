@@ -1,0 +1,127 @@
+import type { Page, Response } from 'playwright';
+import { ONDA_URL, type Preference } from './config.js';
+import type { Cell } from './grid.js';
+import { Safety } from './safety.js';
+import type { Telemetry } from './telemetry.js';
+import { classifyRateLimit } from './rate-limit.js';
+import { availabilityPath, parseAvailability, apiCandidates, hybridPreferences, compareAvailability, type AvailabilitySnapshot } from './onda-availability.js';
+
+export type AvailabilityFetch = () => Promise<AvailabilitySnapshot | undefined>;
+export function browserAvailabilityRequest(page: Page, targetDate: string, safety: Safety, t: Telemetry, timeout = 2500): AvailabilityFetch {
+  const path = availabilityPath(targetDate); // Precompute before the release wait.
+  return async () => {
+    safety.check();
+    if (page.url() !== ONDA_URL) { t.mark('availabilityFallbackToUi'); return; }
+    const started = performance.now(); t.mark('availabilityRequestStarted');
+    // Observe security headers outside evaluate too: reload can destroy its execution context.
+    const onResponse = (response: Response) => {
+      if (response.url() !== new URL(path, ONDA_URL).href) return;
+      const rate = classifyRateLimit(response);
+      if (rate?.restricted) {
+        t.rateLimit('ondaRateLimited', rate.evidence); safety.stop('RATE_LIMITED', rate.evidence);
+      } else if ([401, 403].includes(response.status())) safety.stop('ACCESS_BLOCKED');
+      else if (response.headers()['cf-mitigated'] === 'challenge') safety.stop('SECURITY_CHALLENGE');
+    };
+    page.on('response', onResponse);
+    const abort = () => { void page.evaluate(() => {
+      (globalThis as unknown as { __thirstyAvailabilityAbort?: () => void }).__thirstyAvailabilityAbort?.();
+    }).catch(() => {}); };
+    safety.signal.addEventListener('abort', abort, { once: true });
+    try {
+      const response = await page.evaluate(async ({ path, timeout }) => {
+        const controller = new AbortController();
+        const state = globalThis as unknown as { __thirstyAvailabilityAbort?: () => void };
+        state.__thirstyAvailabilityAbort = () => controller.abort();
+        const timer = setTimeout(() => controller.abort(), timeout);
+        try {
+          const response = await fetch(path, { method: 'GET', credentials: 'same-origin', mode: 'same-origin',
+            redirect: 'error', signal: controller.signal });
+          const retry = response.headers.get('retry-after')?.trim() ?? '';
+          const restricted = response.status === 429 || (/^\d+$/.test(retry) ? Number(retry) > 0 : /^[A-Za-z]{3},/.test(retry) && Date.parse(retry) > Date.now());
+          const meta = { status: response.status, restricted, retryAfterPresent: response.headers.has('retry-after') };
+          if (restricted || [401, 403].includes(response.status)) return { ...meta, kind: 'blocked' as const };
+          if (response.headers.get('cf-mitigated') === 'challenge') return { ...meta, kind: 'challenge' as const };
+          const text = await response.text();
+          if (!response.headers.get('content-type')?.includes('application/json') && /captcha|verify (?:that )?you are human|checking your browser|security challenge|access denied/i.test(text)) return { ...meta, kind: 'challenge' as const };
+          if (!response.ok || text.length > 2_000_000) return { ...meta, kind: 'failed' as const };
+          try { return { ...meta, kind: 'json' as const, data: JSON.parse(text) as unknown }; }
+          catch { return { ...meta, kind: 'failed' as const }; }
+        } finally { clearTimeout(timer); delete state.__thirstyAvailabilityAbort; }
+      }, { path, timeout });
+      t.mark('availabilityResponseReceived', performance.now() - started);
+      if (response.restricted) {
+        const evidence = { reason: 'RATE_LIMITED' as const, timestamp: new Date().toISOString(), monoMs: performance.now(),
+          hostname: 'app.onda.fit', status: response.status, resourceType: 'fetch', navigation: false,
+          retryAfterPresent: response.retryAfterPresent, sameOndaSite: true };
+        t.rateLimit('ondaRateLimited', evidence); safety.stop('RATE_LIMITED', evidence);
+      } else if (response.kind === 'blocked') safety.stop('ACCESS_BLOCKED');
+      else if (response.kind === 'challenge') safety.stop('SECURITY_CHALLENGE');
+      safety.check();
+      if (response.kind !== 'json') { t.mark('availabilityFallbackToUi'); return; }
+      const parseStarted = performance.now(), snapshot = parseAvailability(response.data, targetDate);
+      t.mark('availabilityParsed', performance.now() - parseStarted); t.mark('availabilityUnknownSpaces', snapshot.unknownSpaces);
+      return snapshot;
+    } catch {
+      // Navigation may destroy evaluate/fetch. This optional request is never restarted by reload.
+      // The shared Safety remains aborted for rate limits/security; it is never reset here.
+      t.mark('availabilityFallbackToUi');
+      return undefined;
+    } finally { safety.signal.removeEventListener('abort', abort); page.off('response', onResponse); }
+  };
+}
+
+export interface CandidateDiscovery {
+  rank(cells: Cell[], preferences: Preference[]): Preference[];
+  refresh(): void;
+}
+export class AvailabilityDiscovery implements CandidateDiscovery {
+  private snapshot?: AvailabilitySnapshot;
+  private earlyCandidates?: Preference[];
+  private active = false;
+  private closed = false;
+  private accept = true;
+  private requests = 0;
+  source: 'API+UI' | 'UI_ONLY' = 'UI_ONLY';
+  constructor(private readonly targetDate: string, private readonly maximum: number,
+    private readonly request: AvailabilityFetch, private readonly safety: Safety, private readonly t: Telemetry,
+    private readonly preferences?: Preference[]) {}
+  start() { this.launch(false); }
+  refresh() { this.snapshot = undefined; this.earlyCandidates = undefined; this.launch(true); }
+  private launch(refresh: boolean) {
+    this.safety.check();
+    if (this.closed || this.active || this.requests >= 3) return;
+    this.requests++; this.active = true; this.accept = true;
+    if (refresh) this.t.mark('availabilityRefreshStarted');
+    // Deliberately no awaited availability task on the UI path. All rejections are handled.
+    void this.request().then(result => {
+      if (!this.closed && this.accept && !this.safety.signal.aborted) {
+        this.snapshot = result;
+        if (result && this.preferences) {
+          const started = performance.now();
+          this.earlyCandidates = apiCandidates(result, this.preferences, this.maximum);
+          this.t.mark('availabilityApiCandidatesReady', performance.now() - started);
+        }
+      }
+    }).catch(() => { this.t.mark('availabilityFallbackToUi'); }).finally(() => {
+      this.active = false;
+      if (refresh) this.t.mark('availabilityRefreshCompleted');
+    });
+  }
+  captureAtGrid() { this.accept = false; }
+  finish() { this.closed = true; this.snapshot = undefined; this.earlyCandidates = undefined; }
+  rank(cells: Cell[], preferences: Preference[]) {
+    this.safety.check();
+    const started = performance.now();
+    const result = hybridPreferences(this.snapshot, this.targetDate, cells, preferences, this.maximum, this.earlyCandidates);
+    if (this.snapshot) {
+      const comparison = compareAvailability(this.snapshot, cells);
+      this.t.mark('availabilityApiUiAgreed', comparison.agreed);
+      this.t.mark('availabilityApiUiDisagreed', comparison.domOpenApiClosed + comparison.domClosedApiOpen);
+    }
+    this.source = result.source;
+    this.t.mark(result.source === 'API+UI' ? 'candidateSourceApiUi' : 'candidateSourceUiOnly');
+    if (result.source === 'UI_ONLY') this.t.mark('availabilityFallbackToUi');
+    this.t.mark('availabilityCandidateResolved', performance.now() - started);
+    return result.preferences;
+  }
+}
