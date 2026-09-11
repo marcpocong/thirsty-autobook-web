@@ -13,15 +13,20 @@ export function availabilityPerformance(events: readonly TimingEvent[]) {
     const response = attempt.find(v => v.event === 'availabilityResponseReceived');
     const parsed = attempt.find(v => v.event === 'availabilityParsed');
     return [{ durationMs: delta(e, response), parseMs: parsed?.value ?? null,
+      outcome: parsed ? 'PARSED' : response ? 'FALLBACK' : attempt.some(v => v.event === 'availabilityFallbackToUi') ? 'CANCELED_OR_FAILED' : 'PENDING_AT_STOP',
       responseToCandidateMs: delta(response, attempt.find(v => v.event === 'availabilityCandidateResolved')) }];
   });
   return { requests, releaseToRequestMs: phase('releaseTriggerFired', 'availabilityRequestStarted'),
+    targetEnabledWithoutReload: !!first('targetEnabledWithoutReload'),
+    apiCandidateExistedBeforeGrid: phase('availabilityApiCandidatesReady', 'targetGridReady') !== null,
+    candidateSource: first('candidateSourceApiUi') ? 'API+UI' : first('candidateSourceUiOnly') ? 'UI_ONLY' : null,
     releaseToGridMs: phase('releaseTriggerFired', 'targetGridReady'),
     apiCandidateReadyToGridMs: phase('availabilityApiCandidatesReady', 'targetGridReady'),
     apiCandidateResolutionMs: first('availabilityApiCandidatesReady')?.value ?? null,
     gridToFirstClickMs: phase('targetGridReady', 'slot1ClickStarted'),
     releaseToFirstClickMs: phase('releaseTriggerFired', 'slot1ClickStarted'),
     releaseToSelectionMs: phase('releaseTriggerFired', 'selectionVerified'),
+    selectionToQrHoldMs: phase('selectionVerified', 'qrHandoffVerified'),
     selectionToProceedMs: phase('selectionVerified', 'bookingProceedStarted'),
     proceedToReviewMs: phase('bookingProceedStarted', 'reviewDetected'),
     reviewToPlayerCompletedMs: phase('reviewDetected', 'playerFillCompleted'),

@@ -87,3 +87,24 @@ it('refuses a dirty compare before any availability request', async () => {
   await expect(compareCurrentAvailability(page, date, new Safety(), new Telemetry())).rejects.toThrow('DIAGNOSTIC_SCHEDULE_NOT_CLEAN');
   expect(requests).toHaveLength(0);
 });
+
+// Exercises the actual dry command boundary on the same routed browser fixture.
+it('hybrid dry uses current plan, one GET and only calendar clicks', async () => {
+  const { dryCurrentAvailability } = await import('../src/availability-dry.js');
+  const { ConfigSchema } = await import('../src/config.js');
+  const config = ConfigSchema.parse({ START_TIME:'19:00', DURATION_HOURS:2, PREFERRED_COURTS:[5,7,6,4,3,2,1],
+    FALLBACK_TIMES:['18:00'], MAX_PRICE:1200, PLAYER_FULL_NAME:'Fixture Player', PLAYER_PHONE:'09123456789', PLAYER_EMAIL:'fixture@example.test' });
+  const report = await dryCurrentAvailability(page, date, config, new Safety(), new Telemetry());
+  expect(report).toMatchObject({ pass:true, candidateSource:'API+UI', chosen:{court:5,hours:['19:00','20:00']}, slotClicks:0, proceedClicks:0 });
+  expect(requests).toHaveLength(1);
+  expect(await page.evaluate(() => (window as any).actions)).toEqual(['picker','date']);
+  expect(JSON.stringify(report)).not.toMatch(/Fixture Player|09123456789|fixture@/);
+});
+it('readiness does not navigate, reload, request availability or click', async () => {
+  const { readScheduleReadiness } = await import('../src/readiness.js');
+  const before = page.url();
+  const report = await readScheduleReadiness(page);
+  expect(report).toMatchObject({schedule:'CLEAN', allCourts:'YES', selectedSlots:0, paymentHold:'NONE'});
+  expect(page.url()).toBe(before); expect(requests).toHaveLength(0);
+  expect(await page.evaluate(() => (window as any).actions)).toEqual([]);
+});

@@ -6,20 +6,21 @@ import { Safety, securityReason } from './safety.js';
 import { classifyRateLimit } from './rate-limit.js';
 import type { Telemetry } from './telemetry.js';
 
+export const cdpCodes = ['CDP_NOT_LISTENING', 'CDP_UNSAFE_BIND', 'CDP_AMBIGUOUS_LISTENER',
+  'CDP_PROCESS_METADATA_UNAVAILABLE', 'CDP_PROCESS_NOT_CHROME', 'CDP_PROFILE_MISSING', 'CDP_WRONG_PROFILE'] as const;
 export function verifyDedicatedChrome() {
   if (process.platform !== 'win32') throw new Error('WINDOWS_REQUIRED');
-  // Read only process/listener metadata. Never print process command lines.
-  const script = "$ErrorActionPreference='Stop'; $ls=@(Get-NetTCPConnection -LocalPort 9222 -State Listen); if(-not $ls.Count){throw 'NO_CDP'}; if($ls | Where-Object {$_.LocalAddress -notin @('127.0.0.1','::1')}){throw 'UNSAFE_BIND'}; $ids=@($ls.OwningProcess | Select-Object -Unique); if($ids.Count -ne 1){throw 'AMBIGUOUS_CDP'}; $p=Get-CimInstance Win32_Process -Filter ('ProcessId='+$ids[0]); @{name=$p.Name;command=$p.CommandLine} | ConvertTo-Json -Compress";
-  let result: { name: string; command: string };
-  try { result = JSON.parse(execFileSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] })); }
-  catch { throw new Error('CDP_PROFILE_OR_BIND_UNVERIFIED'); }
-  const expected = resolve('.local/onda-chrome-profile').toLowerCase();
-  const actual = /--user-data-dir=(?:"([^"]+)"|([^\s]+))/.exec(result.command)?.slice(1).find(Boolean);
-  if (result.name.toLowerCase() !== 'chrome.exe' || !actual || resolve(actual).toLowerCase() !== expected) throw new Error('WRONG_CHROME_PROFILE');
+  let code: string;
+  try {
+    code = execFileSync('powershell.exe', ['-NoProfile', '-File', resolve('scripts/verify-onda-chrome.ps1'),
+      '-ExpectedProfile', resolve('.local/onda-chrome-profile')],
+      { encoding: 'utf8', windowsHide: true, timeout: 60000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch { throw new Error('CDP_PROCESS_METADATA_UNAVAILABLE'); }
+  if (code !== 'CDP_VERIFIED') throw new Error(cdpCodes.find(c => c === code) ?? 'CDP_PROCESS_METADATA_UNAVAILABLE');
 }
 export async function attach(safety: Safety, telemetry?: Telemetry) {
   safety.check(); verifyDedicatedChrome();
-  const browser = await chromium.connectOverCDP('http://127.0.0.1:9222', { timeout: 10000 });
+  const browser = await chromium.connectOverCDP('http://127.0.0.1:9222', { timeout: 10000 }).catch(() => { throw Error('CDP_ENDPOINT_UNAVAILABLE'); });
   const candidates = browser.contexts().flatMap(c => c.pages()).filter(p => p.url() === ONDA_URL);
   if (candidates.length !== 1) throw new Error('ONDA_TAB_AMBIGUOUS_OR_MISSING');
   const page = candidates[0]!;

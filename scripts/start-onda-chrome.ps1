@@ -8,11 +8,15 @@ $candidates = @(
 )
 $chromePath = $candidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
 if (-not $chromePath) { throw 'Google Chrome is not installed.' }
-$listeners = @(Get-NetTCPConnection -LocalPort 9222 -State Listen -ErrorAction SilentlyContinue)
-if ($listeners.Count -gt 0) {
-  if ($listeners | Where-Object { $_.LocalAddress -notin @('127.0.0.1', '::1') }) { throw 'UNSAFE_CDP_BIND: port 9222 is exposed beyond localhost.' }
-  Write-Host 'Port 9222 is already listening. Reusing is subject to CDP profile validation; no new Chrome opened.'
+$verification = & (Join-Path $PSScriptRoot 'verify-onda-chrome.ps1') -ExpectedProfile $profilePath
+if ($verification -eq 'CDP_VERIFIED') {
+  Write-Host 'Dedicated Chrome verified. Reusing the existing localhost session.'
   exit 0
+}
+if ($verification -ne 'CDP_NOT_LISTENING') {
+  Write-Host 'WRONG OR UNVERIFIED CDP SESSION DETECTED. Close the conflicting debug session and use Start / Attach Chrome.'
+  Write-Host $verification
+  exit 1
 }
 New-Item -ItemType Directory -Force -Path $profilePath | Out-Null
 # This is the visible, interactive browser requested by the user.
@@ -27,5 +31,6 @@ do {
   $listeners = @(Get-NetTCPConnection -LocalPort 9222 -State Listen -ErrorAction SilentlyContinue)
 } until ($listeners.Count -gt 0 -or [DateTime]::UtcNow -ge $deadline)
 if ($listeners.Count -eq 0) { throw 'Chrome CDP did not start within 15 seconds.' }
-if ($listeners | Where-Object { $_.LocalAddress -notin @('127.0.0.1', '::1') }) { throw 'UNSAFE_CDP_BIND: do not attach.' }
-Write-Host 'Dedicated Chrome ready; localhost-only CDP verified on port 9222.'
+$verification = & (Join-Path $PSScriptRoot 'verify-onda-chrome.ps1') -ExpectedProfile $profilePath
+if ($verification -ne 'CDP_VERIFIED') { Write-Host $verification; exit 1 }
+Write-Host 'Dedicated Chrome ready; localhost-only CDP and dedicated profile verified.'

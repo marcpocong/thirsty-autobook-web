@@ -22,7 +22,9 @@
     "test": "vitest run",
     "ui": "npm run ui:build && node scripts/run-ui.mjs",
     "exe:build": "npm run ui:build && node scripts/build-exe.mjs",
-    "ui:build": "tsc -p tsconfig.ui.json && node scripts/build-ui.mjs"
+    "ui:build": "tsc -p tsconfig.ui.json && node scripts/build-ui.mjs",
+    "availability:dry": "tsx src/index.ts availability:dry",
+    "release:readiness": "tsx src/readiness-cli.ts"
   },
   "dependencies": {
     "dotenv": "^17.4.2",

@@ -1,3 +1,9 @@
+# Phase 5 current readiness - September 12, 2026
+
+Dedicated Chrome, exact Onda tab, clean today schedule and retained lock are resolved. The single live API/UI comparison passed: 7 courts, 112 slots, 112 agreements, zero discrepancies or unknown spaces; GET 152.4429 ms. Safe hybrid dry checks on September 12 and 13 found no candidate for the unchanged current booking plan. **Hybrid remains OFF locally (`ui`), pre-open ON, lead 0 ms.** No booking or race was armed. Next target: September 14 at the September 12 08:00 Manila release.
+
+**NEXT 08:00 HYBRID ROLLOUT: NOT READY** until a real configured candidate passes live API+UI dry validation. Browser/schedule/lock/player/plan readiness now passes; the UI-only production path remains available for the user's later explicit arming. Today's schedule was restored for normal preflight. See [Phase 5 report](PHASE5_HYBRID_VALIDATION_REPORT.md). Historical entries below are superseded by this update.
+
 # Phase 4 readiness update
 
 Hybrid implementation is complete; rollout remains **UI ONLY** pending live validation. Local pre-open is currently **ON**, verified without exposing other local settings; lead is **0 ms**. This supersedes the historical local-OFF entries below.

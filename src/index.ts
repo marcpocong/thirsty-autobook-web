@@ -15,6 +15,7 @@ import { fullBookingToQr } from './booking-checkout.js';
 import {navigateDate,snapshot} from './grid.js';
 import { checkPreopenStability } from './preopen-check.js';
 import { assertReloadProfileTime, profileReload, formatReloadProfile } from './reload-profile.js';
+import { dryCurrentAvailability } from './availability-dry.js';
 import { compareCurrentAvailability } from './availability-compare.js';
 import { assertAvailabilityDate } from './onda-availability.js';
 
@@ -54,17 +55,17 @@ if (process.stdin.isTTY) {
 }
 try {
   const [mode, ...args] = process.argv.slice(2);
-  if (!mode || !['inspect', 'practice', 'availability:compare', 'release:observe', 'release:preopen-check', 'release:reload-profile', 'race:dry', 'race', 'selection:armed','handoff:test','practice:full'].includes(mode)) throw new Error('MODE_REQUIRED');
+  if (!mode || !['inspect', 'practice', 'availability:compare', 'availability:dry', 'release:observe', 'release:preopen-check', 'release:reload-profile', 'race:dry', 'race', 'selection:armed','handoff:test','practice:full'].includes(mode)) throw new Error('MODE_REQUIRED');
   if (mode === 'release:reload-profile') assertReloadProfileTime();
-  const allowed = new Set(mode === 'availability:compare' ? ['--date'] : mode === 'practice' ? ['--date', '--court', '--start', '--duration'] : ['handoff:test','practice:full'].includes(mode)?['--maximum','--date','--court','--start','--duration','--armed','--authorize-terms','--noncompetitive']:['--armed', '--authorize-terms', '--plan-hash']);
+  const allowed = new Set(['availability:compare', 'availability:dry'].includes(mode) ? ['--date'] : mode === 'practice' ? ['--date', '--court', '--start', '--duration'] : ['handoff:test','practice:full'].includes(mode)?['--maximum','--date','--court','--start','--duration','--armed','--authorize-terms','--noncompetitive']:['--armed', '--authorize-terms', '--plan-hash']);
   for (const arg of args.filter(a => a.startsWith('--'))) if (!allowed.has(arg)) throw new Error('UNKNOWN_ARGUMENT');
   requireArmed(mode, args.includes('--armed'));
   requireCapability(mode);
   if(['race','handoff:test','practice:full'].includes(mode)&&!args.includes('--authorize-terms'))throw new Error('TERMS_AUTHORIZATION_REQUIRED');
   if(mode==='handoff:test'&&!args.includes('--noncompetitive'))throw new Error('NONCOMPETITIVE_TARGET_REQUIRED');
-  const config: Config | ReleaseSettings | undefined = ['release:observe', 'release:preopen-check'].includes(mode) ? loadObservationConfig() : ['race:dry','selection:armed','race','handoff:test','practice:full'].includes(mode) ? loadConfig() : undefined;
+  const config: Config | ReleaseSettings | undefined = ['release:observe', 'release:preopen-check'].includes(mode) ? loadObservationConfig() : ['availability:dry','race:dry','selection:armed','race','handoff:test','practice:full'].includes(mode) ? loadConfig() : undefined;
   const value = (flag: string) => { const i = args.indexOf(flag); return i < 0 ? undefined : args[i + 1]; };
-  const compareDate = mode === 'availability:compare' ? value('--date') ?? '' : undefined;
+  const compareDate = ['availability:compare', 'availability:dry'].includes(mode) ? value('--date') ?? '' : undefined;
   if (compareDate !== undefined) assertAvailabilityDate(compareDate);
   if (args.includes('--plan-hash') && (!config || !('MAX_PRICE' in config) || planFingerprint(config as Config) !== value('--plan-hash'))) throw new Error('BOOKING_PLAN_CHANGED');
   const practiceInput = mode === 'practice' ? PracticeSchema.parse({ date: value('--date'), court: value('--court'), start: value('--start'), duration: value('--duration') }) : undefined;
@@ -76,8 +77,10 @@ try {
   const { page } = await attach(safety, telemetry); telemetry.mark('chromeConnected'); telemetry.mark('ondaTabResolved');
   if (mode === 'inspect') await inspect(page);
   else if (compareDate !== undefined) {
-    const result = await compareCurrentAvailability(page, compareDate, safety, telemetry);
-    await writeFileAsync(`DiagnosticsLocal/availability-compare-${telemetry.runID}.json`, JSON.stringify(result, null, 2));
+    const result = mode === 'availability:dry'
+      ? await dryCurrentAvailability(page, compareDate, config as Config, safety, telemetry)
+      : await compareCurrentAvailability(page, compareDate, safety, telemetry);
+    await writeFileAsync(`DiagnosticsLocal/${mode.replace(':', '-')}-${telemetry.runID}.json`, JSON.stringify(result, null, 2));
     console.log(JSON.stringify(result, null, 2));
   }
   else if (mode === 'release:reload-profile') {
