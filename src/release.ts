@@ -4,7 +4,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { type Config, type ReleaseSettings, releaseCalendar, compilePreferences, VENUE } from './config.js';
 import { assertPage } from './browser.js';
 import { snapshot, validateSnapshot, resolvePreference } from './grid.js';
-import { releaseNavigationTarget, waitForBookingShellForRelease, navigateReleasedTargetDate } from './release-navigation.js';
+import { releaseNavigationTarget, waitForBookingShellForRelease, navigateReleasedTargetDate, preopenReleaseCalendar, observePreopenedTarget, clickReleasedTargetDate } from './release-navigation.js';
 import { Safety, waitUntil } from './safety.js';
 import { Telemetry } from './telemetry.js';
 import { emitUiEvent } from './ui-events.js';
@@ -43,16 +43,25 @@ export async function observeRelease(page: Page, c: Config | ReleaseSettings, sa
   console.log(JSON.stringify({ mode: selecting ? 'SELECTION ONLY — STOPS BEFORE PROCEED' : dry ? 'DRY RACE — NO SELECTION' : 'RELEASE OBSERVATION — NO BOOKING', venue: VENUE, targetDate: target.targetDate, preferences, maximumPrice: 'MAX_PRICE' in c ? c.MAX_PRICE : undefined, playerInfoLoaded: 'PLAYER_FULL_NAME' in c, localTime: new Date().toString(), manilaTime: DateTime.now().setZone('Asia/Manila').toISO(), release: target.releaseISO, releaseLeadMs: c.RELEASE_LEAD_MS, maxReloads: c.MAX_RELEASE_RELOADS, secondsRemaining: (target.releaseMs - Date.now()) / 1000, abort: 'Q or Ctrl+C' }, null, 2));
   await waitUntil(target.releaseMs - c.PREFLIGHT_SECONDS_BEFORE * 1000, safety.signal);
   await preflight();
+  if (c.RELEASE_PREOPEN_CALENDAR) await preopenReleaseCalendar(page, navigationTarget, safety, t, c.CRITICAL_STEP_TIMEOUT_MS, c.BOOKING_HORIZON_DAYS > 0);
   if (Date.now() >= target.releaseMs) throw new Error('PREFLIGHT_MISSED_RELEASE');
   t.mark('armed'); t.mark('releaseScheduled', target.releaseMs);
   console.log('ARMED — waiting for release.');
   await waitUntil(target.releaseMs, safety.signal);
   t.mark('releaseTriggerFired', Date.now() - target.releaseMs);
-  await boundedRelease(c.MAX_RELEASE_RELOADS, c.RELEASE_RETRY_DELAY_MS, safety.signal, async () => {
+  let readyWithoutReload = false;
+  if (c.RELEASE_PREOPEN_CALENDAR) {
+    t.mark('preopenedTargetObservationStarted');
+    if (await observePreopenedTarget(page, navigationTarget, safety)) {
+      t.mark('targetEnabledWithoutReload');
+      await clickReleasedTargetDate(page, navigationTarget, safety, t, c.CRITICAL_STEP_TIMEOUT_MS);
+      readyWithoutReload = true;
+    } else t.mark('targetStillDisabledAtRelease');
+  }
+  if (!readyWithoutReload) await boundedRelease(c.MAX_RELEASE_RELOADS, c.RELEASE_RETRY_DELAY_MS, safety.signal, async () => {
     safety.check(); t.mark('reloadStarted');
     await page.reload({ waitUntil: 'commit' }); t.mark('reloadCommitted');
-    await waitForBookingShellForRelease(page, safety, c.CRITICAL_STEP_TIMEOUT_MS);
-    t.mark('releaseShellReady');
+    await waitForBookingShellForRelease(page, safety, c.CRITICAL_STEP_TIMEOUT_MS, t);
     const result = await navigateReleasedTargetDate(page, navigationTarget, safety, t, c.CRITICAL_STEP_TIMEOUT_MS);
     if (result === 'TARGET_DATE_NOT_RELEASED') return undefined;
     return true;

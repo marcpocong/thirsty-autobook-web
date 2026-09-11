@@ -3,6 +3,8 @@ import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { ONDA_URL, VENUE } from './config.js';
 import { Safety, securityReason } from './safety.js';
+import { classifyRateLimit } from './rate-limit.js';
+import type { Telemetry } from './telemetry.js';
 
 export function verifyDedicatedChrome() {
   if (process.platform !== 'win32') throw new Error('WINDOWS_REQUIRED');
@@ -15,7 +17,7 @@ export function verifyDedicatedChrome() {
   const actual = /--user-data-dir=(?:"([^"]+)"|([^\s]+))/.exec(result.command)?.slice(1).find(Boolean);
   if (result.name.toLowerCase() !== 'chrome.exe' || !actual || resolve(actual).toLowerCase() !== expected) throw new Error('WRONG_CHROME_PROFILE');
 }
-export async function attach(safety: Safety) {
+export async function attach(safety: Safety, telemetry?: Telemetry) {
   safety.check(); verifyDedicatedChrome();
   const browser = await chromium.connectOverCDP('http://127.0.0.1:9222', { timeout: 10000 });
   const candidates = browser.contexts().flatMap(c => c.pages()).filter(p => p.url() === ONDA_URL);
@@ -23,18 +25,22 @@ export async function attach(safety: Safety) {
   const page = candidates[0]!;
   page.setDefaultTimeout(15000);
   page.setDefaultNavigationTimeout(15000);
-  monitorConnection(browser, page, safety);
+  monitorConnection(browser, page, safety, telemetry);
   await assertPage(page, safety);
   return { browser, page };
 }
-export function monitorConnection(browser: Browser, page: Page, safety: Safety) {
+export function monitorConnection(browser: Browser, page: Page, safety: Safety, telemetry?: Telemetry) {
   browser.on('disconnected', () => safety.stop('CHROME_DISCONNECTED'));
   page.on('close', () => safety.stop('CHROME_DISCONNECTED'));
   page.on('crash', () => safety.stop('CHROME_DISCONNECTED'));
   page.on('response', response => {
-    // Only status/header presence, never read backend bodies.
-    if (response.status() === 429 || response.headers()['retry-after']) safety.stop('RATE_LIMITED');
-    else if ([401, 403].includes(response.status()) && response.request().isNavigationRequest()) safety.stop('ACCESS_BLOCKED');
+    const rateLimit = classifyRateLimit(response);
+    if (rateLimit) {
+      const { evidence, restricted } = rateLimit;
+      telemetry?.rateLimit(evidence.sameOndaSite ? restricted ? 'ondaRateLimited' : 'ondaRetryAfterUnrestricted' : 'thirdPartyRateLimited', evidence);
+      if (evidence.sameOndaSite && restricted) safety.stop('RATE_LIMITED', evidence);
+    }
+    if ([401, 403].includes(response.status()) && response.request().isNavigationRequest()) safety.stop('ACCESS_BLOCKED');
   });
   page.on('framenavigated', frame => {
     if (frame === page.mainFrame() && !safety.boundary && frame.url() !== ONDA_URL) safety.stop('UNEXPECTED_REDIRECT');

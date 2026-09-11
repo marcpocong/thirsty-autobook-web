@@ -1,10 +1,17 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { emitUiEvent } from './ui-events.js';
+import type { RateLimitEvidence } from './rate-limit.js';
 // Closed numeric metadata schema: never accept DOM, URLs, config, error text or PII.
 export class Telemetry {
   readonly runID = randomUUID();
-  readonly events: { event: string; wall: string; monoMs: number; value?: number }[] = [];
+  readonly events: { event: string; wall: string; monoMs: number; value?: number; evidence?: RateLimitEvidence }[] = [];
+  rateLimit(event: 'ondaRateLimited' | 'thirdPartyRateLimited' | 'ondaRetryAfterUnrestricted', evidence: RateLimitEvidence) {
+    // Explicit field allowlist, never spread response/request objects into diagnostics.
+    const { reason, timestamp, monoMs, hostname, status, resourceType, navigation, retryAfterPresent, sameOndaSite } = evidence;
+    this.mark(event);
+    this.events.at(-1)!.evidence = { reason, timestamp, monoMs, hostname, status, resourceType, navigation, retryAfterPresent, sameOndaSite };
+  }
   mark(event: string, value?: number) {
     if (!/^[a-zA-Z][a-zA-Z0-9]{0,63}$/.test(event)) throw new Error('INVALID_EVENT_NAME');
     this.events.push({ event, wall: new Date().toISOString(), monoMs: performance.now(), ...(typeof value === 'number' && Number.isFinite(value) ? { value } : {}) });

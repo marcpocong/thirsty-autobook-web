@@ -5,7 +5,7 @@ import { ONDA_URL, ObservationSchema } from '../src/config.js';
 import { Safety, waitUntil } from '../src/safety.js';
 import { Telemetry } from '../src/telemetry.js';
 import { observeRelease } from '../src/release.js';
-import { releaseNavigationTarget, waitForBookingShellForRelease, navigateReleasedTargetDate } from '../src/release-navigation.js';
+import { releaseNavigationTarget, waitForBookingShellForRelease, navigateReleasedTargetDate, preopenReleaseCalendar, observePreopenedTarget } from '../src/release-navigation.js';
 import { snapshot, validateSnapshot } from '../src/grid.js';
 
 vi.mock('../src/safety.js', async importOriginal => ({
@@ -54,7 +54,9 @@ it('release reload goes straight from incomplete Today to target and records dis
   expect(await page.evaluate(() => (window as any).actions)).toEqual(['picker', 'target']);
   expect(t.events.map(e => e.event)).toEqual([
     'preflightStarted', 'preflightCompleted', 'preflightStarted', 'preflightCompleted', 'armed', 'releaseScheduled',
-    'releaseTriggerFired', 'reloadStarted', 'reloadCommitted', 'releaseShellReady', 'targetPickerOpened',
+    'releaseTriggerFired', 'reloadStarted', 'reloadCommitted', 'releaseUrlVerified', 'releaseVenueAttached',
+    'releaseVenueVisible', 'releaseVenueVerified', 'releasePickerAttached', 'releasePickerVisible',
+    'releasePickerEnabled', 'releaseShellReady', 'targetPickerOpened',
     'targetDateDetected', 'targetDateEnabled', 'targetDateClickStarted', 'targetDateClicked',
     'targetHeadingDetected', 'targetGridReady', 'gridSnapshotStarted', 'gridSnapshotCompleted',
   ]);
@@ -69,7 +71,7 @@ it.each(['initial', 'final'])('still rejects an incomplete Today grid in %s pref
   expect(reload).not.toHaveBeenCalled(); expect(t.events.some(e => e.event === 'armed')).toBe(false);
 });
 
-it('shell waits for actionable picker with no date heading or grid required', async () => {
+it('shell waits for enabled picker with no date heading or grid required', async () => {
   await page.locator('[data-testid="booking-grid-body"],h3').evaluateAll(elements => elements.forEach(e => e.remove()));
   await page.getByRole('button', { name: 'Select booking date', exact: true }).evaluate(e => (e as HTMLButtonElement).disabled = true);
   let done = false;
@@ -77,6 +79,98 @@ it('shell waits for actionable picker with no date heading or grid required', as
   await page.waitForTimeout(100); expect(done).toBe(false);
   await page.getByRole('button', { name: 'Select booking date', exact: true }).evaluate(e => (e as HTMLButtonElement).disabled = false);
   await waiting; expect(await page.evaluate(() => (window as any).actions)).toEqual([]);
+});
+
+it('shell ignores an overlay and animation without trial or real clicks', async () => {
+  await page.evaluate(() => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:white';
+    document.body.append(overlay);
+  });
+  await waitForBookingShellForRelease(page, new Safety(), 500);
+  expect(await page.evaluate(() => (window as any).actions)).toEqual([]);
+  expect(await readFile('src/release-navigation.ts', 'utf8')).not.toMatch(/trial\s*:/);
+});
+
+it.each(['missing', 'duplicate', 'hiddenDuplicate'])('shell rejects %s exact picker', async kind => {
+  await page.getByRole('button', { name: 'Select booking date', exact: true }).evaluate((e, kind) => {
+    if (kind === 'missing') { e.setAttribute('aria-label', 'Select booking date extra'); return; }
+    const clone = e.cloneNode(true) as HTMLElement;
+    if (kind === 'hiddenDuplicate') clone.hidden = true;
+    e.after(clone);
+  }, kind);
+  await expect(waitForBookingShellForRelease(page, new Safety(), 150)).rejects.toThrow();
+  expect(await page.evaluate(() => (window as any).actions)).toEqual([]);
+});
+
+it.each([true, false])('preopened target at release enabled=%s uses one observation and correct path', async enabled => {
+  await page.locator(target.daySelector).evaluate(e => (e as HTMLButtonElement).disabled = true);
+  let waits = 0;
+  vi.mocked(waitUntil).mockImplementation(async epoch => {
+    vi.mocked(Date.now).mockReturnValue(epoch);
+    if (++waits === 2) {
+      expect(await page.evaluate(() => (window as any).actions)).toEqual(['picker']);
+      await page.locator(target.daySelector).evaluate((e, enabled) => (e as HTMLButtonElement).disabled = !enabled, enabled);
+    }
+  });
+  const reload = vi.spyOn(page, 'reload');
+  const t = new Telemetry();
+  const result = await observeRelease(page, { ...settings, RELEASE_PREOPEN_CALENDAR: true }, new Safety(), t, false);
+  expect(validateSnapshot(result.grid, target.date)).toHaveLength(112);
+  expect(reload).toHaveBeenCalledTimes(enabled ? 0 : 1);
+  expect(waits).toBe(2);
+  expect(t.events.filter(e => e.event === 'preopenedTargetObservationStarted')).toHaveLength(1);
+  expect(t.events.filter(e => e.event === 'preopenTargetDisabled')).toHaveLength(1);
+  const names = t.events.map(e => e.event);
+  const decision = names.indexOf(enabled ? 'targetEnabledWithoutReload' : 'targetStillDisabledAtRelease');
+  expect(names[decision + 1]).toBe(enabled ? 'targetDateEnabled' : 'reloadStarted');
+  expect(names).toContain('targetGridReady');
+  expect(await page.evaluate(() => (window as any).actions)).toEqual(['picker', 'target']);
+});
+
+it('preopen refuses unexpected availability before arming', async () => {
+  const reload = vi.spyOn(page, 'reload');
+  await expect(observeRelease(page, { ...settings, RELEASE_PREOPEN_CALENDAR: true }, new Safety(), new Telemetry(), false)).rejects.toThrow('TARGET_DATE_ALREADY_RELEASED');
+  expect(reload).not.toHaveBeenCalled();
+});
+
+it('preopen rejects booking state changes caused by opening the calendar', async () => {
+  await page.locator(target.daySelector).evaluate(e => (e as HTMLButtonElement).disabled = true);
+  await page.getByRole('button', { name: 'Select booking date', exact: true }).evaluate(e => e.addEventListener('click', () => {
+    document.querySelector('[data-testid="booking-selected-date-label"]')!.textContent = 'changed';
+  }));
+  await expect(preopenReleaseCalendar(page, target, new Safety(), new Telemetry(), 1000, true)).rejects.toThrow('PREOPEN_BOOKING_STATE_CHANGED');
+});
+
+it.each(['disabled', 'enabled', 'missing', 'ambiguous', 'hidden'])('immediate %s target observation evaluates DOM exactly once with no action or wait', async state => {
+  await page.locator(target.daySelector).evaluate((e, state) => {
+    (e as HTMLButtonElement).hidden = state === 'hidden';
+    (e as HTMLButtonElement).disabled = state === 'disabled';
+    if (state === 'missing') e.remove();
+    if (state === 'ambiguous') e.after(e.cloneNode(true));
+  }, state);
+  const evaluate = vi.spyOn(page, 'evaluate'), wait = vi.spyOn(page, 'waitForFunction'), reload = vi.spyOn(page, 'reload');
+  expect(await observePreopenedTarget(page, target, new Safety())).toBe(state === 'enabled');
+  expect(evaluate).toHaveBeenCalledOnce();
+  expect(wait).not.toHaveBeenCalled(); expect(reload).not.toHaveBeenCalled();
+});
+
+it('enabled no-reload path cannot bypass a stale target grid', async () => {
+  await page.locator(target.daySelector).evaluate(e => (e as HTMLButtonElement).disabled = true);
+  let waits = 0;
+  vi.mocked(waitUntil).mockImplementation(async epoch => {
+    vi.mocked(Date.now).mockReturnValue(epoch);
+    if (++waits === 2) await page.evaluate(() => {
+      (document.querySelector('button[data-day]') as HTMLButtonElement).disabled = false;
+      (window as any).deferGrid = true;
+    });
+  });
+  const reload = vi.spyOn(page, 'reload'), t = new Telemetry();
+  await expect(observeRelease(page, { ...settings, RELEASE_PREOPEN_CALENDAR: true, CRITICAL_STEP_TIMEOUT_MS: 200 }, new Safety(), t, false)).rejects.toThrow();
+  expect(reload).not.toHaveBeenCalled();
+  expect(t.events.some(e => e.event === 'targetEnabledWithoutReload')).toBe(true);
+  expect(t.events.some(e => e.event === 'targetGridReady')).toBe(false);
+  expect(await page.evaluate(() => (window as any).actions)).toEqual(['picker', 'target']);
 });
 
 it.each(['venue', 'challenge', 'abort'])('shell refuses %s before any calendar click', async kind => {
@@ -126,6 +220,8 @@ it.each([false, true])('one bounded retry after disabled target (second enabled:
 
 it('keeps zero lead and the current conservative retry default', () => {
   expect(settings.RELEASE_LEAD_MS).toBe(0); expect(settings.RELEASE_RETRY_DELAY_MS).toBe(1000);
+  expect(settings.RELEASE_PREOPEN_CALENDAR).toBe(false);
+  expect(ObservationSchema.parse({ RELEASE_PREOPEN_CALENDAR: 'false' }).RELEASE_PREOPEN_CALENDAR).toBe(false);
   expect(settings.MAX_RELEASE_RELOADS).toBe(2);
   expect(ObservationSchema.safeParse({ RELEASE_LEAD_MS: -50 }).success).toBe(false);
   expect(ObservationSchema.safeParse({ MAX_RELEASE_RELOADS: 3 }).success).toBe(false);

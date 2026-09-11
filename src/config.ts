@@ -27,6 +27,8 @@ export const ConfigSchema = z.object({
   CDP_URL: z.string().refine(v => { try { const u = new URL(v); return u.protocol === 'http:' && u.hostname === '127.0.0.1' && u.port === '9222' && u.pathname === '/' && !u.search && !u.hash && !u.username && !u.password; } catch { return false; } }, 'Use http://127.0.0.1:9222').default('http://127.0.0.1:9222'),
   // Early release is intentionally unavailable until measurements justify it.
   RELEASE_LEAD_MS: z.coerce.number().int().min(0).max(0).default(0),
+  // Enable only after confirming the live calendar remains open through release.
+  RELEASE_PREOPEN_CALENDAR: z.preprocess(v => v === 'true' ? true : v === 'false' ? false : v, z.boolean()).default(false),
   MAX_RELEASE_RELOADS: z.coerce.number().int().min(1).max(2).default(2),
   RELEASE_RETRY_DELAY_MS: z.coerce.number().int().min(500).max(10000).default(1000),
   PREFLIGHT_SECONDS_BEFORE: z.coerce.number().int().min(10).max(120).default(15),
@@ -43,6 +45,7 @@ export const ObservationSchema = z.object({
   ONDA_URL: ConfigSchema.shape.ONDA_URL, TIMEZONE: ConfigSchema.shape.TIMEZONE,
   RELEASE_TIME: ConfigSchema.shape.RELEASE_TIME, BOOKING_HORIZON_DAYS: ConfigSchema.shape.BOOKING_HORIZON_DAYS,
   RELEASE_LEAD_MS: ConfigSchema.shape.RELEASE_LEAD_MS, MAX_RELEASE_RELOADS: ConfigSchema.shape.MAX_RELEASE_RELOADS,
+  RELEASE_PREOPEN_CALENDAR: ConfigSchema.shape.RELEASE_PREOPEN_CALENDAR,
   RELEASE_RETRY_DELAY_MS: ConfigSchema.shape.RELEASE_RETRY_DELAY_MS, PREFLIGHT_SECONDS_BEFORE: ConfigSchema.shape.PREFLIGHT_SECONDS_BEFORE,
   CRITICAL_STEP_TIMEOUT_MS: ConfigSchema.shape.CRITICAL_STEP_TIMEOUT_MS,
 });

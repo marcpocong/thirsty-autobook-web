@@ -1,6 +1,6 @@
 # Telemetry specification
 
-Events are buffered in memory as `{event, wall, monoMs, value?}`; wall is UTC ISO, monoMs is Node `performance.now()`, runID is a UUID. Numeric metadata only. No player fields, arbitrary DOM, browser URL, cookies, error stack, response body, or config is accepted. Files are ignored under `DiagnosticsLocal/<runID>.json`.
+Events are buffered in memory as `{event, wall, monoMs, value?, evidence?}`; wall is UTC ISO, monoMs is Node `performance.now()`, runID is a UUID. General metadata is numeric only. Rate-limit evidence uses the explicit allowlist below. No player fields, arbitrary DOM, browser URL, cookies, error stack, response body, or config is accepted. Files are ignored under `DiagnosticsLocal/<runID>.json`.
 
 Normal completion/failure flushes asynchronously. Abort/disconnection flushes once synchronously after stopping, then exits the Playwright-owning process. No critical-path disk writes. An abrupt kill may lose buffered telemetry. CLI uses no screenshots or tracing.
 
@@ -16,14 +16,22 @@ The desktop adds optional `THIRSTY_UI_EVENTS=1` stdout streaming for validated t
 | releaseTriggerFired | After scheduler returns, before release actions; value is wall-clock firing error ms |
 | reloadStarted | Immediately before ordinary page.reload |
 | reloadCommitted | After reload promise resolves at navigation commit |
-| releaseShellReady | Correct URL/venue and security checks passed; date picker passed normal Playwright trial actionability. No Today grid required. |
+| releaseUrlVerified | Exact Onda booking URL verified after reload commit. |
+| releaseVenueAttached / releaseVenueVisible / releaseVenueVerified | Unique venue attached / visible / text exactly matches the expected venue. |
+| releasePickerAttached / releasePickerVisible / releasePickerEnabled | Exact unique picker attached / visible / enabled; no trial click, stability wait or hit-target check. |
+| releaseShellReady | Structural picker checks and final URL/security/Safety guard passed. No Today grid required. |
+| preopenTargetDisabled / preopenTargetEnabled | One target availability check after final preflight; unchanged booking snapshot and expanded calendar verified. Future horizon targets must be disabled. |
+| releaseCalendarPreopened | Pre-open preparation completed; opt-in until live stability is verified. |
+| preopenedTargetObservationStarted | Before the single immediate DOM evaluation at release; no waiting or retrying this observation. |
+| targetEnabledWithoutReload | Already-rendered exact visible day enabled; normal target click follows immediately, without reload. |
+| targetStillDisabledAtRelease | Immediate observation could not prove an enabled unique visible day (also includes a missing/hidden/ambiguous day); bounded reload follows immediately. |
 | targetPickerOpened | Normal date-picker click returned, or picker was already expanded; calendar content may still hydrate. |
 | targetDateDetected | Exact target day is visible and the security check passed. Missing/ambiguous markup is a structure failure. |
 | targetDateNotReleased | Visible exact day was observed disabled; permits the single configured reload retry. |
 | targetDateEnabled | Exact visible target day was observed enabled; not a measurement of the server's release instant. |
 | targetDateClickStarted / targetDateClicked | Before normal target-day click (including actionability waits) / after that click returns. |
 | targetHeadingDetected | First observation of the exact target heading after the calendar click returns; rows may still be stale. |
-| targetGridReady | Strict target grid wait completed: target heading, 16 target-date rows, seven cells per row and no busy indicator. Snapshot validation still follows. |
+| targetGridReady | Strict target grid wait and full snapshot validation completed: target heading, 16 target-date rows, seven cells per row and no busy indicator. Caller also revalidates its returned snapshot. |
 | gridSnapshotStarted | Immediately before the one-pass DOM evaluation |
 | gridSnapshotCompleted | Matrix returned AND strict local validation completed |
 | preferenceResolved | Initial local ordered preference lookup completed, dry or selection mode |
@@ -53,5 +61,9 @@ The desktop adds optional `THIRSTY_UI_EVENTS=1` stdout streaming for validated t
 The September 10 live test recorded selection, both Proceeds, Terms and one final dispatch. A resumed passive observer verified the same hold after a serialization fix. These were separate process segments: cross-segment elapsed time includes engineering interruptions and must not be reported as navigation latency. See [FULL_BOOKING_REPORT.md](FULL_BOOKING_REPORT.md).
 
 Compute elapsed phases from monotonic differences within one run. Missing events mean NOT MEASURED, never zero. Consecutive combined markers must not be reported as independently measured zero-latency phases. Reload retries have repeated event names and must be paired by occurrence.
+
+Rate-limit events are `ondaRateLimited`, `thirdPartyRateLimited`, and `ondaRetryAfterUnrestricted`. Their evidence contains ONLY `reason: RATE_LIMITED`, `timestamp`, `monoMs`, `hostname`, `status`, `resourceType`, `navigation`, `retryAfterPresent`, and `sameOndaSite`. Host ownership is exactly `onda.fit` or a `.onda.fit` suffix. Every Onda 429 stops; a positive Retry-After delay or future HTTP date also stops. Empty, zero, expired or malformed Retry-After values alone do not impose a wait. Third-party signals are recorded without a rate-limit hard stop. Navigation access-block checks remain in force.
+
+The first abort reason is preserved. Response evidence is buffered before abort dispatch and the CLI's immediate synchronous diagnostic write includes `failure` and `stopEvidence`. No response/request payload is read and no full URL, path, query, header values, cookies or tokens are persisted. Historical failures without this evidence cannot be assigned an origin retrospectively.
 
 Release phase metrics: trigger→reload commit; commit→shell ready; shell→target observed enabled; enabled→click; click→heading→strict grid; grid→snapshot complete; snapshot→preference; preference→first slot→complete selection. Pair repeated markers by reload attempt. These are client observations, not server release timestamps. Historical domReady and combined newDateSignalDetected/targetDateVerified/targetGridSentinelVerified events retain their old meaning and are no longer emitted by the release path.

@@ -1,13 +1,20 @@
 import { setTimeout as delay } from 'node:timers/promises';
+import type { RateLimitEvidence } from './rate-limit.js';
 
 export class Safety {
   readonly controller = new AbortController();
   locked = false;
   boundary = false;
+  stopEvidence?: RateLimitEvidence;
   private finalDispatchAvailable = false;
   get signal() { return this.controller.signal; }
   check() { this.signal.throwIfAborted(); if (this.boundary) throw new Error('PAYMENT_BOUNDARY_REACHED'); }
-  stop(code: string) { if (!this.signal.aborted) this.controller.abort(new Error(code)); }
+  stop(code: string, evidence?: RateLimitEvidence) {
+    if (!this.signal.aborted) {
+      this.stopEvidence = evidence;
+      this.controller.abort(new Error(code));
+    }
+  }
   lock() { this.check(); this.locked = true; }
   fallback() { this.check(); if (this.locked) throw new Error('BOOKING_LOCKED'); }
   checkPassiveHandoff() {

@@ -27,7 +27,7 @@ const lockPath = '.local/automation.lock';
 const stopNow = (code: string) => {
   emitUiEvent({ type: 'error', code: /^[A-Z_]{1,80}$/.test(code) ? code : 'OPERATION_FAILED' });
   telemetry.mark(code === 'USER_ABORT' ? 'aborted' : 'failed');
-  try { writeFileSync(`DiagnosticsLocal/${telemetry.runID}.json`, JSON.stringify({ runID: telemetry.runID, events: telemetry.events })); } catch {}
+  try { writeFileSync(`DiagnosticsLocal/${telemetry.runID}.json`, JSON.stringify({ runID: telemetry.runID, events: telemetry.events, failure: code, stopEvidence: safety.stopEvidence })); } catch {}
   console.error(code === 'USER_ABORT' ? 'AUTOMATION ABORTED — USER CONTROL RESTORED' : code);
   if (process.stdin.isTTY) process.stdin.setRawMode(false);
   // Keep lock on abrupt termination: fail closed until user checks the browser.
@@ -65,7 +65,7 @@ try {
   await mkdirAsync('.local', { recursive: true }); await mkdirAsync('DiagnosticsLocal', { recursive: true });
   const lock = await openAsync(lockPath, 'wx').catch(() => { throw new Error('AUTOMATION_LOCK_EXISTS: verify no bot is running and selections are clean before removing .local/automation.lock'); });
   ownsLock = true; await lock.writeFile(JSON.stringify({ pid: process.pid, runID: telemetry.runID })); await lock.close();
-  const { page } = await attach(safety); telemetry.mark('chromeConnected'); telemetry.mark('ondaTabResolved');
+  const { page } = await attach(safety, telemetry); telemetry.mark('chromeConnected'); telemetry.mark('ondaTabResolved');
   if (mode === 'inspect') await inspect(page);
   else if (practiceInput) await practice(page, practiceInput, safety, telemetry);
   else if(fullPractice&&config){
