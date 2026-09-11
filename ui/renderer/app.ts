@@ -79,6 +79,12 @@ function render(state: Dashboard) {
   status('lock', state.lock ? (busy ? 'Active' : 'Exists · check manually') : 'Clear', state.lock ? 'warn' : 'good');
   const i = state.inspection;
   const fresh = !!i && state.cdp && Date.now() - Date.parse(i.verifiedAt) < 60000;
+  const clock = state.clock;
+  byId('release-strategy').textContent = clock ? `Pre-open calendar: ${clock.preopenCalendar ? 'ON' : 'OFF'}\nRelease trigger: ${clock.releaseTime}.000 ${clock.timezone}\nRelease lead: ${clock.leadMs} ms\n${clock.preopenCalendar ? '1. Check already-open target\n2. If enabled: click without refresh\n3. Otherwise: immediate reload fallback' : 'At release: bounded reload, minimal shell, strict target grid'}\nAuto-enable at 08:00: UNVERIFIED` : 'Configuration unavailable';
+  byId('next-readiness').textContent = `Chrome/CDP: ${state.cdp ? 'REACHABLE' : 'NOT READY'}\nOnda: ${fresh && i?.gridToday && i.allCourts && i.visible ? 'READY (last inspection)' : 'NEEDS INSPECTION'}\nBooking plan: ${state.booking && !dirty ? 'READY' : 'NOT READY'}\nPlayer: ${state.booking?.playerConfigured ? 'READY' : 'NOT READY'}\nPre-open strategy: ${clock ? clock.preopenCalendar ? 'ON' : 'OFF' : 'UNKNOWN'}\nNo existing selections: ${fresh && i?.selected === 0 ? 'YES (last inspection)' : 'NOT VERIFIED'}\nAutomation lock: ${state.lock ? 'BLOCKED' : 'CLEAR'}\nTerms authorization: required per run\nRelease: ${clock ? `${clock.releaseTime} ${clock.timezone}` : 'UNKNOWN'}\nTarget: ${clock?.targetDate ?? 'UNKNOWN'}`;
+  const performance = state.releasePerformance;
+  const ms = (value: number | null) => value === null ? 'NOT MEASURED' : `${value} ms`;
+  byId('release-performance').textContent = performance ? `Trigger error: ${ms(performance.triggerErrorMs)}\nBranch: ${performance.branch}\nTrigger to target enabled: ${ms(performance.triggerToTargetEnabledMs)}\nTarget enabled to click: ${ms(performance.targetEnabledToClickMs)}\nTarget click to grid: ${ms(performance.targetClickToGridMs)}\nGrid to snapshot: ${ms(performance.gridToSnapshotMs)}\nSnapshot to preference: ${ms(performance.snapshotToPreferenceMs)}\nPreference to complete selection: ${ms(performance.preferenceToSelectionMs)}\nTrigger to complete selection: ${ms(performance.triggerToSelectionMs)}${performance.reloads.map((r, n) => `\nReload ${n + 1}:\n  Trigger to commit: ${ms(r.triggerToCommitMs)}\n  Commit to venue: ${ms(r.commitToVenueMs)}\n  Venue to picker: ${ms(r.venueToPickerMs)}\n  Picker to target: ${ms(r.pickerToTargetMs)}`).join('')}` : 'No release measurements in this session.';
   status('onda', i ? (fresh ? 'Verified' : 'Last inspection') : 'Not inspected', fresh ? 'good' : 'muted');
   status('venue', i ? 'Thirsty Pickle | SM Seaside' : 'Not verified', fresh ? 'good' : 'muted');
   status('filter', i ? (i.allCourts ? 'All Courts' : 'Check in Chrome') : 'Unknown', fresh && i?.allCourts ? 'good' : 'muted');
@@ -89,7 +95,7 @@ function render(state: Dashboard) {
     byId('clock').textContent = state.clock.manilaTime; byId('clock-date').textContent = state.clock.manilaDate;
     byId('release-time').textContent = state.clock.releaseTime; byId('release-zone').textContent = state.clock.timezone;
     const activePlan = state.operation === 'observe' ? state.plan : null;
-    byId('target-date').textContent = dateLabel(state.plan?.targetDate ?? state.booking?.targetDate ?? state.clock.targetDate);
+    byId('target-date').textContent = dateLabel(['observe','dry','selection','full'].includes(state.operation) && state.plan ? state.plan.targetDate : state.clock.targetDate);
     byId('safe-config').textContent = `Horizon ${state.clock.horizon} days · lead ${state.clock.leadMs} ms · max ${state.clock.maxReloads} reloads`;
   }
   const signature = JSON.stringify(state.logs);

@@ -51,12 +51,12 @@ export async function observeRelease(page: Page, c: Config | ReleaseSettings, sa
   t.mark('releaseTriggerFired', Date.now() - target.releaseMs);
   let readyWithoutReload = false;
   if (c.RELEASE_PREOPEN_CALENDAR) {
-    t.mark('preopenedTargetObservationStarted');
+    t.mark('preopenReleaseCheckStarted');
     if (await observePreopenedTarget(page, navigationTarget, safety)) {
       t.mark('targetEnabledWithoutReload');
       await clickReleasedTargetDate(page, navigationTarget, safety, t, c.CRITICAL_STEP_TIMEOUT_MS);
       readyWithoutReload = true;
-    } else t.mark('targetStillDisabledAtRelease');
+    } else { t.mark('targetStillDisabledAtRelease'); t.mark('reloadFallbackStarted'); }
   }
   if (!readyWithoutReload) await boundedRelease(c.MAX_RELEASE_RELOADS, c.RELEASE_RETRY_DELAY_MS, safety.signal, async () => {
     safety.check(); t.mark('reloadStarted');

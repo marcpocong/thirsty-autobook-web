@@ -22,7 +22,10 @@ The desktop adds optional `THIRSTY_UI_EVENTS=1` stdout streaming for validated t
 | releaseShellReady | Structural picker checks and final URL/security/Safety guard passed. No Today grid required. |
 | preopenTargetDisabled / preopenTargetEnabled | One target availability check after final preflight; unchanged booking snapshot and expanded calendar verified. Future horizon targets must be disabled. |
 | releaseCalendarPreopened | Pre-open preparation completed; opt-in until live stability is verified. |
-| preopenedTargetObservationStarted | Before the single immediate DOM evaluation at release; no waiting or retrying this observation. |
+| preopenPreparationStarted / preopenTargetDetected | Before final-preflight calendar preparation / after exact unique visible target is found. |
+| preopenCalendarLeftOpen | Pre-open target state, unchanged booking snapshot and expanded calendar verified; release wait follows. |
+| preopenReleaseCheckStarted | Before the single immediate DOM evaluation at release; no waiting or retrying this observation. Replaces V2's preopenedTargetObservationStarted name. |
+| reloadFallbackStarted | The single pre-open observation failed to prove availability; immediate bounded reload path follows. |
 | targetEnabledWithoutReload | Already-rendered exact visible day enabled; normal target click follows immediately, without reload. |
 | targetStillDisabledAtRelease | Immediate observation could not prove an enabled unique visible day (also includes a missing/hidden/ambiguous day); bounded reload follows immediately. |
 | targetPickerOpened | Normal date-picker click returned, or picker was already expanded; calendar content may still hydrate. |
@@ -65,5 +68,9 @@ Compute elapsed phases from monotonic differences within one run. Missing events
 Rate-limit events are `ondaRateLimited`, `thirdPartyRateLimited`, and `ondaRetryAfterUnrestricted`. Their evidence contains ONLY `reason: RATE_LIMITED`, `timestamp`, `monoMs`, `hostname`, `status`, `resourceType`, `navigation`, `retryAfterPresent`, and `sameOndaSite`. Host ownership is exactly `onda.fit` or a `.onda.fit` suffix. Every Onda 429 stops; a positive Retry-After delay or future HTTP date also stops. Empty, zero, expired or malformed Retry-After values alone do not impose a wait. Third-party signals are recorded without a rate-limit hard stop. Navigation access-block checks remain in force.
 
 The first abort reason is preserved. Response evidence is buffered before abort dispatch and the CLI's immediate synchronous diagnostic write includes `failure` and `stopEvidence`. No response/request payload is read and no full URL, path, query, header values, cookies or tokens are persisted. Historical failures without this evidence cannot be assigned an origin retrospectively.
+
+Every diagnostic document now includes `releasePerformance` (null before a release trigger). Release summaries contain the observed branch, trigger error, monotonic phase durations and separate per-reload measurements. Missing endpoints are null, displayed as NOT MEASURED. Normal completion, handled failure and synchronous immediate-stop writes share this serializer. The UI receives a strictly validated `releasePerformance` event and shows the latest run summary for the current app session. The durable copy remains under DiagnosticsLocal. There are no cross-process or cross-attempt duration calculations.
+
+The diagnostic-only `preopenStabilityStarted`, `preopenStabilitySample` (0/15000/30000/45000/60000 planned elapsed ms), and `preopenStabilityPassed` (actual monotonic duration) events are never part of the production release wait. A successful check writes a separate sanitized `preopen-check-<runID>.json` report. This verifies calendar UI stability only, not automatic availability changes at release.
 
 Release phase metrics: trigger→reload commit; commit→shell ready; shell→target observed enabled; enabled→click; click→heading→strict grid; grid→snapshot complete; snapshot→preference; preference→first slot→complete selection. Pair repeated markers by reload attempt. These are client observations, not server release timestamps. Historical domReady and combined newDateSignalDetected/targetDateVerified/targetGridSentinelVerified events retain their old meaning and are no longer emitted by the release path.

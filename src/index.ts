@@ -13,6 +13,7 @@ import { requireCapability } from './capabilities.js';
 import { selectionPort, selectResolvedPreference } from './selection.js';
 import { fullBookingToQr } from './booking-checkout.js';
 import {navigateDate,snapshot} from './grid.js';
+import { checkPreopenStability } from './preopen-check.js';
 
 const safety = new Safety();
 const telemetry = new Telemetry();
@@ -27,7 +28,8 @@ const lockPath = '.local/automation.lock';
 const stopNow = (code: string) => {
   emitUiEvent({ type: 'error', code: /^[A-Z_]{1,80}$/.test(code) ? code : 'OPERATION_FAILED' });
   telemetry.mark(code === 'USER_ABORT' ? 'aborted' : 'failed');
-  try { writeFileSync(`DiagnosticsLocal/${telemetry.runID}.json`, JSON.stringify({ runID: telemetry.runID, events: telemetry.events, failure: code, stopEvidence: safety.stopEvidence })); } catch {}
+  try { writeFileSync(`DiagnosticsLocal/${telemetry.runID}.json`, JSON.stringify(telemetry.document(code, safety.stopEvidence))); } catch {}
+  telemetry.publishPerformance();
   console.error(code === 'USER_ABORT' ? 'AUTOMATION ABORTED — USER CONTROL RESTORED' : code);
   if (process.stdin.isTTY) process.stdin.setRawMode(false);
   // Keep lock on abrupt termination: fail closed until user checks the browser.
@@ -49,14 +51,14 @@ if (process.stdin.isTTY) {
 }
 try {
   const [mode, ...args] = process.argv.slice(2);
-  if (!mode || !['inspect', 'practice', 'release:observe', 'race:dry', 'race', 'selection:armed','handoff:test','practice:full'].includes(mode)) throw new Error('MODE_REQUIRED');
+  if (!mode || !['inspect', 'practice', 'release:observe', 'release:preopen-check', 'race:dry', 'race', 'selection:armed','handoff:test','practice:full'].includes(mode)) throw new Error('MODE_REQUIRED');
   const allowed = new Set(mode === 'practice' ? ['--date', '--court', '--start', '--duration'] : ['handoff:test','practice:full'].includes(mode)?['--maximum','--date','--court','--start','--duration','--armed','--authorize-terms','--noncompetitive']:['--armed', '--authorize-terms', '--plan-hash']);
   for (const arg of args.filter(a => a.startsWith('--'))) if (!allowed.has(arg)) throw new Error('UNKNOWN_ARGUMENT');
   requireArmed(mode, args.includes('--armed'));
   requireCapability(mode);
   if(['race','handoff:test','practice:full'].includes(mode)&&!args.includes('--authorize-terms'))throw new Error('TERMS_AUTHORIZATION_REQUIRED');
   if(mode==='handoff:test'&&!args.includes('--noncompetitive'))throw new Error('NONCOMPETITIVE_TARGET_REQUIRED');
-  const config: Config | ReleaseSettings | undefined = mode === 'release:observe' ? loadObservationConfig() : ['race:dry','selection:armed','race','handoff:test','practice:full'].includes(mode) ? loadConfig() : undefined;
+  const config: Config | ReleaseSettings | undefined = ['release:observe', 'release:preopen-check'].includes(mode) ? loadObservationConfig() : ['race:dry','selection:armed','race','handoff:test','practice:full'].includes(mode) ? loadConfig() : undefined;
   const value = (flag: string) => { const i = args.indexOf(flag); return i < 0 ? undefined : args[i + 1]; };
   if (args.includes('--plan-hash') && (!config || !('MAX_PRICE' in config) || planFingerprint(config as Config) !== value('--plan-hash'))) throw new Error('BOOKING_PLAN_CHANGED');
   const practiceInput = mode === 'practice' ? PracticeSchema.parse({ date: value('--date'), court: value('--court'), start: value('--start'), duration: value('--duration') }) : undefined;
@@ -67,6 +69,11 @@ try {
   ownsLock = true; await lock.writeFile(JSON.stringify({ pid: process.pid, runID: telemetry.runID })); await lock.close();
   const { page } = await attach(safety, telemetry); telemetry.mark('chromeConnected'); telemetry.mark('ondaTabResolved');
   if (mode === 'inspect') await inspect(page);
+  else if (mode === 'release:preopen-check' && config) {
+    const result = await checkPreopenStability(page, config, safety, telemetry);
+    await writeFileAsync(`DiagnosticsLocal/preopen-check-${telemetry.runID}.json`, JSON.stringify(result, null, 2));
+    console.log(JSON.stringify(result, null, 2));
+  }
   else if (practiceInput) await practice(page, practiceInput, safety, telemetry);
   else if(fullPractice&&config){
     const booking=config as Config;
@@ -110,8 +117,7 @@ try {
   emitUiEvent({ type: 'error', code: failureCode });
   console.error(e.name === 'ZodError' ? `INVALID_PRACTICE_ARGUMENTS: ${e.issues?.map(i => i.path.join('.')).join(', ')}` : e.message?.startsWith('CONFIG_INVALID') || /^[A-Z_]+(?::|$)/.test(e.message ?? '') ? e.message : 'OPERATION_FAILED — no automatic recovery. Check the browser manually.');
 } finally {
-  await telemetry.flush();
-  if (failureCode) try { await writeFileAsync(`DiagnosticsLocal/${telemetry.runID}.json`, JSON.stringify({ runID: telemetry.runID, events: telemetry.events, failure: failureCode }, null, 2)); } catch {}
+  await telemetry.flush(failureCode, safety.stopEvidence);
   // Keep lock after failures as selection state can be uncertain.
   if (ownsLock && exitCode === 0 && !retainSelection) await unlinkAsync(lockPath);
   if (process.stdin.isTTY) process.stdin.setRawMode(false);

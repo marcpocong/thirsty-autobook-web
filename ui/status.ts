@@ -26,6 +26,6 @@ export function clockStatus(config: ReleaseSettings, now: DateTime = DateTime.no
   return { manilaTime: now.setZone('Asia/Manila').toFormat('HH:mm:ss'), manilaDate: now.setZone('Asia/Manila').toFormat('ccc, LLL d, yyyy'),
     releaseMs: next.releaseMs, targetDate: next.targetDate, releaseTime: config.RELEASE_TIME, timezone: config.TIMEZONE,
     canArmToday: now.toMillis() < today.releaseMs - config.PREFLIGHT_SECONDS_BEFORE * 1000,
-    remainingMs: Math.max(0, next.releaseMs - now.toMillis()), horizon: config.BOOKING_HORIZON_DAYS, maxReloads: config.MAX_RELEASE_RELOADS, leadMs: config.RELEASE_LEAD_MS };
+    remainingMs: Math.max(0, next.releaseMs - now.toMillis()), horizon: config.BOOKING_HORIZON_DAYS, maxReloads: config.MAX_RELEASE_RELOADS, leadMs: config.RELEASE_LEAD_MS, preopenCalendar: config.RELEASE_PREOPEN_CALENDAR };
 }
 export function readClock() { return clockStatus(loadObservationConfig()); }

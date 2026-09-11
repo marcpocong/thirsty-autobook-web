@@ -24,6 +24,7 @@
     <label class="terms-choice"><input id="terms" type="checkbox" disabled> I authorize accepting Onda Terms for this booking</label>
   </section>
   <div class="content">
+    <section class="panel"><h2>Release strategy</h2><pre id="release-strategy">Reading configuration...</pre><h2>Next release readiness</h2><pre id="next-readiness">Not verified</pre></section>
     <section class="panel session"><div class="section-title"><h2>Session status</h2><span id="checked-at" class="small">Not inspected</span></div>
       <dl>
         <div><dt>Chrome / CDP</dt><dd id="cdp" data-tone="muted">Checking…</dd></div>
@@ -58,5 +59,6 @@
     <p class="small">Uses the exact selected court/time. Does not wait for 08:00. Continues through Onda to QR Checkout. Payment is NOT automated. Reset closes and reopens the dedicated practice browser when a safe local reset is possible.</p><p id="practice-blocked" class="small"></p>
   </section>
   <section class="panel activity"><div class="section-title"><h2>Activity</h2><span class="small" id="activity-state">LOCAL PROCESS OUTPUT</span></div><div id="log" role="log" aria-live="polite" aria-label="Activity log"><p class="empty">Activity will appear here as commands run.</p></div></section>
+  <section class="panel"><h2>Release performance</h2><pre id="release-performance">No release measurements in this session.</pre></section>
   <footer><div><span class="dot"></span><span>Selection is not a reservation. Payment stays manual.</span></div><button id="stop" class="stop">■ &nbsp; Emergency Stop</button></footer>
 </main><script type="module" src="app.js"></script></body></html>

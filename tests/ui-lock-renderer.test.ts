@@ -8,13 +8,17 @@ import {pathToFileURL} from 'node:url';
 import {Controller} from '../ui/controller.js';
 import {bookingView,defaultSetup} from '../ui/booking.js';
 import {ConfigSchema} from '../src/config.js';
+import {ObservationSchema} from '../src/config.js';
+import {clockStatus} from '../ui/status.js';
+import {DateTime} from 'luxon';
 let browser:Browser;
 beforeAll(async()=>{browser=await chromium.launch({headless:true,...(process.platform==='win32'?{channel:'chrome'}:{})});});
 afterAll(async()=>{await browser.close();});
 const plan=bookingView(ConfigSchema.parse({...defaultSetup,PLAYER_FULL_NAME:'Fixture Player',PLAYER_PHONE:'09123456789',PLAYER_EMAIL:'fixture@example.invalid'}));
-async function renderer(old=false){
+async function renderer(old=false, extra:Record<string,unknown>={}){
  const page=await browser.newPage();const html=(old?execFileSync('git',['show','2edebd0:ui/renderer/index.html'],{encoding:'utf8'}):await readFile('ui/renderer/index.html','utf8')).replace(/<meta http-equiv="Content-Security-Policy"[^>]*>/,'').replace(/<script[^>]*src="app.js"[^>]*><\/script>/,'');await page.setContent(html);
  const state={operation:'idle',headline:'Test retained lock',detail:'',ready:false,cdp:true,lock:true,inspection:null,clock:null,plan:null,logs:[],liveRace:true,booking:plan,termsAuthorized:false,capabilities:{selectionReady:true,checkoutReady:true,paymentBoundaryReady:true},selection:null,mode:'full',handoff:null};
+ Object.assign(state,extra);
  await page.evaluate(state=>{(window as any).thirsty={getStatus:async()=>state,onStatus:()=>()=>{},authorizeTerms:async()=>{},resetPractice:async()=>{},saveBooking:async(input:any)=>{state.booking.setup=input;state.booking.fingerprint='saved';state.headline='Booking plan saved';}};},state);
  const source=old?execFileSync('git',['show','2edebd0:ui/renderer/app.ts'],{encoding:'utf8'}):await readFile('ui/renderer/app.ts','utf8');
  await page.addScriptTag({type:'module',content:stripTypeScriptTypes(source)});
@@ -29,6 +33,17 @@ it('actual renderer keeps all setup controls, Save, Review and Stop enabled whil
  expect(await p.locator('#full-terms').isEnabled()).toBe(true);
  expect(await p.locator('#full-date').isEnabled()).toBe(true);
  await p.locator('#duration').fill('3');await p.locator('#maximum').fill('1800');await p.locator('#start-time').selectOption('10:00');await p.locator('#save-booking').click();await p.waitForFunction(()=>document.getElementById('edit-status')?.textContent==='BOOKING PLAN SAVED');expect(await p.locator('#duration').inputValue()).toBe('3');await p.close();
+});
+it('shows local strategy and calculated next target without implying stale inspection is ready',async()=>{
+ const clock=clockStatus(ObservationSchema.parse({RELEASE_PREOPEN_CALENDAR:true}),DateTime.fromISO('2026-09-11T09:00:00+08:00'));
+ const p=await renderer(false,{clock});
+ expect(await p.locator('#release-strategy').innerText()).toContain('Pre-open calendar: ON');
+ expect(await p.locator('#release-strategy').innerText()).toContain('08:00:00.000');
+ expect(await p.locator('#release-strategy').innerText()).toContain('immediate reload fallback');
+ expect(await p.locator('#next-readiness').innerText()).toContain('Target: 2026-09-14');
+ expect(await p.locator('#next-readiness').innerText()).toContain('Onda: NEEDS INSPECTION');
+ expect(await p.locator('#next-readiness').innerText()).toContain('Automation lock: BLOCKED');
+ await p.close();
 });
 it('real config save/reload persists duration, price, start, attempts, courts and fallback into engine config under a retained lock',async()=>{
  await mkdir('.local',{recursive:true});const root=await mkdtemp(resolve('.local/config-persistence-'));

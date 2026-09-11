@@ -9,6 +9,7 @@ export type Command = {kind:'fullPractice';input:FullPracticeInput} | 'chrome' |
 export type Inspection = Extract<UiEvent, { type: 'inspection' }>;
 export interface Activity { at: string; text: string; level: 'info' | 'error' }
 export interface Dashboard {
+  releasePerformance?: Extract<UiEvent, { type: 'releasePerformance' }>['summary'] | null;
   lockReview?:LockReview|null;
   operation: 'idle' | 'chrome' | 'inspect' | 'prepare' | 'confirming' | 'observe' | 'selection' | 'full' | 'dry' | 'practice' | 'stopping' | 'saving' | 'reviewing' | 'clearing' | 'resetting' | 'fullPractice';
   headline: string; detail: string; ready: boolean; cdp: boolean; lock: boolean;

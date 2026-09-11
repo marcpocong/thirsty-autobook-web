@@ -48,6 +48,7 @@ export async function waitForBookingShellForRelease(page: Page, safety: Safety, 
 }
 
 export async function preopenReleaseCalendar(page: Page, target: ReleaseTarget, safety: Safety, t: Telemetry, timeout: number, expectDisabled: boolean) {
+  t.mark('preopenPreparationStarted');
   await guardReleaseShell(page, safety);
   const before = await snapshot(page);
   const picker = page.getByRole('button', { name: 'Select booking date', exact: true });
@@ -55,6 +56,7 @@ export async function preopenReleaseCalendar(page: Page, target: ReleaseTarget, 
   const day = page.locator(target.daySelector);
   await day.waitFor({ state: 'visible', timeout });
   if (await day.count() !== 1) throw Error('TARGET_DATE_STRUCTURE_CHANGED');
+  t.mark('preopenTargetDetected');
   const enabled = await day.isEnabled();
   if (expectDisabled && enabled) throw Error('TARGET_DATE_ALREADY_RELEASED');
   await guardReleaseShell(page, safety);
@@ -62,6 +64,7 @@ export async function preopenReleaseCalendar(page: Page, target: ReleaseTarget, 
   if (await picker.getAttribute('aria-expanded') !== 'true') throw Error('PREOPEN_CALENDAR_CLOSED');
   t.mark(enabled ? 'preopenTargetEnabled' : 'preopenTargetDisabled');
   t.mark('releaseCalendarPreopened');
+  t.mark('preopenCalendarLeftOpen');
 }
 
 // Exactly one DOM evaluation: no locator waits, polling, requests or recovery clicks.

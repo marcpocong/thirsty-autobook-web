@@ -96,6 +96,7 @@ export class Controller {
     } finally { this.polling = false; }
   }
   private event = (event: UiEvent) => {
+    if (event.type === 'releasePerformance') { this.state.releasePerformance = event.summary; this.publish(); }
     if (event.type === 'selection') { this.state.selection=event; this.state.headline='SLOTS SELECTED'; this.state.detail=['full','fullPractice'].includes(this.state.operation)?'Continuing to Review Booking. Selection is not yet a reservation.':'AUTOMATION STOPPED BEFORE PROCEED. USER CONTROL RESTORED. Selection is not a reservation; the lock remains active.'; this.publish(); }
     if(event.type==='handoff'){this.state.handoff=event;this.state.headline='PAYMENT HOLD ACTIVE';this.state.detail='FULL BOOKING COMPLETE TO PAYMENT HANDOFF. AUTOMATION STOPPED. Complete payment manually in Chrome. AUTOMATION LOCK RETAINED.';this.publish();}
     if (event.type === 'inspection') { this.state.inspection = event; this.log('Onda URL and venue verified. Inspection results received.'); }
@@ -135,6 +136,7 @@ export class Controller {
   private async operation(kind: Dashboard['operation'], work: (generation: number) => Promise<void>) {
     if (this.state.operation !== 'idle') throw new Error('OPERATION_ALREADY_RUNNING');
     const generation = ++this.generation;
+    if (['observe', 'dry', 'selection', 'full'].includes(kind)) this.state.releasePerformance = null;
     this.state.operation = kind; this.state.ready = false; this.state.plan = null; this.state.termsAuthorized=false; this.publish();
     try { await work(generation); }
     catch (error) {

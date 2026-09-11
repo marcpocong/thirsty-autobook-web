@@ -119,12 +119,14 @@ it.each([true, false])('preopened target at release enabled=%s uses one observat
   expect(validateSnapshot(result.grid, target.date)).toHaveLength(112);
   expect(reload).toHaveBeenCalledTimes(enabled ? 0 : 1);
   expect(waits).toBe(2);
-  expect(t.events.filter(e => e.event === 'preopenedTargetObservationStarted')).toHaveLength(1);
+  expect(t.events.filter(e => e.event === 'preopenReleaseCheckStarted')).toHaveLength(1);
   expect(t.events.filter(e => e.event === 'preopenTargetDisabled')).toHaveLength(1);
   const names = t.events.map(e => e.event);
   const decision = names.indexOf(enabled ? 'targetEnabledWithoutReload' : 'targetStillDisabledAtRelease');
-  expect(names[decision + 1]).toBe(enabled ? 'targetDateEnabled' : 'reloadStarted');
+  expect(names[decision + 1]).toBe(enabled ? 'targetDateEnabled' : 'reloadFallbackStarted');
   expect(names).toContain('targetGridReady');
+  expect(names.filter(name => ['targetEnabledWithoutReload', 'targetStillDisabledAtRelease'].includes(name))).toHaveLength(1);
+  for (const event of ['preopenPreparationStarted', 'preopenTargetDetected', 'preopenTargetDisabled', 'preopenCalendarLeftOpen']) expect(names).toContain(event);
   expect(await page.evaluate(() => (window as any).actions)).toEqual(['picker', 'target']);
 });
 

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { emitUiEvent } from './ui-events.js';
 import type { RateLimitEvidence } from './rate-limit.js';
+import { releasePerformance } from './release-performance.js';
 // Closed numeric metadata schema: never accept DOM, URLs, config, error text or PII.
 export class Telemetry {
   readonly runID = randomUUID();
@@ -20,8 +21,17 @@ export class Telemetry {
       emitUiEvent({ type: 'telemetry', event, wall: latest.wall, ...(latest.value !== undefined ? { value: latest.value } : {}) });
     }
   }
-  async flush() {
+  document(failure?: string, stopEvidence?: RateLimitEvidence) {
+    return { runID: this.runID, events: this.events, releasePerformance: releasePerformance(this.events),
+      ...(failure ? { failure } : {}), ...(stopEvidence ? { stopEvidence } : {}) };
+  }
+  publishPerformance() {
+    const summary = releasePerformance(this.events);
+    if (summary) emitUiEvent({ type: 'releasePerformance', summary });
+  }
+  async flush(failure?: string, stopEvidence?: RateLimitEvidence) {
     await mkdir('DiagnosticsLocal', { recursive: true });
-    await writeFile(`DiagnosticsLocal/${this.runID}.json`, JSON.stringify({ runID: this.runID, events: this.events }, null, 2));
+    await writeFile(`DiagnosticsLocal/${this.runID}.json`, JSON.stringify(this.document(failure, stopEvidence), null, 2));
+    this.publishPerformance();
   }
 }

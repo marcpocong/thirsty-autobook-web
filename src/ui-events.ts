@@ -1,7 +1,16 @@
 import { z } from 'zod';
+const measurement = z.number().finite().nullable();
+export const ReleasePerformanceSchema = z.object({
+  triggerErrorMs: measurement, branch: z.enum(['NO-REFRESH', 'RELOAD FALLBACK', 'NOT MEASURED']),
+  triggerToTargetEnabledMs: measurement, targetEnabledToClickMs: measurement, targetClickToGridMs: measurement,
+  gridToSnapshotMs: measurement, snapshotToPreferenceMs: measurement, preferenceToSelectionMs: measurement,
+  triggerToSelectionMs: measurement,
+  reloads: z.array(z.object({ triggerToCommitMs: measurement, commitToVenueMs: measurement, venueToPickerMs: measurement, pickerToTargetMs: measurement }).strict()).max(2),
+}).strict();
 
 // Opt-in stdout protocol. Ordinary CLI output and buffered telemetry remain intact.
 export const UiEventSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('releasePerformance'), summary: ReleasePerformanceSchema }).strict(),
   z.object({type:z.literal('handoff'),date:z.iso.date(),court:z.number().int().min(1).max(7),hours:z.array(z.string().regex(/^(0[89]|1\d|2[0-3]):00$/)).min(1).max(16),amount:z.number().finite().positive(),currency:z.literal('PHP'),status:z.literal('Pending'),countdown:z.string().regex(/^\d{1,2}:[0-5]\d$/),verifiedAt:z.iso.datetime()}).strict(),
   z.object({ type: z.literal('selection'), date: z.iso.date(), court: z.number().int().min(1).max(7), hours: z.array(z.string().regex(/^(0[89]|1\d|2[0-3]):00$/)).min(1).max(16), amount: z.number().finite().positive(), proceedReady: z.literal(true), attempts: z.number().int().min(1).max(5) }).strict(),
   z.object({ type: z.literal('telemetry'), event: z.string().regex(/^[a-zA-Z][a-zA-Z0-9]{0,63}$/), wall: z.iso.datetime(), value: z.number().finite().optional() }).strict(),
