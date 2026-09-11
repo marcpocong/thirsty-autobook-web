@@ -8,7 +8,8 @@ import { Safety } from '../src/safety.js';
 import { Telemetry } from '../src/telemetry.js';
 
 const c = ObservationSchema.parse({});
-const now = DateTime.fromISO('2026-09-11T09:00:00+08:00');
+// Keep wall-clock edits (such as set({ hour: 7 })) in Manila on UTC CI hosts too.
+const now = DateTime.fromISO('2026-09-11T09:00:00+08:00', { zone: 'Asia/Manila' });
 let browser: Browser, page: Page;
 beforeAll(async () => { browser = await chromium.launch({ headless: true, ...(process.platform === 'win32' ? { channel: 'chrome' } : {}) }); });
 beforeEach(async () => {
