@@ -1,5 +1,27 @@
 # Next Onda release readiness — September 11, 2026
 
+## Phase 3 latency hardening update
+
+Initial HEAD: `d4e0896` on clean `main`. Phase 3A's existing Review Lock logic was run read-only, including outside the sandbox to rule out process-access restrictions. Result: `LOCK_BROWSER_STATE_UNKNOWN`; recorded PID dead, browser page/selection/hold unknown, `canClear=false`. The retained lock was preserved. Per the requested safety gate, live testing stopped without calendar interaction or reload. No new 60-second pre-open run or normal reload profile occurred in this phase.
+
+- PREOPEN UI STABILITY: NOT RUN / NOT VERIFIED. Duration and calendar-open, unique-target, represented-target and unchanged-booking observations: NOT MEASURED.
+- Local `RELEASE_PREOPEN_CALENDAR`: OFF, verified from loaded settings. Global default false. `.env.local` remains ignored and unchanged.
+- AUTO-ENABLE AT 08:00: UNVERIFIED. Fallback: NORMAL RELOAD. Lead: 0 ms.
+- New command: `npm run release:reload-profile`. Exactly one commit reload after clean schedule, local dedicated CDP, exclusive automation lock, unique Onda tab, visibility and closed-picker checks. No target, slot or Proceed clicks. Reuses production structural shell readiness without trial clicks or document-complete waits.
+- Live reload start→commit, commit→venue attached/visible, commit→picker attached/visible/enabled, commit→shell and total reload→shell: all NOT MEASURED. Classification: NOT MEASURED.
+- LEAN_RELOAD_JUSTIFIED: NO. No successful live profile exists; the historical release congestion observation alone does not justify interception. Phase 3C not implemented; no lean flag or routing added.
+- Phase 3D: not run. All new selection subphase measurements NOT MEASURED; selection code unchanged because 3A/3B live prerequisites are incomplete.
+
+Precomputation audit: release date, day selector, heading and ordered court/time/hour matrix are constructed before the wait. Configuration, maximum price, player validation and mode/capability checks happen before attachment; UI plan fingerprint is verified before the wait when supplied. CLI runs without a plan hash do not consume a fingerprint. Selection retains its existing defensive preference validation; no compilation was moved into the release interval.
+
+Critical-path audit: successful release/selection has no diagnostic flush, screenshots, Git operations or configuration disk reads. Telemetry marks remain buffered, with the existing optional UI stdout streaming; its renderer overhead is unmeasured and was not changed speculatively. Failure/abort diagnostics remain immediate. Strict target grids on both branches, maximum two production reloads, Onda rate-limit stops, third-party false-positive protection, and full booking-to-QR behavior remain unchanged.
+
+Readiness: NO-REFRESH PATH NOT READY (local OFF, live stability unverified). RELOAD FALLBACK code READY; operator session NOT READY. OVERALL READY FOR NEXT 08:00: NO. Concrete blocker: restore and verify a clean dedicated Onda schedule and safely clear the retained lock through Review Lock. Then complete the two authorized diagnostics; enable pre-open locally only after the real stability PASS.
+
+The earlier validation history below is retained for context; this Phase 3 update supersedes its statement that no profiler exists.
+
+Phase 3 validation: typecheck PASS; all 260 tests across 15 files PASS; UI build PASS; diff check PASS. No UI source or launcher semantics changed, so no EXE rebuild was needed. Fixture coverage includes unsafe Manila boundaries, dirty/hidden/ambiguous/hold states, exactly one reload, zero profiler clicks, partial failure milestones, descriptive thresholds, sanitized missing measurements, readiness before document completion, pre-wait preference compilation and no release diagnostic flush. Existing selection and full-booking tests passed unchanged.
+
 V2 was validated first (218 tests, typecheck, UI build, diff check), then committed and pushed to origin/main as `db3e412` — Harden Onda release fallback and rate-limit diagnostics.
 
 ## Calculated release
@@ -37,7 +59,7 @@ To complete live validation, return the dedicated Chrome session to the normal T
 - Sanitized `releasePerformance` summary in every release diagnostic, including handled failures and immediate aborts. It uses monotonic phase differences and separately reports the scheduler's wall-clock firing error. Reload attempts remain separate; missing endpoints stay null/NOT MEASURED.
 - Validated UI release-performance event and read-only summary for the current app session. Durable summaries remain in ignored DiagnosticsLocal files.
 - Existing strict target grid, selection, checkout/payment logic, Onda rate-limit protection, no automatic retry after an Onda rate limit, maximum two reloads and zero lead remain preserved.
-- Optional single-reload profiler: NOT RUN / not added. No resource blocking was added.
+- Single-reload profiler: now implemented in Phase 3; live NOT RUN. No resource blocking was added.
 
 ## Validation
 

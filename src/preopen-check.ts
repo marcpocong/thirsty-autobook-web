@@ -2,11 +2,11 @@ import type { Page } from 'playwright';
 import { DateTime } from 'luxon';
 import { setTimeout as delay } from 'node:timers/promises';
 import { releaseCalendar, type ReleaseSettings } from './config.js';
-import { assertPage } from './browser.js';
 import { snapshot, validateSnapshot } from './grid.js';
 import { releaseNavigationTarget } from './release-navigation.js';
 import { Safety } from './safety.js';
 import { Telemetry } from './telemetry.js';
+import { assertDiagnosticSchedule } from './diagnostic-schedule.js';
 
 export function tomorrowRelease(c: ReleaseSettings, now: DateTime = DateTime.now()) {
   return releaseCalendar(c, now.setZone(c.TIMEZONE).plus({ days: 1 }));
@@ -27,7 +27,7 @@ export async function checkPreopenStability(page: Page, c: ReleaseSettings, safe
   const readClean = async () => {
     safety.check();
     if (navigated) throw Error('PREOPEN_CHECK_NAVIGATED');
-    await assertPage(page, safety);
+    await assertDiagnosticSchedule(page, safety);
     if ((await page.getByTestId('booking-court-filter-label').innerText()).trim() !== 'All Courts') throw Error('COURT_FILTER_NOT_ALL');
     if (!await page.evaluate(() => document.visibilityState === 'visible')) throw Error('TAB_NOT_VISIBLE');
     const grid = await snapshot(page);

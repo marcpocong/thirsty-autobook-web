@@ -14,6 +14,7 @@ import { selectionPort, selectResolvedPreference } from './selection.js';
 import { fullBookingToQr } from './booking-checkout.js';
 import {navigateDate,snapshot} from './grid.js';
 import { checkPreopenStability } from './preopen-check.js';
+import { assertReloadProfileTime, profileReload, formatReloadProfile } from './reload-profile.js';
 
 const safety = new Safety();
 const telemetry = new Telemetry();
@@ -51,7 +52,8 @@ if (process.stdin.isTTY) {
 }
 try {
   const [mode, ...args] = process.argv.slice(2);
-  if (!mode || !['inspect', 'practice', 'release:observe', 'release:preopen-check', 'race:dry', 'race', 'selection:armed','handoff:test','practice:full'].includes(mode)) throw new Error('MODE_REQUIRED');
+  if (!mode || !['inspect', 'practice', 'release:observe', 'release:preopen-check', 'release:reload-profile', 'race:dry', 'race', 'selection:armed','handoff:test','practice:full'].includes(mode)) throw new Error('MODE_REQUIRED');
+  if (mode === 'release:reload-profile') assertReloadProfileTime();
   const allowed = new Set(mode === 'practice' ? ['--date', '--court', '--start', '--duration'] : ['handoff:test','practice:full'].includes(mode)?['--maximum','--date','--court','--start','--duration','--armed','--authorize-terms','--noncompetitive']:['--armed', '--authorize-terms', '--plan-hash']);
   for (const arg of args.filter(a => a.startsWith('--'))) if (!allowed.has(arg)) throw new Error('UNKNOWN_ARGUMENT');
   requireArmed(mode, args.includes('--armed'));
@@ -69,6 +71,11 @@ try {
   ownsLock = true; await lock.writeFile(JSON.stringify({ pid: process.pid, runID: telemetry.runID })); await lock.close();
   const { page } = await attach(safety, telemetry); telemetry.mark('chromeConnected'); telemetry.mark('ondaTabResolved');
   if (mode === 'inspect') await inspect(page);
+  else if (mode === 'release:reload-profile') {
+    const result = await profileReload(page, safety, telemetry);
+    await writeFileAsync(`DiagnosticsLocal/reload-profile-${telemetry.runID}.json`, JSON.stringify(result, null, 2));
+    console.log(formatReloadProfile(result));
+  }
   else if (mode === 'release:preopen-check' && config) {
     const result = await checkPreopenStability(page, config, safety, telemetry);
     await writeFileAsync(`DiagnosticsLocal/preopen-check-${telemetry.runID}.json`, JSON.stringify(result, null, 2));

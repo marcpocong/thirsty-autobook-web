@@ -1,7 +1,7 @@
 import { beforeAll, beforeEach, afterEach, afterAll, it, expect, vi } from 'vitest';
 import { chromium, type Browser, type Page } from 'playwright';
 import { readFile } from 'node:fs/promises';
-import { ONDA_URL, ObservationSchema } from '../src/config.js';
+import { ONDA_URL, ObservationSchema, ConfigSchema } from '../src/config.js';
 import { Safety, waitUntil } from '../src/safety.js';
 import { Telemetry } from '../src/telemetry.js';
 import { observeRelease } from '../src/release.js';
@@ -227,4 +227,22 @@ it('keeps zero lead and the current conservative retry default', () => {
   expect(settings.MAX_RELEASE_RELOADS).toBe(2);
   expect(ObservationSchema.safeParse({ RELEASE_LEAD_MS: -50 }).success).toBe(false);
   expect(ObservationSchema.safeParse({ MAX_RELEASE_RELOADS: 3 }).success).toBe(false);
+});
+
+it('compiles preferences before the release wait and returns without a diagnostic flush', async () => {
+  const config = ConfigSchema.parse({ START_TIME: '08:00', DURATION_HOURS: 2, PREFERRED_COURTS: [7, 6],
+    FALLBACK_TIMES: ['10:00'], MAX_PRICE: 1200, PLAYER_FULL_NAME: 'Fixture User',
+    PLAYER_PHONE: '0000000000', PLAYER_EMAIL: 'fixture@example.invalid' });
+  vi.mocked(waitUntil).mockImplementation(async epoch => {
+    vi.mocked(Date.now).mockReturnValue(epoch);
+    // Changing the input at the wait cannot cause late preference compilation.
+    config.PREFERRED_COURTS = [1]; config.START_TIME = '12:00';
+  });
+  const t = new Telemetry(), flush = vi.spyOn(t, 'flush');
+  const result = await observeRelease(page, config, new Safety(), t, false, true);
+  expect(result.preferences).toEqual([
+    { court: 7, hours: ['08:00', '09:00'] }, { court: 6, hours: ['08:00', '09:00'] },
+    { court: 7, hours: ['10:00', '11:00'] }, { court: 6, hours: ['10:00', '11:00'] },
+  ]);
+  expect(flush).not.toHaveBeenCalled();
 });

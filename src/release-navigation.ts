@@ -20,7 +20,7 @@ async function guardReleaseShell(page: Page, safety: Safety) {
   if (reason) safety.stop(reason);
   safety.check();
 }
-export async function waitForBookingShellForRelease(page: Page, safety: Safety, timeout: number, t?: Telemetry) {
+export async function waitForBookingShellForRelease(page: Page, safety: Safety, timeout: number, t?: Pick<Telemetry, 'mark'>) {
   safety.check();
   if (page.url() !== ONDA_URL) throw Error('WRONG_URL');
   t?.mark('releaseUrlVerified');
