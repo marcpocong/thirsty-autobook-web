@@ -1,3 +1,9 @@
+# Current readiness: hybrid enabled for September 12 at 08:00 Manila
+
+The user explicitly accepted the alternative live validation plan and requested hybrid activation. The September 12 Court 4 08:00-09:00 dry validation PASSED using production hybrid ranking: API+UI candidate, full grid agreement, estimated PHP 700, GET 344.9512 ms, zero slot or Proceed clicks. Together with the earlier seven-court live comparison PASS, this supports local activation. The original saved three-hour plan remains unchanged; its candidate availability at release is not guaranteed by the one-hour validation.
+
+Local effective settings are now `AVAILABILITY_DISCOVERY_MODE=hybrid`, `RELEASE_PREOPEN_CALENDAR=true`, and `RELEASE_LEAD_MS=0`. Global defaults are unchanged and `.env.local` remains ignored. A fresh read-only readiness check confirmed dedicated Chrome/profile/tab/venue verified, clean schedule, All Courts, zero selections, no hold, lock clear, player configured and plan valid. Next target: September 14, release September 12 at 08:00 Asia/Manila. **READY TO ARM; NOT ARMED.** The user will arm the production run explicitly. This update supersedes the historical hybrid-OFF decision below.
+
 # Phase 5 live hybrid validation - September 12, 2026
 
 ## Decision
