@@ -46,9 +46,14 @@ export function createPassiveHandoffReader(page:Page,safety:Safety):PassiveHando
 export async function observePaymentHandoff(reader:PassiveHandoffReader,expectedAmount:number,timeoutMs:number,safety:Safety,t:Telemetry):Promise<HandoffResult>{
   safety.checkPassiveHandoff();
   if(!Number.isInteger(timeoutMs)||timeoutMs<1||timeoutMs>30000)throw new Error('INVALID_HANDOFF_TIMEOUT');
-  const deadline=performance.now()+timeoutMs;let checkoutSeen=false,holdSeen=false;
+  const deadline=performance.now()+timeoutMs;
+  // Keep the read count bounded as well as the wall-clock duration. A fast
+  // reader must not squeeze an extra pass into the deadline boundary.
+  const maxReads=Math.ceil(timeoutMs/100)+1;
+  let reads=0,checkoutSeen=false,holdSeen=false;
   // Bounded state polling only, never payment-status polling. Stops at first complete proof.
-  while(performance.now()<deadline){
+  while(reads<maxReads&&performance.now()<deadline){
+    reads++;
     safety.checkPassiveHandoff();
     const remaining=Math.max(1,deadline-performance.now());
     let evidence:HandoffEvidence;
