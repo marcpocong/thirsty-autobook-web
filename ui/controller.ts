@@ -203,6 +203,20 @@ export class Controller {
     this.state.detail = 'Booking plan and local player information validated. Today’s grid, All Courts, zero selected slots and clear lock verified. Nothing is armed.';
     this.log('READY — preparation completed. Nothing armed.');
   }); }
+  prepareDual() { return this.operation('prepare', async gen => {
+    this.state.booking=this.deps.booking();
+    if(this.state.booking.setup.COURT_COUNT!==2)throw Error('DUAL_CONFIG_REQUIRED');
+    this.state.dualWorkers={};this.state.dualResult=null;this.state.dualValidation=undefined;
+    await this.noLock();this.log('Preparing dual run — starting both dedicated browsers and verifying both clean schedules');
+    await this.run('chromeDual',gen);
+    await this.run('dualPrepare',gen);await this.noLock();
+    if(gen!==this.generation)return;
+    this.state.cdp=await this.deps.cdp();
+    this.state.dualValidation=this.deps.dualEvidence?await this.deps.dualEvidence():undefined;
+    this.state.ready=false;this.state.headline='Dual browsers prepared';
+    this.state.detail='Browser A and Browser B are verified, visible, clean and ready for the selected dual practice or release action. Nothing has been selected or armed.';
+    this.log('DUAL READY — both browsers verified; nothing selected or armed.');
+  }); }
   armObservation() { return this.operation('confirming', async gen => {
     await this.noLock();
     if (!this.deps.clock().canArmToday) throw new Error('TOO_LATE_FOR_PREFLIGHT');

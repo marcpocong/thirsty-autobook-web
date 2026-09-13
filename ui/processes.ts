@@ -48,6 +48,7 @@ export function commandSpec(command: Command, root: string, node: string) {
   switch (command) {
     case 'chromeDual': return { executable:'powershell.exe',args:['-NoProfile','-ExecutionPolicy','Bypass','-File',resolve(root,'scripts/start-onda-dual.ps1')],automation:false };
     case 'dualReadiness': return { executable:node,args:['--import','tsx',resolve(root,'src/dual-entry.ts'),'readiness'],automation:true };
+    case 'dualPrepare': return { executable:node,args:['--import','tsx',resolve(root,'src/dual-entry.ts'),'readiness'],automation:true };
     case 'chrome': return { executable: 'powershell.exe', args: ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', resolve(root, 'scripts/start-onda-chrome.ps1')], automation: false };
     case 'inspect': return { executable: node, args: ['--import', 'tsx', resolve(root, 'src/index.ts'), 'inspect'], automation: true };
     case 'observe': return { executable: node, args: ['--import', 'tsx', resolve(root, 'src/index.ts'), 'release:observe', '--armed'], automation: true };

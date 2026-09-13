@@ -57,6 +57,10 @@ it('identities enforce separate profiles and ports',()=>{
   expect(browserA.port).toBe(9222);expect(browserB.port).toBe(9223);expect(browserA.expectedProfile).toBe('.local/onda-chrome-profile');expect(browserB.expectedProfile).toBe('.local/onda-chrome-profile-b');
   expect(()=>validateBrowserIdentity(browserA)).not.toThrow();expect(()=>validateBrowserIdentity(browserB)).not.toThrow();
 });
+it('provides an explicit dual preparation command without booking arguments',()=>{
+  const spec=commandSpec('dualPrepare','root','node');
+  expect(spec.automation).toBe(true);expect(spec.args).toContain('readiness');expect(spec.args).not.toContain('--armed');expect(spec.args).not.toContain('--authorize-terms');
+});
 it.each([{port:9222},{expectedProfile:browserA.expectedProfile},{cdpUrl:browserA.cdpUrl},{cdpUrl:'http://192.168.1.2:9223'}])('B refuses wrong identity %s',change=>expect(()=>validateBrowserIdentity({...browserB,...change})).toThrow('CDP_IDENTITY_MISMATCH'));
 it.each([1,2,3])('ranks a same-date, same-block, distinct pair for %i hours',duration=>{
   const h=harness({DURATION_HOURS:duration}),pair=resolveDualPair(date,h.grids,compilePreferences(h.c))!;

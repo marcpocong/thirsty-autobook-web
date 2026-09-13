@@ -50,9 +50,12 @@ npm run chrome          # existing A launcher
 npm run chrome:b
 npm run chrome:dual
 npm run dual:readiness
+npm run dual:prepare
 npm run dual:practice:dry -- --date YYYY-MM-DD
 npm run dual:practice:selection -- --date YYYY-MM-DD --court-a 7 --court-b 6 --start 10:00 --duration 1
 ```
+
+`dual:prepare` is the no-click preparation command: it starts or reuses both visible dedicated browsers, verifies their exact identities and Onda tabs, checks clean schedules, and exits without arming, selecting, Proceed, or creating a hold. The UI's **Prepare Dual Browsers** button runs this same operation for the saved `COURT_COUNT=2` plan. **Prepare Booking** remains the one-button preparation path for the selected single or dual production plan; it validates the saved settings before any arm button is enabled.
 
 Explicit `dual:*` commands opt into count 2 for that run without editing saved settings. Selection practice uses the configured maximum unless `--maximum-per-court` is supplied. Its successful terminal state is zero selections in both browsers and zero Proceed clicks.
 
@@ -81,6 +84,7 @@ Coordinator events cover preflight, both ready, armed, release, each/both grids,
 | Two visible dedicated Chrome windows | PASS |
 | A identity / B identity | PASS / PASS |
 | Dual readiness | PASS; both visible, clean, zero selections, no hold |
+| Dual prepare command | PASS; started/reused both browsers and verified both clean schedules; no clicks |
 | Saved-plan dry on September 14 | `NO_DUAL_PAIR_AVAILABLE`; zero slot/Proceed clicks |
 | Failed-dry lock review | PASS; dead owner, both clean; verified safe clear used |
 | Saved-plan dry on September 15 | PASS; A Court 6 + B Court 5, 21:00–24:00, `UI_ONLY` |
@@ -94,6 +98,6 @@ Both browsers were returned to today's clean schedule by the exact read-only che
 
 ## Verification
 
-Typecheck, the full suite (398 tests), UI build and diff whitespace checks passed. The focused dual/browser/lock suite passed 71 tests. An earlier verifier fixture was updated for the now-explicit debugging port and passes. The actual renderer was tested with dual readiness/price/authorization states and visually inspected. The latest EXE rebuild was blocked because the currently running `Thirsty Bot.exe` process holds the tracked executable open; run `npm run exe:build` after closing that window.
+Typecheck, the full suite (399 tests), UI build and diff whitespace checks passed. The focused dual/browser/lock suite passed 64 tests. An earlier verifier fixture was updated for the now-explicit debugging port and passes. The actual renderer was tested with single and dual readiness/price/authorization states and visually inspected. The latest EXE rebuild was blocked because the currently running `Thirsty Bot.exe` process holds the tracked executable open; run `npm run exe:build` after closing that window.
 
 Direct public-checkout calls: **NONE**. Direct is-slot-available calls: **NONE**. Availability-proof handling: **NONE**. Payment automation: **NONE**. Cloudflare/Turnstile/CAPTCHA bypass: **NONE**.

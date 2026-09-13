@@ -38,6 +38,7 @@ it('default single-court renderer keeps dual practice visible but explicitly dis
  const p=await renderer();
  expect(await p.locator('#dual-panel').isVisible()).toBe(true);
  expect(await p.locator('#dual-readiness').innerText()).toContain('Set Courts to book to 2');
+ expect(await p.locator('#dual-prepare').isDisabled()).toBe(true);
  expect(await p.locator('#dual-selection').isDisabled()).toBe(true);
  expect(await p.locator('#dual-full').isDisabled()).toBe(true);
  await p.close();
@@ -72,7 +73,7 @@ it('dual renderer shows two-court semantics, separate readiness, exact practice 
  const p=await renderer(false,{booking:dualPlan,lock:false,dualValidation:{selection:false,full:false},dualWorkers:{A:{type:'dualWorker',workerId:'A',state:'clean',verifiedAt:new Date().toISOString()},B:{type:'dualWorker',workerId:'B',state:'unknown',verifiedAt:new Date().toISOString()}}});
  expect(await p.locator('#court-count').inputValue()).toBe('2');expect(await p.locator('#court-count option').count()).toBe(2);
  expect(await p.locator('#booking-preview').innerText()).toContain('SAME TIME BLOCK');expect(await p.locator('#booking-preview').innerText()).toContain('Maximum possible combined: PHP 2400');
- expect(await p.locator('#dual-panel').isVisible()).toBe(true);expect(await p.locator('#dual-readiness').innerText()).toContain('Browser B: UNKNOWN');
+ expect(await p.locator('#dual-panel').isVisible()).toBe(true);expect(await p.locator('#dual-readiness').innerText()).toContain('Browser B: UNKNOWN');expect(await p.locator('#dual-prepare').isEnabled()).toBe(true);
  expect(await p.locator('#dual-full').isDisabled()).toBe(true);expect(await p.locator('#dual-selection').isDisabled()).toBe(true);expect(await p.locator('#arm').isDisabled()).toBe(true);
  await p.locator('#dual-noncompetitive').check();expect(await p.locator('#dual-selection').isEnabled()).toBe(true);expect(await p.locator('#dual-full').isDisabled()).toBe(true);
  await p.locator('#dual-terms').check();expect(await p.locator('#dual-full').isEnabled()).toBe(true);

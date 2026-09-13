@@ -50,7 +50,7 @@ else {
   window.webContents.on('will-attach-webview', event => event.preventDefault());
   const actions = {
     reviewLock:()=>controller.reviewLock(),clearLock:()=>controller.clearLock(),resetPractice:()=>controller.resetPractice(),
-    startChrome: () => controller.startChrome(), inspectOnda: () => controller.inspectOnda(), prepare: () => controller.prepare(),
+    startChrome: () => controller.startChrome(), inspectOnda: () => controller.inspectOnda(), prepare: () => controller.prepare(), prepareDual:()=>controller.prepareDual(),
     armObservation: () => controller.armObservation(), abortAutomation: () => controller.abortAutomation(), getStatus: () => structuredClone(controller.state),
     armSelection: () => controller.armSelection(), dryRace: () => controller.dryRace(),
     armFullBooking:()=>controller.armFullBooking(),
