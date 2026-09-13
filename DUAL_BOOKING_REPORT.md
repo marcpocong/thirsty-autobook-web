@@ -94,6 +94,6 @@ Both browsers were returned to today's clean schedule by the exact read-only che
 
 ## Verification
 
-Typecheck, the full serial suite (396 tests), UI build, EXE build and diff whitespace checks passed. The default parallel run hit the known existing test-owned browser-close timeout; an earlier verifier fixture was updated for the now-explicit debugging port and passes. The actual renderer was tested with dual readiness/price/authorization states and visually inspected. The tracked EXE launcher was rebuilt.
+Typecheck, the full suite (397 tests), UI build, EXE build and diff whitespace checks passed. The focused dual/browser/lock suite passed 71 tests. An earlier verifier fixture was updated for the now-explicit debugging port and passes. The actual renderer was tested with dual readiness/price/authorization states and visually inspected. The tracked EXE launcher was rebuilt.
 
 Direct public-checkout calls: **NONE**. Direct is-slot-available calls: **NONE**. Availability-proof handling: **NONE**. Payment automation: **NONE**. Cloudflare/Turnstile/CAPTCHA bypass: **NONE**.
