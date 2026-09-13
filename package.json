@@ -24,7 +24,14 @@
     "exe:build": "npm run ui:build && node scripts/build-exe.mjs",
     "ui:build": "tsc -p tsconfig.ui.json && node scripts/build-ui.mjs",
     "availability:dry": "tsx src/index.ts availability:dry",
-    "release:readiness": "tsx src/readiness-cli.ts"
+    "release:readiness": "tsx src/readiness-cli.ts",
+    "chrome:b": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-onda-chrome.ps1 -Worker B",
+    "chrome:dual": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-onda-dual.ps1",
+    "dual:readiness": "tsx src/dual-entry.ts readiness",
+    "dual:practice:dry": "tsx src/dual-entry.ts dry",
+    "dual:practice:selection": "tsx src/dual-entry.ts practice",
+    "dual:practice:full": "tsx src/dual-entry.ts full",
+    "dual:race:dry": "tsx src/dual-entry.ts race:dry"
   },
   "dependencies": {
     "dotenv": "^17.4.2",

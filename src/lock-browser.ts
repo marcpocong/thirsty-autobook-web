@@ -1,5 +1,5 @@
 ﻿import { chromium, type Page } from 'playwright';
-import { verifyDedicatedChrome } from './browser.js';
+import { verifyDedicatedChrome, browserA, type BrowserIdentity } from './browser.js';
 import { ONDA_URL, VENUE } from './config.js';
 import { snapshot, validateSnapshot } from './grid.js';
 export interface BrowserReview { page:'Schedule'|'Review Booking'|'Payment Summary'|'QR Checkout'|'Unknown'; selected:number|null; hold:'Active'|'Not detected'|'Unknown'; clean:boolean }
@@ -23,9 +23,9 @@ export async function inspectLockPage(page:Page):Promise<BrowserReview>{
   const selected=cells.filter(c=>c.state==='SELECTED').length;
   return {page:'Schedule',selected,hold:'Not detected',clean:selected===0};
 }
-export async function probeLockBrowser():Promise<BrowserReview>{
-  verifyDedicatedChrome();
-  const browser=await chromium.connectOverCDP('http://127.0.0.1:9222',{timeout:5000});
+export async function probeLockBrowser(identity:BrowserIdentity=browserA):Promise<BrowserReview>{
+  verifyDedicatedChrome(identity);
+  const browser=await chromium.connectOverCDP(identity.cdpUrl,{timeout:5000});
   // The short-lived reader exits without closing the user's browser, context or tabs.
   const pages=browser.contexts().flatMap(c=>c.pages()).filter(p=>{try{return new URL(p.url()).origin===new URL(ONDA_URL).origin;}catch{return false;}});
   if(pages.length!==1)return unknownBrowser;

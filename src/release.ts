@@ -20,8 +20,9 @@ export async function boundedRelease<T>(maximum: number, retryDelay: number, sig
   }
   throw new Error('RELEASE_HORIZON_UNAVAILABLE');
 }
-export async function observeRelease(page: Page, c: Config | ReleaseSettings, safety: Safety, t: Telemetry, dry: boolean, selecting = false) {
-  const target = releaseCalendar(c);
+export interface ReleaseGate { target: ReturnType<typeof releaseCalendar>; beforeArmed(): Promise<void>; onRelease?():void }
+export async function observeRelease(page: Page, c: Config | ReleaseSettings, safety: Safety, t: Telemetry, dry: boolean, selecting = false, gate?: ReleaseGate) {
+  const target = gate?.target ?? releaseCalendar(c);
   const navigationTarget = releaseNavigationTarget(target.targetDate);
   const preferences = 'START_TIME' in c ? compilePreferences(c) : undefined;
   const discovery = c.AVAILABILITY_DISCOVERY_MODE === 'hybrid' && 'MAX_PRICE' in c
@@ -47,11 +48,13 @@ export async function observeRelease(page: Page, c: Config | ReleaseSettings, sa
   await waitUntil(target.releaseMs - c.PREFLIGHT_SECONDS_BEFORE * 1000, safety.signal);
   await preflight();
   if (c.RELEASE_PREOPEN_CALENDAR) await preopenReleaseCalendar(page, navigationTarget, safety, t, c.CRITICAL_STEP_TIMEOUT_MS, c.BOOKING_HORIZON_DAYS > 0);
+  if (gate) await gate.beforeArmed();
   if (Date.now() >= target.releaseMs) throw new Error('PREFLIGHT_MISSED_RELEASE');
   t.mark('armed'); t.mark('releaseScheduled', target.releaseMs);
   console.log('ARMED — waiting for release.');
   await waitUntil(target.releaseMs, safety.signal);
   t.mark('releaseTriggerFired', Date.now() - target.releaseMs);
+  if (gate?.onRelease) gate.onRelease();
   discovery?.start();
   let readyWithoutReload = false;
   if (c.RELEASE_PREOPEN_CALENDAR) {

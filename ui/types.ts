@@ -5,10 +5,16 @@ import type { clockStatus } from './status.js';
 import type { BookingView } from './booking.js';
 import type { BookingSetup } from '../src/config.js';
 import type { PracticeInput } from '../src/practice.js';
-export type Command = {kind:'fullPractice';input:FullPracticeInput} | 'chrome' | 'inspect' | 'observe' | { kind:'selection' | 'dry'; planHash:string } | {kind:'full';planHash:string;authorizeTerms:true} | { kind:'practice'; input:PracticeInput };
+import type { DualPracticeInput } from '../src/dual-practice.js';
+export type DualPracticeCommand = { kind:'dualDry'; date:string } | { kind:'dualPractice'|'dualFullPractice'; input:DualPracticeInput };
+export type Command = DualPracticeCommand | 'chromeDual' | 'dualReadiness' | {kind:'fullPractice';input:FullPracticeInput} | 'chrome' | 'inspect' | 'observe' | { kind:'selection' | 'dry'; planHash:string } | {kind:'full';planHash:string;authorizeTerms:true} | { kind:'practice'; input:PracticeInput };
 export type Inspection = Extract<UiEvent, { type: 'inspection' }>;
 export interface Activity { at: string; text: string; level: 'info' | 'error' }
 export interface Dashboard {
+  dualWorkers?:Partial<Record<'A'|'B',Extract<UiEvent,{type:'dualWorker'}>>>;
+  dualResult?:Extract<UiEvent,{type:'dualResult'}>|null;
+  dualValidation?:{selection:boolean;full:boolean};
+  dualActive?:boolean;
   releasePerformance?: Extract<UiEvent, { type: 'releasePerformance' }>['summary'] | null;
   lockReview?:LockReview|null;
   operation: 'idle' | 'chrome' | 'inspect' | 'prepare' | 'confirming' | 'observe' | 'selection' | 'full' | 'dry' | 'practice' | 'stopping' | 'saving' | 'reviewing' | 'clearing' | 'resetting' | 'fullPractice';
@@ -21,6 +27,7 @@ export interface Dashboard {
   mode:'selection'|'full'; handoff:Extract<UiEvent,{type:'handoff'}>|null;
 }
 export interface Bridge {
+  runDualPractice(input:DualPracticeCommand):Promise<void>;
   reviewLock():Promise<void>; clearLock():Promise<void>; resetPractice():Promise<void>; runFullPractice(input:FullPracticeInput):Promise<void>;
   startChrome(): Promise<void>; inspectOnda(): Promise<void>; prepare(): Promise<void>;
   armObservation(): Promise<void>; abortAutomation(): Promise<void>; getStatus(): Promise<Dashboard>;

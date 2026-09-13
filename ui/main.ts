@@ -1,3 +1,4 @@
+import { loadConfig } from '../src/config.js';
 import {reviewLock,clearVerifiedLock,browserProbe} from './locks.js';
 import { app, BrowserWindow, ipcMain, dialog, session } from 'electron';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -18,12 +19,14 @@ const indexUrl = pathToFileURL(index).href;
 let window: BrowserWindow;
 let exiting = false;
 const controller = new Controller({ runner: createRunner(root, node), lock: () => readLock(root), cdp: probeCdp, clock: readClock,
-  reviewLock:owned=>reviewLock(root,owned,browserProbe(root,node)),
-  clearLock:(fingerprint,owned)=>clearVerifiedLock(root,fingerprint,owned,browserProbe(root,node)),
+  reviewLock:owned=>reviewLock(root,owned,browserProbe(root,node),undefined,browserProbe(root,node,'B')),
+  clearLock:(fingerprint,owned)=>clearVerifiedLock(root,fingerprint,owned,browserProbe(root,node),undefined,browserProbe(root,node,'B')),
   resetPractice:()=>resetPracticeSession(root,()=>reviewLock(root,false,browserProbe(root,node)),browserProbe(root,node),probeCdp),
   confirmReset:async()=> (await dialog.showMessageBox(window,{type:'question',title:'Reset practice session?',message:'RESET PRACTICE SESSION?',detail:'This closes and reopens only the dedicated Thirsty Bot Chrome, then clears local practice state. Review Booking and Payment Summary page state may be discarded. It will not cancel an Onda payment hold; a detected QR hold, selected slot, or active worker blocks the reset.',buttons:['Cancel','Reset Practice'],defaultId:0,cancelId:0})).response===1,
   confirmClear:async()=> (await dialog.showMessageBox(window,{type:'question',title:'Clear verified stale lock?',message:'CLEAR VERIFIED STALE LOCK?',detail:'PID is no longer running.\nOnda schedule page is clean.\nSelected slots: 0.\nNo checkout hold detected.\nSafety checks will run again before removal.',buttons:['Cancel','Clear Lock'],defaultId:0,cancelId:0})).response===1,
   confirmPractice:async input=>(await dialog.showMessageBox(window,{type:'question',title:'Run Full Flow Practice to QR?',message:'RUN FULL FLOW PRACTICE TO QR?',detail:`Date: ${input.target.date}\nCourt: ${input.target.court}\nStart: ${input.target.start}\nDuration: ${input.target.duration} hours\nMaximum: PHP ${input.maximum}\nPlayer information: Configured\nTerms authorization: YES\n\nThis continues until Onda displays the QR payment page. Payment itself will NOT be performed.`,buttons:['Cancel','Run Practice'],defaultId:0,cancelId:0})).response===1,
+  dualEvidence:async()=>{const {readDualEvidence,dualValidationFingerprint}=await import('../src/dual-runtime.js');const e=await readDualEvidence(dualValidationFingerprint(loadConfig()));return {selection:!!(e.readiness&&e.dry&&e.selection),full:!!(e.readiness&&e.dry&&e.selection&&e.full)};},
+  confirmDualPractice:async command=>(await dialog.showMessageBox(window,{type:'warning',title:'Create TWO real temporary holds?',message:'THIS TEST CAN CREATE TWO REAL TEMPORARY RESERVATION HOLDS.',detail:command.kind==='dualDry'?'':`Date: ${command.input.target.date}\nCourts: ${command.input.target.court} + ${command.input.courtB}\nStart: ${command.input.target.start}\nDuration: ${command.input.target.duration} hours\nMaximum per court: PHP ${command.input.maximum}\nTerms authorized: YES\nNoncompetitive target: confirmed\nPAYMENT WILL NOT BE AUTOMATED.`,buttons:['Cancel','Create two test holds'],defaultId:0,cancelId:0})).response===1,
   booking:readBooking, saveBooking, handoff:()=>readHandoff(root),
   confirm: async (kind='observe',plan) => (await dialog.showMessageBox(window, { type: 'question', title: kind==='full'?'Arm Full Booking to QR?':kind==='selection'?'Arm booking selection?':kind==='dry'?'Arm Dry Race?':'Arm release observation?',
     message: kind==='full'?'ARM FULL BOOKING?':kind==='selection'?'ARM BOOKING SELECTION?':kind==='dry'?'ARM DRY RACE?':'Arm release observation?',
@@ -56,7 +59,7 @@ else {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== indexUrl || args.length) throw new Error('IPC_NOT_ALLOWED');
     return action();
   });
-  for (const [name,action] of Object.entries({runFullPractice:(input:unknown)=>controller.runFullPractice(input),saveBooking:(input:unknown)=>controller.saveBooking(input),runPractice:(input:unknown)=>controller.runPractice(input),setMode:(input:unknown)=>controller.setMode(input),authorizeTerms:(input:unknown)=>controller.authorizeTerms(input)})) ipcMain.handle(`thirsty:${name}`,(event,...args:unknown[])=>{
+  for (const [name,action] of Object.entries({runDualPractice:(input:unknown)=>controller.runDualPractice(input),runFullPractice:(input:unknown)=>controller.runFullPractice(input),saveBooking:(input:unknown)=>controller.saveBooking(input),runPractice:(input:unknown)=>controller.runPractice(input),setMode:(input:unknown)=>controller.setMode(input),authorizeTerms:(input:unknown)=>controller.authorizeTerms(input)})) ipcMain.handle(`thirsty:${name}`,(event,...args:unknown[])=>{
     if(event.sender!==window.webContents||event.senderFrame!==window.webContents.mainFrame||event.senderFrame.url!==indexUrl||args.length!==1)throw new Error('IPC_NOT_ALLOWED');
     return action(args[0]);
   });

@@ -1,8 +1,8 @@
-param([string]$ExpectedProfile = (Join-Path (Split-Path -Parent $PSScriptRoot) '.local\onda-chrome-profile'))
+param([ValidateSet(9222,9223)][int]$Port = 9222, [string]$ExpectedProfile = (Join-Path (Split-Path -Parent $PSScriptRoot) '.local\onda-chrome-profile'))
 $ErrorActionPreference = 'Stop'
 # Only a closed diagnostic code crosses the process boundary. Never print metadata.
 function Get-DedicatedChromeCode {
-  try { $listeners = @(Get-NetTCPConnection -State Listen | Where-Object LocalPort -eq 9222) }
+  try { $listeners = @(Get-NetTCPConnection -State Listen | Where-Object LocalPort -eq $Port) }
   catch { return 'CDP_PROCESS_METADATA_UNAVAILABLE' }
   if ($listeners.Count -eq 0) { return 'CDP_NOT_LISTENING' }
   if ($listeners | Where-Object { $_.LocalAddress -notin @('127.0.0.1','::1') }) { return 'CDP_UNSAFE_BIND' }
@@ -20,6 +20,8 @@ function Get-DedicatedChromeCode {
   try {
     if (-not [IO.Path]::IsPathRooted($profile) -or [IO.Path]::GetFullPath($profile).TrimEnd('\') -ine [IO.Path]::GetFullPath($ExpectedProfile).TrimEnd('\')) { return 'CDP_WRONG_PROFILE' }
   } catch { return 'CDP_WRONG_PROFILE' }
+  $ports = [regex]::Matches($process.CommandLine, '(?:^|\s)--remote-debugging-port=(\d+)(?:\s|$)')
+  if ($ports.Count -ne 1 -or [int]$ports[0].Groups[1].Value -ne $Port) { return 'CDP_WRONG_PORT' }
   return 'CDP_VERIFIED'
 }
 Get-DedicatedChromeCode

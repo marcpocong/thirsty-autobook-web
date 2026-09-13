@@ -6,6 +6,7 @@ import type { Command } from './types.js';
 import { z } from 'zod';
 import { PracticeSchema } from '../src/practice.js';
 import {requireCapability} from '../src/capabilities.js';
+import { DualPracticeSchema, requireDualFullAuthorization } from '../src/dual-practice.js';
 
 export interface RunningCommand { pid: number | undefined; done: Promise<number>; stop(): Promise<void> }
 export type Runner = (command: Command, onEvent: (event: UiEvent) => void, onLine: (line: string, error: boolean) => void) => RunningCommand;
@@ -18,6 +19,15 @@ export function sanitizeLine(text: string): string {
 }
 export function commandSpec(command: Command, root: string, node: string) {
   if (typeof command === 'object' && command !== null) {
+    if(command.kind==='dualDry') {
+      const c=z.object({kind:z.literal('dualDry'),date:z.iso.date()}).strict().parse(command);
+      return {executable:node,args:['--import','tsx',resolve(root,'src/dual-entry.ts'),'dry','--date',c.date],automation:true};
+    }
+    if(command.kind==='dualPractice'||command.kind==='dualFullPractice') {
+      const c=z.object({kind:z.enum(['dualPractice','dualFullPractice']),input:DualPracticeSchema}).strict().parse(command), p=c.input, t=p.target;
+      if(c.kind==='dualFullPractice')requireDualFullAuthorization(p);
+      return {executable:node,args:['--import','tsx',resolve(root,'src/dual-entry.ts'),c.kind==='dualPractice'?'practice':'full','--date',t.date,'--court-a',String(t.court),'--court-b',String(p.courtB),'--start',t.start,'--duration',String(t.duration),'--maximum-per-court',String(p.maximum),'--noncompetitive',...(c.kind==='dualFullPractice'?['--armed','--authorize-terms']:[])],automation:true};
+    }
     if(command.kind==='fullPractice'){
       const {input}=z.object({kind:z.literal('fullPractice'),input:FullPracticeSchema}).strict().parse(command);
       requireCapability('practice:full');const t=input.target;
@@ -36,6 +46,8 @@ export function commandSpec(command: Command, root: string, node: string) {
     return {executable:node,args:['--import','tsx',resolve(root,'src/index.ts'),c.kind==='selection'?'selection:armed':'race:dry','--armed','--plan-hash',c.planHash],automation:true};
   }
   switch (command) {
+    case 'chromeDual': return { executable:'powershell.exe',args:['-NoProfile','-ExecutionPolicy','Bypass','-File',resolve(root,'scripts/start-onda-dual.ps1')],automation:false };
+    case 'dualReadiness': return { executable:node,args:['--import','tsx',resolve(root,'src/dual-entry.ts'),'readiness'],automation:true };
     case 'chrome': return { executable: 'powershell.exe', args: ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', resolve(root, 'scripts/start-onda-chrome.ps1')], automation: false };
     case 'inspect': return { executable: node, args: ['--import', 'tsx', resolve(root, 'src/index.ts'), 'inspect'], automation: true };
     case 'observe': return { executable: node, args: ['--import', 'tsx', resolve(root, 'src/index.ts'), 'release:observe', '--armed'], automation: true };

@@ -6,21 +6,29 @@ import { Safety, securityReason } from './safety.js';
 import { classifyRateLimit } from './rate-limit.js';
 import type { Telemetry } from './telemetry.js';
 
-export const cdpCodes = ['CDP_NOT_LISTENING', 'CDP_UNSAFE_BIND', 'CDP_AMBIGUOUS_LISTENER',
+export const cdpCodes = ['CDP_WRONG_PORT', 'CDP_NOT_LISTENING', 'CDP_UNSAFE_BIND', 'CDP_AMBIGUOUS_LISTENER',
   'CDP_PROCESS_METADATA_UNAVAILABLE', 'CDP_PROCESS_NOT_CHROME', 'CDP_PROFILE_MISSING', 'CDP_WRONG_PROFILE'] as const;
-export function verifyDedicatedChrome() {
+export interface BrowserIdentity { workerId: 'A' | 'B'; cdpUrl: string; port: number; expectedProfile: string }
+export const browserA: BrowserIdentity = Object.freeze({ workerId:'A', cdpUrl:'http://127.0.0.1:9222', port:9222, expectedProfile:'.local/onda-chrome-profile' });
+export const browserB: BrowserIdentity = Object.freeze({ workerId:'B', cdpUrl:'http://127.0.0.1:9223', port:9223, expectedProfile:'.local/onda-chrome-profile-b' });
+export function validateBrowserIdentity(identity: BrowserIdentity) {
+  const expected = identity.workerId === 'A' ? browserA : identity.workerId === 'B' ? browserB : undefined;
+  if (!expected || identity.port !== expected.port || identity.cdpUrl !== expected.cdpUrl || resolve(identity.expectedProfile).toLowerCase() !== resolve(expected.expectedProfile).toLowerCase()) throw Error('CDP_IDENTITY_MISMATCH');
+}
+export function verifyDedicatedChrome(identity: BrowserIdentity = browserA) {
+  validateBrowserIdentity(identity);
   if (process.platform !== 'win32') throw new Error('WINDOWS_REQUIRED');
   let code: string;
   try {
     code = execFileSync('powershell.exe', ['-NoProfile', '-File', resolve('scripts/verify-onda-chrome.ps1'),
-      '-ExpectedProfile', resolve('.local/onda-chrome-profile')],
+      '-Port', String(identity.port), '-ExpectedProfile', resolve(identity.expectedProfile)],
       { encoding: 'utf8', windowsHide: true, timeout: 60000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
   } catch { throw new Error('CDP_PROCESS_METADATA_UNAVAILABLE'); }
   if (code !== 'CDP_VERIFIED') throw new Error(cdpCodes.find(c => c === code) ?? 'CDP_PROCESS_METADATA_UNAVAILABLE');
 }
-export async function attach(safety: Safety, telemetry?: Telemetry) {
-  safety.check(); verifyDedicatedChrome();
-  const browser = await chromium.connectOverCDP('http://127.0.0.1:9222', { timeout: 10000 }).catch(() => { throw Error('CDP_ENDPOINT_UNAVAILABLE'); });
+export async function attach(safety: Safety, telemetry?: Telemetry, identity: BrowserIdentity = browserA) {
+  safety.check(); verifyDedicatedChrome(identity);
+  const browser = await chromium.connectOverCDP(identity.cdpUrl, { timeout: 10000 }).catch(() => { throw Error('CDP_ENDPOINT_UNAVAILABLE'); });
   const candidates = browser.contexts().flatMap(c => c.pages()).filter(p => p.url() === ONDA_URL);
   if (candidates.length !== 1) throw new Error('ONDA_TAB_AMBIGUOUS_OR_MISSING');
   const page = candidates[0]!;

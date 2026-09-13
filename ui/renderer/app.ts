@@ -9,11 +9,14 @@ let courtOrder=[7,6,5,4,3,2,1], fallbackTimes:string[]=[];
 const input=(id:string)=>byId(id) as HTMLInputElement;
 const friendly=(h:string)=>`${Number(h.slice(0,2))%12||12}:00 ${Number(h.slice(0,2))<12?'AM':'PM'}`;
 const hours=Array.from({length:16},(_,i)=>`${String(i+8).padStart(2,'0')}:00`);
-for(const id of ['start-time','fallback-time','practice-start','full-start']) (byId(id) as HTMLSelectElement).replaceChildren(...hours.map(h=>new Option(friendly(h),h)));
+for(const id of ['start-time','fallback-time','practice-start','full-start','dual-start']) (byId(id) as HTMLSelectElement).replaceChildren(...hours.map(h=>new Option(friendly(h),h)));
 (byId('practice-court') as HTMLSelectElement).replaceChildren(...Array.from({length:7},(_,i)=>new Option(`Court ${i+1}`,String(i+1))));
 input('practice-date').value=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Manila',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 (byId('full-court') as HTMLSelectElement).replaceChildren(...Array.from({length:7},(_,i)=>new Option(`Court ${i+1}`,String(i+1))));
 input('full-date').value=input('practice-date').value;
+input('dual-date').value=input('practice-date').value;
+for(const id of ['dual-court-a','dual-court-b'])(byId(id) as HTMLSelectElement).replaceChildren(...Array.from({length:7},(_,i)=>new Option(`Court ${i+1}`,String(i+1))));
+input('dual-court-a').value='7';input('dual-court-b').value='6';
 function changed(){dirty=true;void window.thirsty.authorizeTerms(false).catch(()=>{});byId('edit-status').textContent='Unsaved changes · save before preparing';if(latest)render(latest);}
 function editors(){
   const draw=(id:string,items:(string|number)[],fallback:boolean)=>byId(id).replaceChildren(...items.map((item,index)=>{
@@ -30,6 +33,15 @@ function render(state: Dashboard) {
   latest = state;
   byId('headline').textContent = state.headline; byId('detail').textContent = state.detail;
   const busy = state.operation !== 'idle';
+  const dual=state.booking?.setup.COURT_COUNT===2;
+  byId('dual-panel').hidden=!dual;
+  (byId('dual-fields') as HTMLFieldSetElement).disabled=busy;
+  (byId('dual-dry') as HTMLButtonElement).disabled=busy||state.lock||dirty||!dual||!state.cdp;
+  (byId('dual-selection') as HTMLButtonElement).disabled=busy||state.lock||dirty||!dual||!state.cdp||!input('dual-noncompetitive').checked;
+  (byId('dual-full') as HTMLButtonElement).disabled=busy||state.lock||dirty||!dual||!state.cdp||!input('dual-noncompetitive').checked||!input('dual-terms').checked;
+  byId('dual-readiness').textContent=['A','B'].map(id=>{const w=state.dualWorkers?.[id as 'A'|'B'];return `Browser ${id}: ${w?`${w.state.toUpperCase()} (last observed ${new Date(w.verifiedAt).toLocaleTimeString()})`:'NOT VERIFIED'}`;}).join('\n')+`\nDual selection: ${state.dualValidation?.selection?'READY':'NOT READY'}\n${state.dualValidation?.full?'DUAL FULL FLOW VERIFIED':'FULL DUAL HOLD NOT YET VERIFIED'}`;
+  const dualResult=state.dualResult;byId('dual-result').hidden=!dualResult;
+  byId('dual-result').textContent=dualResult?`${dualResult.status.replaceAll('_',' ')}\n${dualResult.date} / ${dualResult.hours.join(', ')}\nBrowser A: Court ${dualResult.courtA}\nBrowser B: Court ${dualResult.courtB}\nSource: ${dualResult.candidateSource}`:'';
   const full=state.mode==='full',fullReady=state.capabilities.selectionReady&&state.capabilities.checkoutReady&&state.capabilities.paymentBoundaryReady;
   input('mode-full').checked=full;input('mode-selection').checked=!full;
   input('mode-full').disabled=busy||!fullReady;input('mode-selection').disabled=busy;
@@ -52,6 +64,7 @@ function render(state: Dashboard) {
   (byId('reset-practice') as HTMLButtonElement).disabled=busy;
   const review=state.lockReview;
   byId('lock-review').textContent=review?`Run ID: ${review.runID}\nPID: ${review.pid??'Unknown'}\nProcess: ${review.alive===null?'Unknown':review.alive?'Running':'Not running'}\nUI-owned worker: ${review.owned?'Running':'None'}\nBrowser state: ${review.canClear?'Safe at last review':'Needs verification'}\nCurrent page: ${review.page}\nSelected slots: ${review.selected??'Unknown'}\nPayment hold: ${review.hold}\nReason: ${review.reason}\nChecked: ${review.verifiedAt}`:'Browser state: Needs verification. Use Review Lock.';
+  if(review?.mode==='dual')byId('lock-review').textContent=`Mode: DUAL\nCoordinator PID: ${review.pid??'Unknown'} / ${review.alive===false?'Not running':review.alive?'Running':'Unknown'}\n${review.workers?.map(w=>`Browser ${w.id}: PID ${w.pid??'Unknown'} / ${w.alive===false?'Not running':w.alive?'Running':'Unknown'} / ${w.page} / selected ${w.selected??'Unknown'} / hold ${w.hold} / recorded ${w.recordedState}`).join('\n')}\nReason: ${review.reason}`;
   const reason=busy?'An operation is running.':state.lock?'Blocked because an automation lock exists. Use Review Lock.':dirty?'Blocked because booking plan has unsaved changes.':!state.booking?'Player information or booking configuration is invalid.':!state.cdp?'Blocked because Chrome is not prepared.':!state.clock?.canArmToday?"Blocked because today?s 08:00 release has passed or preflight time is too short.":full&&!state.termsAuthorized?'Terms authorization is required for Full Booking.':'';
   byId('blocked-reason').textContent=reason;
   for(const id of ['inspect','prepare','arm','dry','observe'])byId(id).title=reason;
@@ -68,9 +81,10 @@ function render(state: Dashboard) {
   byId('capability-status').textContent=`Selection ${state.capabilities.selectionReady?'ready':'unverified'} · checkout ${state.capabilities.checkoutReady?'verified':'unverified'} · payment handoff ${state.capabilities.paymentBoundaryReady?'verified':'unverified'}`;
   const b=state.booking;
   if(b){
-    if(!dirty && loadedPlan!==b.fingerprint){loadedPlan=b.fingerprint;input('start-time').value=b.setup.START_TIME;input('duration').value=String(b.setup.DURATION_HOURS);input('maximum').value=String(b.setup.MAX_PRICE);input('attempts').value=String(b.setup.MAX_SELECTION_ATTEMPTS);courtOrder=[...b.setup.PREFERRED_COURTS];fallbackTimes=[...b.setup.FALLBACK_TIMES];editors();}
-    byId('booking-preview').textContent=`TARGET  ${dateLabel(b.targetDate)}\nREQUIRED SLOTS  ${b.slots.join(' · ')}\nCOURT ORDER  ${b.setup.PREFERRED_COURTS.join(' → ')}\nFALLBACK STARTS  ${b.setup.FALLBACK_TIMES.map(friendly).join(' → ')||'None'}\nMAXIMUM  ₱${b.setup.MAX_PRICE.toLocaleString()} · ${b.setup.MAX_SELECTION_ATTEMPTS} candidate attempts\nPLAYER  Configured ✓`;
+    if(!dirty && loadedPlan!==b.fingerprint){loadedPlan=b.fingerprint;input('court-count').value=String(b.setup.COURT_COUNT);input('start-time').value=b.setup.START_TIME;input('duration').value=String(b.setup.DURATION_HOURS);input('maximum').value=String(b.setup.MAX_PRICE);input('attempts').value=String(b.setup.MAX_SELECTION_ATTEMPTS);courtOrder=[...b.setup.PREFERRED_COURTS];fallbackTimes=[...b.setup.FALLBACK_TIMES];editors();}
+    byId('booking-preview').textContent=`${dual?`2 COURTS / SAME TIME BLOCK\nMaximum per court: PHP ${b.setup.MAX_PRICE}\nMaximum possible combined: PHP ${2*b.setup.MAX_PRICE}\n`:''}TARGET  ${dateLabel(b.targetDate)}\nREQUIRED SLOTS  ${b.slots.join(' · ')}\nCOURT ORDER  ${b.setup.PREFERRED_COURTS.join(' → ')}\nFALLBACK STARTS  ${b.setup.FALLBACK_TIMES.map(friendly).join(' → ')||'None'}\nMAXIMUM  ₱${b.setup.MAX_PRICE.toLocaleString()} · ${b.setup.MAX_SELECTION_ATTEMPTS} candidate attempts\nPLAYER  Configured ✓`;
   }
+  if(dual){(byId('arm') as HTMLButtonElement).disabled ||= !state.dualValidation?.selection || (full&&!state.dualValidation?.full);byId('full-gate').textContent=state.dualValidation?.full?'DUAL VERIFIED':'DUAL NOT VERIFIED';}
   const result=state.selection;byId('selection-result').hidden=!result||!!state.handoff;
   if(result)byId('selection-result').textContent=`SLOTS SELECTED\nCourt ${result.court} · ${result.date}\nHours: ${result.hours.join(', ')} · ${result.hours.length} slots\n₱${result.amount.toLocaleString()} · Proceed READY\n${full?'Selection is not yet a hold. See current checkout stage above.':'AUTOMATION STOPPED BEFORE PROCEED\nUSER CONTROL RESTORED'}`;
   byId('handoff-result').hidden=!state.handoff;
@@ -82,6 +96,7 @@ function render(state: Dashboard) {
   const clock = state.clock;
   byId('release-strategy').textContent = clock ? `Pre-open calendar: ${clock.preopenCalendar ? 'ON' : 'OFF'}\nRelease trigger: ${clock.releaseTime}.000 ${clock.timezone}\nRelease lead: ${clock.leadMs} ms\n${clock.preopenCalendar ? '1. Check already-open target\n2. If enabled: click without refresh\n3. Otherwise: immediate reload fallback' : 'At release: bounded reload, minimal shell, strict target grid'}\nAuto-enable at 08:00: UNVERIFIED` : 'Configuration unavailable';
   byId('next-readiness').textContent = `Chrome/CDP: ${state.cdp ? 'REACHABLE' : 'NOT READY'}\nOnda: ${fresh && i?.gridToday && i.allCourts && i.visible ? 'READY (last inspection)' : 'NEEDS INSPECTION'}\nBooking plan: ${state.booking && !dirty ? 'READY' : 'NOT READY'}\nPlayer: ${state.booking?.playerConfigured ? 'READY' : 'NOT READY'}\nPre-open strategy: ${clock ? clock.preopenCalendar ? 'ON' : 'OFF' : 'UNKNOWN'}\nNo existing selections: ${fresh && i?.selected === 0 ? 'YES (last inspection)' : 'NOT VERIFIED'}\nAutomation lock: ${state.lock ? 'BLOCKED' : 'CLEAR'}\nTerms authorization: required per run\nRelease: ${clock ? `${clock.releaseTime} ${clock.timezone}` : 'UNKNOWN'}\nTarget: ${clock?.targetDate ?? 'UNKNOWN'}`;
+  if(dual)byId('next-readiness').textContent=`2 courts / SAME TIME BLOCK\n${byId('dual-readiness').textContent}\nBooking plan: ${state.booking&&!dirty?'SAVED':'NOT READY'}\nAutomation lock: ${state.lock?'BLOCKED':'CLEAR'}\nTerms authorization: required per run\nRelease: ${clock?`${clock.releaseTime} ${clock.timezone}`:'UNKNOWN'}\nTarget: ${clock?.targetDate??'UNKNOWN'}`;
   const performance = state.releasePerformance;
   const ms = (value: number | null) => value === null ? 'NOT MEASURED' : `${value} ms`;
   byId('release-performance').textContent = performance ? `Trigger error: ${ms(performance.triggerErrorMs)}\nBranch: ${performance.branch}\nTrigger to target enabled: ${ms(performance.triggerToTargetEnabledMs)}\nTarget enabled to click: ${ms(performance.targetEnabledToClickMs)}\nTarget click to grid: ${ms(performance.targetClickToGridMs)}\nGrid to snapshot: ${ms(performance.gridToSnapshotMs)}\nSnapshot to preference: ${ms(performance.snapshotToPreferenceMs)}\nPreference to complete selection: ${ms(performance.preferenceToSelectionMs)}\nTrigger to complete selection: ${ms(performance.triggerToSelectionMs)}${performance.reloads.map((r, n) => `\nReload ${n + 1}:\n  Trigger to commit: ${ms(r.triggerToCommitMs)}\n  Commit to venue: ${ms(r.commitToVenueMs)}\n  Venue to picker: ${ms(r.venueToPickerMs)}\n  Picker to target: ${ms(r.pickerToTargetMs)}`).join('')}` : 'No release measurements in this session.';
@@ -133,13 +148,20 @@ for(const id of ['full-date','full-court','full-start','full-duration','full-max
 byId('mode-full').addEventListener('change',()=>{void window.thirsty.setMode('full').catch(()=>{});});
 byId('mode-selection').addEventListener('change',()=>{void window.thirsty.setMode('selection').catch(()=>{});});
 byId('terms').addEventListener('change',()=>{void window.thirsty.authorizeTerms(input('terms').checked).catch(()=>{input('terms').checked=false;});});
-for(const id of ['start-time','duration','maximum','attempts'])byId(id).addEventListener('change',changed);
+for(const id of ['court-count','start-time','duration','maximum','attempts'])byId(id).addEventListener('change',changed);
 byId('add-fallback').onclick=()=>{const h=input('fallback-time').value;if(h===input('start-time').value||fallbackTimes.includes(h)){byId('edit-status').textContent='Choose a different fallback start.';return;}fallbackTimes.push(h);editors();changed();};
 byId('save-booking').onclick=()=>{void(async()=>{
-  const setup:BookingSetup={START_TIME:input('start-time').value,DURATION_HOURS:Number(input('duration').value),PREFERRED_COURTS:courtOrder,FALLBACK_COURTS:[],FALLBACK_TIMES:fallbackTimes,MAX_PRICE:Number(input('maximum').value),MAX_SELECTION_ATTEMPTS:Number(input('attempts').value)};
+  const setup:BookingSetup={COURT_COUNT:Number(input('court-count').value) as 1|2,START_TIME:input('start-time').value,DURATION_HOURS:Number(input('duration').value),PREFERRED_COURTS:courtOrder,FALLBACK_COURTS:[],FALLBACK_TIMES:fallbackTimes,MAX_PRICE:Number(input('maximum').value),MAX_SELECTION_ATTEMPTS:Number(input('attempts').value)};
   await window.thirsty.saveBooking(setup);const state=await window.thirsty.getStatus();
   if(state.headline==='Booking plan saved'){dirty=false;loadedPlan='';byId('edit-status').textContent='BOOKING PLAN SAVED';render(state);}else byId('edit-status').textContent='Plan rejected. Check duration, unique times and price.';
 })().catch(()=>{byId('edit-status').textContent='Could not save booking setup.';});};
+byId('dual-dry').onclick=()=>{void window.thirsty.runDualPractice({kind:'dualDry',date:input('dual-date').value}).catch(()=>{});};
+for(const [id,kind] of [['dual-selection','dualPractice'],['dual-full','dualFullPractice']] as const)byId(id).onclick=()=>{
+  const authorized=input('dual-terms').checked;input('dual-terms').checked=false;
+  void window.thirsty.runDualPractice({kind,input:{target:{date:input('dual-date').value,court:Number(input('dual-court-a').value),start:input('dual-start').value,duration:Number(input('dual-duration').value)},courtB:Number(input('dual-court-b').value),maximum:Number(input('dual-maximum').value),noncompetitive:input('dual-noncompetitive').checked as true,authorizeTerms:kind==='dualFullPractice'&&authorized,armed:kind==='dualFullPractice'}}).catch(()=>{});
+};
+for(const id of ['dual-date','dual-court-a','dual-court-b','dual-start','dual-duration','dual-maximum','dual-noncompetitive'])byId(id).addEventListener('change',()=>{input('dual-terms').checked=false;if(latest)render(latest);});
+byId('dual-terms').addEventListener('change',()=>{if(latest)render(latest);});
 window.thirsty.onStatus(render);
 void window.thirsty.getStatus().then(render);
 setInterval(tick, 1000);

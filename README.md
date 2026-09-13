@@ -56,6 +56,8 @@ After the release reload commits, the engine waits only for the verified venue a
 
 Use **Booking Setup** in the panel for start, duration, court order, fallback starts, PHP maximum and maximum candidate attempts. Saved settings live in ignored `config.local.json`; the CLI loads this same object. Defaults are 08:00, 2 hours, courts 7→1, PHP 1,200 and 3 candidate attempts; review them before arming. Save invalidates readiness. The confirmation and worker compare a plan fingerprint, so a changed plan cannot silently replace the authorized one.
 
+**Courts to book** accepts 1 (the safe default, including old config files) or 2. Two courts use separate visible Chrome profiles and the same date/time/duration; the maximum remains per court. Start with `npm run chrome:dual`, then `npm run dual:readiness` and an explicit-date `dual:practice:dry`. Selection practice requires user-chosen non-prime slots. Full dual practice creates real temporary holds and requires separate explicit authorization. Dual production remains gated until the relevant live practice evidence exists. See [dual commands, safety design and current validation](DUAL_BOOKING_REPORT.md).
+
 Store real player fields only in ignored `.env.local`: `PLAYER_FULL_NAME`, `PLAYER_PHONE`, `PLAYER_EMAIL`. Other release settings may also remain there; `.env.example` contains placeholders only. The dashboard reports **Configured** without sending player values to the renderer. Zod validates booking/player configuration before attachment. Preferences use primary time × court order, then each fallback × court order. Starts range from 08:00 through 23:00, with 1–16 consecutive hours on one court, ending no later than midnight.
 
 The horizon uses timezone calendar arithmetic, not `now + 48 hours`. Nonzero release lead is rejected until justified by measurements. Observation reads only release settings and ignores player data. Example values are illustrations, not live booking authorization.
@@ -67,6 +69,8 @@ Press **Q** or **Ctrl+C** in the terminal. Output: `AUTOMATION ABORTED — USER 
 Exact row ISO dates, matching visible heading, complete seven-court hourly coverage, and no busy indicator are required before availability is trusted. A changed date heading alone is insufficient. Missing/contradictory slot states are UNKNOWN, never OPEN. Read [telemetry definitions](TELEMETRY_SPEC.md) before interpreting timings.
 
 Atomic process lock prevents concurrent project commands. Failures, abrupt termination and successful Selection Only and Full Booking preserve `.local/automation.lock`. A verified complete selection also locks out all in-memory fallback. **Only after verifying the recorded PID is no longer running and the browser has no active selection/checkout**, remove that exact lock file:
+
+For a **dual** lock, use the panel's **Review Lock / Clear Lock** instead of the manual single-lock example below. Both browser states and subordinate worker records must be checked. Never delete a dual lock or use single-browser Reset Practice to discard it.
 
 ```powershell
 Get-Content .local/automation.lock

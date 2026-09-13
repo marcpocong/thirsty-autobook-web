@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { Dashboard, Bridge } from './types.js';
 const bridge: Bridge = {
+  runDualPractice:input=>ipcRenderer.invoke('thirsty:runDualPractice',input),
   reviewLock:()=>ipcRenderer.invoke('thirsty:reviewLock'),
   clearLock:()=>ipcRenderer.invoke('thirsty:clearLock'),
   resetPractice:()=>ipcRenderer.invoke('thirsty:resetPractice'),

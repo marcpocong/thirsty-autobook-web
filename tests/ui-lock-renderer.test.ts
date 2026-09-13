@@ -59,3 +59,16 @@ it('real config save/reload persists duration, price, start, attempts, courts an
 it('EXE delegates to the same npm UI entry and main resolves project root independently of cwd',async()=>{
  expect(await readFile('scripts/ThirstyLauncher.cs','utf8')).toContain('scripts/run-ui.mjs');expect(await readFile('scripts/ThirstyLauncher.cs','utf8')).toContain('start.WorkingDirectory = root');expect(await readFile('ui/main.ts','utf8')).toContain("resolve(dirname(fileURLToPath(import.meta.url)), '../..')");
 });
+it('dual renderer shows two-court semantics, separate readiness, exact practice controls and a blocked full-flow gate',async()=>{
+ const dualPlan=bookingView(ConfigSchema.parse({...defaultSetup,COURT_COUNT:2,PLAYER_FULL_NAME:'Fixture Player',PLAYER_PHONE:'09123456789',PLAYER_EMAIL:'fixture@example.invalid'}));
+ const p=await renderer(false,{booking:dualPlan,lock:false,dualValidation:{selection:false,full:false},dualWorkers:{A:{type:'dualWorker',workerId:'A',state:'clean',verifiedAt:new Date().toISOString()},B:{type:'dualWorker',workerId:'B',state:'unknown',verifiedAt:new Date().toISOString()}}});
+ expect(await p.locator('#court-count').inputValue()).toBe('2');expect(await p.locator('#court-count option').count()).toBe(2);
+ expect(await p.locator('#booking-preview').innerText()).toContain('SAME TIME BLOCK');expect(await p.locator('#booking-preview').innerText()).toContain('Maximum possible combined: PHP 2400');
+ expect(await p.locator('#dual-panel').isVisible()).toBe(true);expect(await p.locator('#dual-readiness').innerText()).toContain('Browser B: UNKNOWN');
+ expect(await p.locator('#dual-full').isDisabled()).toBe(true);expect(await p.locator('#dual-selection').isDisabled()).toBe(true);expect(await p.locator('#arm').isDisabled()).toBe(true);
+ await p.locator('#dual-noncompetitive').check();expect(await p.locator('#dual-selection').isEnabled()).toBe(true);expect(await p.locator('#dual-full').isDisabled()).toBe(true);
+ await p.locator('#dual-terms').check();expect(await p.locator('#dual-full').isEnabled()).toBe(true);
+ await p.locator('#dual-duration').fill('2');await p.locator('#dual-duration').dispatchEvent('change');expect(await p.locator('#dual-full').isDisabled()).toBe(true);
+ await p.addStyleTag({content:(await readFile('ui/renderer/styles.css','utf8')).replace(/^\uFEFF/,'')});await p.setViewportSize({width:1010,height:800});
+ await mkdir('.local',{recursive:true});await p.locator('#dual-panel').screenshot({path:'.local/dual-ui-practice.png'});await p.close();
+});

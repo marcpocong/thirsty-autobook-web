@@ -26,10 +26,12 @@ let exitCode = 0;
 let failureCode: string | undefined;
 let ownsLock = false;
 let retainSelection = false;
+let stopDual: (()=>void) | undefined;
 const lockPath = '.local/automation.lock';
 // Exiting the Playwright-owning process cancels its outstanding local action tasks.
 // Never close Chrome/context/page; an already-dispatched click cannot be undone.
 const stopNow = (code: string) => {
+  stopDual?.();
   emitUiEvent({ type: 'error', code: /^[A-Z_]{1,80}$/.test(code) ? code : 'OPERATION_FAILED' });
   telemetry.mark(code === 'USER_ABORT' ? 'aborted' : 'failed');
   try { writeFileSync(`DiagnosticsLocal/${telemetry.runID}.json`, JSON.stringify(telemetry.document(code, safety.stopEvidence))); } catch {}
@@ -68,6 +70,14 @@ try {
   const compareDate = ['availability:compare', 'availability:dry'].includes(mode) ? value('--date') ?? '' : undefined;
   if (compareDate !== undefined) assertAvailabilityDate(compareDate);
   if (args.includes('--plan-hash') && (!config || !('MAX_PRICE' in config) || planFingerprint(config as Config) !== value('--plan-hash'))) throw new Error('BOOKING_PLAN_CHANGED');
+  // Default single mode never imports or initializes the dual coordinator.
+  if (config && 'COURT_COUNT' in config && config.COURT_COUNT === 2 && ['race','race:dry','selection:armed'].includes(mode)) {
+    const { runDual } = await import('./dual-runtime.js');
+    await runDual(config as Config, mode === 'race' ? 'race' : mode === 'race:dry' ? 'race:dry' : 'race:selection', safety, telemetry, { authorizeTerms:args.includes('--authorize-terms'), registerAbort:abort=>{stopDual=abort;} });
+    await telemetry.flush();
+    if (process.stdin.isTTY) process.stdin.setRawMode(false);
+    process.exit(0);
+  }
   const practiceInput = mode === 'practice' ? PracticeSchema.parse({ date: value('--date'), court: value('--court'), start: value('--start'), duration: value('--duration') }) : undefined;
   const fullPractice=mode==='practice:full'?FullPracticeSchema.parse({target:{date:value('--date'),court:value('--court'),start:value('--start'),duration:value('--duration')},maximum:Number(value('--maximum')),authorizeTerms:args.includes('--authorize-terms')}):undefined;
   const handoffInput=mode==='handoff:test'?PracticeSchema.parse({date:value('--date'),court:value('--court'),start:value('--start'),duration:value('--duration')}):undefined;

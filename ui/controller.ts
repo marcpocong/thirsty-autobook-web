@@ -1,3 +1,6 @@
+import { z } from 'zod';
+import { DualPracticeSchema, requireDualFullAuthorization } from '../src/dual-practice.js';
+import type { DualPracticeCommand } from './types.js';
 import {FullPracticeSchema,type FullPracticeInput} from '../src/full-practice.js';
 import type {LockReview} from './locks.js';
 import type { UiEvent } from '../src/ui-events.js';
@@ -52,6 +55,8 @@ export interface Dependencies {
   resetPractice?():Promise<void>;
   confirmReset?():Promise<boolean>;
   confirmPractice?(input:FullPracticeInput):Promise<boolean>;
+  dualEvidence?():Promise<{selection:boolean;full:boolean}>;
+  confirmDualPractice?(input:DualPracticeCommand):Promise<boolean>;
   handoff?():Promise<Dashboard['handoff']>;
 }
 export class Controller {
@@ -81,7 +86,7 @@ export class Controller {
       try { this.state.clock = this.deps.clock(); }
       catch { this.state.clock = null; this.state.ready = false; this.state.detail = errors.CONFIG_INVALID!; }
       if (this.state.operation === 'idle') {
-        try { const booking=this.deps.booking(); if (this.state.booking?.fingerprint !== booking.fingerprint) { this.state.ready=false; this.state.termsAuthorized=false; } this.state.booking=booking; }
+        try { const booking=this.deps.booking(); if (this.state.booking?.fingerprint !== booking.fingerprint) { this.state.ready=false; this.state.termsAuthorized=false; } this.state.booking=booking; if(booking.setup.COURT_COUNT===2&&this.deps.dualEvidence)this.state.dualValidation=await this.deps.dualEvidence(); }
         catch { this.state.booking=null; this.state.ready=false; }
       }
       if (!cdp || (lock && this.state.operation === 'idle') || !this.state.clock?.canArmToday) this.state.ready = false;
@@ -96,6 +101,11 @@ export class Controller {
     } finally { this.polling = false; }
   }
   private event = (event: UiEvent) => {
+    if(event.type==='dualWorker'){this.state.dualWorkers={...this.state.dualWorkers,[event.workerId]:event};this.publish();return;}
+    if(event.type==='dualResult'){this.state.dualResult=event;this.state.headline=event.status.replaceAll('_',' ');this.state.detail=['DUAL_DRY_PASS','DUAL_SELECTION_PASS'].includes(event.status)?'No Proceed clicks. Both browsers clean.':'Automation stopped. Inspect BOTH browsers manually. Locks retained; payment stays manual.';this.publish();return;}
+    if(event.type==='error'&&this.state.dualActive&&['DUAL_PARTIAL_SUCCESS','DUAL_FAILED'].includes(this.state.dualResult?.status??'')){this.state.ready=false;this.log(event.code,true);return;}
+    if(this.state.dualActive&&['handoff','selection','releasePerformance'].includes(event.type))return;
+
     if (event.type === 'releasePerformance') { this.state.releasePerformance = event.summary; this.publish(); }
     if (event.type === 'selection') { this.state.selection=event; this.state.headline='SLOTS SELECTED'; this.state.detail=['full','fullPractice'].includes(this.state.operation)?'Continuing to Review Booking. Selection is not yet a reservation.':'AUTOMATION STOPPED BEFORE PROCEED. USER CONTROL RESTORED. Selection is not a reservation; the lock remains active.'; this.publish(); }
     if(event.type==='handoff'){this.state.handoff=event;this.state.headline='PAYMENT HOLD ACTIVE';this.state.detail='FULL BOOKING COMPLETE TO PAYMENT HANDOFF. AUTOMATION STOPPED. Complete payment manually in Chrome. AUTOMATION LOCK RETAINED.';this.publish();}
@@ -137,12 +147,12 @@ export class Controller {
     if (this.state.operation !== 'idle') throw new Error('OPERATION_ALREADY_RUNNING');
     const generation = ++this.generation;
     if (['observe', 'dry', 'selection', 'full'].includes(kind)) this.state.releasePerformance = null;
-    this.state.operation = kind; this.state.ready = false; this.state.plan = null; this.state.termsAuthorized=false; this.publish();
+    this.state.dualActive=false; this.state.operation = kind; this.state.ready = false; this.state.plan = null; this.state.termsAuthorized=false; this.publish();
     try { await work(generation); }
     catch (error) {
       if (generation === this.generation) {
         const code = error instanceof Error ? error.message : 'OPERATION_FAILED';
-        const hadSpecificFailure = this.state.headline === 'Needs attention'||this.state.headline.includes('FAILED')||this.state.headline==='HANDOFF STATUS UNKNOWN';
+        const hadSpecificFailure = this.state.dualResult?.status==='DUAL_PARTIAL_SUCCESS'||this.state.dualResult?.status==='DUAL_FAILED'||this.state.headline === 'Needs attention'||this.state.headline.includes('FAILED')||this.state.headline==='HANDOFF STATUS UNKNOWN';
         if(code==='HANDOFF_STATUS_UNKNOWN')this.state.headline='HANDOFF STATUS UNKNOWN';
         else if(!hadSpecificFailure)this.state.headline = 'Needs attention';
         if(code==='HANDOFF_STATUS_UNKNOWN')this.state.detail='DO NOT START ANOTHER BOOKING. CHECK CHROME MANUALLY. Lock retained; final action is never retried.';
@@ -160,22 +170,29 @@ export class Controller {
     // attach a booking worker. Allow it while a retained lock is under review
     // so the operator can make Chrome available for read-only verification.
     if (this.active) throw new Error('OPERATION_ALREADY_RUNNING');
-    this.log(this.state.lock ? 'Starting / reusing dedicated Chrome for lock review' : 'Starting / reusing dedicated Chrome'); await this.run('chrome', gen);
+    this.log(this.state.lock ? 'Starting / reusing dedicated Chrome for lock review' : 'Starting / reusing dedicated Chrome'); await this.run(this.state.booking?.setup.COURT_COUNT===2?'chromeDual':'chrome', gen);
     this.state.cdp = await this.deps.cdp(); if (!this.state.cdp) throw new Error('CDP_PROFILE_OR_BIND_UNVERIFIED');
     if (gen !== this.generation) return;
     this.state.headline = 'Chrome is reachable'; this.state.detail = 'Run Prepare to verify the booking page and session.';
   }); }
   inspectOnda() { return this.operation('inspect', async gen => {
-    await this.noLock(); this.state.inspection = null; this.log('Inspecting Onda — read only'); await this.run('inspect', gen);
+    if(this.state.booking?.setup.COURT_COUNT===2)this.state.dualWorkers={};
+    await this.noLock(); this.state.inspection = null; this.log('Inspecting Onda — read only'); await this.run(this.state.booking?.setup.COURT_COUNT===2?'dualReadiness':'inspect', gen);
     this.state.headline = 'Inspection complete'; this.state.detail = 'Review the observed status below. Prepare before arming.';
   }); }
   prepare() { return this.operation('prepare', async gen => {
     this.state.booking=this.deps.booking(); this.state.selection=null;
+    if(this.state.booking.setup.COURT_COUNT===2)this.state.dualWorkers={};
     await this.noLock(); this.state.inspection = null; this.log('Preparing session — no observation will be armed');
-    await this.run('chrome', gen);
+    await this.run(this.state.booking?.setup.COURT_COUNT===2?'chromeDual':'chrome', gen);
     this.state.cdp = await this.deps.cdp(); if (!this.state.cdp) throw new Error('CDP_PROFILE_OR_BIND_UNVERIFIED');
-    await this.run('inspect', gen); await this.noLock();
+    await this.run(this.state.booking?.setup.COURT_COUNT===2?'dualReadiness':'inspect', gen); await this.noLock();
     if (gen !== this.generation) return;
+    if(this.state.booking?.setup.COURT_COUNT===2){
+      if(this.deps.dualEvidence)this.state.dualValidation=await this.deps.dualEvidence();
+      this.state.ready=false;this.state.headline='Dual browsers checked';
+      this.state.detail=this.state.dualValidation?.selection?'DUAL SELECTION READY. '+(this.state.dualValidation.full?'DUAL FULL FLOW VERIFIED.':'FULL DUAL HOLD NOT YET VERIFIED.'):'Run Dual Dry Pair and Dual Selection Practice before production.';return;
+    }
     const inspection = this.state.inspection as Dashboard['inspection'];
     if (!inspection?.gridToday) throw new Error('STALE_OR_INCOMPLETE_GRID');
     if (!inspection.allCourts) throw new Error('COURT_FILTER_NOT_ALL');
@@ -226,6 +243,12 @@ export class Controller {
     await this.noLock(); if (!this.deps.clock().canArmToday) throw new Error('TOO_LATE_FOR_PREFLIGHT');
     if (kind==='selection' && !this.state.capabilities.selectionReady) throw new Error('SELECTION_NOT_READY');
     const plan=this.deps.booking(); this.state.booking=plan; this.state.selection=null;
+    if(plan.setup.COURT_COUNT===2){
+      const evidence=await this.deps.dualEvidence?.();
+      if(kind!=='dry'&&!evidence?.selection)throw Error('DUAL_SELECTION_NOT_READY');
+      if(kind==='full'&&!evidence?.full)throw Error('DUAL_FULL_FLOW_NOT_VERIFIED');
+      this.state.dualActive=true;this.state.dualResult=null;this.state.dualWorkers={};
+    }
     const confirmed=await this.deps.confirm(kind,plan);
     if(gen!==this.generation)return;
     if(!confirmed){this.state.headline='Arming cancelled';this.state.detail='No booking process was launched.';return;}
@@ -235,6 +258,7 @@ export class Controller {
     this.state.operation=kind;this.state.inspection=null;this.state.handoff=null;this.state.headline=kind==='full'?'Full Booking scheduled':kind==='selection'?'Selection scheduled':'Dry Race scheduled';
     this.state.detail=kind==='full'?'At release the engine continues through Onda to QR Checkout. Payment remains manual.':kind==='selection'?'At release the engine may select slots. It will stop before Proceed.':'Release, date, grid and preference checks only. No slots will be selected.';this.publish();
     await this.run(kind==='full'?{kind,planHash:plan.fingerprint,authorizeTerms:true}:{kind,planHash:plan.fingerprint},gen);
+    if(this.state.dualActive){if(!this.state.dualResult)throw Error('DUAL_RESULT_MISSING');return;}
     if(kind==='dry'){this.state.headline='Dry Race complete';this.state.detail='No slots selected. Review availability and preference events.';}
     else if(kind==='full'&&!this.state.handoff)throw new Error('HANDOFF_STATUS_UNKNOWN');
     else if(kind==='selection'&&!this.state.selection)throw new Error('SELECTION_RESULT_MISSING');
@@ -274,6 +298,20 @@ export class Controller {
     await this.run({kind:'fullPractice',input:parsed},gen);
     if(!this.state.handoff)throw Error('QR_HANDOFF_FAILED');
     this.state.headline='FULL FLOW PRACTICE COMPLETE';this.state.detail='PAYMENT HOLD ACTIVE. AUTOMATION STOPPED. DO NOT PAY UNLESS YOU ACTUALLY WANT THIS PRACTICE BOOKING. Lock retained.';
+  });}
+  runDualPractice(input:unknown){return this.operation('practice',async gen=>{
+    const command=z.discriminatedUnion('kind',[
+      z.object({kind:z.literal('dualDry'),date:z.iso.date()}).strict(),
+      z.object({kind:z.enum(['dualPractice','dualFullPractice']),input:DualPracticeSchema}).strict(),
+    ]).parse(input);
+    if(this.deps.booking().setup.COURT_COUNT!==2)throw Error('DUAL_CONFIG_REQUIRED');
+    if(command.kind==='dualFullPractice')requireDualFullAuthorization(command.input);
+    await this.noLock();
+    if(command.kind==='dualFullPractice'&&(!this.deps.confirmDualPractice||!await this.deps.confirmDualPractice(command)||gen!==this.generation))return;
+    await this.noLock();this.state.dualActive=true;this.state.dualResult=null;this.state.dualWorkers={};
+    this.state.headline=command.kind==='dualFullPractice'?'TWO REAL TEMPORARY HOLDS AUTHORIZED':'Dual practice running';this.publish();
+    await this.run(command,gen);
+    if(!this.state.dualResult)throw Error('DUAL_RESULT_MISSING');
   });}
   runPractice(input:unknown) { return this.operation('practice', async gen => {
     const parsed=PracticeSchema.parse(input); await this.noLock();this.state.selection=null;this.state.inspection=null;
