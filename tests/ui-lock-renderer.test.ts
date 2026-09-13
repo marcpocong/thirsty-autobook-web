@@ -34,6 +34,14 @@ it('actual renderer keeps all setup controls, Save, Review and Stop enabled whil
  expect(await p.locator('#full-date').isEnabled()).toBe(true);
  await p.locator('#duration').fill('3');await p.locator('#maximum').fill('1800');await p.locator('#start-time').selectOption('10:00');await p.locator('#save-booking').click();await p.waitForFunction(()=>document.getElementById('edit-status')?.textContent==='BOOKING PLAN SAVED');expect(await p.locator('#duration').inputValue()).toBe('3');await p.close();
 });
+it('default single-court renderer keeps dual practice visible but explicitly disabled until count 2 is saved',async()=>{
+ const p=await renderer();
+ expect(await p.locator('#dual-panel').isVisible()).toBe(true);
+ expect(await p.locator('#dual-readiness').innerText()).toContain('Set Courts to book to 2');
+ expect(await p.locator('#dual-selection').isDisabled()).toBe(true);
+ expect(await p.locator('#dual-full').isDisabled()).toBe(true);
+ await p.close();
+});
 it('shows local strategy and calculated next target without implying stale inspection is ready',async()=>{
  const clock=clockStatus(ObservationSchema.parse({RELEASE_PREOPEN_CALENDAR:true}),DateTime.fromISO('2026-09-11T09:00:00+08:00'));
  const p=await renderer(false,{clock});

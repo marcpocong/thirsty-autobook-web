@@ -66,7 +66,7 @@ npm run dual:practice:full -- --armed --authorize-terms --noncompetitive --date 
 
 `npm run dual:race:dry -- --armed` schedules both normal release flows but performs no selection or Proceed. It shares the same global exclusion lock as all other commands. No scheduled release diagnostic was run during implementation.
 
-With count 2 saved, the UI launches/verifies both browsers and exposes Dual Dry Pair, Dual Selection Practice and Dual Full Flow Practice. Exact practice fields are separate from the saved production plan. Noncompetitive slots require explicit acknowledgment. Full practice additionally requires per-run Terms authorization and a native confirmation listing both courts, time, duration and maximum. Editing practice fields resets Terms authorization. Existing single practice controls remain available.
+The UI always shows a Dual booking practice panel so the feature is discoverable. With the safe count 1 default, it explains that `Courts to book = 2` must be saved and keeps all dual actions disabled. After count 2 is saved, it launches/verifies both browsers and enables Dual Dry Pair, Dual Selection Practice and Dual Full Flow Practice. Exact practice fields are separate from the saved production plan. Noncompetitive slots require explicit acknowledgment. Full practice additionally requires per-run Terms authorization and a native confirmation listing both courts, time, duration and maximum. Editing practice fields resets Terms authorization. Existing single practice controls remain available.
 
 The normal `race`, `race:dry` and `selection:armed` commands dispatch by saved count. Dual production selection requires local readiness + dry + selection-practice evidence. Dual full production additionally requires an explicitly authorized full practice yielding two legitimate holds. Evidence is local, scoped to the relevant saved booking semantics, and never written by unit tests to the real workspace's evidence file. Passing tests alone never marks dual production ready.
 
@@ -94,6 +94,6 @@ Both browsers were returned to today's clean schedule by the exact read-only che
 
 ## Verification
 
-Typecheck, the full suite (397 tests), UI build, EXE build and diff whitespace checks passed. The focused dual/browser/lock suite passed 71 tests. An earlier verifier fixture was updated for the now-explicit debugging port and passes. The actual renderer was tested with dual readiness/price/authorization states and visually inspected. The tracked EXE launcher was rebuilt.
+Typecheck, the full suite (398 tests), UI build and diff whitespace checks passed. The focused dual/browser/lock suite passed 71 tests. An earlier verifier fixture was updated for the now-explicit debugging port and passes. The actual renderer was tested with dual readiness/price/authorization states and visually inspected. The latest EXE rebuild was blocked because the currently running `Thirsty Bot.exe` process holds the tracked executable open; run `npm run exe:build` after closing that window.
 
 Direct public-checkout calls: **NONE**. Direct is-slot-available calls: **NONE**. Availability-proof handling: **NONE**. Payment automation: **NONE**. Cloudflare/Turnstile/CAPTCHA bypass: **NONE**.

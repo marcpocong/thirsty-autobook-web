@@ -34,12 +34,16 @@ function render(state: Dashboard) {
   byId('headline').textContent = state.headline; byId('detail').textContent = state.detail;
   const busy = state.operation !== 'idle';
   const dual=state.booking?.setup.COURT_COUNT===2;
-  byId('dual-panel').hidden=!dual;
+  // Keep the dual practice entry point visible in the safe single-court
+  // default; actions stay disabled until count 2 is explicitly saved.
+  byId('dual-panel').hidden=false;
   (byId('dual-fields') as HTMLFieldSetElement).disabled=busy;
   (byId('dual-dry') as HTMLButtonElement).disabled=busy||state.lock||dirty||!dual||!state.cdp;
   (byId('dual-selection') as HTMLButtonElement).disabled=busy||state.lock||dirty||!dual||!state.cdp||!input('dual-noncompetitive').checked;
   (byId('dual-full') as HTMLButtonElement).disabled=busy||state.lock||dirty||!dual||!state.cdp||!input('dual-noncompetitive').checked||!input('dual-terms').checked;
-  byId('dual-readiness').textContent=['A','B'].map(id=>{const w=state.dualWorkers?.[id as 'A'|'B'];return `Browser ${id}: ${w?`${w.state.toUpperCase()} (last observed ${new Date(w.verifiedAt).toLocaleTimeString()})`:'NOT VERIFIED'}`;}).join('\n')+`\nDual selection: ${state.dualValidation?.selection?'READY':'NOT READY'}\n${state.dualValidation?.full?'DUAL FULL FLOW VERIFIED':'FULL DUAL HOLD NOT YET VERIFIED'}`;
+  byId('dual-readiness').textContent=dual
+    ? ['A','B'].map(id=>{const w=state.dualWorkers?.[id as 'A'|'B'];return `Browser ${id}: ${w?`${w.state.toUpperCase()} (last observed ${new Date(w.verifiedAt).toLocaleTimeString()})`:'NOT VERIFIED'}`;}).join('\n')+`\nDual selection: ${state.dualValidation?.selection?'READY':'NOT READY'}\n${state.dualValidation?.full?'DUAL FULL FLOW VERIFIED':'FULL DUAL HOLD NOT YET VERIFIED'}`
+    : 'Dual mode is disabled. Set Courts to book to 2 and save the booking plan to enable these practice controls.';
   const dualResult=state.dualResult;byId('dual-result').hidden=!dualResult;
   byId('dual-result').textContent=dualResult?`${dualResult.status.replaceAll('_',' ')}\n${dualResult.date} / ${dualResult.hours.join(', ')}\nBrowser A: Court ${dualResult.courtA}\nBrowser B: Court ${dualResult.courtB}\nSource: ${dualResult.candidateSource}`:'';
   const full=state.mode==='full',fullReady=state.capabilities.selectionReady&&state.capabilities.checkoutReady&&state.capabilities.paymentBoundaryReady;
