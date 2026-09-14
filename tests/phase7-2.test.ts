@@ -4,6 +4,9 @@ import {DateTime} from 'luxon';
 import {mkdtemp,mkdir,readFile,rm,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
+import {execFile} from 'node:child_process';
+import {promisify} from 'node:util';
+import {pathToFileURL} from 'node:url';
 import {ConfigSchema,ObservationSchema,type BookingSetup} from '../src/config.js';
 import {defaultSetup,bookingView} from '../ui/booking.js';
 import {Controller} from '../ui/controller.js';
@@ -88,4 +91,11 @@ it('cleans its temporary preparing and guard locks after a failed preparation',a
 });
 it('the renderer/controller command serializes Extended through the booking-entry boundary',()=>{
   const input=testInput('extended',2),command={kind:'resetPrepare' as const,input};const spec=commandSpec(command,process.cwd(),process.execPath);expect(spec.args.some(a=>a.replaceAll('\\','/').endsWith('/src/booking-entry.ts'))).toBe(true);expect(spec.args.at(-2)).toBe('prepare');expect(JSON.parse(spec.args.at(-1)!)).toMatchObject({workflow:'test',request:{strategy:'extended',courtCount:2}});
+});
+it('hold inspection works through the production node --import tsx boundary',async()=>{
+  const moduleUrl=pathToFileURL(join(process.cwd(),'src/lock-browser.ts')).href;
+  const launch=process.platform==='win32'?{headless:true,channel:'chrome'}:{headless:true};
+  const source=`import {chromium} from 'playwright';import {inspectLockPage} from ${JSON.stringify(moduleUrl)};const browser=await chromium.launch(${JSON.stringify(launch)});const page=await browser.newPage();await page.setContent('<h1>Checkout</h1><div><p>Slot reserved for</p><p>05:00</p></div>');console.log(JSON.stringify(await inspectLockPage(page)));await browser.close();`;
+  const {stdout}=await promisify(execFile)(process.execPath,['--import','tsx','--input-type=module','--eval',source],{cwd:process.cwd(),timeout:30000,windowsHide:true});
+  expect(JSON.parse(stdout)).toMatchObject({page:'QR Checkout',hold:'Active',countdownSeconds:300});
 });

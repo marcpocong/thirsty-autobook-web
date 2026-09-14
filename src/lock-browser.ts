@@ -7,11 +7,12 @@ export interface BrowserReview { page:'Schedule'|'Review Booking'|'Payment Summa
 export const unknownBrowser:BrowserReview={page:'Unknown',selected:null,hold:'Unknown',countdownSeconds:null,clean:false};
 async function holdComponent(page:Page){
   return page.evaluate(()=>{
-    const visible=(e:Element)=>e.getClientRects().length>0&&getComputedStyle(e).visibility!=='hidden';
-    const labels=[...document.querySelectorAll('p')].filter(p=>visible(p)&&p.textContent?.trim()==='Slot reserved for');
+    // Keep this callback self-contained. Named local helpers are decorated by
+    // tsx/esbuild with __name, which does not exist in Playwright's page realm.
+    const labels=[...document.querySelectorAll('p')].filter(p=>p.getClientRects().length>0&&getComputedStyle(p).visibility!=='hidden'&&p.textContent?.trim()==='Slot reserved for');
     if(labels.length===0)return {present:false,countdown:null as string|null,ambiguous:false};
     if(labels.length!==1)return {present:true,countdown:null as string|null,ambiguous:true};
-    const values=[...new Set([...(labels[0]!.parentElement?.querySelectorAll('p')??[])].filter(visible).map(p=>p.textContent?.trim()??'').filter(s=>/^\d{1,2}:[0-5]\d$/.test(s)))];
+    const values=[...new Set([...(labels[0]!.parentElement?.querySelectorAll('p')??[])].filter(p=>p.getClientRects().length>0&&getComputedStyle(p).visibility!=='hidden').map(p=>p.textContent?.trim()??'').filter(s=>/^\d{1,2}:[0-5]\d$/.test(s)))];
     return {present:true,countdown:values.length===1?values[0]!:null,ambiguous:values.length!==1};
   });
 }
