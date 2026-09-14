@@ -15,7 +15,15 @@ import { assertDiagnosticSchedule } from './diagnostic-schedule.js';
 import { pidAlive } from '../ui/locks.js';
 
 export function assertResetSafe(record:{stage?:string;state?:string;handoff?:unknown}|undefined,browser:BrowserReview,expired=false){
-  if(record?.stage==='FINAL_ACTION_DISPATCHING'||(!record?.stage&&['checkout','unknown'].includes(record?.state??'')))throw Error('PAYMENT_HOLD_MAY_BE_ACTIVE');
+  if(record?.stage==='FINAL_ACTION_DISPATCHING'){
+    // A final click with no handoff proof stays uncertain while Onda shows a
+    // checkout, hold, selection, or unreadable state. Once the dead worker's
+    // dedicated browser conclusively returns to a clean Schedule, there is no
+    // remaining browser-side reservation state for Reset & Prepare to retain.
+    if(browser.clean&&browser.page==='Schedule'&&browser.selected===0&&browser.hold==='Not detected')return;
+    throw Error('PAYMENT_HOLD_MAY_BE_ACTIVE');
+  }
+  if(!record?.stage&&['checkout','unknown'].includes(record?.state??''))throw Error('PAYMENT_HOLD_MAY_BE_ACTIVE');
   if(browser.hold==='Active'||browser.page==='QR Checkout'){
     if(!(record?.stage==='HOLD_VERIFIED'&&expired))throw Error('PAYMENT_HOLD_MAY_BE_ACTIVE');
     return;

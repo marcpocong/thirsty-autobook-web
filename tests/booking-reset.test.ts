@@ -31,9 +31,16 @@ it('unavailable target date retains state and cannot complete preparation',()=>f
   await expect(resetAndPrepare('standard',new Safety(),{root:h.root,alive:()=>false,inspect:h.inspect},'2030-01-01')).rejects.toThrow('TARGET_DATE_UNAVAILABLE');
   expect(JSON.parse(await readFile(h.path,'utf8')).stage).toBe('REVIEW');
 }));
-it('inspects both Extended browsers before refusing an uncertain final dispatch and never normalizes',()=>fixture(async h=>{
-  await h.record('extended','SELECTION');
-  await writeFile(join(h.root,'.local/dual/worker-a.lock'),JSON.stringify({pid:123,runID:'fixture',id:'A',stage:'FINAL_ACTION_DISPATCHING'}));
+it('inspects both Extended browsers and clears dead final-dispatch records only when both are conclusively clean',()=>fixture(async h=>{
+  await h.record('extended','FINAL_ACTION_DISPATCHING');
+  await h.run('extended');
+  expect(h.inspect.mock.calls.map(c=>c[0].workerId)).toEqual(['A','B']);
+  expect(h.normalize).toHaveBeenCalledTimes(2);
+  await expect(readFile(h.path)).rejects.toThrow();
+}));
+it('inspects both Extended browsers but retains final-dispatch records when either browser is not conclusively clean',()=>fixture(async h=>{
+  await h.record('extended','FINAL_ACTION_DISPATCHING');
+  h.inspect.mockImplementation(async b=>({observed:b.workerId==='B'?{page:'Unknown',selected:null,hold:'Unknown',clean:false}:clean,expired:false,normalize:h.normalize}));
   await expect(h.run('extended')).rejects.toThrow('PAYMENT_HOLD_MAY_BE_ACTIVE');
   expect(h.inspect.mock.calls.map(c=>c[0].workerId)).toEqual(['A','B']);
   expect(h.normalize).not.toHaveBeenCalled();
