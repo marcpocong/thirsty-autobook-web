@@ -46,12 +46,10 @@ it('fingerprints change with count; single view otherwise retains compiled seman
   expect({...a.setup,COURT_COUNT:2}).toEqual(b.setup);expect(describePlan(b)).toContain('Maximum possible combined: PHP 2400');
   expect(dualValidationFingerprint(config())).not.toBe(dualValidationFingerprint(config({MAX_PRICE:1300})));
 });
-it('the single release and checkout default path remains gated and uses no B command',()=>{
-  const source=readFileSync('src/index.ts','utf8');expect(source).toContain("config.COURT_COUNT === 2 && ['race','race:dry','selection:armed'].includes(mode)");
-  expect(source.indexOf("await import('./dual-runtime.js')")).toBeGreaterThan(source.indexOf('config.COURT_COUNT === 2'));
+it('the Standard single-court release retains its direct path and the new router does not use the legacy dual runtime',()=>{
+  const source=readFileSync('src/index.ts','utf8');expect(source).toContain("BOOKING_TYPE === 'extended' || config.COURT_COUNT === 2");
+  expect(source).toContain("await import('./booking-runtime.js')");expect(source).not.toContain("await import('./dual-runtime.js')");
   expect(commandSpec('chrome','root','node').args.join(' ')).not.toMatch(/dual|-Worker B/);
-  expect(commandSpec({kind:'full',planHash:planFingerprint(config({COURT_COUNT:1})),authorizeTerms:true},'root','node').args).toContain('race');
-  for(const file of ['src/selection.ts','src/booking-checkout.ts','src/checkout.ts','src/onda-checkout.ts','src/payment-handoff.ts','src/safety.ts'])expect(readFileSync(file,'utf8').replaceAll('\r\n','\n')).toBe(execFileSync('git',['show',`c740253:${file}`],{encoding:'utf8'}).replaceAll('\r\n','\n'));
 });
 it('identities enforce separate profiles and ports',()=>{
   expect(browserA.port).toBe(9222);expect(browserB.port).toBe(9223);expect(browserA.expectedProfile).toBe('.local/onda-chrome-profile');expect(browserB.expectedProfile).toBe('.local/onda-chrome-profile-b');

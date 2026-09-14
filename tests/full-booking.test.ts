@@ -7,6 +7,7 @@ import {Safety} from '../src/safety.js';
 import {Telemetry} from '../src/telemetry.js';
 import {selectionPort,selectResolvedPreference} from '../src/selection.js';
 import {fullBookingToQr} from '../src/booking-checkout.js';
+import {selectCheckoutBundle} from '../src/checkout-selection.js';
 let browser:Browser,page:Page;
 beforeAll(async()=>{browser=await chromium.launch({headless:true,...(process.platform==='win32'?{channel:'chrome'}:{})});});
 beforeEach(async()=>{
@@ -30,6 +31,28 @@ beforeEach(async()=>{
 });
 afterAll(async()=>{await browser.close();});
 const player={fullName:'Fixture Player',phone:'09123456789',email:'fixture@example.invalid'};
+it('two courts traverse ONE complete normal checkout and ONE QR hold with durable stages',async()=>{
+  await page.evaluate(()=>{
+    document.querySelector('[data-testid="booking-selection-summary-count"]')!.textContent='2 Courts • 4 Slots';
+    document.querySelector('[data-testid="booking-selection-summary-amount"]')!.textContent='₱2,400';
+    const proceed=document.querySelector<HTMLButtonElement>('[data-testid="booking-selection-summary-proceed-button"]')!,original=proceed.onclick!;
+    proceed.onclick=function(event){
+      original.call(this,event);
+      const card=document.querySelector('[data-testid="booking-review-reservation-date"]')!.parentElement!;
+      const other=card.cloneNode(true) as Element;other.innerHTML=other.innerHTML.replace('Court 7:','Court 6:');card.after(other);
+      [...document.querySelectorAll('h3')].find(e=>e.textContent?.startsWith('Your Reservations'))!.textContent='Your Reservations (4)';
+      document.querySelector('#total')!.textContent='₱2,400.00';
+      const final=document.querySelector<HTMLButtonElement>('[aria-label="Continue to Payment"]')!,dispatch=final.onclick!;
+      final.onclick=function(event){dispatch.call(this,event);for(const span of document.querySelectorAll('span,div'))if(span.textContent?.trim()==='₱1,200.00'&&span.children.length===0)span.textContent='₱2,400.00';};
+    };
+  });
+  const s=new Safety(),t=new Telemetry(),stages:string[]=[];s.persistStage=async stage=>{stages.push(stage);};
+  const selected=await selectCheckoutBundle(selectionPort(page,s),'2026-09-11',await snapshot(page),{browser:'A',start:'10:00',duration:2,hours:['10:00','11:00'],requiredCourtCount:2,courts:[7,6]},1200,s,new Set());
+  const hold=await fullBookingToQr(page,selected,player,2400,true,1000,s,t);
+  expect(hold.amount).toBe(2400);expect(stages).toEqual(['SELECTION','SELECTION_VERIFIED','REVIEW','PAYMENT_SUMMARY','FINAL_ACTION_DISPATCHING','HOLD_VERIFIED']);
+  const actions=await page.evaluate(()=>(window as unknown as {actions:string[]}).actions);
+  expect(actions.filter(a=>a==='bookingProceed')).toHaveLength(1);expect(actions.filter(a=>a==='final')).toHaveLength(1);expect(actions).not.toContain('FORBIDDEN_PAYMENT_CONTROL');
+});
 it('runs the actual selection→both Proceeds→terms→one final click→passive QR proof, with no payment interaction',async()=>{
   const s=new Safety(),t=new Telemetry();const selected=await selectResolvedPreference(selectionPort(page,s),'2026-09-11',await snapshot(page),[{court:7,hours:['10:00','11:00']}],1200,3,s,t);
   const result=await fullBookingToQr(page,selected,player,1200,true,1000,s,t);

@@ -1,3 +1,4 @@
+import { TestBookingSchema, type BookingPlan } from '../src/booking-plan.js';
 import { z } from 'zod';
 import { DualPracticeSchema, requireDualFullAuthorization } from '../src/dual-practice.js';
 import type { DualPracticeCommand } from './types.js';
@@ -13,6 +14,9 @@ import { BookingSetupSchema } from '../src/config.js';
 import { capabilities,fullBookingReady } from '../src/capabilities.js';
 
 const errors: Record<string, string> = {
+  EXTENDED_DURATION_LIMIT:'Extended two-browser booking currently supports up to 6 consecutive hours.',
+  PAYMENT_HOLD_MAY_BE_ACTIVE:'PAYMENT HOLD MAY BE ACTIVE. Check Onda manually or wait for expiry, then Reset & Prepare.',
+  TARGET_NOT_AVAILABLE:'TARGET NOT AVAILABLE. No booking was created.',
   LOCK_PID_RUNNING:'The recorded process or a UI-owned worker is still running. Lock cannot be cleared.',
   LOCK_SELECTED_SLOTS:'SELECTED SLOTS STILL PRESENT. Inspect and clear them manually, then Review Lock again.',
   LOCK_PAYMENT_HOLD_ACTIVE:'PAYMENT HOLD ACTIVE. Complete payment, cancel manually if appropriate, or wait for expiry; then return to a clean schedule and Review Lock.',
@@ -46,6 +50,7 @@ const errors: Record<string, string> = {
   COURT_FILTER_NOT_ALL: 'Select All Courts in Chrome, then Prepare again.',
 };
 export interface Dependencies {
+  confirmBooking?:(plan:BookingPlan,maximum:number)=>Promise<boolean>;
   runner: Runner; lock(): Promise<boolean>; cdp(): Promise<boolean>; clock: typeof readClock;
   confirm(kind?: 'observe'|'selection'|'dry'|'full', plan?:BookingView): Promise<boolean>; publish(status: Dashboard): void;
   booking(): BookingView; saveBooking(input:unknown): BookingView;
@@ -60,7 +65,7 @@ export interface Dependencies {
   handoff?():Promise<Dashboard['handoff']>;
 }
 export class Controller {
-  readonly state: Dashboard = { operation: 'idle', headline: 'Prepare your session', detail: 'Start dedicated Chrome, then verify the page before arming.', ready: false,
+  readonly state: Dashboard = { operation: 'idle', headline: 'RESET REQUIRED', workflow:'test', detail: 'Configure your booking, then Reset & Prepare.', ready: false,
     cdp: false, lock: false, inspection: null, clock: null, plan: null, logs: [], liveRace: fullBookingReady(), booking:null, termsAuthorized:false, capabilities, selection:null,mode:fullBookingReady()?'full':'selection',handoff:null };
   private active?: RunningCommand;
   private generation = 0;
@@ -89,7 +94,8 @@ export class Controller {
         try { const booking=this.deps.booking(); if (this.state.booking?.fingerprint !== booking.fingerprint) { this.state.ready=false; this.state.termsAuthorized=false; } this.state.booking=booking; if(booking.setup.COURT_COUNT===2&&this.deps.dualEvidence)this.state.dualValidation=await this.deps.dualEvidence(); }
         catch { this.state.booking=null; this.state.ready=false; }
       }
-      if (!cdp || (lock && this.state.operation === 'idle') || !this.state.clock?.canArmToday) this.state.ready = false;
+      if (!cdp || (lock && this.state.operation === 'idle') || (this.state.workflow==='release'&&!this.state.clock?.canArmToday)) this.state.ready = false;
+      if(this.state.preparedAt&&Date.now()-this.state.preparedAt>60000)this.state.ready=false;
       const checked = this.state.inspection;
       // Never present an old inspection as current readiness after a long idle period.
       if (checked && Date.now() - Date.parse(checked.verifiedAt) > 60000 && this.state.operation === 'idle') this.state.ready = false;
@@ -101,6 +107,8 @@ export class Controller {
     } finally { this.polling = false; }
   }
   private event = (event: UiEvent) => {
+    if(event.type==='bookingResult'){this.state.bookingResult=event;this.state.headline=event.status;this.state.detail=event.description+'\n'+event.outcomes.map((v,i)=>`Checkout ${i+1}: ${v}`).join('\n')+(event.outcomes.includes('FAILED')?'\nCheck both Onda windows manually; a failed checkout may still have an active hold.':'');this.publish();return;}
+    if(event.type==='error'&&this.state.bookingResult&&['PARTIAL SUCCESS','BOOKING FAILED'].includes(this.state.bookingResult.status)){this.state.ready=false;this.log(event.code,true);return;}
     if(event.type==='dualWorker'){this.state.dualWorkers={...this.state.dualWorkers,[event.workerId]:event};this.publish();return;}
     if(event.type==='dualResult'){this.state.dualResult=event;this.state.headline=event.status.replaceAll('_',' ');this.state.detail=['DUAL_DRY_PASS','DUAL_SELECTION_PASS'].includes(event.status)?'No Proceed clicks. Both browsers clean.':'Automation stopped. Inspect BOTH browsers manually. Locks retained; payment stays manual.';this.publish();return;}
     if(event.type==='error'&&this.state.dualActive&&['DUAL_PARTIAL_SUCCESS','DUAL_FAILED'].includes(this.state.dualResult?.status??'')){this.state.ready=false;this.log(event.code,true);return;}
@@ -135,7 +143,7 @@ export class Controller {
   };
   private async run(command: Command, generation: number) {
     if (generation !== this.generation) throw new Error('CANCELLED');
-    const active = this.deps.runner(command, this.event, (line, error) => this.log(line, error));
+    const active = this.deps.runner(command, this.event, (line, error) => this.log(line, error),async plan=>{if(generation!==this.generation)return false;const answer=await this.deps.confirmBooking?.(plan,typeof command==='object'&&command.kind==='testBooking'?command.input.maximum:0)??false;return generation===this.generation&&answer;});
     this.active = active;
     try {
       const code = await active.done;
@@ -152,7 +160,7 @@ export class Controller {
     catch (error) {
       if (generation === this.generation) {
         const code = error instanceof Error ? error.message : 'OPERATION_FAILED';
-        const hadSpecificFailure = this.state.dualResult?.status==='DUAL_PARTIAL_SUCCESS'||this.state.dualResult?.status==='DUAL_FAILED'||this.state.headline === 'Needs attention'||this.state.headline.includes('FAILED')||this.state.headline==='HANDOFF STATUS UNKNOWN';
+        const hadSpecificFailure = ['PARTIAL SUCCESS','BOOKING FAILED'].includes(this.state.bookingResult?.status??'')||this.state.dualResult?.status==='DUAL_PARTIAL_SUCCESS'||this.state.dualResult?.status==='DUAL_FAILED'||this.state.headline === 'Needs attention'||this.state.headline.includes('FAILED')||this.state.headline==='HANDOFF STATUS UNKNOWN';
         if(code==='HANDOFF_STATUS_UNKNOWN')this.state.headline='HANDOFF STATUS UNKNOWN';
         else if(!hadSpecificFailure)this.state.headline = 'Needs attention';
         if(code==='HANDOFF_STATUS_UNKNOWN')this.state.detail='DO NOT START ANOTHER BOOKING. CHECK CHROME MANUALLY. Lock retained; final action is never retried.';
@@ -170,7 +178,7 @@ export class Controller {
     // attach a booking worker. Allow it while a retained lock is under review
     // so the operator can make Chrome available for read-only verification.
     if (this.active) throw new Error('OPERATION_ALREADY_RUNNING');
-    this.log(this.state.lock ? 'Starting / reusing dedicated Chrome for lock review' : 'Starting / reusing dedicated Chrome'); await this.run(this.state.booking?.setup.COURT_COUNT===2?'chromeDual':'chrome', gen);
+    this.log(this.state.lock ? 'Starting / reusing dedicated Chrome for lock review' : 'Starting / reusing dedicated Chrome'); await this.run(this.state.booking?.setup.BOOKING_TYPE==='extended'?'chromeDual':'chrome', gen);
     this.state.cdp = await this.deps.cdp(); if (!this.state.cdp) throw new Error('CDP_PROFILE_OR_BIND_UNVERIFIED');
     if (gen !== this.generation) return;
     this.state.headline = 'Chrome is reachable'; this.state.detail = 'Run Prepare to verify the booking page and session.';
@@ -180,11 +188,25 @@ export class Controller {
     await this.noLock(); this.state.inspection = null; this.log('Inspecting Onda — read only'); await this.run(this.state.booking?.setup.COURT_COUNT===2?'dualReadiness':'inspect', gen);
     this.state.headline = 'Inspection complete'; this.state.detail = 'Review the observed status below. Prepare before arming.';
   }); }
+  async setWorkflow(value:unknown){if(this.state.operation!=='idle')throw Error('OPERATION_ALREADY_RUNNING');this.state.workflow=z.enum(['test','release']).parse(value);this.state.ready=false;this.state.termsAuthorized=false;this.publish();}
+  resetPrepare(value:unknown){return this.operation('prepare',async gen=>{
+    const strategy=z.enum(['standard','extended']).parse(value);
+    this.state.inspection=null;this.state.handoff=null;this.state.bookingResult=undefined;
+    await this.run({kind:'resetPrepare',strategy},gen);await this.noLock();
+    this.state.cdp=await this.deps.cdp();this.state.ready=true;this.state.preparedAt=Date.now();
+    this.state.headline=this.state.workflow==='release'?'READY TO ARM':'READY TO TEST';this.state.detail='Prepared. Review your settings and authorize Terms for this run.';
+  });}
+  testBooking(value:unknown){return this.operation('fullPractice',async gen=>{
+    const input=TestBookingSchema.parse(value);await this.noLock();
+    this.state.handoff=null;this.state.bookingResult=undefined;
+    this.state.headline='Checking availability';this.state.detail='Resolving your courts and time ranges before confirmation.';
+    await this.run({kind:'testBooking',input},gen);
+  });}
   prepare() { return this.operation('prepare', async gen => {
     this.state.booking=this.deps.booking(); this.state.selection=null;
     if(this.state.booking.setup.COURT_COUNT===2)this.state.dualWorkers={};
     await this.noLock(); this.state.inspection = null; this.log('Preparing session — no observation will be armed');
-    await this.run(this.state.booking?.setup.COURT_COUNT===2?'chromeDual':'chrome', gen);
+    await this.run(this.state.booking?.setup.BOOKING_TYPE==='extended'?'chromeDual':'chrome', gen);
     this.state.cdp = await this.deps.cdp(); if (!this.state.cdp) throw new Error('CDP_PROFILE_OR_BIND_UNVERIFIED');
     await this.run(this.state.booking?.setup.COURT_COUNT===2?'dualReadiness':'inspect', gen); await this.noLock();
     if (gen !== this.generation) return;
@@ -229,6 +251,7 @@ export class Controller {
     this.state.headline = 'Observation complete'; this.state.detail = 'No court slots were selected. Review activity and local telemetry.';
   }); }
   saveBooking(input: unknown) { return this.operation('saving', async () => {
+    if((input as {DURATION_HOURS?:number})?.DURATION_HOURS!>6)throw Error('EXTENDED_DURATION_LIMIT');
     const setup=BookingSetupSchema.parse(input);
     this.state.booking=this.deps.saveBooking(setup);
     this.state.headline='Booking plan saved'; this.state.detail='Review the compiled plan, then Prepare Booking. Terms authorization is off.';
@@ -257,12 +280,7 @@ export class Controller {
     await this.noLock(); if (!this.deps.clock().canArmToday) throw new Error('TOO_LATE_FOR_PREFLIGHT');
     if (kind==='selection' && !this.state.capabilities.selectionReady) throw new Error('SELECTION_NOT_READY');
     const plan=this.deps.booking(); this.state.booking=plan; this.state.selection=null;
-    if(plan.setup.COURT_COUNT===2){
-      const evidence=await this.deps.dualEvidence?.();
-      if(kind!=='dry'&&!evidence?.selection)throw Error('DUAL_SELECTION_NOT_READY');
-      if(kind==='full'&&!evidence?.full)throw Error('DUAL_FULL_FLOW_NOT_VERIFIED');
-      this.state.dualActive=true;this.state.dualResult=null;this.state.dualWorkers={};
-    }
+    this.state.bookingResult=undefined;
     const confirmed=await this.deps.confirm(kind,plan);
     if(gen!==this.generation)return;
     if(!confirmed){this.state.headline='Arming cancelled';this.state.detail='No booking process was launched.';return;}
@@ -274,8 +292,8 @@ export class Controller {
     await this.run(kind==='full'?{kind,planHash:plan.fingerprint,authorizeTerms:true}:{kind,planHash:plan.fingerprint},gen);
     if(this.state.dualActive){if(!this.state.dualResult)throw Error('DUAL_RESULT_MISSING');return;}
     if(kind==='dry'){this.state.headline='Dry Race complete';this.state.detail='No slots selected. Review availability and preference events.';}
-    else if(kind==='full'&&!this.state.handoff)throw new Error('HANDOFF_STATUS_UNKNOWN');
-    else if(kind==='selection'&&!this.state.selection)throw new Error('SELECTION_RESULT_MISSING');
+    else if(kind==='full'&&!this.state.handoff&&!this.state.bookingResult)throw new Error('HANDOFF_STATUS_UNKNOWN');
+    else if(kind==='selection'&&!this.state.selection&&!this.state.bookingResult)throw new Error('SELECTION_RESULT_MISSING');
   }); }
   reviewLock(){return this.operation('reviewing',async()=>{
     if(!this.deps.reviewLock)throw Error('LOCK_BROWSER_STATE_UNKNOWN');

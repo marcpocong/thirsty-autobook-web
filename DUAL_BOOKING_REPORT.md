@@ -1,5 +1,7 @@
 # Phase 6: optional dual-court booking
 
+> Historical checkpoint. Phase 7 supersedes the routing, evidence gates and normal UI described here: Standard two courts now uses one checkout; Extended uses two browser chunks. See [Phase 7](PHASE7_BOOKING_REPORT.md).
+
 Baseline: `c740253` on `main`, clean at the start of implementation.
 
 ## Default and configuration

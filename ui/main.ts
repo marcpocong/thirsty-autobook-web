@@ -1,3 +1,4 @@
+import { describeBookingPlan } from '../src/booking-plan.js';
 import { loadConfig } from '../src/config.js';
 import {reviewLock,clearVerifiedLock,browserProbe} from './locks.js';
 import { app, BrowserWindow, ipcMain, dialog, session } from 'electron';
@@ -18,7 +19,8 @@ const index = resolve(root, 'dist/ui/renderer/index.html');
 const indexUrl = pathToFileURL(index).href;
 let window: BrowserWindow;
 let exiting = false;
-const controller = new Controller({ runner: createRunner(root, node), lock: () => readLock(root), cdp: probeCdp, clock: readClock,
+const controller = new Controller({
+  confirmBooking:async(plan,maximum)=>(await dialog.showMessageBox(window,{type:'question',title:`${plan.strategy.toUpperCase()} TEST TO QR`,message:'Create temporary payment holds?',detail:describeBookingPlan(plan,maximum)+'\nIf availability changes before Proceed, the planner may retry other courts or valid splits within this requested time range and court count. Exact courts, when specified, are never substituted.\nTerms authorized for this test. Payment will NOT be automated.',buttons:['Cancel','Run Test to QR'],defaultId:0,cancelId:0})).response===1, runner: createRunner(root, node), lock: () => readLock(root), cdp: probeCdp, clock: readClock,
   reviewLock:owned=>reviewLock(root,owned,browserProbe(root,node),undefined,browserProbe(root,node,'B')),
   clearLock:(fingerprint,owned)=>clearVerifiedLock(root,fingerprint,owned,browserProbe(root,node),undefined,browserProbe(root,node,'B')),
   resetPractice:()=>resetPracticeSession(root,()=>reviewLock(root,false,browserProbe(root,node)),browserProbe(root,node),probeCdp),
@@ -59,7 +61,7 @@ else {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== indexUrl || args.length) throw new Error('IPC_NOT_ALLOWED');
     return action();
   });
-  for (const [name,action] of Object.entries({runDualPractice:(input:unknown)=>controller.runDualPractice(input),runFullPractice:(input:unknown)=>controller.runFullPractice(input),saveBooking:(input:unknown)=>controller.saveBooking(input),runPractice:(input:unknown)=>controller.runPractice(input),setMode:(input:unknown)=>controller.setMode(input),authorizeTerms:(input:unknown)=>controller.authorizeTerms(input)})) ipcMain.handle(`thirsty:${name}`,(event,...args:unknown[])=>{
+  for (const [name,action] of Object.entries({resetPrepare:(input:unknown)=>controller.resetPrepare(input),testBooking:(input:unknown)=>controller.testBooking(input),setWorkflow:(input:unknown)=>controller.setWorkflow(input),runDualPractice:(input:unknown)=>controller.runDualPractice(input),runFullPractice:(input:unknown)=>controller.runFullPractice(input),saveBooking:(input:unknown)=>controller.saveBooking(input),runPractice:(input:unknown)=>controller.runPractice(input),setMode:(input:unknown)=>controller.setMode(input),authorizeTerms:(input:unknown)=>controller.authorizeTerms(input)})) ipcMain.handle(`thirsty:${name}`,(event,...args:unknown[])=>{
     if(event.sender!==window.webContents||event.senderFrame!==window.webContents.mainFrame||event.senderFrame.url!==indexUrl||args.length!==1)throw new Error('IPC_NOT_ALLOWED');
     return action(args[0]);
   });

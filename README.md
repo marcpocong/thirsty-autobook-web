@@ -2,7 +2,27 @@
 
 Windows 11 / Node 24 / TypeScript / Playwright / dedicated Chrome. All files live directly in this project root.
 
-**Full Booking to QR is enabled.** All three capabilities have recorded live evidence. The bot continues from selection through Review, player information, Payment Summary and per-run authorized Terms, dispatches the final Onda button once, verifies QR Checkout passively, then stops. Payment stays manual. The single live test required recovery during development; it is not an uninterrupted latency benchmark. See [full results](FULL_BOOKING_REPORT.md) and [verified evidence](VERIFIED_ONDA.md). Actual 08:00 release behavior remains unobserved.
+The existing single-court booking flow has live evidence, including the [September 12 production run](RELEASE_RUN_REPORT_2026-09-12.md). Automation stops at the verified QR payment hold; payment remains manual. Phase 7 extends that flow with the validation boundaries documented below.
+
+
+## Phase 7: Standard and Extended
+
+The normal workflow is **configure -> Reset & Prepare -> authorize Terms -> Run Test to QR / Arm Release**. Choose **Test Now** for an exact date without waiting for release, or **Release Booking** for the scheduled run. Engineering tools remain under the collapsed **Advanced / Diagnostics** section.
+
+| Booking type | Duration | Courts | Browsers | Checkouts / QR holds |
+|---|---|---|---|---|
+| Standard | 1-3 consecutive hours | 1 or 2 | A only | 1 |
+| Extended | 4-6 consecutive hours | 1 or 2 | A + B | 2 |
+
+Standard two-court bookings select both courts in one checkout. Extended splits are ranked **3+1 -> 2+2 -> 1+3** for four hours, **3+2 -> 2+3** for five, and **3+3** for six. Each court covers its entire chunk. The second chunk prefers continuity but may switch one or both courts. Fallback starts move the entire continuous block. Midnight is an allowed endpoint; crossing midnight and durations above six hours are rejected.
+
+`BOOKING_TYPE` defaults to `standard`; `COURT_COUNT` still defaults to 1. `MAX_PRICE` is the maximum for one court in one checkout chunk. Each checkout independently enforces `COURT_COUNT * MAX_PRICE`.
+
+Test Now resolves availability before a native confirmation shows the actual courts and chunks. The confirmation permits bounded pre-Proceed replanning within the requested range; exact courts are never substituted. Test settings do not require changing the saved release court count. Reset & Prepare and all relevant edits clear Terms authorization. No historical dual readiness/practice evidence is required for normal Test Now or Release Booking.
+
+Reset & Prepare checks dedicated identities, dead owner state, current browser state and both old worker records when applicable. It resets proven pre-final state and returns to today's clean schedule. An active hold or uncertain final dispatch stays protected. Verified holds can be recovered after a conclusively inactive/expired state; a countdown elapsed on the dashboard alone is not proof. Unknown markup, missing worker identity, security challenges and wrong venue remain manual-review stops.
+
+**Live validation limit:** the user verified that Onda supports two courts in one checkout, up to three hours per court. The new multi-court Review DOM adapter and simultaneous same-customer Extended holds have only offline validation in this phase. The adapter requires independently verifiable court cards and stops on unsupported markup. No real hold or release was created during implementation. See [Phase 7 details and test results](PHASE7_BOOKING_REPORT.md).
 
 ## Setup
 
@@ -54,13 +74,11 @@ After the release reload commits, the engine waits only for the verified venue a
 
 ## Booking configuration
 
-Use **Booking Setup** in the panel for start, duration, court order, fallback starts, PHP maximum and maximum candidate attempts. Saved settings live in ignored `config.local.json`; the CLI loads this same object. Defaults are 08:00, 2 hours, courts 7→1, PHP 1,200 and 3 candidate attempts; review them before arming. Save invalidates readiness. The confirmation and worker compare a plan fingerprint, so a changed plan cannot silently replace the authorized one.
+Use **Booking Setup** for start, duration, court order, fallback starts, PHP maximum and maximum candidate attempts. Saved release settings live in ignored `config.local.json`; the CLI loads this same object. Defaults are 08:00, 2 hours, courts 7 through 1, PHP 1,200 and 3 candidate attempts. Save invalidates readiness. Confirmation and the worker compare a plan fingerprint so the authorized plan cannot silently change.
 
-**Courts to book** accepts 1 (the safe default, including old config files) or 2. Two courts use separate visible Chrome profiles and the same date/time/duration; the maximum remains per court. Start with `npm run chrome:dual`, then `npm run dual:readiness` and an explicit-date `dual:practice:dry`. Selection practice requires user-chosen non-prime slots. Full dual practice creates real temporary holds and requires separate explicit authorization. Dual production remains gated until the relevant live practice evidence exists. See [dual commands, safety design and current validation](DUAL_BOOKING_REPORT.md).
+Choose Standard or Extended independently of the court count. Use Reset & Prepare in the normal workflow. The `dual:*` commands below are retained Phase 6 diagnostics; they are not prerequisites for normal bookings.
 
-The UI keeps a **Prepare Dual Browsers** button visible in the Dual booking practice panel. Set and save `Courts to book = 2`, then use that button to start or reuse both dedicated Chrome windows and verify both clean Onda schedules without selecting or booking anything. The same preparation is available from `npm run dual:prepare`.
-
-Store real player fields only in ignored `.env.local`: `PLAYER_FULL_NAME`, `PLAYER_PHONE`, `PLAYER_EMAIL`. Other release settings may also remain there; `.env.example` contains placeholders only. The dashboard reports **Configured** without sending player values to the renderer. Zod validates booking/player configuration before attachment. Preferences use primary time × court order, then each fallback × court order. Starts range from 08:00 through 23:00, with 1–16 consecutive hours on one court, ending no later than midnight.
+Store real player fields only in ignored `.env.local`: `PLAYER_FULL_NAME`, `PLAYER_PHONE`, `PLAYER_EMAIL`. The dashboard reports **Configured** without sending player values to the renderer. Zod validates configuration before attachment. Primary and fallback starts use the configured court priority. Starts range from 08:00 through 23:00, with Standard supporting 1-3 consecutive hours and Extended supporting 4-6, ending no later than midnight.
 
 The horizon uses timezone calendar arithmetic, not `now + 48 hours`. Nonzero release lead is rejected until justified by measurements. Observation reads only release settings and ignores player data. Example values are illustrations, not live booking authorization.
 
@@ -70,15 +88,9 @@ Press **Q** or **Ctrl+C** in the terminal. Output: `AUTOMATION ABORTED — USER 
 
 Exact row ISO dates, matching visible heading, complete seven-court hourly coverage, and no busy indicator are required before availability is trusted. A changed date heading alone is insufficient. Missing/contradictory slot states are UNKNOWN, never OPEN. Read [telemetry definitions](TELEMETRY_SPEC.md) before interpreting timings.
 
-Atomic process lock prevents concurrent project commands. Failures, abrupt termination and successful Selection Only and Full Booking preserve `.local/automation.lock`. A verified complete selection also locks out all in-memory fallback. **Only after verifying the recorded PID is no longer running and the browser has no active selection/checkout**, remove that exact lock file:
+An atomic process lock prevents concurrent project commands. Failures, abrupt termination and successful booking holds retain `.local/automation.lock`. A verified complete selection also blocks fallback until safe owned cleanup. Use the verified recovery flow below.
 
-For a **dual** lock, use the panel's **Review Lock / Clear Lock** instead of the manual single-lock example below. Both browser states and subordinate worker records must be checked. Never delete a dual lock or use single-browser Reset Practice to discard it.
-
-```powershell
-Get-Content .local/automation.lock
-# Check the recorded PID and browser manually first.
-Remove-Item -LiteralPath .local/automation.lock
-```
+Use **Reset & Prepare** for retained Standard, Extended and legacy dual locks. It verifies the recorded process, browser state and durable final-action stage before clearing safe stale state. Do not delete lock files manually to bypass an uncertain payment hold.
 
 Selection verifies exact date/court/hours/count, summary count, PHP amount and actionable Proceed. A failed candidate may be cleaned up only if the current complete grid proves every selected cell belongs to that attempt. A fresh snapshot resolves an untried candidate, up to `MAX_SELECTION_ATTEMPTS` (default 3, allowed 1–5). Unknown state, changed date, foreign selections, security errors and aborts stop without cleanup. Price/count ambiguity never reaches Proceed.
 
@@ -115,12 +127,11 @@ npm run ui
 
 The Electron desktop window uses the existing CLI engine. The first launch may download the Electron runtime; subsequent launches build the small TypeScript UI and open it directly. No installer or additional terminal is needed.
 
-1. **Start / Attach Chrome** reuses the existing PowerShell launcher and checks local CDP.
-2. Configure and save **Booking Setup**. Review the engine-generated target, exact hourly slots, court order, fallbacks, price and player status. **Prepare Booking** validates this plan and local player fields, starts/reuses Chrome, and verifies today’s actual grid, All Courts, visibility, zero selected cells and clear lock. It never arms or selects anything.
-3. Review the session statuses, Manila time, target date and countdown. Onda statuses show their inspection time; they are not continuously re-read. Readiness expires after one minute, on disconnection, an unexpected lock, or the preflight cutoff.
-4. **Arm Booking Selection** opens a native confirmation with the exact plan. After confirmation the existing release engine performs initial/final preflight, waits for release, uses bounded refresh and target-date navigation, then selects and verifies the best available preference. No new confirmation is needed at 08:00. Selection Only stops before Proceed and displays **SLOTS SELECTED**, never “reservation secured.”
-5. Leave dedicated Chrome and the control panel open, with the Onda tab active. Conflicting controls stay disabled while a command runs.
-6. **Emergency Stop** stops only the UI-owned command. Chrome remains open; the panel makes no recovery clicks, deselection or refresh. Closing the panel also stops its command. External CLI runs must be stopped in their own terminal.
+1. Choose **Test Now** or **Release Booking**, booking type, court count, start, duration and per-court maximum. For Test Now choose an explicit date.
+2. Press **Reset & Prepare**. Release settings are saved before preparation. Test fields are independent of saved release settings.
+3. Authorize Terms for this run, then press **Run Test to QR** or **Arm Release**. Review the native confirmation. The test resolves actual chunk courts before confirmation; release confirms priorities, fallback starts and valid splits.
+4. Keep the dedicated Chrome window(s) visible. Successful automation stops at one Standard QR hold or two Extended QR holds. Payment remains manual.
+5. **Emergency Stop** stops only the UI-owned command and retains uncertain state. It never cancels holds or closes Chrome.
 
 **Dry Race** uses the same release/grid/preference path without selecting. **Observe Release** preserves the original read-only observer. **Run Safe Practice** accepts an explicit date/court/start/duration and reuses the existing select→verify→deselect→verify engine, never Proceed. Each command has the same process ownership and stop controls. Full Booking is now available because all three capability gates have recorded evidence. Select **FULL BOOKING — STOP AT QR PAYMENT**, Prepare, check the terms authorization, then **Arm Full Booking**. Its native confirmation includes the exact plan, terms YES and QR Checkout boundary. Practice and Selection Only retain their distinct stopping points.
 
@@ -128,9 +139,9 @@ The countdown is informational and shows the next release after today's cutoff. 
 
 The activity log streams opt-in validated `THIRSTY_EVENT` messages and sanitized child output. Periodic checks only read local CDP reachability and lock existence; they do not poll Onda. No player fields or environment editor are exposed. A reachable CDP endpoint alone does not prove the correct profile; explicit Inspect/Prepare uses the existing profile/tab validation.
 
-Locks are deliberately retained after an aborted or failed command. For a dedicated Full Flow Practice run, use **Reset Practice Session** in the practice panel: it refuses a recorded QR/payment hold, selected slots, or an active worker, closes and reopens only the project Chrome profile, and clears local practice page state. Normal booking locks still require Review Lock and verified manual clearing. A development abort test does not authorize silently clearing another run’s lock.
+Locks are deliberately retained after an aborted or failed command. The old **Reset Practice Session** diagnostic remains conservative: it refuses a recorded QR/payment hold, selected slots, or an active worker, closes and reopens only the project Chrome profile, and clears local practice page state. Use the normal **Reset & Prepare** action for current booking locks. A development abort test does not authorize silently clearing another run’s lock.
 
-Current implementation and validation details are in [FULL_BOOKING_REPORT.md](FULL_BOOKING_REPORT.md). Earlier reports are historical checkpoints.
+Current implementation and validation details are in [PHASE7_BOOKING_REPORT.md](PHASE7_BOOKING_REPORT.md). Earlier reports are historical checkpoints.
 
 ## QR handoff and retained holds
 

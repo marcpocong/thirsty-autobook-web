@@ -64,7 +64,8 @@ export async function resetPracticeSession(
   cdp: () => Promise<boolean>,
 ): Promise<void> {
   const before = await readLock(root);
-  if (before) { try { if (JSON.parse(before.raw).mode === 'dual') throw Error('DUAL_RESET_NOT_ALLOWED'); } catch (error) { if (error instanceof Error && error.message === 'DUAL_RESET_NOT_ALLOWED') throw error; } }
+  if (before) { try { if (['dual','extended'].includes(JSON.parse(before.raw).mode)) throw Error('DUAL_RESET_NOT_ALLOWED'); } catch (error) { if (error instanceof Error && error.message === 'DUAL_RESET_NOT_ALLOWED') throw error; } }
+  if(before){const r=JSON.parse(before.raw);if(r.stage==='FINAL_ACTION_DISPATCHING'||r.stage==='HOLD_VERIFIED')throw Error('PAYMENT_HOLD_MAY_BE_ACTIVE');if(!r.stage)throw Error('USE_RESET_AND_PREPARE');}
   if (before && readHandoff(before.raw)) throw Error('PRACTICE_RESET_HOLD_ACTIVE');
 
   if (before) {

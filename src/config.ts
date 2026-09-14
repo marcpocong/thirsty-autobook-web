@@ -9,13 +9,14 @@ export const VENUE = 'Thirsty Pickle | SM Seaside';
 const hour = z.string().regex(/^(0[89]|1[0-9]|2[0-3]):00$/);
 const courts = z.array(z.number().int().min(1).max(7));
 export const ConfigSchema = z.object({
+  BOOKING_TYPE: z.enum(['standard','extended']).default('standard'),
   COURT_COUNT: z.union([z.literal(1), z.literal(2)]).default(1),
   ONDA_URL: z.literal(ONDA_URL).default(ONDA_URL),
   TIMEZONE: z.string().refine(v => IANAZone.isValidZone(v), 'Invalid timezone').default('Asia/Manila'),
   RELEASE_TIME: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/).default('08:00:00'),
   BOOKING_HORIZON_DAYS: z.coerce.number().int().min(0).max(30).default(2),
   START_TIME: hour,
-  DURATION_HOURS: z.coerce.number().int().min(1).max(16),
+  DURATION_HOURS: z.coerce.number().int().min(1).max(6),
   PREFERRED_COURTS: courts.min(1), FALLBACK_COURTS: courts.default([]),
   FALLBACK_TIMES: z.array(hour).default([]),
   MAX_PRICE: z.coerce.number().finite().positive(),
@@ -36,6 +37,7 @@ export const ConfigSchema = z.object({
   PREFLIGHT_SECONDS_BEFORE: z.coerce.number().int().min(10).max(120).default(15),
   CRITICAL_STEP_TIMEOUT_MS: z.coerce.number().int().min(3000).max(60000).default(15000),
 }).superRefine((c, ctx) => {
+  if(c.BOOKING_TYPE==='standard'?c.DURATION_HOURS>3:c.DURATION_HOURS<4)ctx.addIssue({code:'custom',message:'Standard supports 1-3h; Extended supports 4-6h',path:['DURATION_HOURS']});
   const allCourts = [...c.PREFERRED_COURTS, ...c.FALLBACK_COURTS];
   const times = [c.START_TIME, ...c.FALLBACK_TIMES];
   if (new Set(allCourts).size !== allCourts.length) ctx.addIssue({ code: 'custom', message: 'Duplicate court preference', path: ['PREFERRED_COURTS'] });
@@ -76,12 +78,14 @@ export function loadConfig(): Config {
 }
 // Narrow, PII-free local settings; renderer cannot change URLs, release timing or player data.
 export const BookingSetupSchema = z.object({
+  BOOKING_TYPE: ConfigSchema.shape.BOOKING_TYPE,
   COURT_COUNT: ConfigSchema.shape.COURT_COUNT,
-  START_TIME: hour, DURATION_HOURS: z.number().int().min(1).max(16),
+  START_TIME: hour, DURATION_HOURS: z.number().int().min(1).max(6),
   PREFERRED_COURTS: courts.length(7), FALLBACK_COURTS: z.array(z.never()).default([]),
   FALLBACK_TIMES: z.array(hour).max(15), MAX_PRICE: z.number().finite().positive(),
   MAX_SELECTION_ATTEMPTS: z.number().int().min(1).max(5).default(3),
 }).strict().superRefine((c, ctx) => {
+  if(c.BOOKING_TYPE==='standard'?c.DURATION_HOURS>3:c.DURATION_HOURS<4)ctx.addIssue({code:'custom',message:'Standard supports 1-3h; Extended supports 4-6h'});
   if (new Set(c.PREFERRED_COURTS).size !== 7) ctx.addIssue({ code: 'custom', message: 'Each court must appear once' });
   const times = [c.START_TIME, ...c.FALLBACK_TIMES];
   if (new Set(times).size !== times.length || times.some(t => Number(t.slice(0, 2)) + c.DURATION_HOURS > 24)) ctx.addIssue({ code: 'custom', message: 'Duplicate or out-of-schedule time' });
@@ -99,7 +103,7 @@ export function calculateTarget(c: Pick<Config, 'TIMEZONE' | 'RELEASE_TIME' | 'B
   return { ...releaseCalendar(c, now), preferences: compilePreferences(c) };
 }
 export function planFingerprint(c: Config) {
-  return createHash('sha256').update(JSON.stringify({ courtCount:c.COURT_COUNT, schedule: ObservationSchema.parse(c), target: calculateTarget(c), maximum:c.MAX_PRICE, attempts:c.MAX_SELECTION_ATTEMPTS })).digest('hex');
+  return createHash('sha256').update(JSON.stringify({ strategy:c.BOOKING_TYPE, courtCount:c.COURT_COUNT, schedule: ObservationSchema.parse(c), target: calculateTarget(c), maximum:c.MAX_PRICE, attempts:c.MAX_SELECTION_ATTEMPTS })).digest('hex');
 }
 export function releaseCalendar(c: Pick<Config, 'TIMEZONE' | 'RELEASE_TIME' | 'BOOKING_HORIZON_DAYS'>, now: DateTime = DateTime.now()) {
   const local = now.setZone(c.TIMEZONE);

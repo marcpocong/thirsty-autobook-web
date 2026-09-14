@@ -71,9 +71,9 @@ try {
   if (compareDate !== undefined) assertAvailabilityDate(compareDate);
   if (args.includes('--plan-hash') && (!config || !('MAX_PRICE' in config) || planFingerprint(config as Config) !== value('--plan-hash'))) throw new Error('BOOKING_PLAN_CHANGED');
   // Default single mode never imports or initializes the dual coordinator.
-  if (config && 'COURT_COUNT' in config && config.COURT_COUNT === 2 && ['race','race:dry','selection:armed'].includes(mode)) {
-    const { runDual } = await import('./dual-runtime.js');
-    await runDual(config as Config, mode === 'race' ? 'race' : mode === 'race:dry' ? 'race:dry' : 'race:selection', safety, telemetry, { authorizeTerms:args.includes('--authorize-terms'), registerAbort:abort=>{stopDual=abort;} });
+  if (config && 'COURT_COUNT' in config && ((config as Config).BOOKING_TYPE === 'extended' || config.COURT_COUNT === 2) && ['race','race:dry','selection:armed'].includes(mode)) {
+    const { runBooking } = await import('./booking-runtime.js');
+    await runBooking(config as Config, mode === 'race' ? 'race' : mode === 'race:dry' ? 'race:dry' : 'race:selection', safety, telemetry, { authorizeTerms:args.includes('--authorize-terms') });
     await telemetry.flush();
     if (process.stdin.isTTY) process.stdin.setRawMode(false);
     process.exit(0);
@@ -84,6 +84,8 @@ try {
   await mkdirAsync('.local', { recursive: true }); await mkdirAsync('DiagnosticsLocal', { recursive: true });
   const lock = await openAsync(lockPath, 'wx').catch(() => { throw new Error('AUTOMATION_LOCK_EXISTS: verify no bot is running and selections are clean before removing .local/automation.lock'); });
   ownsLock = true; await lock.writeFile(JSON.stringify({ pid: process.pid, runID: telemetry.runID })); await lock.close();
+  const { lifecycleWriter } = await import('./checkout-lifecycle.js');
+  safety.persistStage=lifecycleWriter(lockPath,{pid:process.pid,runID:telemetry.runID});
   const { page } = await attach(safety, telemetry); telemetry.mark('chromeConnected'); telemetry.mark('ondaTabResolved');
   if (mode === 'inspect') await inspect(page);
   else if (compareDate !== undefined) {
@@ -109,7 +111,7 @@ try {
     const result=await selectExactPractice(page,fullPractice,safety,telemetry);
     retainSelection=true;emitUiEvent({type:'selection',...result});
     const hold=await fullBookingToQr(page,result,{fullName:booking.PLAYER_FULL_NAME,phone:booking.PLAYER_PHONE,email:booking.PLAYER_EMAIL},fullPractice.maximum,true,booking.PAYMENT_HANDOFF_VERIFY_TIMEOUT_MS,safety,telemetry,booking.PAYMENT_SUMMARY_READY_TIMEOUT_MS);
-    await writeFileAsync(lockPath,JSON.stringify({pid:process.pid,runID:telemetry.runID,handoff:{type:'handoff',date:result.date,court:result.court,hours:result.hours,...hold}}));
+    await writeFileAsync(lockPath,JSON.stringify({pid:process.pid,runID:telemetry.runID,stage:'HOLD_VERIFIED',handoff:{type:'handoff',date:result.date,court:result.court,hours:result.hours,...hold}}));
   }
   else if(handoffInput&&config){
     const booking=config as Config;
@@ -119,7 +121,7 @@ try {
     const result=await selectResolvedPreference(selectionPort(page,safety),handoffInput.date,grid,[{court:handoffInput.court,hours:expandHours(handoffInput.start,handoffInput.duration)}],booking.MAX_PRICE,1,safety,telemetry);
     retainSelection=true;emitUiEvent({type:'selection',...result});
     const hold=await fullBookingToQr(page,result,{fullName:booking.PLAYER_FULL_NAME,phone:booking.PLAYER_PHONE,email:booking.PLAYER_EMAIL},booking.MAX_PRICE,true,booking.PAYMENT_HANDOFF_VERIFY_TIMEOUT_MS,safety,telemetry,booking.PAYMENT_SUMMARY_READY_TIMEOUT_MS);
-    await writeFileAsync(lockPath,JSON.stringify({pid:process.pid,runID:telemetry.runID,handoff:{type:'handoff',date:result.date,court:result.court,hours:result.hours,...hold}}));
+    await writeFileAsync(lockPath,JSON.stringify({pid:process.pid,runID:telemetry.runID,stage:'HOLD_VERIFIED',handoff:{type:'handoff',date:result.date,court:result.court,hours:result.hours,...hold}}));
     console.log('PAYMENT HOLD ACTIVE — AUTOMATION STOPPED. Complete payment manually in Chrome. AUTOMATION LOCK RETAINED.');
   }
   else if (config) {
@@ -133,7 +135,7 @@ try {
       emitUiEvent({ type: 'selection', ...result });
       if(mode==='race'){
         const hold=await fullBookingToQr(page,result,{fullName:booking.PLAYER_FULL_NAME,phone:booking.PLAYER_PHONE,email:booking.PLAYER_EMAIL},booking.MAX_PRICE,true,booking.PAYMENT_HANDOFF_VERIFY_TIMEOUT_MS,safety,telemetry,booking.PAYMENT_SUMMARY_READY_TIMEOUT_MS);
-        await writeFileAsync(lockPath,JSON.stringify({pid:process.pid,runID:telemetry.runID,handoff:{type:'handoff',date:result.date,court:result.court,hours:result.hours,...hold}}));
+        await writeFileAsync(lockPath,JSON.stringify({pid:process.pid,runID:telemetry.runID,stage:'HOLD_VERIFIED',handoff:{type:'handoff',date:result.date,court:result.court,hours:result.hours,...hold}}));
       }
       else console.log('SLOTS SELECTED — AUTOMATION STOPPED BEFORE PROCEED. USER CONTROL RESTORED. Lock retained; inspect Chrome before clearing manually.');
     }

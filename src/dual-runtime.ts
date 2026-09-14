@@ -1,3 +1,4 @@
+import { lifecycleWriter, atomicJson } from './checkout-lifecycle.js';
 import { mkdir, open, writeFile, unlink, readFile, rename, realpath } from 'node:fs/promises';
 import { attach, browserA, browserB } from './browser.js';
 import { assertDiagnosticSchedule } from './diagnostic-schedule.js';
@@ -62,6 +63,7 @@ export async function runDual(config: Config, mode: DualMode, safety: Safety, t:
     for (const r of workerRecords) {
       const state = await open(`.local/dual/worker-${r.id.toLowerCase()}.lock`, 'wx').catch(() => { throw Error('DUAL_WORKER_STATE_EXISTS'); });
       await state.writeFile(JSON.stringify(r)); await state.close();
+      workerSafeties[r.id==='A'?0:1]!.persistStage=lifecycleWriter(`.local/dual/worker-${r.id.toLowerCase()}.lock`,{pid:process.pid,runID:t.runID});
     }
     const attached = await Promise.allSettled([browserA, browserB].map(async (identity, i) => {
       const w = await attach(workerSafeties[i]!, workerTelemetry[i], identity);
@@ -86,7 +88,9 @@ export async function runDual(config: Config, mode: DualMode, safety: Safety, t:
         { fullName:config.PLAYER_FULL_NAME, phone:config.PLAYER_PHONE, email:config.PLAYER_EMAIL }, config.MAX_PRICE,
         true, config.PAYMENT_HANDOFF_VERIFY_TIMEOUT_MS, workerSafeties[i]!, workerTelemetry[i]!, config.PAYMENT_SUMMARY_READY_TIMEOUT_MS); },
       state: async (state, selected?:SelectionResult) => {
-        await writeFile(`.local/dual/worker-${i === 0 ? 'a' : 'b'}.lock`, JSON.stringify({ ...workerRecords[i], state, ...(selected ? { selection:selected } : {}) }));
+        const path=`.local/dual/worker-${i === 0 ? 'a' : 'b'}.lock`;
+        const prior=JSON.parse(await readFile(path,'utf8'));
+        await atomicJson(path,{...prior,state,...(selected?{selection:selected}:{})});
         emitUiEvent({ type:'dualWorker', workerId:i === 0 ? 'A' : 'B', state, verifiedAt:new Date().toISOString(), ...(selected ? { court:selected.court, date:selected.date, hours:selected.hours, amount:selected.amount } : {}) });
       },
     })) as [DualWorker, DualWorker];

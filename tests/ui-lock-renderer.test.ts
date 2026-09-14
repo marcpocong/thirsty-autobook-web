@@ -19,24 +19,25 @@ async function renderer(old=false, extra:Record<string,unknown>={}){
  const page=await browser.newPage();const html=(old?execFileSync('git',['show','2edebd0:ui/renderer/index.html'],{encoding:'utf8'}):await readFile('ui/renderer/index.html','utf8')).replace(/<meta http-equiv="Content-Security-Policy"[^>]*>/,'').replace(/<script[^>]*src="app.js"[^>]*><\/script>/,'');await page.setContent(html);
  const state={operation:'idle',headline:'Test retained lock',detail:'',ready:false,cdp:true,lock:true,inspection:null,clock:null,plan:null,logs:[],liveRace:true,booking:plan,termsAuthorized:false,capabilities:{selectionReady:true,checkoutReady:true,paymentBoundaryReady:true},selection:null,mode:'full',handoff:null};
  Object.assign(state,extra);
- await page.evaluate(state=>{(window as any).thirsty={getStatus:async()=>state,onStatus:()=>()=>{},authorizeTerms:async()=>{},resetPractice:async()=>{},saveBooking:async(input:any)=>{state.booking.setup=input;state.booking.fingerprint='saved';state.headline='Booking plan saved';}};},state);
+ await page.evaluate(state=>{(window as any).fixtureState=state;(window as any).thirsty={getStatus:async()=>state,onStatus:(callback:any)=>{(window as any).fixturePublish=callback;return ()=>{};},authorizeTerms:async(value:boolean)=>{state.termsAuthorized=value;(window as any).fixturePublish?.(state);},resetPractice:async()=>{},saveBooking:async(input:any)=>{state.booking.setup=input;state.booking.fingerprint='saved';state.headline='Booking plan saved';}};},state);
  const source=old?execFileSync('git',['show','2edebd0:ui/renderer/app.ts'],{encoding:'utf8'}):await readFile('ui/renderer/app.ts','utf8');
  await page.addScriptTag({type:'module',content:stripTypeScriptTypes(source)});
  await page.waitForFunction(()=>document.getElementById('headline')?.textContent==='Test retained lock');return page;
 }
 it('reproduces the previous retained-lock editor and Save disabling in the actual renderer',async()=>{const p=await renderer(true);expect(await p.locator('#duration').isDisabled()).toBe(true);expect(await p.locator('#save-booking').isDisabled()).toBe(true);await p.close();});
 it('actual renderer keeps all setup controls, Save, Review and Stop enabled while booking actions remain blocked',async()=>{
- const p=await renderer();for(const id of ['start-time','duration','maximum','attempts','fallback-time','save-booking','review-lock','reset-practice','stop'])expect(await p.locator('#'+id).isEnabled(),id).toBe(true);
+ const p=await renderer();await p.locator('#advanced > summary').click();for(const id of ['start-time','duration','maximum','attempts','fallback-time','save-booking','review-lock','reset-practice','stop'])expect(await p.locator('#'+id).isEnabled(),id).toBe(true);
  expect(await p.locator('#court-order button').nth(1).isEnabled()).toBe(true);
- for(const id of ['arm','prepare','dry','observe','practice','full-practice'])expect(await p.locator('#'+id).isDisabled(),id).toBe(true);
+ for(const id of ['arm','dry','observe','practice','full-practice'])expect(await p.locator('#'+id).isDisabled(),id).toBe(true);
  expect(await p.locator('#chrome').isEnabled()).toBe(true);
  expect(await p.locator('#full-terms').isEnabled()).toBe(true);
  expect(await p.locator('#full-date').isEnabled()).toBe(true);
  await p.locator('#duration').fill('3');await p.locator('#maximum').fill('1800');await p.locator('#start-time').selectOption('10:00');await p.locator('#save-booking').click();await p.waitForFunction(()=>document.getElementById('edit-status')?.textContent==='BOOKING PLAN SAVED');expect(await p.locator('#duration').inputValue()).toBe('3');await p.close();
 });
-it('default single-court renderer keeps dual practice visible but explicitly disabled until count 2 is saved',async()=>{
+it('default renderer keeps engineering diagnostics collapsed',async()=>{
  const p=await renderer();
- expect(await p.locator('#dual-panel').isVisible()).toBe(true);
+ expect(await p.locator('#dual-panel').isVisible()).toBe(false);
+ await p.locator('#advanced > summary').click();
  expect(await p.locator('#dual-readiness').innerText()).toContain('Set Courts to book to 2');
  expect(await p.locator('#dual-prepare').isDisabled()).toBe(true);
  expect(await p.locator('#dual-selection').isDisabled()).toBe(true);
@@ -45,7 +46,7 @@ it('default single-court renderer keeps dual practice visible but explicitly dis
 });
 it('shows local strategy and calculated next target without implying stale inspection is ready',async()=>{
  const clock=clockStatus(ObservationSchema.parse({RELEASE_PREOPEN_CALENDAR:true}),DateTime.fromISO('2026-09-11T09:00:00+08:00'));
- const p=await renderer(false,{clock});
+ const p=await renderer(false,{clock});await p.locator('#advanced > summary').click();
  expect(await p.locator('#release-strategy').innerText()).toContain('Pre-open calendar: ON');
  expect(await p.locator('#release-strategy').innerText()).toContain('08:00:00.000');
  expect(await p.locator('#release-strategy').innerText()).toContain('immediate reload fallback');
@@ -68,16 +69,23 @@ it('real config save/reload persists duration, price, start, attempts, courts an
 it('EXE delegates to the same npm UI entry and main resolves project root independently of cwd',async()=>{
  expect(await readFile('scripts/ThirstyLauncher.cs','utf8')).toContain('scripts/run-ui.mjs');expect(await readFile('scripts/ThirstyLauncher.cs','utf8')).toContain('start.WorkingDirectory = root');expect(await readFile('ui/main.ts','utf8')).toContain("resolve(dirname(fileURLToPath(import.meta.url)), '../..')");
 });
-it('dual renderer shows two-court semantics, separate readiness, exact practice controls and a blocked full-flow gate',async()=>{
+it('Standard two courts shows one checkout; Extended has no historical evidence gate in the normal flow',async()=>{
  const dualPlan=bookingView(ConfigSchema.parse({...defaultSetup,COURT_COUNT:2,PLAYER_FULL_NAME:'Fixture Player',PLAYER_PHONE:'09123456789',PLAYER_EMAIL:'fixture@example.invalid'}));
- const p=await renderer(false,{booking:dualPlan,lock:false,dualValidation:{selection:false,full:false},dualWorkers:{A:{type:'dualWorker',workerId:'A',state:'clean',verifiedAt:new Date().toISOString()},B:{type:'dualWorker',workerId:'B',state:'unknown',verifiedAt:new Date().toISOString()}}});
- expect(await p.locator('#court-count').inputValue()).toBe('2');expect(await p.locator('#court-count option').count()).toBe(2);
- expect(await p.locator('#booking-preview').innerText()).toContain('SAME TIME BLOCK');expect(await p.locator('#booking-preview').innerText()).toContain('Maximum possible combined: PHP 2400');
- expect(await p.locator('#dual-panel').isVisible()).toBe(true);expect(await p.locator('#dual-readiness').innerText()).toContain('Browser B: UNKNOWN');expect(await p.locator('#dual-prepare').isEnabled()).toBe(true);
- expect(await p.locator('#dual-full').isDisabled()).toBe(true);expect(await p.locator('#dual-selection').isDisabled()).toBe(true);expect(await p.locator('#arm').isDisabled()).toBe(true);
- await p.locator('#dual-noncompetitive').check();expect(await p.locator('#dual-selection').isEnabled()).toBe(true);expect(await p.locator('#dual-full').isDisabled()).toBe(true);
- await p.locator('#dual-terms').check();expect(await p.locator('#dual-full').isEnabled()).toBe(true);
- await p.locator('#dual-duration').fill('2');await p.locator('#dual-duration').dispatchEvent('change');expect(await p.locator('#dual-full').isDisabled()).toBe(true);
- await p.addStyleTag({content:(await readFile('ui/renderer/styles.css','utf8')).replace(/^\uFEFF/,'')});await p.setViewportSize({width:1010,height:800});
- await mkdir('.local',{recursive:true});await p.locator('#dual-panel').screenshot({path:'.local/dual-ui-practice.png'});await p.close();
+ const p=await renderer(false,{booking:dualPlan,lock:false,ready:true,termsAuthorized:true,dualValidation:{selection:false,full:false}});
+ expect(await p.locator('#booking-preview').innerText()).toContain('1 checkout');
+ expect(await p.locator('#booking-preview').innerText()).toContain('Maximum per checkout: PHP 2400');
+ expect(await p.locator('#dual-panel').isVisible()).toBe(false);
+ expect(await p.locator('#test-booking').isEnabled()).toBe(true);
+ expect(await p.locator('#prepare').isEnabled()).toBe(true);
+ await p.addStyleTag({content:await readFile('ui/renderer/styles.css','utf8')});await p.setViewportSize({width:1010,height:800});
+ await mkdir('.local',{recursive:true});await p.screenshot({path:'.local/phase7-ui.png',fullPage:true});await p.close();
+});
+it('Extended Test Now prepares from test fields without saving production count and consumes per-run Terms',async()=>{
+ const p=await renderer(false,{lock:false,ready:false});
+ await p.evaluate(()=>{const w=window as any;w.calls=[];w.thirsty.resetPrepare=async(strategy:string)=>{w.calls.push({prepare:strategy});w.fixtureState.ready=true;w.fixturePublish(w.fixtureState);};w.thirsty.testBooking=async(input:any)=>{w.calls.push({test:input});};w.thirsty.saveBooking=async()=>{throw Error('Test must not save production');};});
+ await p.locator('#booking-type').selectOption('extended');await p.locator('#court-count').selectOption('2');await p.locator('#start-time').selectOption('20:00');await p.locator('#duration').fill('4');await p.locator('#duration').dispatchEvent('change');
+ await p.locator('#prepare').click();await p.locator('#terms').check();
+ expect(await p.locator('#test-booking').isEnabled()).toBe(true);await p.locator('#test-booking').click();
+ const calls=await p.evaluate(()=>(window as any).calls);expect(calls[0]).toEqual({prepare:'extended'});expect(calls[1].test).toMatchObject({request:{strategy:'extended',courtCount:2,start:'20:00',duration:4},authorizeTerms:true});
+ expect(await p.locator('#terms').isChecked()).toBe(false);await p.close();
 });

@@ -1,3 +1,4 @@
+import { TestBookingSchema, BookingPlanSchema, type BookingPlan } from '../src/booking-plan.js';
 import {FullPracticeSchema} from '../src/full-practice.js';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { resolve } from 'node:path';
@@ -9,7 +10,7 @@ import {requireCapability} from '../src/capabilities.js';
 import { DualPracticeSchema, requireDualFullAuthorization } from '../src/dual-practice.js';
 
 export interface RunningCommand { pid: number | undefined; done: Promise<number>; stop(): Promise<void> }
-export type Runner = (command: Command, onEvent: (event: UiEvent) => void, onLine: (line: string, error: boolean) => void) => RunningCommand;
+export type Runner = (command: Command, onEvent: (event: UiEvent) => void, onLine: (line: string, error: boolean) => void, confirmBooking?:(plan:BookingPlan)=>Promise<boolean>) => RunningCommand;
 export function sanitizeLine(text: string): string {
   return text.replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '').replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '')
     .replace(/(?:gh[pousr]_|github_pat_|sk-)[A-Za-z0-9_-]+/g, '[redacted]')
@@ -19,6 +20,8 @@ export function sanitizeLine(text: string): string {
 }
 export function commandSpec(command: Command, root: string, node: string) {
   if (typeof command === 'object' && command !== null) {
+    if(command.kind==='resetPrepare')return {executable:node,args:['--import','tsx',resolve(root,'src/booking-entry.ts'),'prepare',z.enum(['standard','extended']).parse(command.strategy)],automation:true};
+    if(command.kind==='testBooking')return {executable:node,args:['--import','tsx',resolve(root,'src/booking-entry.ts'),'test',JSON.stringify(TestBookingSchema.parse(command.input))],automation:true};
     if(command.kind==='dualDry') {
       const c=z.object({kind:z.literal('dualDry'),date:z.iso.date()}).strict().parse(command);
       return {executable:node,args:['--import','tsx',resolve(root,'src/dual-entry.ts'),'dry','--date',c.date],automation:true};
@@ -56,12 +59,20 @@ export function commandSpec(command: Command, root: string, node: string) {
   }
 }
 export function createRunner(root: string, node: string): Runner {
-  return (command, onEvent, onLine) => {
+  return (command, onEvent, onLine, confirmBooking) => {
     const spec = commandSpec(command, root, node);
     const env: NodeJS.ProcessEnv = { ...process.env, THIRSTY_UI_EVENTS: '1', THIRSTY_UI_PARENT_PID: String(process.pid) };
     delete env.ELECTRON_RUN_AS_NODE;
     const child = spawn(spec.executable, spec.args, { cwd: root, env, windowsHide: true, shell: false,
       stdio: spec.automation ? ['ignore', 'pipe', 'pipe', 'ipc'] : ['ignore', 'pipe', 'pipe'] });
+    let confirming=false;
+    child.on('message',async message=>{
+      if(typeof command!=='object'||command.kind!=='testBooking'||confirming)return;
+      const m=message as {type?:string;plan?:unknown};if(m?.type!=='confirmBooking')return;
+      confirming=true;
+      try{const plan=BookingPlanSchema.parse(m.plan);const approved=await confirmBooking?.(plan)??false;if(child.connected)child.send({type:'bookingConfirmation',approved});}
+      catch{if(child.connected)child.send({type:'bookingConfirmation',approved:false});}
+    });
     let ended = false;
     const done = new Promise<number>(resolveDone => {
       child.once('error', () => { onLine('PROCESS_START_FAILED', true); });

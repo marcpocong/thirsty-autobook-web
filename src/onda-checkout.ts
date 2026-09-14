@@ -42,17 +42,22 @@ export function ondaCheckoutAdapter(page:Page,safety:Safety,selected:BookingSumm
   const readReview=async()=>{
     await guard();await page.getByRole('heading',{name:'Review Booking',exact:true}).waitFor();safety.check();
     const evidence=await page.evaluate(()=>{
-      const venue=document.querySelector('h2');
-      const dates=document.querySelectorAll('[data-testid="booking-review-reservation-date"]');
-      if(dates.length!==1||document.querySelectorAll('h2').length!==1)throw new Error('REVIEW_STRUCTURE_CHANGED');
-      const card=dates[0]!.parentElement!;
-      const spans=[...card.querySelectorAll('span')].map(e=>e.textContent?.trim()??'');
-      const courts=spans.filter(s=>s.startsWith('Court '));
-      if(courts.length!==1)throw new Error('REVIEW_STRUCTURE_CHANGED');
-      const fullDates=[...(venue?.parentElement?.querySelectorAll('span')??[])].map(e=>e.textContent?.trim()??'').filter(s=>/^[A-Za-z]+, [A-Za-z]+ \d+, \d{4}$/.test(s));
-      if(fullDates.length!==1)throw new Error('REVIEW_STRUCTURE_CHANGED');
-      return {venue:venue?.textContent?.trim()??'',fullDate:fullDates[0]!,shortDate:dates[0]!.textContent?.trim()??'',count:[...document.querySelectorAll('h3')].find(e=>e.textContent?.startsWith('Your Reservations'))?.textContent?.trim()??'',court:courts[0]!,times:spans.filter(s=>/\d.* (AM|PM) - /.test(s))};
-    });safety.check();return reviewSummary(evidence,selected.amount);
+      const venues=document.querySelectorAll('h2');
+      const dates=[...document.querySelectorAll('[data-testid="booking-review-reservation-date"]')];
+      if(venues.length!==1||dates.length<1||dates.length>2)throw new Error('REVIEW_STRUCTURE_CHANGED');
+      const venue=venues[0]!;
+      const fullDates=[...(venue.parentElement?.querySelectorAll('span')??[])].map(e=>e.textContent?.trim()??'').filter(s=>/^[A-Za-z]+, [A-Za-z]+ \d+, \d{4}$/.test(s));
+      const counts=[...document.querySelectorAll('h3')].filter(e=>e.textContent?.startsWith('Your Reservations'));
+      if(fullDates.length!==1||counts.length!==1)throw new Error('REVIEW_STRUCTURE_CHANGED');
+      const cards=dates.map(date=>{
+        const spans=[...date.parentElement!.querySelectorAll('span')].map(e=>e.textContent?.trim()??'');
+        const courts=spans.filter(s=>s.startsWith('Court '));
+        if(courts.length!==1)throw new Error('REVIEW_STRUCTURE_CHANGED');
+        return {venue:venue.textContent?.trim()??'',fullDate:fullDates[0]!,shortDate:date.textContent?.trim()??'',court:courts[0]!,times:spans.filter(s=>/\d.* (AM|PM) - /.test(s))};
+      });
+      return {count:counts[0]!.textContent?.trim()??'',cards};
+    });safety.check();return reviewBundleSummary(evidence,selected.amount);
+
   };
   const name=page.getByRole('textbox',{name:'Full Name',exact:true});
   const phone=page.getByRole('textbox',{name:'Phone Number',exact:true});
@@ -153,6 +158,7 @@ export function ondaCheckoutAdapter(page:Page,safety:Safety,selected:BookingSumm
       // Onda may re-render Payment Summary after the first check. Re-assert
       // the checkbox immediately before the one-way final handoff.
       await ensureTermsChecked();
+      if(await finalButton.count()!==1)throw Error('FINAL_BUTTON_UNVERIFIED');
       if((await finalButton.innerText()).trim()!=='Confirm & Proceed to Payment')throw new Error('FINAL_BUTTON_UNVERIFIED');
       if(!await finalButton.isVisible()||!await finalButton.isEnabled())throw new Error('FINAL_BUTTON_NOT_ACTIONABLE');
       await guard();return payment;
@@ -164,4 +170,13 @@ export function ondaCheckoutAdapter(page:Page,safety:Safety,selected:BookingSumm
       await finalButton.click({noWaitAfter:true});
     },
   };
+}
+
+export function reviewBundleSummary(e:{count:string;cards:Omit<ReviewEvidence,'count'>[]},amount:number):BookingSummary {
+  const total=e.cards.reduce((n,c)=>n+c.times.length,0);
+  if(e.count!==`Your Reservations (${total})`||e.cards.length<1||e.cards.length>2)throw Error('REVIEW_STRUCTURE_CHANGED');
+  const summaries=e.cards.map(c=>reviewSummary({...c,count:`Your Reservations (${c.times.length})`},amount));
+  const first=summaries[0]!;
+  if(new Set(summaries.map(s=>s.court)).size!==summaries.length||summaries.some(s=>s.date!==first.date||s.start!==first.start||s.end!==first.end||s.duration>3))throw Error('REVIEW_STRUCTURE_CHANGED');
+  return {...first,courts:summaries.map(s=>s.court)};
 }

@@ -1,6 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { Dashboard, Bridge } from './types.js';
 const bridge: Bridge = {
+  resetPrepare:strategy=>ipcRenderer.invoke('thirsty:resetPrepare',strategy),
+  testBooking:input=>ipcRenderer.invoke('thirsty:testBooking',input),
+  setWorkflow:workflow=>ipcRenderer.invoke('thirsty:setWorkflow',workflow),
   prepareDual:()=>ipcRenderer.invoke('thirsty:prepareDual'),
   runDualPractice:input=>ipcRenderer.invoke('thirsty:runDualPractice',input),
   reviewLock:()=>ipcRenderer.invoke('thirsty:reviewLock'),

@@ -1,7 +1,10 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import type { RateLimitEvidence } from './rate-limit.js';
 
+export type CheckoutStage='SELECTION'|'SELECTION_VERIFIED'|'REVIEW'|'PAYMENT_SUMMARY'|'FINAL_ACTION_DISPATCHING'|'HOLD_VERIFIED';
 export class Safety {
+  persistStage?: (stage:CheckoutStage)=>Promise<void>;
+  async stage(stage:CheckoutStage){await this.persistStage?.(stage);}
   readonly controller = new AbortController();
   locked = false;
   boundary = false;
@@ -27,7 +30,7 @@ export class Safety {
     this.finalDispatchAvailable = false;
   }
   async finalAction(action: () => Promise<void>) {
-    this.check(); this.locked = true; this.boundary = true;
+    this.check(); await this.stage('FINAL_ACTION_DISPATCHING'); this.check(); this.locked = true; this.boundary = true;
     this.finalDispatchAvailable = true;
     // Close the gate BEFORE dispatch; ambiguous failure must never retry.
     try { await action(); } finally { this.finalDispatchAvailable = false; }

@@ -10,6 +10,7 @@ export const ReleasePerformanceSchema = z.object({
 
 // Opt-in stdout protocol. Ordinary CLI output and buffered telemetry remain intact.
 export const UiEventSchema = z.discriminatedUnion('type', [
+  z.object({type:z.literal('bookingResult'),status:z.enum(['AVAILABLE','CANCELLED','SELECTION_VERIFIED','PAYMENT HOLD ACTIVE','PARTIAL SUCCESS','BOOKING FAILED']),description:z.string().max(2000),outcomes:z.array(z.enum(['PAYMENT HOLD ACTIVE','FAILED'])).max(2)}).strict(),
   z.object({ type:z.literal('dualWorker'), workerId:z.enum(['A','B']), state:z.enum(['ready','clean','selection','checkout','hold','unknown']), verifiedAt:z.iso.datetime(), court:z.number().int().min(1).max(7).optional(), date:z.iso.date().optional(), hours:z.array(z.string().regex(/^(0[89]|1\d|2[0-3]):00$/)).max(16).optional(), amount:z.number().positive().optional() }).strict(),
   z.object({ type:z.literal('dualResult'), status:z.enum(['DUAL_DRY_PASS','DUAL_SELECTION_PASS','DUAL_SELECTION_VERIFIED','DUAL_HOLD_VERIFIED','DUAL_PARTIAL_SUCCESS','DUAL_FAILED']), date:z.iso.date(), start:z.string().regex(/^(0[89]|1\d|2[0-3]):00$/), hours:z.array(z.string().regex(/^(0[89]|1\d|2[0-3]):00$/)).min(1).max(16), courtA:z.number().int().min(1).max(7), courtB:z.number().int().min(1).max(7), candidateSource:z.enum(['UI_ONLY','API+UI']) }).strict(),
   z.object({ type: z.literal('releasePerformance'), summary: ReleasePerformanceSchema }).strict(),

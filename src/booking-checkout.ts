@@ -13,11 +13,13 @@ export async function proceedWithVerifiedSelection(page:Page, selected:Selection
   safety.check();if(!safety.locked)throw new Error('BOOKING_LOCK_REQUIRED');
   const port=selectionPort(page,safety);await port.guard();safety.check();
   const cells=validateSnapshot(await snapshot(page),selected.date);safety.check();
+  const groups=selected.groups??[{court:selected.court,hours:selected.hours}];
+  if(groups.length<1||groups.length>2||new Set(groups.map(g=>g.court)).size!==groups.length||selected.hours.length>3||groups.some(g=>JSON.stringify(g.hours)!==JSON.stringify(selected.hours)))throw Error('INVALID_CHECKOUT_BUNDLE');
   const current=cells.filter(c=>c.state==='SELECTED');
-  if(cells.some(c=>c.state==='UNKNOWN')||current.length!==selected.hours.length||current.some(c=>c.court!==selected.court||!selected.hours.includes(c.hour)))throw new Error('SELECTION_CHANGED_BEFORE_PROCEED');
+  if(cells.some(c=>c.state==='UNKNOWN')||current.length!==groups.reduce((n,g)=>n+g.hours.length,0)||current.some(c=>!groups.some(g=>g.court===c.court&&g.hours.includes(c.hour))))throw new Error('SELECTION_CHANGED_BEFORE_PROCEED');
   const summary=await port.summary();safety.check();
-  if(!summary.actionable||selectionAmount(summary,selected.hours.length,maximum)!==selected.amount)throw new Error('SELECTION_CHANGED_BEFORE_PROCEED');
-  const expected={venue:VENUE,date:selected.date,court:selected.court,start:selected.hours[0]!,end:`${String(Number(selected.hours.at(-1)!.slice(0,2))+1).padStart(2,'0')}:00`,duration:selected.hours.length,amount:selected.amount,currency:'PHP'};
+  if(!summary.actionable||selectionAmount(summary,selected.hours.length*groups.length,maximum,groups.length)!==selected.amount)throw new Error('SELECTION_CHANGED_BEFORE_PROCEED');
+  const expected={courts:groups.map(g=>g.court),venue:VENUE,date:selected.date,court:selected.court,start:selected.hours[0]!,end:`${String(Number(selected.hours.at(-1)!.slice(0,2))+1).padStart(2,'0')}:00`,duration:selected.hours.length,amount:selected.amount,currency:'PHP'};
   safety.check();t.mark('bookingProceedStarted');await page.getByTestId('booking-selection-summary-proceed-button').click();safety.check();t.mark('bookingProceedClicked');t.mark('proceedClicked');
   return checkout(ondaCheckoutAdapter(page,safety,expected,t,paymentSummaryTimeoutMs),safety,t,expected,player,maximum,authorizeTerms);
 }
@@ -33,6 +35,7 @@ export async function fullBookingToQr(page:Page,selected:SelectionResult,player:
   }
   try {
     const hold=await observePaymentHandoff(reader,selected.amount,timeoutMs,safety,t);
+    await safety.stage('HOLD_VERIFIED');
     emitUiEvent({type:'handoff',date:selected.date,court:selected.court,hours:selected.hours,...hold});
     return hold;
   }catch(error){

@@ -13,7 +13,7 @@ export interface SelectionPort {
   click(date: string, court: number, hour: string, state: 'OPEN' | 'SELECTED'): Promise<void>;
   summary(): Promise<SelectionSummary>;
 }
-export interface SelectionResult { date: string; court: number; hours: string[]; amount: number; proceedReady: true; attempts: number }
+export interface SelectionResult { groups?:{court:number;hours:string[]}[]; date: string; court: number; hours: string[]; amount: number; proceedReady: true; attempts: number }
 export function selectionPort(page: Page, safety: Safety): SelectionPort {
   return {
     guard: async () => {
@@ -40,8 +40,8 @@ export function selectionPort(page: Page, safety: Safety): SelectionPort {
     },
   };
 }
-export function selectionAmount(summary: SelectionSummary, duration: number, maxPrice: number) {
-  if (!new RegExp(`^1 Court\\s*•\\s*${duration} Slots?$`).test(summary.count)) throw new Error('SELECTION_SUMMARY_MISMATCH');
+export function selectionAmount(summary: SelectionSummary, duration: number, maxPrice: number, courtCount = 1) {
+  if (!new RegExp(`^${courtCount} Court${courtCount === 1 ? '' : 's'}\\s*•\\s*${duration} Slots?$`).test(summary.count)) throw new Error('SELECTION_SUMMARY_MISMATCH');
   if (!/^(?:₱|PHP)\s*(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{2})?$/.test(summary.amount)) throw new Error('SELECTION_AMOUNT_UNKNOWN');
   const amount = Number(summary.amount.replace(/^(?:₱|PHP)\s*/, '').replaceAll(',', ''));
   if (!Number.isFinite(amount) || amount <= 0 || amount > maxPrice) throw new Error('SELECTION_PRICE_MISMATCH');
@@ -69,6 +69,7 @@ export async function selectResolvedPreference(port: SelectionPort, targetDate: 
     if (!p) throw new Error('NO_AVAILABLE_PREFERENCE');
     attempted.add(key(p)); t.mark(attempt === 1 ? 'preferenceResolved' : 'fallbackResolved');
     await port.guard(); safety.check(); t.mark('selectionAttemptStarted', attempt);
+    await safety.stage('SELECTION');
     const dispatched = new Set<string>();
     let conflict = false;
     for (const [i,hour] of p.hours.entries()) {
@@ -91,7 +92,7 @@ export async function selectResolvedPreference(port: SelectionPort, targetDate: 
       const summary = await port.summary(); safety.check();
       const amount = selectionAmount(summary, p.hours.length, maximumPrice);
       if (summary.actionable) {
-        safety.lock(); t.mark('selectionVerified'); t.mark('proceedActionable');
+        safety.lock(); await safety.stage('SELECTION_VERIFIED'); t.mark('selectionVerified'); t.mark('proceedActionable');
         return { date: targetDate, court: p.court, hours: p.hours, amount, proceedReady: true, attempts: attempt };
       }
     }

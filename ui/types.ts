@@ -1,3 +1,4 @@
+import type { TestBookingInput } from '../src/booking-plan.js';
 import type {FullPracticeInput} from '../src/full-practice.js';
 import type {LockReview} from './locks.js';
 import type { UiEvent } from '../src/ui-events.js';
@@ -7,10 +8,13 @@ import type { BookingSetup } from '../src/config.js';
 import type { PracticeInput } from '../src/practice.js';
 import type { DualPracticeInput } from '../src/dual-practice.js';
 export type DualPracticeCommand = { kind:'dualDry'; date:string } | { kind:'dualPractice'|'dualFullPractice'; input:DualPracticeInput };
-export type Command = DualPracticeCommand | 'chromeDual' | 'dualReadiness' | 'dualPrepare' | {kind:'fullPractice';input:FullPracticeInput} | 'chrome' | 'inspect' | 'observe' | { kind:'selection' | 'dry'; planHash:string } | {kind:'full';planHash:string;authorizeTerms:true} | { kind:'practice'; input:PracticeInput };
+export type Command = {kind:'resetPrepare';strategy:'standard'|'extended'} | {kind:'testBooking';input:TestBookingInput} | DualPracticeCommand | 'chromeDual' | 'dualReadiness' | 'dualPrepare' | {kind:'fullPractice';input:FullPracticeInput} | 'chrome' | 'inspect' | 'observe' | { kind:'selection' | 'dry'; planHash:string } | {kind:'full';planHash:string;authorizeTerms:true} | { kind:'practice'; input:PracticeInput };
 export type Inspection = Extract<UiEvent, { type: 'inspection' }>;
 export interface Activity { at: string; text: string; level: 'info' | 'error' }
 export interface Dashboard {
+  bookingResult?:Extract<UiEvent,{type:'bookingResult'}>;
+  workflow?:'test'|'release';
+  preparedAt?:number;
   dualWorkers?:Partial<Record<'A'|'B',Extract<UiEvent,{type:'dualWorker'}>>>;
   dualResult?:Extract<UiEvent,{type:'dualResult'}>|null;
   dualValidation?:{selection:boolean;full:boolean};
@@ -27,6 +31,9 @@ export interface Dashboard {
   mode:'selection'|'full'; handoff:Extract<UiEvent,{type:'handoff'}>|null;
 }
 export interface Bridge {
+  resetPrepare(strategy:'standard'|'extended'):Promise<void>;
+  testBooking(input:TestBookingInput):Promise<void>;
+  setWorkflow(workflow:'test'|'release'):Promise<void>;
   prepareDual():Promise<void>;
   runDualPractice(input:DualPracticeCommand):Promise<void>;
   reviewLock():Promise<void>; clearLock():Promise<void>; resetPractice():Promise<void>; runFullPractice(input:FullPracticeInput):Promise<void>;
