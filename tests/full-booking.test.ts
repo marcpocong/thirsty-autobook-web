@@ -41,6 +41,7 @@ it('two courts traverse ONE complete normal checkout and ONE QR hold with durabl
       const card=document.querySelector('[data-testid="booking-review-reservation-date"]')!.parentElement!;
       const other=card.cloneNode(true) as Element;other.innerHTML=other.innerHTML.replace('Court 7:','Court 6:');card.after(other);
       [...document.querySelectorAll('h3')].find(e=>e.textContent?.startsWith('Your Reservations'))!.textContent='Your Reservations (4)';
+      document.querySelector('[data-testid="booking-review-payment-summary-sheet"] span')!.textContent='Court rental (4 \u00d7 \u20b1600.00)';
       document.querySelector('#total')!.textContent='₱2,400.00';
       const final=document.querySelector<HTMLButtonElement>('[aria-label="Continue to Payment"]')!,dispatch=final.onclick!;
       final.onclick=function(event){dispatch.call(this,event);for(const span of document.querySelectorAll('span,div'))if(span.textContent?.trim()==='₱1,200.00'&&span.children.length===0)span.textContent='₱2,400.00';};

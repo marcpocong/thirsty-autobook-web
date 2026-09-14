@@ -23,6 +23,9 @@ export const ConfigSchema = z.object({
   MAX_SELECTION_ATTEMPTS: z.coerce.number().int().min(1).max(5).default(3),
   PAYMENT_HANDOFF_VERIFY_TIMEOUT_MS: z.coerce.number().int().min(1000).max(30000).default(10000),
   PAYMENT_SUMMARY_READY_TIMEOUT_MS: z.coerce.number().int().min(3000).max(120000).default(60000),
+  PLAYER_B_FULL_NAME: z.string().optional(),
+  PLAYER_B_PHONE: z.string().optional(),
+  PLAYER_B_EMAIL: z.string().optional(),
   PLAYER_FULL_NAME: z.string().trim().min(2),
   PLAYER_PHONE: z.string().trim().regex(/^\+?[0-9][0-9 ()-]{6,19}$/),
   PLAYER_EMAIL: z.email(),
@@ -111,4 +114,28 @@ export function releaseCalendar(c: Pick<Config, 'TIMEZONE' | 'RELEASE_TIME' | 'B
   if (!release.isValid) throw new Error('INVALID_RELEASE_DATE');
   // Never silently switch to tomorrow after missing today's release.
   return { targetDate: local.startOf('day').plus({ days: c.BOOKING_HORIZON_DAYS }).toISODate()!, releaseMs: release.toMillis(), releaseISO: release.toISO()! };
+}
+
+// Profile values remain local; only readiness booleans cross the UI boundary.
+const PlayerSchema=z.object({fullName:z.string().trim().min(2),phone:z.string().trim().regex(/^(?:0|\+?63)?9\d{9}$/),email:z.email()});
+export function primaryPlayer(c:Config){
+  const parsed=PlayerSchema.safeParse({fullName:c.PLAYER_FULL_NAME,phone:c.PLAYER_PHONE.replace(/[ ()-]/g,''),email:c.PLAYER_EMAIL});
+  if(!parsed.success)throw Error('PLAYER_INFO_MISSING');return parsed.data;
+}
+export function extendedPlayer(c:Config){
+  const parsed=PlayerSchema.safeParse({fullName:c.PLAYER_B_FULL_NAME,phone:c.PLAYER_B_PHONE?.replace(/[ ()-]/g,''),email:c.PLAYER_B_EMAIL});
+  if(!parsed.success)throw Error('EXTENDED_PLAYER_INFO_MISSING');
+  const a=primaryPlayer(c),b=parsed.data;
+  const phone=(p:string)=>p.replace(/^(?:0|\+?63)/,'');
+  if(b.email.toLowerCase()===a.email.toLowerCase()||phone(b.phone)===phone(a.phone))throw Error('EXTENDED_PLAYER_INFO_MISSING');
+  return b;
+}
+export function playerReadiness(c:Config){
+  let primary=false,extended=false;
+  try{primaryPlayer(c);primary=true;}catch{}
+  try{extendedPlayer(c);extended=true;}catch{}
+  return {primary,extended};
+}
+export function bookingPlayers(c:Config,strategy:'standard'|'extended'){
+  return strategy==='extended'?{A:primaryPlayer(c),B:extendedPlayer(c)}:{A:primaryPlayer(c),B:undefined};
 }

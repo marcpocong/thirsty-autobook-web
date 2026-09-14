@@ -42,7 +42,7 @@ function render(state: Dashboard) {
   latest = state;
   byId('headline').textContent = state.headline; byId('detail').textContent = state.detail;
   const busy = state.operation !== 'idle';
-  const dual=state.booking?.setup.BOOKING_TYPE==='extended';
+  const dual=state.booking?.setup.BOOKING_TYPE==='standard'&&state.booking.setup.COURT_COUNT===2;
   // Keep the dual practice entry point visible in the safe single-court
   // default; actions stay disabled until count 2 is explicitly saved.
   byId('dual-panel').hidden=false;
@@ -53,7 +53,7 @@ function render(state: Dashboard) {
   (byId('dual-full') as HTMLButtonElement).disabled=busy||state.lock||dirty||!dual||!state.cdp||!input('dual-noncompetitive').checked||!input('dual-terms').checked;
   byId('dual-readiness').textContent=dual
     ? ['A','B'].map(id=>{const w=state.dualWorkers?.[id as 'A'|'B'];return `Browser ${id}: ${w?`${w.state.toUpperCase()} (last observed ${new Date(w.verifiedAt).toLocaleTimeString()})`:'NOT VERIFIED'}`;}).join('\n')+`\nDual selection: ${state.dualValidation?.selection?'READY':'NOT READY'}\n${state.dualValidation?.full?'DUAL FULL FLOW VERIFIED':'FULL DUAL HOLD NOT YET VERIFIED'}`
-    : 'Dual mode is disabled. Set Courts to book to 2 and save the booking plan to enable these practice controls.';
+    : 'Legacy dual practice only: Set Courts to book to 2 with Standard saved settings. Use the main controls for Standard / Extended bookings.';
   const dualResult=state.dualResult;byId('dual-result').hidden=!dualResult;
   byId('dual-result').textContent=dualResult?`${dualResult.status.replaceAll('_',' ')}\n${dualResult.date} / ${dualResult.hours.join(', ')}\nBrowser A: Court ${dualResult.courtA}\nBrowser B: Court ${dualResult.courtB}\nSource: ${dualResult.candidateSource}`:'';
   const full=state.mode==='full',fullReady=state.capabilities.selectionReady&&state.capabilities.checkoutReady&&state.capabilities.paymentBoundaryReady;
@@ -140,7 +140,7 @@ function render(state: Dashboard) {
   byId('activity-state').textContent = busy ? `${state.operation.toUpperCase()} · PROCESS ACTIVE` : 'LOCAL PROCESS OUTPUT';
   byId('mode-label').textContent=workflow==='test'?'TEST NOW':'RELEASE BOOKING';
   byId('prepare').firstChild!.textContent='RESET & PREPARE ';
-  input('prepare').disabled=busy;
+  input('prepare').disabled=['prepare','stopping','saving','resetting'].includes(state.operation);
   byId('arm').textContent='ARM RELEASE';byId('arm').hidden=workflow==='test';
   byId('test-booking').hidden=workflow==='release';byId('test-date-label').hidden=workflow==='release';
   input('test-booking').disabled=busy||dirty||state.lock||!state.ready||!input('terms').checked;
@@ -154,6 +154,9 @@ function render(state: Dashboard) {
   const duration=Number(input('duration').value),start=Number(input('start-time').value.slice(0,2)),strategy=input('booking-type').value;
   byId('booking-preview').textContent=`${workflow==='release'?'Target: '+(state.booking?.targetDate??'Not configured')+'\n':''}${strategy.toUpperCase()} | ${input('court-count').value} court(s) | ${input('start-time').value}-${String(start+duration).padStart(2,'0')}:00\n${strategy==='extended'?'2 browsers | 2 checkouts | 2 payment holds\nPreferred split: '+(duration===4?'3 + 1; alternatives 2 + 2, 1 + 3':duration===5?'3 + 2; alternative 2 + 3':'3 + 3')+'\nCourt continuity preferred; switching allowed between checkouts.':'1 browser | 1 checkout | 1 payment hold'}\nMaximum per checkout: PHP ${Number(input('maximum').value)*Number(input('court-count').value)} | Payment manual`;
   if(duration>6){byId('booking-preview').textContent='Extended two-browser booking currently supports up to 6 consecutive hours.';input('test-booking').disabled=true;input('arm').disabled=true;}
+  const playersReady=!!state.booking?.playerConfigured&&(strategy!=='extended'||!!state.booking.extendedPlayerConfigured);
+  byId('player-status').textContent=`Primary player: ${state.booking?.playerConfigured?'Configured':'Missing'}${strategy==='extended'?' | Extended player: '+(state.booking?.extendedPlayerConfigured?'Configured':'Missing'):''}`;
+  input('test-booking').disabled ||= !playersReady;input('arm').disabled ||= !playersReady;
   tick();
 }
 function tick() {
@@ -170,7 +173,7 @@ function tick() {
     byId('handoff-result').textContent=`${active?'PAYMENT HOLD ACTIVE — VERIFIED AT HANDOFF':'HOLD NEEDS MANUAL REVIEW'}\nVenue: Thirsty Pickle | SM Seaside\nCourt ${hold.court} · ${hold.date}\nTime: ${hold.hours[0]}–${String(Number(hold.hours.at(-1)!.slice(0,2))+1).padStart(2,'0')}:00\nAmount: ₱${hold.amount.toLocaleString()}\nLast observed status: Pending\nHold countdown at verification: ${hold.countdown}\nVerified: ${new Date(hold.verifiedAt).toLocaleString('en-GB',{timeZone:'Asia/Manila'})}\n${active?'Complete payment manually in Chrome.':'The observed countdown has elapsed. Check Chrome manually.'}\nAUTOMATION STOPPED · AUTOMATION LOCK RETAINED`;
   }
 }
-for (const [id, action] of Object.entries({ 'review-lock':()=>window.thirsty.reviewLock(),'clear-lock':()=>window.thirsty.clearLock(),'reset-practice':()=>window.thirsty.resetPractice(),'dual-prepare':()=>window.thirsty.prepareDual(),'full-practice':async()=>{const authorized=input('full-terms').checked;input('full-terms').checked=false;await window.thirsty.runFullPractice({target:{date:input('full-date').value,court:Number(input('full-court').value),start:input('full-start').value,duration:Number(input('full-duration').value)},maximum:Number(input('full-maximum').value),authorizeTerms:authorized as true});}, chrome: () => window.thirsty.startChrome(), inspect: () => window.thirsty.inspectOnda(), prepare: async () => {input('terms').checked=false;if(workflow==='release')await saveCurrent();else dirty=false;await window.thirsty.resetPrepare(input('booking-type').value as 'standard'|'extended');}, arm: () => latest?.mode==='full'?window.thirsty.armFullBooking():window.thirsty.armSelection(), dry:()=>window.thirsty.dryRace(), observe:()=>window.thirsty.armObservation(), stop: () => window.thirsty.abortAutomation(), practice:()=>window.thirsty.runPractice({date:input('practice-date').value,court:Number(input('practice-court').value),start:input('practice-start').value,duration:Number(input('practice-duration').value)}) })) {
+for (const [id, action] of Object.entries({ 'review-lock':()=>window.thirsty.reviewLock(),'clear-lock':()=>window.thirsty.clearLock(),'reset-practice':()=>window.thirsty.resetPractice(),'dual-prepare':()=>window.thirsty.prepareDual(),'full-practice':async()=>{const authorized=input('full-terms').checked;input('full-terms').checked=false;await window.thirsty.runFullPractice({target:{date:input('full-date').value,court:Number(input('full-court').value),start:input('full-start').value,duration:Number(input('full-duration').value)},maximum:Number(input('full-maximum').value),authorizeTerms:authorized as true});}, chrome: () => window.thirsty.startChrome(), inspect: () => window.thirsty.inspectOnda(), prepare: async () => {input('terms').checked=false;await window.thirsty.resetPrepare(workflow==='test'?{workflow:'test',...testRequest()}:{workflow:'release',strategy:input('booking-type').value as 'standard'|'extended',setup:currentSetup()});if((await window.thirsty.getStatus()).ready)dirty=false;render(await window.thirsty.getStatus());}, arm: () => latest?.mode==='full'?window.thirsty.armFullBooking():window.thirsty.armSelection(), dry:()=>window.thirsty.dryRace(), observe:()=>window.thirsty.armObservation(), stop: () => window.thirsty.abortAutomation(), practice:()=>window.thirsty.runPractice({date:input('practice-date').value,court:Number(input('practice-court').value),start:input('practice-start').value,duration:Number(input('practice-duration').value)}) })) {
   byId(id).addEventListener('click', () => { void action().catch(() => { byId('detail').textContent = 'Command refused or unavailable. Check activity and the current process status.'; }); });
 }
 byId('full-terms').addEventListener('change',()=>{if(latest)render(latest);});
@@ -193,12 +196,10 @@ for(const [id,kind] of [['dual-selection','dualPractice'],['dual-full','dualFull
 for(const id of ['dual-date','dual-court-a','dual-court-b','dual-start','dual-duration','dual-maximum','dual-noncompetitive'])byId(id).addEventListener('change',()=>{input('dual-terms').checked=false;if(latest)render(latest);});
 byId('dual-terms').addEventListener('change',()=>{if(latest)render(latest);});
 
-async function saveCurrent(){
-  await window.thirsty.saveBooking({BOOKING_TYPE:input('booking-type').value as 'standard'|'extended',COURT_COUNT:Number(input('court-count').value) as 1|2,START_TIME:input('start-time').value,DURATION_HOURS:Number(input('duration').value),PREFERRED_COURTS:courtOrder,FALLBACK_COURTS:[],FALLBACK_TIMES:workflow==='test'?[]:fallbackTimes,MAX_PRICE:Number(input('maximum').value),MAX_SELECTION_ATTEMPTS:Number(input('attempts').value)});
-  const state=await window.thirsty.getStatus();if(state.headline!=='Booking plan saved')throw Error('CONFIG_INVALID');dirty=false;loadedPlan='';render(state);
-}
 for(const [id,mode] of [['workflow-test','test'],['workflow-release','release']] as const)byId(id).onclick=()=>{workflow=mode;dirty=true;input('terms').checked=false;void window.thirsty.setWorkflow(mode);if(latest)render(latest);};
-byId('test-booking').onclick=()=>{const authorized=input('terms').checked;input('terms').checked=false;void window.thirsty.testBooking({request:{strategy:input('booking-type').value as 'standard'|'extended',date:input('test-date').value,start:input('start-time').value,duration:Number(input('duration').value),courtCount:Number(input('court-count').value) as 1|2,priority:courtOrder,fallbackStarts:[],...((input('exact-a').value.trim()||input('exact-b').value.trim())?{exact:(input('booking-type').value==='extended'?['exact-a','exact-b']:['exact-a']).map(id=>input(id).value.split(',').map(v=>Number(v.trim())))}:{})},maximum:Number(input('maximum').value),authorizeTerms:authorized as true}).catch(()=>{byId('detail').textContent='Check booking duration, date, price and Terms authorization.';});};
+function testRequest(){return {request:{strategy:input('booking-type').value as 'standard'|'extended',date:input('test-date').value,start:input('start-time').value,duration:Number(input('duration').value),courtCount:Number(input('court-count').value) as 1|2,priority:courtOrder,fallbackStarts:[],...((input('exact-a').value.trim()||input('exact-b').value.trim())?{exact:(input('booking-type').value==='extended'?['exact-a','exact-b']:['exact-a']).map(id=>input(id).value.split(',').map(v=>Number(v.trim())))}:{})},maximum:Number(input('maximum').value)};}
+function currentSetup():BookingSetup{return {BOOKING_TYPE:input('booking-type').value as 'standard'|'extended',COURT_COUNT:Number(input('court-count').value) as 1|2,START_TIME:input('start-time').value,DURATION_HOURS:Number(input('duration').value),PREFERRED_COURTS:courtOrder,FALLBACK_COURTS:[],FALLBACK_TIMES:fallbackTimes,MAX_PRICE:Number(input('maximum').value),MAX_SELECTION_ATTEMPTS:Number(input('attempts').value)};}
+byId('test-booking').onclick=()=>{const authorized=input('terms').checked;input('terms').checked=false;void window.thirsty.testBooking({...testRequest(),authorizeTerms:authorized as true}).catch(()=>{byId('detail').textContent='Check booking fields and Terms authorization.';});};
 window.thirsty.onStatus(render);
 void window.thirsty.getStatus().then(render);
 setInterval(tick, 1000);

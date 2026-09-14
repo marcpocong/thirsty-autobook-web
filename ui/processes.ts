@@ -1,4 +1,4 @@
-import { TestBookingSchema, BookingPlanSchema, type BookingPlan } from '../src/booking-plan.js';
+import { PreparationSchema, TestBookingSchema, BookingPlanSchema, type BookingPlan } from '../src/booking-plan.js';
 import {FullPracticeSchema} from '../src/full-practice.js';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { resolve } from 'node:path';
@@ -20,7 +20,7 @@ export function sanitizeLine(text: string): string {
 }
 export function commandSpec(command: Command, root: string, node: string) {
   if (typeof command === 'object' && command !== null) {
-    if(command.kind==='resetPrepare')return {executable:node,args:['--import','tsx',resolve(root,'src/booking-entry.ts'),'prepare',z.enum(['standard','extended']).parse(command.strategy)],automation:true};
+    if(command.kind==='resetPrepare')return {executable:node,args:['--import','tsx',resolve(root,'src/booking-entry.ts'),'prepare',JSON.stringify(PreparationSchema.parse(command.input))],automation:true};
     if(command.kind==='testBooking')return {executable:node,args:['--import','tsx',resolve(root,'src/booking-entry.ts'),'test',JSON.stringify(TestBookingSchema.parse(command.input))],automation:true};
     if(command.kind==='dualDry') {
       const c=z.object({kind:z.literal('dualDry'),date:z.iso.date()}).strict().parse(command);

@@ -1,4 +1,4 @@
-import { loadConfig, loadObservationConfig, type Config } from './config.js';
+import { playerReadiness, loadConfig, loadObservationConfig, type Config } from './config.js';
 import { verifyDedicatedChrome, attach, browserB } from './browser.js';
 import { Safety } from './safety.js';
 import { readScheduleReadiness } from './readiness.js';
@@ -13,11 +13,11 @@ try {
   Object.assign(result, { preopen: config.RELEASE_PREOPEN_CALENDAR ? 'ON' : 'OFF',
     availabilityMode: config.AVAILABILITY_DISCOVERY_MODE.toUpperCase(), releaseLeadMs: config.RELEASE_LEAD_MS,
     targetDate: next.targetDate, releaseTime: `${config.RELEASE_TIME} ${config.TIMEZONE}` });
-  try { booking=loadConfig(); result.courtCount=booking.COURT_COUNT; result.playerConfiguration = 'CONFIGURED'; result.bookingPlan = 'VALID'; } catch {}
+  try { booking=loadConfig(); result.courtCount=booking.COURT_COUNT; result.playerConfiguration = playerReadiness(booking).primary?'CONFIGURED':'MISSING'; result.extendedPlayerConfiguration=playerReadiness(booking).extended?'CONFIGURED':'MISSING'; result.bookingPlan = 'VALID'; } catch {}
   verifyDedicatedChrome(); result.dedicatedProfile = 'VERIFIED';
   const { page } = await attach(new Safety()); result.cdp = 'READY';
   Object.assign(result, await readScheduleReadiness(page));
-  if(booking?.COURT_COUNT===2){
+  if(booking?.BOOKING_TYPE==='extended'){
     result.browserB='NOT VERIFIED';
     const second=await attach(new Safety(),undefined,browserB);
     const readiness=await readScheduleReadiness(second.page);result.browserB=readiness;

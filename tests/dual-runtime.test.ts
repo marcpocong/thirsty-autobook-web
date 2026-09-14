@@ -34,7 +34,7 @@ it('single/dual mutual exclusion uses the original global lock; no worker bypass
   const {writeFile}=await import('node:fs/promises');const single=JSON.stringify({pid:process.pid,runID:'single'});await writeFile('.local/automation.lock',single);
   await expect(runDual(config(),'readiness',new Safety(),new Telemetry())).rejects.toThrow('AUTOMATION_LOCK_EXISTS');expect(spies.attach).not.toHaveBeenCalled();expect(await readFile('.local/automation.lock','utf8')).toBe(single);
 }));
-it('count one cannot initialize the coordinator or any browser worker',()=>local(async()=>{await expect(runDual({...config(),COURT_COUNT:1},'readiness',new Safety(),new Telemetry())).rejects.toThrow('DUAL_CONFIG_REQUIRED');expect(spies.attach).not.toHaveBeenCalled();}));
+it('Extended one court inspects both browsers without a court-count routing gate',()=>local(async()=>{await runDual({...config(),BOOKING_TYPE:'extended',DURATION_HOURS:4,COURT_COUNT:1},'readiness',new Safety(),new Telemetry());expect(spies.attach.mock.calls.map(c=>c[2].workerId)).toEqual(['A','B']);}));
 it('two profile paths cannot alias the same physical directory',()=>local(async()=>{
   const {symlink,rmdir}=await import('node:fs/promises');await rmdir(resolve('.local/onda-chrome-profile-b'));
   await symlink(resolve('.local/onda-chrome-profile'),resolve('.local/onda-chrome-profile-b'),process.platform==='win32'?'junction':'dir');

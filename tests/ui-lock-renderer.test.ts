@@ -81,11 +81,25 @@ it('Standard two courts shows one checkout; Extended has no historical evidence 
  await mkdir('.local',{recursive:true});await p.screenshot({path:'.local/phase7-ui.png',fullPage:true});await p.close();
 });
 it('Extended Test Now prepares from test fields without saving production count and consumes per-run Terms',async()=>{
- const p=await renderer(false,{lock:false,ready:false});
+ const p=await renderer(false,{lock:false,ready:false,booking:{...plan,extendedPlayerConfigured:true}});
  await p.evaluate(()=>{const w=window as any;w.calls=[];w.thirsty.resetPrepare=async(strategy:string)=>{w.calls.push({prepare:strategy});w.fixtureState.ready=true;w.fixturePublish(w.fixtureState);};w.thirsty.testBooking=async(input:any)=>{w.calls.push({test:input});};w.thirsty.saveBooking=async()=>{throw Error('Test must not save production');};});
  await p.locator('#booking-type').selectOption('extended');await p.locator('#court-count').selectOption('2');await p.locator('#start-time').selectOption('20:00');await p.locator('#duration').fill('4');await p.locator('#duration').dispatchEvent('change');
  await p.locator('#prepare').click();await p.locator('#terms').check();
  expect(await p.locator('#test-booking').isEnabled()).toBe(true);await p.locator('#test-booking').click();
- const calls=await p.evaluate(()=>(window as any).calls);expect(calls[0]).toEqual({prepare:'extended'});expect(calls[1].test).toMatchObject({request:{strategy:'extended',courtCount:2,start:'20:00',duration:4},authorizeTerms:true});
+ const calls=await p.evaluate(()=>(window as any).calls);expect(calls[0]).toMatchObject({prepare:{workflow:'test',request:{strategy:'extended',courtCount:2,start:'20:00',duration:4}}});expect(calls[1].test).toMatchObject({request:{strategy:'extended',courtCount:2,start:'20:00',duration:4},authorizeTerms:true});
  expect(await p.locator('#terms').isChecked()).toBe(false);await p.close();
+});
+it('renderer shows only missing/configured player status and blocks Extended without B',async()=>{
+ const p=await renderer(false,{lock:false,ready:true,termsAuthorized:true});
+ await p.locator('#booking-type').selectOption('extended');
+ expect(await p.locator('#player-status').innerText()).toContain('Primary player: Configured');
+ expect(await p.locator('#player-status').innerText()).toContain('Extended player: Missing');
+ expect(await p.locator('#test-booking').isDisabled()).toBe(true);
+ expect(await p.locator('#arm').isDisabled()).toBe(true);
+ expect(await p.locator('body').innerText()).not.toContain('fixture@example.invalid');await p.close();
+});
+it('Reset & Prepare stays accessible while a UI booking worker is running',async()=>{
+ const p=await renderer(false,{operation:'fullPractice',ready:false});
+ expect(await p.locator('#prepare').isEnabled()).toBe(true);
+ expect(await p.locator('#test-booking').isDisabled()).toBe(true);await p.close();
 });

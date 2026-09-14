@@ -36,7 +36,7 @@ export async function requireDualEvidence(fingerprint: string, full: boolean) {
 }
 export async function runDual(config: Config, mode: DualMode, safety: Safety, t: Telemetry,
   options: { date?:string; exact?:DualCandidate; authorizeTerms?:boolean; maximum?:number; registerAbort?:(abort:()=>void)=>void } = {}) {
-  if (config.COURT_COUNT !== 2) throw Error('DUAL_CONFIG_REQUIRED');
+  if (mode !== 'readiness' && (config.BOOKING_TYPE !== 'standard' || config.COURT_COUNT !== 2)) throw Error('DUAL_CONFIG_REQUIRED');
   if (['full','practice'].includes(mode) && !options.exact) throw Error('EXACT_DUAL_TARGET_REQUIRED');
   if (options.maximum !== undefined && (!Number.isFinite(options.maximum) || options.maximum <= 0)) throw Error('INVALID_SELECTION_LIMIT');
   if (['full','race'].includes(mode) && !options.authorizeTerms) throw Error('TERMS_AUTHORIZATION_REQUIRED');

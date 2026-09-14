@@ -1,7 +1,6 @@
 import { mkdir } from 'node:fs/promises';
-import { z } from 'zod';
-import { loadConfig } from './config.js';
-import { TestBookingSchema, type BookingPlan } from './booking-plan.js';
+import { bookingPlayers, loadConfig } from './config.js';
+import { PreparationSchema, TestBookingSchema, type BookingPlan } from './booking-plan.js';
 import { resetAndPrepare } from './booking-prepare.js';
 import { runBooking } from './booking-runtime.js';
 import { Safety } from './safety.js';
@@ -24,7 +23,7 @@ let code=0;
 try{
   await mkdir('.local',{recursive:true});await mkdir('DiagnosticsLocal',{recursive:true});
   const [mode,raw]=process.argv.slice(2);
-  if(mode==='prepare'){const strategy=z.enum(['standard','extended']).parse(raw);await resetAndPrepare(strategy,safety);console.log('READY');}
+  if(mode==='prepare'){const input=PreparationSchema.parse(JSON.parse(raw??''));const config=loadConfig();const strategy=input.workflow==='test'?input.request.strategy:config.BOOKING_TYPE;bookingPlayers(config,strategy);await resetAndPrepare(strategy,safety,{},input.workflow==='test'?input.request.date:undefined);console.log('READY');}
   else if(mode==='test'){
     const input=TestBookingSchema.parse(JSON.parse(raw??''));
     await runBooking(loadConfig(),'test',safety,t,{...input,confirm});

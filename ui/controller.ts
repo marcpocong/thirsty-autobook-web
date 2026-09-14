@@ -1,4 +1,4 @@
-import { TestBookingSchema, type BookingPlan } from '../src/booking-plan.js';
+import { PreparationSchema, TestBookingSchema, type BookingPlan } from '../src/booking-plan.js';
 import { z } from 'zod';
 import { DualPracticeSchema, requireDualFullAuthorization } from '../src/dual-practice.js';
 import type { DualPracticeCommand } from './types.js';
@@ -13,11 +13,16 @@ import { PracticeSchema } from '../src/practice.js';
 import { BookingSetupSchema } from '../src/config.js';
 import { capabilities,fullBookingReady } from '../src/capabilities.js';
 
+const preparationHeadlines:Record<string,string>={EXTENDED_PLAYER_INFO_MISSING:'EXTENDED PLAYER CONFIGURATION REQUIRED',PLAYER_INFO_MISSING:'PLAYER CONFIGURATION REQUIRED',TARGET_DATE_UNAVAILABLE:'TARGET NOT AVAILABLE',PAYMENT_HOLD_MAY_BE_ACTIVE:'PAYMENT HOLD MAY BE ACTIVE',LOCK_PID_RUNNING:'AUTOMATION STILL RUNNING'};
 const errors: Record<string, string> = {
   EXTENDED_DURATION_LIMIT:'Extended two-browser booking currently supports up to 6 consecutive hours.',
   PAYMENT_HOLD_MAY_BE_ACTIVE:'PAYMENT HOLD MAY BE ACTIVE. Check Onda manually or wait for expiry, then Reset & Prepare.',
   TARGET_NOT_AVAILABLE:'TARGET NOT AVAILABLE. No booking was created.',
-  LOCK_PID_RUNNING:'The recorded process or a UI-owned worker is still running. Lock cannot be cleared.',
+  LOCK_PID_RUNNING:'AUTOMATION STILL RUNNING. Stop the external run first, then Reset & Prepare.',
+  AUTOMATION_STILL_RUNNING:'AUTOMATION STILL RUNNING. Stop the external run first, then Reset & Prepare.',
+  STOP_NOT_CONFIRMED:'STOP NOT CONFIRMED. Reset was not performed.',
+  EXTENDED_PLAYER_INFO_MISSING:'EXTENDED PLAYER CONFIGURATION REQUIRED',
+  TARGET_DATE_UNAVAILABLE:'TARGET NOT AVAILABLE. Choose a reachable date, then Reset & Prepare.',
   LOCK_SELECTED_SLOTS:'SELECTED SLOTS STILL PRESENT. Inspect and clear them manually, then Review Lock again.',
   LOCK_PAYMENT_HOLD_ACTIVE:'PAYMENT HOLD ACTIVE. Complete payment, cancel manually if appropriate, or wait for expiry; then return to a clean schedule and Review Lock.',
   LOCK_BROWSER_STATE_UNKNOWN:'Browser state is unknown or not a clean schedule. Manual review required.',
@@ -50,6 +55,7 @@ const errors: Record<string, string> = {
   COURT_FILTER_NOT_ALL: 'Select All Courts in Chrome, then Prepare again.',
 };
 export interface Dependencies {
+  confirmStopPrepare?:()=>Promise<boolean>;
   confirmBooking?:(plan:BookingPlan,maximum:number)=>Promise<boolean>;
   runner: Runner; lock(): Promise<boolean>; cdp(): Promise<boolean>; clock: typeof readClock;
   confirm(kind?: 'observe'|'selection'|'dry'|'full', plan?:BookingView): Promise<boolean>; publish(status: Dashboard): void;
@@ -91,7 +97,7 @@ export class Controller {
       try { this.state.clock = this.deps.clock(); }
       catch { this.state.clock = null; this.state.ready = false; this.state.detail = errors.CONFIG_INVALID!; }
       if (this.state.operation === 'idle') {
-        try { const booking=this.deps.booking(); if (this.state.booking?.fingerprint !== booking.fingerprint) { this.state.ready=false; this.state.termsAuthorized=false; } this.state.booking=booking; if(booking.setup.COURT_COUNT===2&&this.deps.dualEvidence)this.state.dualValidation=await this.deps.dualEvidence(); }
+        try { const booking=this.deps.booking(); if (this.state.booking?.fingerprint !== booking.fingerprint || this.state.booking?.playerConfigured!==booking.playerConfigured || this.state.booking?.extendedPlayerConfigured!==booking.extendedPlayerConfigured) { this.state.ready=false; this.state.termsAuthorized=false; } this.state.booking=booking; if(booking.setup.BOOKING_TYPE==='extended'&&this.deps.dualEvidence)this.state.dualValidation=await this.deps.dualEvidence(); }
         catch { this.state.booking=null; this.state.ready=false; }
       }
       if (!cdp || (lock && this.state.operation === 'idle') || (this.state.workflow==='release'&&!this.state.clock?.canArmToday)) this.state.ready = false;
@@ -122,6 +128,7 @@ export class Controller {
     if (event.type === 'error') {
       this.state.ready = false;
       if (event.code !== 'USER_ABORT') { this.state.headline = event.code==='HANDOFF_STATUS_UNKNOWN'?'HANDOFF STATUS UNKNOWN':/REVIEW_/.test(event.code)?'REVIEW VALIDATION FAILED':/PLAYER_|PHONE_/.test(event.code)?'PLAYER FORM FAILED':/PAYMENT_/.test(event.code)?'PAYMENT SUMMARY FAILED':/TERMS_|FINAL_BUTTON_/.test(event.code)?'TERMS / FINAL ACTION FAILED':/SELECTION_|CLEANUP_|NO_AVAILABLE/.test(event.code)?'SELECTION FAILED':'Needs attention'; this.state.detail = event.code==='HANDOFF_STATUS_UNKNOWN'?'DO NOT START ANOTHER BOOKING. CHECK CHROME MANUALLY. Lock retained; final action is never retried.':errors[event.code] ?? event.code; }
+      if(preparationHeadlines[event.code])this.state.headline=preparationHeadlines[event.code]!;
       this.log(errors[event.code] ?? event.code, true);
     }
     if (event.type === 'telemetry') {
@@ -160,12 +167,13 @@ export class Controller {
     catch (error) {
       if (generation === this.generation) {
         const code = error instanceof Error ? error.message : 'OPERATION_FAILED';
-        const hadSpecificFailure = ['PARTIAL SUCCESS','BOOKING FAILED'].includes(this.state.bookingResult?.status??'')||this.state.dualResult?.status==='DUAL_PARTIAL_SUCCESS'||this.state.dualResult?.status==='DUAL_FAILED'||this.state.headline === 'Needs attention'||this.state.headline.includes('FAILED')||this.state.headline==='HANDOFF STATUS UNKNOWN';
+        const hadSpecificFailure = Object.values(preparationHeadlines).includes(this.state.headline)||['PARTIAL SUCCESS','BOOKING FAILED'].includes(this.state.bookingResult?.status??'')||this.state.dualResult?.status==='DUAL_PARTIAL_SUCCESS'||this.state.dualResult?.status==='DUAL_FAILED'||this.state.headline === 'Needs attention'||this.state.headline.includes('FAILED')||this.state.headline==='HANDOFF STATUS UNKNOWN';
         if(code==='HANDOFF_STATUS_UNKNOWN')this.state.headline='HANDOFF STATUS UNKNOWN';
         else if(!hadSpecificFailure)this.state.headline = 'Needs attention';
         if(code==='HANDOFF_STATUS_UNKNOWN')this.state.detail='DO NOT START ANOTHER BOOKING. CHECK CHROME MANUALLY. Lock retained; final action is never retried.';
         else if (code !== 'COMMAND_FAILED') this.state.detail = errors[code] ?? code;
         else if (!hadSpecificFailure) this.state.detail = 'The command failed. See the sanitized process output in Activity.';
+        if(preparationHeadlines[code])this.state.headline=preparationHeadlines[code]!;
         this.log(code, true);
       }
     } finally {
@@ -184,50 +192,57 @@ export class Controller {
     this.state.headline = 'Chrome is reachable'; this.state.detail = 'Run Prepare to verify the booking page and session.';
   }); }
   inspectOnda() { return this.operation('inspect', async gen => {
-    if(this.state.booking?.setup.COURT_COUNT===2)this.state.dualWorkers={};
-    await this.noLock(); this.state.inspection = null; this.log('Inspecting Onda — read only'); await this.run(this.state.booking?.setup.COURT_COUNT===2?'dualReadiness':'inspect', gen);
+    if(this.state.booking?.setup.BOOKING_TYPE==='extended')this.state.dualWorkers={};
+    await this.noLock(); this.state.inspection = null; this.log('Inspecting Onda — read only'); await this.run(this.state.booking?.setup.BOOKING_TYPE==='extended'?'dualReadiness':'inspect', gen);
     this.state.headline = 'Inspection complete'; this.state.detail = 'Review the observed status below. Prepare before arming.';
   }); }
   async setWorkflow(value:unknown){if(this.state.operation!=='idle')throw Error('OPERATION_ALREADY_RUNNING');this.state.workflow=z.enum(['test','release']).parse(value);this.state.ready=false;this.state.termsAuthorized=false;this.publish();}
-  resetPrepare(value:unknown){return this.operation('prepare',async gen=>{
-    const strategy=z.enum(['standard','extended']).parse(value);
-    this.state.inspection=null;this.state.handoff=null;this.state.bookingResult=undefined;
-    await this.run({kind:'resetPrepare',strategy},gen);await this.noLock();
-    this.state.cdp=await this.deps.cdp();this.state.ready=true;this.state.preparedAt=Date.now();
-    this.state.headline=this.state.workflow==='release'?'READY TO ARM':'READY TO TEST';this.state.detail='Prepared. Review your settings and authorize Terms for this run.';
-  });}
+  private resetting=false;
+  async resetPrepare(value:unknown){
+    if(this.resetting)throw Error('OPERATION_ALREADY_RUNNING');
+    this.resetting=true;this.state.ready=false;this.state.termsAuthorized=false;this.state.preparedAt=undefined;
+    try{
+      const input=PreparationSchema.parse(value);
+      if(this.state.operation!=='idle'){
+        const active=this.active;
+        if(!active)throw Error('AUTOMATION_STILL_RUNNING');
+        const generation=this.generation;
+        if(!await this.deps.confirmStopPrepare?.())return;
+        if(generation!==this.generation||this.active&&this.active!==active)throw Error('STOP_NOT_CONFIRMED');
+        ++this.generation;this.state.operation='stopping';this.state.ready=false;this.state.termsAuthorized=false;this.publish();
+        try{
+          await active.stop();
+          await Promise.race([active.done,new Promise<never>((_,reject)=>{const timer=setTimeout(()=>reject(Error('STOP_NOT_CONFIRMED')),3500);timer.unref();})]);
+        }catch{this.state.headline='STOP NOT CONFIRMED';this.state.detail='Stop the existing automation before preparing.';this.publish();throw Error('STOP_NOT_CONFIRMED');}
+        this.active=undefined;this.state.operation='idle';
+      }
+      await this.operation('prepare',async gen=>{
+        if(input.workflow==='release'&&input.setup!==undefined)this.state.booking=this.deps.saveBooking(BookingSetupSchema.parse(input.setup));
+        const booking=this.deps.booking(),strategy=input.workflow==='test'?input.request.strategy:booking.setup.BOOKING_TYPE;
+        this.state.booking=booking;if(!booking.playerConfigured)throw Error('PLAYER_INFO_MISSING');
+        if(strategy==='extended'&&!booking.extendedPlayerConfigured)throw Error('EXTENDED_PLAYER_INFO_MISSING');
+        this.state.workflow=input.workflow;this.state.inspection=null;this.state.handoff=null;this.state.bookingResult=undefined;
+        this.state.headline='PREPARING';this.publish();
+        await this.run({kind:'resetPrepare',input:input.workflow==='release'?{workflow:'release',strategy}:input},gen);await this.noLock();
+        this.state.cdp=await this.deps.cdp();if(!this.state.cdp)throw Error('CDP_PROFILE_OR_BIND_UNVERIFIED');
+        this.state.ready=true;this.state.preparedAt=Date.now();
+        this.state.headline=input.workflow==='release'?'READY TO ARM':'READY TO TEST';this.state.detail='Prepared. Review your settings and authorize Terms for this run.';
+      });
+    }catch(error){
+      if(this.state.operation!=='stopping'){this.state.headline='RESET REQUIRED';this.state.detail='Check the booking fields, then Reset & Prepare.';this.publish();}
+      throw error;
+    }finally{this.resetting=false;}
+  }
   testBooking(value:unknown){return this.operation('fullPractice',async gen=>{
-    const input=TestBookingSchema.parse(value);await this.noLock();
+    const input=TestBookingSchema.parse(value);const booking=this.deps.booking();this.state.booking=booking;if(!booking.playerConfigured)throw Error('PLAYER_INFO_MISSING');if(input.request.strategy==='extended'&&!booking.extendedPlayerConfigured)throw Error('EXTENDED_PLAYER_INFO_MISSING');await this.noLock();
     this.state.handoff=null;this.state.bookingResult=undefined;
     this.state.headline='Checking availability';this.state.detail='Resolving your courts and time ranges before confirmation.';
     await this.run({kind:'testBooking',input},gen);
   });}
-  prepare() { return this.operation('prepare', async gen => {
-    this.state.booking=this.deps.booking(); this.state.selection=null;
-    if(this.state.booking.setup.COURT_COUNT===2)this.state.dualWorkers={};
-    await this.noLock(); this.state.inspection = null; this.log('Preparing session — no observation will be armed');
-    await this.run(this.state.booking?.setup.BOOKING_TYPE==='extended'?'chromeDual':'chrome', gen);
-    this.state.cdp = await this.deps.cdp(); if (!this.state.cdp) throw new Error('CDP_PROFILE_OR_BIND_UNVERIFIED');
-    await this.run(this.state.booking?.setup.COURT_COUNT===2?'dualReadiness':'inspect', gen); await this.noLock();
-    if (gen !== this.generation) return;
-    if(this.state.booking?.setup.COURT_COUNT===2){
-      if(this.deps.dualEvidence)this.state.dualValidation=await this.deps.dualEvidence();
-      this.state.ready=false;this.state.headline='Dual browsers checked';
-      this.state.detail=this.state.dualValidation?.selection?'DUAL SELECTION READY. '+(this.state.dualValidation.full?'DUAL FULL FLOW VERIFIED.':'FULL DUAL HOLD NOT YET VERIFIED.'):'Run Dual Dry Pair and Dual Selection Practice before production.';return;
-    }
-    const inspection = this.state.inspection as Dashboard['inspection'];
-    if (!inspection?.gridToday) throw new Error('STALE_OR_INCOMPLETE_GRID');
-    if (!inspection.allCourts) throw new Error('COURT_FILTER_NOT_ALL');
-    if (inspection.selected !== 0) throw new Error('PREEXISTING_SELECTION');
-    if (!inspection.visible) throw new Error('TAB_NOT_VISIBLE');
-    this.state.clock = this.deps.clock(); if (!this.state.clock.canArmToday) throw new Error('TOO_LATE_FOR_PREFLIGHT');
-    this.state.ready = true; this.state.headline = `Ready for ${this.state.clock.releaseTime.slice(0, 5)}`;
-    this.state.detail = 'Booking plan and local player information validated. Today’s grid, All Courts, zero selected slots and clear lock verified. Nothing is armed.';
-    this.log('READY — preparation completed. Nothing armed.');
-  }); }
+  prepare() { return this.resetPrepare({workflow:'release',strategy:this.deps.booking().setup.BOOKING_TYPE}); }
   prepareDual() { return this.operation('prepare', async gen => {
     this.state.booking=this.deps.booking();
-    if(this.state.booking.setup.COURT_COUNT!==2)throw Error('DUAL_CONFIG_REQUIRED');
+    if(this.state.booking.setup.BOOKING_TYPE!=='standard'||this.state.booking.setup.COURT_COUNT!==2)throw Error('LEGACY_DIAGNOSTIC_CONFIG_REQUIRED');
     this.state.dualWorkers={};this.state.dualResult=null;this.state.dualValidation=undefined;
     await this.noLock();this.log('Preparing dual run — starting both dedicated browsers and verifying both clean schedules');
     await this.run('chromeDual',gen);
@@ -279,7 +294,7 @@ export class Controller {
     if(kind==='full'&&!authorized)throw new Error('TERMS_AUTHORIZATION_REQUIRED');
     await this.noLock(); if (!this.deps.clock().canArmToday) throw new Error('TOO_LATE_FOR_PREFLIGHT');
     if (kind==='selection' && !this.state.capabilities.selectionReady) throw new Error('SELECTION_NOT_READY');
-    const plan=this.deps.booking(); this.state.booking=plan; this.state.selection=null;
+    const plan=this.deps.booking();if(!plan.playerConfigured)throw Error('PLAYER_INFO_MISSING');if(plan.setup.BOOKING_TYPE==='extended'&&!plan.extendedPlayerConfigured)throw Error('EXTENDED_PLAYER_INFO_MISSING'); this.state.booking=plan; this.state.selection=null;
     this.state.bookingResult=undefined;
     const confirmed=await this.deps.confirm(kind,plan);
     if(gen!==this.generation)return;
@@ -336,7 +351,7 @@ export class Controller {
       z.object({kind:z.literal('dualDry'),date:z.iso.date()}).strict(),
       z.object({kind:z.enum(['dualPractice','dualFullPractice']),input:DualPracticeSchema}).strict(),
     ]).parse(input);
-    if(this.deps.booking().setup.COURT_COUNT!==2)throw Error('DUAL_CONFIG_REQUIRED');
+    if(this.deps.booking().setup.BOOKING_TYPE!=='standard'||this.deps.booking().setup.COURT_COUNT!==2)throw Error('LEGACY_DIAGNOSTIC_CONFIG_REQUIRED');
     if(command.kind==='dualFullPractice')requireDualFullAuthorization(command.input);
     await this.noLock();
     if(command.kind==='dualFullPractice'&&(!this.deps.confirmDualPractice||!await this.deps.confirmDualPractice(command)||gen!==this.generation))return;

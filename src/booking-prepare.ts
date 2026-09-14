@@ -1,14 +1,15 @@
 import { resolve } from 'node:path';
+import type { Page } from 'playwright';
 import type { BrowserIdentity } from './browser.js';
 import { readFile, open, unlink } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { chromium } from 'playwright';
 import { DateTime } from 'luxon';
-import { browserA,browserB,verifyDedicatedChrome } from './browser.js';
+import { browserA,browserB,verifyDedicatedChrome,monitorConnection } from './browser.js';
 import { ONDA_URL, VENUE } from './config.js';
 import { inspectLockPage, type BrowserReview } from './lock-browser.js';
-import { navigateDate } from './grid.js';
+import { snapshot, validateSnapshot, navigateDate } from './grid.js';
 import { Safety, securityReason } from './safety.js';
 import { assertDiagnosticSchedule } from './diagnostic-schedule.js';
 import { pidAlive } from '../ui/locks.js';
@@ -28,9 +29,9 @@ export function assertResetSafe(record:{stage?:string;state?:string;handoff?:unk
   throw Error('PAYMENT_HOLD_MAY_BE_ACTIVE');
 }
 async function maybeRead(path:string){try{return await readFile(path,'utf8');}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return undefined;throw e;}}
-export interface PreparedBrowser { observed:BrowserReview; expired:boolean; normalize():Promise<void> }
+export interface PreparedBrowser { observed:BrowserReview; expired:boolean; normalize(date?:string):Promise<void> }
 export interface PreparationDependencies { root?:string; alive?:typeof pidAlive; inspect?:(identity:BrowserIdentity,safety:Safety)=>Promise<PreparedBrowser> }
-export async function resetAndPrepare(strategy:'standard'|'extended',safety:Safety,deps:PreparationDependencies={}){
+export async function resetAndPrepare(strategy:'standard'|'extended',safety:Safety,deps:PreparationDependencies={},date?:string){
   const root=deps.root??'.',alive=deps.alive??pidAlive;
   const path=resolve(root,'.local/automation.lock'),raw=await maybeRead(path);
   let expectedRaw=raw;
@@ -66,7 +67,7 @@ export async function resetAndPrepare(strategy:'standard'|'extended',safety:Safe
       browsers.push(prepared);
     }
     // Inspect every relevant browser before discarding any state.
-    for(const browser of browsers){await same();safety.check();await browser.normalize();}
+    for(const browser of browsers){await same();safety.check();await browser.normalize(date);}
     if(raw){await same();for(const [i,r] of subordinate.entries())if(r)await unlink(workerPaths[i]!);await unlink(path);}
     else if(reserved){const r=JSON.parse((await readFile(path,'utf8')));if(r.pid!==process.pid||r.mode!=='preparing')throw Error('LOCK_REPLACED');await unlink(path);reserved=false;}
   }finally{await guard.close();await unlink(guardPath);}
@@ -78,7 +79,7 @@ async function inspectForPreparation(b:BrowserIdentity,safety:Safety):Promise<Pr
   const browser=await chromium.connectOverCDP(b.cdpUrl,{timeout:10000});
   const candidates=browser.contexts().flatMap(c=>c.pages()).filter(p=>{try{return new URL(p.url()).origin===new URL(ONDA_URL).origin;}catch{return false;}});
   if(candidates.length!==1)throw Error('ONDA_TAB_AMBIGUOUS_OR_MISSING');
-  const page=candidates[0]!;page.setDefaultTimeout(10000);
+  const page=candidates[0]!;page.setDefaultTimeout(10000);monitorConnection(browser,page,safety);
   const reason=securityReason(await page.locator('body').innerText());if(reason)throw Error(reason);
   const observed=await inspectLockPage(page);
   if(['Review Booking','Payment Summary'].includes(observed.page)&&(page.url()!==ONDA_URL||await page.locator('h2').count()!==1||(await page.locator('h2').innerText()).trim()!==VENUE))throw Error('WRONG_VENUE');
@@ -86,9 +87,17 @@ async function inspectForPreparation(b:BrowserIdentity,safety:Safety):Promise<Pr
     const labels=[...document.querySelectorAll('p')].filter(p=>p.textContent?.trim()==='Slot reserved for'&&p.getClientRects().length);
     return labels.length===1&&[...(labels[0]!.parentElement?.querySelectorAll('p')??[])].some(p=>/^(?:0?0):00$/.test(p.textContent?.trim()??''));
   });
-  return {observed,expired,normalize:async()=>{
-    await page.goto(ONDA_URL,{waitUntil:'domcontentloaded'});
-    await navigateDate(page,DateTime.now().setZone('Asia/Manila').toISODate()!,safety);
-    await assertDiagnosticSchedule(page,safety);
+  return {observed,expired,normalize:async(date)=>{
+    await prepareSchedule(page,safety,date);
   }};
+}
+
+export async function prepareSchedule(page:Page,safety:Safety,date?:string){
+  safety.check();
+    await page.goto(ONDA_URL,{waitUntil:'domcontentloaded'});
+    const target=date??DateTime.now().setZone('Asia/Manila').toISODate()!;
+    await navigateDate(page,target,safety);
+    const cells=validateSnapshot(await snapshot(page),target);
+    if(cells.some(c=>c.state==='SELECTED'))throw Error('PREEXISTING_SELECTION');
+    await assertDiagnosticSchedule(page,safety);
 }

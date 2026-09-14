@@ -33,6 +33,14 @@ export function paymentAmount(text:string) {
   if(!/^₱(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2}$/.test(text))throw new Error('PAYMENT_AMOUNT_UNKNOWN');
   return Number(text.slice(1).replaceAll(',',''));
 }
+// Text is scoped to the already established Payment Summary sheet. No new selector.
+export function verifyRentalQuantity(lines:string[],expected:number){
+  const rentals=lines.map(s=>s.trim()).filter(s=>/^Court rental\b/i.test(s));
+  if(rentals.length!==1)throw Error('PAYMENT_RENTAL_STRUCTURE_CHANGED');
+  const match=/^Court rental \((\d+) \u00d7 (\u20b1(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2})\)$/.exec(rentals[0]!);
+  if(!match||!Number.isFinite(paymentAmount(match[2]!))||paymentAmount(match[2]!)<=0)throw Error('PAYMENT_RENTAL_STRUCTURE_CHANGED');
+  if(Number(match[1])!==expected)throw Error('PAYMENT_QUANTITY_MISMATCH');
+}
 export function ondaCheckoutAdapter(page:Page,safety:Safety,selected:BookingSummary,t?:Telemetry,paymentSummaryTimeoutMs=60000):CheckoutAdapter {
   const guard=async()=>{
     safety.check();if(page.url()!==ONDA_URL)throw new Error('WRONG_URL');
@@ -129,6 +137,7 @@ export function ondaCheckoutAdapter(page:Page,safety:Safety,selected:BookingSumm
   const readPayment=async()=>{
     await guard();await sheet.getByRole('heading',{name:'Payment Summary',exact:true}).waitFor({timeout:paymentSummaryTimeoutMs});safety.check();
     const review=await readReview();
+    verifyRentalQuantity(await sheet.locator('span').allTextContents(),(selected.courts?.length??1)*selected.duration);
     const total=await sheet.getByText('Total',{exact:true}).evaluate(e=>{
       const spans=e.parentElement?.querySelectorAll(':scope > span');if(spans?.length!==2)throw new Error('PAYMENT_STRUCTURE_CHANGED');return spans[1]!.textContent?.trim()??'';
     });safety.check();return {...review,amount:paymentAmount(total)};

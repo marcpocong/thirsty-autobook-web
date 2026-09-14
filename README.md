@@ -78,7 +78,7 @@ Use **Booking Setup** for start, duration, court order, fallback starts, PHP max
 
 Choose Standard or Extended independently of the court count. Use Reset & Prepare in the normal workflow. The `dual:*` commands below are retained Phase 6 diagnostics; they are not prerequisites for normal bookings.
 
-Store real player fields only in ignored `.env.local`: `PLAYER_FULL_NAME`, `PLAYER_PHONE`, `PLAYER_EMAIL`. The dashboard reports **Configured** without sending player values to the renderer. Zod validates configuration before attachment. Primary and fallback starts use the configured court priority. Starts range from 08:00 through 23:00, with Standard supporting 1-3 consecutive hours and Extended supporting 4-6, ending no later than midnight.
+Store real player fields only in ignored `.env.local`: `PLAYER_FULL_NAME`, `PLAYER_PHONE`, `PLAYER_EMAIL`. Extended additionally requires valid `PLAYER_B_FULL_NAME`, `PLAYER_B_PHONE`, and `PLAYER_B_EMAIL` for Checkout B. Standard uses only the primary profile. Two different profiles are a product requirement; B never falls back to A. Only configured/missing status reaches the dashboard. The dashboard reports **Configured** without sending player values to the renderer. Zod validates configuration before attachment. Primary and fallback starts use the configured court priority. Starts range from 08:00 through 23:00, with Standard supporting 1-3 consecutive hours and Extended supporting 4-6, ending no later than midnight.
 
 The horizon uses timezone calendar arithmetic, not `now + 48 hours`. Nonzero release lead is rejected until justified by measurements. Observation reads only release settings and ignores player data. Example values are illustrations, not live booking authorization.
 
@@ -128,7 +128,7 @@ npm run ui
 The Electron desktop window uses the existing CLI engine. The first launch may download the Electron runtime; subsequent launches build the small TypeScript UI and open it directly. No installer or additional terminal is needed.
 
 1. Choose **Test Now** or **Release Booking**, booking type, court count, start, duration and per-court maximum. For Test Now choose an explicit date.
-2. Press **Reset & Prepare**. Release settings are saved before preparation. Test fields are independent of saved release settings.
+2. Press **Reset & Prepare**. Test Now verifies the exact requested calendar date and a clean grid in every required browser without selecting reservation slots. Release settings are saved before preparation; Test Now fields remain independent. If a UI-owned run is active, confirm stopping it first. Retained hold and uncertain final-action protections still apply.
 3. Authorize Terms for this run, then press **Run Test to QR** or **Arm Release**. Review the native confirmation. The test resolves actual chunk courts before confirmation; release confirms priorities, fallback starts and valid splits.
 4. Keep the dedicated Chrome window(s) visible. Successful automation stops at one Standard QR hold or two Extended QR holds. Payment remains manual.
 5. **Emergency Stop** stops only the UI-owned command and retains uncertain state. It never cancels holds or closes Chrome.
@@ -161,3 +161,5 @@ Keep `RELEASE_PREOPEN_CALENDAR=false` until a real check passes. After a live PA
 Phase 4 adds optional `AVAILABILITY_DISCOVERY_MODE=hybrid` (default: `ui`). It uses one same-browser availability GET at release and verifies candidates against the strict target-date UI. Slow or invalid discovery falls back immediately; normal UI checkout and manual payment are preserved.
 
 Use `npm run availability:compare -- --date YYYY-MM-DD` for a read-only comparison on a clean visible schedule. `race:dry` exercises the configured discovery mode without selection. Complete live comparison and dry validation before enabling hybrid locally. See [Phase 4 implementation and validation](HYBRID_AVAILABILITY_REPORT.md).
+
+See [Phase 7.1 validation and evidence](PHASE7_1_REPORT.md) for player routing, Payment Summary quantity checks, and Reset & Prepare recovery.

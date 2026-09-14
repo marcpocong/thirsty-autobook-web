@@ -28,7 +28,7 @@ function harness(confirmed = true) {
 describe('desktop orchestration', () => {
   it('Prepare only starts Chrome and inspects; never arms or books', async () => {
     const h = harness(); await h.controller.prepare();
-    expect(h.calls).toEqual(['chrome', 'inspect']); expect(h.controller.state.ready).toBe(true); expect(h.confirm).not.toHaveBeenCalled();
+    expect(h.calls).toEqual([{kind:'resetPrepare',input:{workflow:'release',strategy:'standard'}}]); expect(h.controller.state.ready).toBe(true); expect(h.confirm).not.toHaveBeenCalled();
   });
   it('requires explicit confirmation before creating any observer', async () => {
     const h = harness(false); await h.controller.armObservation(); expect(h.confirm).toHaveBeenCalledOnce(); expect(h.calls).toEqual([]);
@@ -37,14 +37,14 @@ describe('desktop orchestration', () => {
     const h = harness(); const run = h.controller.armObservation();
     await vi.waitFor(() => expect(h.calls).toEqual(['observe']));
     await expect(h.controller.armObservation()).rejects.toThrow('ALREADY_RUNNING');
-    await expect(h.controller.prepare()).rejects.toThrow('ALREADY_RUNNING');
+    await h.controller.prepare();
     await h.controller.abortAutomation(); await run;
     expect(h.stop).toHaveBeenCalledOnce(); expect(h.calls).toEqual(['observe']); expect(h.controller.state.operation).toBe('idle');
     expect(h.controller.state.headline).toBe('Automation aborted');
   });
   it('never launches when a lock exists', async () => {
     const h = harness(); h.setLock(true); await h.controller.prepare(); await h.controller.armObservation();
-    expect(h.calls).toEqual([]); expect(h.confirm).not.toHaveBeenCalled(); expect(h.controller.state.ready).toBe(false);
+    expect(h.calls).toEqual([{kind:'resetPrepare',input:{workflow:'release',strategy:'standard'}}]); expect(h.confirm).not.toHaveBeenCalled(); expect(h.controller.state.ready).toBe(false);
   });
   it('confirms the compiled selection plan and sends only a validated selection command',async()=>{
     const h=harness();await h.controller.armSelection();

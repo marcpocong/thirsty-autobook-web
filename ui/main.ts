@@ -20,6 +20,7 @@ const indexUrl = pathToFileURL(index).href;
 let window: BrowserWindow;
 let exiting = false;
 const controller = new Controller({
+  confirmStopPrepare:async()=>(await dialog.showMessageBox(window,{type:'question',title:'Reset & Prepare',message:'An automation is currently running.',detail:'Stop it and prepare a new session?',buttons:['Cancel','Stop and prepare'],defaultId:0,cancelId:0})).response===1,
   confirmBooking:async(plan,maximum)=>(await dialog.showMessageBox(window,{type:'question',title:`${plan.strategy.toUpperCase()} TEST TO QR`,message:'Create temporary payment holds?',detail:describeBookingPlan(plan,maximum)+'\nIf availability changes before Proceed, the planner may retry other courts or valid splits within this requested time range and court count. Exact courts, when specified, are never substituted.\nTerms authorized for this test. Payment will NOT be automated.',buttons:['Cancel','Run Test to QR'],defaultId:0,cancelId:0})).response===1, runner: createRunner(root, node), lock: () => readLock(root), cdp: probeCdp, clock: readClock,
   reviewLock:owned=>reviewLock(root,owned,browserProbe(root,node),undefined,browserProbe(root,node,'B')),
   clearLock:(fingerprint,owned)=>clearVerifiedLock(root,fingerprint,owned,browserProbe(root,node),undefined,browserProbe(root,node,'B')),

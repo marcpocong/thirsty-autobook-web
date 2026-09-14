@@ -1,7 +1,7 @@
 import { mkdir, open, realpath } from 'node:fs/promises';
 import { attach, browserA, browserB } from './browser.js';
 import { assertDiagnosticSchedule } from './diagnostic-schedule.js';
-import { releaseCalendar, type Config } from './config.js';
+import { bookingPlayers, releaseCalendar, type Config } from './config.js';
 import { snapshot, navigateDate } from './grid.js';
 import { Safety } from './safety.js';
 import { Telemetry } from './telemetry.js';
@@ -19,6 +19,7 @@ export async function runBooking(config:Config,mode:'test'|'race'|'race:dry'|'ra
   if(full&&!options.authorizeTerms)throw Error('TERMS_AUTHORIZATION_REQUIRED');
   if(mode==='test'&&(!options.request||!options.confirm))throw Error('TEST_CONFIRMATION_REQUIRED');
   const target=releaseCalendar(config),request:PlanRequest=options.request??{strategy:config.BOOKING_TYPE,date:target.targetDate,start:config.START_TIME,duration:config.DURATION_HOURS,courtCount:config.COURT_COUNT,priority:[...config.PREFERRED_COURTS,...config.FALLBACK_COURTS],fallbackStarts:config.FALLBACK_TIMES};
+  const players=bookingPlayers(config,request.strategy);
   const identities=request.strategy==='extended'?[browserA,browserB]:[browserA];
   await mkdir('.local/dual',{recursive:true});await mkdir('DiagnosticsLocal',{recursive:true});
   const identity={pid:process.pid,runID:t.runID};
@@ -39,7 +40,7 @@ export async function runBooking(config:Config,mode:'test'|'race'|'race:dry'|'ra
     const connections=connected.map(c=>{if(c.status==='rejected')throw c.reason;return c.value;});
     if(identities.length===2){const paths=await Promise.all(identities.map(i=>realpath(i.expectedProfile)));if(paths[0]!.toLowerCase()===paths[1]!.toLowerCase())throw Error('DUAL_PROFILE_NOT_ISOLATED');}
     const workers=connections.map((c,i):DualWorker=>({id:identities[i]!.workerId,safety:safeties[i]!,telemetry:t,port:selectionPort(c.page,safeties[i]!),state:async()=>{},checkout:async selected=>{
-      await fullBookingToQr(c.page,selected,{fullName:config.PLAYER_FULL_NAME,phone:config.PLAYER_PHONE,email:config.PLAYER_EMAIL},(options.maximum??config.MAX_PRICE)*request.courtCount,true,config.PAYMENT_HANDOFF_VERIFY_TIMEOUT_MS,safeties[i]!,t,config.PAYMENT_SUMMARY_READY_TIMEOUT_MS);
+      await fullBookingToQr(c.page,selected,players[identities[i]!.workerId]!,(options.maximum??config.MAX_PRICE)*request.courtCount,true,config.PAYMENT_HANDOFF_VERIFY_TIMEOUT_MS,safeties[i]!,t,config.PAYMENT_SUMMARY_READY_TIMEOUT_MS);
     }}));
     const gate=dualArmGate(target,safety,t);
     const grids=await Promise.all(workers.map(async(w,i)=>{

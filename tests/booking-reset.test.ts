@@ -22,3 +22,12 @@ it('both expired verified holds allow later one-click recovery',()=>fixture(asyn
 it('replacement during normalization is retained',()=>fixture(async h=>{await h.record('standard','REVIEW');h.normalize.mockImplementation(async()=>{await writeFile(h.path,JSON.stringify({pid:456,runID:'replacement'}));});await expect(h.run()).rejects.toThrow('LOCK_REPLACED');expect(JSON.parse(await readFile(h.path,'utf8')).runID).toBe('replacement');}));
 it('replacement after inspection blocks all normalization even when starting without a lock',()=>fixture(async h=>{h.inspect.mockImplementation(async()=>{await writeFile(h.path,JSON.stringify({pid:456,runID:'replacement'}));return {observed:clean,expired:false,normalize:h.normalize};});await expect(h.run()).rejects.toThrow('LOCK_REPLACED');expect(h.normalize).not.toHaveBeenCalled();}));
 it('a dead interrupted preparation guard can be recovered',()=>fixture(async h=>{await writeFile(join(h.root,'.local/preparation.lock'),JSON.stringify({pid:321}));await h.run();expect(h.normalize).toHaveBeenCalledOnce();}));
+it.each(['standard','extended'] as const)('%s prepares the exact Test Now date in every required browser',strategy=>fixture(async h=>{
+  await resetAndPrepare(strategy,new Safety(),{root:h.root,alive:()=>false,inspect:h.inspect},'2026-09-15');
+  expect(h.normalize.mock.calls).toEqual(Array.from({length:strategy==='standard'?1:2},()=>['2026-09-15']));
+}));
+it('unavailable target date retains state and cannot complete preparation',()=>fixture(async h=>{
+  await h.record('standard','REVIEW');h.normalize.mockRejectedValue(Error('TARGET_DATE_UNAVAILABLE'));
+  await expect(resetAndPrepare('standard',new Safety(),{root:h.root,alive:()=>false,inspect:h.inspect},'2030-01-01')).rejects.toThrow('TARGET_DATE_UNAVAILABLE');
+  expect(JSON.parse(await readFile(h.path,'utf8')).stage).toBe('REVIEW');
+}));
