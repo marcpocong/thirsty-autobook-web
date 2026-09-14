@@ -73,7 +73,7 @@ A recorded verified hold may recover when the browser is conclusively back on a 
 - Full serial suite: 456 tests passed across 25 files.
 - Focused tests include strategy ranges, midnight, split order/fallback, continuity and switching, exact targets, one/two-court selection, selection barrier, owned cleanup/replan, foreign selection, price, multi-court Review, the full single-checkout two-court QR flow, durable final dispatch, reset/process/record races, expiry, and the actual renderer.
 - UI build: passed. Actual renderer screenshots were visually inspected; diagnostics are collapsed and primary Standard controls fit the 1010×800 layout.
-- EXE build: attempted, blocked by Windows CS0016 because the running `Thirsty Bot.exe` holds the output file open. No application was killed. Close the EXE, then run `npm run exe:build`. The UI assets were built successfully before the launcher failure.
+- EXE build: passed after the user closed the running launcher. `npm run exe:build` rebuilt the UI assets and `Thirsty Bot.exe` successfully. The initial attempt encountered Windows CS0016 while the launcher was open; no application was killed.
 - Live structure inspection: read-only attempt only; both dedicated browser identities were unavailable. No browser preparation or booking was run live in this session.
 - Real holds created: **NO**. Release armed: **NO**. Payment performed: **NONE**.
 
