@@ -37,7 +37,7 @@ Standard two-court regression still uses one browser, one combined checkout, one
 - Reset stays accessible during a UI run. A native confirmation offers to stop that run and prepare. It invokes the existing owned-process abort path and waits for confirmed completion before starting normal state inspection. `STOP_NOT_CONFIRMED` prevents reset. External processes are never killed by this recovery path.
 - Stopping a process does not establish clean browser state. Active holds, uncertain `FINAL_ACTION_DISPATCHING`, legacy ambiguity, identity inconsistencies, and replacement-lock races still block cleanup. Verified expired holds and known dead pre-final state retain their existing recovery behavior. Legacy Phase 6 recovery still inspects both retained browsers.
 
-Offline calendar preparation test: reservation slot clicks **0**; Proceed clicks **0**; Terms clicks **0**; final actions **0**. It also rejects an unavailable date. Reset orchestration tests verify exact-date propagation to both required browsers and retained state on date failure. These are offline results, not live preparation claims.
+Offline calendar preparation test: reservation slot clicks **0**; Proceed clicks **0**; Terms clicks **0**; final actions **0**. It also rejects an unavailable date. Reset orchestration tests verify exact-date propagation to both required browsers and retained state on date failure. These are offline results, not live preparation claims. The recovery order now inspects both required browsers before evaluating durable per-worker final-action stages; the new regression confirms both are inspected and no normalization or lock removal occurs when either stage is uncertain.
 
 ## Routing audit
 
@@ -50,7 +50,7 @@ Extended split order remains 3+1 / 2+2 / 1+3, 3+2 / 2+3, and 3+3. Court continui
 ## Validation and delivery
 
 - Typecheck: passed.
-- Final full serial suite: **484 tests passed across 27 files** (`npm test -- --maxWorkers=1`).
+- Final full serial suite: **485 tests passed across 27 files** (`npm test -- --maxWorkers=1`).
 - Focused checks: player config/runtime routing and privacy; exact-date preparation; active-run stop confirmation; missing-player renderer status; Payment Summary quantity; single/two-court checkout; reset lifecycle; Extended split/court-switch regression.
 - UI build: passed; actual renderer screenshot visually reviewed.
 - Windows EXE build: passed; `Thirsty Bot.exe` rebuilt successfully.

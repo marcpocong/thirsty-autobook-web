@@ -63,10 +63,16 @@ export async function resetAndPrepare(strategy:'standard'|'extended',safety:Safe
     const browsers:PreparedBrowser[]=[];
     for(const [i,b] of (two?[browserA,browserB]:[browserA]).entries()){
       const prepared=await (deps.inspect??inspectForPreparation)(b,safety);
-      assertResetSafe(legacy||record?.mode==='extended'?records[i]:i===0?record:undefined,prepared.observed,prepared.expired);
       browsers.push(prepared);
     }
-    // Inspect every relevant browser before discarding any state.
+    // Inspect every required browser before deciding whether any state is safe
+    // to normalize. In particular, a FINAL_ACTION_DISPATCHING record in A must
+    // not prevent inspection of B's independent Onda checkout.
+    for(const [i,browser] of browsers.entries()){
+      const workerRecord=legacy||record?.mode==='extended'?records[i]:i===0?record:undefined;
+      assertResetSafe(workerRecord,browser.observed,browser.expired);
+    }
+    // Only normalize after all browser state and durable records are safe.
     for(const browser of browsers){await same();safety.check();await browser.normalize(date);}
     if(raw){await same();for(const [i,r] of subordinate.entries())if(r)await unlink(workerPaths[i]!);await unlink(path);}
     else if(reserved){const r=JSON.parse((await readFile(path,'utf8')));if(r.pid!==process.pid||r.mode!=='preparing')throw Error('LOCK_REPLACED');await unlink(path);reserved=false;}

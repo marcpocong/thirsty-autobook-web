@@ -16,7 +16,7 @@ import { capabilities,fullBookingReady } from '../src/capabilities.js';
 const preparationHeadlines:Record<string,string>={EXTENDED_PLAYER_INFO_MISSING:'EXTENDED PLAYER CONFIGURATION REQUIRED',PLAYER_INFO_MISSING:'PLAYER CONFIGURATION REQUIRED',TARGET_DATE_UNAVAILABLE:'TARGET NOT AVAILABLE',PAYMENT_HOLD_MAY_BE_ACTIVE:'PAYMENT HOLD MAY BE ACTIVE',LOCK_PID_RUNNING:'AUTOMATION STILL RUNNING'};
 const errors: Record<string, string> = {
   EXTENDED_DURATION_LIMIT:'Extended two-browser booking currently supports up to 6 consecutive hours.',
-  PAYMENT_HOLD_MAY_BE_ACTIVE:'PAYMENT HOLD MAY BE ACTIVE. Check Onda manually or wait for expiry, then Reset & Prepare.',
+  PAYMENT_HOLD_MAY_BE_ACTIVE:'PAYMENT HOLD MAY BE ACTIVE. Inspect both Onda browsers manually. The uncertain final action is retained, and Reset & Prepare cannot clear it automatically.',
   TARGET_NOT_AVAILABLE:'TARGET NOT AVAILABLE. No booking was created.',
   LOCK_PID_RUNNING:'AUTOMATION STILL RUNNING. Stop the external run first, then Reset & Prepare.',
   AUTOMATION_STILL_RUNNING:'AUTOMATION STILL RUNNING. Stop the external run first, then Reset & Prepare.',
