@@ -17,16 +17,16 @@ afterAll(async()=>{await browser.close();});
 const plan=bookingView(ConfigSchema.parse({...defaultSetup,PLAYER_FULL_NAME:'Fixture Player',PLAYER_PHONE:'09123456789',PLAYER_EMAIL:'fixture@example.invalid'}));
 async function renderer(old=false, extra:Record<string,unknown>={}){
  const page=await browser.newPage();const html=(old?execFileSync('git',['show','2edebd0:ui/renderer/index.html'],{encoding:'utf8'}):await readFile('ui/renderer/index.html','utf8')).replace(/<meta http-equiv="Content-Security-Policy"[^>]*>/,'').replace(/<script[^>]*src="app.js"[^>]*><\/script>/,'');await page.setContent(html);
- const state={operation:'idle',headline:'Test retained lock',detail:'',ready:false,cdp:true,lock:true,inspection:null,clock:null,plan:null,logs:[],liveRace:true,booking:plan,termsAuthorized:false,capabilities:{selectionReady:true,checkoutReady:true,paymentBoundaryReady:true},selection:null,mode:'full',handoff:null};
+ const state={operation:'idle',headline:'Test retained lock',detail:'',ready:false,workflow:'test',cdp:true,lock:true,inspection:null,clock:null,plan:null,logs:[],liveRace:true,booking:plan,termsAuthorized:false,capabilities:{selectionReady:true,checkoutReady:true,paymentBoundaryReady:true},selection:null,mode:'full',handoff:null};
  Object.assign(state,extra);
- await page.evaluate(state=>{(window as any).fixtureState=state;(window as any).thirsty={getStatus:async()=>state,onStatus:(callback:any)=>{(window as any).fixturePublish=callback;return ()=>{};},authorizeTerms:async(value:boolean)=>{state.termsAuthorized=value;(window as any).fixturePublish?.(state);},resetPractice:async()=>{},saveBooking:async(input:any)=>{state.booking.setup=input;state.booking.fingerprint='saved';state.headline='Booking plan saved';}};},state);
+ await page.evaluate(state=>{(window as any).fixtureState=state;(window as any).thirsty={getStatus:async()=>state,onStatus:(callback:any)=>{(window as any).fixturePublish=callback;return ()=>{};},authorizeTerms:async(value:boolean)=>{state.termsAuthorized=value;(window as any).fixturePublish?.(state);},invalidatePreparation:async()=>{state.ready=false;state.termsAuthorized=false;},setWorkflow:async(workflow:string)=>{state.workflow=workflow;state.ready=false;state.termsAuthorized=false;},resetPractice:async()=>{},armFullBooking:async()=>{},saveBooking:async(input:any)=>{state.booking.setup=input;state.booking.fingerprint='saved';state.headline='Booking plan saved';}};},state);
  const source=old?execFileSync('git',['show','2edebd0:ui/renderer/app.ts'],{encoding:'utf8'}):await readFile('ui/renderer/app.ts','utf8');
  await page.addScriptTag({type:'module',content:stripTypeScriptTypes(source)});
  await page.waitForFunction(()=>document.getElementById('headline')?.textContent==='Test retained lock');return page;
 }
 it('reproduces the previous retained-lock editor and Save disabling in the actual renderer',async()=>{const p=await renderer(true);expect(await p.locator('#duration').isDisabled()).toBe(true);expect(await p.locator('#save-booking').isDisabled()).toBe(true);await p.close();});
 it('actual renderer keeps all setup controls, Save, Review and Stop enabled while booking actions remain blocked',async()=>{
- const p=await renderer();await p.locator('#advanced > summary').click();for(const id of ['start-time','duration','maximum','attempts','fallback-time','save-booking','review-lock','reset-practice','stop'])expect(await p.locator('#'+id).isEnabled(),id).toBe(true);
+ const p=await renderer();await p.locator('#workflow-release').click();await p.locator('#advanced > summary').click();for(const id of ['start-time','duration','maximum','attempts','fallback-time','save-booking','review-lock','reset-practice','stop'])expect(await p.locator('#'+id).isEnabled(),id).toBe(true);
  expect(await p.locator('#court-order button').nth(1).isEnabled()).toBe(true);
  for(const id of ['arm','dry','observe','practice','full-practice'])expect(await p.locator('#'+id).isDisabled(),id).toBe(true);
  expect(await p.locator('#chrome').isEnabled()).toBe(true);
@@ -72,10 +72,10 @@ it('EXE delegates to the same npm UI entry and main resolves project root indepe
 it('Standard two courts shows one checkout; Extended has no historical evidence gate in the normal flow',async()=>{
  const dualPlan=bookingView(ConfigSchema.parse({...defaultSetup,COURT_COUNT:2,PLAYER_FULL_NAME:'Fixture Player',PLAYER_PHONE:'09123456789',PLAYER_EMAIL:'fixture@example.invalid'}));
  const p=await renderer(false,{booking:dualPlan,lock:false,ready:true,termsAuthorized:true,dualValidation:{selection:false,full:false}});
+ await p.locator('#workflow-release').click();
  expect(await p.locator('#booking-preview').innerText()).toContain('1 checkout');
  expect(await p.locator('#booking-preview').innerText()).toContain('Maximum per checkout: PHP 2400');
  expect(await p.locator('#dual-panel').isVisible()).toBe(false);
- expect(await p.locator('#test-booking').isEnabled()).toBe(true);
  expect(await p.locator('#prepare').isEnabled()).toBe(true);
  await p.addStyleTag({content:await readFile('ui/renderer/styles.css','utf8')});await p.setViewportSize({width:1010,height:800});
  await mkdir('.local',{recursive:true});await p.screenshot({path:'.local/phase7-ui.png',fullPage:true});await p.close();
@@ -102,4 +102,15 @@ it('Reset & Prepare stays accessible while a UI booking worker is running',async
  const p=await renderer(false,{operation:'fullPractice',ready:false});
  expect(await p.locator('#prepare').isEnabled()).toBe(true);
  expect(await p.locator('#test-booking').isDisabled()).toBe(true);await p.close();
+});
+it('keeps independent Test and Release drafts across workflow switches and status refreshes',async()=>{
+ const releasePlan=bookingView(ConfigSchema.parse({...defaultSetup,START_TIME:'18:00',DURATION_HOURS:3,PLAYER_FULL_NAME:'Fixture Player',PLAYER_PHONE:'09123456789',PLAYER_EMAIL:'fixture@example.invalid'}));
+ const p=await renderer(false,{booking:releasePlan,lock:false,ready:false});
+ await p.evaluate(()=>{const w=window as any;w.calls=[];w.thirsty.resetPrepare=async(input:any)=>w.calls.push(input);});
+ await p.locator('#booking-type').selectOption('extended');await p.locator('#court-count').selectOption('2');await p.locator('#start-time').selectOption('20:00');await p.locator('#duration').fill('4');await p.locator('#duration').dispatchEvent('change');
+ await p.evaluate(()=>{const w=window as any;w.fixturePublish(w.fixtureState);});
+ expect(await p.locator('#booking-type').inputValue()).toBe('extended');expect(await p.locator('#start-time').inputValue()).toBe('20:00');
+ await p.locator('#workflow-release').click();expect(await p.locator('#booking-type').inputValue()).toBe('standard');expect(await p.locator('#start-time').inputValue()).toBe('18:00');expect(await p.locator('#duration').inputValue()).toBe('3');
+ await p.locator('#workflow-test').click();expect(await p.locator('#booking-type').inputValue()).toBe('extended');expect(await p.locator('#court-count').inputValue()).toBe('2');expect(await p.locator('#start-time').inputValue()).toBe('20:00');expect(await p.locator('#duration').inputValue()).toBe('4');
+ await p.locator('#prepare').click();expect(await p.evaluate(()=>(window as any).calls[0])).toMatchObject({workflow:'test',request:{strategy:'extended',courtCount:2,start:'20:00',duration:4}});await p.close();
 });

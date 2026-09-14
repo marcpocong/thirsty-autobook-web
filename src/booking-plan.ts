@@ -54,3 +54,20 @@ export const PreparationSchema=z.discriminatedUnion('workflow',[
   z.object({workflow:z.literal('release'),strategy:z.enum(['standard','extended']),setup:z.unknown().optional()}).strict(),
 ]);
 export type PreparationInput=z.infer<typeof PreparationSchema>;
+
+export const PreparedBrowserSchema=z.object({
+  id:z.enum(['A','B']),dedicatedProfileVerified:z.literal(true),ondaVerified:z.literal(true),
+  preparedDate:z.iso.date(),gridVerified:z.literal(true),selectedCount:z.literal(0),
+  hold:z.literal('Not detected'),
+}).strict();
+export const PreparationResultSchema=z.object({
+  workflow:z.enum(['test','release']),strategy:z.enum(['standard','extended']),
+  fingerprint:z.string().regex(/^[a-f0-9]{64}$/),browsers:z.array(PreparedBrowserSchema).min(1).max(2),
+  solutionAvailable:z.boolean(),releaseTargetDate:z.iso.date().optional(),releaseMs:z.number().finite().optional(),
+}).strict().superRefine((r,c)=>{
+  const ids=r.browsers.map(b=>b.id);
+  if(JSON.stringify(ids)!==JSON.stringify(r.strategy==='extended'?['A','B']:['A']))c.addIssue({code:'custom',message:'Required browser evidence mismatch'});
+  if(r.workflow==='test'&&!r.solutionAvailable)c.addIssue({code:'custom',message:'Test preparation requires a solution'});
+  if(r.workflow==='release'&&(!r.releaseTargetDate||r.releaseMs===undefined))c.addIssue({code:'custom',message:'Release preparation requires timing evidence'});
+}).readonly();
+export type PreparationResult=z.infer<typeof PreparationResultSchema>;

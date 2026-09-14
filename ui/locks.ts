@@ -20,7 +20,7 @@ export async function reviewLock(root:string,owned:boolean,probe:()=>Promise<Bro
   try {const data=JSON.parse(raw);if(Number.isSafeInteger(data.pid)&&data.pid>0)pid=data.pid;if(typeof data.runID==='string'&&/^[a-zA-Z0-9-]{1,80}$/.test(data.runID))runID=data.runID;}catch{}
   const data = (()=>{try{return JSON.parse(raw);}catch{return {};}})();
   if(data.mode==='extended')return {...unknownBrowser,runID,pid,alive:pid===null?null:alive(pid),owned,fingerprint:createHash('sha256').update(raw).digest('hex'),verifiedAt:new Date().toISOString(),reason:'USE_RESET_AND_PREPARE',canClear:false};
-  if(data.stage==='FINAL_ACTION_DISPATCHING')return {...unknownBrowser,runID,pid,alive:pid===null?null:alive(pid),owned,fingerprint:createHash('sha256').update(raw).digest('hex'),verifiedAt:new Date().toISOString(),reason:'PAYMENT_HOLD_MAY_BE_ACTIVE',canClear:false};
+  if(data.stage==='FINAL_ACTION_DISPATCHING'||data.stage==='HOLD_VERIFIED'||data.handoff||data.state==='hold')return {...unknownBrowser,runID,pid,alive:pid===null?null:alive(pid),owned,fingerprint:createHash('sha256').update(raw).digest('hex'),verifiedAt:new Date().toISOString(),reason:'USE_RESET_AND_PREPARE',canClear:false};
   if(data.mode==='dual')return reviewDual(root,raw,data,owned,probe,probeB,alive);
   const browser=await probe().catch(()=>unknownBrowser);
   const r={...browser,runID,pid,alive:pid===null?null:alive(pid),owned,fingerprint:createHash('sha256').update(raw).digest('hex'),verifiedAt:new Date().toISOString()};
@@ -28,8 +28,8 @@ export async function reviewLock(root:string,owned:boolean,probe:()=>Promise<Bro
 }
 export async function clearVerifiedLock(root:string,expected:string,owned:()=>boolean,probe:()=>Promise<BrowserReview>,alive=pidAlive,probeB?:()=>Promise<BrowserReview>){
   const review=await reviewLock(root,owned(),probe,alive,probeB);
-  if(!review.canClear||owned())throw Error(review.reason);
   if(review.fingerprint!==expected)throw Error('LOCK_BROWSER_STATE_UNKNOWN');
+  if(!review.canClear||owned())throw Error(review.reason);
   // Recheck identity and PID after browser verification; never unlink a replacement lock.
   const path=resolve(root,'.local/automation.lock');
   const raw=await readFile(path,'utf8');
@@ -57,12 +57,12 @@ async function reviewDual(root:string,raw:string,data:any,owned:boolean,probe:()
     const state=(()=>{try{return JSON.parse(r);}catch{return {};}})();
     const matching=state.id===id&&state.runID===runID&&state.pid===coordinatorPid&&coordinatorPid!==null&&Array.isArray(data.workers)&&data.workers.length===2&&data.workers[i]?.id===id&&data.workers[i]?.pid===coordinatorPid&&data.workers[i]?.runID===runID;
     const browser=await (i===0?probe:probeB??(async()=>unknownBrowser))().catch(()=>unknownBrowser);
-    return {...browser,id,pid:matching?state.pid:null,alive:matching?alive(state.pid):null,recordedState:state.stage==='FINAL_ACTION_DISPATCHING'?'FINAL_ACTION_DISPATCHING':['clean','selection','checkout','hold','unknown'].includes(state.state)?state.state:'unknown'};
+    return {...browser,id,pid:matching?state.pid:null,alive:matching?alive(state.pid):null,recordedState:state.stage==='FINAL_ACTION_DISPATCHING'?'FINAL_ACTION_DISPATCHING':state.stage==='HOLD_VERIFIED'?'hold':['clean','selection','checkout','hold','unknown'].includes(state.state)?state.state:'unknown'};
   }));
   const clean=workers.every(w=>w.clean&&w.page==='Schedule'&&w.selected===0&&w.hold==='Not detected'&&w.alive===false);
   const hold=workers.some(w=>w.hold==='Active')?'Active':workers.every(w=>w.hold==='Not detected')?'Not detected':'Unknown';
   const r:LockReview={mode:'dual',workers,runID,pid:coordinatorPid,alive:coordinatorPid===null?null:alive(coordinatorPid),owned,
     page:clean?'Schedule':'Unknown',selected:workers.every(w=>w.selected!==null)?workers.reduce((n,w)=>n+w.selected!,0):null,hold,clean,
     fingerprint:createHash('sha256').update(JSON.stringify([raw,...raws])).digest('hex'),verifiedAt:new Date().toISOString(),reason:'',canClear:false};
-  r.reason=workers.some(w=>w.recordedState==='FINAL_ACTION_DISPATCHING')?'PAYMENT_HOLD_MAY_BE_ACTIVE':workers.some(w=>w.alive===true)?'LOCK_PID_RUNNING':lockReason(r);r.canClear=r.reason==='VERIFIED_STALE_LOCK';return r;
+  r.reason=workers.some(w=>['FINAL_ACTION_DISPATCHING','hold'].includes(w.recordedState))?'USE_RESET_AND_PREPARE':workers.some(w=>w.alive===true)?'LOCK_PID_RUNNING':lockReason(r);r.canClear=r.reason==='VERIFIED_STALE_LOCK';return r;
 }

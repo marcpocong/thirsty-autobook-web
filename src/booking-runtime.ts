@@ -24,7 +24,7 @@ export async function runBooking(config:Config,mode:'test'|'race'|'race:dry'|'ra
   await mkdir('.local/dual',{recursive:true});await mkdir('DiagnosticsLocal',{recursive:true});
   const identity={pid:process.pid,runID:t.runID};
   const lock=await open('.local/automation.lock','wx').catch(()=>{throw Error('AUTOMATION_LOCK_EXISTS');});
-  await lock.writeFile(JSON.stringify({...identity,mode:request.strategy,stage:'SELECTION',workers:identities.map(i=>i.workerId)}));await lock.sync();await lock.close();
+  await lock.writeFile(JSON.stringify({...identity,mode:request.strategy,stage:'SELECTION',stageAt:new Date().toISOString(),workers:identities.map(i=>i.workerId)}));await lock.sync();await lock.close();
   const records:string[]=[];
   const safeties=identities.map(()=>new Safety());
   const abort=()=>safeties.forEach(s=>s.stop('USER_ABORT'));
@@ -33,7 +33,7 @@ export async function runBooking(config:Config,mode:'test'|'race'|'race:dry'|'ra
   try{
     for(const [i,b] of identities.entries()){
       const path=identities.length===1?'.local/automation.lock':`.local/dual/worker-${b.workerId.toLowerCase()}.lock`;
-      if(identities.length>1){const f=await open(path,'wx');await f.writeFile(JSON.stringify({...identity,id:b.workerId,stage:'SELECTION'}));await f.sync();await f.close();records.push(path);}
+      if(identities.length>1){const f=await open(path,'wx');await f.writeFile(JSON.stringify({...identity,id:b.workerId,stage:'SELECTION',stageAt:new Date().toISOString()}));await f.sync();await f.close();records.push(path);}
       safeties[i]!.persistStage=lifecycleWriter(path,identity);
     }
     const connected=await Promise.allSettled(identities.map((b,i)=>attach(safeties[i]!,t,b)));

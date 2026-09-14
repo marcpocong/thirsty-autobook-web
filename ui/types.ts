@@ -7,6 +7,7 @@ import type { BookingView } from './booking.js';
 import type { BookingSetup } from '../src/config.js';
 import type { PracticeInput } from '../src/practice.js';
 import type { DualPracticeInput } from '../src/dual-practice.js';
+import type {PreparedContext} from '../src/prepared-context.js';
 export type DualPracticeCommand = { kind:'dualDry'; date:string } | { kind:'dualPractice'|'dualFullPractice'; input:DualPracticeInput };
 export type Command = {kind:'resetPrepare';input:PreparationInput} | {kind:'testBooking';input:TestBookingInput} | DualPracticeCommand | 'chromeDual' | 'dualReadiness' | 'dualPrepare' | {kind:'fullPractice';input:FullPracticeInput} | 'chrome' | 'inspect' | 'observe' | { kind:'selection' | 'dry'; planHash:string } | {kind:'full';planHash:string;authorizeTerms:true} | { kind:'practice'; input:PracticeInput };
 export type Inspection = Extract<UiEvent, { type: 'inspection' }>;
@@ -15,6 +16,9 @@ export interface Dashboard {
   bookingResult?:Extract<UiEvent,{type:'bookingResult'}>;
   workflow?:'test'|'release';
   preparedAt?:number;
+  preparedContext?:PreparedContext|null;
+  browserHealth?:{A:boolean;B:boolean};
+  playerStatus?:{primary:boolean;extended:boolean};
   dualWorkers?:Partial<Record<'A'|'B',Extract<UiEvent,{type:'dualWorker'}>>>;
   dualResult?:Extract<UiEvent,{type:'dualResult'}>|null;
   dualValidation?:{selection:boolean;full:boolean};
@@ -34,6 +38,7 @@ export interface Bridge {
   resetPrepare(input:PreparationInput):Promise<void>;
   testBooking(input:TestBookingInput):Promise<void>;
   setWorkflow(workflow:'test'|'release'):Promise<void>;
+  invalidatePreparation():Promise<void>;
   prepareDual():Promise<void>;
   runDualPractice(input:DualPracticeCommand):Promise<void>;
   reviewLock():Promise<void>; clearLock():Promise<void>; resetPractice():Promise<void>; runFullPractice(input:FullPracticeInput):Promise<void>;

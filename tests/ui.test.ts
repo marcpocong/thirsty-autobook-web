@@ -8,6 +8,7 @@ import { clockStatus, readLock } from '../ui/status.js';
 import { ObservationSchema, ConfigSchema } from '../src/config.js';
 import { bookingView, defaultSetup } from '../ui/booking.js';
 import type { Command } from '../ui/types.js';
+import {expectedPreparationFingerprint} from '../src/prepared-context.js';
 
 const settings = ObservationSchema.parse({});
 const clock = () => clockStatus(settings, DateTime.fromISO('2026-09-10T07:00:00+08:00'));
@@ -18,6 +19,7 @@ function harness(confirmed = true) {
   const runner: Runner = (command, onEvent) => {
     calls.push(command);
     if (command === 'inspect') onEvent({ type: 'inspection', date: '2026-09-10', gridToday: true, selected: 0, allCourts: true, visible: true, verifiedAt: new Date().toISOString() });
+    if(typeof command==='object'&&command.kind==='resetPrepare'){const input=command.input,view=booking();const strategy=input.workflow==='test'?input.request.strategy:view.setup.BOOKING_TYPE;onEvent({type:'preparationResult',result:{workflow:input.workflow,strategy,fingerprint:expectedPreparationFingerprint(input,input.workflow==='release'?view.fingerprint:undefined),browsers:(strategy==='extended'?['A','B'] as const:['A'] as const).map(id=>({id,dedicatedProfileVerified:true,ondaVerified:true,preparedDate:input.workflow==='test'?input.request.date:'2026-09-10',gridVerified:true,selectedCount:0,hold:'Not detected' as const})),solutionAvailable:true,...(input.workflow==='release'?{releaseTargetDate:view.targetDate,releaseMs:view.releaseMs}:{})}});}
     return { pid: 123, done: command === 'observe' ? new Promise<number>(resolveDone => { finish = resolveDone; }) : Promise.resolve(0), stop };
   };
   const confirm = vi.fn(async () => confirmed);

@@ -20,7 +20,11 @@ Standard two-court bookings select both courts in one checkout. Extended splits 
 
 Test Now resolves availability before a native confirmation shows the actual courts and chunks. The confirmation permits bounded pre-Proceed replanning within the requested range; exact courts are never substituted. Test settings do not require changing the saved release court count. Reset & Prepare and all relevant edits clear Terms authorization. No historical dual readiness/practice evidence is required for normal Test Now or Release Booking.
 
+Test and Release use independent drafts. Test stays in memory and never writes `config.local.json`; Release Reset & Prepare validates, atomically saves, re-reads, fingerprints, and prepares the current Release fields. Status refreshes cannot replace the active Test draft with saved Release values. Normal Run Test to QR and Arm Release always mean the full visible Onda flow to the temporary QR hold boundary, regardless of the historical Advanced mode switch.
+
 Reset & Prepare checks dedicated identities, dead owner state, current browser state and both old worker records when applicable. It resets proven pre-final state and returns to today's clean schedule. An active hold or uncertain final dispatch stays protected. Verified holds can be recovered after a conclusively inactive/expired state; a countdown elapsed on the dashboard alone is not proof. Unknown markup, missing worker identity, security challenges and wrong venue remain manual-review stops.
+
+Preparation emits sanitized per-browser evidence and the controller accepts it only when its fingerprint matches the exact current request. Standard requires Browser A; Extended requires A+B health. Readiness is invalidated by meaningful configuration, workflow, browser, lock, hold, or release-window changes—not merely because 60 seconds passed. Countdown recovery is scoped to the unique visible `Slot reserved for` component, and a visible `00:00` must be stable across a bounded second read.
 
 **Live validation limit:** the user verified that Onda supports two courts in one checkout, up to three hours per court. The new multi-court Review DOM adapter and simultaneous same-customer Extended holds have only offline validation in this phase. The adapter requires independently verifiable court cards and stops on unsupported markup. No real hold or release was created during implementation. See [Phase 7 details and test results](PHASE7_BOOKING_REPORT.md).
 
@@ -162,4 +166,4 @@ Phase 4 adds optional `AVAILABILITY_DISCOVERY_MODE=hybrid` (default: `ui`). It u
 
 Use `npm run availability:compare -- --date YYYY-MM-DD` for a read-only comparison on a clean visible schedule. `race:dry` exercises the configured discovery mode without selection. Complete live comparison and dry validation before enabling hybrid locally. See [Phase 4 implementation and validation](HYBRID_AVAILABILITY_REPORT.md).
 
-See [Phase 7.1 validation and evidence](PHASE7_1_REPORT.md) for player routing, Payment Summary quantity checks, and Reset & Prepare recovery.
+See [Phase 7.1 validation and evidence](PHASE7_1_REPORT.md) for player routing and Payment Summary quantity checks, and [Phase 7.2](PHASE7_2_REPORT.md) for the one-button readiness transaction, independent drafts, and hold recovery model.

@@ -12,8 +12,10 @@ import type { BookingView } from './booking.js';
 import { PracticeSchema } from '../src/practice.js';
 import { BookingSetupSchema } from '../src/config.js';
 import { capabilities,fullBookingReady } from '../src/capabilities.js';
+import {expectedPreparationFingerprint,makePreparedContext} from '../src/prepared-context.js';
+import type {PreparationInput,PreparationResult} from '../src/booking-plan.js';
 
-const preparationHeadlines:Record<string,string>={EXTENDED_PLAYER_INFO_MISSING:'EXTENDED PLAYER CONFIGURATION REQUIRED',PLAYER_INFO_MISSING:'PLAYER CONFIGURATION REQUIRED',TARGET_DATE_UNAVAILABLE:'TARGET NOT AVAILABLE',PAYMENT_HOLD_MAY_BE_ACTIVE:'PAYMENT HOLD MAY BE ACTIVE',LOCK_PID_RUNNING:'AUTOMATION STILL RUNNING'};
+const preparationHeadlines:Record<string,string>={EXTENDED_PLAYER_INFO_MISSING:'EXTENDED PLAYER REQUIRED',PLAYER_INFO_MISSING:'PLAYER CONFIGURATION REQUIRED',TARGET_DATE_UNAVAILABLE:'TARGET NOT AVAILABLE',TARGET_NOT_AVAILABLE:'TARGET NOT AVAILABLE',PAYMENT_HOLD_MAY_BE_ACTIVE:'PAYMENT HOLD ACTIVE',LOCK_PID_RUNNING:'AUTOMATION STILL RUNNING',TODAYS_RELEASE_PASSED:"TODAY'S RELEASE HAS PASSED"};
 const errors: Record<string, string> = {
   EXTENDED_DURATION_LIMIT:'Extended two-browser booking currently supports up to 6 consecutive hours.',
   PAYMENT_HOLD_MAY_BE_ACTIVE:'PAYMENT HOLD MAY BE ACTIVE. Reset & Prepare checked every required browser but could not prove a clean schedule with zero selections and no hold.',
@@ -53,11 +55,15 @@ const errors: Record<string, string> = {
   CHROME_DISCONNECTED: 'Chrome disconnected. Automation stopped; prepare a new run manually.',
   CONFIG_INVALID: 'Booking or local player configuration is invalid. Review Booking Setup and the local player fields.',
   COURT_FILTER_NOT_ALL: 'Select All Courts in Chrome, then Prepare again.',
+  RESET_REQUIRED:'RESET REQUIRED. Press Reset & Prepare for these settings.',
+  TODAYS_RELEASE_PASSED:"TODAY'S RELEASE HAS PASSED. This release can no longer be armed today.",
 };
 export interface Dependencies {
   confirmStopPrepare?:()=>Promise<boolean>;
   confirmBooking?:(plan:BookingPlan,maximum:number)=>Promise<boolean>;
   runner: Runner; lock(): Promise<boolean>; cdp(): Promise<boolean>; clock: typeof readClock;
+  browserHealth?():Promise<{A:boolean;B:boolean}>;
+  playerStatus?():{primary:boolean;extended:boolean};
   confirm(kind?: 'observe'|'selection'|'dry'|'full', plan?:BookingView): Promise<boolean>; publish(status: Dashboard): void;
   booking(): BookingView; saveBooking(input:unknown): BookingView;
   reviewLock?(owned:boolean):Promise<LockReview>;
@@ -72,11 +78,24 @@ export interface Dependencies {
 }
 export class Controller {
   readonly state: Dashboard = { operation: 'idle', headline: 'RESET REQUIRED', workflow:'test', detail: 'Configure your booking, then Reset & Prepare.', ready: false,
-    cdp: false, lock: false, inspection: null, clock: null, plan: null, logs: [], liveRace: fullBookingReady(), booking:null, termsAuthorized:false, capabilities, selection:null,mode:fullBookingReady()?'full':'selection',handoff:null };
+    cdp: false, lock: false, inspection: null, clock: null, plan: null, logs: [], liveRace: fullBookingReady(), booking:null, termsAuthorized:false, capabilities, selection:null,mode:fullBookingReady()?'full':'selection',handoff:null,preparedContext:null,browserHealth:{A:false,B:false},playerStatus:{primary:false,extended:false} };
   private active?: RunningCommand;
+  private pendingPreparation?:{input:PreparationInput;fingerprint:string;release?:BookingView;players:{primary:boolean;extended:boolean}};
+  private preparationResult?:PreparationResult;
   private generation = 0;
   private polling = false;
   constructor(private deps: Dependencies) {}
+  private players(){if(this.deps.playerStatus)return this.deps.playerStatus();try{const b=this.deps.booking();return {primary:b.playerConfigured,extended:b.extendedPlayerConfigured};}catch{return {primary:false,extended:false};}}
+  private clearPreparation(){this.state.preparedContext=null;this.state.preparedAt=undefined;this.state.ready=false;this.state.termsAuthorized=false;}
+  async invalidatePreparation(){if(this.state.operation!=='idle')throw Error('OPERATION_ALREADY_RUNNING');this.clearPreparation();this.state.headline='SETTINGS CHANGED';this.state.detail='Press Reset & Prepare to prepare these settings.';this.publish();}
+  private async health(){const h=this.deps.browserHealth?await this.deps.browserHealth():await this.deps.cdp().then(A=>({A,B:A}));this.state.browserHealth=h;this.state.cdp=h.A;return h;}
+  private async requirePrepared(workflow:'test'|'release',fingerprint:string,strategy:'standard'|'extended'){
+    const context=this.state.preparedContext;
+    if(!context||context.workflow!==workflow||context.strategy!==strategy||context.configFingerprint!==fingerprint||this.state.workflow!==workflow)throw Error('RESET_REQUIRED');
+    if(await this.deps.lock())throw Error('RESET_REQUIRED');
+    const h=await this.health(),required=strategy==='extended'?['A','B'] as const:['A'] as const;
+    if(required.some(id=>!h[id])){this.clearPreparation();throw Error('RESET_REQUIRED');}
+  }
   private publish() { this.deps.publish(structuredClone(this.state)); }
   private log(text: string, error = false) {
     this.state.logs.push({ at: new Date().toISOString(), text, level: error ? 'error' : 'info' });
@@ -88,8 +107,8 @@ export class Controller {
     this.polling = true;
     try {
       const wasReady = this.state.ready;
-      const [lock, cdp] = await Promise.all([this.deps.lock(), this.deps.cdp()]);
-      this.state.lock = lock; this.state.cdp = cdp;
+      const [lock, health] = await Promise.all([this.deps.lock(), this.deps.browserHealth?this.deps.browserHealth():this.deps.cdp().then(A=>({A,B:A}))]);
+      this.state.lock = lock; this.state.browserHealth=health;this.state.cdp = health.A;this.state.playerStatus=this.players();
       if(lock&&!this.state.handoff&&this.state.operation==='idle'&&this.deps.handoff){
         this.state.handoff=await this.deps.handoff();
         if(this.state.handoff){this.state.headline='Payment handoff recorded';this.state.detail='Automation stopped. Lock retained. Check the last observed hold and complete payment manually in Chrome.';}
@@ -97,22 +116,30 @@ export class Controller {
       try { this.state.clock = this.deps.clock(); }
       catch { this.state.clock = null; this.state.ready = false; this.state.detail = errors.CONFIG_INVALID!; }
       if (this.state.operation === 'idle') {
-        try { const booking=this.deps.booking(); if (this.state.booking?.fingerprint !== booking.fingerprint || this.state.booking?.playerConfigured!==booking.playerConfigured || this.state.booking?.extendedPlayerConfigured!==booking.extendedPlayerConfigured) { this.state.ready=false; this.state.termsAuthorized=false; } this.state.booking=booking; if(booking.setup.BOOKING_TYPE==='extended'&&this.deps.dualEvidence)this.state.dualValidation=await this.deps.dualEvidence(); }
+        try { const booking=this.deps.booking(); if (this.state.preparedContext?.workflow==='release'&&this.state.preparedContext.configFingerprint!==booking.fingerprint)this.clearPreparation(); this.state.booking=booking; if(booking.setup.BOOKING_TYPE==='extended'&&this.deps.dualEvidence)this.state.dualValidation=await this.deps.dualEvidence(); }
         catch { this.state.booking=null; this.state.ready=false; }
       }
-      if (!cdp || (lock && this.state.operation === 'idle') || (this.state.workflow==='release'&&!this.state.clock?.canArmToday)) this.state.ready = false;
-      if(this.state.preparedAt&&Date.now()-this.state.preparedAt>60000)this.state.ready=false;
-      const checked = this.state.inspection;
-      // Never present an old inspection as current readiness after a long idle period.
-      if (checked && Date.now() - Date.parse(checked.verifiedAt) > 60000 && this.state.operation === 'idle') this.state.ready = false;
+      const context=this.state.preparedContext,required=context?.requiredBrowsers??[];
+      this.state.ready=!!context&&context.workflow===this.state.workflow&&required.every(id=>health[id])&&!lock&&(context.workflow!=='release'||!!this.state.clock?.canArmToday);
+      if(context&&this.state.operation==='idle'&&!this.state.ready)this.clearPreparation();
       if (wasReady && !this.state.ready && this.state.operation === 'idle') {
         this.state.headline = 'Preparation needs rechecking';
-        this.state.detail = lock ? errors.AUTOMATION_LOCK_EXISTS! : !cdp ? errors.CDP_PROFILE_OR_BIND_UNVERIFIED! : !this.state.clock?.canArmToday ? errors.TOO_LATE_FOR_PREFLIGHT! : 'The last inspection is over a minute old. Prepare again to verify the current page before arming.';
+        this.state.detail = lock ? errors.AUTOMATION_LOCK_EXISTS! : required.some(id=>!health[id]) ? 'A required browser disconnected. Press Reset & Prepare again.' : !this.state.clock?.canArmToday ? errors.TODAYS_RELEASE_PASSED! : errors.RESET_REQUIRED!;
       }
       this.publish();
     } finally { this.polling = false; }
   }
   private event = (event: UiEvent) => {
+    if(event.type==='preparationResult'){this.preparationResult=event.result;this.publish();return;}
+    if(event.type==='preparationProgress'){
+      const labels={starting:'Starting required browser(s)...','previous-session':'Checking previous session...','holds':'Checking payment holds...','onda':'Preparing Onda...','calendar':'Verifying calendar...','grids':'Verifying grids...','availability':'Checking booking availability...','final':'Final readiness check...'};
+      this.state.headline='PREPARING';this.state.detail=labels[event.step];this.publish();return;
+    }
+    if(event.type==='preparationBlocked'){
+      this.state.headline=event.hold==='Active'?'PAYMENT HOLD ACTIVE':'ONDA NEEDS ATTENTION';
+      const remaining=event.countdownSeconds===null?'remaining time unknown':`${Math.floor(event.countdownSeconds/60)}:${String(event.countdownSeconds%60).padStart(2,'0')} remaining`;
+      this.state.detail=`Browser ${event.browser} · ${remaining}\nWait for expiry, then press Reset & Prepare again.`;this.publish();return;
+    }
     if(event.type==='bookingResult'){this.state.bookingResult=event;this.state.headline=event.status;this.state.detail=event.description+'\n'+event.outcomes.map((v,i)=>`Checkout ${i+1}: ${v}`).join('\n')+(event.outcomes.includes('FAILED')?'\nCheck both Onda windows manually; a failed checkout may still have an active hold.':'');this.publish();return;}
     if(event.type==='error'&&this.state.bookingResult&&['PARTIAL SUCCESS','BOOKING FAILED'].includes(this.state.bookingResult.status)){this.state.ready=false;this.log(event.code,true);return;}
     if(event.type==='dualWorker'){this.state.dualWorkers={...this.state.dualWorkers,[event.workerId]:event};this.publish();return;}
@@ -127,6 +154,7 @@ export class Controller {
     if (event.type === 'plan') { this.state.plan = event; this.publish(); }
     if (event.type === 'error') {
       this.state.ready = false;
+      if(event.code==='PAYMENT_HOLD_MAY_BE_ACTIVE'&&this.state.headline==='PAYMENT HOLD ACTIVE'){this.log(event.code,true);return;}
       if (event.code !== 'USER_ABORT') { this.state.headline = event.code==='HANDOFF_STATUS_UNKNOWN'?'HANDOFF STATUS UNKNOWN':/REVIEW_/.test(event.code)?'REVIEW VALIDATION FAILED':/PLAYER_|PHONE_/.test(event.code)?'PLAYER FORM FAILED':/PAYMENT_/.test(event.code)?'PAYMENT SUMMARY FAILED':/TERMS_|FINAL_BUTTON_/.test(event.code)?'TERMS / FINAL ACTION FAILED':/SELECTION_|CLEANUP_|NO_AVAILABLE/.test(event.code)?'SELECTION FAILED':'Needs attention'; this.state.detail = event.code==='HANDOFF_STATUS_UNKNOWN'?'DO NOT START ANOTHER BOOKING. CHECK CHROME MANUALLY. Lock retained; final action is never retried.':errors[event.code] ?? event.code; }
       if(preparationHeadlines[event.code])this.state.headline=preparationHeadlines[event.code]!;
       this.log(errors[event.code] ?? event.code, true);
@@ -196,11 +224,11 @@ export class Controller {
     await this.noLock(); this.state.inspection = null; this.log('Inspecting Onda — read only'); await this.run(this.state.booking?.setup.BOOKING_TYPE==='extended'?'dualReadiness':'inspect', gen);
     this.state.headline = 'Inspection complete'; this.state.detail = 'Review the observed status below. Prepare before arming.';
   }); }
-  async setWorkflow(value:unknown){if(this.state.operation!=='idle')throw Error('OPERATION_ALREADY_RUNNING');this.state.workflow=z.enum(['test','release']).parse(value);this.state.ready=false;this.state.termsAuthorized=false;this.publish();}
+  async setWorkflow(value:unknown){if(this.state.operation!=='idle')throw Error('OPERATION_ALREADY_RUNNING');this.state.workflow=z.enum(['test','release']).parse(value);this.clearPreparation();this.state.headline='RESET REQUIRED';this.state.detail='Configure your booking, then Reset & Prepare.';this.publish();}
   private resetting=false;
   async resetPrepare(value:unknown){
     if(this.resetting)throw Error('OPERATION_ALREADY_RUNNING');
-    this.resetting=true;this.state.ready=false;this.state.termsAuthorized=false;this.state.preparedAt=undefined;
+    this.resetting=true;this.clearPreparation();this.preparationResult=undefined;this.pendingPreparation=undefined;
     try{
       const input=PreparationSchema.parse(value);
       if(this.state.operation!=='idle'){
@@ -217,24 +245,36 @@ export class Controller {
         this.active=undefined;this.state.operation='idle';
       }
       await this.operation('prepare',async gen=>{
-        if(input.workflow==='release'&&input.setup!==undefined)this.state.booking=this.deps.saveBooking(BookingSetupSchema.parse(input.setup));
-        const booking=this.deps.booking(),strategy=input.workflow==='test'?input.request.strategy:booking.setup.BOOKING_TYPE;
-        this.state.booking=booking;if(!booking.playerConfigured)throw Error('PLAYER_INFO_MISSING');
-        if(strategy==='extended'&&!booking.extendedPlayerConfigured)throw Error('EXTENDED_PLAYER_INFO_MISSING');
+        let release:BookingView|undefined;
+        if(input.workflow==='release'){
+          if(input.setup!==undefined){const saved=this.deps.saveBooking(BookingSetupSchema.parse(input.setup));release=this.deps.booking();if(saved.fingerprint!==release.fingerprint)throw Error('BOOKING_PLAN_CHANGED');}
+          else release=this.deps.booking();
+          if(release.setup.BOOKING_TYPE!==input.strategy)throw Error('BOOKING_PLAN_CHANGED');this.state.booking=release;
+        }
+        const strategy=input.workflow==='test'?input.request.strategy:release!.setup.BOOKING_TYPE;
+        const players=this.players();this.state.playerStatus=players;if(!players.primary)throw Error('PLAYER_INFO_MISSING');
+        if(strategy==='extended'&&!players.extended)throw Error('EXTENDED_PLAYER_INFO_MISSING');
+        const fingerprint=expectedPreparationFingerprint(input,release?.fingerprint);
+        this.pendingPreparation={input,fingerprint,release,players};
         this.state.workflow=input.workflow;this.state.inspection=null;this.state.handoff=null;this.state.bookingResult=undefined;
         this.state.headline='PREPARING';this.publish();
-        await this.run({kind:'resetPrepare',input:input.workflow==='release'?{workflow:'release',strategy}:input},gen);await this.noLock();
-        this.state.cdp=await this.deps.cdp();if(!this.state.cdp)throw Error('CDP_PROFILE_OR_BIND_UNVERIFIED');
-        this.state.ready=true;this.state.preparedAt=Date.now();
-        this.state.headline=input.workflow==='release'?'READY TO ARM':'READY TO TEST';this.state.detail='Prepared. Review your settings and authorize Terms for this run.';
+        const commandInput:PreparationInput=input.workflow==='release'?{workflow:'release',strategy}:input;
+        await this.run({kind:'resetPrepare',input:commandInput},gen);await this.noLock();
+        const result=this.preparationResult;if(!result||result.fingerprint!==fingerprint||result.workflow!==input.workflow||result.strategy!==strategy)throw Error('PREPARATION_RESULT_MISMATCH');
+        const health=await this.health(),required=strategy==='extended'?['A','B'] as const:['A'] as const;if(required.some(id=>!health[id]))throw Error('RESET_REQUIRED');
+        this.state.preparedContext=makePreparedContext(input,result,players,release);this.state.ready=true;this.state.preparedAt=Date.parse(this.state.preparedContext.preparedAt);
+        this.state.headline=input.workflow==='release'?'READY TO ARM':'READY TO TEST';
+        this.state.detail=input.workflow==='release'?`${strategy==='extended'?'Extended':'Standard'} · ${this.state.preparedContext.courtCount} court(s)\nBrowsers: ${required.length} ready\nPlayers: ${strategy==='extended'?2:1} configured\nSelected slots: 0\nPayment holds: none\nAuthorize Terms, then Arm Release.`:`${strategy==='extended'?'Extended':'Standard'} · ${this.state.preparedContext.courtCount} court(s)\nDate: ${this.state.preparedContext.date}\nBrowsers: ${required.length} ready\nPlayers: ${strategy==='extended'?2:1} configured\nCurrent booking solution: available\nSelected slots: 0\nPayment holds: none\nAuthorize Terms, then Run Test to QR.`;
       });
     }catch(error){
-      if(this.state.operation!=='stopping'){this.state.headline='RESET REQUIRED';this.state.detail='Check the booking fields, then Reset & Prepare.';this.publish();}
+      if(this.state.operation!=='stopping'&&!['PAYMENT HOLD ACTIVE','TARGET NOT AVAILABLE','EXTENDED PLAYER REQUIRED',"TODAY'S RELEASE HAS PASSED",'AUTOMATION STILL RUNNING','ONDA NEEDS ATTENTION'].includes(this.state.headline)){this.state.headline='RESET REQUIRED';this.state.detail='Check the booking fields, then Reset & Prepare.';this.publish();}
       throw error;
-    }finally{this.resetting=false;}
+    }finally{this.pendingPreparation=undefined;this.resetting=false;}
   }
-  testBooking(value:unknown){return this.operation('fullPractice',async gen=>{
-    const input=TestBookingSchema.parse(value);const booking=this.deps.booking();this.state.booking=booking;if(!booking.playerConfigured)throw Error('PLAYER_INFO_MISSING');if(input.request.strategy==='extended'&&!booking.extendedPlayerConfigured)throw Error('EXTENDED_PLAYER_INFO_MISSING');await this.noLock();
+  testBooking(value:unknown){const input=TestBookingSchema.parse(value),authorized=this.state.termsAuthorized;this.state.termsAuthorized=false;return this.operation('fullPractice',async gen=>{
+    const players=this.players();if(!players.primary)throw Error('PLAYER_INFO_MISSING');if(input.request.strategy==='extended'&&!players.extended)throw Error('EXTENDED_PLAYER_INFO_MISSING');
+    await this.requirePrepared('test',expectedPreparationFingerprint({workflow:'test',request:input.request,maximum:input.maximum}),input.request.strategy);
+    if(!authorized)throw Error('TERMS_AUTHORIZATION_REQUIRED');
     this.state.handoff=null;this.state.bookingResult=undefined;
     this.state.headline='Checking availability';this.state.detail='Resolving your courts and time ranges before confirmation.';
     await this.run({kind:'testBooking',input},gen);
@@ -277,12 +317,12 @@ export class Controller {
     if(this.state.operation!=='idle')throw new Error('OPERATION_ALREADY_RUNNING');
     if(mode!=='selection'&&mode!=='full')throw new Error('MODE_NOT_ALLOWED');
     if(mode==='full'&&!fullBookingReady(this.state.capabilities))throw new Error('LIVE_RACE_BLOCKED');
-    this.state.mode=mode;this.state.ready=false;this.state.termsAuthorized=false;this.publish();
+    this.state.mode=mode;this.state.termsAuthorized=false;this.publish();
   }
   async authorizeTerms(value:unknown){
     if(typeof value!=='boolean')throw new Error('INVALID_TERMS_AUTHORIZATION');
     if(this.state.operation!=='idle')throw new Error('OPERATION_ALREADY_RUNNING');
-    if(value&&(this.state.mode!=='full'||!fullBookingReady(this.state.capabilities)||this.state.lock))throw new Error('TERMS_AUTHORIZATION_NOT_ALLOWED');
+    if(value&&(!fullBookingReady(this.state.capabilities)||this.state.lock||!this.state.ready||!this.state.preparedContext||this.state.preparedContext.workflow!==this.state.workflow))throw new Error('TERMS_AUTHORIZATION_NOT_ALLOWED');
     this.state.termsAuthorized=value;this.publish();
   }
   armFullBooking(){
@@ -290,11 +330,10 @@ export class Controller {
     return this.armBooking('full',authorized);
   }
   private armBooking(kind:'selection'|'dry'|'full',authorized=false) { return this.operation('confirming', async gen => {
-    if(kind==='full'&&(!fullBookingReady(this.state.capabilities)||this.state.mode!=='full'))throw new Error('LIVE_RACE_BLOCKED');
-    if(kind==='full'&&!authorized)throw new Error('TERMS_AUTHORIZATION_REQUIRED');
+    if(kind==='full'&&!fullBookingReady(this.state.capabilities))throw new Error('LIVE_RACE_BLOCKED');
     await this.noLock(); if (!this.deps.clock().canArmToday) throw new Error('TOO_LATE_FOR_PREFLIGHT');
     if (kind==='selection' && !this.state.capabilities.selectionReady) throw new Error('SELECTION_NOT_READY');
-    const plan=this.deps.booking();if(!plan.playerConfigured)throw Error('PLAYER_INFO_MISSING');if(plan.setup.BOOKING_TYPE==='extended'&&!plan.extendedPlayerConfigured)throw Error('EXTENDED_PLAYER_INFO_MISSING'); this.state.booking=plan; this.state.selection=null;
+    const plan=this.deps.booking();if(!plan.playerConfigured)throw Error('PLAYER_INFO_MISSING');if(plan.setup.BOOKING_TYPE==='extended'&&!plan.extendedPlayerConfigured)throw Error('EXTENDED_PLAYER_INFO_MISSING');if(kind==='full')await this.requirePrepared('release',plan.fingerprint,plan.setup.BOOKING_TYPE);if(kind==='full'&&!authorized)throw new Error('TERMS_AUTHORIZATION_REQUIRED'); this.state.booking=plan; this.state.selection=null;
     this.state.bookingResult=undefined;
     const confirmed=await this.deps.confirm(kind,plan);
     if(gen!==this.generation)return;
@@ -302,6 +341,7 @@ export class Controller {
     await this.noLock();
     if(this.deps.booking().fingerprint!==plan.fingerprint)throw new Error('BOOKING_PLAN_CHANGED');
     if(!this.deps.clock().canArmToday)throw new Error('TOO_LATE_FOR_PREFLIGHT');
+    if(kind==='full')await this.requirePrepared('release',plan.fingerprint,plan.setup.BOOKING_TYPE);
     this.state.operation=kind;this.state.inspection=null;this.state.handoff=null;this.state.headline=kind==='full'?'Full Booking scheduled':kind==='selection'?'Selection scheduled':'Dry Race scheduled';
     this.state.detail=kind==='full'?'At release the engine continues through Onda to QR Checkout. Payment remains manual.':kind==='selection'?'At release the engine may select slots. It will stop before Proceed.':'Release, date, grid and preference checks only. No slots will be selected.';this.publish();
     await this.run(kind==='full'?{kind,planHash:plan.fingerprint,authorizeTerms:true}:{kind,planHash:plan.fingerprint},gen);

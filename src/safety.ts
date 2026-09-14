@@ -2,9 +2,10 @@ import { setTimeout as delay } from 'node:timers/promises';
 import type { RateLimitEvidence } from './rate-limit.js';
 
 export type CheckoutStage='SELECTION'|'SELECTION_VERIFIED'|'REVIEW'|'PAYMENT_SUMMARY'|'FINAL_ACTION_DISPATCHING'|'HOLD_VERIFIED';
+export interface StageEvidence {holdVerifiedAt?:string;holdExpiresAt?:string}
 export class Safety {
-  persistStage?: (stage:CheckoutStage)=>Promise<void>;
-  async stage(stage:CheckoutStage){await this.persistStage?.(stage);}
+  persistStage?: (stage:CheckoutStage,evidence?:StageEvidence)=>Promise<void>;
+  async stage(stage:CheckoutStage,evidence?:StageEvidence){await this.persistStage?.(stage,evidence);}
   readonly controller = new AbortController();
   locked = false;
   boundary = false;

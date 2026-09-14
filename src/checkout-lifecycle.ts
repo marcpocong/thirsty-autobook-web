@@ -1,5 +1,5 @@
 import { open, readFile, rename, unlink } from 'node:fs/promises';
-import type { CheckoutStage } from './safety.js';
+import type { CheckoutStage,StageEvidence } from './safety.js';
 
 export async function atomicJson(path:string,value:unknown){
   const temporary=`${path}.${process.pid}.tmp`;
@@ -8,10 +8,10 @@ export async function atomicJson(path:string,value:unknown){
   await rename(temporary,path);
 }
 export function lifecycleWriter(path:string,identity:{pid:number;runID:string}){
-  return async(stage:CheckoutStage)=>{
+  return async(stage:CheckoutStage,evidence:StageEvidence={})=>{
     const current=JSON.parse(await readFile(path,'utf8'));
     if(current.pid!==identity.pid||current.runID!==identity.runID)throw Error('LOCK_REPLACED');
-    await atomicJson(path,{...current,stage});
+    await atomicJson(path,{...current,stage,stageAt:new Date().toISOString(),...evidence});
   };
 }
 export async function removeOwnedRecord(path:string,pid:number,runID:string){

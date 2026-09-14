@@ -28,6 +28,7 @@ let ownsLock = false;
 let retainSelection = false;
 let stopDual: (()=>void) | undefined;
 const lockPath = '.local/automation.lock';
+const retainedHandoff=(hold:{countdown:string;verifiedAt:string})=>{const [m,s]=hold.countdown.split(':').map(Number);return {stage:'HOLD_VERIFIED',stageAt:new Date().toISOString(),holdVerifiedAt:hold.verifiedAt,holdExpiresAt:new Date(Date.parse(hold.verifiedAt)+(m!*60+s!)*1000).toISOString()};};
 // Exiting the Playwright-owning process cancels its outstanding local action tasks.
 // Never close Chrome/context/page; an already-dispatched click cannot be undone.
 const stopNow = (code: string) => {
@@ -111,7 +112,7 @@ try {
     const result=await selectExactPractice(page,fullPractice,safety,telemetry);
     retainSelection=true;emitUiEvent({type:'selection',...result});
     const hold=await fullBookingToQr(page,result,{fullName:booking.PLAYER_FULL_NAME,phone:booking.PLAYER_PHONE,email:booking.PLAYER_EMAIL},fullPractice.maximum,true,booking.PAYMENT_HANDOFF_VERIFY_TIMEOUT_MS,safety,telemetry,booking.PAYMENT_SUMMARY_READY_TIMEOUT_MS);
-    await writeFileAsync(lockPath,JSON.stringify({pid:process.pid,runID:telemetry.runID,stage:'HOLD_VERIFIED',handoff:{type:'handoff',date:result.date,court:result.court,hours:result.hours,...hold}}));
+    await writeFileAsync(lockPath,JSON.stringify({pid:process.pid,runID:telemetry.runID,...retainedHandoff(hold),handoff:{type:'handoff',date:result.date,court:result.court,hours:result.hours,...hold}}));
   }
   else if(handoffInput&&config){
     const booking=config as Config;
@@ -121,7 +122,7 @@ try {
     const result=await selectResolvedPreference(selectionPort(page,safety),handoffInput.date,grid,[{court:handoffInput.court,hours:expandHours(handoffInput.start,handoffInput.duration)}],booking.MAX_PRICE,1,safety,telemetry);
     retainSelection=true;emitUiEvent({type:'selection',...result});
     const hold=await fullBookingToQr(page,result,{fullName:booking.PLAYER_FULL_NAME,phone:booking.PLAYER_PHONE,email:booking.PLAYER_EMAIL},booking.MAX_PRICE,true,booking.PAYMENT_HANDOFF_VERIFY_TIMEOUT_MS,safety,telemetry,booking.PAYMENT_SUMMARY_READY_TIMEOUT_MS);
-    await writeFileAsync(lockPath,JSON.stringify({pid:process.pid,runID:telemetry.runID,stage:'HOLD_VERIFIED',handoff:{type:'handoff',date:result.date,court:result.court,hours:result.hours,...hold}}));
+    await writeFileAsync(lockPath,JSON.stringify({pid:process.pid,runID:telemetry.runID,...retainedHandoff(hold),handoff:{type:'handoff',date:result.date,court:result.court,hours:result.hours,...hold}}));
     console.log('PAYMENT HOLD ACTIVE — AUTOMATION STOPPED. Complete payment manually in Chrome. AUTOMATION LOCK RETAINED.');
   }
   else if (config) {
@@ -135,7 +136,7 @@ try {
       emitUiEvent({ type: 'selection', ...result });
       if(mode==='race'){
         const hold=await fullBookingToQr(page,result,{fullName:booking.PLAYER_FULL_NAME,phone:booking.PLAYER_PHONE,email:booking.PLAYER_EMAIL},booking.MAX_PRICE,true,booking.PAYMENT_HANDOFF_VERIFY_TIMEOUT_MS,safety,telemetry,booking.PAYMENT_SUMMARY_READY_TIMEOUT_MS);
-        await writeFileAsync(lockPath,JSON.stringify({pid:process.pid,runID:telemetry.runID,stage:'HOLD_VERIFIED',handoff:{type:'handoff',date:result.date,court:result.court,hours:result.hours,...hold}}));
+        await writeFileAsync(lockPath,JSON.stringify({pid:process.pid,runID:telemetry.runID,...retainedHandoff(hold),handoff:{type:'handoff',date:result.date,court:result.court,hours:result.hours,...hold}}));
       }
       else console.log('SLOTS SELECTED — AUTOMATION STOPPED BEFORE PROCEED. USER CONTROL RESTORED. Lock retained; inspect Chrome before clearing manually.');
     }

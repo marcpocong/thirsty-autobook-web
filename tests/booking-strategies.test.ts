@@ -59,9 +59,9 @@ it('validates multi-court review identities, full hours and reservation count',(
   expect(reviewBundleSummary({count:'Your Reservations (4)',cards:[card,{...card,court:'Court 6: Mango Wing'}]},2000).courts).toEqual([7,6]);
   expect(()=>reviewBundleSummary({count:'Your Reservations (4)',cards:[card,card]},2000)).toThrow();expect(()=>reviewBundleSummary({count:'Your Reservations (5)',cards:[card,{...card,court:'Court 6: Mango Wing'}]},2000)).toThrow();
 });
-it.each(['SELECTION','SELECTION_VERIFIED','REVIEW','PAYMENT_SUMMARY'])('allows safe dead pre-final %s reset',stage=>{expect(()=>assertResetSafe({stage},{page:'Payment Summary',selected:null,hold:'Unknown',clean:false})).not.toThrow();});
+it.each(['SELECTION','SELECTION_VERIFIED','REVIEW','PAYMENT_SUMMARY'])('allows safe dead pre-final %s reset',stage=>{expect(()=>assertResetSafe({stage},{page:'Payment Summary',selected:null,hold:'Not detected',clean:false})).not.toThrow();});
 it.each(['FINAL_ACTION_DISPATCHING','HOLD_VERIFIED'])('blocks uncertain or active %s',stage=>{expect(()=>assertResetSafe({stage},{page:'QR Checkout',selected:null,hold:'Active',clean:false})).toThrow('PAYMENT_HOLD_MAY_BE_ACTIVE');});
-it('requires conclusive expiry for recorded holds; ambiguity stays blocked',()=>{const b={page:'QR Checkout' as const,selected:null,hold:'Active' as const,clean:false};expect(()=>assertResetSafe({stage:'HOLD_VERIFIED'},b,true)).not.toThrow();expect(()=>assertResetSafe({stage:'FINAL_ACTION_DISPATCHING'},b,true)).toThrow();});
+it('requires conclusive expiry for recorded holds; ambiguity stays blocked',()=>{const active={page:'QR Checkout' as const,selected:null,hold:'Active' as const,clean:false},expired={...active,hold:'Expired' as const,countdownSeconds:0};expect(()=>assertResetSafe({stage:'HOLD_VERIFIED'},expired)).not.toThrow();expect(()=>assertResetSafe({stage:'FINAL_ACTION_DISPATCHING'},active)).toThrow();});
 it('records final dispatch durably before any final action and refuses replaced state',async()=>{
   const dir=await mkdtemp(join(tmpdir(),'thirsty-stage-'));const path=join(dir,'lock');try{
     await writeFile(path,JSON.stringify({pid:123,runID:'fixture'}));const s=new Safety();s.persistStage=lifecycleWriter(path,{pid:123,runID:'fixture'});

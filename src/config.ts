@@ -66,7 +66,8 @@ export function loadObservationConfig(): ReleaseSettings {
   if (!parsed.success) throw new Error(`CONFIG_INVALID: ${parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
   return parsed.data;
 }
-export function loadConfig(): Config {
+type TestRuntimeSetup={strategy:'standard'|'extended';courtCount:1|2;start:string;duration:number;priority:number[];fallbackStarts:string[];maximum:number};
+function parseConfig(includeSaved:boolean,test?:TestRuntimeSetup):Config {
   const env = environment();
   const raw: Record<string, unknown> = { START_TIME:'08:00', DURATION_HOURS:2, PREFERRED_COURTS:[7,6,5,4,3,2,1], FALLBACK_COURTS:[], FALLBACK_TIMES:[], MAX_PRICE:1200 };
   for (const key of Object.keys(ConfigSchema.shape)) if (env[key] !== undefined) raw[key] = env[key];
@@ -74,11 +75,16 @@ export function loadConfig(): Config {
     if (typeof raw[key] === 'string') raw[key] = (raw[key] as string).split(',').map(s => s.trim()).filter(Boolean).map(s => key === 'FALLBACK_TIMES' ? s : Number(s));
   }
   if (raw.COURT_COUNT === '1' || raw.COURT_COUNT === '2') raw.COURT_COUNT = Number(raw.COURT_COUNT);
-  if (existsSync('config.local.json')) Object.assign(raw, BookingSetupSchema.parse(JSON.parse(readFileSync('config.local.json', 'utf8'))));
+  if (includeSaved&&existsSync('config.local.json')) Object.assign(raw, BookingSetupSchema.parse(JSON.parse(readFileSync('config.local.json', 'utf8'))));
+  if(test)Object.assign(raw,{BOOKING_TYPE:test.strategy,COURT_COUNT:test.courtCount,START_TIME:test.start,DURATION_HOURS:test.duration,PREFERRED_COURTS:test.priority,FALLBACK_COURTS:[],FALLBACK_TIMES:test.fallbackStarts,MAX_PRICE:test.maximum});
   const parsed = ConfigSchema.safeParse(raw);
   if (!parsed.success) throw new Error(`CONFIG_INVALID: ${parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
   return parsed.data;
 }
+export function loadConfig():Config{return parseConfig(true);}
+// Test Now uses environment/player/runtime settings without parsing or applying
+// the saved Release draft in config.local.json.
+export function loadTestRuntimeConfig(test:TestRuntimeSetup):Config{return parseConfig(false,test);}
 // Narrow, PII-free local settings; renderer cannot change URLs, release timing or player data.
 export const BookingSetupSchema = z.object({
   BOOKING_TYPE: ConfigSchema.shape.BOOKING_TYPE,
@@ -118,11 +124,12 @@ export function releaseCalendar(c: Pick<Config, 'TIMEZONE' | 'RELEASE_TIME' | 'B
 
 // Profile values remain local; only readiness booleans cross the UI boundary.
 const PlayerSchema=z.object({fullName:z.string().trim().min(2),phone:z.string().trim().regex(/^(?:0|\+?63)?9\d{9}$/),email:z.email()});
-export function primaryPlayer(c:Config){
+type PlayerFields=Pick<Config,'PLAYER_FULL_NAME'|'PLAYER_PHONE'|'PLAYER_EMAIL'|'PLAYER_B_FULL_NAME'|'PLAYER_B_PHONE'|'PLAYER_B_EMAIL'>;
+export function primaryPlayer(c:PlayerFields){
   const parsed=PlayerSchema.safeParse({fullName:c.PLAYER_FULL_NAME,phone:c.PLAYER_PHONE.replace(/[ ()-]/g,''),email:c.PLAYER_EMAIL});
   if(!parsed.success)throw Error('PLAYER_INFO_MISSING');return parsed.data;
 }
-export function extendedPlayer(c:Config){
+export function extendedPlayer(c:PlayerFields){
   const parsed=PlayerSchema.safeParse({fullName:c.PLAYER_B_FULL_NAME,phone:c.PLAYER_B_PHONE?.replace(/[ ()-]/g,''),email:c.PLAYER_B_EMAIL});
   if(!parsed.success)throw Error('EXTENDED_PLAYER_INFO_MISSING');
   const a=primaryPlayer(c),b=parsed.data;
@@ -130,11 +137,15 @@ export function extendedPlayer(c:Config){
   if(b.email.toLowerCase()===a.email.toLowerCase()||phone(b.phone)===phone(a.phone))throw Error('EXTENDED_PLAYER_INFO_MISSING');
   return b;
 }
-export function playerReadiness(c:Config){
+export function playerReadiness(c:PlayerFields){
   let primary=false,extended=false;
   try{primaryPlayer(c);primary=true;}catch{}
   try{extendedPlayer(c);extended=true;}catch{}
   return {primary,extended};
+}
+export function loadPlayerReadiness(){
+  const env=environment();
+  return playerReadiness({PLAYER_FULL_NAME:String(env.PLAYER_FULL_NAME??''),PLAYER_PHONE:String(env.PLAYER_PHONE??''),PLAYER_EMAIL:String(env.PLAYER_EMAIL??''),PLAYER_B_FULL_NAME:typeof env.PLAYER_B_FULL_NAME==='string'?env.PLAYER_B_FULL_NAME:undefined,PLAYER_B_PHONE:typeof env.PLAYER_B_PHONE==='string'?env.PLAYER_B_PHONE:undefined,PLAYER_B_EMAIL:typeof env.PLAYER_B_EMAIL==='string'?env.PLAYER_B_EMAIL:undefined});
 }
 export function bookingPlayers(c:Config,strategy:'standard'|'extended'){
   return strategy==='extended'?{A:primaryPlayer(c),B:extendedPlayer(c)}:{A:primaryPlayer(c),B:undefined};

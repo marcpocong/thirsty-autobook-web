@@ -13,6 +13,7 @@ import {Controller} from '../ui/controller.js';
 import {clockStatus} from '../ui/status.js';
 import {DateTime} from 'luxon';
 import type {Command} from '../ui/types.js';
+import {expectedPreparationFingerprint} from '../src/prepared-context.js';
 const config=(extra:Record<string,unknown>={})=>ConfigSchema.parse({...defaultSetup,PLAYER_FULL_NAME:'Synthetic Primary',PLAYER_PHONE:'09123456789',PLAYER_EMAIL:'primary@example.invalid',...extra});
 const b={PLAYER_B_FULL_NAME:'Synthetic Extended',PLAYER_B_PHONE:'09987654321',PLAYER_B_EMAIL:'extended@example.invalid'};
 it.each([1,2] as const)('routes Standard %i courts to primary only and Extended to distinct local profiles',COURT_COUNT=>{
@@ -59,7 +60,7 @@ function harness(extra:Record<string,unknown>={},stopFails=false){
   const calls:Command[]=[],view=bookingView(config(extra));let finish!:(n:number)=>void;
   const stop=vi.fn(async()=>{if(stopFails)throw Error('STOP_NOT_CONFIRMED');finish(130);});
   const confirmStopPrepare=vi.fn(async()=>true);
-  const c=new Controller({booking:()=>view,saveBooking:()=>view,lock:async()=>false,cdp:async()=>true,clock:()=>clockStatus(ObservationSchema.parse({}),DateTime.fromISO('2026-09-10T07:00:00+08:00')),publish:()=>{},confirm:async()=>true,confirmStopPrepare,runner:command=>{calls.push(command);return {pid:123,stop,done:command==='observe'?new Promise<number>(r=>{finish=r;}):Promise.resolve(0)};}});
+  const c=new Controller({booking:()=>view,saveBooking:()=>view,lock:async()=>false,cdp:async()=>true,clock:()=>clockStatus(ObservationSchema.parse({}),DateTime.fromISO('2026-09-10T07:00:00+08:00')),publish:()=>{},confirm:async()=>true,confirmStopPrepare,runner:(command,event)=>{calls.push(command);if(typeof command==='object'&&command.kind==='resetPrepare'){const input=command.input,strategy=input.workflow==='test'?input.request.strategy:view.setup.BOOKING_TYPE;event({type:'preparationResult',result:{workflow:input.workflow,strategy,fingerprint:expectedPreparationFingerprint(input,input.workflow==='release'?view.fingerprint:undefined),browsers:(strategy==='extended'?['A','B'] as const:['A'] as const).map(id=>({id,dedicatedProfileVerified:true,ondaVerified:true,preparedDate:input.workflow==='test'?input.request.date:'2026-09-10',gridVerified:true,selectedCount:0,hold:'Not detected' as const})),solutionAvailable:true,...(input.workflow==='release'?{releaseTargetDate:view.targetDate,releaseMs:view.releaseMs}:{})}});}return {pid:123,stop,done:command==='observe'?new Promise<number>(r=>{finish=r;}):Promise.resolve(0)};}});
   return {c,calls,stop,confirmStopPrepare};
 }
 const request={strategy:'extended' as const,date:'2026-09-15',start:'20:00',duration:4,courtCount:2 as const,priority:[7,6,5],fallbackStarts:[]};

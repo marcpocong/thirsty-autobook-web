@@ -1,7 +1,8 @@
 import { mkdir } from 'node:fs/promises';
-import { bookingPlayers, loadConfig } from './config.js';
-import { PreparationSchema, TestBookingSchema, type BookingPlan } from './booking-plan.js';
-import { resetAndPrepare } from './booking-prepare.js';
+import { bookingPlayers, loadConfig, loadTestRuntimeConfig, planFingerprint, releaseCalendar } from './config.js';
+import { PreparationResultSchema, PreparationSchema, TestBookingSchema, resolveBookingPlan, type BookingPlan } from './booking-plan.js';
+import { resetAndPrepare,PreparationBlockedError } from './booking-prepare.js';
+import {expectedPreparationFingerprint} from './prepared-context.js';
 import { runBooking } from './booking-runtime.js';
 import { Safety } from './safety.js';
 import { Telemetry } from './telemetry.js';
@@ -23,11 +24,28 @@ let code=0;
 try{
   await mkdir('.local',{recursive:true});await mkdir('DiagnosticsLocal',{recursive:true});
   const [mode,raw]=process.argv.slice(2);
-  if(mode==='prepare'){const input=PreparationSchema.parse(JSON.parse(raw??''));const config=loadConfig();const strategy=input.workflow==='test'?input.request.strategy:config.BOOKING_TYPE;bookingPlayers(config,strategy);await resetAndPrepare(strategy,safety,{},input.workflow==='test'?input.request.date:undefined);console.log('READY');}
+  if(mode==='prepare'){
+    const input=PreparationSchema.parse(JSON.parse(raw??''));
+    const config=input.workflow==='test'?loadTestRuntimeConfig({...input.request,maximum:input.maximum}):loadConfig();
+    const strategy=input.workflow==='test'?input.request.strategy:config.BOOKING_TYPE;
+    bookingPlayers(config,strategy);
+    const target=input.workflow==='release'?releaseCalendar(config):undefined;
+    if(target&&Date.now()>=target.releaseMs-config.PREFLIGHT_SECONDS_BEFORE*1000)throw Error('TODAYS_RELEASE_PASSED');
+    const prepared=await resetAndPrepare(strategy,safety,{progress:step=>emitUiEvent({type:'preparationProgress',step})},input.workflow==='test'?input.request.date:undefined);
+    emitUiEvent({type:'preparationProgress',step:'availability'});
+    const snapshots=prepared.browsers.map(b=>b.snapshot);
+    if(snapshots.some(s=>!s))throw Error('PREPARATION_RESULT_MISSING');
+    const solution=input.workflow==='test'?resolveBookingPlan(input.request,snapshots as NonNullable<typeof snapshots[number]>[])!==undefined:true;
+    if(!solution)throw Error('TARGET_NOT_AVAILABLE');
+    const fingerprint=expectedPreparationFingerprint(input,input.workflow==='release'?planFingerprint(config):undefined);
+    emitUiEvent({type:'preparationProgress',step:'final'});
+    const result=PreparationResultSchema.parse({workflow:input.workflow,strategy,fingerprint,browsers:prepared.browsers.map(b=>({id:b.id,dedicatedProfileVerified:true,ondaVerified:true,preparedDate:b.snapshot!.rows[0]!.date,gridVerified:true,selectedCount:0,hold:'Not detected'})),solutionAvailable:solution,...(target?{releaseTargetDate:target.targetDate,releaseMs:target.releaseMs}:{})});
+    emitUiEvent({type:'preparationResult',result});console.log('READY');
+  }
   else if(mode==='test'){
     const input=TestBookingSchema.parse(JSON.parse(raw??''));
-    await runBooking(loadConfig(),'test',safety,t,{...input,confirm});
+    await runBooking(loadTestRuntimeConfig({...input.request,maximum:input.maximum}),'test',safety,t,{...input,confirm});
   }else throw Error('MODE_REQUIRED');
-}catch(e){code=1;const reason=e instanceof Error&&/^[A-Z_]{1,80}$/.test(e.message)?e.message:'BOOKING_OPERATION_FAILED';emitUiEvent({type:'error',code:reason});console.error(reason);}
+}catch(e){code=1;if(e instanceof PreparationBlockedError)emitUiEvent({type:'preparationBlocked',browser:e.browserId,hold:e.review.hold,countdownSeconds:e.review.countdownSeconds??null});const reason=e instanceof Error&&/^[A-Z_]{1,80}$/.test(e.message)?e.message:'BOOKING_OPERATION_FAILED';emitUiEvent({type:'error',code:reason});console.error(reason);}
 finally{await t.flush();}
 process.exit(code);

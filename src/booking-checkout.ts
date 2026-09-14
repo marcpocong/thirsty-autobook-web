@@ -35,7 +35,8 @@ export async function fullBookingToQr(page:Page,selected:SelectionResult,player:
   }
   try {
     const hold=await observePaymentHandoff(reader,selected.amount,timeoutMs,safety,t);
-    await safety.stage('HOLD_VERIFIED');
+    const [minutes,seconds]=hold.countdown.split(':').map(Number);
+    await safety.stage('HOLD_VERIFIED',{holdVerifiedAt:hold.verifiedAt,holdExpiresAt:new Date(Date.parse(hold.verifiedAt)+(minutes!*60+seconds!)*1000).toISOString()});
     emitUiEvent({type:'handoff',date:selected.date,court:selected.court,hours:selected.hours,...hold});
     return hold;
   }catch(error){

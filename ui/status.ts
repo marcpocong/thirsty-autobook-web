@@ -13,12 +13,16 @@ export async function readHandoff(root:string):Promise<Dashboard['handoff']>{
   try {const lock=JSON.parse(await readFile(resolve(root,'.local/automation.lock'),'utf8'));const event=UiEventSchema.safeParse(lock.handoff);return event.success&&event.data.type==='handoff'?event.data:null;}catch{return null;}
 }
 export async function probeCdp(): Promise<boolean> {
+  return (await probeBrowserHealth()).A;
+}
+async function probePort(port:number):Promise<boolean>{
   try {
-    const response = await fetch('http://127.0.0.1:9222/json/version', { signal: AbortSignal.timeout(1200), redirect: 'error' });
+    const response = await fetch(`http://127.0.0.1:${port}/json/version`, { signal: AbortSignal.timeout(1200), redirect: 'error' });
     const data = await response.json() as { Browser?: string };
     return response.ok && typeof data.Browser === 'string' && data.Browser.startsWith('Chrome/');
   } catch { return false; }
 }
+export async function probeBrowserHealth(){const [A,B]=await Promise.all([probePort(9222),probePort(9223)]);return {A,B};}
 export function clockStatus(config: ReleaseSettings, now: DateTime = DateTime.now()) {
   const today = releaseCalendar(config, now);
   // Informational next-release display only; the CLI still refuses late starts today.

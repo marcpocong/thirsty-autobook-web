@@ -9,38 +9,42 @@ import { DateTime } from 'luxon';
 import { browserA,browserB,verifyDedicatedChrome,monitorConnection } from './browser.js';
 import { ONDA_URL, VENUE } from './config.js';
 import { inspectLockPage, type BrowserReview } from './lock-browser.js';
-import { snapshot, validateSnapshot, navigateDate } from './grid.js';
+import { snapshot, validateSnapshot, navigateDate, type Snapshot } from './grid.js';
 import { Safety, securityReason } from './safety.js';
 import { assertDiagnosticSchedule } from './diagnostic-schedule.js';
 import { pidAlive } from '../ui/locks.js';
 
-export function assertResetSafe(record:{stage?:string;state?:string;handoff?:unknown}|undefined,browser:BrowserReview,expired=false){
+type RetainedRecord={stage?:string;stageAt?:string;state?:string;handoff?:unknown;holdExpiresAt?:string};
+export class PreparationBlockedError extends Error { constructor(code:string,readonly browserId:'A'|'B',readonly review:BrowserReview){super(code);} }
+export function assertResetSafe(record:RetainedRecord|undefined,browser:BrowserReview,now=Date.now()){
   if(record?.stage==='FINAL_ACTION_DISPATCHING'){
-    // A final click with no handoff proof stays uncertain while Onda shows a
-    // checkout, hold, selection, or unreadable state. Once the dead worker's
-    // dedicated browser conclusively returns to a clean Schedule, there is no
-    // remaining browser-side reservation state for Reset & Prepare to retain.
-    if(browser.clean&&browser.page==='Schedule'&&browser.selected===0&&browser.hold==='Not detected')return;
+    if(browser.hold==='Expired')return;
+    const stageAt=Date.parse(record.stageAt??'');
+    // New records may recover after the validated ten-minute maximum plus a
+    // conservative minute, but legacy records never recover from Schedule alone.
+    if(Number.isFinite(stageAt)&&now-stageAt>660000&&browser.clean&&browser.page==='Schedule'&&browser.selected===0&&browser.hold==='Not detected')return;
     throw Error('PAYMENT_HOLD_MAY_BE_ACTIVE');
   }
   if(!record?.stage&&['checkout','unknown'].includes(record?.state??''))throw Error('PAYMENT_HOLD_MAY_BE_ACTIVE');
-  if(browser.hold==='Active'||browser.page==='QR Checkout'){
-    if(!(record?.stage==='HOLD_VERIFIED'&&expired))throw Error('PAYMENT_HOLD_MAY_BE_ACTIVE');
-    return;
-  }
   if(record?.stage==='HOLD_VERIFIED'||record?.handoff||record?.state==='hold'){
-    if(!browser.clean||browser.hold!=='Not detected')throw Error('PAYMENT_HOLD_MAY_BE_ACTIVE');
-    return;
+    if(browser.hold==='Expired')return;
+    const expires=Date.parse(record.holdExpiresAt??'');
+    if(Number.isFinite(expires)&&expires<=now&&browser.clean&&browser.page==='Schedule'&&browser.hold==='Not detected')return;
+    throw Error('PAYMENT_HOLD_MAY_BE_ACTIVE');
   }
+  if(browser.hold==='Active'||browser.hold==='Unknown'||browser.page==='QR Checkout'&&browser.hold!=='Expired')throw Error('PAYMENT_HOLD_MAY_BE_ACTIVE');
+  if(browser.hold==='Expired')return;
   if(browser.page==='Schedule'&&browser.hold==='Not detected')return;
-  if(record&&['SELECTION','SELECTION_VERIFIED','REVIEW','PAYMENT_SUMMARY'].includes(record.stage??'')&&['Review Booking','Payment Summary'].includes(browser.page))return;
+  if(['Review Booking','Payment Summary'].includes(browser.page)&&browser.hold==='Not detected'&&(!record||['SELECTION','SELECTION_VERIFIED','REVIEW','PAYMENT_SUMMARY'].includes(record.stage??'')))return;
   throw Error('PAYMENT_HOLD_MAY_BE_ACTIVE');
 }
 async function maybeRead(path:string){try{return await readFile(path,'utf8');}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return undefined;throw e;}}
-export interface PreparedBrowser { observed:BrowserReview; expired:boolean; normalize(date?:string):Promise<void> }
-export interface PreparationDependencies { root?:string; alive?:typeof pidAlive; inspect?:(identity:BrowserIdentity,safety:Safety)=>Promise<PreparedBrowser> }
+export interface PreparedBrowser { observed:BrowserReview; normalize(date?:string):Promise<Snapshot|void> }
+export interface PreparationDependencies { root?:string; alive?:typeof pidAlive; start?:(identity:BrowserIdentity)=>Promise<void>; inspect?:(identity:BrowserIdentity,safety:Safety)=>Promise<PreparedBrowser>; progress?:(step:'starting'|'previous-session'|'holds'|'onda'|'calendar'|'grids'|'availability'|'final')=>void }
+export interface ResetPreparation {browsers:{id:'A'|'B';snapshot?:Snapshot}[]}
 export async function resetAndPrepare(strategy:'standard'|'extended',safety:Safety,deps:PreparationDependencies={},date?:string){
   const root=deps.root??'.',alive=deps.alive??pidAlive;
+  deps.progress?.('starting');
   const path=resolve(root,'.local/automation.lock'),raw=await maybeRead(path);
   let expectedRaw=raw;
   const record=raw?JSON.parse(raw):undefined;
@@ -62,33 +66,47 @@ export async function resetAndPrepare(strategy:'standard'|'extended',safety:Safe
   // by the retained global lock, or a temporary reservation when starting clean.
   const previous=await maybeRead(guardPath);
   if(previous){const p=JSON.parse(previous);if(!Number.isSafeInteger(p.pid)||alive(p.pid)!==false)throw Error('PREPARATION_ALREADY_RUNNING');if(await maybeRead(guardPath)!==previous)throw Error('LOCK_REPLACED');await unlink(guardPath);}
+  const guardRaw=JSON.stringify({pid:process.pid,runID:`prepare-${Date.now()}-${Math.random().toString(16).slice(2)}`});
   const guard=await open(guardPath,'wx').catch(()=>{throw Error('PREPARATION_ALREADY_RUNNING');});
-  await guard.writeFile(JSON.stringify({pid:process.pid}));await guard.sync();
-  let reserved=false;
+  await guard.writeFile(guardRaw);await guard.sync();await guard.close();
+  let reservedRaw:string|undefined;
+  let result:ResetPreparation|undefined;
   try{
     await same();
-    if(!raw){const f=await open(path,'wx');expectedRaw=JSON.stringify({pid:process.pid,mode:'preparing'});await f.writeFile(expectedRaw);await f.close();reserved=true;}
+    deps.progress?.('previous-session');
+    if(!raw){const f=await open(path,'wx');reservedRaw=JSON.stringify({pid:process.pid,runID:JSON.parse(guardRaw).runID,mode:'preparing'});expectedRaw=reservedRaw;await f.writeFile(reservedRaw);await f.sync();await f.close();}
+    const identities=two?[browserA,browserB]:[browserA];
+    // Phase 1 starts every required browser before Phase 2 inspects either one.
+    if(!deps.inspect||deps.start)await Promise.all(identities.map(b=>(deps.start??startForPreparation)(b)));
     const browsers:PreparedBrowser[]=[];
-    for(const [i,b] of (two?[browserA,browserB]:[browserA]).entries()){
+    deps.progress?.('onda');
+    for(const b of identities){
       const prepared=await (deps.inspect??inspectForPreparation)(b,safety);
       browsers.push(prepared);
     }
     // Inspect every required browser before deciding whether any state is safe
     // to normalize. In particular, a FINAL_ACTION_DISPATCHING record in A must
     // not prevent inspection of B's independent Onda checkout.
+    deps.progress?.('holds');
     for(const [i,browser] of browsers.entries()){
       const workerRecord=legacy||record?.mode==='extended'?records[i]:i===0?record:undefined;
-      assertResetSafe(workerRecord,browser.observed,browser.expired);
+      try{assertResetSafe(workerRecord,browser.observed);}catch(error){throw new PreparationBlockedError(error instanceof Error?error.message:'PAYMENT_HOLD_MAY_BE_ACTIVE',i===0?'A':'B',browser.observed);}
     }
     // Only normalize after all browser state and durable records are safe.
-    for(const browser of browsers){await same();safety.check();await browser.normalize(date);}
+    deps.progress?.('calendar');
+    const normalized:ResetPreparation['browsers']=[];
+    for(const [i,browser] of browsers.entries()){await same();safety.check();const prepared=await browser.normalize(date);normalized.push({id:i===0?'A':'B',...(prepared?{snapshot:prepared}:{})});}
+    deps.progress?.('grids');
     if(raw){await same();for(const [i,r] of subordinate.entries())if(r)await unlink(workerPaths[i]!);await unlink(path);}
-    else if(reserved){const r=JSON.parse((await readFile(path,'utf8')));if(r.pid!==process.pid||r.mode!=='preparing')throw Error('LOCK_REPLACED');await unlink(path);reserved=false;}
-  }finally{await guard.close();await unlink(guardPath);}
+    result={browsers:normalized};
+    return result;
+  }finally{
+    if(reservedRaw){const current=await maybeRead(path);if(current===reservedRaw)await unlink(path);else if(current!==undefined)throw Error('LOCK_REPLACED');}
+    const currentGuard=await maybeRead(guardPath);if(currentGuard===guardRaw)await unlink(guardPath);else if(currentGuard!==undefined)throw Error('LOCK_REPLACED');
+  }
 }
 
 async function inspectForPreparation(b:BrowserIdentity,safety:Safety):Promise<PreparedBrowser>{
-  await promisify(execFile)('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File','scripts/start-onda-chrome.ps1',...(b.workerId==='B'?['-Worker','B']:[])],{windowsHide:true,timeout:60000});
   safety.check();verifyDedicatedChrome(b);
   const browser=await chromium.connectOverCDP(b.cdpUrl,{timeout:10000});
   const candidates=browser.contexts().flatMap(c=>c.pages()).filter(p=>{try{return new URL(p.url()).origin===new URL(ONDA_URL).origin;}catch{return false;}});
@@ -97,13 +115,10 @@ async function inspectForPreparation(b:BrowserIdentity,safety:Safety):Promise<Pr
   const reason=securityReason(await page.locator('body').innerText());if(reason)throw Error(reason);
   const observed=await inspectLockPage(page);
   if(['Review Booking','Payment Summary'].includes(observed.page)&&(page.url()!==ONDA_URL||await page.locator('h2').count()!==1||(await page.locator('h2').innerText()).trim()!==VENUE))throw Error('WRONG_VENUE');
-  const expired=await page.evaluate(()=>{
-    const labels=[...document.querySelectorAll('p')].filter(p=>p.textContent?.trim()==='Slot reserved for'&&p.getClientRects().length);
-    return labels.length===1&&[...(labels[0]!.parentElement?.querySelectorAll('p')??[])].some(p=>/^(?:0?0):00$/.test(p.textContent?.trim()??''));
-  });
-  return {observed,expired,normalize:async(date)=>{
-    await prepareSchedule(page,safety,date);
-  }};
+  return {observed,normalize:async(date)=>prepareSchedule(page,safety,date)};
+}
+async function startForPreparation(b:BrowserIdentity){
+  await promisify(execFile)('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File','scripts/start-onda-chrome.ps1',...(b.workerId==='B'?['-Worker','B']:[])],{windowsHide:true,timeout:60000});
 }
 
 export async function prepareSchedule(page:Page,safety:Safety,date?:string){
@@ -111,7 +126,8 @@ export async function prepareSchedule(page:Page,safety:Safety,date?:string){
     await page.goto(ONDA_URL,{waitUntil:'domcontentloaded'});
     const target=date??DateTime.now().setZone('Asia/Manila').toISODate()!;
     await navigateDate(page,target,safety);
-    const cells=validateSnapshot(await snapshot(page),target);
+    const current=await snapshot(page),cells=validateSnapshot(current,target);
     if(cells.some(c=>c.state==='SELECTED'))throw Error('PREEXISTING_SELECTION');
     await assertDiagnosticSchedule(page,safety);
+    return current;
 }
