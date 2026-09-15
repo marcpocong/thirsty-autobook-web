@@ -41,17 +41,18 @@ export async function runBooking(config:Config,mode:'test'|'race'|'race:dry'|'ra
       if(identities.length>1){const f=await open(path,'wx');await f.writeFile(JSON.stringify({...identity,id:b.workerId,stage:'SELECTION',stageAt:new Date().toISOString()}));await f.sync();await f.close();records.push(path);}
       safeties[i]!.persistStage=lifecycleWriter(path,identity);
     }
-    const connected=await Promise.allSettled(identities.map((b,i)=>attach(safeties[i]!,t,b)));
+    const workerTelemetry=identities.map(b=>t.worker(b.workerId));
+    const connected=await Promise.allSettled(identities.map((b,i)=>attach(safeties[i]!,workerTelemetry[i],b)));
     const connections=connected.map(c=>{if(c.status==='rejected')throw c.reason;return c.value;});
-    if(options.scheduledTarget)connections.forEach((_,i)=>t.mark('browserAttached',i+1));
+    if(options.scheduledTarget)connections.forEach((_,i)=>workerTelemetry[i]!.mark('browserAttached'));
     if(identities.length===2){const paths=await Promise.all(identities.map(i=>realpath(i.expectedProfile)));if(paths[0]!.toLowerCase()===paths[1]!.toLowerCase())throw Error('DUAL_PROFILE_NOT_ISOLATED');}
-    const workers=connections.map((c,i):DualWorker=>({id:identities[i]!.workerId,safety:safeties[i]!,telemetry:t,port:selectionPort(c.page,safeties[i]!),state:async()=>{},checkout:async selected=>{
-      await fullBookingToQr(c.page,selected,players[identities[i]!.workerId]!,(options.maximum??config.MAX_PRICE)*request.courtCount,true,config.PAYMENT_HANDOFF_VERIFY_TIMEOUT_MS,safeties[i]!,t,config.PAYMENT_SUMMARY_READY_TIMEOUT_MS);
+    const workers=connections.map((c,i):DualWorker=>({id:identities[i]!.workerId,safety:safeties[i]!,telemetry:workerTelemetry[i]!,port:selectionPort(c.page,safeties[i]!),state:async()=>{},checkout:async selected=>{
+      await fullBookingToQr(c.page,selected,players[identities[i]!.workerId]!,(options.maximum??config.MAX_PRICE)*request.courtCount,true,config.PAYMENT_HANDOFF_VERIFY_TIMEOUT_MS,safeties[i]!,workerTelemetry[i]!,config.PAYMENT_SUMMARY_READY_TIMEOUT_MS);
     }}));
     const gate=dualArmGate(target,safety,t);
     const grids=await Promise.all(workers.map(async(w,i)=>{
       if(mode==='test'){await assertDiagnosticSchedule(connections[i]!.page,w.safety);await navigateDate(connections[i]!.page,request.date,w.safety);return snapshot(connections[i]!.page);}
-      try{return (await observeRelease(connections[i]!.page,{...config,AVAILABILITY_DISCOVERY_MODE:'ui'},w.safety,t,mode==='race:dry',true,{target,beforeArmed:identities.length===2?()=>gate(w.id):async()=>{},verifyContext:options.scheduledFingerprint?()=>{if(planFingerprint(loadConfig())!==options.scheduledFingerprint)throw Error('SCHEDULE_CONTEXT_MISMATCH');}:undefined})).grid;}
+      try{return (await observeRelease(connections[i]!.page,{...config,AVAILABILITY_DISCOVERY_MODE:'ui'},w.safety,w.telemetry,mode==='race:dry',true,{target,beforeArmed:identities.length===2?()=>gate(w.id):async()=>{},verifyContext:options.scheduledFingerprint?()=>{if(planFingerprint(loadConfig())!==options.scheduledFingerprint)throw Error('SCHEDULE_CONTEXT_MISMATCH');}:undefined})).grid;}
       catch(e){abort();throw e;}
     }));
     const result=await coordinateBooking(workers,request,grids,options.maximum??config.MAX_PRICE,config.MAX_SELECTION_ATTEMPTS,mode==='race:dry'?'dry':mode==='race:selection'?'selection':'full',options.confirm);

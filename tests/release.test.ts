@@ -60,7 +60,7 @@ it('release reload goes straight from incomplete Today to target and records dis
     'releaseVenueVisible', 'releaseVenueVerified', 'releasePickerAttached', 'releasePickerVisible',
     'releasePickerEnabled', 'releaseShellReady', 'targetPickerOpened',
     'targetDateDetected', 'targetDateEnabled', 'targetDateClickStarted', 'targetDateClicked',
-    'targetHeadingDetected', 'gridSnapshotStarted', 'gridSnapshotCompleted', 'targetGridReady',
+    'targetHeadingDetected','targetGridReady','gridSnapshotStarted','gridSnapshotCompleted',
   ]);
 });
 

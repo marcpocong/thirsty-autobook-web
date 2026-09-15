@@ -34,7 +34,7 @@ export async function observeRelease(page: Page, c: Config | ReleaseSettings, sa
   page.setDefaultNavigationTimeout(c.CRITICAL_STEP_TIMEOUT_MS);
   let preflightCount=0;
   const preflight = async () => {
-    const final=preflightCount++>0;if(final&&gate)t.mark('finalPreflightStarted');
+    const final=preflightCount++>0;if(gate)t.mark(final?'finalPreflightStarted':'initialPreflightStarted');
     t.mark('preflightStarted');
     gate?.verifyContext?.();
     await assertPage(page, safety);

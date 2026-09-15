@@ -27,6 +27,9 @@ it.each([[1,1],[1,2],[1,3],[2,1],[2,2],[2,3]] as const)('%i court x %ih successf
   expect(count*duration+1).toBeGreaterThan(h.stats().reads);
   expect(h.telemetry.events.filter(e=>e.event.endsWith('StateConfirmed'))).toHaveLength(count*duration);
   expect(h.telemetry.events.filter(e=>e.event==='selectionFinalVerificationCompleted')).toHaveLength(1);
+  expect(h.telemetry.events.filter(e=>e.event==='selectionFullGridRead')).toHaveLength(1);
+  expect(h.telemetry.events.filter(e=>e.event==='fullGuardCompleted')).toHaveLength(2);
+  expect(h.telemetry.events.filter(e=>e.event==='lightGuardCompleted')).toHaveLength(count*duration);
 });
 
 it('a mid-bundle conflict performs an authoritative read and never locks',async()=>{

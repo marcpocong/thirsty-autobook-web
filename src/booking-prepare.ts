@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 import { createServer } from 'node:net';
 import { chromium } from 'playwright';
 import { DateTime } from 'luxon';
-import { browserIdentity,cdpCodes,rememberBrowserPort,verifyDedicatedChrome,monitorConnection } from './browser.js';
+import { browserIdentity,candidateBrowserIdentity,cdpCodes,rememberBrowserPort,verifyDedicatedChrome,verifyCandidateChrome,monitorConnection } from './browser.js';
 import { ONDA_URL, VENUE } from './config.js';
 import { inspectLockPage, type BrowserReview } from './lock-browser.js';
 import { snapshot, validateSnapshot, navigateDate, type Snapshot } from './grid.js';
@@ -115,7 +115,7 @@ export async function resetAndPrepare(strategy:'standard'|'extended',safety:Safe
 
 async function inspectForPreparation(b:BrowserIdentity,safety:Safety):Promise<PreparedBrowser>{
   safety.check();verifyDedicatedChrome(b);
-  const browser=await chromium.connectOverCDP(b.cdpUrl,{timeout:10000});
+  const browser=await chromium.connectOverCDP(b.cdpUrl,{timeout:10000}).catch(()=>{throw Error('CDP_ENDPOINT_UNAVAILABLE');});
   const candidates=browser.contexts().flatMap(c=>c.pages()).filter(p=>{try{return new URL(p.url()).origin===new URL(ONDA_URL).origin;}catch{return false;}});
   if(candidates.length!==1)throw Error('ONDA_TAB_AMBIGUOUS_OR_MISSING');
   const page=candidates[0]!;page.setDefaultTimeout(10000);monitorConnection(browser,page,safety);
@@ -140,16 +140,18 @@ async function launch(b:BrowserIdentity){
     await promisify(execFile)('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',resolve('scripts/start-onda-chrome.ps1'),'-Worker',b.workerId,'-Port',String(b.port)],{windowsHide:true,timeout:60000});
   }catch(error){throw Error(failureCode(error)??'CHROME_START_FAILED');}
 }
-async function startForPreparation(initial:BrowserIdentity):Promise<BrowserIdentity>{
-  try{await launch(initial);return initial;}catch(error){
+export interface PreparationStarterDependencies {available?:(port:number)=>Promise<boolean>;launch?:(identity:BrowserIdentity)=>Promise<void>;verify?:(identity:BrowserIdentity)=>void;persist?:(workerId:'A'|'B',port:number)=>BrowserIdentity}
+export async function startForPreparation(initial:BrowserIdentity,deps:PreparationStarterDependencies={}):Promise<BrowserIdentity>{
+  const launchBrowser=deps.launch??launch,portAvailable=deps.available??available,verify=deps.verify??verifyCandidateChrome,persist=deps.persist??rememberBrowserPort;
+  try{await launchBrowser(initial);return initial;}catch(error){
     const code=error instanceof Error?error.message:'CHROME_START_FAILED';
     if(!cdpCodes.includes(code as typeof cdpCodes[number]))throw error;
   }
   const other=browserIdentity(initial.workerId==='A'?'B':'A').port,base=initial.workerId==='A'?19222:19223;
   for(let port=base;port<=base+38;port+=2){
-    if(port===other||!await available(port))continue;
-    const fallback=rememberBrowserPort(initial.workerId,port);
-    try{await launch(fallback);return fallback;}catch(error){
+    if(port===other||!await portAvailable(port))continue;
+    const candidate=candidateBrowserIdentity(initial.workerId,port);
+    try{await launchBrowser(candidate);verify(candidate);return persist(initial.workerId,port);}catch(error){
       const code=error instanceof Error?error.message:'CHROME_START_FAILED';
       if(!cdpCodes.includes(code as typeof cdpCodes[number]))throw error;
     }

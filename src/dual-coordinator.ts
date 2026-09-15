@@ -46,7 +46,7 @@ export interface DualWorker {
 // Every selection click is recorded BEFORE dispatch so ambiguous results remain owned only
 // if they are positively identified on the exact assigned grid during cleanup.
 export function trackedPort(worker: DualWorker, dispatched: Set<string>): SelectionPort {
-  return { guard: () => worker.port.guard(), read: () => worker.port.read(), summary: () => worker.port.summary(),
+  return { guard: () => worker.port.guard(), lightGuard:worker.port.lightGuard?()=>worker.port.lightGuard!():undefined,read: () => worker.port.read(), summary: () => worker.port.summary(),
     click: async (date, court, hour, state) => {
       if (state === 'OPEN') dispatched.add(`${date}/${court}/${hour}`);
       await worker.port.click(date, court, hour, state);
@@ -85,7 +85,7 @@ export async function coordinateDual(workers: [DualWorker, DualWorker], date: st
     if (!resolvePreference(cleanCells(grids[0], date), [pair.a]) || !resolvePreference(cleanCells(grids[1], date), [pair.b])) throw Error('NO_DUAL_PAIR_AVAILABLE');
     excluded.add(pairKey(pair));
     telemetry.mark('dualPairResolved', attempt);
-    telemetry.mark('workerAAssigned', pair.a.court); telemetry.mark('workerBAssigned', pair.b.court);
+    workers[0].telemetry.mark('workerAssigned',pair.a.court);workers[1].telemetry.mark('workerAssigned',pair.b.court);
     const source = workers.some(w => w.discovery && 'source' in w.discovery && w.discovery.source === 'API+UI') ? 'API+UI' as const : 'UI_ONLY' as const;
     if (mode === 'dry') return { status:'DUAL_DRY_PASS', pair, candidateSource:source };
     const dispatched = [new Set<string>(), new Set<string>()];
@@ -93,7 +93,7 @@ export async function coordinateDual(workers: [DualWorker, DualWorker], date: st
     const selections = await Promise.allSettled(workers.map(async (w, i) => {
       await w.state('unknown');
       const selected = await selectResolvedPreference(trackedPort(w, dispatched[i]!), date, grids[i]!, [i === 0 ? pair.a : pair.b], config.MAX_PRICE, 1, w.safety, w.telemetry);
-      await w.state('selection', selected); telemetry.mark(`worker${w.id}SelectionVerified`); return selected;
+      await w.state('selection', selected);return selected;
     }));
     if (selections.some(s => s.status === 'rejected') || mode === 'practice') {
       const cleaned = await Promise.allSettled(workers.map((w, i) => cleanupOwned(w, date, dispatched[i]!)));
@@ -117,7 +117,7 @@ export async function coordinateDual(workers: [DualWorker, DualWorker], date: st
     telemetry.mark('dualProceedReleased');
     const holds = await Promise.allSettled(workers.map(async (w, i) => {
       await w.state('checkout', selected[i]);
-      try { await w.checkout(selected[i]!); await w.state('hold', selected[i]); telemetry.mark(`worker${w.id}HoldVerified`); }
+      try { await w.checkout(selected[i]!);await w.state('hold',selected[i]);}
       catch (error) { await w.state('unknown', selected[i]); throw error; }
     }));
     const outcomes = holds.map(h => h.status === 'fulfilled' ? 'hold' : 'failed') as ['hold' | 'failed', 'hold' | 'failed'];
@@ -135,7 +135,7 @@ export function dualArmGate(target: { releaseMs: number }, safety: Safety, telem
   const gate = new Promise<void>(resolve => { release = resolve; });
   return async (id: WorkerId) => {
     safety.check(); if (ready.has(id)) throw Error('DUAL_PLAN_MISMATCH');
-    ready.add(id); telemetry.mark(`worker${id}Ready`);
+    ready.add(id);telemetry.worker(id).mark('workerReady');
     if (ready.size === 2) { if (Date.now() >= target.releaseMs) throw Error('PREFLIGHT_MISSED_RELEASE'); telemetry.mark('dualArmed'); release(); }
     let timer:ReturnType<typeof setTimeout>|undefined;
     let aborted = () => {};

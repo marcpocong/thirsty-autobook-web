@@ -45,16 +45,16 @@ export async function runDual(config: Config, mode: DualMode, safety: Safety, t:
   if (options.maximum !== undefined) config = { ...config, MAX_PRICE:options.maximum };
   const date = mode.startsWith('race') ? target.targetDate : options.exact?.date ?? options.date;
   if (mode !== 'readiness' && !date) throw Error('EXPLICIT_DATE_REQUIRED');
-  await mkdir('.local/dual', { recursive:true });
+  await mkdir('.local/dual',{recursive:true});await mkdir('DiagnosticsLocal',{recursive:true});
   const lock = await open('.local/automation.lock', 'wx').catch(() => { throw Error('AUTOMATION_LOCK_EXISTS'); });
   const workerRecords = ['A','B'].map(id => ({ id, pid:process.pid, runID:t.runID, state:'unknown' }));
   await lock.writeFile(JSON.stringify({ mode:'dual', pid:process.pid, runID:t.runID, workers:workerRecords })); await lock.close();
   let cleanExit = false;
   const workerSafeties = [new Safety(), new Safety()];
-  const workerTelemetry = [new Telemetry(), new Telemetry()];
+  const workerTelemetry = [t.worker('A'), t.worker('B')];
   const abort = () => {
     abortDualWorkers(workerSafeties);
-    for(const log of [t,...workerTelemetry])try{writeFileSync(`DiagnosticsLocal/${log.runID}.json`,JSON.stringify(log.document('USER_ABORT')));}catch{}
+    try{writeFileSync(`DiagnosticsLocal/${t.runID}.json`,JSON.stringify(t.document('USER_ABORT')));}catch{}
   };
   options.registerAbort?.(abort);
   safety.signal.addEventListener('abort', abort, { once:true });
@@ -134,8 +134,7 @@ export async function runDual(config: Config, mode: DualMode, safety: Safety, t:
   } finally {
     safety.signal.removeEventListener('abort', abort);
     options.registerAbort?.(()=>{});
-    await Promise.all(workerTelemetry.map(w => w.flush()));
-    await writeFile(`DiagnosticsLocal/dual-${t.runID}.json`, JSON.stringify({ coordinator:t.document(), workers:workerTelemetry.map(w => w.document()), metrics:dualMetrics(t, workerTelemetry, mode.startsWith('race') ? target.releaseMs : undefined) }, null, 2));
+    await writeFile(`DiagnosticsLocal/dual-${t.runID}.json`, JSON.stringify({run:t.document(),metrics:dualMetrics(t,workerTelemetry,mode.startsWith('race')?target.releaseMs:undefined)},null,2));
     if (cleanExit) {
       for (const id of ['a','b']) await unlink(`.local/dual/worker-${id}.lock`);
       await unlink('.local/automation.lock');
@@ -143,15 +142,15 @@ export async function runDual(config: Config, mode: DualMode, safety: Safety, t:
   }
 }
 export function dualMetrics(t: Telemetry, workers: Telemetry[], releaseMs?:number) {
-  const wall = (log:Telemetry, event:string) => { const e = log.events.find(e => e.event === event); return e ? Date.parse(e.wall) : undefined; };
+  const wall = (log:Telemetry, event:string,workerId?:'A'|'B') => { const e = log.events.find(e => e.event === event&&(!workerId||e.workerId===workerId)); return e ? Date.parse(e.wall) : undefined; };
   const delta = (a:number|undefined, b:number|undefined) => a === undefined || b === undefined ? null : b-a;
   const bothGrid = wall(t,'bothGridsReady'), pair = wall(t,'dualPairResolved'), selections = wall(t,'dualSelectionVerified');
-  const holds = workers.map(w => wall(w,'paymentHoldVerified') ?? wall(t,`worker${workers.indexOf(w) === 0 ? 'A' : 'B'}HoldVerified`));
-  const proceeds = workers.map(w => wall(w,'bookingProceedClicked'));
+  const holds = workers.map((w,i) => wall(w,'qrHandoffVerified',i===0?'A':'B'));
+  const proceeds = workers.map((w,i) => wall(w,'bookingProceedClicked',i===0?'A':'B'));
   return { releaseToWorkerGrids:workers.map((_,i) => delta(releaseMs,wall(t,`worker${i === 0 ? 'A' : 'B'}GridReady`))), releaseToBothGrids:delta(releaseMs,bothGrid),
-    bothGridsToPair:delta(bothGrid,pair), pairToFirstClicks:workers.map(w => delta(pair,wall(w,'slot1ClickStarted'))), releaseToBothSelections:delta(releaseMs,selections),
+    bothGridsToPair:delta(bothGrid,pair), pairToFirstClicks:workers.map((w,i) => delta(pair,wall(w,'slot1ClickStarted',i===0?'A':'B'))), releaseToBothSelections:delta(releaseMs,selections),
     selectionsToBothProceed:proceeds.every(v => v !== undefined) ? delta(selections,Math.max(...proceeds as number[])) : null,
-    selectionToHold:workers.map((w,i) => delta(wall(w,'selectionVerified'),holds[i])),
+    selectionToHold:workers.map((w,i) => delta(wall(w,'selectionVerified',i===0?'A':'B'),holds[i])),
     releaseToFirstHold:delta(releaseMs,holds.filter(v => v !== undefined).length ? Math.min(...holds.filter(v => v !== undefined)) : undefined),
     releaseToSecondHold:holds.every(v => v !== undefined) ? delta(releaseMs,Math.max(...holds as number[])) : null,
     releaseToBothHolds:holds.every(v => v !== undefined) ? delta(releaseMs,Math.max(...holds as number[])) : null };

@@ -1,6 +1,8 @@
-import { it, expect } from 'vitest';
+import { it, expect,vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import {candidateBrowserIdentity} from '../src/browser.js';
+import {startForPreparation} from '../src/booking-prepare.js';
 it.skipIf(process.platform !== 'win32')('classifies listener/profile failures without returning process metadata', () => {
   const script = String.raw`
     function Get-NetTCPConnection { if($script:metadataFailure){throw 'secret-command'}; return $script:listeners }
@@ -61,4 +63,11 @@ it.skipIf(process.platform !== 'win32')('B rejects A profile, wrong debugging po
   `;
   const output=execFileSync('powershell.exe',['-NoProfile','-Command',script],{encoding:'utf8',windowsHide:true});
   expect(output.trim().split(/\r?\n/)).toEqual(['CDP_NOT_LISTENING','CDP_VERIFIED','CDP_WRONG_PROFILE','CDP_WRONG_PORT','CDP_WRONG_PROFILE','CDP_UNSAFE_BIND','CDP_AMBIGUOUS_LISTENER']);expect(output).not.toContain('private-marker');
+});
+it('does not persist failed fallback candidates and commits only a verified replacement',async()=>{
+  const initial=candidateBrowserIdentity('A',9222),attempts:number[]=[],persisted:number[]=[];
+  const launch=vi.fn(async(identity:typeof initial)=>{attempts.push(identity.port);if(identity.port!==19224)throw Error('CDP_WRONG_PORT');});
+  const verify=vi.fn((identity:typeof initial)=>{expect(identity.cdpUrl).toBe(`http://127.0.0.1:${identity.port}`);});
+  const result=await startForPreparation(initial,{available:async()=>true,launch,verify,persist:(id,port)=>{persisted.push(port);return candidateBrowserIdentity(id,port);}});
+  expect(attempts).toEqual([9222,19222,19224]);expect(persisted).toEqual([19224]);expect(verify).toHaveBeenCalledOnce();expect(result.port).toBe(19224);
 });

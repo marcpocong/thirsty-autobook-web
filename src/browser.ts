@@ -26,6 +26,10 @@ export function browserIdentity(workerId:'A'|'B'):BrowserIdentity{
   const port=storedPorts()[workerId]??defaultPort(workerId);
   return Object.freeze({workerId,cdpUrl:`http://127.0.0.1:${port}`,port,expectedProfile:profile(workerId)});
 }
+export function candidateBrowserIdentity(workerId:'A'|'B',port:number):BrowserIdentity{
+  if(!Number.isInteger(port)||port<1024||port>65535)throw Error('CDP_IDENTITY_MISMATCH');
+  return Object.freeze({workerId,cdpUrl:`http://127.0.0.1:${port}`,port,expectedProfile:profile(workerId)});
+}
 export let browserA:BrowserIdentity=browserIdentity('A');
 export let browserB:BrowserIdentity=browserIdentity('B');
 export function rememberBrowserPort(workerId:'A'|'B',port:number){
@@ -41,8 +45,7 @@ export function validateBrowserIdentity(identity: BrowserIdentity) {
   const expected = identity.workerId === 'A' ? browserIdentity('A') : identity.workerId === 'B' ? browserIdentity('B') : undefined;
   if (!expected || identity.port !== expected.port || identity.cdpUrl !== expected.cdpUrl || resolve(identity.expectedProfile).toLowerCase() !== resolve(expected.expectedProfile).toLowerCase()) throw Error('CDP_IDENTITY_MISMATCH');
 }
-export function verifyDedicatedChrome(identity: BrowserIdentity = browserA) {
-  validateBrowserIdentity(identity);
+function verifyChromeProcess(identity:BrowserIdentity){
   if (process.platform !== 'win32') throw new Error('WINDOWS_REQUIRED');
   let code: string;
   try {
@@ -51,6 +54,13 @@ export function verifyDedicatedChrome(identity: BrowserIdentity = browserA) {
       { encoding: 'utf8', windowsHide: true, timeout: 60000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
   } catch { throw new Error('CDP_PROCESS_METADATA_UNAVAILABLE'); }
   if (code !== 'CDP_VERIFIED') throw new Error(cdpCodes.find(c => c === code) ?? 'CDP_PROCESS_METADATA_UNAVAILABLE');
+}
+export function verifyDedicatedChrome(identity: BrowserIdentity = browserA) {validateBrowserIdentity(identity);verifyChromeProcess(identity);}
+export function verifyCandidateChrome(identity:BrowserIdentity){
+  const expected=candidateBrowserIdentity(identity.workerId,identity.port);
+  if(identity.cdpUrl!==expected.cdpUrl||resolve(identity.expectedProfile).toLowerCase()!==resolve(expected.expectedProfile).toLowerCase())throw Error('CDP_IDENTITY_MISMATCH');
+  const other=browserIdentity(identity.workerId==='A'?'B':'A');if(identity.port===other.port)throw Error('CDP_IDENTITY_MISMATCH');
+  verifyChromeProcess(identity);
 }
 export async function attach(safety: Safety, telemetry?: Telemetry, identity: BrowserIdentity = browserA) {
   safety.check(); verifyDedicatedChrome(identity);

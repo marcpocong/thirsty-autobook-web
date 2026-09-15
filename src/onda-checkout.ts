@@ -64,7 +64,7 @@ export function ondaCheckoutAdapter(page:Page,safety:Safety,selected:BookingSumm
         return {venue:venue.textContent?.trim()??'',fullDate:fullDates[0]!,shortDate:date.textContent?.trim()??'',court:courts[0]!,times:spans.filter(s=>/\d.* (AM|PM) - /.test(s))};
       });
       return {count:counts[0]!.textContent?.trim()??'',cards};
-    });safety.check();return reviewBundleSummary(evidence,selected.amount);
+    });safety.check();t?.mark('reviewParsed');return reviewBundleSummary(evidence,selected.amount);
 
   };
   const name=page.getByRole('textbox',{name:'Full Name',exact:true});
@@ -146,7 +146,7 @@ export function ondaCheckoutAdapter(page:Page,safety:Safety,selected:BookingSumm
     verifyRentalQuantity(await sheet.locator('span').allTextContents(),(selected.courts?.length??1)*selected.duration);
     const total=await sheet.getByText('Total',{exact:true}).evaluate(e=>{
       const spans=e.parentElement?.querySelectorAll(':scope > span');if(spans?.length!==2)throw new Error('PAYMENT_STRUCTURE_CHANGED');return spans[1]!.textContent?.trim()??'';
-    });safety.check();return verifiedPayment={...review,amount:paymentAmount(total)};
+    });safety.check();t?.mark('paymentSummaryParsed');return verifiedPayment={...review,amount:paymentAmount(total)};
   };
   return {
     review:async()=>verifiedReview=await readReview(),

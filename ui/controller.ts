@@ -17,7 +17,7 @@ import {expectedPreparationFingerprint,makePreparedContext} from '../src/prepare
 import type {PreparationInput,PreparationResult} from '../src/booking-plan.js';
 import {scheduledReleaseContext,type ScheduledReleaseContext} from '../src/scheduled-release.js';
 
-const preparationHeadlines:Record<string,string>={EXTENDED_PLAYER_INFO_MISSING:'EXTENDED PLAYER REQUIRED',PLAYER_INFO_MISSING:'PLAYER CONFIGURATION REQUIRED',TARGET_DATE_UNAVAILABLE:'TARGET NOT AVAILABLE',TARGET_NOT_AVAILABLE:'TARGET NOT AVAILABLE',PAYMENT_HOLD_MAY_BE_ACTIVE:'PAYMENT HOLD ACTIVE',LOCK_PID_RUNNING:'AUTOMATION STILL RUNNING',TODAYS_RELEASE_PASSED:"TODAY'S RELEASE HAS PASSED"};
+const preparationHeadlines:Record<string,string>={EXTENDED_PLAYER_INFO_MISSING:'EXTENDED PLAYER REQUIRED',PLAYER_INFO_MISSING:'PLAYER CONFIGURATION REQUIRED',TARGET_DATE_UNAVAILABLE:'TARGET NOT AVAILABLE',TARGET_NOT_AVAILABLE:'TARGET NOT AVAILABLE',PAYMENT_HOLD_MAY_BE_ACTIVE:'PAYMENT HOLD ACTIVE',LOCK_PID_RUNNING:'AUTOMATION STILL RUNNING',TODAYS_RELEASE_PASSED:"TODAY'S RELEASE HAS PASSED",CHROME_NOT_INSTALLED:'CHROME NOT INSTALLED',CHROME_START_TIMEOUT:'DEDICATED CHROME DID NOT START',CHROME_START_FAILED:'DEDICATED CHROME DID NOT START',CDP_ENDPOINT_UNAVAILABLE:'DEDICATED CHROME UNAVAILABLE',ONDA_TAB_AMBIGUOUS_OR_MISSING:'ONDA TAB NOT READY',WRONG_VENUE:'WRONG VENUE'};
 const errors: Record<string, string> = {
   EXTENDED_DURATION_LIMIT:'Extended two-browser booking currently supports up to 6 consecutive hours.',
   PAYMENT_HOLD_MAY_BE_ACTIVE:'PAYMENT HOLD MAY BE ACTIVE. Reset & Prepare checked every required browser but could not prove a clean schedule with zero selections and no hold.',
@@ -189,7 +189,7 @@ export class Controller {
     if (event.type === 'telemetry') {
       const labels: Record<string, string> = { chromeConnected: 'Dedicated Chrome and Onda tab verified', preflightStarted: 'Preflight started', preflightCompleted: 'Preflight passed',
         armed: 'ARMED — final preflight passed', releaseTriggerFired: 'Release trigger fired', reloadStarted: 'Reload started', reloadCommitted: 'Reload committed', targetGridReady: 'Target grid verified', gridSnapshotCompleted: 'Availability snapshot completed', automationStopped: 'Command completed' };
-      this.log(labels[event.event] ?? event.event);
+      this.log(`${event.workerId?`Browser ${event.workerId} Â· `:''}${labels[event.event]??event.event}`);
       if(['full','fullPractice'].includes(this.state.operation)){
         const stages:Record<string,string>={armed:'Full Booking armed',reviewValidated:'BOOKING REVIEWED',playerFillCompleted:'PLAYER INFORMATION VERIFIED',paymentSummaryValidated:'READY TO CREATE PAYMENT HOLD',finalOndaActionStarted:'Creating payment hold',finalOndaButtonClicked:'Checking QR handoff — read only'};
         if(stages[event.event])this.state.headline=stages[event.event]!;

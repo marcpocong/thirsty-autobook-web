@@ -60,6 +60,7 @@ it('runs the actual selection→both Proceeds→terms→one final click→passiv
   expect(result).toMatchObject({status:'Pending',countdown:'09:57',amount:1200});expect(s.locked).toBe(true);expect(s.boundary).toBe(true);
   expect(await page.evaluate(()=>(window as unknown as {actions:string[]}).actions)).toEqual(['bookingProceed','Full Name','Phone Number','Email Address','playerProceed','terms','final']);
   expect(t.events.at(-1)?.event).toBe('automationStopped');expect(t.events.filter(e=>e.event==='qrHandoffVerified')).toHaveLength(1);
+  expect(t.events.filter(e=>e.event==='preProceedGridRead')).toHaveLength(1);
   const events=JSON.stringify(t.events);for(const value of Object.values(player))expect(events).not.toContain(value);
 });
 it('Full Booking without terms authorization never clicks the first Proceed',async()=>{
