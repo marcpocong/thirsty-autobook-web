@@ -11,6 +11,7 @@ import type { readClock } from './status.js';
 import type { BookingView } from './booking.js';
 import { PracticeSchema } from '../src/practice.js';
 import { BookingSetupSchema } from '../src/config.js';
+import {bookingSetupProblem,reconcileBookingSetupFallbacks,type FallbackReconciliation} from '../src/booking-setup.js';
 import { capabilities,fullBookingReady } from '../src/capabilities.js';
 import {expectedPreparationFingerprint,makePreparedContext} from '../src/prepared-context.js';
 import type {PreparationInput,PreparationResult} from '../src/booking-plan.js';
@@ -86,6 +87,11 @@ export class Controller {
   private polling = false;
   constructor(private deps: Dependencies) {}
   private players(){if(this.deps.playerStatus)return this.deps.playerStatus();try{const b=this.deps.booking();return {primary:b.playerConfigured,extended:b.extendedPlayerConfigured};}catch{return {primary:false,extended:false};}}
+  private releaseSetup(input:unknown):{setup:ReturnType<typeof BookingSetupSchema.parse>;reconciliation:FallbackReconciliation}{
+    const repaired=reconcileBookingSetupFallbacks(input),parsed=BookingSetupSchema.safeParse(repaired.setup);
+    if(!parsed.success){this.state.headline='BOOKING SETTINGS NEED ATTENTION';this.state.detail=`Check the highlighted booking fields and press Reset & Prepare again.\n${bookingSetupProblem(repaired.setup)??'The current Release booking settings are invalid.'}`;throw Error('BOOKING_SETTINGS_INVALID');}
+    return {setup:parsed.data,reconciliation:repaired.reconciliation};
+  }
   private clearPreparation(){this.state.preparedContext=null;this.state.preparedAt=undefined;this.state.ready=false;this.state.termsAuthorized=false;}
   async invalidatePreparation(){if(this.state.operation!=='idle')throw Error('OPERATION_ALREADY_RUNNING');this.clearPreparation();this.state.headline='SETTINGS CHANGED';this.state.detail='Press Reset & Prepare to prepare these settings.';this.publish();}
   private async health(){const h=this.deps.browserHealth?await this.deps.browserHealth():await this.deps.cdp().then(A=>({A,B:A}));this.state.browserHealth=h;this.state.cdp=h.A;return h;}
@@ -197,8 +203,10 @@ export class Controller {
         const code = error instanceof Error ? error.message : 'OPERATION_FAILED';
         const hadSpecificFailure = Object.values(preparationHeadlines).includes(this.state.headline)||['PARTIAL SUCCESS','BOOKING FAILED'].includes(this.state.bookingResult?.status??'')||this.state.dualResult?.status==='DUAL_PARTIAL_SUCCESS'||this.state.dualResult?.status==='DUAL_FAILED'||this.state.headline === 'Needs attention'||this.state.headline.includes('FAILED')||this.state.headline==='HANDOFF STATUS UNKNOWN';
         if(code==='HANDOFF_STATUS_UNKNOWN')this.state.headline='HANDOFF STATUS UNKNOWN';
+        else if(code==='BOOKING_SETTINGS_INVALID')this.state.headline='BOOKING SETTINGS NEED ATTENTION';
         else if(!hadSpecificFailure)this.state.headline = 'Needs attention';
         if(code==='HANDOFF_STATUS_UNKNOWN')this.state.detail='DO NOT START ANOTHER BOOKING. CHECK CHROME MANUALLY. Lock retained; final action is never retried.';
+        else if(code==='BOOKING_SETTINGS_INVALID')this.state.detail ||= 'Check the highlighted booking fields and press Reset & Prepare again.';
         else if (code !== 'COMMAND_FAILED') this.state.detail = errors[code] ?? code;
         else if (!hadSpecificFailure) this.state.detail = 'The command failed. See the sanitized process output in Activity.';
         if(preparationHeadlines[code])this.state.headline=preparationHeadlines[code]!;
@@ -247,8 +255,10 @@ export class Controller {
       await this.operation('prepare',async gen=>{
         let release:BookingView|undefined;
         if(input.workflow==='release'){
-          if(input.setup!==undefined){const saved=this.deps.saveBooking(BookingSetupSchema.parse(input.setup));release=this.deps.booking();if(saved.fingerprint!==release.fingerprint)throw Error('BOOKING_PLAN_CHANGED');}
-          else release=this.deps.booking();
+          const existing=this.deps.booking(),candidate=this.releaseSetup(input.setup??existing.setup);
+          const removed=candidate.reconciliation.removed.length?candidate.reconciliation.removed:existing.fallbackReconciliation.removed;
+          const saved=this.deps.saveBooking(candidate.setup);release=this.deps.booking();if(saved.fingerprint!==release.fingerprint)throw Error('BOOKING_PLAN_CHANGED');
+          this.state.bookingAdjustment=removed.length?{valid:release.setup.FALLBACK_TIMES,removed}:null;
           if(release.setup.BOOKING_TYPE!==input.strategy)throw Error('BOOKING_PLAN_CHANGED');this.state.booking=release;
         }
         const strategy=input.workflow==='test'?input.request.strategy:release!.setup.BOOKING_TYPE;
@@ -307,8 +317,8 @@ export class Controller {
   }); }
   saveBooking(input: unknown) { return this.operation('saving', async () => {
     if((input as {DURATION_HOURS?:number})?.DURATION_HOURS!>6)throw Error('EXTENDED_DURATION_LIMIT');
-    const setup=BookingSetupSchema.parse(input);
-    this.state.booking=this.deps.saveBooking(setup);
+    const candidate=this.releaseSetup(input);
+    this.state.booking=this.deps.saveBooking(candidate.setup);this.state.bookingAdjustment=candidate.reconciliation.removed.length?candidate.reconciliation:null;
     this.state.headline='Booking plan saved'; this.state.detail='Review the compiled plan, then Prepare Booking. Terms authorization is off.';
   }); }
   armSelection() { return this.armBooking('selection'); }

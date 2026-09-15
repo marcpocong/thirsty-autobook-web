@@ -20,7 +20,8 @@ async function renderer(old=false, extra:Record<string,unknown>={}){
  const state={operation:'idle',headline:'Test retained lock',detail:'',ready:false,workflow:'test',cdp:true,lock:true,inspection:null,clock:null,plan:null,logs:[],liveRace:true,booking:plan,termsAuthorized:false,capabilities:{selectionReady:true,checkoutReady:true,paymentBoundaryReady:true},selection:null,mode:'full',handoff:null};
  Object.assign(state,extra);
  await page.evaluate(state=>{(window as any).fixtureState=state;(window as any).thirsty={getStatus:async()=>state,onStatus:(callback:any)=>{(window as any).fixturePublish=callback;return ()=>{};},authorizeTerms:async(value:boolean)=>{state.termsAuthorized=value;(window as any).fixturePublish?.(state);},invalidatePreparation:async()=>{state.ready=false;state.termsAuthorized=false;},setWorkflow:async(workflow:string)=>{state.workflow=workflow;state.ready=false;state.termsAuthorized=false;},resetPractice:async()=>{},armFullBooking:async()=>{},saveBooking:async(input:any)=>{state.booking.setup=input;state.booking.fingerprint='saved';state.headline='Booking plan saved';}};},state);
- const source=old?execFileSync('git',['show','2edebd0:ui/renderer/app.ts'],{encoding:'utf8'}):await readFile('ui/renderer/app.ts','utf8');
+ let source=old?execFileSync('git',['show','2edebd0:ui/renderer/app.ts'],{encoding:'utf8'}):await readFile('ui/renderer/app.ts','utf8');
+ if(!old)source=(await readFile('src/booking-setup.ts','utf8'))+'\n'+source.replace(/^import .*booking-setup\.js';\r?\n/m,'');
  await page.addScriptTag({type:'module',content:stripTypeScriptTypes(source)});
  await page.waitForFunction(()=>document.getElementById('headline')?.textContent==='Test retained lock');return page;
 }
@@ -113,4 +114,24 @@ it('keeps independent Test and Release drafts across workflow switches and statu
  await p.locator('#workflow-release').click();expect(await p.locator('#booking-type').inputValue()).toBe('standard');expect(await p.locator('#start-time').inputValue()).toBe('18:00');expect(await p.locator('#duration').inputValue()).toBe('3');
  await p.locator('#workflow-test').click();expect(await p.locator('#booking-type').inputValue()).toBe('extended');expect(await p.locator('#court-count').inputValue()).toBe('2');expect(await p.locator('#start-time').inputValue()).toBe('20:00');expect(await p.locator('#duration').inputValue()).toBe('4');
  await p.locator('#prepare').click();expect(await p.evaluate(()=>(window as any).calls[0])).toMatchObject({workflow:'test',request:{strategy:'extended',courtCount:2,start:'20:00',duration:4}});await p.close();
+});
+it('immediately removes stale Release fallbacks and shows the effective normal summary',async()=>{
+ const releasePlan=bookingView(ConfigSchema.parse({...defaultSetup,START_TIME:'18:00',DURATION_HOURS:3,FALLBACK_TIMES:['19:00','20:00'],PLAYER_FULL_NAME:'Fixture Player',PLAYER_PHONE:'09123456789',PLAYER_EMAIL:'fixture@example.invalid',PLAYER_B_FULL_NAME:'Fixture Extended',PLAYER_B_PHONE:'09987654321',PLAYER_B_EMAIL:'extended@example.invalid'}));
+ const p=await renderer(false,{booking:releasePlan,lock:false,ready:false,playerStatus:{primary:true,extended:true}});
+ await p.locator('#workflow-release').click();await p.locator('#booking-type').selectOption('extended');await p.locator('#duration').fill('6');await p.locator('#duration').dispatchEvent('change');
+ expect(await p.locator('#booking-adjustment').innerText()).toContain('2 invalid fallback starts were removed');
+ expect(await p.locator('#configuration-status').innerText()).toContain('CONFIGURATION: VALID');
+ expect(await p.locator('#booking-preview').innerText()).toContain('18:00-24:00');
+ expect(await p.locator('#booking-preview').innerText()).toContain('Fallback starts: None');
+ expect(await p.locator('#prepare').isEnabled()).toBe(true);await mkdir('.local',{recursive:true});await p.addStyleTag({content:await readFile('ui/renderer/styles.css','utf8')});await p.setViewportSize({width:1010,height:800});await p.screenshot({path:'.local/fallback-hotfix-ui.png',fullPage:true});await p.close();
+});
+it('removes a fallback when the Release primary start changes and preserves the Test draft',async()=>{
+ const releasePlan=bookingView(ConfigSchema.parse({...defaultSetup,BOOKING_TYPE:'extended',START_TIME:'17:00',DURATION_HOURS:6,FALLBACK_TIMES:['18:00'],PLAYER_FULL_NAME:'Fixture Player',PLAYER_PHONE:'09123456789',PLAYER_EMAIL:'fixture@example.invalid',PLAYER_B_FULL_NAME:'Fixture Extended',PLAYER_B_PHONE:'09987654321',PLAYER_B_EMAIL:'extended@example.invalid'}));
+ const p=await renderer(false,{booking:releasePlan,lock:false,ready:false,playerStatus:{primary:true,extended:true}});await p.locator('#advanced > summary').click();
+ await p.locator('#fallback-time').selectOption('20:00');await p.locator('#add-fallback').click();
+ expect(await p.locator('#fallback-order').innerText()).toContain('8:00 PM');
+ await p.locator('#workflow-release').click();expect(await p.locator('#fallback-order').innerText()).toContain('6:00 PM');
+ await p.locator('#start-time').selectOption('18:00');expect(await p.locator('#fallback-order').innerText()).not.toContain('6:00 PM');
+ expect(await p.locator('#booking-adjustment').innerText()).toContain('1 invalid fallback start was removed');
+ await p.locator('#workflow-test').click();expect(await p.locator('#fallback-order').innerText()).toContain('8:00 PM');await p.close();
 });

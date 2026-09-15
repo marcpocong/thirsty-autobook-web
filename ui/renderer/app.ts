@@ -1,5 +1,6 @@
 import type { Bridge, Dashboard } from '../types.js';
 import type { BookingSetup } from '../../src/config.js';
+import {bookingSetupProblem,reconcileFallbackTimes,type FallbackReconciliation} from '../../src/booking-setup.js';
 declare global { interface Window { thirsty: Bridge } }
 const byId = (id: string) => document.getElementById(id)!;
 let latest: Dashboard | undefined;
@@ -10,6 +11,7 @@ const input=(id:string)=>byId(id) as HTMLInputElement;
 let workflow:'test'|'release'='test';
 interface FormDraft {strategy:'standard'|'extended';date:string;courtCount:1|2;start:string;duration:number;maximum:number;attempts:number;courtOrder:number[];fallbackTimes:string[];exactA:string;exactB:string}
 let testDraft:FormDraft|undefined,releaseDraft:FormDraft|undefined,testDirty=false,releaseDirty=false;
+let releaseAdjustment:FallbackReconciliation|undefined;
 byId('simple-status').append(byId('readiness'));
 const primary=byId('primary-actions');
 primary.prepend(byId('prepare'),byId('terms').parentElement!);
@@ -31,7 +33,12 @@ input('dual-court-a').value='7';input('dual-court-b').value='6';
 function formDraft():FormDraft{return {strategy:input('booking-type').value as 'standard'|'extended',date:input('test-date').value,courtCount:Number(input('court-count').value) as 1|2,start:input('start-time').value,duration:Number(input('duration').value),maximum:Number(input('maximum').value),attempts:Number(input('attempts').value),courtOrder:[...courtOrder],fallbackTimes:[...fallbackTimes],exactA:input('exact-a').value,exactB:input('exact-b').value};}
 function applyDraft(d:FormDraft){input('booking-type').value=d.strategy;input('test-date').value=d.date;input('court-count').value=String(d.courtCount);input('start-time').value=d.start;input('duration').value=String(d.duration);input('maximum').value=String(d.maximum);input('attempts').value=String(d.attempts);courtOrder=[...d.courtOrder];fallbackTimes=[...d.fallbackTimes];input('exact-a').value=d.exactA;input('exact-b').value=d.exactB;editors();}
 function storeDraft(){const d=formDraft();if(workflow==='test')testDraft=d;else releaseDraft=d;}
-function changed(){input('terms').checked=false;if(workflow==='test')testDirty=true;else releaseDirty=true;dirty=true;storeDraft();void window.thirsty.invalidatePreparation?.().catch(()=>{});byId('edit-status').textContent='SETTINGS CHANGED · Press Reset & Prepare.';if(latest)render(latest);}
+function reconcileReleaseDraft(){
+  if(workflow!=='release')return;
+  const reconciliation=reconcileFallbackTimes(input('start-time').value,Number(input('duration').value),fallbackTimes);
+  if(reconciliation.removed.length){fallbackTimes=[...reconciliation.valid];releaseAdjustment=reconciliation;editors();}
+}
+function changed(){input('terms').checked=false;reconcileReleaseDraft();if(workflow==='test')testDirty=true;else releaseDirty=true;dirty=true;storeDraft();void window.thirsty.invalidatePreparation?.().catch(()=>{});byId('edit-status').textContent='SETTINGS CHANGED · Press Reset & Prepare.';if(latest)render(latest);}
 function editors(){
   const draw=(id:string,items:(string|number)[],fallback:boolean)=>byId(id).replaceChildren(...items.map((item,index)=>{
     const li=document.createElement('li'),label=document.createElement('span');label.textContent=fallback?friendly(String(item)):`Court ${item}`;li.append(label);
@@ -102,7 +109,7 @@ function render(state: Dashboard) {
   byId('capability-status').textContent=`Selection ${state.capabilities.selectionReady?'ready':'unverified'} · checkout ${state.capabilities.checkoutReady?'verified':'unverified'} · payment handoff ${state.capabilities.paymentBoundaryReady?'verified':'unverified'}`;
   const b=state.booking;
   if(b){
-    if(!releaseDirty&&loadedPlan!==b.fingerprint){loadedPlan=b.fingerprint;releaseDraft={strategy:b.setup.BOOKING_TYPE??'standard',date:testDraft?.date??input('test-date').value,courtCount:b.setup.COURT_COUNT,start:b.setup.START_TIME,duration:b.setup.DURATION_HOURS,maximum:b.setup.MAX_PRICE,attempts:b.setup.MAX_SELECTION_ATTEMPTS,courtOrder:[...b.setup.PREFERRED_COURTS],fallbackTimes:[...b.setup.FALLBACK_TIMES],exactA:'',exactB:''};if(workflow==='release')applyDraft(releaseDraft);}
+    if(!releaseDirty&&loadedPlan!==b.fingerprint){loadedPlan=b.fingerprint;releaseDraft={strategy:b.setup.BOOKING_TYPE??'standard',date:testDraft?.date??input('test-date').value,courtCount:b.setup.COURT_COUNT,start:b.setup.START_TIME,duration:b.setup.DURATION_HOURS,maximum:b.setup.MAX_PRICE,attempts:b.setup.MAX_SELECTION_ATTEMPTS,courtOrder:[...b.setup.PREFERRED_COURTS],fallbackTimes:[...b.setup.FALLBACK_TIMES],exactA:'',exactB:''};if(b.fallbackReconciliation.removed.length){releaseAdjustment=b.fallbackReconciliation;releaseDirty=true;}if(workflow==='release'){applyDraft(releaseDraft);dirty=releaseDirty;}}
     byId('booking-preview').textContent=`${dual?`2 COURTS / SAME TIME BLOCK\nMaximum per court: PHP ${b.setup.MAX_PRICE}\nMaximum possible combined: PHP ${2*b.setup.MAX_PRICE}\n`:''}TARGET  ${dateLabel(b.targetDate)}\nREQUIRED SLOTS  ${b.slots.join(' · ')}\nCOURT ORDER  ${b.setup.PREFERRED_COURTS.join(' → ')}\nFALLBACK STARTS  ${b.setup.FALLBACK_TIMES.map(friendly).join(' → ')||'None'}\nMAXIMUM  ₱${b.setup.MAX_PRICE.toLocaleString()} · ${b.setup.MAX_SELECTION_ATTEMPTS} candidate attempts\nPLAYER  Configured ✓`;
   }
 
@@ -147,7 +154,14 @@ function render(state: Dashboard) {
   byId('activity-state').textContent = busy ? `${state.operation.toUpperCase()} · PROCESS ACTIVE` : 'LOCAL PROCESS OUTPUT';
   byId('mode-label').textContent=workflow==='test'?'TEST NOW':'RELEASE BOOKING';
   byId('prepare').firstChild!.textContent='RESET & PREPARE ';
-  input('prepare').disabled=['prepare','stopping','saving','resetting'].includes(state.operation);
+  const draftProblem=workflow==='release'?bookingSetupProblem(currentSetup()):undefined;
+  byId('configuration-status').hidden=workflow!=='release';
+  byId('configuration-status').textContent=draftProblem?`CONFIGURATION: NEEDS ATTENTION\n${draftProblem}`:'CONFIGURATION: VALID';
+  byId('configuration-status').dataset.tone=draftProblem?'warn':'good';
+  const adjustment=releaseAdjustment??state.bookingAdjustment??b?.fallbackReconciliation;
+  byId('booking-adjustment').hidden=workflow!=='release'||!adjustment?.removed.length;
+  if(adjustment?.removed.length)byId('booking-adjustment').textContent=`BOOKING SETTINGS ADJUSTED\n${adjustment.removed.length} invalid fallback start${adjustment.removed.length===1?' was':'s were'} removed because ${adjustment.removed.length===1?'it no longer fits':'they no longer fit'} the current primary booking.`;
+  input('prepare').disabled=['prepare','stopping','saving','resetting'].includes(state.operation)||!!draftProblem;
   byId('arm').textContent='ARM RELEASE';byId('arm').hidden=workflow==='test';
   byId('test-booking').hidden=workflow==='release';byId('test-date-label').hidden=workflow==='release';
   input('test-booking').disabled=busy||dirty||state.lock||!state.ready||!input('terms').checked;
@@ -160,7 +174,7 @@ function render(state: Dashboard) {
   if(workflow==='test')byId('blocked-reason').textContent=state.lock?'RESET REQUIRED':dirty?'SETTINGS CHANGED · Press Reset & Prepare.':!state.ready?'Reset & Prepare before running a test.':!input('terms').checked?'Authorize Terms, then run your test.':'';
   if(state.bookingResult){byId('handoff-result').hidden=false;byId('handoff-result').textContent=state.bookingResult.description+'\n'+state.bookingResult.outcomes.map((v,i)=>`Checkout ${i+1}: ${v}`).join('\n');}
   const duration=Number(input('duration').value),start=Number(input('start-time').value.slice(0,2)),strategy=input('booking-type').value;
-  byId('booking-preview').textContent=`${workflow==='release'?'Target: '+(state.booking?.targetDate??'Not configured')+'\n':''}${strategy.toUpperCase()} | ${input('court-count').value} court(s) | ${input('start-time').value}-${String(start+duration).padStart(2,'0')}:00\n${strategy==='extended'?'2 browsers | 2 checkouts | 2 payment holds\nPreferred split: '+(duration===4?'3 + 1; alternatives 2 + 2, 1 + 3':duration===5?'3 + 2; alternative 2 + 3':'3 + 3')+'\nCourt continuity preferred; switching allowed between checkouts.':'1 browser | 1 checkout | 1 payment hold'}\nMaximum per checkout: PHP ${Number(input('maximum').value)*Number(input('court-count').value)} | Payment manual`;
+  byId('booking-preview').textContent=`${workflow==='release'?'Target: '+(state.booking?.targetDate??'Not configured')+'\n':''}${strategy.toUpperCase()} | ${input('court-count').value} court(s) | ${input('start-time').value}-${String(start+duration).padStart(2,'0')}:00\nFallback starts: ${fallbackTimes.map(friendly).join(', ')||'None'}\n${strategy==='extended'?'2 browsers | 2 checkouts | 2 payment holds\nPreferred split: '+(duration===4?'3 + 1; alternatives 2 + 2, 1 + 3':duration===5?'3 + 2; alternative 2 + 3':'3 + 3')+'\nCourt continuity preferred; switching allowed between checkouts.':'1 browser | 1 checkout | 1 payment hold'}\nMaximum per checkout: PHP ${Number(input('maximum').value)*Number(input('court-count').value)} | Payment manual`;
   if(duration>6){byId('booking-preview').textContent='Extended two-browser booking currently supports up to 6 consecutive hours.';input('test-booking').disabled=true;input('arm').disabled=true;}
   const playersReady=playerStatus.primary&&(strategy!=='extended'||playerStatus.extended);
   byId('player-status').textContent=`Primary player: ${playerStatus.primary?'Configured':'Missing'}${strategy==='extended'?' | Extended player: '+(playerStatus.extended?'Configured':'Missing'):''}`;
@@ -190,7 +204,7 @@ byId('mode-full').addEventListener('change',()=>{void window.thirsty.setMode('fu
 byId('mode-selection').addEventListener('change',()=>{void window.thirsty.setMode('selection').catch(()=>{});});
 byId('terms').addEventListener('change',()=>{void window.thirsty.authorizeTerms(input('terms').checked).catch(()=>{input('terms').checked=false;});});
 for(const id of ['booking-type','test-date','court-count','start-time','duration','maximum','attempts','exact-a','exact-b'])byId(id).addEventListener('change',changed);
-byId('add-fallback').onclick=()=>{const h=input('fallback-time').value;if(h===input('start-time').value||fallbackTimes.includes(h)){byId('edit-status').textContent='Choose a different fallback start.';return;}fallbackTimes.push(h);editors();changed();};
+byId('add-fallback').onclick=()=>{const h=input('fallback-time').value;if(h===input('start-time').value||fallbackTimes.includes(h)){byId('edit-status').textContent='Choose a different fallback start.';return;}if(workflow==='release'){const reconciliation=reconcileFallbackTimes(input('start-time').value,Number(input('duration').value),[...fallbackTimes,h]);if(reconciliation.removed.length){releaseAdjustment=reconciliation;byId('edit-status').textContent=bookingSetupProblem({...currentSetup(),FALLBACK_TIMES:[...fallbackTimes,h]})??'That fallback does not fit the current booking.';if(latest)render(latest);return;}}fallbackTimes.push(h);editors();changed();};
 byId('save-booking').onclick=()=>{void(async()=>{
   const setup:BookingSetup={BOOKING_TYPE:input('booking-type').value as 'standard'|'extended',COURT_COUNT:Number(input('court-count').value) as 1|2,START_TIME:input('start-time').value,DURATION_HOURS:Number(input('duration').value),PREFERRED_COURTS:courtOrder,FALLBACK_COURTS:[],FALLBACK_TIMES:fallbackTimes,MAX_PRICE:Number(input('maximum').value),MAX_SELECTION_ATTEMPTS:Number(input('attempts').value)};
   await window.thirsty.saveBooking(setup);const state=await window.thirsty.getStatus();

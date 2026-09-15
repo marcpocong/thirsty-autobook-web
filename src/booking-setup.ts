@@ -1,0 +1,94 @@
+export type FallbackRemovalReason =
+  | 'DUPLICATES_PRIMARY_START'
+  | 'DUPLICATE_FALLBACK'
+  | 'CROSSES_MIDNIGHT'
+  | 'INVALID_FORMAT';
+
+export interface RemovedFallbackTime {
+  time: string;
+  reason: FallbackRemovalReason;
+}
+
+export interface FallbackReconciliation {
+  valid: string[];
+  removed: RemovedFallbackTime[];
+}
+
+const hourPattern = /^(0[89]|1[0-9]|2[0-3]):00$/;
+
+export function reconcileFallbackTimes(
+  primaryStart: string,
+  duration: number,
+  fallbackTimes: readonly string[],
+): FallbackReconciliation {
+  const valid: string[] = [];
+  const removed: RemovedFallbackTime[] = [];
+  const seen = new Set<string>();
+
+  for (const time of fallbackTimes) {
+    let reason: FallbackRemovalReason | undefined;
+    if (!hourPattern.test(time)) reason = 'INVALID_FORMAT';
+    else if (time === primaryStart) reason = 'DUPLICATES_PRIMARY_START';
+    else if (seen.has(time)) reason = 'DUPLICATE_FALLBACK';
+    else {
+      seen.add(time);
+      if (!Number.isInteger(duration) || Number(time.slice(0, 2)) + duration > 24) reason = 'CROSSES_MIDNIGHT';
+    }
+    if (reason) removed.push({ time, reason });
+    else valid.push(time);
+  }
+
+  return { valid, removed };
+}
+
+export function reconcileBookingSetupFallbacks(input: unknown): { setup: unknown; reconciliation: FallbackReconciliation } {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return { setup: input, reconciliation: { valid: [], removed: [] } };
+  const setup = input as Record<string, unknown>;
+  if (typeof setup.START_TIME !== 'string' || typeof setup.DURATION_HOURS !== 'number' || !Array.isArray(setup.FALLBACK_TIMES)) {
+    return { setup: input, reconciliation: { valid: [], removed: [] } };
+  }
+  const times = setup.FALLBACK_TIMES;
+  if (!times.every((time): time is string => typeof time === 'string')) return { setup: input, reconciliation: { valid: [], removed: [] } };
+  const reconciliation = reconcileFallbackTimes(setup.START_TIME, setup.DURATION_HOURS, times);
+  return { setup: { ...setup, FALLBACK_TIMES: reconciliation.valid }, reconciliation };
+}
+
+export interface BookingSetupDraft {
+  BOOKING_TYPE: 'standard' | 'extended';
+  COURT_COUNT: 1 | 2;
+  START_TIME: string;
+  DURATION_HOURS: number;
+  PREFERRED_COURTS: number[];
+  FALLBACK_TIMES: string[];
+  MAX_PRICE: number;
+  MAX_SELECTION_ATTEMPTS: number;
+}
+
+export function bookingSetupProblem(input: unknown): string | undefined {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return 'The booking settings could not be read.';
+  const setup=input as Partial<BookingSetupDraft>;
+  if (setup.BOOKING_TYPE !== 'standard' && setup.BOOKING_TYPE !== 'extended') return 'Choose a valid booking type.';
+  if (setup.COURT_COUNT !== 1 && setup.COURT_COUNT !== 2) return 'Choose one or two courts.';
+  if (typeof setup.START_TIME!=='string'||!hourPattern.test(setup.START_TIME)) return 'Choose a valid main start time.';
+  if (typeof setup.DURATION_HOURS!=='number'||!Number.isInteger(setup.DURATION_HOURS) || setup.DURATION_HOURS < 1 || setup.DURATION_HOURS > 6) return 'Enter a booking duration from 1 to 6 hours.';
+  if (setup.BOOKING_TYPE === 'standard' && setup.DURATION_HOURS > 3) return 'Standard bookings must be 1–3 hours.';
+  if (setup.BOOKING_TYPE === 'extended' && setup.DURATION_HOURS < 4) return 'Extended bookings must be 4–6 hours.';
+  if (Number(setup.START_TIME.slice(0, 2)) + setup.DURATION_HOURS > 24) return 'The main booking would end after midnight.';
+  if (!Array.isArray(setup.PREFERRED_COURTS)||setup.PREFERRED_COURTS.length !== 7 || new Set(setup.PREFERRED_COURTS).size !== 7 || setup.PREFERRED_COURTS.some(court => !Number.isInteger(court) || court < 1 || court > 7)) return 'Court priority is invalid.';
+  if (typeof setup.MAX_PRICE!=='number'||!Number.isFinite(setup.MAX_PRICE) || setup.MAX_PRICE <= 0) return 'Enter a valid maximum price.';
+  if (typeof setup.MAX_SELECTION_ATTEMPTS!=='number'||!Number.isInteger(setup.MAX_SELECTION_ATTEMPTS) || setup.MAX_SELECTION_ATTEMPTS < 1 || setup.MAX_SELECTION_ATTEMPTS > 5) return 'Attempt count must be from 1 to 5.';
+  if(!Array.isArray(setup.FALLBACK_TIMES)||!setup.FALLBACK_TIMES.every((time):time is string=>typeof time==='string'))return 'Fallback starts are invalid.';
+  const reconciliation = reconcileFallbackTimes(setup.START_TIME, setup.DURATION_HOURS, setup.FALLBACK_TIMES);
+  const first = reconciliation.removed[0];
+  if (!first) return undefined;
+  if (first.reason === 'DUPLICATES_PRIMARY_START') return `Fallback ${friendlyTime(first.time)} duplicates the main start.`;
+  if (first.reason === 'DUPLICATE_FALLBACK') return `Fallback ${friendlyTime(first.time)} appears more than once.`;
+  if (first.reason === 'CROSSES_MIDNIGHT') return `Fallback ${friendlyTime(first.time)} is not valid for a ${setup.DURATION_HOURS}-hour booking.`;
+  return 'A fallback start has an invalid time format.';
+}
+
+export function friendlyTime(time: string): string {
+  if (!hourPattern.test(time)) return time;
+  const hour = Number(time.slice(0, 2));
+  return `${hour % 12 || 12}:00 ${hour < 12 ? 'AM' : 'PM'}`;
+}

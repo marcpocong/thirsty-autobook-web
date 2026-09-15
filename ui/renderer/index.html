@@ -22,6 +22,8 @@
     </div>
     <div class="setup-grid editors"><div><h3>Court priority</h3><ol id="court-order"></ol></div><div><h3>Fallback starts · in order</h3><div class="button-row"><select id="fallback-time" aria-label="Add fallback start time"></select><button id="add-fallback" class="secondary">Add</button></div><ol id="fallback-order"></ol><p class="small">Primary time × court order, then each fallback × court order.</p></div></div>
     <button id="save-booking" class="secondary">Save booking plan</button><span id="edit-status" class="small"></span></fieldset>
+    <div id="booking-adjustment" class="readiness" role="status" hidden></div>
+    <div id="configuration-status" class="small" role="status" hidden></div>
     <pre id="booking-preview" aria-live="polite">Save your booking setup to compile a plan.</pre>
     <div class="mode-choice mode-options">
       <label><input id="mode-selection" type="radio" name="mode" checked><span><strong>SELECTION ONLY — STOP BEFORE PROCEED</strong><small>Leaves verified selected cells on screen for manual inspection. Does not deselect or Proceed.</small></span></label>

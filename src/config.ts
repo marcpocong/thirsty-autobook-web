@@ -3,6 +3,7 @@ import { DateTime, IANAZone } from 'luxon';
 import { parse as parseEnv } from 'dotenv';
 import { existsSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { reconcileBookingSetupFallbacks, reconcileFallbackTimes, type FallbackReconciliation } from './booking-setup.js';
 
 export const ONDA_URL = 'https://app.onda.fit/book/thirsty-pickle';
 export const VENUE = 'Thirsty Pickle | SM Seaside';
@@ -67,24 +68,30 @@ export function loadObservationConfig(): ReleaseSettings {
   return parsed.data;
 }
 type TestRuntimeSetup={strategy:'standard'|'extended';courtCount:1|2;start:string;duration:number;priority:number[];fallbackStarts:string[];maximum:number};
-function parseConfig(includeSaved:boolean,test?:TestRuntimeSetup):Config {
+function parseConfig(includeSaved:boolean,test?:TestRuntimeSetup):{config:Config;fallbackReconciliation:FallbackReconciliation} {
   const env = environment();
+  let fallbackReconciliation:FallbackReconciliation={valid:[],removed:[]};
   const raw: Record<string, unknown> = { START_TIME:'08:00', DURATION_HOURS:2, PREFERRED_COURTS:[7,6,5,4,3,2,1], FALLBACK_COURTS:[], FALLBACK_TIMES:[], MAX_PRICE:1200 };
   for (const key of Object.keys(ConfigSchema.shape)) if (env[key] !== undefined) raw[key] = env[key];
   for (const key of ['PREFERRED_COURTS', 'FALLBACK_COURTS', 'FALLBACK_TIMES']) {
     if (typeof raw[key] === 'string') raw[key] = (raw[key] as string).split(',').map(s => s.trim()).filter(Boolean).map(s => key === 'FALLBACK_TIMES' ? s : Number(s));
   }
   if (raw.COURT_COUNT === '1' || raw.COURT_COUNT === '2') raw.COURT_COUNT = Number(raw.COURT_COUNT);
-  if (includeSaved&&existsSync('config.local.json')) Object.assign(raw, BookingSetupSchema.parse(JSON.parse(readFileSync('config.local.json', 'utf8'))));
+  if (includeSaved&&existsSync('config.local.json')) {
+    const repaired=reconcileBookingSetupFallbacks(JSON.parse(readFileSync('config.local.json', 'utf8')));
+    fallbackReconciliation=repaired.reconciliation;
+    Object.assign(raw, BookingSetupSchema.parse(repaired.setup));
+  }
   if(test)Object.assign(raw,{BOOKING_TYPE:test.strategy,COURT_COUNT:test.courtCount,START_TIME:test.start,DURATION_HOURS:test.duration,PREFERRED_COURTS:test.priority,FALLBACK_COURTS:[],FALLBACK_TIMES:test.fallbackStarts,MAX_PRICE:test.maximum});
   const parsed = ConfigSchema.safeParse(raw);
   if (!parsed.success) throw new Error(`CONFIG_INVALID: ${parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
-  return parsed.data;
+  return {config:parsed.data,fallbackReconciliation};
 }
-export function loadConfig():Config{return parseConfig(true);}
+export function loadConfig():Config{return parseConfig(true).config;}
+export function loadConfigWithReconciliation(){return parseConfig(true);}
 // Test Now uses environment/player/runtime settings without parsing or applying
 // the saved Release draft in config.local.json.
-export function loadTestRuntimeConfig(test:TestRuntimeSetup):Config{return parseConfig(false,test);}
+export function loadTestRuntimeConfig(test:TestRuntimeSetup):Config{return parseConfig(false,test).config;}
 // Narrow, PII-free local settings; renderer cannot change URLs, release timing or player data.
 export const BookingSetupSchema = z.object({
   BOOKING_TYPE: ConfigSchema.shape.BOOKING_TYPE,
@@ -94,10 +101,11 @@ export const BookingSetupSchema = z.object({
   FALLBACK_TIMES: z.array(hour).max(15), MAX_PRICE: z.number().finite().positive(),
   MAX_SELECTION_ATTEMPTS: z.number().int().min(1).max(5).default(3),
 }).strict().superRefine((c, ctx) => {
-  if(c.BOOKING_TYPE==='standard'?c.DURATION_HOURS>3:c.DURATION_HOURS<4)ctx.addIssue({code:'custom',message:'Standard supports 1-3h; Extended supports 4-6h'});
-  if (new Set(c.PREFERRED_COURTS).size !== 7) ctx.addIssue({ code: 'custom', message: 'Each court must appear once' });
-  const times = [c.START_TIME, ...c.FALLBACK_TIMES];
-  if (new Set(times).size !== times.length || times.some(t => Number(t.slice(0, 2)) + c.DURATION_HOURS > 24)) ctx.addIssue({ code: 'custom', message: 'Duplicate or out-of-schedule time' });
+  if(c.BOOKING_TYPE==='standard'?c.DURATION_HOURS>3:c.DURATION_HOURS<4)ctx.addIssue({code:'custom',message:c.BOOKING_TYPE==='standard'?'Standard bookings must be 1–3 hours.':'Extended bookings must be 4–6 hours.',path:['DURATION_HOURS']});
+  if (new Set(c.PREFERRED_COURTS).size !== 7) ctx.addIssue({ code: 'custom', message: 'Court priority is invalid.', path:['PREFERRED_COURTS'] });
+  if(Number(c.START_TIME.slice(0,2))+c.DURATION_HOURS>24)ctx.addIssue({code:'custom',message:'The main booking would end after midnight.',path:['START_TIME']});
+  const fallback=reconcileFallbackTimes(c.START_TIME,c.DURATION_HOURS,c.FALLBACK_TIMES).removed[0];
+  if(fallback)ctx.addIssue({code:'custom',message:fallback.reason==='DUPLICATES_PRIMARY_START'?'A fallback duplicates the main start.':fallback.reason==='DUPLICATE_FALLBACK'?'A fallback start appears more than once.':fallback.reason==='CROSSES_MIDNIGHT'?`Fallback ${fallback.time} is not valid for a ${c.DURATION_HOURS}-hour booking.`:'A fallback start has an invalid time format.',path:['FALLBACK_TIMES']});
 });
 export type BookingSetup = z.infer<typeof BookingSetupSchema>;
 export interface Preference { court: number; hours: string[] }

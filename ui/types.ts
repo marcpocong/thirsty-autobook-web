@@ -8,6 +8,7 @@ import type { BookingSetup } from '../src/config.js';
 import type { PracticeInput } from '../src/practice.js';
 import type { DualPracticeInput } from '../src/dual-practice.js';
 import type {PreparedContext} from '../src/prepared-context.js';
+import type {FallbackReconciliation} from '../src/booking-setup.js';
 export type DualPracticeCommand = { kind:'dualDry'; date:string } | { kind:'dualPractice'|'dualFullPractice'; input:DualPracticeInput };
 export type Command = {kind:'resetPrepare';input:PreparationInput} | {kind:'testBooking';input:TestBookingInput} | DualPracticeCommand | 'chromeDual' | 'dualReadiness' | 'dualPrepare' | {kind:'fullPractice';input:FullPracticeInput} | 'chrome' | 'inspect' | 'observe' | { kind:'selection' | 'dry'; planHash:string } | {kind:'full';planHash:string;authorizeTerms:true} | { kind:'practice'; input:PracticeInput };
 export type Inspection = Extract<UiEvent, { type: 'inspection' }>;
@@ -30,6 +31,7 @@ export interface Dashboard {
   inspection: Inspection | null; clock: ReturnType<typeof clockStatus> | null;
   plan: Extract<UiEvent, { type: 'plan' }> | null; logs: Activity[]; liveRace: boolean;
   booking: BookingView | null; termsAuthorized: boolean;
+  bookingAdjustment?:FallbackReconciliation|null;
   capabilities: { selectionReady:boolean; checkoutReady:boolean; paymentBoundaryReady:boolean };
   selection: Extract<UiEvent, {type:'selection'}> | null;
   mode:'selection'|'full'; handoff:Extract<UiEvent,{type:'handoff'}>|null;
