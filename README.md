@@ -7,7 +7,7 @@ The existing single-court booking flow has live evidence, including the [Septemb
 
 ## Phase 7: Standard and Extended
 
-The normal workflow is **configure -> Reset & Prepare -> authorize Terms -> Run Test to QR / Arm Release**. Choose **Test Now** for an exact date without waiting for release, or **Release Booking** for the scheduled run. Engineering tools remain under the collapsed **Advanced / Diagnostics** section.
+The normal workflow is **configure → Reset & Prepare → authorize Terms → Run Test to QR / Arm Next Release**. Choose **Test Now** for an exact date without waiting for release, or **Release Booking** for the scheduled run. Engineering tools remain under the collapsed **Advanced / Diagnostics** section.
 
 | Booking type | Duration | Courts | Browsers | Checkouts / QR holds |
 |---|---|---|---|---|
@@ -20,7 +20,7 @@ Standard two-court bookings select both courts in one checkout. Extended splits 
 
 Test Now resolves availability before a native confirmation shows the actual courts and chunks. The confirmation permits bounded pre-Proceed replanning within the requested range; exact courts are never substituted. Test settings do not require changing the saved release court count. Reset & Prepare and all relevant edits clear Terms authorization. No historical dual readiness/practice evidence is required for normal Test Now or Release Booking.
 
-Test and Release use independent drafts. Test stays in memory and never writes `config.local.json`; Release Reset & Prepare validates, atomically saves, re-reads, fingerprints, and prepares the current Release fields. Status refreshes cannot replace the active Test draft with saved Release values. Normal Run Test to QR and Arm Release always mean the full visible Onda flow to the temporary QR hold boundary, regardless of the historical Advanced mode switch.
+Test and Release use independent drafts. Test stays in memory and never writes `config.local.json`; Release Reset & Prepare validates, atomically saves, re-reads, fingerprints, and prepares the current Release fields. Status refreshes cannot replace the active Test draft with saved Release values. Normal Run Test to QR and Arm Next Release always mean the full visible Onda flow to the temporary QR hold boundary, regardless of the historical Advanced mode switch.
 
 Reset & Prepare checks dedicated identities, dead owner state, current browser state and both old worker records when applicable. It resets proven pre-final state and returns to today's clean schedule. An active hold or uncertain final dispatch stays protected. Verified holds can be recovered after a conclusively inactive/expired state; a countdown elapsed on the dashboard alone is not proof. Unknown markup, missing worker identity, security challenges and wrong venue remain manual-review stops.
 
@@ -135,13 +135,15 @@ The Electron desktop window uses the existing CLI engine. The first launch may d
 
 1. Choose **Test Now** or **Release Booking**, booking type, court count, start, duration and per-court maximum. For Test Now choose an explicit date.
 2. Press **Reset & Prepare**. Test Now verifies the exact requested calendar date and a clean grid in every required browser without selecting reservation slots. Release settings are saved before preparation; Test Now fields remain independent. If a UI-owned run is active, confirm stopping it first. Retained hold and uncertain final-action protections still apply.
-3. Authorize Terms for this run, then press **Run Test to QR** or **Arm Release**. Review the native confirmation. The test resolves actual chunk courts before confirmation; release confirms priorities, fallback starts and valid splits.
+3. Authorize Terms for this run, then press **Run Test to QR** or **Arm Next Release**. Review the native confirmation. The test resolves actual chunk courts before confirmation; release confirms priorities, fallback starts and valid splits.
 4. Keep the dedicated Chrome window(s) visible. Successful automation stops at one Standard QR hold or two Extended QR holds. Payment remains manual.
 5. **Emergency Stop** stops only the UI-owned command and retains uncertain state. It never cancels holds or closes Chrome.
 
 **Dry Race** uses the same release/grid/preference path without selecting. **Observe Release** preserves the original read-only observer. **Run Safe Practice** accepts an explicit date/court/start/duration and reuses the existing select→verify→deselect→verify engine, never Proceed. Each command has the same process ownership and stop controls. Full Booking is now available because all three capability gates have recorded evidence. Select **FULL BOOKING — STOP AT QR PAYMENT**, Prepare, check the terms authorization, then **Arm Full Booking**. Its native confirmation includes the exact plan, terms YES and QR Checkout boundary. Practice and Selection Only retain their distinct stopping points.
 
-The countdown is informational and shows the next release after today's cutoff. The booking target remains **today in the configured timezone + horizon**; it is never silently shifted to tomorrow's plan. Arming is disabled after today's preflight cutoff. Prepare again on the intended release day. Local configuration is re-read before confirmation/launch, and a worker rejects a changed plan hash. External changes cannot modify a running worker's already-loaded configuration.
+The normal Release view always calculates the next future release in the configured timezone: before today's release it selects today; after today's release it selects tomorrow. The target date is that scheduled release calendar date plus `BOOKING_HORIZON_DAYS`. The operator may configure, Reset & Prepare, authorize Terms and **Arm Next Release** many hours in advance, including after today's cutoff for tomorrow's release.
+
+Arming freezes the exact release timestamp, exact target date and effective configuration fingerprint, and enables Electron sleep protection. Before release the app performs its wake/reconnect phase and a fresh final preflight. It never executes late. If an already-armed timestamp is missed or the run is cancelled, that frozen run is not silently rolled to a later release; Terms and preparation are cleared and the operator must Reset & Prepare and explicitly re-arm. Relevant setting changes likewise cancel an armed run and clear Terms/preparation. This missed-armed-run rule is distinct from the normal next-future-release calculation above. Local configuration is re-read before confirmation/launch, and a worker rejects a changed plan hash. External changes cannot modify a running worker's already-loaded configuration.
 
 The activity log streams opt-in validated `THIRSTY_EVENT` messages and sanitized child output. Periodic checks only read local CDP reachability and lock existence; they do not poll Onda. No player fields or environment editor are exposed. A reachable CDP endpoint alone does not prove the correct profile; explicit Inspect/Prepare uses the existing profile/tab validation.
 

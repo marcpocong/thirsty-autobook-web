@@ -12,6 +12,8 @@ import { resetPracticeSession } from './practice-reset.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 process.chdir(root);
+app.setName('Thirsty Pickle Bot');
+app.setAppUserModelId('com.thirstypickle.bot');
 app.setPath('userData', resolve(root, '.local/control-panel'));
 const node = process.env.THIRSTY_NODE_EXEC;
 if (!node) throw new Error('Launch the panel with npm run ui.');
@@ -45,7 +47,7 @@ else {
   void app.whenReady().then(async () => {
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
   session.defaultSession.setPermissionCheckHandler(() => false);
-  window = new BrowserWindow({ width: 1010, height: 800, minWidth: 820, minHeight: 690, title: 'Thirsty Bot · Onda Booking Control', backgroundColor: '#101419',
+  window = new BrowserWindow({ width: 1010, height: 800, minWidth: 820, minHeight: 690, title: 'Thirsty Pickle Bot · Onda Booking Control', backgroundColor: '#07140f', icon:resolve(root,'assets/brand/thirsty-pickle-bot.png'),
     autoHideMenuBar: true, show: false,
     webPreferences: { preload: resolve(root, 'dist/ui/preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, webviewTag: false } });
   window.removeMenu();

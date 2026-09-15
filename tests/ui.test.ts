@@ -101,6 +101,15 @@ describe('desktop orchestration', () => {
     const preload = await readFile('ui/preload.cts', 'utf8');
     expect(preload).not.toMatch(/exec|spawn|['"]thirsty:race['"]|shell|readFile/);
   });
+  it('keeps renderer branding assets wired and rejects known mojibake sequences', async () => {
+    const sources=await Promise.all(['ui/controller.ts','ui/main.ts','ui/renderer/app.ts','ui/renderer/index.html'].map(path=>readFile(path,'utf8')));
+    const combined=sources.join('\n');
+    expect(combined).not.toContain('Ã‚Â·');expect(combined).not.toContain('Ã¢â‚¬ â€™');
+    expect(combined).not.toContain('Â·');expect(combined).not.toContain('â†’');
+    expect(combined).toContain('·');expect(combined).toContain('→');
+    expect(sources[3]).toContain('src="thirsty-pickle-bot.png"');
+    expect((await readFile('assets/brand/thirsty-pickle-bot.png')).byteLength).toBeGreaterThan(1000);
+  });
   it('redacts sensitive output before it reaches renderer', () => {
     const line = sanitizeLine('person@example.com +639123456789 Bearer abcdef token=secret');
     expect(line).not.toContain('person@'); expect(line).not.toContain('639123'); expect(line).not.toContain('abcdef'); expect(line).not.toContain('secret');

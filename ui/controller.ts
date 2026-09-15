@@ -189,7 +189,7 @@ export class Controller {
     if (event.type === 'telemetry') {
       const labels: Record<string, string> = { chromeConnected: 'Dedicated Chrome and Onda tab verified', preflightStarted: 'Preflight started', preflightCompleted: 'Preflight passed',
         armed: 'ARMED — final preflight passed', releaseTriggerFired: 'Release trigger fired', reloadStarted: 'Reload started', reloadCommitted: 'Reload committed', targetGridReady: 'Target grid verified', gridSnapshotCompleted: 'Availability snapshot completed', automationStopped: 'Command completed' };
-      this.log(`${event.workerId?`Browser ${event.workerId} Â· `:''}${labels[event.event]??event.event}`);
+      this.log(`${event.workerId?`Browser ${event.workerId} · `:''}${labels[event.event]??event.event}`);
       if(['full','fullPractice'].includes(this.state.operation)){
         const stages:Record<string,string>={armed:'Full Booking armed',reviewValidated:'BOOKING REVIEWED',playerFillCompleted:'PLAYER INFORMATION VERIFIED',paymentSummaryValidated:'READY TO CREATE PAYMENT HOLD',finalOndaActionStarted:'Creating payment hold',finalOndaButtonClicked:'Checking QR handoff — read only'};
         if(stages[event.event])this.state.headline=stages[event.event]!;
@@ -295,7 +295,7 @@ export class Controller {
         const health=await this.health(),required=strategy==='extended'?['A','B'] as const:['A'] as const;if(required.some(id=>!health[id]))throw Error('RESET_REQUIRED');
         this.state.preparedContext=makePreparedContext(input,result,players,release);this.state.ready=true;this.state.preparedAt=Date.parse(this.state.preparedContext.preparedAt);
         this.state.headline=input.workflow==='release'?'READY TO ARM':'READY TO TEST';
-        this.state.detail=input.workflow==='release'?`${strategy==='extended'?'Extended':'Standard'} · ${this.state.preparedContext.courtCount} court(s)\nBrowsers: ${required.length} ready\nPlayers: ${strategy==='extended'?2:1} configured\nSelected slots: 0\nPayment holds: none\nAuthorize Terms, then Arm Release.`:`${strategy==='extended'?'Extended':'Standard'} · ${this.state.preparedContext.courtCount} court(s)\nDate: ${this.state.preparedContext.date}\nBrowsers: ${required.length} ready\nPlayers: ${strategy==='extended'?2:1} configured\nCurrent booking solution: available\nSelected slots: 0\nPayment holds: none\nAuthorize Terms, then Run Test to QR.`;
+        this.state.detail=input.workflow==='release'?`${strategy==='extended'?'Extended':'Standard'} · ${this.state.preparedContext.courtCount} court(s)\nBrowsers: ${required.length} ready\nPlayers: ${strategy==='extended'?2:1} configured\nSelected slots: 0\nPayment holds: none\nAuthorize Terms, then Arm Next Release.`:`${strategy==='extended'?'Extended':'Standard'} · ${this.state.preparedContext.courtCount} court(s)\nDate: ${this.state.preparedContext.date}\nBrowsers: ${required.length} ready\nPlayers: ${strategy==='extended'?2:1} configured\nCurrent booking solution: available\nSelected slots: 0\nPayment holds: none\nAuthorize Terms, then Run Test to QR.`;
       });
     }catch(error){
       if(this.state.operation!=='stopping'&&!['PAYMENT HOLD ACTIVE','TARGET NOT AVAILABLE','EXTENDED PLAYER REQUIRED',"TODAY'S RELEASE HAS PASSED",'AUTOMATION STILL RUNNING','ONDA NEEDS ATTENTION'].includes(this.state.headline)){this.state.headline='RESET REQUIRED';this.state.detail='Check the booking fields, then Reset & Prepare.';this.publish();}
