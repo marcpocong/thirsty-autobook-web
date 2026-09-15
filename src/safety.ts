@@ -48,6 +48,9 @@ export async function waitUntil(epochMs: number, signal: AbortSignal) {
   const monoTarget = performance.now() + epochMs - Date.now();
   while (true) {
     signal.throwIfAborted();
+    // A wall-clock jump or resume past an exact schedule must wake the caller
+    // immediately so it can fail closed instead of waiting on monotonic time.
+    if(Date.now()>=epochMs)return;
     const remaining = monoTarget - performance.now();
     if (remaining <= 0 && Date.now() >= epochMs) return;
     // Yield even in final precision interval, keeping abort input responsive.

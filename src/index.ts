@@ -18,6 +18,7 @@ import { assertReloadProfileTime, profileReload, formatReloadProfile } from './r
 import { dryCurrentAvailability } from './availability-dry.js';
 import { compareCurrentAvailability } from './availability-compare.js';
 import { assertAvailabilityDate } from './onda-availability.js';
+import {ScheduledReleaseContextSchema} from './scheduled-release.js';
 
 const safety = new Safety();
 const telemetry = new Telemetry();
@@ -60,7 +61,7 @@ try {
   const [mode, ...args] = process.argv.slice(2);
   if (!mode || !['inspect', 'practice', 'availability:compare', 'availability:dry', 'release:observe', 'release:preopen-check', 'release:reload-profile', 'race:dry', 'race', 'selection:armed','handoff:test','practice:full'].includes(mode)) throw new Error('MODE_REQUIRED');
   if (mode === 'release:reload-profile') assertReloadProfileTime();
-  const allowed = new Set(['availability:compare', 'availability:dry'].includes(mode) ? ['--date'] : mode === 'practice' ? ['--date', '--court', '--start', '--duration'] : ['handoff:test','practice:full'].includes(mode)?['--maximum','--date','--court','--start','--duration','--armed','--authorize-terms','--noncompetitive']:['--armed', '--authorize-terms', '--plan-hash']);
+  const allowed = new Set(['availability:compare', 'availability:dry'].includes(mode) ? ['--date'] : mode === 'practice' ? ['--date', '--court', '--start', '--duration'] : ['handoff:test','practice:full'].includes(mode)?['--maximum','--date','--court','--start','--duration','--armed','--authorize-terms','--noncompetitive']:['--armed', '--authorize-terms', '--plan-hash','--scheduled-release']);
   for (const arg of args.filter(a => a.startsWith('--'))) if (!allowed.has(arg)) throw new Error('UNKNOWN_ARGUMENT');
   requireArmed(mode, args.includes('--armed'));
   requireCapability(mode);
@@ -68,17 +69,21 @@ try {
   if(mode==='handoff:test'&&!args.includes('--noncompetitive'))throw new Error('NONCOMPETITIVE_TARGET_REQUIRED');
   const config: Config | ReleaseSettings | undefined = ['release:observe', 'release:preopen-check'].includes(mode) ? loadObservationConfig() : ['availability:dry','race:dry','selection:armed','race','handoff:test','practice:full'].includes(mode) ? loadConfig() : undefined;
   const value = (flag: string) => { const i = args.indexOf(flag); return i < 0 ? undefined : args[i + 1]; };
+  const scheduledRaw=value('--scheduled-release');
+  const scheduled=scheduledRaw?ScheduledReleaseContextSchema.parse(JSON.parse(scheduledRaw)):undefined;
+  if(mode==='race'&&!scheduled)throw Error('SCHEDULE_CONTEXT_REQUIRED');
   const compareDate = ['availability:compare', 'availability:dry'].includes(mode) ? value('--date') ?? '' : undefined;
   if (compareDate !== undefined) assertAvailabilityDate(compareDate);
   if (args.includes('--plan-hash') && (!config || !('MAX_PRICE' in config) || planFingerprint(config as Config) !== value('--plan-hash'))) throw new Error('BOOKING_PLAN_CHANGED');
   // Default single mode never imports or initializes the dual coordinator.
   if (config && 'COURT_COUNT' in config && ((config as Config).BOOKING_TYPE === 'extended' || config.COURT_COUNT === 2) && ['race','race:dry','selection:armed'].includes(mode)) {
     const { runBooking } = await import('./booking-runtime.js');
-    await runBooking(config as Config, mode === 'race' ? 'race' : mode === 'race:dry' ? 'race:dry' : 'race:selection', safety, telemetry, { authorizeTerms:args.includes('--authorize-terms') });
+    await runBooking(config as Config, mode === 'race' ? 'race' : mode === 'race:dry' ? 'race:dry' : 'race:selection', safety, telemetry, { authorizeTerms:args.includes('--authorize-terms'),...(scheduled?{scheduledTarget:{releaseMs:scheduled.releaseMs,releaseISO:scheduled.releaseISO,targetDate:scheduled.targetDate},scheduledFingerprint:scheduled.configFingerprint}:{}) });
     await telemetry.flush();
     if (process.stdin.isTTY) process.stdin.setRawMode(false);
     process.exit(0);
   }
+  if (scheduled) { telemetry.mark('scheduledWorkerWake'); telemetry.mark('workerStart'); }
   const practiceInput = mode === 'practice' ? PracticeSchema.parse({ date: value('--date'), court: value('--court'), start: value('--start'), duration: value('--duration') }) : undefined;
   const fullPractice=mode==='practice:full'?FullPracticeSchema.parse({target:{date:value('--date'),court:value('--court'),start:value('--start'),duration:value('--duration')},maximum:Number(value('--maximum')),authorizeTerms:args.includes('--authorize-terms')}):undefined;
   const handoffInput=mode==='handoff:test'?PracticeSchema.parse({date:value('--date'),court:value('--court'),start:value('--start'),duration:value('--duration')}):undefined;
@@ -88,6 +93,7 @@ try {
   const { lifecycleWriter } = await import('./checkout-lifecycle.js');
   safety.persistStage=lifecycleWriter(lockPath,{pid:process.pid,runID:telemetry.runID});
   const { page } = await attach(safety, telemetry); telemetry.mark('chromeConnected'); telemetry.mark('ondaTabResolved');
+  if (scheduled) telemetry.mark('browserAttached', 1);
   if (mode === 'inspect') await inspect(page);
   else if (compareDate !== undefined) {
     const result = mode === 'availability:dry'
@@ -127,7 +133,9 @@ try {
   }
   else if (config) {
     const selecting = mode === 'selection:armed' || mode === 'race';
-    const released = await observeRelease(page, config, safety, telemetry, mode === 'race:dry', selecting);
+    const target=scheduled?{releaseMs:scheduled.releaseMs,releaseISO:scheduled.releaseISO,targetDate:scheduled.targetDate}:undefined;
+    if(scheduled&&(!('MAX_PRICE' in config)||scheduled.configFingerprint!==planFingerprint(config as Config)||Date.now()>=scheduled.releaseMs))throw Error(Date.now()>=scheduled.releaseMs?'RELEASE_MISSED':'SCHEDULE_CONTEXT_MISMATCH');
+    const released = await observeRelease(page, config, safety, telemetry, mode === 'race:dry', selecting,target?{target,beforeArmed:async()=>{},verifyContext:()=>{if(scheduled!.configFingerprint!==planFingerprint(loadConfig()))throw Error('SCHEDULE_CONTEXT_MISMATCH');}}:undefined);
     if (selecting && 'MAX_PRICE' in config) {
       const booking = config as Config;
       const result = await selectResolvedPreference(selectionPort(page, safety), released.target.targetDate, released.grid, released.preferences, booking.MAX_PRICE, booking.MAX_SELECTION_ATTEMPTS, safety, telemetry, released.discovery)

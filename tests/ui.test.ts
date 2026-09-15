@@ -109,7 +109,7 @@ describe('desktop orchestration', () => {
     const before = clockStatus(settings, DateTime.fromISO('2026-09-10T07:59:00+08:00'));
     expect(before.manilaTime).toBe('07:59:00'); expect(before.remainingMs).toBe(60000); expect(before.targetDate).toBe('2026-09-12'); expect(before.canArmToday).toBe(true);
     const after = clockStatus(settings, DateTime.fromISO('2026-12-31T09:00:00+08:00'));
-    expect(after.targetDate).toBe('2027-01-03'); expect(after.canArmToday).toBe(false); expect(after.remainingMs).toBe(23 * 3600000);
+    expect(after.targetDate).toBe('2027-01-03'); expect(after.canArmToday).toBe(true); expect(after.todayReleasePassed).toBe(true);expect(after.remainingMs).toBe(23 * 3600000);
   });
   it('lock detection is read-only, including malformed stale locks', async () => {
     await mkdir('.local', { recursive: true }); const root = await mkdtemp(resolve('.local/ui-lock-test-'));

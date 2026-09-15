@@ -7,6 +7,7 @@
 <main>
   <section id="simple-status" class="panel"></section>
   <section class="workflow panel"><div class="button-row"><button id="workflow-test" class="secondary">TEST NOW</button><button id="workflow-release" class="secondary">RELEASE BOOKING</button></div></section>
+  <section id="release-schedule" class="panel release-schedule" hidden><div class="section-title"><div><p class="eyebrow" id="release-passed"></p><h2>NEXT RELEASE</h2><strong id="next-release">Calculating...</strong></div><div class="countdown-block"><p class="eyebrow">NEXT RELEASE IN</p><div id="next-release-countdown" class="countdown">--:--:--</div></div></div><p>Booking target: <strong id="next-target">Calculating...</strong></p><p id="schedule-meta" class="small"></p></section>
 
   <section class="panel" id="lock-card" hidden><h2>AUTOMATION LOCK ACTIVE</h2><pre id="lock-review">Browser state: Needs verification. Use Review Lock.</pre><p>Booking actions are blocked. You can still edit and save your next booking plan locally.</p><button id="review-lock" class="secondary">Review Lock</button> <button id="clear-lock" class="secondary" hidden>Clear Verified Stale Lock</button></section>
   <section class="hero" aria-label="Release clock"><div><p class="eyebrow">ASIA / MANILA</p><div id="clock" class="clock">--:--:--</div><p id="clock-date" class="muted">Reading local clock…</p></div><div class="countdown-block"><p class="eyebrow" id="countdown-label">NEXT RELEASE IN</p><div id="countdown" class="countdown">--:--:--</div><p class="muted"><span id="release-time">08:00:00</span> <span id="release-zone">Asia/Manila</span></p></div></section>
@@ -16,22 +17,23 @@
       <label id="test-date-label">Test date<input id="test-date" type="date"></label>
       <label>Courts to book<select id="court-count"><option value="1">1 Court</option><option value="2">2 Courts</option></select></label>
       <label>Start time<select id="start-time"></select></label>
-      <label>Duration (hours)<input id="duration" type="number" min="1" max="6" value="2"></label>
-      <label>Maximum per court / checkout (PHP)<input id="maximum" type="number" min="1" step="0.01" value="1200"></label>
+      <label>Duration (hours)<input id="duration" type="number" min="1" max="3" value="2"></label>
+      <label>Maximum per court (PHP)<input id="maximum" type="number" min="1" step="0.01" value="1200"></label>
       <label>Maximum candidate attempts<input id="attempts" type="number" min="1" max="5" value="3"></label>
     </div>
     <div class="setup-grid editors"><div><h3>Court priority</h3><ol id="court-order"></ol></div><div><h3>Fallback starts · in order</h3><div class="button-row"><select id="fallback-time" aria-label="Add fallback start time"></select><button id="add-fallback" class="secondary">Add</button></div><ol id="fallback-order"></ol><p class="small">Primary time × court order, then each fallback × court order.</p></div></div>
     <button id="save-booking" class="secondary">Save booking plan</button><span id="edit-status" class="small"></span></fieldset>
     <div id="booking-adjustment" class="readiness" role="status" hidden></div>
     <div id="configuration-status" class="small" role="status" hidden></div>
-    <pre id="booking-preview" aria-live="polite">Save your booking setup to compile a plan.</pre>
+    <div id="booking-preview" class="plan-card" aria-live="polite">Save your booking setup to compile a plan.</div>
     <div class="mode-choice mode-options">
       <label><input id="mode-selection" type="radio" name="mode" checked><span><strong>SELECTION ONLY — STOP BEFORE PROCEED</strong><small>Leaves verified selected cells on screen for manual inspection. Does not deselect or Proceed.</small></span></label>
       <label><input id="mode-full" type="radio" name="mode" disabled><span><strong>FULL BOOKING — STOP AT QR PAYMENT</strong><small>Select → Proceed → player information → Proceed → Terms → QR Checkout → stop. You pay manually.</small></span></label>
     </div>
     <label class="terms-choice"><input id="terms" type="checkbox" disabled> I authorize accepting Onda Terms for this booking</label>
   </section>
-  <section id="primary-actions" class="panel"><button id="test-booking" class="arm">RUN TEST TO QR</button></section>
+  <section id="release-readiness-card" class="panel" hidden><h2>RELEASE READINESS</h2><div id="release-readiness"></div></section>
+  <section id="primary-actions" class="panel"><button id="test-booking" class="arm">RUN TEST TO QR</button><p id="sleep-warning" class="small" hidden>Keep the PC powered on. Do not hibernate or close the laptop lid if Windows is configured to sleep on lid close.</p></section>
   <details id="advanced"><summary>Advanced / Diagnostics</summary><div id="advanced-extra"></div>
   <section class="panel"><h2>Exact courts for Test Now (optional)</h2><p class="small">Leave both blank to use court priority. Exact courts are never substituted. For two courts, enter two distinct numbers separated by a comma.</p><div class="setup-grid"><label>Checkout 1<input id="exact-a" type="text" placeholder="7,6" autocomplete="off"></label><label>Checkout 2 · Extended only<input id="exact-b" type="text" placeholder="7,5" autocomplete="off"></label></div></section>
   <div class="content">

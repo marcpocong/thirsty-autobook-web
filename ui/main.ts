@@ -1,7 +1,7 @@
 import { describeBookingPlan } from '../src/booking-plan.js';
 import { loadConfig,loadPlayerReadiness } from '../src/config.js';
 import {reviewLock,clearVerifiedLock,browserProbe} from './locks.js';
-import { app, BrowserWindow, ipcMain, dialog, session } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, session, powerSaveBlocker } from 'electron';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { Controller } from './controller.js';
@@ -31,6 +31,7 @@ const controller = new Controller({
   dualEvidence:async()=>{const {readDualEvidence,dualValidationFingerprint}=await import('../src/dual-runtime.js');const e=await readDualEvidence(dualValidationFingerprint(loadConfig()));return {selection:!!(e.readiness&&e.dry&&e.selection),full:!!(e.readiness&&e.dry&&e.selection&&e.full)};},
   confirmDualPractice:async command=>(await dialog.showMessageBox(window,{type:'warning',title:'Create TWO real temporary holds?',message:'THIS TEST CAN CREATE TWO REAL TEMPORARY RESERVATION HOLDS.',detail:command.kind==='dualDry'?'':`Date: ${command.input.target.date}\nCourts: ${command.input.target.court} + ${command.input.courtB}\nStart: ${command.input.target.start}\nDuration: ${command.input.target.duration} hours\nMaximum per court: PHP ${command.input.maximum}\nTerms authorized: YES\nNoncompetitive target: confirmed\nPAYMENT WILL NOT BE AUTOMATED.`,buttons:['Cancel','Create two test holds'],defaultId:0,cancelId:0})).response===1,
   booking:readBooking, saveBooking, handoff:()=>readHandoff(root),browserHealth:probeBrowserHealth,playerStatus:loadPlayerReadiness,
+  startSleepProtection:()=>powerSaveBlocker.start('prevent-app-suspension'),stopSleepProtection:id=>{if(powerSaveBlocker.isStarted(id))powerSaveBlocker.stop(id);},
   confirm: async (kind='observe',plan) => (await dialog.showMessageBox(window, { type: 'question', title: kind==='full'?'Arm Full Booking to QR?':kind==='selection'?'Arm booking selection?':kind==='dry'?'Arm Dry Race?':'Arm release observation?',
     message: kind==='full'?'ARM FULL BOOKING?':kind==='selection'?'ARM BOOKING SELECTION?':kind==='dry'?'ARM DRY RACE?':'Arm release observation?',
     detail: (plan ? describePlan(plan)+'\n\n' : '') + (kind==='full'?'Terms authorization: YES, for this booking only.\nFinal automation boundary: QR Checkout.\nThe bot will continue through Onda until the QR payment page is reached, then stop. Payment itself remains manual.':kind==='selection'?'At release this automation MAY SELECT available court slots.\nSelection Only stops before Proceed. Selection is not a reservation.':'This waits for release and performs read-only refresh/date navigation. No court slots will be selected.'),
@@ -56,7 +57,7 @@ else {
     startChrome: () => controller.startChrome(), inspectOnda: () => controller.inspectOnda(), prepare: () => controller.prepare(), prepareDual:()=>controller.prepareDual(),
     armObservation: () => controller.armObservation(), abortAutomation: () => controller.abortAutomation(), getStatus: () => structuredClone(controller.state),
     armSelection: () => controller.armSelection(), dryRace: () => controller.dryRace(),
-    armFullBooking:()=>controller.armFullBooking(),invalidatePreparation:()=>controller.invalidatePreparation(),
+    armFullBooking:()=>controller.armFullBooking(),cancelScheduledRelease:()=>controller.cancelScheduledRelease(),invalidatePreparation:()=>controller.invalidatePreparation(),
   };
   for (const [name, action] of Object.entries(actions)) ipcMain.handle(`thirsty:${name}`, (event, ...args: unknown[]) => {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== indexUrl || args.length) throw new Error('IPC_NOT_ALLOWED');

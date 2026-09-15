@@ -52,6 +52,7 @@ it('release reload goes straight from incomplete Today to target and records dis
   const result = await observeRelease(page, settings, new Safety(), t, false);
   expect(reloads).toBe(1);
   expect(validateSnapshot(result.grid, target.date)).toHaveLength(112);
+  expect(t.events.filter(e=>e.event==='gridSnapshotCompleted')).toHaveLength(1);
   expect(await page.evaluate(() => (window as any).actions)).toEqual(['picker', 'target']);
   expect(t.events.map(e => e.event)).toEqual([
     'preflightStarted', 'preflightCompleted', 'preflightStarted', 'preflightCompleted', 'armed', 'releaseScheduled',
@@ -59,7 +60,7 @@ it('release reload goes straight from incomplete Today to target and records dis
     'releaseVenueVisible', 'releaseVenueVerified', 'releasePickerAttached', 'releasePickerVisible',
     'releasePickerEnabled', 'releaseShellReady', 'targetPickerOpened',
     'targetDateDetected', 'targetDateEnabled', 'targetDateClickStarted', 'targetDateClicked',
-    'targetHeadingDetected', 'targetGridReady', 'gridSnapshotStarted', 'gridSnapshotCompleted',
+    'targetHeadingDetected', 'gridSnapshotStarted', 'gridSnapshotCompleted', 'targetGridReady',
   ]);
 });
 
@@ -206,7 +207,7 @@ it('heading alone never releases the target grid barrier; stale, partial and bus
   await page.evaluate(() => { (window as any).render('2026-09-13'); document.body.setAttribute('aria-busy','true'); });
   await page.waitForTimeout(70); expect(done).toBe(false);
   await page.evaluate(() => document.body.removeAttribute('aria-busy'));
-  expect(await waiting).toBe('TARGET_GRID_READY');
+  const completed=await waiting;if(completed==='TARGET_DATE_NOT_RELEASED')throw Error('TARGET_NOT_RELEASED');expect(validateSnapshot(completed,target.date)).toHaveLength(112);
   expect(validateSnapshot(await snapshot(page), target.date)).toHaveLength(112);
   expect(await page.evaluate(() => (window as any).actions)).toEqual(['picker', 'target']);
 });

@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { PracticeSchema } from '../src/practice.js';
 import {requireCapability} from '../src/capabilities.js';
 import { DualPracticeSchema, requireDualFullAuthorization } from '../src/dual-practice.js';
+import {ScheduledReleaseContextSchema} from '../src/scheduled-release.js';
 
 export interface RunningCommand { pid: number | undefined; done: Promise<number>; stop(): Promise<void> }
 export type Runner = (command: Command, onEvent: (event: UiEvent) => void, onLine: (line: string, error: boolean) => void, confirmBooking?:(plan:BookingPlan)=>Promise<boolean>) => RunningCommand;
@@ -37,9 +38,9 @@ export function commandSpec(command: Command, root: string, node: string) {
       return {executable:node,args:['--import','tsx',resolve(root,'src/index.ts'),'practice:full','--armed','--authorize-terms','--date',t.date,'--court',String(t.court),'--start',t.start,'--duration',String(t.duration),'--maximum',String(input.maximum)],automation:true};
     }
     if(command.kind==='full'){
-      const c=z.object({kind:z.literal('full'),planHash:z.string().regex(/^[a-f0-9]{64}$/),authorizeTerms:z.literal(true)}).strict().parse(command);
+      const c=z.object({kind:z.literal('full'),context:ScheduledReleaseContextSchema,authorizeTerms:z.literal(true)}).strict().parse(command);
       requireCapability('race');
-      return {executable:node,args:['--import','tsx',resolve(root,'src/index.ts'),'race','--armed','--authorize-terms','--plan-hash',c.planHash],automation:true};
+      return {executable:node,args:['--import','tsx',resolve(root,'src/index.ts'),'race','--armed','--authorize-terms','--scheduled-release',JSON.stringify(c.context)],automation:true};
     }
     if (command.kind === 'practice') {
       const {input} = z.object({kind:z.literal('practice'),input:PracticeSchema}).strict().parse(command);

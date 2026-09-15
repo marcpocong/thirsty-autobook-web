@@ -21,6 +21,8 @@ advanced.append(byId('lock-card'),document.querySelector('.hero')!,document.quer
 input('test-date').value=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Manila',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 
 const friendly=(h:string)=>`${Number(h.slice(0,2))%12||12}:00 ${Number(h.slice(0,2))<12?'AM':'PM'}`;
+const endFriendly=(start:string,duration:number)=>Number(start.slice(0,2))+duration===24?'12:00 MN':friendly(`${String(Number(start.slice(0,2))+duration).padStart(2,'0')}:00`);
+const money=(n:number)=>`PHP ${n.toLocaleString('en-PH',{maximumFractionDigits:2})}`;
 const hours=Array.from({length:16},(_,i)=>`${String(i+8).padStart(2,'0')}:00`);
 for(const id of ['start-time','fallback-time','practice-start','full-start','dual-start']) (byId(id) as HTMLSelectElement).replaceChildren(...hours.map(h=>new Option(friendly(h),h)));
 (byId('practice-court') as HTMLSelectElement).replaceChildren(...Array.from({length:7},(_,i)=>new Option(`Court ${i+1}`,String(i+1))));
@@ -39,6 +41,14 @@ function reconcileReleaseDraft(){
   if(reconciliation.removed.length){fallbackTimes=[...reconciliation.valid];releaseAdjustment=reconciliation;editors();}
 }
 function changed(){input('terms').checked=false;reconcileReleaseDraft();if(workflow==='test')testDirty=true;else releaseDirty=true;dirty=true;storeDraft();void window.thirsty.invalidatePreparation?.().catch(()=>{});byId('edit-status').textContent='SETTINGS CHANGED · Press Reset & Prepare.';if(latest)render(latest);}
+function syncViableControls(){
+  const duration=Number(input('duration').value),start=input('start-time').value,extended=input('booking-type').value==='extended';
+  input('duration').min=extended?'4':'1';input('duration').max=extended?'6':'3';
+  for(const option of [...(byId('start-time') as HTMLSelectElement).options])option.disabled=Number(option.value.slice(0,2))+duration>24;
+  const viable=hours.filter(h=>h!==start&&!fallbackTimes.includes(h)&&Number(h.slice(0,2))+duration<=24);
+  const picker=byId('fallback-time') as HTMLSelectElement,previous=picker.value;picker.replaceChildren(...viable.map(h=>new Option(friendly(h),h)));if(viable.includes(previous))picker.value=previous;
+  (byId('add-fallback') as HTMLButtonElement).disabled=!viable.length;
+}
 function editors(){
   const draw=(id:string,items:(string|number)[],fallback:boolean)=>byId(id).replaceChildren(...items.map((item,index)=>{
     const li=document.createElement('li'),label=document.createElement('span');label.textContent=fallback?friendly(String(item)):`Court ${item}`;li.append(label);
@@ -54,7 +64,8 @@ function status(id: string, text: string, tone: string) { const el = byId(id); e
 function render(state: Dashboard) {
   latest = state;
   byId('headline').textContent = state.headline; byId('detail').textContent = state.detail;
-  const busy = state.operation !== 'idle';
+  const armed=!!state.scheduledRelease;
+  const busy = state.operation !== 'idle'&&state.operation!=='scheduled';
   const playerStatus=state.playerStatus??{primary:!!state.booking?.playerConfigured,extended:!!state.booking?.extendedPlayerConfigured};
   const dual=state.booking?.setup.BOOKING_TYPE==='standard'&&state.booking.setup.COURT_COUNT===2;
   // Keep the dual practice entry point visible in the safe single-court
@@ -70,10 +81,10 @@ function render(state: Dashboard) {
     : 'Legacy dual practice only: Set Courts to book to 2 with Standard saved settings. Use the main controls for Standard / Extended bookings.';
   const dualResult=state.dualResult;byId('dual-result').hidden=!dualResult;
   byId('dual-result').textContent=dualResult?`${dualResult.status.replaceAll('_',' ')}\n${dualResult.date} / ${dualResult.hours.join(', ')}\nBrowser A: Court ${dualResult.courtA}\nBrowser B: Court ${dualResult.courtB}\nSource: ${dualResult.candidateSource}`:'';
-  const full=state.mode==='full',fullReady=state.capabilities.selectionReady&&state.capabilities.checkoutReady&&state.capabilities.paymentBoundaryReady;
+  const full=workflow==='release'||state.mode==='full',fullReady=state.capabilities.selectionReady&&state.capabilities.checkoutReady&&state.capabilities.paymentBoundaryReady;
   input('mode-full').checked=full;input('mode-selection').checked=!full;
   input('mode-full').disabled=busy||!fullReady;input('mode-selection').disabled=busy;
-  input('terms').disabled=busy||state.lock||dirty||!full||!fullReady;
+  input('terms').disabled=armed||busy||state.lock||dirty||!full||!fullReady;
   byId('mode-label').textContent=full?'FULL BOOKING TO QR':'SELECTION ONLY';
   byId('prepare').firstChild!.textContent=dual?'Prepare Selected Dual Run ':full?'Prepare Full Booking ':'Prepare Selection ';
   byId('arm').textContent=full?'Arm Full Booking':'Arm Booking Selection';
@@ -100,11 +111,11 @@ function render(state: Dashboard) {
   (byId('full-practice') as HTMLButtonElement).disabled=busy||state.lock||!state.cdp||!state.booking?.playerConfigured||!fullReady||!input('full-terms').checked;
   (byId('practice') as HTMLButtonElement).disabled=busy||state.lock||!state.cdp;
   byId('practice-blocked').textContent=state.lock?'Use Reset Practice Session to inspect and safely restart the dedicated practice environment.':!state.cdp?'Start / Attach Chrome first.':!state.booking?.playerConfigured?'Player information is missing.':!fullReady?'Full Booking capability is not verified.':!input('full-terms').checked?'Terms authorization is required for this practice run.':'';
-  (byId('prepare') as HTMLButtonElement).disabled=busy||state.lock||dirty||!state.booking;
-  (byId('arm') as HTMLButtonElement).disabled = busy || state.lock || !state.booking || !state.capabilities.selectionReady || !state.cdp || !state.clock?.canArmToday || (full&&(!fullReady||!state.termsAuthorized));
+  (byId('prepare') as HTMLButtonElement).disabled=armed||busy||state.lock||dirty||!state.booking;
+  (byId('arm') as HTMLButtonElement).disabled = armed?false:busy || state.lock || !state.booking || !state.capabilities.selectionReady || !state.cdp || (full&&(!fullReady||!state.termsAuthorized));
   (byId('dry') as HTMLButtonElement).disabled=busy||dirty||state.lock||!state.booking||!state.clock?.canArmToday;
   (byId('observe') as HTMLButtonElement).disabled=busy||state.lock||!state.clock?.canArmToday;
-  input('terms').checked=state.termsAuthorized;
+  input('terms').checked=state.termsAuthorized||armed;
   byId('player-status').textContent=`Player information · ${state.booking?.playerConfigured?'Configured ✓':'Missing / configuration invalid'}`;
   byId('capability-status').textContent=`Selection ${state.capabilities.selectionReady?'ready':'unverified'} · checkout ${state.capabilities.checkoutReady?'verified':'unverified'} · payment handoff ${state.capabilities.paymentBoundaryReady?'verified':'unverified'}`;
   const b=state.booking;
@@ -161,33 +172,52 @@ function render(state: Dashboard) {
   const adjustment=releaseAdjustment??state.bookingAdjustment??b?.fallbackReconciliation;
   byId('booking-adjustment').hidden=workflow!=='release'||!adjustment?.removed.length;
   if(adjustment?.removed.length)byId('booking-adjustment').textContent=`BOOKING SETTINGS ADJUSTED\n${adjustment.removed.length} invalid fallback start${adjustment.removed.length===1?' was':'s were'} removed because ${adjustment.removed.length===1?'it no longer fits':'they no longer fit'} the current primary booking.`;
+  if(adjustment?.removed.length)byId('booking-adjustment').textContent=`BOOKING SETTINGS ADJUSTED\n${adjustment.removed.length} invalid fallback start${adjustment.removed.length===1?' was':'s were'} removed.\nRemoved:\n${adjustment.removed.map(r=>`${friendly(r.time)} - ${r.reason==='CROSSES_MIDNIGHT'?`${Number(input('duration').value)} hours would end after midnight`:r.reason==='DUPLICATES_PRIMARY_START'?'duplicates the primary start':r.reason==='DUPLICATE_FALLBACK'?'duplicate fallback':'invalid time'}`).join('\n')}\nPrimary booking unchanged:\n${friendly(input('start-time').value)} -> ${endFriendly(input('start-time').value,Number(input('duration').value))}`;
   input('prepare').disabled=['prepare','stopping','saving','resetting'].includes(state.operation)||!!draftProblem;
-  byId('arm').textContent='ARM RELEASE';byId('arm').hidden=workflow==='test';
+  byId('arm').textContent=armed?'CANCEL ARMED RELEASE':'ARM NEXT RELEASE';byId('arm').hidden=workflow==='test';
   byId('test-booking').hidden=workflow==='release';byId('test-date-label').hidden=workflow==='release';
   input('test-booking').disabled=busy||dirty||state.lock||!state.ready||!input('terms').checked;
-  input('terms').disabled=busy||dirty||state.lock||!state.ready;
+  input('terms').disabled=armed||busy||dirty||state.lock||!state.ready;
   byId('terms').parentElement!.lastChild!.textContent=workflow==='test'?' I authorize accepting Onda Terms for this test':' I authorize accepting Onda Terms for this booking';
+  if(workflow==='release'&&armed)byId('terms').parentElement!.lastChild!.textContent=' AUTHORIZED FOR THIS EXACT SCHEDULED RUN';
   byId('workflow-test').setAttribute('aria-pressed',String(workflow==='test'));byId('workflow-release').setAttribute('aria-pressed',String(workflow==='release'));
   input('workflow-test').disabled=busy;input('workflow-release').disabled=busy;
   input('save-booking').disabled=busy||workflow==='test';
   if(workflow==='release'){input('arm').disabled ||= dirty||!state.ready||!input('terms').checked||!fullReady;byId('blocked-reason').textContent=state.lock?'RESET REQUIRED':dirty?'SETTINGS CHANGED · Press Reset & Prepare.':!state.ready?'Reset & Prepare before arming.':!input('terms').checked?'Authorize Terms, then Arm Release.':'';}
   if(workflow==='test')byId('blocked-reason').textContent=state.lock?'RESET REQUIRED':dirty?'SETTINGS CHANGED · Press Reset & Prepare.':!state.ready?'Reset & Prepare before running a test.':!input('terms').checked?'Authorize Terms, then run your test.':'';
+  if(workflow==='release'&&armed){input('arm').disabled=false;byId('blocked-reason').textContent='';}
   if(state.bookingResult){byId('handoff-result').hidden=false;byId('handoff-result').textContent=state.bookingResult.description+'\n'+state.bookingResult.outcomes.map((v,i)=>`Checkout ${i+1}: ${v}`).join('\n');}
   const duration=Number(input('duration').value),start=Number(input('start-time').value.slice(0,2)),strategy=input('booking-type').value;
   byId('booking-preview').textContent=`${workflow==='release'?'Target: '+(state.booking?.targetDate??'Not configured')+'\n':''}${strategy.toUpperCase()} | ${input('court-count').value} court(s) | ${input('start-time').value}-${String(start+duration).padStart(2,'0')}:00\nFallback starts: ${fallbackTimes.map(friendly).join(', ')||'None'}\n${strategy==='extended'?'2 browsers | 2 checkouts | 2 payment holds\nPreferred split: '+(duration===4?'3 + 1; alternatives 2 + 2, 1 + 3':duration===5?'3 + 2; alternative 2 + 3':'3 + 3')+'\nCourt continuity preferred; switching allowed between checkouts.':'1 browser | 1 checkout | 1 payment hold'}\nMaximum per checkout: PHP ${Number(input('maximum').value)*Number(input('court-count').value)} | Payment manual`;
+  const perCourt=Number(input('maximum').value),count=Number(input('court-count').value),releaseText=state.clock?new Date(state.clock.releaseMs).toLocaleString('en-US',{timeZone:state.clock.timezone,month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'Calculating';
+  byId('booking-preview').textContent=`${workflow==='release'?`RELEASE PLAN\nRelease: ${releaseText}\nTarget: ${state.clock?dateLabel(state.clock.targetDate):'Not configured'}\n`:''}${strategy.toUpperCase()} | ${count} COURT${count===1?'':'S'}\n${friendly(input('start-time').value)} -> ${endFriendly(input('start-time').value,duration)} | ${duration} hours\nFallback starts: ${fallbackTimes.map(friendly).join(' -> ')||'None'}\nCourt priority: ${courtOrder.join(' -> ')}\n${strategy==='extended'?`Extended split: ${duration===4?'3h + 1h (alternatives 2h + 2h, 1h + 3h)':duration===5?'3h + 2h (alternative 2h + 3h)':'3h + 3h'}\n2 browsers | 2 checkouts | Players: Primary + Extended`:'Browser: A | 1 checkout | Player: Primary'}\nMaximum per court: ${money(perCourt)}\nMaximum per checkout: ${money(perCourt*count)}${strategy==='extended'?' (each A/B checkout)':''}\nAttempts: ${input('attempts').value} | Payment: MANUAL`;
   if(duration>6){byId('booking-preview').textContent='Extended two-browser booking currently supports up to 6 consecutive hours.';input('test-booking').disabled=true;input('arm').disabled=true;}
   const playersReady=playerStatus.primary&&(strategy!=='extended'||playerStatus.extended);
   byId('player-status').textContent=`Primary player: ${playerStatus.primary?'Configured':'Missing'}${strategy==='extended'?' | Extended player: '+(playerStatus.extended?'Configured':'Missing'):''}`;
   input('test-booking').disabled ||= !playersReady;input('arm').disabled ||= !playersReady;
-  tick();
+  const releaseMode=workflow==='release';byId('release-schedule').hidden=!releaseMode;byId('release-readiness-card').hidden=!releaseMode;
+  if(releaseMode&&state.clock){
+    byId('release-passed').textContent=state.clock.todayReleasePassed?`TODAY'S ${friendly(state.clock.releaseTime.slice(0,5))} RELEASE HAS PASSED`:'';
+    byId('next-release').textContent=new Date(armed?state.scheduledRelease!.releaseMs:state.clock.releaseMs).toLocaleString('en-US',{timeZone:state.clock.timezone,month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
+    byId('next-target').textContent=dateLabel(armed?state.scheduledRelease!.targetDate:state.clock.targetDate);
+    const finalAt=(armed?state.scheduledRelease!.releaseMs:state.clock.releaseMs)-state.clock.preflightSecondsBefore*1000;
+    byId('schedule-meta').textContent=`Final preflight: ${new Date(finalAt).toLocaleTimeString('en-US',{timeZone:state.clock.timezone,hour:'numeric',minute:'2-digit',second:'2-digit'})} | System: ${state.scheduleStatus??(armed?'WAITING':'NOT ARMED')}`;
+  }
+  const prepared=!!state.preparedContext&&state.preparedContext.workflow==='release'&&state.preparedContext.configFingerprint===state.booking?.fingerprint;
+  const required=strategy==='extended'?['A','B'] as const:['A'] as const;
+  const gates:[string,boolean][]=[['Configuration valid',!draftProblem],['Next release calculated',!!state.clock],['Booking target calculated',!!state.clock?.targetDate],['Primary player configured',playerStatus.primary],...(strategy==='extended'?[['Extended player configured',playerStatus.extended] as [string,boolean]]:[]),...required.map(id=>[`Browser ${id} prepared`,prepared&&!!state.preparedContext?.browsers.some(b=>b.id===id)] as [string,boolean]),['Onda verified',prepared],['All Courts verified',prepared],['Selected slots: 0',prepared],['Payment holds: none',prepared&&!state.lock],['Automation lock clear',!state.lock],['Prepared fingerprint matches',prepared],['Terms authorized for this run',state.termsAuthorized||armed],['Armed for next release',armed]];
+  const readiness=byId('release-readiness');readiness.replaceChildren(...gates.map(([label,ok])=>{const e=document.createElement('div');e.className=`gate ${ok?'good':'warn'}`;e.textContent=`${ok?'OK':'--'} ${label}`;return e;}));readiness.className='gate-list';
+  byId('release-readiness-card').dataset.state=armed?'armed':prepared?'prepared':'draft';byId('sleep-warning').hidden=!armed;byId('sleep-warning').textContent=`Sleep protection: ${state.sleepProtection?'ACTIVE':'NOT AVAILABLE'} | Keep the PC powered on. Do not hibernate or close the laptop lid if Windows sleeps on lid close.`;
+  syncViableControls();tick();
 }
 function tick() {
   // Display only; never launches a command. Authoritative release plan comes from main/CLI.
   if (!latest?.clock) return;
   byId('clock').textContent = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Manila', hourCycle: 'h23' }).format(new Date());
-  const release = latest.plan && ['observe','dry','selection','full'].includes(latest.operation) ? latest.plan.releaseMs : latest.clock.releaseMs;
+  const release = latest.scheduledRelease?.releaseMs??(latest.plan && ['observe','dry','selection','full'].includes(latest.operation) ? latest.plan.releaseMs : latest.clock.releaseMs);
   const seconds = Math.max(0, Math.ceil((release - Date.now()) / 1000));
   byId('countdown').textContent = [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60].map(v => String(v).padStart(2, '0')).join(':');
+  byId('next-release-countdown').textContent=byId('countdown').textContent;
   byId('countdown-label').textContent = latest.operation === 'observe' ? 'SCHEDULED RELEASE IN' : 'NEXT RELEASE IN';
   const hold=latest.bookingResult?null:latest.handoff;
   if(hold){
@@ -203,7 +233,8 @@ for(const id of ['full-date','full-court','full-start','full-duration','full-max
 byId('mode-full').addEventListener('change',()=>{void window.thirsty.setMode('full').catch(()=>{});});
 byId('mode-selection').addEventListener('change',()=>{void window.thirsty.setMode('selection').catch(()=>{});});
 byId('terms').addEventListener('change',()=>{void window.thirsty.authorizeTerms(input('terms').checked).catch(()=>{input('terms').checked=false;});});
-for(const id of ['booking-type','test-date','court-count','start-time','duration','maximum','attempts','exact-a','exact-b'])byId(id).addEventListener('change',changed);
+for(const id of ['test-date','court-count','start-time','duration','maximum','attempts','exact-a','exact-b'])byId(id).addEventListener('change',changed);
+byId('booking-type').addEventListener('change',()=>{const extended=input('booking-type').value==='extended',d=Number(input('duration').value);if(extended&&d<4)input('duration').value='4';if(!extended&&d>3)input('duration').value='3';syncViableControls();changed();});
 byId('add-fallback').onclick=()=>{const h=input('fallback-time').value;if(h===input('start-time').value||fallbackTimes.includes(h)){byId('edit-status').textContent='Choose a different fallback start.';return;}if(workflow==='release'){const reconciliation=reconcileFallbackTimes(input('start-time').value,Number(input('duration').value),[...fallbackTimes,h]);if(reconciliation.removed.length){releaseAdjustment=reconciliation;byId('edit-status').textContent=bookingSetupProblem({...currentSetup(),FALLBACK_TIMES:[...fallbackTimes,h]})??'That fallback does not fit the current booking.';if(latest)render(latest);return;}}fallbackTimes.push(h);editors();changed();};
 byId('save-booking').onclick=()=>{void(async()=>{
   const setup:BookingSetup={BOOKING_TYPE:input('booking-type').value as 'standard'|'extended',COURT_COUNT:Number(input('court-count').value) as 1|2,START_TIME:input('start-time').value,DURATION_HOURS:Number(input('duration').value),PREFERRED_COURTS:courtOrder,FALLBACK_COURTS:[],FALLBACK_TIMES:fallbackTimes,MAX_PRICE:Number(input('maximum').value),MAX_SELECTION_ATTEMPTS:Number(input('attempts').value)};

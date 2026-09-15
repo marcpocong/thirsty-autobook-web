@@ -15,6 +15,7 @@ import {bookingSetupProblem,reconcileBookingSetupFallbacks,type FallbackReconcil
 import { capabilities,fullBookingReady } from '../src/capabilities.js';
 import {expectedPreparationFingerprint,makePreparedContext} from '../src/prepared-context.js';
 import type {PreparationInput,PreparationResult} from '../src/booking-plan.js';
+import {scheduledReleaseContext,type ScheduledReleaseContext} from '../src/scheduled-release.js';
 
 const preparationHeadlines:Record<string,string>={EXTENDED_PLAYER_INFO_MISSING:'EXTENDED PLAYER REQUIRED',PLAYER_INFO_MISSING:'PLAYER CONFIGURATION REQUIRED',TARGET_DATE_UNAVAILABLE:'TARGET NOT AVAILABLE',TARGET_NOT_AVAILABLE:'TARGET NOT AVAILABLE',PAYMENT_HOLD_MAY_BE_ACTIVE:'PAYMENT HOLD ACTIVE',LOCK_PID_RUNNING:'AUTOMATION STILL RUNNING',TODAYS_RELEASE_PASSED:"TODAY'S RELEASE HAS PASSED"};
 const errors: Record<string, string> = {
@@ -76,14 +77,18 @@ export interface Dependencies {
   dualEvidence?():Promise<{selection:boolean;full:boolean}>;
   confirmDualPractice?(input:DualPracticeCommand):Promise<boolean>;
   handoff?():Promise<Dashboard['handoff']>;
+  startSleepProtection?():number;
+  stopSleepProtection?(id:number):void;
 }
 export class Controller {
   readonly state: Dashboard = { operation: 'idle', headline: 'RESET REQUIRED', workflow:'test', detail: 'Configure your booking, then Reset & Prepare.', ready: false,
-    cdp: false, lock: false, inspection: null, clock: null, plan: null, logs: [], liveRace: fullBookingReady(), booking:null, termsAuthorized:false, capabilities, selection:null,mode:fullBookingReady()?'full':'selection',handoff:null,preparedContext:null,browserHealth:{A:false,B:false},playerStatus:{primary:false,extended:false} };
+    cdp: false, lock: false, inspection: null, clock: null, plan: null, logs: [], liveRace: fullBookingReady(), booking:null, termsAuthorized:false, capabilities, selection:null,mode:fullBookingReady()?'full':'selection',handoff:null,preparedContext:null,browserHealth:{A:false,B:false},playerStatus:{primary:false,extended:false},scheduledRelease:null,sleepProtection:false,scheduleStatus:null };
   private active?: RunningCommand;
   private pendingPreparation?:{input:PreparationInput;fingerprint:string;release?:BookingView;players:{primary:boolean;extended:boolean}};
   private preparationResult?:PreparationResult;
   private generation = 0;
+  private scheduledTimer?:ReturnType<typeof setTimeout>;
+  private sleepBlockerId?:number;
   private polling = false;
   constructor(private deps: Dependencies) {}
   private players(){if(this.deps.playerStatus)return this.deps.playerStatus();try{const b=this.deps.booking();return {primary:b.playerConfigured,extended:b.extendedPlayerConfigured};}catch{return {primary:false,extended:false};}}
@@ -93,7 +98,15 @@ export class Controller {
     return {setup:parsed.data,reconciliation:repaired.reconciliation};
   }
   private clearPreparation(){this.state.preparedContext=null;this.state.preparedAt=undefined;this.state.ready=false;this.state.termsAuthorized=false;}
-  async invalidatePreparation(){if(this.state.operation!=='idle')throw Error('OPERATION_ALREADY_RUNNING');this.clearPreparation();this.state.headline='SETTINGS CHANGED';this.state.detail='Press Reset & Prepare to prepare these settings.';this.publish();}
+  private stopSleepProtection(){if(this.sleepBlockerId!==undefined)this.deps.stopSleepProtection?.(this.sleepBlockerId);this.sleepBlockerId=undefined;this.state.sleepProtection=false;}
+  private clearScheduled(){if(this.scheduledTimer)clearTimeout(this.scheduledTimer);this.scheduledTimer=undefined;this.state.scheduledRelease=null;this.state.scheduleStatus=null;this.stopSleepProtection();}
+  async cancelScheduledRelease(reason='SCHEDULE CANCELLED'){
+    if(!this.state.scheduledRelease&&this.state.operation!=='scheduled')return;
+    ++this.generation;this.clearScheduled();this.state.termsAuthorized=false;this.clearPreparation();
+    const active=this.active;this.active=undefined;if(active)await active.stop().catch(()=>{});
+    this.state.operation='idle';this.state.headline=reason;this.state.detail=reason==='RELEASE MISSED'?'The exact armed release time passed. No booking action was started. Reset & Prepare and explicitly arm a new run.':'The armed release was cancelled. Terms and preparation were cleared.';this.publish();
+  }
+  async invalidatePreparation(){if(this.state.scheduledRelease){await this.cancelScheduledRelease('SCHEDULE CANCELLED - SETTINGS CHANGED');return;}if(this.state.operation!=='idle')throw Error('OPERATION_ALREADY_RUNNING');this.clearPreparation();this.state.headline='SETTINGS CHANGED';this.state.detail='Press Reset & Prepare to prepare these settings.';this.publish();}
   private async health(){const h=this.deps.browserHealth?await this.deps.browserHealth():await this.deps.cdp().then(A=>({A,B:A}));this.state.browserHealth=h;this.state.cdp=h.A;return h;}
   private async requirePrepared(workflow:'test'|'release',fingerprint:string,strategy:'standard'|'extended'){
     const context=this.state.preparedContext;
@@ -121,12 +134,15 @@ export class Controller {
       }
       try { this.state.clock = this.deps.clock(); }
       catch { this.state.clock = null; this.state.ready = false; this.state.detail = errors.CONFIG_INVALID!; }
-      if (this.state.operation === 'idle') {
+      if (this.state.operation === 'idle'||this.state.operation==='scheduled') {
         try { const booking=this.deps.booking(); if (this.state.preparedContext?.workflow==='release'&&this.state.preparedContext.configFingerprint!==booking.fingerprint)this.clearPreparation(); this.state.booking=booking; if(booking.setup.BOOKING_TYPE==='extended'&&this.deps.dualEvidence)this.state.dualValidation=await this.deps.dualEvidence(); }
         catch { this.state.booking=null; this.state.ready=false; }
       }
+      const scheduled=this.state.scheduledRelease;
+      if(scheduled&&this.state.operation==='scheduled'&&Date.now()>=scheduled.releaseMs){await this.cancelScheduledRelease('RELEASE MISSED');return;}
+      if(scheduled&&this.state.operation==='scheduled'&&this.state.booking?.fingerprint!==scheduled.configFingerprint){await this.cancelScheduledRelease('SCHEDULE CANCELLED - SETTINGS CHANGED');return;}
       const context=this.state.preparedContext,required=context?.requiredBrowsers??[];
-      this.state.ready=!!context&&context.workflow===this.state.workflow&&required.every(id=>health[id])&&!lock&&(context.workflow!=='release'||!!this.state.clock?.canArmToday);
+      this.state.ready=!!context&&context.workflow===this.state.workflow&&!lock&&(this.state.operation==='scheduled'||required.every(id=>health[id]));
       if(context&&this.state.operation==='idle'&&!this.state.ready)this.clearPreparation();
       if (wasReady && !this.state.ready && this.state.operation === 'idle') {
         this.state.headline = 'Preparation needs rechecking';
@@ -232,7 +248,7 @@ export class Controller {
     await this.noLock(); this.state.inspection = null; this.log('Inspecting Onda — read only'); await this.run(this.state.booking?.setup.BOOKING_TYPE==='extended'?'dualReadiness':'inspect', gen);
     this.state.headline = 'Inspection complete'; this.state.detail = 'Review the observed status below. Prepare before arming.';
   }); }
-  async setWorkflow(value:unknown){if(this.state.operation!=='idle')throw Error('OPERATION_ALREADY_RUNNING');this.state.workflow=z.enum(['test','release']).parse(value);this.clearPreparation();this.state.headline='RESET REQUIRED';this.state.detail='Configure your booking, then Reset & Prepare.';this.publish();}
+  async setWorkflow(value:unknown){if(this.state.scheduledRelease)await this.cancelScheduledRelease('SCHEDULE CANCELLED - WORKFLOW CHANGED');if(this.state.operation!=='idle')throw Error('OPERATION_ALREADY_RUNNING');this.state.workflow=z.enum(['test','release']).parse(value);this.clearPreparation();this.state.headline='RESET REQUIRED';this.state.detail='Configure your booking, then Reset & Prepare.';this.publish();}
   private resetting=false;
   async resetPrepare(value:unknown){
     if(this.resetting)throw Error('OPERATION_ALREADY_RUNNING');
@@ -335,15 +351,57 @@ export class Controller {
     if(value&&(!fullBookingReady(this.state.capabilities)||this.state.lock||!this.state.ready||!this.state.preparedContext||this.state.preparedContext.workflow!==this.state.workflow))throw new Error('TERMS_AUTHORIZATION_NOT_ALLOWED');
     this.state.termsAuthorized=value;this.publish();
   }
-  armFullBooking(){
+  async armFullBooking(){
     const authorized=this.state.termsAuthorized;this.state.termsAuthorized=false;
-    return this.armBooking('full',authorized);
+    try{await this.armScheduledRelease(authorized);}catch(error){if(this.state.scheduledRelease){this.clearScheduled();this.clearPreparation();this.state.operation='idle';}const code=error instanceof Error?error.message:'SCHEDULE_FAILED';this.state.headline='Needs attention';this.state.detail=errors[code]??code;this.log(code,true);}
   }
-  private armBooking(kind:'selection'|'dry'|'full',authorized=false) { return this.operation('confirming', async gen => {
-    if(kind==='full'&&!fullBookingReady(this.state.capabilities))throw new Error('LIVE_RACE_BLOCKED');
+  private async armScheduledRelease(authorized:boolean){
+    if(this.state.scheduledRelease){await this.cancelScheduledRelease();return;}
+    if(this.state.operation!=='idle')throw Error('OPERATION_ALREADY_RUNNING');
+    if(!fullBookingReady(this.state.capabilities))throw Error('LIVE_RACE_BLOCKED');
+    await this.noLock();const plan=this.deps.booking();
+    if(!plan.playerConfigured)throw Error('PLAYER_INFO_MISSING');if(plan.setup.BOOKING_TYPE==='extended'&&!plan.extendedPlayerConfigured)throw Error('EXTENDED_PLAYER_INFO_MISSING');
+    await this.requirePrepared('release',plan.fingerprint,plan.setup.BOOKING_TYPE);if(!authorized)throw Error('TERMS_AUTHORIZATION_REQUIRED');
+    const clock=this.deps.clock(),prepared=this.state.preparedContext!;
+    const context=scheduledReleaseContext(prepared,plan,clock);
+    const confirmed=await this.deps.confirm('full',plan);if(!confirmed){this.state.headline='Arming cancelled';this.state.detail='No release was scheduled.';this.publish();return;}
+    await this.noLock();const fresh=this.deps.clock();if(this.deps.booking().fingerprint!==context.configFingerprint||fresh.releaseMs!==context.releaseMs||fresh.targetDate!==context.targetDate)throw Error('SCHEDULE_CONTEXT_MISMATCH');
+    const generation=++this.generation;this.state.termsAuthorized=false;this.state.scheduledRelease=context;this.state.scheduleStatus='WAITING';this.state.operation='scheduled';
+    if(this.deps.startSleepProtection){this.sleepBlockerId=this.deps.startSleepProtection();this.state.sleepProtection=true;}
+    const wakeAt=context.releaseMs-fresh.wakeSecondsBefore*1000,delay=Math.max(0,wakeAt-Date.now());
+    this.scheduledTimer=setTimeout(()=>{void this.executeScheduled(context,generation);},delay);
+    this.state.headline='ARMED FOR NEXT RELEASE';this.state.detail=`Exact release and booking target frozen. The browser reconnect starts ${fresh.wakeSecondsBefore} seconds before release. Keep the PC powered on; do not hibernate or close the lid if Windows sleeps on lid close.`;this.publish();
+  }
+  private async executeScheduled(context:ScheduledReleaseContext,generation:number){
+    this.scheduledTimer=undefined;
+    try{
+      if(generation!==this.generation||this.state.scheduledRelease?.generation!==context.generation)return;
+      if(Date.now()>=context.releaseMs)throw Error('RELEASE_MISSED');
+      const plan=this.deps.booking(),clock=this.deps.clock();
+      if(plan.fingerprint!==context.configFingerprint||clock.releaseMs!==context.releaseMs||clock.targetDate!==context.targetDate)throw Error('SCHEDULE_CONTEXT_MISMATCH');
+      this.state.scheduleStatus='WAKE / RECONNECT';this.state.headline='WAKE / RECONNECT';this.publish();
+      await this.run(context.strategy==='extended'?'chromeDual':'chrome',generation);
+      this.preparationResult=undefined;
+      await this.run({kind:'resetPrepare',input:{workflow:'release',strategy:context.strategy}},generation);
+      const result=this.preparationResult as PreparationResult|undefined;
+      if(!result||result.fingerprint!==context.preparedFingerprint||result.releaseMs!==context.releaseMs||result.releaseTargetDate!==context.targetDate)throw Error('PREPARED_FINGERPRINT_MISMATCH');
+      if(Date.now()>=context.releaseMs)throw Error('RELEASE_MISSED');
+      this.state.scheduleStatus='FINAL PREFLIGHT';this.state.operation='full';this.state.headline='FINAL PREFLIGHT';this.publish();
+      await this.run({kind:'full',context,authorizeTerms:true},generation);
+      if(!this.state.handoff&&!this.state.bookingResult)throw Error('HANDOFF_STATUS_UNKNOWN');
+    }catch(error){
+      if(generation!==this.generation)return;
+      const code=error instanceof Error?error.message:'SCHEDULE_FAILED';
+      this.state.headline=code==='RELEASE_MISSED'?'RELEASE MISSED':code==='SCHEDULE_CONTEXT_MISMATCH'||code==='PREPARED_FINGERPRINT_MISMATCH'?'SCHEDULE CANCELLED - SETTINGS CHANGED':'Needs attention';
+      this.state.detail=code==='RELEASE_MISSED'?'The exact armed timestamp passed. No late booking was attempted and the run was not moved to another day.':errors[code]??code;this.log(code,true);
+    }finally{
+      if(generation===this.generation){this.clearScheduled();this.clearPreparation();this.state.operation='idle';await this.refresh();this.publish();}
+    }
+  }
+  private armBooking(kind:'selection'|'dry') { return this.operation('confirming', async gen => {
     await this.noLock(); if (!this.deps.clock().canArmToday) throw new Error('TOO_LATE_FOR_PREFLIGHT');
     if (kind==='selection' && !this.state.capabilities.selectionReady) throw new Error('SELECTION_NOT_READY');
-    const plan=this.deps.booking();if(!plan.playerConfigured)throw Error('PLAYER_INFO_MISSING');if(plan.setup.BOOKING_TYPE==='extended'&&!plan.extendedPlayerConfigured)throw Error('EXTENDED_PLAYER_INFO_MISSING');if(kind==='full')await this.requirePrepared('release',plan.fingerprint,plan.setup.BOOKING_TYPE);if(kind==='full'&&!authorized)throw new Error('TERMS_AUTHORIZATION_REQUIRED'); this.state.booking=plan; this.state.selection=null;
+    const plan=this.deps.booking();if(!plan.playerConfigured)throw Error('PLAYER_INFO_MISSING');if(plan.setup.BOOKING_TYPE==='extended'&&!plan.extendedPlayerConfigured)throw Error('EXTENDED_PLAYER_INFO_MISSING');this.state.booking=plan; this.state.selection=null;
     this.state.bookingResult=undefined;
     const confirmed=await this.deps.confirm(kind,plan);
     if(gen!==this.generation)return;
@@ -351,13 +409,11 @@ export class Controller {
     await this.noLock();
     if(this.deps.booking().fingerprint!==plan.fingerprint)throw new Error('BOOKING_PLAN_CHANGED');
     if(!this.deps.clock().canArmToday)throw new Error('TOO_LATE_FOR_PREFLIGHT');
-    if(kind==='full')await this.requirePrepared('release',plan.fingerprint,plan.setup.BOOKING_TYPE);
-    this.state.operation=kind;this.state.inspection=null;this.state.handoff=null;this.state.headline=kind==='full'?'Full Booking scheduled':kind==='selection'?'Selection scheduled':'Dry Race scheduled';
-    this.state.detail=kind==='full'?'At release the engine continues through Onda to QR Checkout. Payment remains manual.':kind==='selection'?'At release the engine may select slots. It will stop before Proceed.':'Release, date, grid and preference checks only. No slots will be selected.';this.publish();
-    await this.run(kind==='full'?{kind,planHash:plan.fingerprint,authorizeTerms:true}:{kind,planHash:plan.fingerprint},gen);
+    this.state.operation=kind;this.state.inspection=null;this.state.handoff=null;this.state.headline=kind==='selection'?'Selection scheduled':'Dry Race scheduled';
+    this.state.detail=kind==='selection'?'At release the engine may select slots. It will stop before Proceed.':'Release, date, grid and preference checks only. No slots will be selected.';this.publish();
+    await this.run({kind,planHash:plan.fingerprint},gen);
     if(this.state.dualActive){if(!this.state.dualResult)throw Error('DUAL_RESULT_MISSING');return;}
     if(kind==='dry'){this.state.headline='Dry Race complete';this.state.detail='No slots selected. Review availability and preference events.';}
-    else if(kind==='full'&&!this.state.handoff&&!this.state.bookingResult)throw new Error('HANDOFF_STATUS_UNKNOWN');
     else if(kind==='selection'&&!this.state.selection&&!this.state.bookingResult)throw new Error('SELECTION_RESULT_MISSING');
   }); }
   reviewLock(){return this.operation('reviewing',async()=>{
@@ -418,6 +474,7 @@ export class Controller {
   }); }
   async abortAutomation() {
     this.state.termsAuthorized=false;
+    if(this.state.scheduledRelease){await this.cancelScheduledRelease('SCHEDULE CANCELLED');return;}
     if (this.state.operation === 'idle') { this.log('No UI-launched automation is running. External CLI processes are not controlled by this panel.'); return; }
     ++this.generation; this.state.ready = false; this.state.operation = 'stopping'; this.publish();
     try {

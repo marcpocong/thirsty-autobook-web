@@ -80,16 +80,15 @@ export function ondaCheckoutAdapter(page:Page,safety:Safety,selected:BookingSumm
     // Onda can paint the Payment Summary heading before hydrating its Terms
     // control. Wait for the control itself instead of treating that short
     // render gap as a changed DOM structure.
-    for(let attempt=0;attempt<60;attempt++){
-      safety.check();
-      if(await termsPanel.count()!==1){await page.waitForTimeout(100);continue;}
-      const nativeCount=await nativeTerms.count();
-      if(nativeCount===1)return {locator:nativeTerms, native:true as const};
-      const roleCount=await roleTerms.count();
-      if(roleCount===1)return {locator:roleTerms, native:false as const};
-      await page.waitForTimeout(100);
-    }
-    throw new Error('TERMS_STRUCTURE_CHANGED');
+    try{await page.waitForFunction(()=>{
+      const panels=[...document.querySelectorAll<HTMLElement>('[data-testid="booking-review-terms-panel"]')].filter(e=>e.checkVisibility());
+      if(panels.length!==1)return false;const controls=[...panels[0]!.querySelectorAll<HTMLElement>('input[type="checkbox"],[role="checkbox"]')].filter(e=>e.checkVisibility());return controls.length===1;
+    },undefined,{timeout:6000,polling:'raf'});}catch{throw new Error('TERMS_STRUCTURE_CHANGED');}
+    safety.check();t?.mark('termsControlDetected');
+    if(await termsPanel.count()!==1)throw Error('TERMS_STRUCTURE_CHANGED');
+    const nativeCount=await nativeTerms.count();if(nativeCount===1)return {locator:nativeTerms,native:true as const};
+    if(await roleTerms.count()===1)return {locator:roleTerms,native:false as const};
+    throw Error('TERMS_STRUCTURE_CHANGED');
   }
   async function termsChecked(control:Awaited<ReturnType<typeof termsControl>>){
     return control.native ? control.locator.isChecked() : (await control.locator.getAttribute('aria-checked')) === 'true';
@@ -129,21 +128,28 @@ export function ondaCheckoutAdapter(page:Page,safety:Safety,selected:BookingSumm
       // Reacquire the settled visible control before verifying its state.
       const verified=await termsControl();
       if(await termsCommitted(verified))return;
-      await page.waitForTimeout(250);
+      try{await page.waitForFunction(()=>{
+        const panels=[...document.querySelectorAll<HTMLElement>('[data-testid="booking-review-terms-panel"]')].filter(e=>e.checkVisibility());if(panels.length!==1)return false;
+        const controls=[...panels[0]!.querySelectorAll<HTMLInputElement>('[type="checkbox"],[role="checkbox"]')].filter(e=>e.checkVisibility());if(controls.length!==1)return false;
+        const checked=controls[0]!.matches('input')?(controls[0] as HTMLInputElement).checked:controls[0]!.getAttribute('aria-checked')==='true';
+        const buttons=[...document.querySelectorAll<HTMLButtonElement>('button')].filter(b=>b.textContent?.trim()==='Confirm & Proceed to Payment');return checked&&(!buttons.length||buttons.length===1&&!buttons[0]!.disabled&&buttons[0]!.getAttribute('aria-disabled')!=='true');
+      },undefined,{timeout:1500,polling:'raf'});return;}catch{/* bounded reacquire */}
     }
     throw new Error('TERMS_NOT_CHECKED');
   }
   const finalButton=sheet.getByRole('button',{name:'Continue to Payment',exact:true});
+  let verifiedReview:BookingSummary|undefined,verifiedPayment:BookingSummary|undefined;
   const readPayment=async()=>{
     await guard();await sheet.getByRole('heading',{name:'Payment Summary',exact:true}).waitFor({timeout:paymentSummaryTimeoutMs});safety.check();
+    // Revalidate the booking identity as Payment Summary appears, before Terms.
     const review=await readReview();
     verifyRentalQuantity(await sheet.locator('span').allTextContents(),(selected.courts?.length??1)*selected.duration);
     const total=await sheet.getByText('Total',{exact:true}).evaluate(e=>{
       const spans=e.parentElement?.querySelectorAll(':scope > span');if(spans?.length!==2)throw new Error('PAYMENT_STRUCTURE_CHANGED');return spans[1]!.textContent?.trim()??'';
-    });safety.check();return {...review,amount:paymentAmount(total)};
+    });safety.check();return verifiedPayment={...review,amount:paymentAmount(total)};
   };
   return {
-    review:readReview,
+    review:async()=>verifiedReview=await readReview(),
     async fillPlayer(player:Player){
       await guard();await page.getByRole('heading',{name:'Player Information',exact:true}).waitFor();safety.check();
       t?.mark('playerFormDetected');
@@ -162,7 +168,16 @@ export function ondaCheckoutAdapter(page:Page,safety:Safety,selected:BookingSumm
       return true;
     },
     async prepareFinalAction(){
-      const payment=await readPayment();safety.check();
+      if(!verifiedPayment)throw Error('PAYMENT_SUMMARY_FAILED');
+      // Re-read the still-visible booking identity immediately before the
+      // one-way action. Payment entry reused the first verified Review, so
+      // this is the second (not third) full review parse on the happy path.
+      const finalReview=await readReview();
+      for(const key of ['courts','venue','date','start','end','duration'] as const)if(JSON.stringify(finalReview[key])!==JSON.stringify(verifiedReview?.[key]))throw Error('PAYMENT_MISMATCH');
+      await guard();await sheet.getByRole('heading',{name:'Payment Summary',exact:true}).waitFor({timeout:paymentSummaryTimeoutMs});
+      verifyRentalQuantity(await sheet.locator('span').allTextContents(),(selected.courts?.length??1)*selected.duration);
+      const total=await sheet.getByText('Total',{exact:true}).evaluate(e=>{const spans=e.parentElement?.querySelectorAll(':scope > span');if(spans?.length!==2)throw Error('PAYMENT_STRUCTURE_CHANGED');return spans[1]!.textContent?.trim()??'';});
+      const payment={...verifiedPayment,amount:paymentAmount(total)};safety.check();
       if(!safety.locked)throw new Error('TERMS_NOT_CHECKED');
       // Onda may re-render Payment Summary after the first check. Re-assert
       // the checkbox immediately before the one-way final handoff.
@@ -170,7 +185,7 @@ export function ondaCheckoutAdapter(page:Page,safety:Safety,selected:BookingSumm
       if(await finalButton.count()!==1)throw Error('FINAL_BUTTON_UNVERIFIED');
       if((await finalButton.innerText()).trim()!=='Confirm & Proceed to Payment')throw new Error('FINAL_BUTTON_UNVERIFIED');
       if(!await finalButton.isVisible()||!await finalButton.isEnabled())throw new Error('FINAL_BUTTON_NOT_ACTIONABLE');
-      await guard();return payment;
+      t?.mark('finalButtonActionable');await guard();return payment;
     },
     async finalOndaAction(){
       // Only Safety.finalAction can open this one-way dispatch. No post-click DOM reads.

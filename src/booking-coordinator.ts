@@ -16,7 +16,7 @@ export async function coordinateBooking(workers:DualWorker[],request:PlanRequest
     if(confirm&&!confirmed){if(!await confirm(plan))return {status:'CANCELLED' as const,plan};confirmed=true;}
     excluded.add(bookingPlanKey(plan));
     const dispatched=workers.map(()=>new Set<string>());
-    const selections=await Promise.allSettled(workers.map((w,i)=>selectCheckoutBundle(w.port,request.date,grids[i]!,plan.chunks[i]!,maximum,w.safety,dispatched[i]!)));
+    const selections=await Promise.allSettled(workers.map((w,i)=>selectCheckoutBundle(w.port,request.date,grids[i]!,plan.chunks[i]!,maximum,w.safety,dispatched[i]!,w.telemetry)));
     if(selections.some(s=>s.status==='rejected')){
       // Unknown state, foreign selection, price and authorization failures never clean up.
       const errors=selections.filter(s=>s.status==='rejected');

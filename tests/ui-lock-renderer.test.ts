@@ -75,7 +75,7 @@ it('Standard two courts shows one checkout; Extended has no historical evidence 
  const p=await renderer(false,{booking:dualPlan,lock:false,ready:true,termsAuthorized:true,dualValidation:{selection:false,full:false}});
  await p.locator('#workflow-release').click();
  expect(await p.locator('#booking-preview').innerText()).toContain('1 checkout');
- expect(await p.locator('#booking-preview').innerText()).toContain('Maximum per checkout: PHP 2400');
+ expect(await p.locator('#booking-preview').innerText()).toContain('Maximum per checkout: PHP 2,400');
  expect(await p.locator('#dual-panel').isVisible()).toBe(false);
  expect(await p.locator('#prepare').isEnabled()).toBe(true);
  await p.addStyleTag({content:await readFile('ui/renderer/styles.css','utf8')});await p.setViewportSize({width:1010,height:800});
@@ -89,6 +89,14 @@ it('Extended Test Now prepares from test fields without saving production count 
  expect(await p.locator('#test-booking').isEnabled()).toBe(true);await p.locator('#test-booking').click();
  const calls=await p.evaluate(()=>(window as any).calls);expect(calls[0]).toMatchObject({prepare:{workflow:'test',request:{strategy:'extended',courtCount:2,start:'20:00',duration:4}}});expect(calls[1].test).toMatchObject({request:{strategy:'extended',courtCount:2,start:'20:00',duration:4},authorizeTerms:true});
  expect(await p.locator('#terms').isChecked()).toBe(false);await p.close();
+});
+it('after today release the normal screen shows tomorrow, target, plan, readiness and usable preparation',async()=>{
+ const clock=clockStatus(ObservationSchema.parse({BOOKING_HORIZON_DAYS:2}),DateTime.fromISO('2026-09-15T08:30:00+08:00'));
+ const p=await renderer(false,{clock,booking:plan,lock:false,ready:false,playerStatus:{primary:true,extended:false}});await p.locator('#workflow-release').click();await p.addStyleTag({content:await readFile('ui/renderer/styles.css','utf8')});await p.setViewportSize({width:1010,height:800});
+ expect(await p.locator('#release-passed').innerText()).toContain('HAS PASSED');expect(await p.locator('#next-release').innerText()).toContain('September 16');expect(await p.locator('#next-target').innerText()).toContain('September 18');
+ expect(await p.locator('#booking-preview').innerText()).toContain('RELEASE PLAN');expect(await p.locator('#release-readiness-card').isVisible()).toBe(true);expect(await p.locator('#prepare').isEnabled()).toBe(true);expect(await p.locator('#advanced').getAttribute('open')).toBeNull();expect(await p.locator('body').innerText()).not.toContain('ZodError');
+ expect(await p.locator('#booking-preview').innerText()).toContain('Maximum per court: PHP 1,200');expect(await p.locator('#booking-preview').innerText()).toContain('Maximum per checkout: PHP 1,200');
+ await mkdir('.local',{recursive:true});await p.screenshot({path:'.local/phase8-release-ui.png',fullPage:true});await p.close();
 });
 it('renderer shows only missing/configured player status and blocks Extended without B',async()=>{
  const p=await renderer(false,{lock:false,ready:true,termsAuthorized:true});
@@ -121,7 +129,7 @@ it('immediately removes stale Release fallbacks and shows the effective normal s
  await p.locator('#workflow-release').click();await p.locator('#booking-type').selectOption('extended');await p.locator('#duration').fill('6');await p.locator('#duration').dispatchEvent('change');
  expect(await p.locator('#booking-adjustment').innerText()).toContain('2 invalid fallback starts were removed');
  expect(await p.locator('#configuration-status').innerText()).toContain('CONFIGURATION: VALID');
- expect(await p.locator('#booking-preview').innerText()).toContain('18:00-24:00');
+ expect(await p.locator('#booking-preview').innerText()).toContain('6:00 PM');expect(await p.locator('#booking-preview').innerText()).toContain('12:00 MN');
  expect(await p.locator('#booking-preview').innerText()).toContain('Fallback starts: None');
  expect(await p.locator('#prepare').isEnabled()).toBe(true);await mkdir('.local',{recursive:true});await p.addStyleTag({content:await readFile('ui/renderer/styles.css','utf8')});await p.setViewportSize({width:1010,height:800});await p.screenshot({path:'.local/fallback-hotfix-ui.png',fullPage:true});await p.close();
 });

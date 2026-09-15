@@ -20,7 +20,7 @@ export async function boundedRelease<T>(maximum: number, retryDelay: number, sig
   }
   throw new Error('RELEASE_HORIZON_UNAVAILABLE');
 }
-export interface ReleaseGate { target: ReturnType<typeof releaseCalendar>; beforeArmed(): Promise<void>; onRelease?():void }
+export interface ReleaseGate { target: ReturnType<typeof releaseCalendar>; beforeArmed(): Promise<void>; verifyContext?():void; onRelease?():void }
 export async function observeRelease(page: Page, c: Config | ReleaseSettings, safety: Safety, t: Telemetry, dry: boolean, selecting = false, gate?: ReleaseGate) {
   const target = gate?.target ?? releaseCalendar(c);
   const navigationTarget = releaseNavigationTarget(target.targetDate);
@@ -32,8 +32,11 @@ export async function observeRelease(page: Page, c: Config | ReleaseSettings, sa
   emitUiEvent({ type: 'plan', targetDate: target.targetDate, releaseMs: target.releaseMs, timezone: c.TIMEZONE });
   page.setDefaultTimeout(c.CRITICAL_STEP_TIMEOUT_MS);
   page.setDefaultNavigationTimeout(c.CRITICAL_STEP_TIMEOUT_MS);
+  let preflightCount=0;
   const preflight = async () => {
+    const final=preflightCount++>0;if(final&&gate)t.mark('finalPreflightStarted');
     t.mark('preflightStarted');
+    gate?.verifyContext?.();
     await assertPage(page, safety);
     const s = await snapshot(page);
     const current = DateTime.now().setZone(c.TIMEZONE).toISODate()!;
@@ -42,6 +45,7 @@ export async function observeRelease(page: Page, c: Config | ReleaseSettings, sa
     if (await page.getByTestId('booking-court-filter-label').innerText() !== 'All Courts') throw new Error('COURT_FILTER_NOT_ALL');
     if (await page.evaluate(() => document.visibilityState) !== 'visible') throw new Error('TAB_NOT_VISIBLE');
     t.mark('preflightCompleted');
+    if(gate)t.mark(final?'finalPreflightCompleted':'initialPreflightCompleted');
   };
   await preflight();
   console.log(JSON.stringify({ mode: selecting ? 'SELECTION ONLY — STOPS BEFORE PROCEED' : dry ? 'DRY RACE — NO SELECTION' : 'RELEASE OBSERVATION — NO BOOKING', venue: VENUE, targetDate: target.targetDate, preferences, maximumPrice: 'MAX_PRICE' in c ? c.MAX_PRICE : undefined, playerInfoLoaded: 'PLAYER_FULL_NAME' in c, localTime: new Date().toString(), manilaTime: DateTime.now().setZone('Asia/Manila').toISO(), release: target.releaseISO, releaseLeadMs: c.RELEASE_LEAD_MS, maxReloads: c.MAX_RELEASE_RELOADS, secondsRemaining: (target.releaseMs - Date.now()) / 1000, abort: 'Q or Ctrl+C' }, null, 2));
@@ -53,30 +57,30 @@ export async function observeRelease(page: Page, c: Config | ReleaseSettings, sa
   t.mark('armed'); t.mark('releaseScheduled', target.releaseMs);
   console.log('ARMED — waiting for release.');
   await waitUntil(target.releaseMs, safety.signal);
+  if(Date.now()-target.releaseMs>1000)throw Error('RELEASE_MISSED');
   t.mark('releaseTriggerFired', Date.now() - target.releaseMs);
   if (gate?.onRelease) gate.onRelease();
   discovery?.start();
   let readyWithoutReload = false;
+  let grid:import('./grid.js').Snapshot|undefined;
   if (c.RELEASE_PREOPEN_CALENDAR) {
     t.mark('preopenReleaseCheckStarted');
     if (await observePreopenedTarget(page, navigationTarget, safety)) {
       t.mark('targetEnabledWithoutReload');
-      await clickReleasedTargetDate(page, navigationTarget, safety, t, c.CRITICAL_STEP_TIMEOUT_MS);
+      grid=await clickReleasedTargetDate(page, navigationTarget, safety, t, c.CRITICAL_STEP_TIMEOUT_MS);
       readyWithoutReload = true;
     } else { t.mark('targetStillDisabledAtRelease'); t.mark('reloadFallbackStarted'); }
   }
-  if (!readyWithoutReload) await boundedRelease(c.MAX_RELEASE_RELOADS, c.RELEASE_RETRY_DELAY_MS, safety.signal, async () => {
+  if (!readyWithoutReload) grid=await boundedRelease(c.MAX_RELEASE_RELOADS, c.RELEASE_RETRY_DELAY_MS, safety.signal, async () => {
     safety.check(); t.mark('reloadStarted');
     await page.reload({ waitUntil: 'commit' }); t.mark('reloadCommitted');
     await waitForBookingShellForRelease(page, safety, c.CRITICAL_STEP_TIMEOUT_MS, t);
     const result = await navigateReleasedTargetDate(page, navigationTarget, safety, t, c.CRITICAL_STEP_TIMEOUT_MS);
     if (result === 'TARGET_DATE_NOT_RELEASED') return undefined;
-    return true;
+    return result;
   });
-  safety.check(); t.mark('gridSnapshotStarted');
-  const grid = await snapshot(page);
+  safety.check();if(!grid)throw Error('STALE_OR_INCOMPLETE_GRID');
   const cells = validateSnapshot(grid, target.targetDate);
-  t.mark('gridSnapshotCompleted');
   discovery?.captureAtGrid();
   const chosen = preferences && !selecting ? resolvePreference(cells, discovery?.rank(cells, preferences) ?? preferences) : undefined;
   if (preferences && !selecting) t.mark('preferenceResolved');

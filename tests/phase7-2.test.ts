@@ -34,7 +34,7 @@ function controllerHarness(options:{health?:{A:boolean;B:boolean};view?:ReturnTy
     }
     return {pid:42,done:Promise.resolve(0),stop:async()=>{}};
   };
-  const c=new Controller({runner,lock:async()=>locked,cdp:async()=>health.A,browserHealth:async()=>health,playerStatus:()=>({primary:true,extended:true}),clock:()=>clockStatus(ObservationSchema.parse({}),DateTime.fromISO('2026-09-10T07:00:00+08:00')),booking:()=>view,saveBooking:input=>{saved.push(input);view=makeView(input as BookingSetup);return view;},confirm:async()=>true,publish:()=>{}});
+  const c=new Controller({runner,lock:async()=>locked,cdp:async()=>health.A,browserHealth:async()=>health,playerStatus:()=>({primary:true,extended:true}),clock:()=>({...clockStatus(ObservationSchema.parse({}),DateTime.fromMillis(Date.now())),releaseMs:view.releaseMs,targetDate:view.targetDate}),booking:()=>view,saveBooking:input=>{saved.push(input);view=makeView(input as BookingSetup);return view;},confirm:async()=>true,publish:()=>{}});
   return {c,calls,saved,setHealth:(h:{A:boolean;B:boolean})=>{health=h;},view:()=>view,setLock:(v:boolean)=>{locked=v;}};
 }
 
@@ -61,7 +61,7 @@ it('Release Reset & Prepare validates, saves, re-reads and prepares the current 
 });
 it('legacy selection mode does not change the meaning of the normal Release action',async()=>{
   const h=controllerHarness();await h.c.setWorkflow('release');await h.c.resetPrepare({workflow:'release',strategy:'standard'});await h.c.setMode('selection');await h.c.authorizeTerms(true);await h.c.armFullBooking();
-  expect(h.calls.at(-1)).toMatchObject({kind:'full',authorizeTerms:true});
+  expect(h.c.state.scheduledRelease).toMatchObject({workflow:'release',strategy:'standard'});expect(h.calls.at(-1)).toMatchObject({kind:'resetPrepare'});await h.c.cancelScheduledRelease();
 });
 it('editing invalidates PreparedContext and Terms immediately',async()=>{
   const h=controllerHarness();await h.c.resetPrepare(testInput('standard',1));await h.c.authorizeTerms(true);await h.c.invalidatePreparation();expect(h.c.state).toMatchObject({ready:false,termsAuthorized:false,preparedContext:null,headline:'SETTINGS CHANGED'});

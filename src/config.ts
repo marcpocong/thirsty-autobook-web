@@ -39,6 +39,10 @@ export const ConfigSchema = z.object({
   MAX_RELEASE_RELOADS: z.coerce.number().int().min(1).max(2).default(2),
   RELEASE_RETRY_DELAY_MS: z.coerce.number().int().min(500).max(10000).default(1000),
   PREFLIGHT_SECONDS_BEFORE: z.coerce.number().int().min(10).max(120).default(15),
+  // Lightweight desktop scheduler wake-up. This is deliberately separate from
+  // release lead (which remains zero) and gives the bounded 60s Chrome startup
+  // path time to reconnect before the existing final preflight.
+  SCHEDULE_WAKE_SECONDS_BEFORE: z.coerce.number().int().min(30).max(300).default(90),
   CRITICAL_STEP_TIMEOUT_MS: z.coerce.number().int().min(3000).max(60000).default(15000),
 }).superRefine((c, ctx) => {
   if(c.BOOKING_TYPE==='standard'?c.DURATION_HOURS>3:c.DURATION_HOURS<4)ctx.addIssue({code:'custom',message:'Standard supports 1-3h; Extended supports 4-6h',path:['DURATION_HOURS']});
@@ -56,6 +60,7 @@ export const ObservationSchema = z.object({
   RELEASE_PREOPEN_CALENDAR: ConfigSchema.shape.RELEASE_PREOPEN_CALENDAR,
   AVAILABILITY_DISCOVERY_MODE: ConfigSchema.shape.AVAILABILITY_DISCOVERY_MODE,
   RELEASE_RETRY_DELAY_MS: ConfigSchema.shape.RELEASE_RETRY_DELAY_MS, PREFLIGHT_SECONDS_BEFORE: ConfigSchema.shape.PREFLIGHT_SECONDS_BEFORE,
+  SCHEDULE_WAKE_SECONDS_BEFORE: ConfigSchema.shape.SCHEDULE_WAKE_SECONDS_BEFORE,
   CRITICAL_STEP_TIMEOUT_MS: ConfigSchema.shape.CRITICAL_STEP_TIMEOUT_MS,
 });
 export type ReleaseSettings = z.infer<typeof ObservationSchema>;
@@ -124,10 +129,17 @@ export function planFingerprint(c: Config) {
 }
 export function releaseCalendar(c: Pick<Config, 'TIMEZONE' | 'RELEASE_TIME' | 'BOOKING_HORIZON_DAYS'>, now: DateTime = DateTime.now()) {
   const local = now.setZone(c.TIMEZONE);
-  const release = DateTime.fromISO(`${local.toISODate()}T${c.RELEASE_TIME}`, { zone: c.TIMEZONE });
+  const today = DateTime.fromISO(`${local.toISODate()}T${c.RELEASE_TIME}`, { zone: c.TIMEZONE });
+  const release = today.toMillis() > now.toMillis() ? today : today.plus({days:1});
   if (!release.isValid) throw new Error('INVALID_RELEASE_DATE');
-  // Never silently switch to tomorrow after missing today's release.
-  return { targetDate: local.startOf('day').plus({ days: c.BOOKING_HORIZON_DAYS }).toISODate()!, releaseMs: release.toMillis(), releaseISO: release.toISO()! };
+  return { targetDate: release.startOf('day').plus({ days: c.BOOKING_HORIZON_DAYS }).toISODate()!, releaseMs: release.toMillis(), releaseISO: release.toISO()! };
+}
+
+/** Exact calendar release used only when a caller has already chosen the day. */
+export function releaseCalendarOn(c: Pick<Config, 'TIMEZONE' | 'RELEASE_TIME' | 'BOOKING_HORIZON_DAYS'>, releaseDate:string) {
+  const release=DateTime.fromISO(`${releaseDate}T${c.RELEASE_TIME}`,{zone:c.TIMEZONE});
+  if(!release.isValid||release.toISODate()!==releaseDate)throw Error('INVALID_RELEASE_DATE');
+  return {targetDate:release.startOf('day').plus({days:c.BOOKING_HORIZON_DAYS}).toISODate()!,releaseMs:release.toMillis(),releaseISO:release.toISO()!};
 }
 
 // Profile values remain local; only readiness booleans cross the UI boundary.

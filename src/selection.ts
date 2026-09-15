@@ -1,5 +1,5 @@
 import type { Page } from 'playwright';
-import { expandHours, type Preference } from './config.js';
+import { expandHours, ONDA_URL, type Preference } from './config.js';
 import { snapshot, validateSnapshot, resolvePreference, selectors, type Snapshot, type Cell } from './grid.js';
 import { assertPage } from './browser.js';
 import { Safety } from './safety.js';
@@ -9,6 +9,7 @@ import type { CandidateDiscovery } from './availability-discovery.js';
 export interface SelectionSummary { count: string; amount: string; actionable: boolean }
 export interface SelectionPort {
   guard(): Promise<void>;
+  lightGuard?():Promise<void>;
   read(): Promise<Snapshot>;
   click(date: string, court: number, hour: string, state: 'OPEN' | 'SELECTED'): Promise<void>;
   summary(): Promise<SelectionSummary>;
@@ -19,7 +20,22 @@ export function selectionPort(page: Page, safety: Safety): SelectionPort {
     guard: async () => {
       await assertPage(page,safety);
       if(await page.evaluate(()=>document.visibilityState)!=='visible')throw new Error('TAB_NOT_VISIBLE');
+      await page.evaluate(()=>{
+        const w=window as typeof window&{__thirstyGuard?:{reason?:string;observer:MutationObserver}};
+        w.__thirstyGuard?.observer.disconnect();
+        const state:{reason?:string;observer:MutationObserver}={observer:null as unknown as MutationObserver};
+        const scan=()=>{const text=document.body?.innerText??'';state.reason=/too many requests|rate.?limit|retry.after|\b429\b/i.test(text)?'RATE_LIMITED':/captcha|verify (?:that )?you are human|checking your browser|access denied|security challenge/i.test(text)?'SECURITY_CHALLENGE':undefined;};
+        scan();state.observer=new MutationObserver(scan);state.observer.observe(document.body,{subtree:true,childList:true,characterData:true});w.__thirstyGuard=state;
+      });
       safety.check();
+    },
+    lightGuard:async()=>{
+      safety.check();
+      const state=await page.evaluate(()=>{const g=(window as typeof window&{__thirstyGuard?:{reason?:string}}).__thirstyGuard;return {installed:!!g,visible:document.visibilityState==='visible',reason:g?.reason,grid:document.querySelectorAll('[data-testid="booking-grid-body"]').length};});
+      // Offline DOM fixtures replace the full guard and therefore have no
+      // sentinel. Production always installs it in guard() before this path.
+      if(state.installed&&page.url()!==ONDA_URL)throw Error('WRONG_URL');
+      if(state.reason)safety.stop(state.reason);safety.check();if(!state.visible)throw Error('TAB_NOT_VISIBLE');if(state.grid!==1)throw Error('GRID_UNVERIFIED');
     }, read: () => snapshot(page),
     async click(date, court, hour, state) {
       safety.check();
@@ -73,18 +89,15 @@ export async function selectResolvedPreference(port: SelectionPort, targetDate: 
     const dispatched = new Set<string>();
     let conflict = false;
     for (const [i,hour] of p.hours.entries()) {
-      safety.check(); t.mark(`slot${i+1}ClickStarted`); dispatched.add(hour);
+      await (port.lightGuard?.()??Promise.resolve());safety.check(); t.mark(`slot${i+1}ClickStarted`); dispatched.add(hour);
       try { await port.click(targetDate, p.court, hour, 'OPEN'); }
       catch { safety.check(); conflict = true; break; }
       safety.check();
-      // Verify every dispatched click before emitting a factual selected event.
-      cells = validateSnapshot(await port.read(), targetDate); safety.check(); known(cells);
-      const selected = cells.filter(c => c.state === 'SELECTED');
-      if (selected.some(c => !intended(c,p) || !dispatched.has(c.hour))) throw new Error('UNOWNED_SELECTION');
-      if (!selected.some(c => c.hour === hour)) { conflict = true; break; }
-      t.mark(`slot${i+1}Selected`);
+      // click() already waits for this exact cell's OPEN -> SELECTED state.
+      t.mark(`slot${i+1}StateConfirmed`);
     }
     safety.check(); await port.guard(); safety.check();
+    t.mark('selectionFinalVerificationStarted');
     cells = validateSnapshot(await port.read(), targetDate); safety.check(); known(cells);
     let selected = cells.filter(c => c.state === 'SELECTED');
     if (selected.some(c => !intended(c,p) || !dispatched.has(c.hour))) throw new Error('UNOWNED_SELECTION');
@@ -92,7 +105,7 @@ export async function selectResolvedPreference(port: SelectionPort, targetDate: 
       const summary = await port.summary(); safety.check();
       const amount = selectionAmount(summary, p.hours.length, maximumPrice);
       if (summary.actionable) {
-        safety.lock(); await safety.stage('SELECTION_VERIFIED'); t.mark('selectionVerified'); t.mark('proceedActionable');
+        safety.lock(); await safety.stage('SELECTION_VERIFIED'); t.mark('selectionFinalVerificationCompleted');t.mark('selectionVerified'); t.mark('proceedActionable');
         return { date: targetDate, court: p.court, hours: p.hours, amount, proceedReady: true, attempts: attempt };
       }
     }

@@ -1,7 +1,7 @@
 import { mkdir, open, realpath } from 'node:fs/promises';
 import { attach, browserA, browserB } from './browser.js';
 import { assertDiagnosticSchedule } from './diagnostic-schedule.js';
-import { bookingPlayers, releaseCalendar, type Config } from './config.js';
+import { bookingPlayers, releaseCalendar, planFingerprint, loadConfig, type Config } from './config.js';
 import { snapshot, navigateDate } from './grid.js';
 import { Safety } from './safety.js';
 import { Telemetry } from './telemetry.js';
@@ -13,12 +13,17 @@ import { coordinateBooking } from './booking-coordinator.js';
 import { lifecycleWriter, removeOwnedRecord } from './checkout-lifecycle.js';
 import { type PlanRequest, type BookingPlan, describeBookingPlan } from './booking-plan.js';
 import { emitUiEvent } from './ui-events.js';
+import {DateTime} from 'luxon';
 
-export async function runBooking(config:Config,mode:'test'|'race'|'race:dry'|'race:selection',safety:Safety,t:Telemetry,options:{request?:PlanRequest;maximum?:number;authorizeTerms?:boolean;confirm?:(plan:BookingPlan)=>Promise<boolean>}={}){
+export async function runBooking(config:Config,mode:'test'|'race'|'race:dry'|'race:selection',safety:Safety,t:Telemetry,options:{request?:PlanRequest;maximum?:number;authorizeTerms?:boolean;confirm?:(plan:BookingPlan)=>Promise<boolean>;scheduledTarget?:ReturnType<typeof releaseCalendar>;scheduledFingerprint?:string}={}){
+  if(options.scheduledTarget){t.mark('scheduledWorkerWake');t.mark('workerStart');}
   const full=mode==='test'||mode==='race';
   if(full&&!options.authorizeTerms)throw Error('TERMS_AUTHORIZATION_REQUIRED');
   if(mode==='test'&&(!options.request||!options.confirm))throw Error('TEST_CONFIRMATION_REQUIRED');
-  const target=releaseCalendar(config),request:PlanRequest=options.request??{strategy:config.BOOKING_TYPE,date:target.targetDate,start:config.START_TIME,duration:config.DURATION_HOURS,courtCount:config.COURT_COUNT,priority:[...config.PREFERRED_COURTS,...config.FALLBACK_COURTS],fallbackStarts:config.FALLBACK_TIMES};
+  const target=options.scheduledTarget??releaseCalendar(config);
+  const scheduledTargetDate=DateTime.fromMillis(target.releaseMs,{zone:config.TIMEZONE}).startOf('day').plus({days:config.BOOKING_HORIZON_DAYS}).toISODate();
+  if(options.scheduledTarget&&(Date.now()>=target.releaseMs||target.targetDate!==scheduledTargetDate||options.scheduledFingerprint!==planFingerprint(config)))throw Error(Date.now()>=target.releaseMs?'RELEASE_MISSED':'SCHEDULE_CONTEXT_MISMATCH');
+  const request:PlanRequest=options.request??{strategy:config.BOOKING_TYPE,date:target.targetDate,start:config.START_TIME,duration:config.DURATION_HOURS,courtCount:config.COURT_COUNT,priority:[...config.PREFERRED_COURTS,...config.FALLBACK_COURTS],fallbackStarts:config.FALLBACK_TIMES};
   const players=bookingPlayers(config,request.strategy);
   const identities=request.strategy==='extended'?[browserA,browserB]:[browserA];
   await mkdir('.local/dual',{recursive:true});await mkdir('DiagnosticsLocal',{recursive:true});
@@ -38,6 +43,7 @@ export async function runBooking(config:Config,mode:'test'|'race'|'race:dry'|'ra
     }
     const connected=await Promise.allSettled(identities.map((b,i)=>attach(safeties[i]!,t,b)));
     const connections=connected.map(c=>{if(c.status==='rejected')throw c.reason;return c.value;});
+    if(options.scheduledTarget)connections.forEach((_,i)=>t.mark('browserAttached',i+1));
     if(identities.length===2){const paths=await Promise.all(identities.map(i=>realpath(i.expectedProfile)));if(paths[0]!.toLowerCase()===paths[1]!.toLowerCase())throw Error('DUAL_PROFILE_NOT_ISOLATED');}
     const workers=connections.map((c,i):DualWorker=>({id:identities[i]!.workerId,safety:safeties[i]!,telemetry:t,port:selectionPort(c.page,safeties[i]!),state:async()=>{},checkout:async selected=>{
       await fullBookingToQr(c.page,selected,players[identities[i]!.workerId]!,(options.maximum??config.MAX_PRICE)*request.courtCount,true,config.PAYMENT_HANDOFF_VERIFY_TIMEOUT_MS,safeties[i]!,t,config.PAYMENT_SUMMARY_READY_TIMEOUT_MS);
@@ -45,7 +51,7 @@ export async function runBooking(config:Config,mode:'test'|'race'|'race:dry'|'ra
     const gate=dualArmGate(target,safety,t);
     const grids=await Promise.all(workers.map(async(w,i)=>{
       if(mode==='test'){await assertDiagnosticSchedule(connections[i]!.page,w.safety);await navigateDate(connections[i]!.page,request.date,w.safety);return snapshot(connections[i]!.page);}
-      try{return (await observeRelease(connections[i]!.page,{...config,AVAILABILITY_DISCOVERY_MODE:'ui'},w.safety,t,mode==='race:dry',true,identities.length===2?{target,beforeArmed:()=>gate(w.id)}:undefined)).grid;}
+      try{return (await observeRelease(connections[i]!.page,{...config,AVAILABILITY_DISCOVERY_MODE:'ui'},w.safety,t,mode==='race:dry',true,{target,beforeArmed:identities.length===2?()=>gate(w.id):async()=>{},verifyContext:options.scheduledFingerprint?()=>{if(planFingerprint(loadConfig())!==options.scheduledFingerprint)throw Error('SCHEDULE_CONTEXT_MISMATCH');}:undefined})).grid;}
       catch(e){abort();throw e;}
     }));
     const result=await coordinateBooking(workers,request,grids,options.maximum??config.MAX_PRICE,config.MAX_SELECTION_ATTEMPTS,mode==='race:dry'?'dry':mode==='race:selection'?'selection':'full',options.confirm);

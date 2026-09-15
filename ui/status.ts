@@ -1,7 +1,7 @@
 import { access,readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { DateTime } from 'luxon';
-import { loadObservationConfig, releaseCalendar, type ReleaseSettings } from '../src/config.js';
+import { loadObservationConfig, releaseCalendar, releaseCalendarOn, type ReleaseSettings } from '../src/config.js';
 import {UiEventSchema} from '../src/ui-events.js';
 import type {Dashboard} from './types.js';
 
@@ -24,12 +24,12 @@ async function probePort(port:number):Promise<boolean>{
 }
 export async function probeBrowserHealth(){const [A,B]=await Promise.all([probePort(9222),probePort(9223)]);return {A,B};}
 export function clockStatus(config: ReleaseSettings, now: DateTime = DateTime.now()) {
-  const today = releaseCalendar(config, now);
-  // Informational next-release display only; the CLI still refuses late starts today.
-  const next = today.releaseMs <= now.toMillis() ? releaseCalendar(config, now.setZone(config.TIMEZONE).plus({ days: 1 })) : today;
+  const local=now.setZone(config.TIMEZONE),today=releaseCalendarOn(config,local.toISODate()!);
+  const next = releaseCalendar(config,now);
   return { manilaTime: now.setZone('Asia/Manila').toFormat('HH:mm:ss'), manilaDate: now.setZone('Asia/Manila').toFormat('ccc, LLL d, yyyy'),
     releaseMs: next.releaseMs, targetDate: next.targetDate, releaseTime: config.RELEASE_TIME, timezone: config.TIMEZONE,
-    canArmToday: now.toMillis() < today.releaseMs - config.PREFLIGHT_SECONDS_BEFORE * 1000,
-    remainingMs: Math.max(0, next.releaseMs - now.toMillis()), horizon: config.BOOKING_HORIZON_DAYS, maxReloads: config.MAX_RELEASE_RELOADS, leadMs: config.RELEASE_LEAD_MS, preopenCalendar: config.RELEASE_PREOPEN_CALENDAR };
+    canArmToday: next.releaseMs > now.toMillis(), canArmNext:true, todayReleasePassed:now.toMillis()>=today.releaseMs,
+    remainingMs: Math.max(0, next.releaseMs - now.toMillis()), horizon: config.BOOKING_HORIZON_DAYS, maxReloads: config.MAX_RELEASE_RELOADS, leadMs: config.RELEASE_LEAD_MS, preopenCalendar: config.RELEASE_PREOPEN_CALENDAR,
+    preflightSecondsBefore:config.PREFLIGHT_SECONDS_BEFORE,wakeSecondsBefore:config.SCHEDULE_WAKE_SECONDS_BEFORE };
 }
 export function readClock() { return clockStatus(loadObservationConfig()); }

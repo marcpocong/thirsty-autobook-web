@@ -93,12 +93,13 @@ export async function clickReleasedTargetDate(page: Page, target: ReleaseTarget,
   }, { selector: selectors.heading, heading: target.heading }, { timeout, polling: 'raf' });
   safety.check(); t.mark('targetHeadingDetected');
   await waitForGrid(page, target.date, safety, timeout, target.heading);
-  validateSnapshot(await snapshot(page), target.date);
+  safety.check();t.mark('gridSnapshotStarted');
+  const validated=await snapshot(page);validateSnapshot(validated, target.date);t.mark('gridSnapshotCompleted');
   safety.check(); t.mark('targetGridReady');
   if (await picker.getAttribute('aria-expanded') === 'true') {
     safety.check(); await picker.click({ timeout });
   }
-  safety.check(); return 'TARGET_GRID_READY' as const;
+  safety.check(); return validated;
 }
 export async function navigateReleasedTargetDate(page: Page, target: ReleaseTarget, safety: Safety, t: Telemetry, timeout: number) {
   await guardReleaseShell(page, safety);

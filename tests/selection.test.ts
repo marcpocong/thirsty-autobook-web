@@ -52,7 +52,7 @@ describe('selection-only engine',()=>{
     const h=harness();h.port.summary=async()=>({count:kind==='count'?'2 Courts • 2 Slots':'1 Court • 2 Slots',amount:kind==='price'?'₱1,201':kind==='amount'?'unknown':'₱1,200',actionable:true});await expect(h.run()).rejects.toThrow('SELECTION_');expect(h.calls).toHaveLength(2);expect(h.safety.locked).toBe(false);
   });
   it.each(['date','unknown','foreign'])('stops on %s uncertainty and performs no cleanup',async(kind)=>{
-    const h=harness(),click=h.port.click;h.port.click=async(...a)=>{await click(...a);if(kind==='date')h.grid.rows[0]!.date='2026-09-12';else if(kind==='unknown')h.grid.cells[0]!.state='new-state';else h.set(1,'08:00','selected');};await expect(h.run()).rejects.toThrow();expect(h.calls).toHaveLength(1);
+    const h=harness(),click=h.port.click;h.port.click=async(...a)=>{await click(...a);if(kind==='date')h.grid.rows[0]!.date='2026-09-12';else if(kind==='unknown')h.grid.cells[0]!.state='new-state';else h.set(1,'08:00','selected');};await expect(h.run()).rejects.toThrow();expect(h.calls).toHaveLength(2);
   });
   it('refuses existing selected cells',async()=>{const h=harness();h.set(1,'08:00','selected');await expect(h.run()).rejects.toThrow('PREEXISTING');expect(h.calls).toEqual([]);});
   it.each([0,1])('abort after slot %i prevents all later actions, including cleanup',async(index)=>{

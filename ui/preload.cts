@@ -17,6 +17,7 @@ const bridge: Bridge = {
   armObservation: () => ipcRenderer.invoke('thirsty:armObservation'),
   armSelection: () => ipcRenderer.invoke('thirsty:armSelection'),
   armFullBooking:()=>ipcRenderer.invoke('thirsty:armFullBooking'),
+  cancelScheduledRelease:()=>ipcRenderer.invoke('thirsty:cancelScheduledRelease'),
   setMode:mode=>ipcRenderer.invoke('thirsty:setMode',mode),
   authorizeTerms:value=>ipcRenderer.invoke('thirsty:authorizeTerms',value),
   dryRace: () => ipcRenderer.invoke('thirsty:dryRace'),

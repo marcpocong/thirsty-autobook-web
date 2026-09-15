@@ -1,7 +1,7 @@
 import type { Page } from 'playwright';
 import { DateTime } from 'luxon';
 import { setTimeout as delay } from 'node:timers/promises';
-import { releaseCalendar, type ReleaseSettings } from './config.js';
+import { releaseCalendar, releaseCalendarOn, type ReleaseSettings } from './config.js';
 import { snapshot, validateSnapshot } from './grid.js';
 import { releaseNavigationTarget } from './release-navigation.js';
 import { Safety } from './safety.js';
@@ -9,7 +9,7 @@ import { Telemetry } from './telemetry.js';
 import { assertDiagnosticSchedule } from './diagnostic-schedule.js';
 
 export function tomorrowRelease(c: ReleaseSettings, now: DateTime = DateTime.now()) {
-  return releaseCalendar(c, now.setZone(c.TIMEZONE).plus({ days: 1 }));
+  return releaseCalendarOn(c, now.setZone(c.TIMEZONE).plus({ days: 1 }).toISODate()!);
 }
 
 // Diagnostic only: the sole permitted interactions are opening/closing the picker.
@@ -17,7 +17,7 @@ export async function checkPreopenStability(page: Page, c: ReleaseSettings, safe
   pause: (ms: number, signal: AbortSignal) => Promise<unknown> = (ms, signal) => delay(ms, undefined, { signal }),
   now: DateTime = DateTime.now()) {
   const target = tomorrowRelease(c, now), dayTarget = releaseNavigationTarget(target.targetDate);
-  const today = releaseCalendar(c, now);
+  const today = releaseCalendarOn(c, now.setZone(c.TIMEZONE).toISODate()!);
   if (now.toMillis() < today.releaseMs || Date.now() + 65000 >= target.releaseMs) throw Error('PREOPEN_CHECK_OUTSIDE_SAFE_WINDOW');
   let navigated = false;
   const onNavigation = () => { navigated = true; };
