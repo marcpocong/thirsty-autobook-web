@@ -14,6 +14,12 @@ async function fixture(work:(h:{root:string;path:string;inspect:ReturnType<typeo
   try{await work({root,path,inspect,normalize,run,record});}finally{await rm(root,{recursive:true,force:true});}
 }
 it.each(['standard','extended'] as const)('no-lock %s preparation starts/reuses only its required browsers',strategy=>fixture(async h=>{await h.run(strategy);expect(h.inspect.mock.calls.map(c=>c[0].workerId)).toEqual(strategy==='standard'?['A']:['A','B']);expect(h.normalize).toHaveBeenCalledTimes(strategy==='standard'?1:2);await expect(readFile(h.path)).rejects.toThrow();}));
+it('uses the endpoint identity returned by preparation startup',()=>fixture(async h=>{
+  const fallback={workerId:'A' as const,port:19222,cdpUrl:'http://127.0.0.1:19222',expectedProfile:'.local/onda-chrome-profile'};
+  const start=vi.fn(async()=>fallback);
+  await resetAndPrepare('standard',new Safety(),{root:h.root,alive:()=>false,start,inspect:h.inspect});
+  expect(start).toHaveBeenCalledOnce();expect(h.inspect).toHaveBeenCalledWith(fallback,expect.any(Safety));
+}));
 it.each(['SELECTION','REVIEW','PAYMENT_SUMMARY'])('recovers a dead Standard %s record',stage=>fixture(async h=>{await h.record('standard',stage);h.inspect.mockImplementation(async()=>({observed:{page:stage==='SELECTION'?'Schedule':'Payment Summary',selected:stage==='SELECTION'?2:null,hold:'Not detected',clean:false},normalize:h.normalize}));await h.run();expect(h.normalize).toHaveBeenCalledOnce();await expect(readFile(h.path)).rejects.toThrow();}));
 it.each(['extended','dual'])('recovers safe stale %s state before preparing Standard',mode=>fixture(async h=>{await h.record(mode,'SELECTION');await h.run();expect(h.inspect.mock.calls.map(c=>c[0].workerId)).toEqual(['A','B']);for(const p of ['automation.lock','dual/worker-a.lock','dual/worker-b.lock'])await expect(readFile(join(h.root,'.local',p))).rejects.toThrow();}));
 it('refuses an active PID before inspecting or normalizing',()=>fixture(async h=>{await h.record('standard','SELECTION');await expect(resetAndPrepare('standard',new Safety(),{root:h.root,alive:()=>true,inspect:h.inspect})).rejects.toThrow('LOCK_PID_RUNNING');expect(h.inspect).not.toHaveBeenCalled();}));

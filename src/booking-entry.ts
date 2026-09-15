@@ -25,7 +25,9 @@ try{
   await mkdir('.local',{recursive:true});await mkdir('DiagnosticsLocal',{recursive:true});
   const [mode,raw]=process.argv.slice(2);
   if(mode==='prepare'){
-    const input=PreparationSchema.parse(JSON.parse(raw??''));
+    let decoded:unknown;try{decoded=JSON.parse(raw??'');}catch{throw Error('PREPARATION_INPUT_INVALID');}
+    const parsed=PreparationSchema.safeParse(decoded);if(!parsed.success)throw Error('PREPARATION_INPUT_INVALID');
+    const input=parsed.data;
     const config=input.workflow==='test'?loadTestRuntimeConfig({...input.request,maximum:input.maximum}):loadConfig();
     const strategy=input.workflow==='test'?input.request.strategy:config.BOOKING_TYPE;
     bookingPlayers(config,strategy);
@@ -43,7 +45,9 @@ try{
     emitUiEvent({type:'preparationResult',result});console.log('READY');
   }
   else if(mode==='test'){
-    const input=TestBookingSchema.parse(JSON.parse(raw??''));
+    let decoded:unknown;try{decoded=JSON.parse(raw??'');}catch{throw Error('BOOKING_INPUT_INVALID');}
+    const parsed=TestBookingSchema.safeParse(decoded);if(!parsed.success)throw Error('BOOKING_INPUT_INVALID');
+    const input=parsed.data;
     await runBooking(loadTestRuntimeConfig({...input.request,maximum:input.maximum}),'test',safety,t,{...input,confirm});
   }else throw Error('MODE_REQUIRED');
 }catch(e){code=1;if(e instanceof PreparationBlockedError)emitUiEvent({type:'preparationBlocked',browser:e.browserId,hold:e.review.hold,countdownSeconds:e.review.countdownSeconds??null});const reason=e instanceof Error&&/^[A-Z_]{1,80}$/.test(e.message)?e.message:'BOOKING_OPERATION_FAILED';emitUiEvent({type:'error',code:reason});console.error(reason);}

@@ -4,9 +4,10 @@ import type { BrowserIdentity } from './browser.js';
 import { readFile, open, unlink } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { createServer } from 'node:net';
 import { chromium } from 'playwright';
 import { DateTime } from 'luxon';
-import { browserA,browserB,verifyDedicatedChrome,monitorConnection } from './browser.js';
+import { browserIdentity,cdpCodes,rememberBrowserPort,verifyDedicatedChrome,monitorConnection } from './browser.js';
 import { ONDA_URL, VENUE } from './config.js';
 import { inspectLockPage, type BrowserReview } from './lock-browser.js';
 import { snapshot, validateSnapshot, navigateDate, type Snapshot } from './grid.js';
@@ -40,7 +41,7 @@ export function assertResetSafe(record:RetainedRecord|undefined,browser:BrowserR
 }
 async function maybeRead(path:string){try{return await readFile(path,'utf8');}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return undefined;throw e;}}
 export interface PreparedBrowser { observed:BrowserReview; normalize(date?:string):Promise<Snapshot|void> }
-export interface PreparationDependencies { root?:string; alive?:typeof pidAlive; start?:(identity:BrowserIdentity)=>Promise<void>; inspect?:(identity:BrowserIdentity,safety:Safety)=>Promise<PreparedBrowser>; progress?:(step:'starting'|'previous-session'|'holds'|'onda'|'calendar'|'grids'|'availability'|'final')=>void }
+export interface PreparationDependencies { root?:string; alive?:typeof pidAlive; start?:(identity:BrowserIdentity)=>Promise<void|BrowserIdentity>; inspect?:(identity:BrowserIdentity,safety:Safety)=>Promise<PreparedBrowser>; progress?:(step:'starting'|'previous-session'|'holds'|'onda'|'calendar'|'grids'|'availability'|'final')=>void }
 export interface ResetPreparation {browsers:{id:'A'|'B';snapshot?:Snapshot}[]}
 export async function resetAndPrepare(strategy:'standard'|'extended',safety:Safety,deps:PreparationDependencies={},date?:string){
   const root=deps.root??'.',alive=deps.alive??pidAlive;
@@ -75,9 +76,15 @@ export async function resetAndPrepare(strategy:'standard'|'extended',safety:Safe
     await same();
     deps.progress?.('previous-session');
     if(!raw){const f=await open(path,'wx');reservedRaw=JSON.stringify({pid:process.pid,runID:JSON.parse(guardRaw).runID,mode:'preparing'});expectedRaw=reservedRaw;await f.writeFile(reservedRaw);await f.sync();await f.close();}
-    const identities=two?[browserA,browserB]:[browserA];
-    // Phase 1 starts every required browser before Phase 2 inspects either one.
-    if(!deps.inspect||deps.start)await Promise.all(identities.map(b=>(deps.start??startForPreparation)(b)));
+    let identities=two?[browserIdentity('A'),browserIdentity('B')]:[browserIdentity('A')];
+    // Start/reuse every required browser before inspecting any Onda state. The
+    // built-in starter may move a worker to its recorded fallback endpoint when
+    // another application owns the preferred port; it never closes that owner.
+    if(!deps.inspect||deps.start){
+      const started:BrowserIdentity[]=[];
+      for(const identity of identities)started.push(await (deps.start??startForPreparation)(identity)??identity);
+      identities=started;
+    }
     const browsers:PreparedBrowser[]=[];
     deps.progress?.('onda');
     for(const b of identities){
@@ -117,8 +124,37 @@ async function inspectForPreparation(b:BrowserIdentity,safety:Safety):Promise<Pr
   if(['Review Booking','Payment Summary'].includes(observed.page)&&(page.url()!==ONDA_URL||await page.locator('h2').count()!==1||(await page.locator('h2').innerText()).trim()!==VENUE))throw Error('WRONG_VENUE');
   return {observed,normalize:async(date)=>prepareSchedule(page,safety,date)};
 }
-async function startForPreparation(b:BrowserIdentity){
-  await promisify(execFile)('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File','scripts/start-onda-chrome.ps1',...(b.workerId==='B'?['-Worker','B']:[])],{windowsHide:true,timeout:60000});
+async function available(port:number){
+  return new Promise<boolean>(resolveAvailable=>{
+    const server=createServer();server.unref();server.once('error',()=>resolveAvailable(false));
+    server.listen({host:'127.0.0.1',port,exclusive:true},()=>server.close(()=>resolveAvailable(true)));
+  });
+}
+function failureCode(error:unknown){
+  const e=error as {message?:unknown;stdout?:unknown;stderr?:unknown};
+  const text=[e?.message,e?.stdout,e?.stderr].filter(v=>typeof v==='string').join('\n');
+  return [...cdpCodes,'CHROME_NOT_INSTALLED','CHROME_START_TIMEOUT'].find(code=>new RegExp(`(?:^|[^A-Z_])${code}(?:$|[^A-Z_])`).test(text));
+}
+async function launch(b:BrowserIdentity){
+  try{
+    await promisify(execFile)('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',resolve('scripts/start-onda-chrome.ps1'),'-Worker',b.workerId,'-Port',String(b.port)],{windowsHide:true,timeout:60000});
+  }catch(error){throw Error(failureCode(error)??'CHROME_START_FAILED');}
+}
+async function startForPreparation(initial:BrowserIdentity):Promise<BrowserIdentity>{
+  try{await launch(initial);return initial;}catch(error){
+    const code=error instanceof Error?error.message:'CHROME_START_FAILED';
+    if(!cdpCodes.includes(code as typeof cdpCodes[number]))throw error;
+  }
+  const other=browserIdentity(initial.workerId==='A'?'B':'A').port,base=initial.workerId==='A'?19222:19223;
+  for(let port=base;port<=base+38;port+=2){
+    if(port===other||!await available(port))continue;
+    const fallback=rememberBrowserPort(initial.workerId,port);
+    try{await launch(fallback);return fallback;}catch(error){
+      const code=error instanceof Error?error.message:'CHROME_START_FAILED';
+      if(!cdpCodes.includes(code as typeof cdpCodes[number]))throw error;
+    }
+  }
+  throw Error('CDP_ENDPOINT_UNAVAILABLE');
 }
 
 export async function prepareSchedule(page:Page,safety:Safety,date?:string){

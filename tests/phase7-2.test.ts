@@ -59,6 +59,13 @@ it('Release Reset & Prepare validates, saves, re-reads and prepares the current 
   await h.c.setWorkflow('release');await h.c.resetPrepare({workflow:'release',strategy:'extended',setup});
   expect(h.saved).toEqual([setup]);expect(h.view().setup).toEqual(setup);expect(h.c.state).toMatchObject({ready:true,headline:'READY TO ARM'});expect(h.c.state.preparedContext?.configFingerprint).toBe(h.view().fingerprint);
 });
+it.each(['standard','extended'] as const)('Release Reset & Prepare routes %s through the same complete preparation command',async strategy=>{
+  const setup:BookingSetup={...defaultSetup,BOOKING_TYPE:strategy,DURATION_HOURS:strategy==='standard'?3:4};
+  const h=controllerHarness({view:makeView(setup)});await h.c.setWorkflow('release');await h.c.resetPrepare({workflow:'release',strategy,setup});
+  expect(h.c.state).toMatchObject({ready:true,workflow:'release',headline:'READY TO ARM'});
+  expect(h.calls[0]).toMatchObject({kind:'resetPrepare',input:{workflow:'release',strategy}});
+  expect(h.c.state.preparedContext?.requiredBrowsers).toEqual(strategy==='standard'?['A']:['A','B']);
+});
 it('legacy selection mode does not change the meaning of the normal Release action',async()=>{
   const h=controllerHarness();await h.c.setWorkflow('release');await h.c.resetPrepare({workflow:'release',strategy:'standard'});await h.c.setMode('selection');await h.c.authorizeTerms(true);await h.c.armFullBooking();
   expect(h.c.state.scheduledRelease).toMatchObject({workflow:'release',strategy:'standard'});expect(h.calls.at(-1)).toMatchObject({kind:'resetPrepare'});await h.c.cancelScheduledRelease();

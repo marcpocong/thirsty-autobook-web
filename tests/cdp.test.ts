@@ -35,6 +35,8 @@ it('launcher shares verification, reuses only verified sessions and never kills 
   expect(source).toContain('verify-onda-chrome.ps1');
   expect(source).toContain("$verification -eq 'CDP_VERIFIED'");
   expect(source).toContain("$verification -ne 'CDP_NOT_LISTENING'");
+  expect(source).toContain('browser-endpoints.json');
+  expect(source).toContain("[ValidateScript({ $_ -eq 0 -or ($_ -ge 1024 -and $_ -le 65535) })][int]$Port");
   expect(source).not.toMatch(/Stop-Process|taskkill/i);
 });
 it.skipIf(process.platform !== 'win32')('B rejects A profile, wrong debugging port, unsafe binding, duplicate owning processes and duplicate profiles',()=>{

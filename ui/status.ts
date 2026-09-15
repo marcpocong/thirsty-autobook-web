@@ -4,6 +4,7 @@ import { DateTime } from 'luxon';
 import { loadObservationConfig, releaseCalendar, releaseCalendarOn, type ReleaseSettings } from '../src/config.js';
 import {UiEventSchema} from '../src/ui-events.js';
 import type {Dashboard} from './types.js';
+import {browserIdentity} from '../src/browser.js';
 
 export async function readLock(root: string): Promise<boolean> {
   try { await access(resolve(root, '.local/automation.lock')); return true; }
@@ -22,7 +23,7 @@ async function probePort(port:number):Promise<boolean>{
     return response.ok && typeof data.Browser === 'string' && data.Browser.startsWith('Chrome/');
   } catch { return false; }
 }
-export async function probeBrowserHealth(){const [A,B]=await Promise.all([probePort(9222),probePort(9223)]);return {A,B};}
+export async function probeBrowserHealth(){const [A,B]=await Promise.all([probePort(browserIdentity('A').port),probePort(browserIdentity('B').port)]);return {A,B};}
 export function clockStatus(config: ReleaseSettings, now: DateTime = DateTime.now()) {
   const local=now.setZone(config.TIMEZONE),today=releaseCalendarOn(config,local.toISODate()!);
   const next = releaseCalendar(config,now);

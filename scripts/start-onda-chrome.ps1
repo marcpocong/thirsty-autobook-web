@@ -1,7 +1,16 @@
-param([ValidateSet('A','B')][string]$Worker = 'A')
+param([ValidateSet('A','B')][string]$Worker = 'A', [ValidateScript({ $_ -eq 0 -or ($_ -ge 1024 -and $_ -le 65535) })][int]$Port = 0)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$port = if ($Worker -eq 'B') { 9223 } else { 9222 }
+$endpointFile = Join-Path $projectRoot '.local\browser-endpoints.json'
+$port = $Port
+if ($port -eq 0 -and (Test-Path -LiteralPath $endpointFile)) {
+  try {
+    $saved = Get-Content -LiteralPath $endpointFile -Raw | ConvertFrom-Json
+    $candidate = if ($Worker -eq 'B') { $saved.B } else { $saved.A }
+    if ($saved.version -eq 1 -and $candidate -ge 1024 -and $candidate -le 65535) { $port = [int]$candidate }
+  } catch {}
+}
+if ($port -eq 0) { $port = if ($Worker -eq 'B') { 9223 } else { 9222 } }
 $profile = if ($Worker -eq 'B') { '.local\onda-chrome-profile-b' } else { '.local\onda-chrome-profile' }
 $profilePath = Join-Path $projectRoot $profile
 $candidates = @(
@@ -10,7 +19,7 @@ $candidates = @(
   "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
 )
 $chromePath = $candidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
-if (-not $chromePath) { throw 'Google Chrome is not installed.' }
+if (-not $chromePath) { Write-Error 'CHROME_NOT_INSTALLED'; exit 1 }
 $verification = & (Join-Path $PSScriptRoot 'verify-onda-chrome.ps1') -Port $port -ExpectedProfile $profilePath
 if ($verification -eq 'CDP_VERIFIED') {
   Write-Host 'Dedicated Chrome verified. Reusing the existing localhost session.'
@@ -33,7 +42,7 @@ do {
   Start-Sleep -Milliseconds 200
   $listeners = @(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue)
 } until ($listeners.Count -gt 0 -or [DateTime]::UtcNow -ge $deadline)
-if ($listeners.Count -eq 0) { throw 'Chrome CDP did not start within 15 seconds.' }
+if ($listeners.Count -eq 0) { Write-Error 'CHROME_START_TIMEOUT'; exit 1 }
 $verification = & (Join-Path $PSScriptRoot 'verify-onda-chrome.ps1') -Port $port -ExpectedProfile $profilePath
 if ($verification -ne 'CDP_VERIFIED') { Write-Host $verification; exit 1 }
 Write-Host 'Dedicated Chrome ready; localhost-only CDP and dedicated profile verified.'

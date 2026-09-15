@@ -1,6 +1,7 @@
 import { chromium, type Page, type Browser } from 'playwright';
 import { execFileSync } from 'node:child_process';
-import { resolve } from 'node:path';
+import { readFileSync,renameSync,writeFileSync,mkdirSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { ONDA_URL, VENUE } from './config.js';
 import { Safety, securityReason } from './safety.js';
 import { classifyRateLimit } from './rate-limit.js';
@@ -9,10 +10,35 @@ import type { Telemetry } from './telemetry.js';
 export const cdpCodes = ['CDP_WRONG_PORT', 'CDP_NOT_LISTENING', 'CDP_UNSAFE_BIND', 'CDP_AMBIGUOUS_LISTENER',
   'CDP_PROCESS_METADATA_UNAVAILABLE', 'CDP_PROCESS_NOT_CHROME', 'CDP_PROFILE_MISSING', 'CDP_WRONG_PROFILE'] as const;
 export interface BrowserIdentity { workerId: 'A' | 'B'; cdpUrl: string; port: number; expectedProfile: string }
-export const browserA: BrowserIdentity = Object.freeze({ workerId:'A', cdpUrl:'http://127.0.0.1:9222', port:9222, expectedProfile:'.local/onda-chrome-profile' });
-export const browserB: BrowserIdentity = Object.freeze({ workerId:'B', cdpUrl:'http://127.0.0.1:9223', port:9223, expectedProfile:'.local/onda-chrome-profile-b' });
+const endpointPath=()=>resolve('.local/browser-endpoints.json');
+const defaultPort=(workerId:'A'|'B')=>workerId==='A'?9222:9223;
+const profile=(workerId:'A'|'B')=>workerId==='A'?'.local/onda-chrome-profile':'.local/onda-chrome-profile-b';
+function storedPorts():Partial<Record<'A'|'B',number>>{
+  try{
+    const parsed=JSON.parse(readFileSync(endpointPath(),'utf8')) as {version?:unknown;A?:unknown;B?:unknown};
+    if(parsed.version!==1)return {};
+    const valid=(value:unknown)=>Number.isInteger(value)&&Number(value)>=1024&&Number(value)<=65535;
+    const A=valid(parsed.A)?Number(parsed.A):undefined,B=valid(parsed.B)?Number(parsed.B):undefined;
+    return A!==B?{...(A?{A}:{}),...(B?{B}:{})}:{};
+  }catch{return {};}
+}
+export function browserIdentity(workerId:'A'|'B'):BrowserIdentity{
+  const port=storedPorts()[workerId]??defaultPort(workerId);
+  return Object.freeze({workerId,cdpUrl:`http://127.0.0.1:${port}`,port,expectedProfile:profile(workerId)});
+}
+export let browserA:BrowserIdentity=browserIdentity('A');
+export let browserB:BrowserIdentity=browserIdentity('B');
+export function rememberBrowserPort(workerId:'A'|'B',port:number){
+  if(!Number.isInteger(port)||port<1024||port>65535)throw Error('CDP_IDENTITY_MISMATCH');
+  const current=storedPorts(),other=workerId==='A'?current.B??defaultPort('B'):current.A??defaultPort('A');
+  if(port===other)throw Error('CDP_IDENTITY_MISMATCH');
+  const next={version:1,A:workerId==='A'?port:current.A??defaultPort('A'),B:workerId==='B'?port:current.B??defaultPort('B')};
+  const path=endpointPath(),temporary=`${path}.${process.pid}.tmp`;mkdirSync(dirname(path),{recursive:true});writeFileSync(temporary,JSON.stringify(next));renameSync(temporary,path);
+  browserA=browserIdentity('A');browserB=browserIdentity('B');
+  return workerId==='A'?browserA:browserB;
+}
 export function validateBrowserIdentity(identity: BrowserIdentity) {
-  const expected = identity.workerId === 'A' ? browserA : identity.workerId === 'B' ? browserB : undefined;
+  const expected = identity.workerId === 'A' ? browserIdentity('A') : identity.workerId === 'B' ? browserIdentity('B') : undefined;
   if (!expected || identity.port !== expected.port || identity.cdpUrl !== expected.cdpUrl || resolve(identity.expectedProfile).toLowerCase() !== resolve(expected.expectedProfile).toLowerCase()) throw Error('CDP_IDENTITY_MISMATCH');
 }
 export function verifyDedicatedChrome(identity: BrowserIdentity = browserA) {

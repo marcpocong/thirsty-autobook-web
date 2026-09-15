@@ -1,4 +1,4 @@
-param([ValidateSet(9222,9223)][int]$Port = 9222, [string]$ExpectedProfile = (Join-Path (Split-Path -Parent $PSScriptRoot) '.local\onda-chrome-profile'))
+param([ValidateRange(1024,65535)][int]$Port = 9222, [string]$ExpectedProfile = (Join-Path (Split-Path -Parent $PSScriptRoot) '.local\onda-chrome-profile'))
 $ErrorActionPreference = 'Stop'
 # Only a closed diagnostic code crosses the process boundary. Never print metadata.
 function Get-DedicatedChromeCode {

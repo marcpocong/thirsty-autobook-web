@@ -52,7 +52,7 @@ it('the Standard single-court release retains its direct path and the new router
   expect(commandSpec('chrome','root','node').args.join(' ')).not.toMatch(/dual|-Worker B/);
 });
 it('identities enforce separate profiles and ports',()=>{
-  expect(browserA.port).toBe(9222);expect(browserB.port).toBe(9223);expect(browserA.expectedProfile).toBe('.local/onda-chrome-profile');expect(browserB.expectedProfile).toBe('.local/onda-chrome-profile-b');
+  expect(browserA.port).not.toBe(browserB.port);expect(browserA.cdpUrl).toBe(`http://127.0.0.1:${browserA.port}`);expect(browserB.cdpUrl).toBe(`http://127.0.0.1:${browserB.port}`);expect(browserA.expectedProfile).toBe('.local/onda-chrome-profile');expect(browserB.expectedProfile).toBe('.local/onda-chrome-profile-b');
   expect(()=>validateBrowserIdentity(browserA)).not.toThrow();expect(()=>validateBrowserIdentity(browserB)).not.toThrow();
 });
 it('provides an explicit dual preparation command without booking arguments',()=>{
