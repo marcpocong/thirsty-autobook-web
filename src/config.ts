@@ -10,6 +10,7 @@ export const VENUE = 'Thirsty Pickle | SM Seaside';
 const hour = z.string().regex(/^(0[89]|1[0-9]|2[0-3]):00$/);
 const courts = z.array(z.number().int().min(1).max(7));
 export const ConfigSchema = z.object({
+  BOOKING_METHOD: z.enum(['browser','hybrid','api-first']).default('browser'),
   BOOKING_TYPE: z.enum(['standard','extended']).default('standard'),
   COURT_COUNT: z.union([z.literal(1), z.literal(2)]).default(1),
   ONDA_URL: z.literal(ONDA_URL).default(ONDA_URL),
@@ -99,6 +100,7 @@ export function loadConfigWithReconciliation(){return parseConfig(true);}
 export function loadTestRuntimeConfig(test:TestRuntimeSetup):Config{return parseConfig(false,test).config;}
 // Narrow, PII-free local settings; renderer cannot change URLs, release timing or player data.
 export const BookingSetupSchema = z.object({
+  BOOKING_METHOD: ConfigSchema.shape.BOOKING_METHOD,
   BOOKING_TYPE: ConfigSchema.shape.BOOKING_TYPE,
   COURT_COUNT: ConfigSchema.shape.COURT_COUNT,
   START_TIME: hour, DURATION_HOURS: z.number().int().min(1).max(6),
@@ -125,7 +127,7 @@ export function calculateTarget(c: Pick<Config, 'TIMEZONE' | 'RELEASE_TIME' | 'B
   return { ...releaseCalendar(c, now), preferences: compilePreferences(c) };
 }
 export function planFingerprint(c: Config) {
-  return createHash('sha256').update(JSON.stringify({ strategy:c.BOOKING_TYPE, courtCount:c.COURT_COUNT, schedule: ObservationSchema.parse(c), target: calculateTarget(c), maximum:c.MAX_PRICE, attempts:c.MAX_SELECTION_ATTEMPTS })).digest('hex');
+  return createHash('sha256').update(JSON.stringify({ method:c.BOOKING_METHOD, strategy:c.BOOKING_TYPE, courtCount:c.COURT_COUNT, schedule: ObservationSchema.parse(c), target: calculateTarget(c), maximum:c.MAX_PRICE, attempts:c.MAX_SELECTION_ATTEMPTS })).digest('hex');
 }
 export function releaseCalendar(c: Pick<Config, 'TIMEZONE' | 'RELEASE_TIME' | 'BOOKING_HORIZON_DAYS'>, now: DateTime = DateTime.now()) {
   const local = now.setZone(c.TIMEZONE);

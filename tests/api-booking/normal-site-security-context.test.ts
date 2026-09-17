@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { currentHeadersFromNormalSiteHelpers } from '../../src/api-booking/normal-site-security-context.js';
+import { currentHeadersFromNormalSiteHelpers, inspectNormalSiteSecurityContext } from '../../src/api-booking/normal-site-security-context.js';
 
 describe('normal site security context', () => {
   it('awaits the actual helper pair, including an interactive verification delay, without caching values', async () => {
@@ -28,5 +28,11 @@ describe('normal site security context', () => {
       getPublicBookingTurnstileToken: async () => { throw Error('Cloudflare challenge failed'); },
       getPublicFingerprintId: async () => 'visitor',
     })()).rejects.toThrow('NORMAL_SITE_SECURITY_VERIFICATION_FAILED');
+  });
+
+  it('reports readiness categories without exposing current verification values', async () => {
+    await expect(inspectNormalSiteSecurityContext({ getPublicBookingTurnstileToken: async () => 'token', getPublicFingerprintId: async () => 'fingerprint' })).resolves.toEqual({ status: 'ready' });
+    await expect(inspectNormalSiteSecurityContext({ getPublicBookingTurnstileToken: async () => { await new Promise(resolve => setTimeout(resolve, 20)); return 'late'; }, getPublicFingerprintId: async () => 'fingerprint' }, 1)).resolves.toMatchObject({ status: 'user-interaction-required' });
+    await expect(inspectNormalSiteSecurityContext({} as never)).resolves.toMatchObject({ status: 'unsupported-integration' });
   });
 });

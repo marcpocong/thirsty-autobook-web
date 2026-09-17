@@ -54,6 +54,7 @@ export function reconcileBookingSetupFallbacks(input: unknown): { setup: unknown
 }
 
 export interface BookingSetupDraft {
+  BOOKING_METHOD: 'browser' | 'hybrid' | 'api-first';
   BOOKING_TYPE: 'standard' | 'extended';
   COURT_COUNT: 1 | 2;
   START_TIME: string;
@@ -67,6 +68,7 @@ export interface BookingSetupDraft {
 export function bookingSetupProblem(input: unknown): string | undefined {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return 'The booking settings could not be read.';
   const setup=input as Partial<BookingSetupDraft>;
+  if (setup.BOOKING_METHOD !== 'browser' && setup.BOOKING_METHOD !== 'hybrid' && setup.BOOKING_METHOD !== 'api-first') return 'Choose a valid booking method.';
   if (setup.BOOKING_TYPE !== 'standard' && setup.BOOKING_TYPE !== 'extended') return 'Choose a valid booking type.';
   if (setup.COURT_COUNT !== 1 && setup.COURT_COUNT !== 2) return 'Choose one or two courts.';
   if (typeof setup.START_TIME!=='string'||!hourPattern.test(setup.START_TIME)) return 'Choose a valid main start time.';

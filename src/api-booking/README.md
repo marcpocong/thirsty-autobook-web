@@ -1,5 +1,11 @@
 # API-first booking experiment
 
+The desktop booking setup now exposes three explicit methods: `browser` (the
+existing normal flow), `hybrid` (same-browser API discovery intersected with the
+UI flow), and `api-first` (read-only API discovery and planning). The API-first
+method never implies that a reservation or payment is enabled; the UI labels the
+missing current security-context and official-checkout integration explicitly.
+
 This directory is isolated from the production Chrome coordinator. Onda's owner has authorized use of publicly available APIs for this project. A read-only live availability provider is available. Real reservation creation is disabled by default; payment automation and live checkout transfer are absent. A synthetic checkout handoff runs in tests and the demo.
 
 ## Experimental two-hour reservation boundary
@@ -51,7 +57,16 @@ The investigation report says the browser request covered September 17-23; the f
 
 ## Flow
 
-`AvailabilityProvider -> AvailabilityParser -> BookingPlanner -> ReservationProvider -> CheckoutHandoff`
+`AvailabilityProvider -> AvailabilityParser -> ApiAvailabilityEngine -> BookingPlanner -> FreshSlotProofs -> PublicCheckoutBuilder -> ResponseValidator -> OfficialCheckoutState`
+
+`availability-engine.ts` is the grid-independent discovery boundary. It makes one
+exact-date provider request, parses the response, ranks bounded deterministic
+candidates, and records monotonic request/response/parse/selection timings. It
+does not import Playwright or wait for the visual calendar. `slot-proofs.ts`
+performs bounded fresh proof acquisition and preserves the proof-to-hour
+association. `public-checkout.ts` builds and validates standard one-court 1–3
+hour observed-schema requests; it is a preparation boundary, not authorization
+to submit them.
 
 The live availability provider and fixture-backed mock share the parser and planner. Standard plans require 1-3 consecutive hours. Extended plans use two sequential checkout chunks, in the same split order as the Chrome planner: 3+1, 2+2, 1+3 for four hours; 3+2, 2+3 for five; and 3+3 for six. Each chunk selects its own courts, with overlap preferred. `maximumTotalPrice` is retained as a legacy field name but means a limit **per court in each chunk**. This models Chrome product behavior, not an observed Onda multi-hour API contract.
 

@@ -2,6 +2,7 @@ import type { Page } from 'playwright';
 import { ONDA_URL } from '../config.js';
 import { consumeSubmissionPermit, DurableSubmissionJournal, type SubmissionPermit } from './durable-submission-journal.js';
 import type { SlotCheckRequest, TwoHourCheckoutRequest, TwoHourTransport } from './two-hour-reservation.js';
+import { SubmissionDispatchError } from './submission-errors.js';
 
 const ORIGIN = 'https://app.onda.fit';
 const SLOT_PATH = '/api/public/is-slot-available';
@@ -16,8 +17,8 @@ export interface CurrentCheckoutHeaders {
 /** Values must come from the current normal site flow immediately before checkout; this transport cannot create them. */
 export type CurrentCheckoutHeadersProvider = () => Promise<CurrentCheckoutHeaders>;
 
-export class BrowserSessionTransportError extends Error {
-  constructor(readonly code: string) { super(code); this.name = 'BrowserSessionTransportError'; }
+export class BrowserSessionTransportError extends SubmissionDispatchError {
+  constructor(code: string, dispatched = false) { super(code, dispatched); this.name = 'BrowserSessionTransportError'; }
 }
 
 function usable(value: unknown): value is string {
@@ -43,13 +44,14 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
           body: JSON.stringify(payload) });
         return { status: response.status, contentType: response.headers.get('content-type') ?? '', body: await response.text() };
       }, { url: `${ORIGIN}${path}`, payload: body, headers: extraHeaders ?? {} });
-    } catch { throw new BrowserSessionTransportError('ONDA_TRANSPORT_FAILED'); }
-    this.assertPage();
-    if (result.status !== 200) throw new BrowserSessionTransportError('ONDA_HTTP_STATUS_INVALID');
-    if (!result.contentType.toLowerCase().includes('application/json')) throw new BrowserSessionTransportError('ONDA_CONTENT_TYPE_INVALID');
-    if (Buffer.byteLength(result.body, 'utf8') > MAX_RESPONSE_BYTES) throw new BrowserSessionTransportError('ONDA_RESPONSE_TOO_LARGE');
+    } catch { throw new BrowserSessionTransportError('ONDA_TRANSPORT_FAILED', true); }
+    try { this.assertPage(); }
+    catch { throw new BrowserSessionTransportError('ONDA_SESSION_DISCONNECTED_AFTER_DISPATCH', true); }
+    if (result.status !== 200) throw new BrowserSessionTransportError('ONDA_HTTP_STATUS_INVALID', true);
+    if (!result.contentType.toLowerCase().includes('application/json')) throw new BrowserSessionTransportError('ONDA_CONTENT_TYPE_INVALID', true);
+    if (Buffer.byteLength(result.body, 'utf8') > MAX_RESPONSE_BYTES) throw new BrowserSessionTransportError('ONDA_RESPONSE_TOO_LARGE', true);
     try { return JSON.parse(result.body) as unknown; }
-    catch { throw new BrowserSessionTransportError('ONDA_RESPONSE_JSON_INVALID'); }
+    catch { throw new BrowserSessionTransportError('ONDA_RESPONSE_JSON_INVALID', true); }
   }
 
   async checkSlot(request: SlotCheckRequest): Promise<unknown> {

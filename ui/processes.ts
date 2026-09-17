@@ -23,6 +23,10 @@ export function commandSpec(command: Command, root: string, node: string) {
   if (typeof command === 'object' && command !== null) {
     if(command.kind==='resetPrepare')return {executable:node,args:['--import','tsx',resolve(root,'src/booking-entry.ts'),'prepare',JSON.stringify(PreparationSchema.parse(command.input))],automation:true};
     if(command.kind==='testBooking')return {executable:node,args:['--import','tsx',resolve(root,'src/booking-entry.ts'),'test',JSON.stringify(TestBookingSchema.parse(command.input))],automation:true};
+    if(command.kind==='apiPreview'){
+      const c=z.object({kind:z.literal('apiPreview'),date:z.iso.date()}).strict().parse(command);
+      return {executable:node,args:['--import','tsx',resolve(root,'src/api-booking/preview-config.ts'),c.date],automation:true};
+    }
     if(command.kind==='dualDry') {
       const c=z.object({kind:z.literal('dualDry'),date:z.iso.date()}).strict().parse(command);
       return {executable:node,args:['--import','tsx',resolve(root,'src/dual-entry.ts'),'dry','--date',c.date],automation:true};

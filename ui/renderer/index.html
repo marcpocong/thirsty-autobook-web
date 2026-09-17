@@ -13,6 +13,7 @@
   <section class="hero" aria-label="Release clock"><div><p class="eyebrow">ASIA / MANILA</p><div id="clock" class="clock">--:--:--</div><p id="clock-date" class="muted">Reading local clock…</p></div><div class="countdown-block"><p class="eyebrow" id="countdown-label">NEXT RELEASE IN</p><div id="countdown" class="countdown">--:--:--</div><p class="muted"><span id="release-time">08:00:00</span> <span id="release-zone">Asia/Manila</span></p></div></section>
   <section class="panel setup"><div class="section-title"><h2>Booking setup</h2><span id="player-status" class="small">Player information · Checking</span></div>
     <fieldset id="setup-fields"><div class="setup-grid">
+      <label>Booking method<select id="booking-method"><option value="browser">NORMAL BROWSER</option><option value="hybrid">HYBRID AVAILABILITY</option><option value="api-first">API-FIRST EXPERIMENTAL</option></select></label>
       <label>Booking type<select id="booking-type"><option value="standard">STANDARD · 1–3 hours</option><option value="extended">EXTENDED · 4–6 hours</option></select></label>
       <label id="test-date-label">Test date<input id="test-date" type="date"></label>
       <label>Courts to book<select id="court-count"><option value="1">1 Court</option><option value="2">2 Courts</option></select></label>
@@ -53,6 +54,7 @@
     <section class="panel controls"><div class="section-title"><h2>Booking operations</h2><span class="small">PREPARE & ARM</span></div>
       <div class="button-row"><button id="chrome" class="secondary">Start / Attach Chrome</button><button id="inspect" class="secondary">Inspect Onda</button></div>
       <button id="prepare" class="prepare">Prepare Booking <span aria-hidden="true">→</span></button>
+      <button id="api-preview" class="secondary" hidden>API-First Read-only Preview</button>
       <div class="readiness" id="readiness" role="status"><strong id="headline">Prepare your session</strong><p id="detail">Start dedicated Chrome, then verify the page before arming.</p></div>
       <p id="blocked-reason" class="small" role="status"></p><button id="arm" class="arm">Arm Booking Selection</button>
       <p class="small hint" id="arm-description">Explicit confirmation · selects at release · stops before Proceed</p>

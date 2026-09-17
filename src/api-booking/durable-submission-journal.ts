@@ -3,11 +3,22 @@ import { mkdir, open, readFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 
 export type SubmissionState = 'dispatching' | 'unknown' | 'verified' | 'rejected';
+export interface SanitizedSubmissionAttempt {
+  attemptId: string;
+  planFingerprint: string;
+  targetDate: string;
+  courtIds: number[];
+  hourlyBoundaries: { startTime: string; endTime: string }[];
+  expectedBookingCount: number;
+  maximumAmount: number;
+  stage: 'dispatching';
+}
 export interface SubmissionRecord {
   key: string;
   state: SubmissionState;
   createdAt: string;
   updatedAt: string;
+  attempt: SanitizedSubmissionAttempt;
   // Deliberately excludes proofs, credentials, checkout tokens, and customer data.
 }
 export interface SubmissionPermit { readonly key: string }
@@ -29,9 +40,16 @@ export class DurableSubmissionJournal {
     return createHash('sha256').update(JSON.stringify([facilityId, spaceId, date, startTime, endTime])).digest('hex');
   }
 
-  async begin(key: string, now = new Date()): Promise<void> {
+  async begin(key: string, now = new Date(), attempt?: SanitizedSubmissionAttempt): Promise<void> {
     await mkdir(this.directory, { recursive: true, mode: 0o700 });
     const path = this.path(key);
+    const safeAttempt = attempt ?? { attemptId: key, planFingerprint: key, targetDate: 'unknown', courtIds: [], hourlyBoundaries: [],
+      expectedBookingCount: 1, maximumAmount: 0, stage: 'dispatching' as const };
+    if (!/^[a-f0-9]{64}$/.test(safeAttempt.attemptId) || !/^[a-f0-9]{64}$/.test(safeAttempt.planFingerprint) ||
+      !/^\d{4}-\d{2}-\d{2}$|^unknown$/.test(safeAttempt.targetDate) || !Array.isArray(safeAttempt.courtIds) ||
+      safeAttempt.courtIds.some(court => !Number.isInteger(court) || court < 1 || court > 7) ||
+      !Number.isInteger(safeAttempt.expectedBookingCount) || safeAttempt.expectedBookingCount < 1 ||
+      !Number.isFinite(safeAttempt.maximumAmount) || safeAttempt.maximumAmount < 0 || safeAttempt.stage !== 'dispatching') throw Error('SUBMISSION_ATTEMPT_INVALID');
     let handle;
     try { handle = await open(path, 'wx', 0o600); }
     catch (error) {
@@ -40,7 +58,7 @@ export class DurableSubmissionJournal {
     }
     try {
       const time = now.toISOString();
-      await handle.writeFile(JSON.stringify({ key, state: 'dispatching', createdAt: time, updatedAt: time } satisfies SubmissionRecord));
+      await handle.writeFile(JSON.stringify({ key, state: 'dispatching', createdAt: time, updatedAt: time, attempt: safeAttempt } satisfies SubmissionRecord));
       await handle.sync();
     } finally { await handle.close(); }
   }

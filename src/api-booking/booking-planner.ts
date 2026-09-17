@@ -4,6 +4,8 @@ export class BookingPlanningError extends Error {
   constructor(readonly code: string) { super(code); this.name = 'BookingPlanningError'; }
 }
 
+export const bookingPlanKey = (plan: BookingPlan) => JSON.stringify(plan.chunks.map(chunk => [chunk.startTime, chunk.endTime, chunk.courts.map(court => [court.court, court.spaceId])]));
+
 const unique = <T>(values: T[]) => [...new Set(values)];
 const cents = (value: number) => Math.round(value * 100);
 
@@ -61,7 +63,7 @@ export function planBooking(snapshot: AvailabilitySnapshot, p: BookingPreference
         const seconds = split.length === 1 ? [[]] : [...options[1]!].sort((x, y) => y.filter(c => a.some(first => first.court === c.court)).length - x.filter(c => a.some(first => first.court === c.court)).length);
         for (const b of seconds) {
           const selected = split.length === 1 ? [a] : [a, b];
-          const key = JSON.stringify(selected.map(cs => [cs[0]!.startTime, cs.map(c => c.court)]));
+          const key = JSON.stringify(selected.map(cs => [cs[0]!.startTime, cs[0]!.endTime, cs.map(c => [c.court, c.spaceId])]));
           if (excluded.has(key)) continue;
           const chunks = selected.map(cs => ({ startTime: cs[0]!.startTime, endTime: cs[0]!.endTime, durationHours: cs[0]!.durationMinutes / 60, courts: cs, totalPrice: cs.reduce((sum, c) => sum + c.price, 0) }));
           return { mode: p.mode, targetDate: p.targetDate, startTime, endTime: chunks.at(-1)!.endTime, durationHours: p.durationHours,
@@ -71,4 +73,26 @@ export function planBooking(snapshot: AvailabilitySnapshot, p: BookingPreference
     }
   }
   throw new BookingPlanningError(affordable ? 'BOOKING_CANDIDATES_EXCLUDED' : enoughCourts ? 'BOOKING_MAXIMUM_PRICE_EXCEEDED' : 'BOOKING_NO_CONSECUTIVE_AVAILABILITY');
+}
+
+/**
+ * Returns the same deterministic ordering used by planBooking, without reading
+ * or waiting for a browser grid. The limit is a safety bound on local work.
+ */
+export function rankBookingCandidates(snapshot: AvailabilitySnapshot, p: BookingPreferences, limit = 32): BookingPlan[] {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 256) throw new BookingPlanningError('BOOKING_CANDIDATE_LIMIT_INVALID');
+  const candidates: BookingPlan[] = [];
+  const excluded = new Set<string>();
+  while (candidates.length < limit) {
+    try {
+      const candidate = planBooking(snapshot, p, excluded);
+      const key = bookingPlanKey(candidate);
+      if (excluded.has(key)) throw new BookingPlanningError('BOOKING_CANDIDATE_ENUMERATION_FAILED');
+      excluded.add(key); candidates.push(candidate);
+    } catch (error) {
+      if (error instanceof BookingPlanningError && (error.code === 'BOOKING_CANDIDATES_EXCLUDED' || error.code === 'BOOKING_NO_CONSECUTIVE_AVAILABILITY' || error.code === 'BOOKING_MAXIMUM_PRICE_EXCEEDED')) break;
+      throw error;
+    }
+  }
+  return candidates;
 }

@@ -60,6 +60,7 @@ else {
     armObservation: () => controller.armObservation(), abortAutomation: () => controller.abortAutomation(), getStatus: () => structuredClone(controller.state),
     armSelection: () => controller.armSelection(), dryRace: () => controller.dryRace(),
     armFullBooking:()=>controller.armFullBooking(),cancelScheduledRelease:()=>controller.cancelScheduledRelease(),invalidatePreparation:()=>controller.invalidatePreparation(),
+    apiPreview:()=>controller.apiPreview(),
   };
   for (const [name, action] of Object.entries(actions)) ipcMain.handle(`thirsty:${name}`, (event, ...args: unknown[]) => {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== indexUrl || args.length) throw new Error('IPC_NOT_ALLOWED');

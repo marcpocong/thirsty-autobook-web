@@ -16,7 +16,7 @@ const plan = planBooking(snapshot, { mode: 'standard', targetDate: date, duratio
   preferredStartTimes: ['08:00'], fallbackStartTimes: [], courtPriority: [3], fallbackCourts: [], courtCount: 1,
   maximumTotalPrice: 1_200, currency: 'PHP' });
 const hours = selectedTwoHours(plan);
-const customer = { clientId: 'synthetic-client', customerId: 'synthetic-customer',
+const customer = { clientId: 'synthetic-client', customerId: 'synthetic-customer', customerFirstName: 'Synthetic', customerLastName: 'Guest',
   customerEmail: 'example@test.invalid', customerPhone: '0000000000' };
 const proof = (index: number) => ({ success: true, availabilityProof: `synthetic-proof-${index}` });
 const holdUntil = '2026-09-18T00:05:00.000Z';

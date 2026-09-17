@@ -16,8 +16,8 @@ const spaceId = '0e853a91-33b6-4de2-9237-778007a9313b';
 const date = '2026-09-18';
 const slot: SlotCheckRequest = { clientId: 'synthetic-client', facilityId, spaceId, date, startTime: '12:00', endTime: '13:00' };
 const checkout = { bookingType: 'online', clientId: 'synthetic-client', customerId: 'synthetic-customer',
-  customerEmail: 'example@test.invalid', customerPhone: '0000000000', customerFirstName: null,
-  customerLastName: null, facilityId, usedCustomerMembershipId: null, userId: null,
+  customerEmail: 'example@test.invalid', customerPhone: '0000000000', customerFirstName: 'Synthetic',
+  customerLastName: 'Guest', facilityId, usedCustomerMembershipId: null, userId: null,
   items: [
     { spaceId, date, startTime: '12:00', endTime: '13:00', availabilityProof: 'synthetic-proof-1',
       activityKey: null, activityLabel: null, chargedAmount: 600, duration: 60, facilityId,
@@ -127,13 +127,13 @@ describe('browser session transport, offline', () => {
       maximumTotalPrice: 1200, currency: 'PHP' });
     const adapter = new TwoHourReservationAdapter(transport, journal, clock);
     process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT = 'SUPERVISED_ONE_SHOT';
-    const customer = { clientId: 'synthetic-client', customerId: 'synthetic-customer',
+    const customer = { clientId: 'synthetic-client', customerId: 'synthetic-customer', customerFirstName: 'Synthetic', customerLastName: 'Guest',
       customerEmail: 'example@test.invalid', customerPhone: '0000000000' };
     await expect(adapter.submit(plan, customer, { supervisedOneShot: true }))
-      .rejects.toThrow('SUBMISSION_OUTCOME_UNKNOWN_RECONCILIATION_REQUIRED');
+      .rejects.toThrow('CURRENT_CHECKOUT_HEADERS_UNAVAILABLE');
     expect(evaluate).toHaveBeenCalledTimes(2);
     const key = DurableSubmissionJournal.key(facilityId, spaceId, date, '12:00', '14:00');
-    await expect(journal.read(key)).resolves.toMatchObject({ state: 'unknown' });
+    await expect(journal.read(key)).resolves.toMatchObject({ state: 'rejected' });
     await expect(adapter.submit(plan, customer, { supervisedOneShot: true }))
       .rejects.toThrow('DUPLICATE_LOGICAL_BOOKING_BLOCKED');
     expect(evaluate).toHaveBeenCalledTimes(4); // fresh proof checks occur, but checkout is still blocked.
