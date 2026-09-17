@@ -3,7 +3,7 @@ import { DateTime } from 'luxon';
 import { ONDA_URL, VENUE } from './config.js';
 import { selectors, waitForGrid, snapshot, validateSnapshot } from './grid.js';
 import { Safety, securityReason } from './safety.js';
-import type { Telemetry } from './telemetry.js';
+import type { ReleaseFailureClassification, ReleaseFailureCode, ReleaseFailureStage, Telemetry } from './telemetry.js';
 
 // Construct before the release wait; the normal practice navigator is unchanged.
 export function releaseNavigationTarget(date: string) {
@@ -20,30 +20,69 @@ async function guardReleaseShell(page: Page, safety: Safety) {
   if (reason) safety.stop(reason);
   safety.check();
 }
-export async function waitForBookingShellForRelease(page: Page, safety: Safety, timeout: number, t?: Pick<Telemetry, 'mark'>) {
-  safety.check();
-  if (page.url() !== ONDA_URL) throw Error('WRONG_URL');
+const classified=(code:ReleaseFailureCode,classification:ReleaseFailureClassification)=>({code,classification});
+export class ReleaseShellFailure extends Error{
+  constructor(readonly code:ReleaseFailureCode,readonly recoverableBeforeSelection:boolean,cause:unknown){super(code,{cause});this.name='ReleaseShellFailure';}
+}
+function knownReleaseFailure(code:string){
+  if(code==='CHROME_DISCONNECTED')return classified('CHROME_DISCONNECTED','BROWSER_DISCONNECTED');
+  if(code==='SECURITY_CHALLENGE')return classified('SECURITY_CHALLENGE','SECURITY_CHALLENGE');
+  if(code==='RATE_LIMITED')return classified('RATE_LIMITED','RATE_LIMITED');
+  if(code==='ACCESS_BLOCKED')return classified('ACCESS_BLOCKED','ACCESS_BLOCKED');
+  if(code==='UNEXPECTED_REDIRECT'||code==='WRONG_URL')return classified(code,'UNEXPECTED_NAVIGATION');
+  if(code==='USER_ABORT')return classified('USER_ABORT','ABORTED');
+}
+async function shellFailure(page:Page,safety:Safety,t:Pick<Telemetry,'recordReleaseFailure'>|undefined,stage:ReleaseFailureStage,error:unknown,httpStatus?:number){
+  let result:ReturnType<typeof classified>|undefined;
+  try{safety.check();}catch(stopped){result=knownReleaseFailure(stopped instanceof Error?stopped.message:'');}
+  if(!result&&page.isClosed())result=classified('CHROME_DISCONNECTED','BROWSER_DISCONNECTED');
+  if(!result&&page.url()!==ONDA_URL)result=classified('UNEXPECTED_REDIRECT','UNEXPECTED_NAVIGATION');
+  let state:{readyState:string;hasBody:boolean;security?:string}|undefined;
+  if(!result){
+    try{state=await page.evaluate(()=>({readyState:document.readyState,hasBody:!!document.body,bodyText:document.body?.innerText??''})).then(v=>({readyState:v.readyState,hasBody:v.hasBody,security:securityReason(v.bodyText)}));}
+    catch{if(page.isClosed())result=classified('CHROME_DISCONNECTED','BROWSER_DISCONNECTED');}
+  }
+  if(!result&&state?.security)result=knownReleaseFailure(state.security);
+  if(!result&&httpStatus!==undefined&&httpStatus>=400)result=classified('RELEASE_HTTP_STATUS','HTTP_ERROR_STATUS');
+  const timeoutError=error instanceof Error&&(error.name==='TimeoutError'||/timeout/i.test(error.name));
+  if(!result&&timeoutError){
+    if(stage==='WAIT_FOR_VENUE_ATTACHED')result=state?.readyState==='complete'&&state.hasBody?classified('RELEASE_VENUE_ELEMENT_MISSING','MISSING_VENUE_ELEMENT'):classified('RELEASE_PAGE_LOAD_TIMEOUT','PAGE_LOADING_TIMEOUT');
+    else if(stage==='WAIT_FOR_VENUE_VISIBLE')result=classified('RELEASE_VENUE_NOT_VISIBLE','VENUE_NOT_VISIBLE');
+    else if(stage==='WAIT_FOR_DATE_PICKER_ATTACHED')result=classified('RELEASE_DATE_PICKER_MISSING','MISSING_DATE_PICKER');
+    else if(stage==='WAIT_FOR_DATE_PICKER_VISIBLE')result=classified('RELEASE_DATE_PICKER_NOT_VISIBLE','DATE_PICKER_NOT_VISIBLE');
+    else if(stage==='WAIT_FOR_DATE_PICKER_ENABLED')result=classified('RELEASE_DATE_PICKER_NOT_READY','DATE_PICKER_NOT_READY');
+    else result=classified('RELEASE_PAGE_LOAD_TIMEOUT','PAGE_LOADING_TIMEOUT');
+  }
+  if(!result)result=classified('RELEASE_SHELL_UNCLASSIFIED','UNCLASSIFIED');
+  t?.recordReleaseFailure(stage,result.code,result.classification,httpStatus);
+  return new ReleaseShellFailure(result.code,result.classification==='PAGE_LOADING_TIMEOUT',error);
+}
+export async function waitForBookingShellForRelease(page: Page, safety: Safety, timeout: number, t?: Pick<Telemetry, 'mark'|'recordReleaseFailure'>, navigation?:{httpStatus?:number}) {
+  try{safety.check();if(page.url()!==ONDA_URL)throw Error('WRONG_URL');}
+  catch(error){throw await shellFailure(page,safety,t,'VERIFY_RELEASE_SHELL',error,navigation?.httpStatus);}
+  if(navigation?.httpStatus!==undefined&&navigation.httpStatus>=400)throw await shellFailure(page,safety,t,'VERIFY_RELEASE_SHELL',Error('HTTP_STATUS'),navigation.httpStatus);
   t?.mark('releaseUrlVerified');
   const venue = page.getByTestId('public-booking-hero-title');
-  await venue.waitFor({ state: 'attached', timeout }); t?.mark('releaseVenueAttached');
-  await venue.waitFor({ state: 'visible', timeout });
+  try{await venue.waitFor({ state: 'attached', timeout });}catch(error){throw await shellFailure(page,safety,t,'WAIT_FOR_VENUE_ATTACHED',error,navigation?.httpStatus);}t?.mark('releaseVenueAttached');
+  try{await venue.waitFor({ state: 'visible', timeout });}catch(error){throw await shellFailure(page,safety,t,'WAIT_FOR_VENUE_VISIBLE',error,navigation?.httpStatus);}
   t?.mark('releaseVenueVisible');
-  if ((await venue.innerText()).trim() !== VENUE) throw Error('WRONG_VENUE');
+  if ((await venue.innerText()).trim() !== VENUE){t?.recordReleaseFailure('VERIFY_VENUE','WRONG_VENUE','WRONG_VENUE',navigation?.httpStatus);throw Error('WRONG_VENUE');}
   t?.mark('releaseVenueVerified');
   const picker = page.getByRole('button', { name: 'Select booking date', exact: true, includeHidden: true });
-  await picker.waitFor({ state: 'attached', timeout }); t?.mark('releasePickerAttached');
-  if (await picker.count() !== 1) throw Error('AMBIGUOUS_DATE_PICKER');
-  await picker.waitFor({ state: 'visible', timeout }); t?.mark('releasePickerVisible');
+  try{await picker.waitFor({ state: 'attached', timeout });}catch(error){throw await shellFailure(page,safety,t,'WAIT_FOR_DATE_PICKER_ATTACHED',error,navigation?.httpStatus);}t?.mark('releasePickerAttached');
+  if (await picker.count() !== 1){t?.recordReleaseFailure('VERIFY_DATE_PICKER','RELEASE_DATE_PICKER_MISSING','MISSING_DATE_PICKER',navigation?.httpStatus);throw Error('RELEASE_DATE_PICKER_MISSING');}
+  try{await picker.waitFor({ state: 'visible', timeout });}catch(error){throw await shellFailure(page,safety,t,'WAIT_FOR_DATE_PICKER_VISIBLE',error,navigation?.httpStatus);}t?.mark('releasePickerVisible');
   // Wait only for enabled semantics, never stability or hit-target actionability.
   const handle = await picker.elementHandle();
-  if (!handle) throw Error('DATE_PICKER_DETACHED');
+  if (!handle){t?.recordReleaseFailure('VERIFY_DATE_PICKER','RELEASE_DATE_PICKER_MISSING','MISSING_DATE_PICKER',navigation?.httpStatus);throw Error('RELEASE_DATE_PICKER_MISSING');}
   try {
-    await page.waitForFunction(e => e.isConnected && !e.matches(':disabled') &&
-      !e.closest('[aria-disabled="true"]'), handle, { timeout, polling: 'raf' });
+    try{await page.waitForFunction(e => e.isConnected && !e.matches(':disabled') &&
+      !e.closest('[aria-disabled="true"]'), handle, { timeout, polling: 'raf' });}
+    catch(error){throw await shellFailure(page,safety,t,'WAIT_FOR_DATE_PICKER_ENABLED',error,navigation?.httpStatus);}
   } finally { await handle.dispose(); }
-  if (await picker.count() !== 1 || !await picker.isVisible() || !await picker.isEnabled()) throw Error('DATE_PICKER_NOT_READY');
+  if (await picker.count() !== 1 || !await picker.isVisible() || !await picker.isEnabled()){t?.recordReleaseFailure('VERIFY_DATE_PICKER','RELEASE_DATE_PICKER_NOT_READY','DATE_PICKER_NOT_READY',navigation?.httpStatus);throw Error('RELEASE_DATE_PICKER_NOT_READY');}
   t?.mark('releasePickerEnabled');
-  await guardReleaseShell(page, safety);
+  try{await guardReleaseShell(page, safety);}catch(error){throw await shellFailure(page,safety,t,'VERIFY_RELEASE_SHELL',error,navigation?.httpStatus);}
   t?.mark('releaseShellReady');
 }
 

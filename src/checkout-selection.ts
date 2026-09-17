@@ -7,14 +7,23 @@ import type {Telemetry} from './telemetry.js';
 
 export interface CheckoutSelection extends SelectionResult { groups:{court:number;hours:string[];amount?:number}[]; totalAmount:number }
 export async function selectCheckoutBundle(port:SelectionPort,date:string,grid:Snapshot,chunk:BookingChunk,maximum:number,safety:Safety,dispatched:Set<string>,t?:Telemetry):Promise<CheckoutSelection>{
+  t?.mark('selectionInitialGridValidationStarted');
   const courts=chunk.courts;
-  if(!courts||courts.length!==chunk.requiredCourtCount||new Set(courts).size!==courts.length||courts.some(c=>!Number.isInteger(c)||c<1||c>7)||chunk.duration>3||JSON.stringify(expandHours(chunk.start,chunk.duration))!==JSON.stringify(chunk.hours))throw Error('INVALID_CHECKOUT_BUNDLE');
   const read=(g:Snapshot)=>{const cells=validateSnapshot(g,date);if(cells.some(c=>c.state==='UNKNOWN'))throw Error('SELECTION_STATE_UNKNOWN');return cells;};
-  if(read(grid).some(c=>c.state==='SELECTED'))throw Error('PREEXISTING_SELECTION');
-  await port.guard();t?.mark('fullGuardCompleted');safety.check();await safety.stage('SELECTION');t?.mark('selectionAttemptStarted',1);
+  try{
+    if(!courts||courts.length!==chunk.requiredCourtCount||new Set(courts).size!==courts.length||courts.some(c=>!Number.isInteger(c)||c<1||c>7)||chunk.duration>3||JSON.stringify(expandHours(chunk.start,chunk.duration))!==JSON.stringify(chunk.hours))throw Error('INVALID_CHECKOUT_BUNDLE');
+    if(read(grid).some(c=>c.state==='SELECTED'))throw Error('PREEXISTING_SELECTION');
+  }catch(error){t?.recordSelectionFailure('INITIAL_GRID_VALIDATION',error);throw error;}
+  t?.mark('selectionInitialGridValidationCompleted');t?.mark('fullGuardStarted');
+  try{await port.guard();safety.check();}catch(error){t?.recordSelectionFailure('FULL_BROWSER_GUARD',error);throw error;}
+  t?.mark('fullGuardCompleted');t?.mark('selectionPreparationStarted');
+  try{await safety.stage('SELECTION');safety.check();}catch(error){t?.recordSelectionFailure('SELECTION_PREPARATION',error);throw error;}
+  t?.mark('selectionPreparationCompleted');t?.mark('selectionAttemptStarted',1);
   let slot=0;
   for(const court of courts)for(const hour of chunk.hours){
-    await (port.lightGuard?.()??Promise.resolve());t?.mark('lightGuardCompleted');safety.check();dispatched.add(`${date}/${court}/${hour}`);t?.mark(`slot${++slot}ClickStarted`);
+    if(slot===0)t?.mark('firstClickGuardStarted');
+    try{await (port.lightGuard?.()??Promise.resolve());safety.check();}catch(error){if(slot===0)t?.recordSelectionFailure('FIRST_CLICK_GUARD',error);throw error;}
+    t?.mark('lightGuardCompleted');if(slot===0){t?.mark('firstClickGuardCompleted');t?.mark('firstSlotClickDispatchStarted');}dispatched.add(`${date}/${court}/${hour}`);t?.mark(`slot${++slot}ClickStarted`);
     try{await port.click(date,court,hour,'OPEN');t?.mark(`slot${slot}StateConfirmed`);}catch{
       safety.check();t?.mark('selectionFullGridRead');const authoritative=read(await port.read()).filter(c=>c.state==='SELECTED');
       if(authoritative.some(c=>!dispatched.has(`${date}/${c.court}/${c.hour}`)))throw Error('UNOWNED_SELECTION');

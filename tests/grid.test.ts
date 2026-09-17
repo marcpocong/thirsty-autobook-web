@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { snapshot, validateSnapshot, waitForGrid, resolvePreference } from '../src/grid.js';
 import { Safety } from '../src/safety.js';
 import { monitorConnection } from '../src/browser.js';
-import { selectionPort,selectResolvedPreference } from '../src/selection.js';
+import { installSelectionSecuritySentinelSource,readSelectionSecuritySentinel,selectionPort,selectResolvedPreference } from '../src/selection.js';
 import { Telemetry } from '../src/telemetry.js';
 let browser: Browser;
 let page: Page;
@@ -47,6 +47,12 @@ it('fails closed on an actual test-owned page close',async()=>{
   const disposable=await browser.newPage();const safety=new Safety();
   monitorConnection(browser,disposable,safety);
   await disposable.close();expect(()=>safety.check()).toThrow('CHROME_DISCONNECTED');
+});
+it('installs the selection security sentinel across the Playwright boundary without Node transform helpers',async()=>{
+  expect(installSelectionSecuritySentinelSource).not.toContain('__name');
+  await page.evaluate(installSelectionSecuritySentinelSource);
+  expect(await page.evaluate(readSelectionSecuritySentinel)).toMatchObject({installed:true,visible:true,grid:1});
+  await page.evaluate(()=>{const w=window as typeof window&{__thirstyGuard?:{observer:MutationObserver}};w.__thirstyGuard?.observer.disconnect();delete w.__thirstyGuard;});
 });
 it('production DOM port selects consecutive cells, verifies summary and never clicks Proceed',async()=>{
   await page.evaluate(()=>{

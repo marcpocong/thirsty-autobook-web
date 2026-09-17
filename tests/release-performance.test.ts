@@ -1,6 +1,6 @@
 import {it,expect} from 'vitest';
 import {releasePerformance,type TimingEvent} from '../src/release-performance.js';
-import {Telemetry} from '../src/telemetry.js';
+import {Telemetry,sanitizedOperationFailureCode} from '../src/telemetry.js';
 import {UiEventSchema} from '../src/ui-events.js';
 const e=(event:string,monoMs:number,workerId?:'A'|'B',value?:number):TimingEvent=>({event,monoMs,...(workerId?{workerId}:{}),...(value===undefined?{}:{value})});
 const flow=(id:'A'|'B',offset=0)=>[
@@ -30,4 +30,11 @@ it('documents an immediate rate-limit failure without private evidence expansion
   const t=new Telemetry(),A=t.worker('A');A.mark('releaseTriggerFired',4);A.mark('reloadStarted');A.mark('reloadCommitted');
   const evidence={reason:'RATE_LIMITED' as const,timestamp:new Date().toISOString(),monoMs:performance.now(),hostname:'app.onda.fit',status:429,resourceType:'fetch',navigation:false,retryAfterPresent:false,sameOndaSite:true};
   const saved=t.document('RATE_LIMITED',evidence);expect(saved.failure).toBe('RATE_LIMITED');expect(saved.releasePerformance?.workers.A?.branch).toBe('RELOAD FALLBACK');
+});
+it('preserves a safe Playwright category through wrapped causes without serializing exception text',()=>{
+  const original=Object.assign(Error('private URL and token'),{name:'TimeoutError'}),wrapped=Error('wrapper',{cause:original});
+  expect(sanitizedOperationFailureCode(wrapped)).toBe('PLAYWRIGHT_TIMEOUT');
+  const t=new Telemetry();t.worker('A').recordReleaseFailure('WAIT_FOR_VENUE_ATTACHED','not allowlisted','not allowlisted',999);
+  const text=JSON.stringify(t.document(sanitizedOperationFailureCode(wrapped)));
+  expect(text).toContain('RELEASE_SHELL_UNCLASSIFIED');expect(text).toContain('UNCLASSIFIED');expect(text).not.toContain('private');expect(text).not.toContain('999');
 });

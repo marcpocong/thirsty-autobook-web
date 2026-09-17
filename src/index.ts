@@ -2,7 +2,7 @@ import {FullPracticeSchema,selectExactPractice} from './full-practice.js';
 import { writeFileSync } from 'node:fs';
 import { mkdir as mkdirAsync, open as openAsync, unlink as unlinkAsync,writeFile as writeFileAsync } from 'node:fs/promises';
 import { Safety, requireArmed } from './safety.js';
-import { Telemetry } from './telemetry.js';
+import { Telemetry, sanitizedOperationFailureCode } from './telemetry.js';
 import { loadConfig, loadObservationConfig, planFingerprint, expandHours, type Config, type ReleaseSettings } from './config.js';
 import { attach } from './browser.js';
 import { inspect } from './inspector.js';
@@ -154,7 +154,7 @@ try {
   exitCode = 1; telemetry.mark('failed');
   // Zod input exceptions may contain values: print only issue paths.
   const e = error as { name?: string; issues?: { path: unknown[] }[]; message?: string };
-  failureCode = /^[A-Z_]{1,80}(?=:|$)/.exec(e.message ?? '')?.[0] ?? 'OPERATION_FAILED';
+  failureCode = /^[A-Z_]{1,80}(?=:|$)/.exec(e.message ?? '')?.[0] ?? sanitizedOperationFailureCode(error);
   emitUiEvent({ type: 'error', code: failureCode });
   console.error(e.name === 'ZodError' ? `INVALID_PRACTICE_ARGUMENTS: ${e.issues?.map(i => i.path.join('.')).join(', ')}` : e.message?.startsWith('CONFIG_INVALID') || /^[A-Z_]+(?::|$)/.test(e.message ?? '') ? e.message : 'OPERATION_FAILED — no automatic recovery. Check the browser manually.');
 } finally {

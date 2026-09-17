@@ -47,6 +47,16 @@ it('exact targets do not substitute',()=>{const a=grid(),b=grid();only(b,['21:00
 it.each([1,2] as const)('Standard %i court uses one worker and one checkout',async count=>{const h=harness(request(3,count));const r=await h.run();expect(r.status).toBe('PAYMENT HOLD ACTIVE');expect(h.workers).toHaveLength(1);expect(h.calls.filter(c=>c.endsWith('OPEN'))).toHaveLength(3*count);expect(h.calls.filter(c=>c.endsWith('Proceed'))).toHaveLength(1);});
 it.each([1,2] as const)('Extended %i court verifies both complete selections before two checkouts',async count=>{const h=harness(request(4,count));const r=await h.run();expect(r.status).toBe('PAYMENT HOLD ACTIVE');expect(h.calls.filter(c=>c.endsWith('OPEN'))).toHaveLength(4*count);expect(h.calls.filter(c=>c.endsWith('Proceed'))).toHaveLength(2);});
 it('confirmation cancellation creates no selections or holds',async()=>{const h=harness();expect((await h.run(async()=>false)).status).toBe('CANCELLED');expect(h.calls).toEqual([]);});
+it('preserves a post-confirmation full-guard failure without attempting a slot click',async()=>{
+  const h=harness(request(2,1)),worker=h.workers[0]!;worker.port.guard=async()=>{throw Error('TAB_NOT_VISIBLE');};
+  let failure:Error|undefined;try{await h.run(async()=>true);}catch(error){failure=error as Error;}if(!failure)throw Error('EXPECTED_FAILURE');
+  expect(failure.message).toBe('SELECTION_UNSAFE_FOR_RECOVERY');expect((failure.cause as Error).message).toBe('TAB_NOT_VISIBLE');expect(h.calls).toEqual([]);
+  expect(worker.telemetry.events.map(e=>e.event)).toEqual(['preferenceResolved','selectionInitialGridValidationStarted','selectionInitialGridValidationCompleted','fullGuardStarted']);
+  expect(worker.telemetry.document('SELECTION_UNSAFE_FOR_RECOVERY').selectionFailures).toEqual([
+    {stage:'FULL_BROWSER_GUARD',code:'TAB_NOT_VISIBLE'},
+    {stage:'SELECTION_COORDINATION',code:'TAB_NOT_VISIBLE'},
+  ]);
+});
 it('confirmed Test Now retries a safe conflict with just one confirmation',async()=>{const h=harness(),confirm=vi.fn(async()=>true),click=h.workers[1]!.port.click;let failed=false;h.workers[1]!.port.click=async(...a)=>{if(!failed){failed=true;set(h.grids[1]!,a[1],a[2],'unavailable');throw Error('conflict');}await click(...a);};expect((await h.run(confirm)).status).toBe('PAYMENT HOLD ACTIVE');expect(confirm).toHaveBeenCalledOnce();});
 it('an over-limit second checkout prevents both Proceeds despite a lower first-checkout total',async()=>{const h=harness();h.workers[1]!.port.summary=async()=>({count:'2 Courts • 2 Slots',amount:'PHP 2001',actionable:true});await expect(h.run()).rejects.toThrow('UNSAFE_FOR_RECOVERY');expect(h.calls.filter(c=>c.endsWith('Proceed'))).toHaveLength(0);});
 it('a durable write failure prevents final dispatch',async()=>{const s=new Safety(),action=vi.fn(async()=>{});s.persistStage=async()=>{throw Error('DISK_WRITE_FAILED');};await expect(s.finalAction(action)).rejects.toThrow('DISK_WRITE_FAILED');expect(action).not.toHaveBeenCalled();});

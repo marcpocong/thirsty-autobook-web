@@ -21,7 +21,8 @@ export async function coordinateBooking(workers:DualWorker[],request:PlanRequest
     if(selections.some(s=>s.status==='rejected')){
       // Unknown state, foreign selection, price and authorization failures never clean up.
       const errors=selections.filter(s=>s.status==='rejected');
-      if(errors.some(s=>s.reason?.message!=='SELECTION_CONFLICT'))throw Error('SELECTION_UNSAFE_FOR_RECOVERY');
+      const unsafe=selections.find(s=>s.status==='rejected'&&s.reason?.message!=='SELECTION_CONFLICT');
+      if(unsafe?.status==='rejected'){const unsafeIndex=selections.indexOf(unsafe);workers[unsafeIndex]!.telemetry.recordSelectionFailure('SELECTION_COORDINATION',unsafe.reason);throw Error('SELECTION_UNSAFE_FOR_RECOVERY',{cause:unsafe.reason});}
       const cleaned=await Promise.allSettled(workers.map((w,i)=>cleanupOwned(w,request.date,dispatched[i]!)));
       if(cleaned.some(c=>c.status==='rejected'))throw Error('CLEANUP_NOT_VERIFIED');
       grids=await Promise.all(workers.map(w=>w.port.read()));continue;

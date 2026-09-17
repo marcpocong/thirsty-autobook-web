@@ -1,10 +1,10 @@
 import type { Page } from 'playwright';
 import { DateTime } from 'luxon';
 import { setTimeout as delay } from 'node:timers/promises';
-import { type Config, type ReleaseSettings, releaseCalendar, compilePreferences, VENUE } from './config.js';
+import { type Config, type ReleaseSettings, releaseCalendar, compilePreferences, ONDA_URL, VENUE } from './config.js';
 import { assertPage } from './browser.js';
 import { snapshot, validateSnapshot, resolvePreference } from './grid.js';
-import { releaseNavigationTarget, waitForBookingShellForRelease, navigateReleasedTargetDate, preopenReleaseCalendar, observePreopenedTarget, clickReleasedTargetDate } from './release-navigation.js';
+import { ReleaseShellFailure, releaseNavigationTarget, waitForBookingShellForRelease, navigateReleasedTargetDate, preopenReleaseCalendar, observePreopenedTarget, clickReleasedTargetDate } from './release-navigation.js';
 import { Safety, waitUntil } from './safety.js';
 import { Telemetry } from './telemetry.js';
 import { emitUiEvent } from './ui-events.js';
@@ -71,10 +71,21 @@ export async function observeRelease(page: Page, c: Config | ReleaseSettings, sa
       readyWithoutReload = true;
     } else { t.mark('targetStillDisabledAtRelease'); t.mark('reloadFallbackStarted'); }
   }
-  if (!readyWithoutReload) grid=await boundedRelease(c.MAX_RELEASE_RELOADS, c.RELEASE_RETRY_DELAY_MS, safety.signal, async () => {
+  if (!readyWithoutReload) grid=await boundedRelease(c.MAX_RELEASE_RELOADS, c.RELEASE_RETRY_DELAY_MS, safety.signal, async attempt => {
     safety.check(); t.mark('reloadStarted');
-    await page.reload({ waitUntil: 'commit' }); t.mark('reloadCommitted');
-    await waitForBookingShellForRelease(page, safety, c.CRITICAL_STEP_TIMEOUT_MS, t);
+    let response:Awaited<ReturnType<Page['reload']>>;
+    try{response=await page.reload({ waitUntil: 'commit' });}
+    catch(error){
+      const timeout=error instanceof Error&&(error.name==='TimeoutError'||/timeout/i.test(error.name));
+      let code=timeout?'RELEASE_PAGE_LOAD_TIMEOUT':'RELEASE_NAVIGATION_FAILED',classification=timeout?'PAGE_LOADING_TIMEOUT':'NAVIGATION_FAILED';
+      try{safety.check();}catch(stopped){code=stopped instanceof Error&&['CHROME_DISCONNECTED','SECURITY_CHALLENGE','RATE_LIMITED','ACCESS_BLOCKED','UNEXPECTED_REDIRECT','USER_ABORT'].includes(stopped.message)?stopped.message:'RELEASE_NAVIGATION_FAILED';classification=code==='CHROME_DISCONNECTED'?'BROWSER_DISCONNECTED':code==='UNEXPECTED_REDIRECT'?'UNEXPECTED_NAVIGATION':code==='USER_ABORT'?'ABORTED':code;}
+      t.recordNavigation(timeout?'TIMEOUT':'FAILED');t.recordReleaseFailure('RELOAD_NAVIGATION',code,classification);
+      if(timeout&&attempt<c.MAX_RELEASE_RELOADS&&!page.isClosed()&&page.url()===ONDA_URL){safety.check();t.mark('releaseShellRecoveryAllowed');return undefined;}
+      throw Error(code,{cause:error});
+    }
+    const httpStatus=response?.status();t.recordNavigation(response?'HTTP_RESPONSE':'NO_RESPONSE',httpStatus);t.mark('reloadCommitted');
+    try{await waitForBookingShellForRelease(page, safety, c.CRITICAL_STEP_TIMEOUT_MS, t, {httpStatus});}
+    catch(error){if(error instanceof ReleaseShellFailure&&error.recoverableBeforeSelection&&attempt<c.MAX_RELEASE_RELOADS){safety.check();t.mark('releaseShellRecoveryAllowed');return undefined;}throw error;}
     const result = await navigateReleasedTargetDate(page, navigationTarget, safety, t, c.CRITICAL_STEP_TIMEOUT_MS);
     if (result === 'TARGET_DATE_NOT_RELEASED') return undefined;
     return result;

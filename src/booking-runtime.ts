@@ -50,11 +50,20 @@ export async function runBooking(config:Config,mode:'test'|'race'|'race:dry'|'ra
       await fullBookingToQr(c.page,selected,players[identities[i]!.workerId]!,(options.maximum??config.MAX_PRICE)*request.courtCount,true,config.PAYMENT_HANDOFF_VERIFY_TIMEOUT_MS,safeties[i]!,workerTelemetry[i]!,config.PAYMENT_SUMMARY_READY_TIMEOUT_MS);
     }}));
     const gate=dualArmGate(target,safety,t);
-    const grids=await Promise.all(workers.map(async(w,i)=>{
+    const gridResults=await Promise.allSettled(workers.map(async(w,i)=>{
       if(mode==='test'){await assertDiagnosticSchedule(connections[i]!.page,w.safety);await navigateDate(connections[i]!.page,request.date,w.safety);return snapshot(connections[i]!.page);}
-      try{return (await observeRelease(connections[i]!.page,{...config,AVAILABILITY_DISCOVERY_MODE:'ui'},w.safety,w.telemetry,mode==='race:dry',true,{target,beforeArmed:identities.length===2?()=>gate(w.id):async()=>{},verifyContext:options.scheduledFingerprint?()=>{if(planFingerprint(loadConfig())!==options.scheduledFingerprint)throw Error('SCHEDULE_CONTEXT_MISMATCH');}:undefined})).grid;}
-      catch(e){abort();throw e;}
+      return (await observeRelease(connections[i]!.page,{...config,AVAILABILITY_DISCOVERY_MODE:'ui'},w.safety,w.telemetry,mode==='race:dry',true,{target,beforeArmed:identities.length===2?()=>gate(w.id):async()=>{},verifyContext:options.scheduledFingerprint?()=>{if(planFingerprint(loadConfig())!==options.scheduledFingerprint)throw Error('SCHEDULE_CONTEXT_MISMATCH');}:undefined})).grid;
     }));
+    const failed=gridResults.flatMap((result,i)=>result.status==='rejected'?[{result,worker:workers[i]!}]:[]);
+    if(failed.length){
+      if(mode!=='test')for(const {result,worker} of failed)if(!worker.telemetry.hasReleaseFailure()){
+        const code=result.reason instanceof Error&&/^[A-Z_]{1,80}$/.test(result.reason.message)?result.reason.message:'RELEASE_SHELL_UNCLASSIFIED';
+        const classification=code==='CHROME_DISCONNECTED'?'BROWSER_DISCONNECTED':code==='SECURITY_CHALLENGE'?'SECURITY_CHALLENGE':code==='RATE_LIMITED'?'RATE_LIMITED':code==='ACCESS_BLOCKED'?'ACCESS_BLOCKED':code==='UNEXPECTED_REDIRECT'||code==='WRONG_URL'?'UNEXPECTED_NAVIGATION':code==='USER_ABORT'?'ABORTED':'UNCLASSIFIED';
+        worker.telemetry.recordReleaseFailure('RELEASE_WORKER',code,classification);
+      }
+      abort();throw failed[0]!.result.reason;
+    }
+    const grids=gridResults.map(result=>{if(result.status!=='fulfilled')throw Error('RELEASE_WORKER_FAILED');return result.value;});
     const result=await coordinateBooking(workers,request,grids,options.maximum??config.MAX_PRICE,config.MAX_SELECTION_ATTEMPTS,mode==='race:dry'?'dry':mode==='race:selection'?'selection':'full',options.confirm);
     clean=result.status==='CANCELLED'||result.status==='AVAILABLE';
     emitUiEvent({type:'bookingResult',status:result.status,description:describeBookingPlan(result.plan,options.maximum??config.MAX_PRICE),outcomes:result.outcomes??[]});

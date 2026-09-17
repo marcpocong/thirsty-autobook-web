@@ -53,6 +53,7 @@ it('release reload goes straight from incomplete Today to target and records dis
   expect(reloads).toBe(1);
   expect(validateSnapshot(result.grid, target.date)).toHaveLength(112);
   expect(t.events.filter(e=>e.event==='gridSnapshotCompleted')).toHaveLength(1);
+  expect(t.document().navigations).toEqual([{stage:'RELOAD_COMMIT',outcome:'HTTP_RESPONSE',httpStatus:200}]);
   expect(await page.evaluate(() => (window as any).actions)).toEqual(['picker', 'target']);
   expect(t.events.map(e => e.event)).toEqual([
     'preflightStarted', 'preflightCompleted', 'preflightStarted', 'preflightCompleted', 'armed', 'releaseScheduled',
@@ -229,6 +230,52 @@ it('keeps zero lead and the current conservative retry default', () => {
   expect(settings.MAX_RELEASE_RELOADS).toBe(2);
   expect(ObservationSchema.safeParse({ RELEASE_LEAD_MS: -50 }).success).toBe(false);
   expect(ObservationSchema.safeParse({ MAX_RELEASE_RELOADS: 3 }).success).toBe(false);
+});
+
+it('allows one bounded pre-selection recovery for a classified reload timeout', async () => {
+  const original=page.reload.bind(page);let calls=0;
+  vi.spyOn(page,'reload').mockImplementation(async options=>{if(++calls===1){const error=Error('private transport detail');error.name='TimeoutError';throw error;}return original(options);});
+  const t=new Telemetry(),result=await observeRelease(page,{...settings,MAX_RELEASE_RELOADS:2,RELEASE_RETRY_DELAY_MS:500},new Safety(),t,false);
+  expect(validateSnapshot(result.grid,target.date)).toHaveLength(112);expect(calls).toBe(2);
+  expect(t.events.filter(e=>e.event==='releaseShellRecoveryAllowed')).toHaveLength(1);
+  expect(t.document().releaseFailures).toEqual([{stage:'RELOAD_NAVIGATION',code:'RELEASE_PAGE_LOAD_TIMEOUT',classification:'PAGE_LOADING_TIMEOUT'}]);
+  expect(await page.evaluate(()=>(window as any).actions)).toEqual(['picker','target']);
+});
+
+it('classifies the September 17 barrier as a missing venue element after a completed document', async () => {
+  await page.getByTestId('public-booking-hero-title').evaluate(e=>e.remove());
+  const t = new Telemetry(), worker=t.worker('A');
+  await expect(waitForBookingShellForRelease(page,new Safety(),100,worker,{httpStatus:200})).rejects.toThrow('RELEASE_VENUE_ELEMENT_MISSING');
+  expect(t.document('RELEASE_VENUE_ELEMENT_MISSING').releaseFailures).toEqual([{
+    workerId:'A',stage:'WAIT_FOR_VENUE_ATTACHED',code:'RELEASE_VENUE_ELEMENT_MISSING',classification:'MISSING_VENUE_ELEMENT',httpStatus:200,
+  }]);
+  expect(await page.evaluate(() => (window as any).actions)).toEqual([]);
+});
+
+it('accepts bounded delayed venue rendering without reloading or clicking', async () => {
+  const venue=page.getByTestId('public-booking-hero-title'),html=await venue.evaluate(e=>e.outerHTML);await venue.evaluate(e=>e.remove());
+  await page.evaluate(html=>setTimeout(()=>document.body.insertAdjacentHTML('afterbegin',html),40),html);
+  const reload=vi.spyOn(page,'reload');await waitForBookingShellForRelease(page,new Safety(),500,new Telemetry(),{httpStatus:200});
+  expect(reload).not.toHaveBeenCalled();expect(await page.evaluate(() => (window as any).actions)).toEqual([]);
+});
+
+it('records only a safe HTTP status and classification for a failed navigation response', async () => {
+  const t=new Telemetry(),worker=t.worker('B');
+  await expect(waitForBookingShellForRelease(page,new Safety(),100,worker,{httpStatus:503})).rejects.toThrow('RELEASE_HTTP_STATUS');
+  const text=JSON.stringify(t.document('RELEASE_HTTP_STATUS'));
+  expect(text).toContain('"httpStatus":503');expect(text).toContain('"classification":"HTTP_ERROR_STATUS"');expect(text).not.toContain(ONDA_URL);
+});
+
+it('distinguishes security challenge, unexpected navigation, and browser disconnection at the venue barrier', async () => {
+  await page.getByTestId('public-booking-hero-title').evaluate(e=>e.remove());await page.evaluate(()=>document.body.textContent='Verify you are human');
+  const security=new Telemetry().worker('A');await expect(waitForBookingShellForRelease(page,new Safety(),30,security)).rejects.toThrow('SECURITY_CHALLENGE');
+  expect(security.document().releaseFailures?.[0]?.classification).toBe('SECURITY_CHALLENGE');
+  await page.goto('data:text/html,unexpected');
+  const redirect=new Telemetry().worker('A');await expect(waitForBookingShellForRelease(page,new Safety(),30,redirect)).rejects.toThrow('UNEXPECTED_REDIRECT');
+  expect(redirect.document().releaseFailures?.[0]?.classification).toBe('UNEXPECTED_NAVIGATION');
+  const disposable=await browser.newPage();await disposable.close();const disconnected=new Telemetry().worker('B');
+  await expect(waitForBookingShellForRelease(disposable,new Safety(),30,disconnected)).rejects.toThrow('CHROME_DISCONNECTED');
+  expect(disconnected.document().releaseFailures?.[0]?.classification).toBe('BROWSER_DISCONNECTED');
 });
 
 it('compiles preferences before the release wait and returns without a diagnostic flush', async () => {

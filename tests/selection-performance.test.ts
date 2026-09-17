@@ -1,10 +1,12 @@
 import {DateTime} from 'luxon';
-import {expect,it} from 'vitest';
+import {expect,it,vi} from 'vitest';
 import {selectCheckoutBundle} from '../src/checkout-selection.js';
 import {Safety} from '../src/safety.js';
 import {Telemetry} from '../src/telemetry.js';
 import type {Snapshot} from '../src/grid.js';
-import type {SelectionPort} from '../src/selection.js';
+import {selectionPort,type SelectionPort} from '../src/selection.js';
+import {ONDA_URL,VENUE} from '../src/config.js';
+import type {Page} from 'playwright';
 
 const date='2026-09-18';
 function fixture():Snapshot{
@@ -30,6 +32,10 @@ it.each([[1,1],[1,2],[1,3],[2,1],[2,2],[2,3]] as const)('%i court x %ih successf
   expect(h.telemetry.events.filter(e=>e.event==='selectionFullGridRead')).toHaveLength(1);
   expect(h.telemetry.events.filter(e=>e.event==='fullGuardCompleted')).toHaveLength(2);
   expect(h.telemetry.events.filter(e=>e.event==='lightGuardCompleted')).toHaveLength(count*duration);
+  expect(h.telemetry.events.filter(e=>e.event==='selectionInitialGridValidationCompleted')).toHaveLength(1);
+  expect(h.telemetry.events.filter(e=>e.event==='selectionPreparationCompleted')).toHaveLength(1);
+  expect(h.telemetry.events.filter(e=>e.event==='firstClickGuardCompleted')).toHaveLength(1);
+  expect(h.telemetry.events.filter(e=>e.event==='firstSlotClickDispatchStarted')).toHaveLength(1);
 });
 
 it('a mid-bundle conflict performs an authoritative read and never locks',async()=>{
@@ -37,4 +43,22 @@ it('a mid-bundle conflict performs an authoritative read and never locks',async(
   const port:SelectionPort={guard:async()=>{},lightGuard:async()=>{},read:async()=>{reads++;return structuredClone(grid);},click:async()=>{if(++clicks===2)throw Error('detached');},summary:async()=>({count:'',amount:'',actionable:false})};
   await expect(selectCheckoutBundle(port,date,grid,{browser:'A',start:'18:00',duration:3,hours:['18:00','19:00','20:00'],requiredCourtCount:1,courts:[7]},1000,safety,new Set())).rejects.toThrow('SELECTION_CONFLICT');
   expect(reads).toBe(1);expect(safety.locked).toBe(false);
+});
+
+it('reactivates the prepared Onda tab after confirmation before enforcing visibility',async()=>{
+  let visible=false,evaluations=0;
+  const bringToFront=vi.fn(async()=>{visible=true;});
+  const page={
+    bringToFront,url:()=>ONDA_URL,locator:()=>({innerText:async()=>''}),
+    getByTestId:(id:string)=>id==='public-booking-hero-title'?{innerText:async()=>VENUE}:{count:async()=>1},
+    evaluate:vi.fn(async()=>++evaluations===1?(visible?'visible':'hidden'):undefined),
+  } as unknown as Page;
+  await selectionPort(page,new Safety()).guard();
+  expect(bringToFront).toHaveBeenCalledOnce();expect(visible).toBe(true);
+});
+
+it('records only allowlisted selection failure data',()=>{
+  const telemetry=new Telemetry();telemetry.recordSelectionFailure('FULL_BROWSER_GUARD',Error('Bearer secret@example.invalid token=private'));
+  const diagnostic=JSON.stringify(telemetry.document('SELECTION_UNSAFE_FOR_RECOVERY'));
+  expect(diagnostic).toContain('UNCLASSIFIED_SELECTION_FAILURE');expect(diagnostic).not.toContain('secret@example.invalid');expect(diagnostic).not.toContain('private');
 });

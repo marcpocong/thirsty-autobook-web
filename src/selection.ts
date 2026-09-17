@@ -22,6 +22,22 @@ export function installSelectionSecuritySentinel(){
   const scan=()=>{const text=document.body?.innerText??'';state.reason=/too many requests|rate.?limit|retry.after|\b429\b/i.test(text)?'RATE_LIMITED':/captcha|verify (?:that )?you are human|checking your browser|access denied|automated access.*(?:blocked|prohibited)|automation.*(?:blocked|prohibited)|security challenge/i.test(text)?'SECURITY_CHALLENGE':undefined;};
   scan();state.observer=new MutationObserver(scan);state.observer.observe(document.documentElement,{subtree:true,childList:true,characterData:true});w.__thirstyGuard=state;
 }
+// This script crosses the Node/Playwright browser boundary. Keep it as a static
+// expression: tsx/esbuild decorates nested functions with a Node-only __name
+// helper when Function#toString serialization is used by page.evaluate().
+export const installSelectionSecuritySentinelSource=`(() => {
+  const w = window;
+  if (w.__thirstyGuard) w.__thirstyGuard.observer.disconnect();
+  const state = { observer: null };
+  const scan = () => {
+    const text = document.body ? document.body.innerText : '';
+    state.reason = /too many requests|rate.?limit|retry.after|\\b429\\b/i.test(text) ? 'RATE_LIMITED' : /captcha|verify (?:that )?you are human|checking your browser|access denied|automated access.*(?:blocked|prohibited)|automation.*(?:blocked|prohibited)|security challenge/i.test(text) ? 'SECURITY_CHALLENGE' : undefined;
+  };
+  scan();
+  state.observer = new MutationObserver(scan);
+  state.observer.observe(document.documentElement, { subtree: true, childList: true, characterData: true });
+  w.__thirstyGuard = state;
+})()`;
 export function readSelectionSecuritySentinel(){
   const g=(window as typeof window&{__thirstyGuard?:{reason?:string}}).__thirstyGuard;
   return {installed:!!g,visible:document.visibilityState==='visible',reason:g?.reason,grid:document.querySelectorAll('[data-testid="booking-grid-body"]').length};
@@ -29,9 +45,14 @@ export function readSelectionSecuritySentinel(){
 export function selectionPort(page: Page, safety: Safety): SelectionPort {
   return {
     guard: async () => {
+      // Test Now confirmation belongs to the Electron control panel and can leave
+      // the dedicated Onda tab in the background. Reactivate only this already-
+      // verified page, then retain the visibility check and all page sentinels.
+      try{await page.bringToFront();}catch{throw Error('TAB_REACTIVATION_FAILED');}
       await assertPage(page,safety);
-      if(await page.evaluate(()=>document.visibilityState)!=='visible')throw new Error('TAB_NOT_VISIBLE');
-      await page.evaluate(installSelectionSecuritySentinel);
+      let visibility:string;try{visibility=await page.evaluate(()=>document.visibilityState);}catch{throw Error('TAB_VISIBILITY_UNREADABLE');}
+      if(visibility!=='visible')throw new Error('TAB_NOT_VISIBLE');
+      try{await page.evaluate(installSelectionSecuritySentinelSource);}catch{throw Error('SECURITY_SENTINEL_INSTALL_FAILED');}
       safety.check();
     },
     lightGuard:async()=>{
@@ -79,9 +100,11 @@ function validatePreference(p: Preference) {
 export async function selectResolvedPreference(port: SelectionPort, targetDate: string, initial: Snapshot, preferences: Preference[], maximumPrice: number, maximumAttempts: number, safety: Safety, t: Telemetry, discovery?: CandidateDiscovery): Promise<SelectionResult> {
   if (!Number.isInteger(maximumAttempts) || maximumAttempts < 1 || maximumAttempts > 5 || !Number.isFinite(maximumPrice) || maximumPrice <= 0) throw new Error('INVALID_SELECTION_LIMIT');
   preferences.forEach(validatePreference);
-  let cells = validateSnapshot(initial, targetDate);
-  known(cells);
-  if (cells.some(c => c.state === 'SELECTED')) throw new Error('PREEXISTING_SELECTION');
+  t.mark('selectionInitialGridValidationStarted');
+  let cells:Cell[];
+  try{cells=validateSnapshot(initial,targetDate);known(cells);if(cells.some(c=>c.state==='SELECTED'))throw new Error('PREEXISTING_SELECTION');}
+  catch(error){t.recordSelectionFailure('INITIAL_GRID_VALIDATION',error);throw error;}
+  t.mark('selectionInitialGridValidationCompleted');
   const attempted = new Set<string>();
   for (let attempt=1; attempt<=maximumAttempts; attempt++) {
     safety.fallback();
@@ -89,12 +112,17 @@ export async function selectResolvedPreference(port: SelectionPort, targetDate: 
     const p = resolvePreference(cells, discovery?.rank(cells, untried) ?? untried);
     if (!p) throw new Error('NO_AVAILABLE_PREFERENCE');
     attempted.add(key(p)); t.mark(attempt === 1 ? 'preferenceResolved' : 'fallbackResolved');
-    await port.guard();t.mark('fullGuardCompleted'); safety.check(); t.mark('selectionAttemptStarted', attempt);
-    await safety.stage('SELECTION');
+    t.mark('fullGuardStarted');
+    try{await port.guard();safety.check();}catch(error){t.recordSelectionFailure('FULL_BROWSER_GUARD',error);throw error;}
+    t.mark('fullGuardCompleted');t.mark('selectionPreparationStarted');
+    try{await safety.stage('SELECTION');safety.check();}catch(error){t.recordSelectionFailure('SELECTION_PREPARATION',error);throw error;}
+    t.mark('selectionPreparationCompleted');t.mark('selectionAttemptStarted', attempt);
     const dispatched = new Set<string>();
     let conflict = false;
     for (const [i,hour] of p.hours.entries()) {
-      await (port.lightGuard?.()??Promise.resolve());t.mark('lightGuardCompleted');safety.check(); t.mark(`slot${i+1}ClickStarted`); dispatched.add(hour);
+      if(i===0)t.mark('firstClickGuardStarted');
+      try{await (port.lightGuard?.()??Promise.resolve());safety.check();}catch(error){if(i===0)t.recordSelectionFailure('FIRST_CLICK_GUARD',error);throw error;}
+      t.mark('lightGuardCompleted');if(i===0){t.mark('firstClickGuardCompleted');t.mark('firstSlotClickDispatchStarted');}t.mark(`slot${i+1}ClickStarted`);dispatched.add(hour);
       try { await port.click(targetDate, p.court, hour, 'OPEN'); }
       catch { safety.check(); conflict = true; break; }
       safety.check();

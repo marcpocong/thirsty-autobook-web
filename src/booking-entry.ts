@@ -5,7 +5,7 @@ import { resetAndPrepare,PreparationBlockedError } from './booking-prepare.js';
 import {expectedPreparationFingerprint} from './prepared-context.js';
 import { runBooking } from './booking-runtime.js';
 import { Safety } from './safety.js';
-import { Telemetry } from './telemetry.js';
+import { Telemetry, sanitizedOperationFailureCode } from './telemetry.js';
 import { emitUiEvent } from './ui-events.js';
 
 const safety=new Safety(),t=new Telemetry();
@@ -20,7 +20,7 @@ async function confirm(plan:BookingPlan){
     process.on('message',listener);process.send!({type:'confirmBooking',plan});
   });
 }
-let code=0;
+let code=0,failureCode:string|undefined;
 try{
   await mkdir('.local',{recursive:true});await mkdir('DiagnosticsLocal',{recursive:true});
   const [mode,raw]=process.argv.slice(2);
@@ -50,6 +50,6 @@ try{
     const input=parsed.data;
     await runBooking(loadTestRuntimeConfig({...input.request,maximum:input.maximum}),'test',safety,t,{...input,confirm});
   }else throw Error('MODE_REQUIRED');
-}catch(e){code=1;if(e instanceof PreparationBlockedError)emitUiEvent({type:'preparationBlocked',browser:e.browserId,hold:e.review.hold,countdownSeconds:e.review.countdownSeconds??null});const reason=e instanceof Error&&/^[A-Z_]{1,80}$/.test(e.message)?e.message:'BOOKING_OPERATION_FAILED';emitUiEvent({type:'error',code:reason});console.error(reason);}
-finally{await t.flush();}
+}catch(e){code=1;if(e instanceof PreparationBlockedError)emitUiEvent({type:'preparationBlocked',browser:e.browserId,hold:e.review.hold,countdownSeconds:e.review.countdownSeconds??null});failureCode=sanitizedOperationFailureCode(e,'BOOKING_OPERATION_FAILED');emitUiEvent({type:'error',code:failureCode});console.error(failureCode);}
+finally{await t.flush(failureCode,safety.stopEvidence);}
 process.exit(code);

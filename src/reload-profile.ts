@@ -52,6 +52,7 @@ export async function profileReload(page: Page, safety: Safety, t: Telemetry, ti
   t.mark('reloadCommitted');
   await waitForBookingShellForRelease(page, safety, timeout, {
     mark: (event, value) => t.mark(event.replace(/^release/, 'profile'), value),
+    recordReleaseFailure: (stage,code,classification,httpStatus) => t.recordReleaseFailure(stage,code,classification,httpStatus),
   });
   // Post-readiness safety verification is deliberately excluded from shell timing.
   await assertDiagnosticSchedule(page, safety);
