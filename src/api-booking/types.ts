@@ -1,5 +1,5 @@
 export type BookingMode = 'standard' | 'extended';
-export type FixtureKind = 'captured-historical' | 'synthetic';
+export type FixtureKind = 'captured-historical' | 'synthetic' | 'live';
 
 export interface AvailabilityQuery {
   startDate: string;

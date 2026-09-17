@@ -113,5 +113,7 @@ describe('deterministic booking planning', () => {
     const plan = planBooking(historical, { ...base, durationHours: 2, preferredStartTimes: ['08:00'], courtPriority: [7, 6, 3], maximumTotalPrice: 1_200 });
     expect(plan.courts[0]!.court).toBe(3);
     expect(plan.startTime).toBe('08:00');
+    expect(plan.chunks).toHaveLength(1);
+    expect(plan.chunks[0]!.courts[0]!.slots.map(slot => slot.startTime)).toEqual(['08:00', '09:00']);
   });
 });

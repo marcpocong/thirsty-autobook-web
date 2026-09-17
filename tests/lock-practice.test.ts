@@ -18,6 +18,7 @@ it.each([
  [{page:'Payment Summary'},'LOCK_BROWSER_STATE_UNKNOWN'],[{},'VERIFIED_STALE_LOCK']
 ])('fails closed for lock state %j', (change,reason)=>{expect(lockReason({...safe,...change} as typeof safe)).toBe(reason);});
 it('PID check identifies the current live process',()=>expect(pidAlive(process.pid)).toBe(true));
+it.skipIf(process.platform!=='win32')('PID check confirms a nonexistent Windows process',()=>expect(pidAlive(2147483647)).toBe(false));
 it('reads without mutation, rechecks on clear and preserves changed locks',async()=>{
  await mkdir('.local',{recursive:true});const root=await mkdtemp(resolve('.local/lock-review-test-'));
  try{

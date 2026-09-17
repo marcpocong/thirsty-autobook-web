@@ -1,9 +1,9 @@
 import type { AvailabilityEnvelope, AvailabilityQuery } from './types.js';
 
 export interface AvailabilityProvider {
-  readonly kind: 'fixture-backed-mock';
+  readonly kind: 'fixture-backed-mock' | 'onda-live-availability';
   getAvailability(query: AvailabilityQuery): Promise<AvailabilityEnvelope>;
 }
 
-// Live transport is intentionally absent until Onda authorizes and documents an integration.
-export const LIVE_AVAILABILITY_INTEGRATION_ENABLED = false as const;
+// Read-only live availability is separate from reservation submission.
+export const LIVE_AVAILABILITY_INTEGRATION_ENABLED = true as const;

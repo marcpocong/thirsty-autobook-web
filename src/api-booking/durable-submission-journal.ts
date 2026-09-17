@@ -1,0 +1,80 @@
+import { createHash } from 'node:crypto';
+import { mkdir, open, readFile } from 'node:fs/promises';
+import { resolve, join } from 'node:path';
+
+export type SubmissionState = 'dispatching' | 'unknown' | 'verified' | 'rejected';
+export interface SubmissionRecord {
+  key: string;
+  state: SubmissionState;
+  createdAt: string;
+  updatedAt: string;
+  // Deliberately excludes proofs, credentials, checkout tokens, and customer data.
+}
+export interface SubmissionPermit { readonly key: string }
+const unspentPermits = new WeakSet<SubmissionPermit>();
+export function consumeSubmissionPermit(permit: SubmissionPermit, expectedKey: string): void {
+  if (!permit || permit.key !== expectedKey || !unspentPermits.delete(permit)) throw Error('SUBMISSION_PERMIT_INVALID_OR_USED');
+}
+
+/** Write-once, cross-process duplicate guard. Records are never automatically cleared. */
+export class DurableSubmissionJournal {
+  constructor(private readonly directory: string) {}
+
+  private path(key: string): string {
+    if (!/^[a-f0-9]{64}$/.test(key)) throw Error('SUBMISSION_KEY_INVALID');
+    return join(resolve(this.directory), `${key}.json`);
+  }
+
+  static key(facilityId: string, spaceId: string, date: string, startTime: string, endTime: string): string {
+    return createHash('sha256').update(JSON.stringify([facilityId, spaceId, date, startTime, endTime])).digest('hex');
+  }
+
+  async begin(key: string, now = new Date()): Promise<void> {
+    await mkdir(this.directory, { recursive: true, mode: 0o700 });
+    const path = this.path(key);
+    let handle;
+    try { handle = await open(path, 'wx', 0o600); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw Error('DUPLICATE_LOGICAL_BOOKING_BLOCKED');
+      throw error;
+    }
+    try {
+      const time = now.toISOString();
+      await handle.writeFile(JSON.stringify({ key, state: 'dispatching', createdAt: time, updatedAt: time } satisfies SubmissionRecord));
+      await handle.sync();
+    } finally { await handle.close(); }
+  }
+
+  async claimSupervisedOneShot(key: string, now = new Date()): Promise<SubmissionPermit> {
+    const intent = await this.read(key);
+    if (intent.state !== 'dispatching') throw Error('SUBMISSION_STATE_INVALID');
+    await mkdir(this.directory, { recursive: true, mode: 0o700 });
+    let handle;
+    try { handle = await open(join(resolve(this.directory), 'supervised-one-shot.json'), 'wx', 0o600); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw Error('SUPERVISED_ONE_SHOT_ALREADY_USED');
+      throw error;
+    }
+    try { await handle.writeFile(JSON.stringify({ claimedAt: now.toISOString() })); await handle.sync(); }
+    finally { await handle.close(); }
+    const permit = Object.freeze({ key });
+    unspentPermits.add(permit);
+    return permit;
+  }
+
+  async mark(key: string, state: Exclude<SubmissionState, 'dispatching'>, now = new Date()): Promise<void> {
+    const path = this.path(key);
+    const prior = JSON.parse(await readFile(path, 'utf8')) as SubmissionRecord;
+    if (prior.key !== key || prior.state !== 'dispatching') throw Error('SUBMISSION_STATE_INVALID');
+    const handle = await open(path, 'r+');
+    try {
+      await handle.truncate(0);
+      await handle.writeFile(JSON.stringify({ ...prior, state, updatedAt: now.toISOString() } satisfies SubmissionRecord));
+      await handle.sync();
+    } finally { await handle.close(); }
+  }
+
+  async read(key: string): Promise<SubmissionRecord> {
+    return JSON.parse(await readFile(this.path(key), 'utf8')) as SubmissionRecord;
+  }
+}

@@ -323,3 +323,38 @@ it.each(['fast', 'slow', 'reload'])('hybrid dry release with %s API never waits 
     expect(await page.evaluate(() => (window as any).actions)).not.toContain('SLOT');
   } finally { releaseResponse(); }
 });
+
+it('simulated release computes API candidates while the target grid is deliberately stalled, but cannot select yet', async () => {
+  const config = ConfigSchema.parse({ AVAILABILITY_DISCOVERY_MODE: 'hybrid', RELEASE_PREOPEN_CALENDAR: true,
+    START_TIME: '08:00', DURATION_HOURS: 2, PREFERRED_COURTS: [7, 6], MAX_PRICE: 1200,
+    PLAYER_FULL_NAME: 'Fixture User', PLAYER_PHONE: '0000000000', PLAYER_EMAIL: 'fixture@example.invalid' });
+  await page.locator(target.daySelector).evaluate(e => (e as HTMLButtonElement).disabled = true);
+  await page.evaluate(() => { (window as typeof window & { deferGrid?: boolean }).deferGrid = true; });
+  await page.route('**/date-availability?*', route => route.fulfill({ json: availabilityFixture(target.date) }));
+  let waits = 0;
+  vi.mocked(waitUntil).mockImplementation(async epoch => {
+    vi.mocked(Date.now).mockReturnValue(epoch);
+    if (++waits === 2) await page.locator(target.daySelector).evaluate(e => (e as HTMLButtonElement).disabled = false);
+  });
+  const t = new Telemetry();
+  const pending = observeRelease(page, config, new Safety(), t, true);
+  try {
+    await vi.waitFor(() => expect(t.events.some(e => e.event === 'availabilityApiCandidatesReady')).toBe(true));
+    await vi.waitFor(() => expect(t.events.some(e => e.event === 'targetHeadingDetected')).toBe(true));
+    expect(t.events.some(e => e.event === 'targetGridReady')).toBe(false);
+    expect(t.events.some(e => e.event === 'preferenceResolved')).toBe(false);
+    expect(await page.evaluate(() => (window as { actions?: string[] }).actions)).not.toContain('SLOT');
+    // Hold the visual grid back after the API candidate is ready.
+    await new Promise(resolve => setTimeout(resolve, 250));
+    await page.evaluate(date => (window as typeof window & { render: (date: string) => void }).render(date), target.date);
+    const result = await pending;
+    expect(validateSnapshot(result.grid, target.date)).toHaveLength(112);
+    expect(t.events.map(e => e.event).indexOf('availabilityApiCandidatesReady'))
+      .toBeLessThan(t.events.map(e => e.event).indexOf('targetGridReady'));
+    expect(t.events.some(e => e.event === 'candidateSourceApiUi')).toBe(true);
+    expect(t.events.some(e => e.event === 'selectionAttemptStarted')).toBe(false);
+  } finally {
+    await page.evaluate(date => (window as typeof window & { render: (date: string) => void }).render(date), target.date).catch(() => {});
+    await pending.catch(() => {});
+  }
+});
