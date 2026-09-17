@@ -1,0 +1,26 @@
+{
+  "observedAt": "2026-09-09T21:12:18.607Z",
+  "samples": [
+    {
+      "onePassMs": 28.911200000000008,
+      "repeatedLocatorMs": 415.39140000000043
+    },
+    {
+      "onePassMs": 7.929800000000341,
+      "repeatedLocatorMs": 338.43049999999994
+    },
+    {
+      "onePassMs": 5.7861000000002605,
+      "repeatedLocatorMs": 322.0858000000003
+    },
+    {
+      "onePassMs": 6.195600000000013,
+      "repeatedLocatorMs": 353.47180000000026
+    },
+    {
+      "onePassMs": 7.92719999999963,
+      "repeatedLocatorMs": 317.14739999999983
+    }
+  ],
+  "scope": "5 read-only snapshots; repeated comparator reads label and disabled only; no release or clicks"
+}

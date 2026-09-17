@@ -3,6 +3,7 @@ import { ONDA_URL } from '../config.js';
 import { consumeSubmissionPermit, DurableSubmissionJournal, type SubmissionPermit } from './durable-submission-journal.js';
 import type { SlotCheckRequest, TwoHourCheckoutRequest, TwoHourTransport } from './two-hour-reservation.js';
 import { SubmissionDispatchError } from './submission-errors.js';
+import { checkoutDiagnostic } from './checkout-diagnostics.js';
 
 const ORIGIN = 'https://app.onda.fit';
 const SLOT_PATH = '/api/public/is-slot-available';
@@ -28,7 +29,21 @@ function usable(value: unknown): value is string {
 
 /** Sends only the two observed POSTs in an existing, verified browser page. It never launches a browser. */
 export class OndaBrowserSessionTransport implements TwoHourTransport {
+  private preparedHeaders?: CurrentCheckoutHeaders;
   constructor(private readonly page: Page, private readonly currentCheckoutHeaders: CurrentCheckoutHeadersProvider) {}
+
+  async prepareCheckoutContext(): Promise<void> {
+    this.assertPage();
+    if (process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT !== 'SUPERVISED_ONE_SHOT')
+      throw new BrowserSessionTransportError('LIVE_SUBMISSION_DISABLED');
+    let current: CurrentCheckoutHeaders;
+    try { current = await this.currentCheckoutHeaders(); }
+    catch { throw new BrowserSessionTransportError('CURRENT_CHECKOUT_HEADERS_UNAVAILABLE'); }
+    if (!usable(current?.turnstileToken) || !usable(current?.publicFingerprint))
+      throw new BrowserSessionTransportError('CURRENT_CHECKOUT_HEADERS_INVALID');
+    this.assertPage();
+    this.preparedHeaders = current;
+  }
 
   private assertPage(): void {
     if (this.page.isClosed() || this.page.url() !== ONDA_URL) throw new BrowserSessionTransportError('ONDA_SESSION_PAGE_INVALID');
@@ -37,32 +52,21 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
   private async post(path: typeof SLOT_PATH | typeof CHECKOUT_PATH, body: unknown,
     extraHeaders?: Record<string, string>): Promise<unknown> {
     this.assertPage();
-    let result: { status: number; contentType: string; body: string };
+    let result: { status: number; contentType: string; server: string; cloudflareRay: string; body: string };
     try {
       result = await this.page.evaluate(async ({ url, payload, headers }) => {
         const response = await fetch(url, { method: 'POST', credentials: 'same-origin', redirect: 'error',
-          cache: 'no-store', headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...headers },
+          cache: 'no-store', headers: { 'Content-Type': 'application/json', ...headers },
           body: JSON.stringify(payload) });
-        return { status: response.status, contentType: response.headers.get('content-type') ?? '', body: await response.text() };
+        return { status: response.status, contentType: response.headers.get('content-type') ?? '',
+          server: response.headers.get('server') ?? '', cloudflareRay: response.headers.get('cf-ray') ?? '',
+          body: await response.text() };
       }, { url: `${ORIGIN}${path}`, payload: body, headers: extraHeaders ?? {} });
     } catch { throw new BrowserSessionTransportError('ONDA_TRANSPORT_FAILED', true); }
     try { this.assertPage(); }
     catch { throw new BrowserSessionTransportError('ONDA_SESSION_DISCONNECTED_AFTER_DISPATCH', true); }
-    if (result.status !== 200) {
-      let applicationCode: string | undefined;
-      if (result.contentType.toLowerCase().includes('application/json') &&
-        Buffer.byteLength(result.body, 'utf8') <= MAX_RESPONSE_BYTES) {
-        try {
-          const parsed: unknown = JSON.parse(result.body);
-          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-            const code = (parsed as Record<string, unknown>).code;
-            if (typeof code === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/.test(code)) applicationCode = code;
-          }
-        } catch {/* response is not parseable */}
-      }
-      throw new BrowserSessionTransportError('ONDA_HTTP_STATUS_INVALID', true,
-        { status: result.status, category: 'http-rejection', ...(applicationCode ? { applicationCode } : {}) });
-    }
+    if (result.status !== 200) throw new BrowserSessionTransportError('ONDA_HTTP_STATUS_INVALID', true,
+      checkoutDiagnostic(result));
     if (!result.contentType.toLowerCase().includes('application/json')) throw new BrowserSessionTransportError('ONDA_CONTENT_TYPE_INVALID', true);
     if (Buffer.byteLength(result.body, 'utf8') > MAX_RESPONSE_BYTES) throw new BrowserSessionTransportError('ONDA_RESPONSE_TOO_LARGE', true);
     try { return JSON.parse(result.body) as unknown; }
@@ -79,9 +83,12 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
     this.assertPage();
     if (process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT !== 'SUPERVISED_ONE_SHOT')
       throw new BrowserSessionTransportError('LIVE_SUBMISSION_DISABLED');
-    let current: CurrentCheckoutHeaders;
-    try { current = await this.currentCheckoutHeaders(); }
-    catch { throw new BrowserSessionTransportError('CURRENT_CHECKOUT_HEADERS_UNAVAILABLE'); }
+    let current = this.preparedHeaders;
+    this.preparedHeaders = undefined;
+    if (!current) {
+      try { current = await this.currentCheckoutHeaders(); }
+      catch { throw new BrowserSessionTransportError('CURRENT_CHECKOUT_HEADERS_UNAVAILABLE'); }
+    }
     if (!usable(current?.turnstileToken) || !usable(current?.publicFingerprint))
       throw new BrowserSessionTransportError('CURRENT_CHECKOUT_HEADERS_INVALID');
     const [first, second] = request.items;

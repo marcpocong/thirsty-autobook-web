@@ -1,0 +1,87 @@
+{
+  "coordinator": {
+    "runID": "d193b670-2de2-4eed-807c-714b7a8e8850",
+    "events": [
+      {
+        "event": "dualRunStarted",
+        "wall": "2026-09-13T18:40:26.434Z",
+        "monoMs": 908.1114
+      },
+      {
+        "event": "dualPreflightStarted",
+        "wall": "2026-09-13T18:40:26.434Z",
+        "monoMs": 908.2082
+      },
+      {
+        "event": "workerAGridReady",
+        "wall": "2026-09-13T18:40:31.427Z",
+        "monoMs": 5900.6202
+      },
+      {
+        "event": "workerBGridReady",
+        "wall": "2026-09-13T18:40:31.524Z",
+        "monoMs": 5997.3627
+      },
+      {
+        "event": "bothGridsReady",
+        "wall": "2026-09-13T18:40:31.524Z",
+        "monoMs": 5997.4892
+      },
+      {
+        "event": "dualPairResolved",
+        "wall": "2026-09-13T18:40:31.526Z",
+        "monoMs": 5999.6423,
+        "value": 1
+      },
+      {
+        "event": "workerAAssigned",
+        "wall": "2026-09-13T18:40:31.526Z",
+        "monoMs": 5999.6823,
+        "value": 7
+      },
+      {
+        "event": "workerBAssigned",
+        "wall": "2026-09-13T18:40:31.526Z",
+        "monoMs": 5999.696,
+        "value": 6
+      }
+    ],
+    "releasePerformance": null,
+    "availabilityPerformance": null
+  },
+  "workers": [
+    {
+      "runID": "5c09dfa7-2c26-4ed3-9447-dd9ed427d056",
+      "events": [],
+      "releasePerformance": null,
+      "availabilityPerformance": null
+    },
+    {
+      "runID": "cb9d43f2-510f-4cc0-b19f-7b23f4c1392b",
+      "events": [],
+      "releasePerformance": null,
+      "availabilityPerformance": null
+    }
+  ],
+  "metrics": {
+    "releaseToWorkerGrids": [
+      null,
+      null
+    ],
+    "releaseToBothGrids": null,
+    "bothGridsToPair": 2,
+    "pairToFirstClicks": [
+      null,
+      null
+    ],
+    "releaseToBothSelections": null,
+    "selectionsToBothProceed": null,
+    "selectionToHold": [
+      null,
+      null
+    ],
+    "releaseToFirstHold": null,
+    "releaseToSecondHold": null,
+    "releaseToBothHolds": null
+  }
+}

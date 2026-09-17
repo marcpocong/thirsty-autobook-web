@@ -1,0 +1,446 @@
+{
+  "runID": "b52e5ded-2743-4a0a-ac12-57a17dcedbe3",
+  "events": [
+    {
+      "event": "processStarted",
+      "wall": "2026-09-11T23:47:34.704Z",
+      "monoMs": 581.3934
+    },
+    {
+      "event": "chromeConnected",
+      "wall": "2026-09-11T23:47:36.487Z",
+      "monoMs": 2364.4888
+    },
+    {
+      "event": "ondaTabResolved",
+      "wall": "2026-09-11T23:47:36.487Z",
+      "monoMs": 2364.5372
+    },
+    {
+      "event": "preflightStarted",
+      "wall": "2026-09-11T23:47:36.489Z",
+      "monoMs": 2366.5186
+    },
+    {
+      "event": "preflightCompleted",
+      "wall": "2026-09-11T23:47:36.508Z",
+      "monoMs": 2385.7545
+    },
+    {
+      "event": "preflightStarted",
+      "wall": "2026-09-11T23:59:45.012Z",
+      "monoMs": 730890.3512
+    },
+    {
+      "event": "preflightCompleted",
+      "wall": "2026-09-11T23:59:45.046Z",
+      "monoMs": 730923.8
+    },
+    {
+      "event": "preopenPreparationStarted",
+      "wall": "2026-09-11T23:59:45.046Z",
+      "monoMs": 730923.9638
+    },
+    {
+      "event": "preopenTargetDetected",
+      "wall": "2026-09-11T23:59:45.132Z",
+      "monoMs": 731009.6292
+    },
+    {
+      "event": "preopenTargetDisabled",
+      "wall": "2026-09-11T23:59:45.152Z",
+      "monoMs": 731030.0727
+    },
+    {
+      "event": "releaseCalendarPreopened",
+      "wall": "2026-09-11T23:59:45.152Z",
+      "monoMs": 731030.1577
+    },
+    {
+      "event": "preopenCalendarLeftOpen",
+      "wall": "2026-09-11T23:59:45.152Z",
+      "monoMs": 731030.1709
+    },
+    {
+      "event": "armed",
+      "wall": "2026-09-11T23:59:45.152Z",
+      "monoMs": 731030.1834
+    },
+    {
+      "event": "releaseScheduled",
+      "wall": "2026-09-11T23:59:45.152Z",
+      "monoMs": 731030.1902,
+      "value": 1789171200000
+    },
+    {
+      "event": "releaseTriggerFired",
+      "wall": "2026-09-12T00:00:00.010Z",
+      "monoMs": 745887.5171,
+      "value": 10
+    },
+    {
+      "event": "availabilityRequestStarted",
+      "wall": "2026-09-12T00:00:00.015Z",
+      "monoMs": 745892.8308
+    },
+    {
+      "event": "preopenReleaseCheckStarted",
+      "wall": "2026-09-12T00:00:00.019Z",
+      "monoMs": 745896.5188
+    },
+    {
+      "event": "targetStillDisabledAtRelease",
+      "wall": "2026-09-12T00:00:00.066Z",
+      "monoMs": 745943.6348
+    },
+    {
+      "event": "reloadFallbackStarted",
+      "wall": "2026-09-12T00:00:00.066Z",
+      "monoMs": 745943.6936
+    },
+    {
+      "event": "reloadStarted",
+      "wall": "2026-09-12T00:00:00.066Z",
+      "monoMs": 745943.8757
+    },
+    {
+      "event": "availabilityFallbackToUi",
+      "wall": "2026-09-12T00:00:00.307Z",
+      "monoMs": 746184.4647
+    },
+    {
+      "event": "reloadCommitted",
+      "wall": "2026-09-12T00:00:00.331Z",
+      "monoMs": 746208.4151
+    },
+    {
+      "event": "releaseUrlVerified",
+      "wall": "2026-09-12T00:00:00.331Z",
+      "monoMs": 746208.864
+    },
+    {
+      "event": "releaseVenueAttached",
+      "wall": "2026-09-12T00:00:00.727Z",
+      "monoMs": 746604.6177
+    },
+    {
+      "event": "releaseVenueVisible",
+      "wall": "2026-09-12T00:00:00.745Z",
+      "monoMs": 746622.5571
+    },
+    {
+      "event": "releaseVenueVerified",
+      "wall": "2026-09-12T00:00:00.748Z",
+      "monoMs": 746625.454
+    },
+    {
+      "event": "releasePickerAttached",
+      "wall": "2026-09-12T00:00:00.758Z",
+      "monoMs": 746635.6914
+    },
+    {
+      "event": "releasePickerVisible",
+      "wall": "2026-09-12T00:00:00.766Z",
+      "monoMs": 746644.1669
+    },
+    {
+      "event": "releasePickerEnabled",
+      "wall": "2026-09-12T00:00:01.271Z",
+      "monoMs": 747149.2654
+    },
+    {
+      "event": "releaseShellReady",
+      "wall": "2026-09-12T00:00:01.273Z",
+      "monoMs": 747151.1995
+    },
+    {
+      "event": "targetPickerOpened",
+      "wall": "2026-09-12T00:00:01.319Z",
+      "monoMs": 747196.9785
+    },
+    {
+      "event": "targetDateDetected",
+      "wall": "2026-09-12T00:00:01.324Z",
+      "monoMs": 747201.947
+    },
+    {
+      "event": "targetDateEnabled",
+      "wall": "2026-09-12T00:00:01.326Z",
+      "monoMs": 747203.9708
+    },
+    {
+      "event": "targetDateClickStarted",
+      "wall": "2026-09-12T00:00:01.326Z",
+      "monoMs": 747204.0063
+    },
+    {
+      "event": "targetDateClicked",
+      "wall": "2026-09-12T00:00:01.373Z",
+      "monoMs": 747251.2163
+    },
+    {
+      "event": "targetHeadingDetected",
+      "wall": "2026-09-12T00:00:01.376Z",
+      "monoMs": 747254.2143
+    },
+    {
+      "event": "targetGridReady",
+      "wall": "2026-09-12T00:00:01.600Z",
+      "monoMs": 747478.3568
+    },
+    {
+      "event": "gridSnapshotStarted",
+      "wall": "2026-09-12T00:00:01.604Z",
+      "monoMs": 747482.3311
+    },
+    {
+      "event": "gridSnapshotCompleted",
+      "wall": "2026-09-12T00:00:01.611Z",
+      "monoMs": 747489.1765
+    },
+    {
+      "event": "candidateSourceUiOnly",
+      "wall": "2026-09-12T00:00:01.612Z",
+      "monoMs": 747490.3714
+    },
+    {
+      "event": "availabilityFallbackToUi",
+      "wall": "2026-09-12T00:00:01.613Z",
+      "monoMs": 747490.4157
+    },
+    {
+      "event": "availabilityCandidateResolved",
+      "wall": "2026-09-12T00:00:01.613Z",
+      "monoMs": 747490.4291,
+      "value": 0.2831000000005588
+    },
+    {
+      "event": "preferenceResolved",
+      "wall": "2026-09-12T00:00:01.613Z",
+      "monoMs": 747490.5261
+    },
+    {
+      "event": "selectionAttemptStarted",
+      "wall": "2026-09-12T00:00:01.624Z",
+      "monoMs": 747501.702,
+      "value": 1
+    },
+    {
+      "event": "slot1ClickStarted",
+      "wall": "2026-09-12T00:00:01.624Z",
+      "monoMs": 747501.7473
+    },
+    {
+      "event": "slot1Selected",
+      "wall": "2026-09-12T00:00:01.722Z",
+      "monoMs": 747600.3694
+    },
+    {
+      "event": "slot2ClickStarted",
+      "wall": "2026-09-12T00:00:01.723Z",
+      "monoMs": 747600.4205
+    },
+    {
+      "event": "slot2Selected",
+      "wall": "2026-09-12T00:00:01.771Z",
+      "monoMs": 747648.4671
+    },
+    {
+      "event": "slot3ClickStarted",
+      "wall": "2026-09-12T00:00:01.771Z",
+      "monoMs": 747648.5194
+    },
+    {
+      "event": "slot3Selected",
+      "wall": "2026-09-12T00:00:01.857Z",
+      "monoMs": 747734.8809
+    },
+    {
+      "event": "selectionVerified",
+      "wall": "2026-09-12T00:00:01.911Z",
+      "monoMs": 747788.4306
+    },
+    {
+      "event": "proceedActionable",
+      "wall": "2026-09-12T00:00:01.911Z",
+      "monoMs": 747788.4732
+    },
+    {
+      "event": "bookingProceedStarted",
+      "wall": "2026-09-12T00:00:01.945Z",
+      "monoMs": 747822.9984
+    },
+    {
+      "event": "thirdPartyRateLimited",
+      "wall": "2026-09-12T00:00:02.061Z",
+      "monoMs": 747939.0692,
+      "evidence": {
+        "reason": "RATE_LIMITED",
+        "timestamp": "2026-09-12T00:00:02.061Z",
+        "monoMs": 747938.9435,
+        "hostname": "[REDACTED]",
+        "status": 429,
+        "resourceType": "fetch",
+        "navigation": false,
+        "retryAfterPresent": true,
+        "sameOndaSite": false
+      }
+    },
+    {
+      "event": "bookingProceedClicked",
+      "wall": "2026-09-12T00:00:02.783Z",
+      "monoMs": 748661.3994
+    },
+    {
+      "event": "proceedClicked",
+      "wall": "2026-09-12T00:00:02.784Z",
+      "monoMs": 748661.4608
+    },
+    {
+      "event": "reviewDetected",
+      "wall": "2026-09-12T00:00:02.810Z",
+      "monoMs": 748687.9256
+    },
+    {
+      "event": "reviewValidated",
+      "wall": "2026-09-12T00:00:02.810Z",
+      "monoMs": 748688.0085
+    },
+    {
+      "event": "playerFillStarted",
+      "wall": "2026-09-12T00:00:02.810Z",
+      "monoMs": 748688.0194
+    },
+    {
+      "event": "playerFormDetected",
+      "wall": "2026-09-12T00:00:02.815Z",
+      "monoMs": 748692.742
+    },
+    {
+      "event": "playerFillCompleted",
+      "wall": "2026-09-12T00:00:02.847Z",
+      "monoMs": 748724.9583
+    },
+    {
+      "event": "playerProceedStarted",
+      "wall": "2026-09-12T00:00:02.847Z",
+      "monoMs": 748724.9982
+    },
+    {
+      "event": "playerProceedClicked",
+      "wall": "2026-09-12T00:00:03.672Z",
+      "monoMs": 749550.2742
+    },
+    {
+      "event": "paymentSummaryDetected",
+      "wall": "2026-09-12T00:00:08.849Z",
+      "monoMs": 754727.2259
+    },
+    {
+      "event": "paymentSummaryValidated",
+      "wall": "2026-09-12T00:00:08.849Z",
+      "monoMs": 754727.2769
+    },
+    {
+      "event": "termsCheckStarted",
+      "wall": "2026-09-12T00:00:08.850Z",
+      "monoMs": 754727.4273
+    },
+    {
+      "event": "termsChecked",
+      "wall": "2026-09-12T00:00:09.487Z",
+      "monoMs": 755365.0236
+    },
+    {
+      "event": "finalOndaActionStarted",
+      "wall": "2026-09-12T00:00:09.518Z",
+      "monoMs": 755396.3272
+    },
+    {
+      "event": "finalOndaButtonClicked",
+      "wall": "2026-09-12T00:00:09.538Z",
+      "monoMs": 755415.8082
+    },
+    {
+      "event": "paymentBoundaryReached",
+      "wall": "2026-09-12T00:00:09.538Z",
+      "monoMs": 755415.8489
+    },
+    {
+      "event": "automationStopped",
+      "wall": "2026-09-12T00:00:09.538Z",
+      "monoMs": 755415.8571
+    },
+    {
+      "event": "checkoutPageDetected",
+      "wall": "2026-09-12T00:00:13.379Z",
+      "monoMs": 759257.2858
+    },
+    {
+      "event": "holdStatusDetected",
+      "wall": "2026-09-12T00:00:13.379Z",
+      "monoMs": 759257.339
+    },
+    {
+      "event": "qrHandoffVerified",
+      "wall": "2026-09-12T00:00:14.684Z",
+      "monoMs": 760561.9999
+    },
+    {
+      "event": "automationStopped",
+      "wall": "2026-09-12T00:00:14.684Z",
+      "monoMs": 760562.0457
+    },
+    {
+      "event": "automationStopped",
+      "wall": "2026-09-12T00:00:14.685Z",
+      "monoMs": 760562.9408
+    }
+  ],
+  "releasePerformance": {
+    "triggerErrorMs": 10,
+    "branch": "RELOAD FALLBACK",
+    "triggerToTargetEnabledMs": 1316.454,
+    "targetEnabledToClickMs": 47.245,
+    "targetClickToGridMs": 227.14,
+    "gridToSnapshotMs": 10.82,
+    "snapshotToPreferenceMs": 1.35,
+    "preferenceToSelectionMs": 297.904,
+    "triggerToSelectionMs": 1900.913,
+    "reloads": [
+      {
+        "triggerToCommitMs": 320.898,
+        "commitToVenueMs": 417.039,
+        "venueToPickerMs": 523.811,
+        "pickerToTargetMs": 54.705
+      }
+    ]
+  },
+  "availabilityPerformance": {
+    "requests": [
+      {
+        "durationMs": null,
+        "parseMs": null,
+        "outcome": "CANCELED_OR_FAILED",
+        "responseToCandidateMs": null
+      }
+    ],
+    "releaseToRequestMs": 5.313699999940582,
+    "targetEnabledWithoutReload": false,
+    "apiCandidateExistedBeforeGrid": false,
+    "candidateSource": "UI_ONLY",
+    "releaseToGridMs": 1590.839699999895,
+    "apiCandidateReadyToGridMs": null,
+    "apiCandidateResolutionMs": null,
+    "gridToFirstClickMs": 23.390500000095926,
+    "releaseToFirstClickMs": 1614.2301999999909,
+    "releaseToSelectionMs": 1900.9134999999078,
+    "selectionToQrHoldMs": 12773.56930000009,
+    "selectionToProceedMs": 34.56780000007711,
+    "proceedToReviewMs": 864.9271999999182,
+    "reviewToPlayerCompletedMs": 37.032700000097975,
+    "playerProceedToSummaryMs": 6002.22769999993,
+    "finalActionToHoldMs": 5165.6726999999955,
+    "candidateResolutionMs": 0.2831000000005588
+  }
+}

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { mkdir, open, readFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
+import type { CheckoutDiagnostic } from './checkout-diagnostics.js';
 
 export type SubmissionState = 'dispatching' | 'unknown' | 'verified' | 'rejected';
 export interface SanitizedSubmissionAttempt {
@@ -19,7 +20,7 @@ export interface SubmissionRecord {
   createdAt: string;
   updatedAt: string;
   attempt: SanitizedSubmissionAttempt;
-  diagnostic?: { status: number; category: 'http-rejection' | 'invalid-response'; applicationCode?: string };
+  diagnostic?: CheckoutDiagnostic;
   // Deliberately excludes proofs, credentials, checkout tokens, and customer data.
 }
 export interface SubmissionPermit { readonly key: string }
@@ -88,7 +89,11 @@ export class DurableSubmissionJournal {
     if (prior.key !== key || prior.state !== 'dispatching') throw Error('SUBMISSION_STATE_INVALID');
     if (diagnostic && (!Number.isInteger(diagnostic.status) || diagnostic.status < 100 || diagnostic.status > 599 ||
       !['http-rejection', 'invalid-response'].includes(diagnostic.category) ||
-      (diagnostic.applicationCode !== undefined && !/^[A-Z][A-Z0-9_]{0,63}$/.test(diagnostic.applicationCode))))
+      !['json', 'html', 'text', 'empty', 'other'].includes(diagnostic.contentKind) ||
+      !['cloudflare', 'application', 'unknown'].includes(diagnostic.responseSource) ||
+      !['verification', 'availability', 'customer', 'rate-limit', 'access', 'other', 'none'].includes(diagnostic.errorHint) ||
+      (diagnostic.applicationCode !== undefined && !/^[A-Z][A-Z0-9_]{0,63}$/.test(diagnostic.applicationCode)) ||
+      (diagnostic.cloudflareRay !== undefined && !/^[a-f0-9]{8,32}(?:-[A-Za-z0-9]{2,8})?$/.test(diagnostic.cloudflareRay))))
       throw Error('SUBMISSION_DIAGNOSTIC_INVALID');
     const handle = await open(path, 'r+');
     try {

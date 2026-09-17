@@ -1,0 +1,27 @@
+{
+  "runID": "decc8a40-7fd8-43cd-8402-c9806682d58d",
+  "events": [
+    {
+      "event": "processStarted",
+      "wall": "2026-09-13T18:58:14.909Z",
+      "monoMs": 816.2978
+    },
+    {
+      "event": "chromeConnected",
+      "wall": "2026-09-13T18:58:16.644Z",
+      "monoMs": 2550.946
+    },
+    {
+      "event": "ondaTabResolved",
+      "wall": "2026-09-13T18:58:16.644Z",
+      "monoMs": 2551.0179
+    },
+    {
+      "event": "automationStopped",
+      "wall": "2026-09-13T18:58:16.711Z",
+      "monoMs": 2618.4655
+    }
+  ],
+  "releasePerformance": null,
+  "availabilityPerformance": null
+}

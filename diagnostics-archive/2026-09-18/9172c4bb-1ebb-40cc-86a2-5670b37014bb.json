@@ -1,0 +1,176 @@
+{
+  "runID": "9172c4bb-1ebb-40cc-86a2-5670b37014bb",
+  "events": [
+    {
+      "event": "processStarted",
+      "wall": "2026-09-10T20:16:27.857Z",
+      "monoMs": 528.2923
+    },
+    {
+      "event": "chromeConnected",
+      "wall": "2026-09-10T20:16:30.381Z",
+      "monoMs": 3052.2237
+    },
+    {
+      "event": "ondaTabResolved",
+      "wall": "2026-09-10T20:16:30.381Z",
+      "monoMs": 3052.2799
+    },
+    {
+      "event": "preferenceResolved",
+      "wall": "2026-09-10T20:16:31.362Z",
+      "monoMs": 4033.5434
+    },
+    {
+      "event": "selectionAttemptStarted",
+      "wall": "2026-09-10T20:16:31.370Z",
+      "monoMs": 4041.4691,
+      "value": 1
+    },
+    {
+      "event": "slot1ClickStarted",
+      "wall": "2026-09-10T20:16:31.370Z",
+      "monoMs": 4041.5226
+    },
+    {
+      "event": "slot1Selected",
+      "wall": "2026-09-10T20:16:31.426Z",
+      "monoMs": 4097.0041
+    },
+    {
+      "event": "slot2ClickStarted",
+      "wall": "2026-09-10T20:16:31.426Z",
+      "monoMs": 4097.0835
+    },
+    {
+      "event": "slot2Selected",
+      "wall": "2026-09-10T20:16:31.472Z",
+      "monoMs": 4143.3435
+    },
+    {
+      "event": "selectionVerified",
+      "wall": "2026-09-10T20:16:31.497Z",
+      "monoMs": 4167.6878
+    },
+    {
+      "event": "proceedActionable",
+      "wall": "2026-09-10T20:16:31.497Z",
+      "monoMs": 4167.7377
+    },
+    {
+      "event": "bookingProceedStarted",
+      "wall": "2026-09-10T20:16:31.525Z",
+      "monoMs": 4195.7591
+    },
+    {
+      "event": "bookingProceedClicked",
+      "wall": "2026-09-10T20:16:32.365Z",
+      "monoMs": 5035.8883
+    },
+    {
+      "event": "proceedClicked",
+      "wall": "2026-09-10T20:16:32.365Z",
+      "monoMs": 5035.917
+    },
+    {
+      "event": "reviewDetected",
+      "wall": "2026-09-10T20:16:32.383Z",
+      "monoMs": 5054.2552
+    },
+    {
+      "event": "reviewValidated",
+      "wall": "2026-09-10T20:16:32.383Z",
+      "monoMs": 5054.4098
+    },
+    {
+      "event": "playerFillStarted",
+      "wall": "2026-09-10T20:16:32.383Z",
+      "monoMs": 5054.4413
+    },
+    {
+      "event": "playerFormDetected",
+      "wall": "2026-09-10T20:16:32.390Z",
+      "monoMs": 5060.8054
+    },
+    {
+      "event": "playerFillCompleted",
+      "wall": "2026-09-10T20:16:32.431Z",
+      "monoMs": 5102.3813
+    },
+    {
+      "event": "playerProceedStarted",
+      "wall": "2026-09-10T20:16:32.431Z",
+      "monoMs": 5102.4202
+    },
+    {
+      "event": "playerProceedClicked",
+      "wall": "2026-09-10T20:16:33.252Z",
+      "monoMs": 5923.469
+    },
+    {
+      "event": "paymentSummaryDetected",
+      "wall": "2026-09-10T20:16:37.175Z",
+      "monoMs": 9846.0074
+    },
+    {
+      "event": "paymentSummaryValidated",
+      "wall": "2026-09-10T20:16:37.175Z",
+      "monoMs": 9846.0415
+    },
+    {
+      "event": "termsCheckStarted",
+      "wall": "2026-09-10T20:16:37.175Z",
+      "monoMs": 9846.0991
+    },
+    {
+      "event": "termsChecked",
+      "wall": "2026-09-10T20:16:38.197Z",
+      "monoMs": 10867.962
+    },
+    {
+      "event": "finalOndaActionStarted",
+      "wall": "2026-09-10T20:16:38.224Z",
+      "monoMs": 10895.1745
+    },
+    {
+      "event": "finalOndaButtonClicked",
+      "wall": "2026-09-10T20:16:38.254Z",
+      "monoMs": 10925.5076
+    },
+    {
+      "event": "paymentBoundaryReached",
+      "wall": "2026-09-10T20:16:38.254Z",
+      "monoMs": 10925.5376
+    },
+    {
+      "event": "automationStopped",
+      "wall": "2026-09-10T20:16:38.254Z",
+      "monoMs": 10925.5433
+    },
+    {
+      "event": "checkoutPageDetected",
+      "wall": "2026-09-10T20:16:40.785Z",
+      "monoMs": 13455.6277
+    },
+    {
+      "event": "holdStatusDetected",
+      "wall": "2026-09-10T20:16:40.902Z",
+      "monoMs": 13572.8491
+    },
+    {
+      "event": "qrHandoffVerified",
+      "wall": "2026-09-10T20:16:41.999Z",
+      "monoMs": 14670.5927
+    },
+    {
+      "event": "automationStopped",
+      "wall": "2026-09-10T20:16:42.000Z",
+      "monoMs": 14670.6415
+    },
+    {
+      "event": "automationStopped",
+      "wall": "2026-09-10T20:16:42.000Z",
+      "monoMs": 14671.2113
+    }
+  ]
+}

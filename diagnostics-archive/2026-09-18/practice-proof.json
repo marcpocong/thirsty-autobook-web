@@ -1,0 +1,23 @@
+{
+  "time": "2026-09-09T21:05:01.293Z",
+  "date": "2026-09-11",
+  "court": 1,
+  "hours": [
+    "10:00",
+    "11:00"
+  ],
+  "evidence": [
+    {
+      "label": "Court 1: Mango Wing 10 AM to 11 AM selected",
+      "state": "selected",
+      "disabled": false
+    },
+    {
+      "label": "Court 1: Mango Wing 11 AM to 12 PM selected",
+      "state": "selected",
+      "disabled": false
+    }
+  ],
+  "clean": true,
+  "proceedClicked": false
+}

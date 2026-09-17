@@ -13,14 +13,16 @@ export interface TwoHourItem extends HourIdentity {
   activityKey: null; activityLabel: null; availabilityProof: string; chargedAmount: number; duration: 60;
   facilityId: string; guestCount: 1; promotionId: null; rate: number; sessionRef: 'session_1';
 }
-export interface TwoHourCheckoutRequest extends CheckoutCustomer {
-  bookingType: 'online'; customerFirstName: string; customerLastName: string; facilityId: string;
+export interface TwoHourCheckoutRequest extends Omit<CheckoutCustomer, 'customerFirstName' | 'customerLastName'> {
+  bookingType: 'online'; customerFirstName: null; customerLastName: null; facilityId: string;
   items: [TwoHourItem, TwoHourItem]; usedCustomerMembershipId: null; userId: null;
 }
 export interface VerifiedTwoHourHold { bookingIds: [string, string]; sessionId: string; holdExpiresAt: string; transactionId: string }
 
 /** An observed-schema transport must implement both calls; this contract never generates proofs. */
 export interface TwoHourTransport {
+  /** Onda's court UI obtains its challenge and fingerprint before its final slot checks. */
+  prepareCheckoutContext?(): Promise<void>;
   /** Must make a new normal-session request for each call; no proof cache or captured values. */
   checkSlot(request: SlotCheckRequest): Promise<unknown>;
   publicCheckout(request: TwoHourCheckoutRequest, permit: SubmissionPermit): Promise<unknown>;
@@ -104,6 +106,7 @@ export class TwoHourReservationAdapter {
     if (!Object.values(customer).every(nonempty) || Object.values(customer).some(value => /^<.*>$/.test(value)) || Object.values(customer).some(value => /[\r\n]/.test(value)))
       fail('CHECKOUT_CUSTOMER_INVALID');
     if (!Number.isFinite(this.maximumProofAgeMs) || this.maximumProofAgeMs <= 0) fail('PROOF_AGE_INVALID');
+    await this.transport.prepareCheckoutContext?.();
     // Each hour has its own fresh check. Any failed check stops before the durable dispatch record.
     const proofs = await acquireFreshSlotProofs(hours, { clientId: customer.clientId,
       facilityId: THIRSTY_PICKLE_FACILITY_ID, transport: this.transport, clock: this.clock,
@@ -112,7 +115,9 @@ export class TwoHourReservationAdapter {
       availabilityProof: proofs[index]!.availabilityProof, chargedAmount: plan.courts[0]!.slots[index]!.price, duration: 60 as const,
       facilityId: THIRSTY_PICKLE_FACILITY_ID, guestCount: 1 as const, promotionId: null,
       rate: plan.courts[0]!.slots[index]!.price, sessionRef: 'session_1' as const })) as [TwoHourItem, TwoHourItem];
+    // The court UI passes null names to createBookingTransaction even after resolving a customer ID.
     const request: TwoHourCheckoutRequest = { bookingType: 'online', ...customer,
+      customerFirstName: null, customerLastName: null,
       facilityId: THIRSTY_PICKLE_FACILITY_ID, items, usedCustomerMembershipId: null, userId: null };
     const now = this.clock();
     const key = DurableSubmissionJournal.key(THIRSTY_PICKLE_FACILITY_ID, hours[0].spaceId, hours[0].date, hours[0].startTime, hours[1].endTime);

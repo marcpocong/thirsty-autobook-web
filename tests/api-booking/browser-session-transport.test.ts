@@ -16,8 +16,8 @@ const spaceId = '0e853a91-33b6-4de2-9237-778007a9313b';
 const date = '2026-09-18';
 const slot: SlotCheckRequest = { clientId: 'synthetic-client', facilityId, spaceId, date, startTime: '12:00', endTime: '13:00' };
 const checkout = { bookingType: 'online', clientId: 'synthetic-client', customerId: 'synthetic-customer',
-  customerEmail: 'example@test.invalid', customerPhone: '0000000000', customerFirstName: 'Synthetic',
-  customerLastName: 'Guest', facilityId, usedCustomerMembershipId: null, userId: null,
+  customerEmail: 'example@test.invalid', customerPhone: '0000000000', customerFirstName: null,
+  customerLastName: null, facilityId, usedCustomerMembershipId: null, userId: null,
   items: [
     { spaceId, date, startTime: '12:00', endTime: '13:00', availabilityProof: 'synthetic-proof-1',
       activityKey: null, activityLabel: null, chargedAmount: 600, duration: 60, facilityId,
@@ -70,7 +70,7 @@ describe('browser session transport, offline', () => {
       const [url, init] = fetcher.mock.calls[0]! as unknown as [string, RequestInit];
       expect(url).toBe('https://app.onda.fit/api/public/is-slot-available');
       expect(init).toMatchObject({ method: 'POST', credentials: 'same-origin', redirect: 'error', cache: 'no-store',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(slot) });
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(slot) });
       expect(JSON.stringify(init)).not.toMatch(/cookie|authorization|turnstile|fingerprint/i);
     } finally { vi.unstubAllGlobals(); }
   });
@@ -103,7 +103,7 @@ describe('browser session transport, offline', () => {
       .checkSlot(slot)).rejects.toThrow('ONDA_SESSION_PAGE_INVALID');
   });
 
-  it('does not dispatch or retry a hold when normal verification fails after both proof checks', async () => {
+  it('stops before proof checks or a journal claim when normal verification fails', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'onda-context-failure-'));
     directories.push(directory);
     const evaluate = vi.fn(async (_fn: unknown, argument: unknown) => {
@@ -131,11 +131,11 @@ describe('browser session transport, offline', () => {
       customerEmail: 'example@test.invalid', customerPhone: '0000000000' };
     await expect(adapter.submit(plan, customer, { supervisedOneShot: true }))
       .rejects.toThrow('CURRENT_CHECKOUT_HEADERS_UNAVAILABLE');
-    expect(evaluate).toHaveBeenCalledTimes(2);
+    expect(evaluate).not.toHaveBeenCalled();
     const key = DurableSubmissionJournal.key(facilityId, spaceId, date, '12:00', '14:00');
-    await expect(journal.read(key)).resolves.toMatchObject({ state: 'rejected' });
+    await expect(journal.read(key)).rejects.toThrow();
     await expect(adapter.submit(plan, customer, { supervisedOneShot: true }))
-      .rejects.toThrow('DUPLICATE_LOGICAL_BOOKING_BLOCKED');
-    expect(evaluate).toHaveBeenCalledTimes(4); // fresh proof checks occur, but checkout is still blocked.
+      .rejects.toThrow('CURRENT_CHECKOUT_HEADERS_UNAVAILABLE');
+    expect(evaluate).not.toHaveBeenCalled();
   });
 });

@@ -1,0 +1,18 @@
+{
+  "runID": "c1d3db29-3666-4da3-abcd-afbc6c01f385",
+  "events": [
+    {
+      "event": "processStarted",
+      "wall": "2026-09-11T07:39:18.024Z",
+      "monoMs": 580.6915
+    },
+    {
+      "event": "failed",
+      "wall": "2026-09-11T07:39:20.274Z",
+      "monoMs": 2830.4879
+    }
+  ],
+  "releasePerformance": null,
+  "availabilityPerformance": null,
+  "failure": "CDP_PROFILE_OR_BIND_UNVERIFIED"
+}

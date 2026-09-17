@@ -102,7 +102,8 @@ describe('isolated headerless assessment boundary', () => {
     expect(fetcher).toHaveBeenCalledTimes(3);
     const key = DurableSubmissionJournal.key(approval.facilityId, approval.spaceId, date, '12:00', '14:00');
     const record = await journal.read(key);
-    expect(record.diagnostic).toEqual({ status: 403, category: 'http-rejection', applicationCode: 'VERIFICATION_REQUIRED' });
+    expect(record.diagnostic).toEqual({ status: 403, category: 'http-rejection', contentKind: 'json',
+      responseSource: 'application', errorHint: 'verification', applicationCode: 'VERIFICATION_REQUIRED' });
     expect(JSON.stringify(record)).not.toContain('private details');
   });
 });

@@ -1,0 +1,83 @@
+{
+  "runID": "dc21bada-332b-4849-82d3-ee168a55ac9e",
+  "events": [
+    {
+      "event": "processStarted",
+      "wall": "2026-09-11T22:04:49.525Z",
+      "monoMs": 1274.0878
+    },
+    {
+      "event": "chromeConnected",
+      "wall": "2026-09-11T22:04:55.676Z",
+      "monoMs": 7424.5023
+    },
+    {
+      "event": "ondaTabResolved",
+      "wall": "2026-09-11T22:04:55.676Z",
+      "monoMs": 7424.5428
+    },
+    {
+      "event": "availabilityRequestStarted",
+      "wall": "2026-09-11T22:04:56.241Z",
+      "monoMs": 7989.3987
+    },
+    {
+      "event": "availabilityResponseReceived",
+      "wall": "2026-09-11T22:04:56.394Z",
+      "monoMs": 8141.8534,
+      "value": 152.4429
+    },
+    {
+      "event": "availabilityParsed",
+      "wall": "2026-09-11T22:04:56.405Z",
+      "monoMs": 8152.7888,
+      "value": 10.795399999999972
+    },
+    {
+      "event": "availabilityUnknownSpaces",
+      "wall": "2026-09-11T22:04:56.405Z",
+      "monoMs": 8152.8624,
+      "value": 0
+    },
+    {
+      "event": "availabilityApiUiAgreed",
+      "wall": "2026-09-11T22:04:56.475Z",
+      "monoMs": 8223.7077,
+      "value": 112
+    },
+    {
+      "event": "availabilityApiUiDisagreed",
+      "wall": "2026-09-11T22:04:56.475Z",
+      "monoMs": 8223.7487,
+      "value": 0
+    },
+    {
+      "event": "automationStopped",
+      "wall": "2026-09-11T22:04:56.516Z",
+      "monoMs": 8264.5821
+    }
+  ],
+  "releasePerformance": null,
+  "availabilityPerformance": {
+    "requests": [
+      {
+        "durationMs": 152.45470000000023,
+        "parseMs": 10.795399999999972,
+        "responseToCandidateMs": null
+      }
+    ],
+    "releaseToRequestMs": null,
+    "releaseToGridMs": null,
+    "apiCandidateReadyToGridMs": null,
+    "apiCandidateResolutionMs": null,
+    "gridToFirstClickMs": null,
+    "releaseToFirstClickMs": null,
+    "releaseToSelectionMs": null,
+    "selectionToProceedMs": null,
+    "proceedToReviewMs": null,
+    "reviewToPlayerCompletedMs": null,
+    "playerProceedToSummaryMs": null,
+    "finalActionToHoldMs": null,
+    "candidateResolutionMs": null
+  }
+}

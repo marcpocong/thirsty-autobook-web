@@ -27,11 +27,11 @@ export interface PublicCheckoutItem {
   availabilityProof: string;
 }
 
-export interface PublicCheckoutRequest extends ResolvedGuestCustomer {
+export interface PublicCheckoutRequest extends Omit<ResolvedGuestCustomer, 'customerFirstName' | 'customerLastName'> {
   bookingType: 'online';
   facilityId: string;
-  customerFirstName: string;
-  customerLastName: string;
+  customerFirstName: null;
+  customerLastName: null;
   usedCustomerMembershipId: null;
   userId: null;
   items: PublicCheckoutItem[];
@@ -105,7 +105,7 @@ export function buildStandardPublicCheckoutRequest(
       activityKey: null, activityLabel: null, sessionRef: 'session_1', availabilityProof: validProof.availabilityProof };
   });
   return { bookingType: 'online', clientId: customer.clientId, customerId: customer.customerId,
-    customerFirstName: customer.customerFirstName, customerLastName: customer.customerLastName,
+    customerFirstName: null, customerLastName: null,
     customerEmail: customer.customerEmail, customerPhone: customer.customerPhone, facilityId,
     usedCustomerMembershipId: null, userId: null, items };
 }

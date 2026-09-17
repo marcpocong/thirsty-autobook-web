@@ -20,8 +20,8 @@ function reply() {
 }
 
 describe('standard public-checkout builder and validator', () => {
-  it('builds names, customer identity, ordered hourly items, and current proofs', () => {
-    expect(request).toMatchObject({ bookingType: 'online', customerFirstName: 'Synthetic', customerLastName: 'Guest', facilityId: 'facility', usedCustomerMembershipId: null, userId: null });
+  it('builds the observed null-name shape, customer identity, ordered hourly items, and current proofs', () => {
+    expect(request).toMatchObject({ bookingType: 'online', customerFirstName: null, customerLastName: null, facilityId: 'facility', usedCustomerMembershipId: null, userId: null });
     expect(request.items.map(item => [item.spaceId, item.startTime, item.endTime, item.duration, item.sessionRef, item.availabilityProof])).toEqual(court.slots.map((slot, index) => [slot.spaceId, slot.startTime, slot.endTime, 60, 'session_1', `proof-${slot.startTime}`]));
   });
 

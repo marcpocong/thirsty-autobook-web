@@ -3,6 +3,7 @@ import { ONDA_URL } from '../config.js';
 import { consumeSubmissionPermit, DurableSubmissionJournal, type SubmissionPermit } from './durable-submission-journal.js';
 import { OndaBrowserSessionTransport } from './browser-session-transport.js';
 import { SubmissionDispatchError } from './submission-errors.js';
+import { checkoutDiagnostic } from './checkout-diagnostics.js';
 import type { SlotCheckRequest, TwoHourCheckoutRequest, TwoHourTransport } from './two-hour-reservation.js';
 
 export interface ApprovedHeaderlessAttempt {
@@ -69,7 +70,7 @@ export class HeaderlessAssessmentTransport implements TwoHourTransport {
     const key = DurableSubmissionJournal.key(request.facilityId, first.spaceId, first.date, first.startTime, second.endTime);
     consumeSubmissionPermit(permit, key);
     this.attempted = true;
-    let result: { status: number; contentType: string; body: string };
+    let result: { status: number; contentType: string; server: string; cloudflareRay: string; body: string };
     try {
       result = await this.page.evaluate(async ({ payload }) => {
         const response = await fetch('https://app.onda.fit/api/bookings/public-checkout', {
@@ -77,7 +78,9 @@ export class HeaderlessAssessmentTransport implements TwoHourTransport {
           headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
           body: JSON.stringify(payload),
         });
-        return { status: response.status, contentType: response.headers.get('content-type') ?? '', body: await response.text() };
+        return { status: response.status, contentType: response.headers.get('content-type') ?? '',
+          server: response.headers.get('server') ?? '', cloudflareRay: response.headers.get('cf-ray') ?? '',
+          body: await response.text() };
       }, { payload: request });
     } catch { throw new HeaderlessAssessmentError('ASSESSMENT_TRANSPORT_UNKNOWN', true); }
     if (this.page.isClosed() || this.page.url() !== ONDA_URL)
@@ -96,10 +99,7 @@ export class HeaderlessAssessmentTransport implements TwoHourTransport {
         sessionCount: Array.isArray(value.bookingSessions) ? value.bookingSessions.length : undefined,
         pendingTransaction: value.transaction !== null && typeof value.transaction === 'object' &&
           (value.transaction as Record<string, unknown>).status === 'pending' } : {}) }); } catch {/* passive */}
-    const applicationCode = typeof value?.code === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/.test(value.code)
-      ? value.code : undefined;
-    const diagnostic = { status: result.status, category: result.status === 200 ? 'invalid-response' as const : 'http-rejection' as const,
-      ...(applicationCode ? { applicationCode } : {}) };
+    const diagnostic = checkoutDiagnostic(result);
     if (result.status !== 200) throw new HeaderlessAssessmentError('ASSESSMENT_HTTP_REJECTED', true, diagnostic);
     if (!json) throw new HeaderlessAssessmentError('ASSESSMENT_CONTENT_TYPE_INVALID', true, diagnostic);
     if (Buffer.byteLength(result.body, 'utf8') > 1_000_000) throw new HeaderlessAssessmentError('ASSESSMENT_RESPONSE_TOO_LARGE', true, diagnostic);

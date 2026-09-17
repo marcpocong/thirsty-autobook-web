@@ -1,5 +1,52 @@
 # API-first booking experiment
 
+## Checkout boundary update (September 18, 2026)
+
+The currently served court checkout bundle calls `getPublicBookingTurnstileToken()`
+and `getPublicFingerprintId()` together, then obtains a fresh proof for each
+hourly item, then calls `createBookingTransaction`. The browser page currently
+loads the same checkout, transaction-service, and challenge chunks as the saved
+source trace. The site request path and the rejected direct request compare as
+follows; the site values are from its live-served client code and earlier
+sanitized successful checkout observation, not a second live submission here.
+
+| Field or stage | Normal court checkout | Rejected API attempt |
+| --- | --- | --- |
+| Page and cookies | Onda page; fetch defaults to same-origin cookies | Verified Onda page; `credentials: same-origin` |
+| Customer | Resolves customer through public customer flow when needed | Existing resolved customer ID, contact-bound locally |
+| Verification | Fresh `public_booking_checkout` Turnstile and FingerprintJS visitor ID, then checkout headers | Both checkout headers absent |
+| Final hourly proofs | One fresh `is-slot-available` call per hour after verification | Two fresh distinct proofs before checkout, acquired before verification stage |
+| Customer names in POST | `customerFirstName: null`, `customerLastName: null` | Both sent as strings |
+| Two-hour items | Per-hour amount, 60-minute duration, proof, shared `session_1` | Same observed item shape and shared `session_1` |
+| Optional fields | Empty voucher omitted; add-ons omitted when empty | Both omitted |
+| Transport options | `Content-Type` and conditional verification headers | Also sent `Accept`; explicit no-store and redirect error |
+| Result evidence | Earlier normal flow returned pending bookings and transaction | Resource Timing reported HTTP 403; response body was lost |
+| Official payment handoff | After acceptance, client stores booking IDs, numbers, checkout token, amount and sessions, then adds `bookingId` to its URL; QRPH request uses booking and checkout access | No accepted response, booking ID, checkout token or QRPH page |
+
+The old response body was lost, so **none of these differences is a confirmed
+cause of the HTTP 403**. The old journal and consumed permit remain untouched.
+
+`calendar-free-security-context.ts` now performs the public
+`public_booking_checkout` Turnstile challenge and FingerprintJS 5.2.0 in the
+Onda page, without reading the calendar. The two-hour adapter obtains this
+context before fresh hourly proofs and sends the corrected name fields. The
+new `calendar-free-checkout.ts` entry point requires a fresh live snapshot,
+exact approval, a prior-attempt reconciliation reference, a separate one-shot
+gate, and a journal supplied for the new attempt. No production runner invokes
+it automatically. Its use still requires authoritative reconciliation of the
+September 18 02:00:05 unknown attempt and fresh, exact approval.
+
+An isolated headless Chrome probe obtained a FingerprintJS visitor ID before
+the 112-cell grid was ready. It loaded the Turnstile widget without waiting for
+the grid, but the challenge did not complete in that headless session within
+60 seconds. This does not establish that the token will be obtained or accepted
+in the supervised normal browser. No new checkout POST or hold was created.
+`checkout-diagnostics.ts` now retains only HTTP status, response format,
+application versus edge hint, bounded error category, safe application code,
+and a valid Cloudflare ray ID. It never stores response text or verification
+values. These diagnostics apply only to future responses; the old 403 body
+cannot be recovered from the journal.
+
 The desktop booking setup now exposes three explicit methods: `browser` (the
 existing normal flow), `hybrid` (same-browser API discovery intersected with the
 UI flow), and `api-first` (read-only API discovery and planning). The API-first

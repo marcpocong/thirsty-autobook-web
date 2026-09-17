@@ -232,6 +232,37 @@ it('keeps zero lead and the current conservative retry default', () => {
   expect(ObservationSchema.safeParse({ MAX_RELEASE_RELOADS: 3 }).success).toBe(false);
 });
 
+it('waits past the critical-step timeout for reload and shell rendering', async () => {
+  await page.addInitScript(() => {
+    document.addEventListener('DOMContentLoaded', () => {
+      const venue = document.querySelector('[data-testid="public-booking-hero-title"]');
+      if (!venue) return;
+      venue.remove();
+      setTimeout(() => document.body.prepend(venue), 300);
+    });
+  });
+  await page.route('**/*', async route => {
+    await new Promise(resolve => setTimeout(resolve, 300));
+    await route.fulfill({ body: fixture(), contentType: 'text/html' });
+  });
+  const t = new Telemetry();
+  const result = await observeRelease(page, { ...settings, CRITICAL_STEP_TIMEOUT_MS: 200 }, new Safety(), t, false);
+  expect(validateSnapshot(result.grid, target.date)).toHaveLength(112);
+  expect(t.events.some(e => e.event === 'releaseShellReady')).toBe(true);
+  expect(await page.evaluate(() => (window as any).actions)).toEqual(['picker', 'target']);
+});
+
+it('still stops an unlimited shell wait when the operator aborts', async () => {
+  await page.route('**/*', route => route.fulfill({
+    body: fixture().replace('data-testid="public-booking-hero-title"', 'data-testid="missing-hero"'),
+    contentType: 'text/html',
+  }));
+  const safety = new Safety();
+  const run = observeRelease(page, settings, safety, new Telemetry(), false);
+  setTimeout(() => safety.stop('USER_ABORT'), 300);
+  await expect(run).rejects.toThrow('USER_ABORT');
+});
+
 it('allows one bounded pre-selection recovery for a classified reload timeout', async () => {
   const original=page.reload.bind(page);let calls=0;
   vi.spyOn(page,'reload').mockImplementation(async options=>{if(++calls===1){const error=Error('private transport detail');error.name='TimeoutError';throw error;}return original(options);});

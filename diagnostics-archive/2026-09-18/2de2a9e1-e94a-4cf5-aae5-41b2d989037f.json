@@ -1,0 +1,37 @@
+{
+  "runID": "2de2a9e1-e94a-4cf5-aae5-41b2d989037f",
+  "events": [
+    {
+      "event": "dualRunStarted",
+      "wall": "2026-09-13T18:35:21.885Z",
+      "monoMs": 708.2591
+    },
+    {
+      "event": "dualPreflightStarted",
+      "wall": "2026-09-13T18:35:21.886Z",
+      "monoMs": 708.3245
+    },
+    {
+      "event": "workerBGridReady",
+      "wall": "2026-09-13T18:35:25.966Z",
+      "monoMs": 4788.4942
+    },
+    {
+      "event": "workerAGridReady",
+      "wall": "2026-09-13T18:35:25.980Z",
+      "monoMs": 4802.342
+    },
+    {
+      "event": "bothGridsReady",
+      "wall": "2026-09-13T18:35:25.980Z",
+      "monoMs": 4802.3725
+    },
+    {
+      "event": "dualFailed",
+      "wall": "2026-09-13T18:35:26.044Z",
+      "monoMs": 4866.9833
+    }
+  ],
+  "releasePerformance": null,
+  "availabilityPerformance": null
+}
