@@ -18,7 +18,8 @@ export interface CurrentCheckoutHeaders {
 export type CurrentCheckoutHeadersProvider = () => Promise<CurrentCheckoutHeaders>;
 
 export class BrowserSessionTransportError extends SubmissionDispatchError {
-  constructor(code: string, dispatched = false) { super(code, dispatched); this.name = 'BrowserSessionTransportError'; }
+  constructor(code: string, dispatched = false, diagnostic?: SubmissionDispatchError['diagnostic']) {
+    super(code, dispatched, diagnostic); this.name = 'BrowserSessionTransportError'; }
 }
 
 function usable(value: unknown): value is string {
@@ -47,7 +48,21 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
     } catch { throw new BrowserSessionTransportError('ONDA_TRANSPORT_FAILED', true); }
     try { this.assertPage(); }
     catch { throw new BrowserSessionTransportError('ONDA_SESSION_DISCONNECTED_AFTER_DISPATCH', true); }
-    if (result.status !== 200) throw new BrowserSessionTransportError('ONDA_HTTP_STATUS_INVALID', true);
+    if (result.status !== 200) {
+      let applicationCode: string | undefined;
+      if (result.contentType.toLowerCase().includes('application/json') &&
+        Buffer.byteLength(result.body, 'utf8') <= MAX_RESPONSE_BYTES) {
+        try {
+          const parsed: unknown = JSON.parse(result.body);
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            const code = (parsed as Record<string, unknown>).code;
+            if (typeof code === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/.test(code)) applicationCode = code;
+          }
+        } catch {/* response is not parseable */}
+      }
+      throw new BrowserSessionTransportError('ONDA_HTTP_STATUS_INVALID', true,
+        { status: result.status, category: 'http-rejection', ...(applicationCode ? { applicationCode } : {}) });
+    }
     if (!result.contentType.toLowerCase().includes('application/json')) throw new BrowserSessionTransportError('ONDA_CONTENT_TYPE_INVALID', true);
     if (Buffer.byteLength(result.body, 'utf8') > MAX_RESPONSE_BYTES) throw new BrowserSessionTransportError('ONDA_RESPONSE_TOO_LARGE', true);
     try { return JSON.parse(result.body) as unknown; }

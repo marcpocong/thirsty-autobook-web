@@ -25,6 +25,7 @@
     "ui:build": "tsc -p tsconfig.ui.json && node scripts/build-ui.mjs",
     "availability:dry": "tsx src/index.ts availability:dry",
     "api:preview": "tsx src/api-booking/preview-config.ts",
+    "api:prewarm": "tsx src/api-booking/prewarmed-runner.ts",
     "release:readiness": "tsx src/readiness-cli.ts",
     "chrome:b": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-onda-chrome.ps1 -Worker B",
     "chrome:dual": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-onda-dual.ps1",

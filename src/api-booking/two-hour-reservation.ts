@@ -133,7 +133,8 @@ export class TwoHourReservationAdapter {
     } catch (error) {
       // A sent request may have succeeded even when its response was lost or malformed.
       const dispatched = !(error instanceof SubmissionDispatchError) || error.dispatched;
-      await this.journal.mark(key, dispatched ? 'unknown' : 'rejected', this.clock()).catch(() => undefined);
+      await this.journal.mark(key, dispatched ? 'unknown' : 'rejected', this.clock(),
+        error instanceof SubmissionDispatchError ? error.diagnostic : undefined).catch(() => undefined);
       if (!dispatched) throw error;
       fail('SUBMISSION_OUTCOME_UNKNOWN_RECONCILIATION_REQUIRED');
     }

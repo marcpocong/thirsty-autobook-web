@@ -19,6 +19,7 @@ export interface SubmissionRecord {
   createdAt: string;
   updatedAt: string;
   attempt: SanitizedSubmissionAttempt;
+  diagnostic?: { status: number; category: 'http-rejection' | 'invalid-response'; applicationCode?: string };
   // Deliberately excludes proofs, credentials, checkout tokens, and customer data.
 }
 export interface SubmissionPermit { readonly key: string }
@@ -80,14 +81,20 @@ export class DurableSubmissionJournal {
     return permit;
   }
 
-  async mark(key: string, state: Exclude<SubmissionState, 'dispatching'>, now = new Date()): Promise<void> {
+  async mark(key: string, state: Exclude<SubmissionState, 'dispatching'>, now = new Date(),
+    diagnostic?: SubmissionRecord['diagnostic']): Promise<void> {
     const path = this.path(key);
     const prior = JSON.parse(await readFile(path, 'utf8')) as SubmissionRecord;
     if (prior.key !== key || prior.state !== 'dispatching') throw Error('SUBMISSION_STATE_INVALID');
+    if (diagnostic && (!Number.isInteger(diagnostic.status) || diagnostic.status < 100 || diagnostic.status > 599 ||
+      !['http-rejection', 'invalid-response'].includes(diagnostic.category) ||
+      (diagnostic.applicationCode !== undefined && !/^[A-Z][A-Z0-9_]{0,63}$/.test(diagnostic.applicationCode))))
+      throw Error('SUBMISSION_DIAGNOSTIC_INVALID');
     const handle = await open(path, 'r+');
     try {
       await handle.truncate(0);
-      await handle.writeFile(JSON.stringify({ ...prior, state, updatedAt: now.toISOString() } satisfies SubmissionRecord));
+      await handle.writeFile(JSON.stringify({ ...prior, state, updatedAt: now.toISOString(),
+        ...(diagnostic ? { diagnostic } : {}) } satisfies SubmissionRecord));
       await handle.sync();
     } finally { await handle.close(); }
   }
