@@ -7,6 +7,9 @@ import { availabilityPerformance } from './availability-performance.js';
 // Closed numeric metadata schema: never accept DOM, URLs, config, error text or PII.
 export type WorkerId = 'A' | 'B';
 export interface TelemetryEvent { event: string; wall: string; monoMs: number; value?: number; workerId?: WorkerId; evidence?: RateLimitEvidence }
+export type PassiveEndpoint = 'AVAILABILITY'|'CHECKOUT_PREPARATION'|'RESERVATION_SUBMISSION';
+export type PassivePhase = 'DISPATCHED'|'HEADERS'|'COMPLETED'|'FAILED';
+export interface PassiveNetworkEvent {requestId:number;endpoint:PassiveEndpoint;phase:PassivePhase;wall:string;monoMs:number;workerId?:WorkerId;status?:number;failure?:'CANCELED_OR_NAVIGATED'|'NETWORK_FAILURE'|'UNKNOWN'}
 export const selectionFailureStages = ['INITIAL_GRID_VALIDATION','FULL_BROWSER_GUARD','SELECTION_PREPARATION','FIRST_CLICK_GUARD','FIRST_SLOT_CLICK','SELECTION_COORDINATION'] as const;
 export type SelectionFailureStage = typeof selectionFailureStages[number];
 export const selectionFailureCodes = [
@@ -27,7 +30,7 @@ export type ReleaseFailureClassification = typeof releaseFailureClassifications[
 export interface ReleaseFailureDiagnostic {stage:ReleaseFailureStage;code:ReleaseFailureCode;classification:ReleaseFailureClassification;workerId?:WorkerId;httpStatus?:number}
 export type NavigationOutcome = 'HTTP_RESPONSE'|'NO_RESPONSE'|'TIMEOUT'|'FAILED';
 export interface NavigationDiagnostic {stage:'RELOAD_COMMIT';outcome:NavigationOutcome;workerId?:WorkerId;httpStatus?:number}
-interface TelemetryShared {runID:string;events:TelemetryEvent[];selectionFailures:SelectionFailureDiagnostic[];releaseFailures:ReleaseFailureDiagnostic[];navigations:NavigationDiagnostic[]}
+interface TelemetryShared {runID:string;events:TelemetryEvent[];selectionFailures:SelectionFailureDiagnostic[];releaseFailures:ReleaseFailureDiagnostic[];navigations:NavigationDiagnostic[];passiveNetwork:PassiveNetworkEvent[];releaseContext?:{targetDate:string;bookingMethod:'browser'|'hybrid'}}
 const allowedSelectionFailures=new Set<string>(selectionFailureCodes);
 const allowedReleaseFailures=new Set<string>(releaseFailureCodes),allowedReleaseClassifications=new Set<string>(releaseFailureClassifications);
 const safeStatus=(status:unknown)=>typeof status==='number'&&Number.isInteger(status)&&status>=100&&status<=599?status:undefined;
@@ -50,7 +53,7 @@ export class Telemetry {
   private readonly shared:TelemetryShared;
   private readonly workerId?: WorkerId;
   constructor(shared?:TelemetryShared,workerId?:WorkerId){
-    this.shared=shared??{runID:randomUUID(),events:[],selectionFailures:[],releaseFailures:[],navigations:[]};this.runID=this.shared.runID;this.events=this.shared.events;this.workerId=workerId;
+    this.shared=shared??{runID:randomUUID(),events:[],selectionFailures:[],releaseFailures:[],navigations:[],passiveNetwork:[]};this.runID=this.shared.runID;this.events=this.shared.events;this.workerId=workerId;
   }
   worker(workerId:WorkerId){return new Telemetry(this.shared,workerId);}
   recordSelectionFailure(stage:SelectionFailureStage,error:unknown){
@@ -65,9 +68,18 @@ export class Telemetry {
     if(!this.shared.releaseFailures.some(existing=>JSON.stringify(existing)===JSON.stringify(diagnostic)))this.shared.releaseFailures.push(diagnostic);
   }
   hasReleaseFailure(){return this.shared.releaseFailures.some(f=>f.workerId===this.workerId);}
+  recordReleaseContext(targetDate:string,bookingMethod:'browser'|'hybrid'){
+    try{if(/^\d{4}-\d{2}-\d{2}$/.test(targetDate))this.shared.releaseContext={targetDate,bookingMethod};}catch{/* passive */}
+  }
   recordNavigation(outcome:NavigationOutcome,httpStatus?:number){
     const diagnostic:NavigationDiagnostic={stage:'RELOAD_COMMIT',outcome,...(this.workerId?{workerId:this.workerId}:{}),...(safeStatus(httpStatus)!==undefined?{httpStatus:safeStatus(httpStatus)}:{})};
     this.shared.navigations.push(diagnostic);
+  }
+  recordPassiveNetwork(requestId:number,endpoint:PassiveEndpoint,phase:PassivePhase,status?:number,failure?:PassiveNetworkEvent['failure']){
+    try{
+      if(this.shared.passiveNetwork.length>=128||!Number.isInteger(requestId)||requestId<1)return;
+      this.shared.passiveNetwork.push({requestId,endpoint,phase,wall:new Date().toISOString(),monoMs:performance.now(),...(this.workerId?{workerId:this.workerId}:{}),...(safeStatus(status)!==undefined?{status:safeStatus(status)}:{}),...(phase==='FAILED'&&failure?{failure}:{})});
+    }catch{/* Diagnostics must never interrupt booking. */}
   }
   rateLimit(event: 'ondaRateLimited' | 'thirdPartyRateLimited' | 'ondaRetryAfterUnrestricted', evidence: RateLimitEvidence) {
     // Explicit field allowlist, never spread response/request objects into diagnostics.
@@ -85,8 +97,9 @@ export class Telemetry {
   }
   document(failure?: string, stopEvidence?: RateLimitEvidence) {
     return { runID: this.runID, events: this.events, releasePerformance: releasePerformance(this.events),
-      availabilityPerformance: availabilityPerformance(this.events),...(this.shared.selectionFailures.length?{selectionFailures:this.shared.selectionFailures}:{}),
+      availabilityPerformance: availabilityPerformance(this.events),...(this.shared.releaseContext?{releaseContext:this.shared.releaseContext}:{}),...(this.shared.selectionFailures.length?{selectionFailures:this.shared.selectionFailures}:{}),
       ...(this.shared.releaseFailures.length?{releaseFailures:this.shared.releaseFailures}:{}),...(this.shared.navigations.length?{navigations:this.shared.navigations}:{}),
+      ...(this.shared.passiveNetwork.length?{passiveNetwork:this.shared.passiveNetwork}:{}),
       ...(failure ? { failure } : {}), ...(stopEvidence ? { stopEvidence } : {}) };
   }
   publishPerformance() {

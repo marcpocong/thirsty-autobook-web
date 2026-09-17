@@ -23,6 +23,7 @@ export async function boundedRelease<T>(maximum: number, retryDelay: number, sig
 export interface ReleaseGate { target: ReturnType<typeof releaseCalendar>; beforeArmed(): Promise<void>; verifyContext?():void; onRelease?():void }
 export async function observeRelease(page: Page, c: Config | ReleaseSettings, safety: Safety, t: Telemetry, dry: boolean, selecting = false, gate?: ReleaseGate) {
   const target = gate?.target ?? releaseCalendar(c);
+  t.recordReleaseContext(target.targetDate,c.AVAILABILITY_DISCOVERY_MODE==='hybrid'?'hybrid':'browser');
   const navigationTarget = releaseNavigationTarget(target.targetDate);
   const preferences = 'START_TIME' in c ? compilePreferences(c) : undefined;
   const discovery = c.AVAILABILITY_DISCOVERY_MODE === 'hybrid' && 'MAX_PRICE' in c
