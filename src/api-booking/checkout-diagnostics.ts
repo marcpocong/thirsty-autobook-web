@@ -13,7 +13,7 @@ const object = (value: unknown): Record<string, unknown> | null =>
   value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
 
 export function checkoutDiagnostic(input: { status: number; contentType: string; server?: string;
-  cloudflareRay?: string; body: string }): CheckoutDiagnostic {
+  cloudflareRay?: string; cfMitigated?: string; body: string }): CheckoutDiagnostic {
   const type = input.contentType.toLowerCase();
   const contentKind = !input.body ? 'empty' : type.includes('json') ? 'json' :
     type.includes('html') ? 'html' : type.startsWith('text/') ? 'text' : 'other';
@@ -32,9 +32,11 @@ export function checkoutDiagnostic(input: { status: number; contentType: string;
         /rate.?limit|too many requests/i.test(text) ? 'rate-limit' :
           /forbidden|unauthori[sz]ed|access denied|blocked/i.test(text) ? 'access' : text ? 'other' : 'none';
   const ray = input.cloudflareRay?.trim();
+  const edgeChallenge = input.cfMitigated?.toLowerCase() === 'challenge';
+  const edgeHtml = contentKind === 'html' && (/cloudflare/i.test(input.server ?? '') || !!ray) &&
+    /cloudflare|attention required|just a moment|checking your browser/i.test(input.body.slice(0, 4096));
   return { status: input.status, category: input.status === 200 ? 'invalid-response' : 'http-rejection',
-    contentKind, responseSource: parsed ? 'application' :
-      (contentKind === 'html' && (/cloudflare/i.test(input.server ?? '') || !!ray) ? 'cloudflare' : 'unknown'),
+    contentKind, responseSource: edgeChallenge || edgeHtml ? 'cloudflare' : parsed ? 'application' : 'unknown',
     errorHint, ...(applicationCode ? { applicationCode } : {}),
     ...(ray && /^[a-f0-9]{8,32}(?:-[A-Za-z0-9]{2,8})?$/.test(ray) ? { cloudflareRay: ray } : {}) };
 }

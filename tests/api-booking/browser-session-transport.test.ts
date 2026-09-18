@@ -7,6 +7,7 @@ import { OndaBrowserSessionTransport } from '../../src/api-booking/browser-sessi
 import { DurableSubmissionJournal } from '../../src/api-booking/durable-submission-journal.js';
 import { TwoHourReservationAdapter, type SlotCheckRequest, type TwoHourCheckoutRequest } from '../../src/api-booking/two-hour-reservation.js';
 import { currentHeadersFromNormalSiteHelpers } from '../../src/api-booking/normal-site-security-context.js';
+import { CalendarFreeSecurityError } from '../../src/api-booking/calendar-free-security-context.js';
 import { availabilityFixture } from '../availability-fixture.js';
 import { parseAvailability } from '../../src/api-booking/availability-parser.js';
 import { planBooking } from '../../src/api-booking/booking-planner.js';
@@ -101,6 +102,31 @@ describe('browser session transport, offline', () => {
     const wrong = { ...page, url: () => 'https://example.invalid/' } as Page;
     await expect(new OndaBrowserSessionTransport(wrong, async () => ({ turnstileToken: 'x', publicFingerprint: 'y' }))
       .checkSlot(slot)).rejects.toThrow('ONDA_SESSION_PAGE_INVALID');
+  });
+
+  it('rejects a prepared challenge after the freshness margin before dispatch', async () => {
+    const { page, evaluate } = fakePage();
+    const current = vi.fn(async () => ({ turnstileToken: 'synthetic-current-token',
+      publicFingerprint: 'synthetic-current-fingerprint' }));
+    const transport = new OndaBrowserSessionTransport(page, current);
+    process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT = 'SUPERVISED_ONE_SHOT';
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-09-18T00:00:00.000Z'));
+      await transport.prepareCheckoutContext();
+      vi.setSystemTime(new Date('2026-09-18T00:02:00.001Z'));
+      await expect(transport.publicCheckout(checkout, await permit())).rejects.toThrow('CURRENT_CHECKOUT_HEADERS_STALE');
+      expect(current).toHaveBeenCalledOnce();
+      expect(evaluate).not.toHaveBeenCalled();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('preserves a sanitized challenge failure code without starting a proof or checkout request', async () => {
+    const { page, evaluate } = fakePage();
+    process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT = 'SUPERVISED_ONE_SHOT';
+    const transport = new OndaBrowserSessionTransport(page, async () => { throw new CalendarFreeSecurityError('CHALLENGE_ERROR_600010'); });
+    await expect(transport.prepareCheckoutContext()).rejects.toThrow('CHALLENGE_ERROR_600010');
+    expect(evaluate).not.toHaveBeenCalled();
   });
 
   it('stops before proof checks or a journal claim when normal verification fails', async () => {

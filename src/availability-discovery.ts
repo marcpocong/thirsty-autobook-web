@@ -7,6 +7,80 @@ import { classifyRateLimit } from './rate-limit.js';
 import { availabilityPath, parseAvailability, apiCandidates, hybridPreferences, compareAvailability, type AvailabilitySnapshot } from './onda-availability.js';
 
 export type AvailabilityFetch = () => Promise<AvailabilitySnapshot | undefined>;
+function unreleasedEmptyResponse(raw: unknown): boolean {
+  if (!raw || typeof raw !== 'object') return false;
+  const body = raw as { success?: unknown; data?: unknown };
+  if (body.success !== true || !body.data || typeof body.data !== 'object') return false;
+  const data = body.data as { dates?: unknown; slotsBySpace?: unknown };
+  return !!data.dates && typeof data.dates === 'object' && !Array.isArray(data.dates) &&
+    !!data.slotsBySpace && typeof data.slotsBySpace === 'object' && !Array.isArray(data.slotsBySpace) &&
+    Object.keys(data.dates).length === 0 && Object.keys(data.slotsBySpace).length === 0;
+}
+// Release discovery must survive a same-tab reload. BrowserContext.request shares
+// the context cookie jar but is not tied to the page's JavaScript execution context.
+export function releaseAvailabilityRequest(page: Page, targetDate: string, safety: Safety, t: Telemetry, timeout = 2500,
+  notReleasedAttempts = 0): AvailabilityFetch {
+  const url = new URL(availabilityPath(targetDate), ONDA_URL).href;
+  return async () => {
+    safety.check();
+    if (page.url() !== ONDA_URL) { t.mark('availabilityWrongPage'); t.mark('availabilityFallbackToUi'); return; }
+    const started = performance.now();
+    t.mark('availabilityRequestStarted');
+    t.mark('availabilitySessionTransport');
+    try {
+      const response = await page.context().request.get(url, { timeout, failOnStatusCode: false, maxRedirects: 0 });
+      t.mark('availabilityResponseReceived', performance.now() - started);
+      const status = response.status(), headers = response.headers();
+      t.mark('availabilityHttpStatus', status);
+      const retry = headers['retry-after']?.trim() ?? '';
+      const restricted = status === 429 || (/^\d+$/.test(retry) ? Number(retry) > 0 :
+        /^[A-Za-z]{3},/.test(retry) && Date.parse(retry) > Date.now());
+      if (restricted) {
+        const evidence = { reason: 'RATE_LIMITED' as const, timestamp: new Date().toISOString(), monoMs: performance.now(),
+          hostname: 'app.onda.fit', status, resourceType: 'fetch', navigation: false,
+          retryAfterPresent: !!headers['retry-after'], sameOndaSite: true };
+        t.rateLimit('ondaRateLimited', evidence); safety.stop('RATE_LIMITED', evidence);
+      }
+      if (status === 401 || status === 403) safety.stop('ACCESS_BLOCKED');
+      if (headers['cf-mitigated'] === 'challenge') safety.stop('SECURITY_CHALLENGE');
+      safety.check();
+      if (status !== 200) { t.mark('availabilityHttpFailure'); t.mark('availabilityFallbackToUi'); return; }
+      const body = await response.body();
+      if (body.length > 2_000_000) { t.mark('availabilityOversize'); t.mark('availabilityFallbackToUi'); return; }
+      const contentType = headers['content-type'] ?? '';
+      if (!contentType.includes('application/json')) {
+        if (/captcha|verify (?:that )?you are human|checking your browser|security challenge|access denied/i.test(body.toString('utf8')))
+          safety.stop('SECURITY_CHALLENGE');
+        t.mark('availabilityNonJson'); t.mark('availabilityFallbackToUi'); return;
+      }
+      let raw: unknown;
+      try { raw = JSON.parse(body.toString('utf8')); }
+      catch { t.mark('availabilityInvalidJson'); t.mark('availabilityFallbackToUi'); return; }
+      if (unreleasedEmptyResponse(raw)) {
+        t.mark('availabilityDateNotReleased');
+        if (notReleasedAttempts < 4) {
+          await new Promise(resolve => setTimeout(resolve, [250, 500, 1000, 2000][notReleasedAttempts]));
+          safety.check();
+          return releaseAvailabilityRequest(page, targetDate, safety, t, timeout, notReleasedAttempts + 1)();
+        }
+        t.mark('availabilityFallbackToUi');
+        return;
+      }
+      try {
+        const parseStarted = performance.now(), snapshot = parseAvailability(raw, targetDate);
+        t.mark('availabilityParsed', performance.now() - parseStarted);
+        t.mark('availabilityUnknownSpaces', snapshot.unknownSpaces);
+        return snapshot;
+      } catch { t.mark('availabilitySchemaRejected'); t.mark('availabilityFallbackToUi'); return; }
+    } catch (error) {
+      if (safety.signal.aborted) t.mark('availabilitySafetyAbort');
+      else if (error instanceof Error && error.name === 'TimeoutError') t.mark('availabilityTransportTimeout');
+      else t.mark('availabilityTransportFailed');
+      t.mark('availabilityFallbackToUi');
+      return;
+    }
+  };
+}
 export function browserAvailabilityRequest(page: Page, targetDate: string, safety: Safety, t: Telemetry, timeout = 2500): AvailabilityFetch {
   const path = availabilityPath(targetDate); // Precompute before the release wait.
   return async () => {
@@ -61,9 +135,14 @@ export function browserAvailabilityRequest(page: Page, targetDate: string, safet
       const parseStarted = performance.now(), snapshot = parseAvailability(response.data, targetDate);
       t.mark('availabilityParsed', performance.now() - parseStarted); t.mark('availabilityUnknownSpaces', snapshot.unknownSpaces);
       return snapshot;
-    } catch {
+    } catch (error) {
       // Navigation may destroy evaluate/fetch. This optional request is never restarted by reload.
       // The shared Safety remains aborted for rate limits/security; it is never reset here.
+      if (safety.signal.aborted) t.mark('availabilitySafetyAbort');
+      else if (error instanceof Error && /execution context was destroyed|navigation|target closed/i.test(error.message))
+        t.mark('availabilityPageContextDestroyed');
+      else if (error instanceof Error && error.name === 'TimeoutError') t.mark('availabilityTransportTimeout');
+      else t.mark('availabilityTransportFailed');
       t.mark('availabilityFallbackToUi');
       return undefined;
     } finally { safety.signal.removeEventListener('abort', abort); page.off('response', onResponse); }
@@ -100,6 +179,7 @@ export class AvailabilityDiscovery implements CandidateDiscovery {
           const started = performance.now();
           this.earlyCandidates = apiCandidates(result, this.preferences, this.maximum);
           this.t.mark('availabilityApiCandidatesReady', performance.now() - started);
+          this.t.mark('availabilityApiCandidateCount', this.earlyCandidates.length);
         }
       }
     }).catch(() => { this.t.mark('availabilityFallbackToUi'); }).finally(() => {

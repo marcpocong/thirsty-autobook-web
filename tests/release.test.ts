@@ -334,10 +334,11 @@ it.each(['fast', 'slow', 'reload'])('hybrid dry release with %s API never waits 
   await page.locator(target.daySelector).evaluate(e => (e as HTMLButtonElement).disabled = true);
   let waits = 0, requests = 0, releaseResponse!: () => void;
   const pending = new Promise<void>(resolve => { releaseResponse = resolve; });
-  await page.route('**/date-availability?*', async route => {
+  const apiGet = vi.spyOn(page.context().request, 'get').mockImplementation(async () => {
     requests++;
     if (kind !== 'fast') await pending;
-    await route.fulfill({ json: availabilityFixture(target.date) }).catch(() => {});
+    return { status: () => 200, headers: () => ({ 'content-type': 'application/json' }),
+      body: async () => Buffer.from(JSON.stringify(availabilityFixture(target.date))) } as any;
   });
   vi.mocked(waitUntil).mockImplementation(async epoch => {
     vi.mocked(Date.now).mockReturnValue(epoch);
@@ -352,7 +353,7 @@ it.each(['fast', 'slow', 'reload'])('hybrid dry release with %s API never waits 
     expect(t.events.map(e => e.event)).toContain(kind === 'fast' ? 'candidateSourceApiUi' : 'candidateSourceUiOnly');
     expect(t.events.some(e => e.event === 'selectionAttemptStarted')).toBe(false);
     expect(await page.evaluate(() => (window as any).actions)).not.toContain('SLOT');
-  } finally { releaseResponse(); }
+  } finally { releaseResponse(); apiGet.mockRestore(); }
 });
 
 it('simulated release computes API candidates while the target grid is deliberately stalled, but cannot select yet', async () => {
@@ -361,7 +362,9 @@ it('simulated release computes API candidates while the target grid is deliberat
     PLAYER_FULL_NAME: 'Fixture User', PLAYER_PHONE: '0000000000', PLAYER_EMAIL: 'fixture@example.invalid' });
   await page.locator(target.daySelector).evaluate(e => (e as HTMLButtonElement).disabled = true);
   await page.evaluate(() => { (window as typeof window & { deferGrid?: boolean }).deferGrid = true; });
-  await page.route('**/date-availability?*', route => route.fulfill({ json: availabilityFixture(target.date) }));
+  const apiGet = vi.spyOn(page.context().request, 'get').mockResolvedValue({
+    status: () => 200, headers: () => ({ 'content-type': 'application/json' }),
+    body: async () => Buffer.from(JSON.stringify(availabilityFixture(target.date))) } as any);
   let waits = 0;
   vi.mocked(waitUntil).mockImplementation(async epoch => {
     vi.mocked(Date.now).mockReturnValue(epoch);
@@ -385,6 +388,7 @@ it('simulated release computes API candidates while the target grid is deliberat
     expect(t.events.some(e => e.event === 'candidateSourceApiUi')).toBe(true);
     expect(t.events.some(e => e.event === 'selectionAttemptStarted')).toBe(false);
   } finally {
+    apiGet.mockRestore();
     await page.evaluate(date => (window as typeof window & { render: (date: string) => void }).render(date), target.date).catch(() => {});
     await pending.catch(() => {});
   }

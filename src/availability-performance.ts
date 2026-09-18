@@ -12,8 +12,13 @@ export function availabilityPerformance(events: readonly TimingEvent[]) {
     const attempt = events.slice(index, next < 0 ? undefined : next);
     const response = attempt.find(v => v.event === 'availabilityResponseReceived');
     const parsed = attempt.find(v => v.event === 'availabilityParsed');
+    const cause = ['availabilityWrongPage','availabilityDateNotReleased','availabilitySafetyAbort','availabilityPageContextDestroyed','availabilityTransportTimeout',
+      'availabilityTransportFailed','availabilityHttpFailure','availabilityOversize',
+      'availabilityNonJson','availabilityInvalidJson','availabilitySchemaRejected']
+      .find(name => attempt.some(v => v.event === name)) ?? null;
     return [{ durationMs: delta(e, response), parseMs: parsed?.value ?? null,
       outcome: parsed ? 'PARSED' : response ? 'FALLBACK' : attempt.some(v => v.event === 'availabilityFallbackToUi') ? 'CANCELED_OR_FAILED' : 'PENDING_AT_STOP',
+      cause,
       responseToCandidateMs: delta(response, attempt.find(v => v.event === 'availabilityCandidateResolved')) }];
   });
   return { requests, releaseToRequestMs: phase('releaseTriggerFired', 'availabilityRequestStarted'),
@@ -23,6 +28,7 @@ export function availabilityPerformance(events: readonly TimingEvent[]) {
     releaseToGridMs: phase('releaseTriggerFired', 'targetGridReady'),
     apiCandidateReadyToGridMs: phase('availabilityApiCandidatesReady', 'targetGridReady'),
     apiCandidateResolutionMs: first('availabilityApiCandidatesReady')?.value ?? null,
+    apiCandidateCount: first('availabilityApiCandidateCount')?.value ?? null,
     gridToFirstClickMs: phase('targetGridReady', 'slot1ClickStarted'),
     releaseToFirstClickMs: phase('releaseTriggerFired', 'slot1ClickStarted'),
     releaseToSelectionMs: phase('releaseTriggerFired', 'selectionVerified'),

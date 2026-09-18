@@ -1,5 +1,35 @@
 # API-first booking experiment
 
+## Genuine Onda checkout dry run
+
+`real-checkout-hybrid.ts` carries a fresh, exact one-court API plan into Onda's
+normal date, selection, Review Booking, Player Information, and Payment Summary
+screens. It waits for the planned cells rather than the 112-cell predicate,
+checks the visible selection and amount, and stops before Terms and the final
+reservation action. The dry-run runner blocks `public-checkout` POSTs while it
+is attached. It does not invoke the custom Turnstile widget.
+
+Start the separate development Chrome with
+`powershell -NoProfile -File scripts/start-onda-hybrid-dev-chrome.ps1`, then run
+`$env:ONDA_HYBRID_CDP_URL='http://127.0.0.1:19333'; npx tsx src/api-booking/real-checkout-dry-run.ts YYYY-MM-DD HH:00 HOURS COURT`.
+For a non-submitting test that chooses a fresh available slot, use `auto
+--prefer-next-day --barrier=target` in place of the date/hour/court arguments.
+The runner prepares the verified development browser in parallel with the API
+read. `--barrier=full-grid` retains the comparison path.
+
+Current WIP evidence: September 20 Court 5, 10:00–13:00 reached Onda's real
+Payment Summary without a reservation POST. Off peak, the target cells and
+112-cell grid appeared in the same render; parallel browser preparation saved
+about 1.2 seconds to Payment Summary in one comparable run. This does not prove
+an 08:00 release gain. `scripts/probe-release-boundary.ts` compares an already
+open date picker with a concurrent guarded reload at the release boundary and
+records only sanitized timings. Until that boundary is observed, the release
+path retains its guarded reload fallback.
+The saved booking setup and original Chrome profiles are not modified. Use an
+available candidate and close the development window after inspection. A live
+final action still requires authoritative reconciliation and separate exact
+approval; this command has no live-submit option.
+
 ## Checkout boundary update (September 18, 2026)
 
 The currently served court checkout bundle calls `getPublicBookingTurnstileToken()`

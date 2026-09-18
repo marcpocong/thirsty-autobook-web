@@ -25,19 +25,27 @@ async ({ sitekey, action }) => {
     try {
       return await new Promise((resolve, reject) => {
         const timer = setTimeout(() => reject(Error('CHALLENGE_TIMEOUT')), 60000);
-        const finish = token => { clearTimeout(timer); token ? resolve(token) : reject(Error('CHALLENGE_FAILED')); };
+        const finish = token => { clearTimeout(timer); token ? resolve(token) : reject(Error('CHALLENGE_EMPTY_TOKEN')); };
         widget = turnstile.render(container, { sitekey, action, size: 'flexible', execution: 'execute',
           appearance: 'execute', callback: token => finish(token),
-          'error-callback': () => finish(), 'expired-callback': () => finish(), 'timeout-callback': () => finish() });
+          'error-callback': code => {
+            clearTimeout(timer);
+            reject(Error(typeof code === 'string' && /^\d{3,6}$/.test(code) ? `CHALLENGE_ERROR_${code}` : 'CHALLENGE_ERROR'));
+            return true;
+          },
+          'expired-callback': () => { clearTimeout(timer); reject(Error('CHALLENGE_EXPIRED')); },
+          'timeout-callback': () => { clearTimeout(timer); reject(Error('CHALLENGE_WIDGET_TIMEOUT')); } });
         turnstile.execute(widget);
       });
-    } finally { if (widget) turnstile.remove(widget); container.remove(); }
+    } finally { if (widget !== undefined) turnstile.remove(widget); container.remove(); }
   };
   const [challengeResult, fingerprintResult] = await Promise.allSettled([challenge(), fingerprintPromise]);
   if (challengeResult.status === 'rejected') {
     const code = challengeResult.reason instanceof Error ? challengeResult.reason.message : '';
     return { code: ['CHALLENGE_SCRIPT_TIMEOUT', 'CHALLENGE_SCRIPT_INVALID', 'CHALLENGE_SCRIPT_FAILED',
-      'CHALLENGE_TIMEOUT', 'CHALLENGE_FAILED'].includes(code) ? code : 'CHALLENGE_UNKNOWN_FAILURE' };
+      'CHALLENGE_TIMEOUT', 'CHALLENGE_EMPTY_TOKEN', 'CHALLENGE_ERROR', 'CHALLENGE_EXPIRED',
+      'CHALLENGE_WIDGET_TIMEOUT'].includes(code) || /^CHALLENGE_ERROR_\d{3,6}$/.test(code)
+      ? code : 'CHALLENGE_UNKNOWN_FAILURE' };
   }
   if (fingerprintResult.status === 'rejected') return { code: 'FINGERPRINT_GENERATION_FAILED' };
   return { turnstileToken: challengeResult.value, publicFingerprint: fingerprintResult.value };

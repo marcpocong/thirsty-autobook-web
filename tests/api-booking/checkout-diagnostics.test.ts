@@ -13,9 +13,16 @@ describe('checkout rejection diagnostics', () => {
 
   it('distinguishes a Cloudflare HTML response without retaining its body', () => {
     const diagnostic = checkoutDiagnostic({ status: 403, contentType: 'text/html', server: 'cloudflare',
-      cloudflareRay: 'abc123def4567890-MNL', body: '<html>Access denied for secret@example.invalid</html>' });
+      cloudflareRay: 'abc123def4567890-MNL', body: '<html>Cloudflare: Access denied for secret@example.invalid</html>' });
     expect(diagnostic).toMatchObject({ responseSource: 'cloudflare', contentKind: 'html',
       errorHint: 'access', cloudflareRay: 'abc123def4567890-MNL' });
     expect(JSON.stringify(diagnostic)).not.toContain('secret@example.invalid');
+  });
+
+  it('uses the challenge header for an edge JSON rejection and stays uncertain for unmarked HTML', () => {
+    expect(checkoutDiagnostic({ status: 403, contentType: 'application/json', server: 'cloudflare',
+      cfMitigated: 'challenge', body: '{"error":"blocked"}' }).responseSource).toBe('cloudflare');
+    expect(checkoutDiagnostic({ status: 403, contentType: 'text/html', server: 'cloudflare',
+      body: '<html>Access denied</html>' }).responseSource).toBe('unknown');
   });
 });

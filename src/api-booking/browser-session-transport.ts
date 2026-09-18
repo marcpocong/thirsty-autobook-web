@@ -4,6 +4,7 @@ import { consumeSubmissionPermit, DurableSubmissionJournal, type SubmissionPermi
 import type { SlotCheckRequest, TwoHourCheckoutRequest, TwoHourTransport } from './two-hour-reservation.js';
 import { SubmissionDispatchError } from './submission-errors.js';
 import { checkoutDiagnostic } from './checkout-diagnostics.js';
+import { CalendarFreeSecurityError } from './calendar-free-security-context.js';
 
 const ORIGIN = 'https://app.onda.fit';
 const SLOT_PATH = '/api/public/is-slot-available';
@@ -27,9 +28,16 @@ function usable(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0 && !/^<.*>$/.test(value) && !/[\r\n]/.test(value);
 }
 
+function securityContextError(error: unknown): BrowserSessionTransportError {
+  return error instanceof CalendarFreeSecurityError && /^[A-Z][A-Z0-9_]{0,63}$/.test(error.code)
+    ? new BrowserSessionTransportError(error.code)
+    : new BrowserSessionTransportError('CURRENT_CHECKOUT_HEADERS_UNAVAILABLE');
+}
+
 /** Sends only the two observed POSTs in an existing, verified browser page. It never launches a browser. */
 export class OndaBrowserSessionTransport implements TwoHourTransport {
   private preparedHeaders?: CurrentCheckoutHeaders;
+  private preparedAt?: number;
   constructor(private readonly page: Page, private readonly currentCheckoutHeaders: CurrentCheckoutHeadersProvider) {}
 
   async prepareCheckoutContext(): Promise<void> {
@@ -38,11 +46,12 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
       throw new BrowserSessionTransportError('LIVE_SUBMISSION_DISABLED');
     let current: CurrentCheckoutHeaders;
     try { current = await this.currentCheckoutHeaders(); }
-    catch { throw new BrowserSessionTransportError('CURRENT_CHECKOUT_HEADERS_UNAVAILABLE'); }
+    catch (error) { throw securityContextError(error); }
     if (!usable(current?.turnstileToken) || !usable(current?.publicFingerprint))
       throw new BrowserSessionTransportError('CURRENT_CHECKOUT_HEADERS_INVALID');
     this.assertPage();
     this.preparedHeaders = current;
+    this.preparedAt = Date.now();
   }
 
   private assertPage(): void {
@@ -52,7 +61,8 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
   private async post(path: typeof SLOT_PATH | typeof CHECKOUT_PATH, body: unknown,
     extraHeaders?: Record<string, string>): Promise<unknown> {
     this.assertPage();
-    let result: { status: number; contentType: string; server: string; cloudflareRay: string; body: string };
+    let result: { status: number; contentType: string; server: string; cloudflareRay: string;
+      cfMitigated: string; body: string };
     try {
       result = await this.page.evaluate(async ({ url, payload, headers }) => {
         const response = await fetch(url, { method: 'POST', credentials: 'same-origin', redirect: 'error',
@@ -60,6 +70,7 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
           body: JSON.stringify(payload) });
         return { status: response.status, contentType: response.headers.get('content-type') ?? '',
           server: response.headers.get('server') ?? '', cloudflareRay: response.headers.get('cf-ray') ?? '',
+          cfMitigated: response.headers.get('cf-mitigated') ?? '',
           body: await response.text() };
       }, { url: `${ORIGIN}${path}`, payload: body, headers: extraHeaders ?? {} });
     } catch { throw new BrowserSessionTransportError('ONDA_TRANSPORT_FAILED', true); }
@@ -84,13 +95,21 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
     if (process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT !== 'SUPERVISED_ONE_SHOT')
       throw new BrowserSessionTransportError('LIVE_SUBMISSION_DISABLED');
     let current = this.preparedHeaders;
+    let preparedAt = this.preparedAt;
     this.preparedHeaders = undefined;
+    this.preparedAt = undefined;
     if (!current) {
       try { current = await this.currentCheckoutHeaders(); }
-      catch { throw new BrowserSessionTransportError('CURRENT_CHECKOUT_HEADERS_UNAVAILABLE'); }
+      catch (error) { throw securityContextError(error); }
+      preparedAt = Date.now();
     }
     if (!usable(current?.turnstileToken) || !usable(current?.publicFingerprint))
       throw new BrowserSessionTransportError('CURRENT_CHECKOUT_HEADERS_INVALID');
+    // Cloudflare tokens expire after five minutes. A wide margin covers proof calls and dispatch latency.
+    if (preparedAt === undefined || !Number.isFinite(preparedAt) || Date.now() - preparedAt < 0 ||
+      Date.now() - preparedAt > 120_000)
+      throw new BrowserSessionTransportError('CURRENT_CHECKOUT_HEADERS_STALE');
+    this.assertPage();
     const [first, second] = request.items;
     const expectedKey = DurableSubmissionJournal.key(request.facilityId, first.spaceId, first.date, first.startTime, second.endTime);
     consumeSubmissionPermit(permit, expectedKey);

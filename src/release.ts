@@ -8,7 +8,7 @@ import { ReleaseShellFailure, releaseNavigationTarget, waitForBookingShellForRel
 import { Safety, waitUntil } from './safety.js';
 import { Telemetry } from './telemetry.js';
 import { emitUiEvent } from './ui-events.js';
-import { AvailabilityDiscovery, browserAvailabilityRequest } from './availability-discovery.js';
+import { AvailabilityDiscovery, releaseAvailabilityRequest } from './availability-discovery.js';
 
 export async function boundedRelease<T>(maximum: number, retryDelay: number, signal: AbortSignal, attempt: (n: number) => Promise<T | undefined>): Promise<T> {
   if (!Number.isInteger(maximum) || maximum < 1 || maximum > 2) throw new Error('INVALID_RELOAD_LIMIT');
@@ -37,7 +37,7 @@ export async function observeRelease(page: Page, c: Config | ReleaseSettings, sa
   const navigationTarget = releaseNavigationTarget(target.targetDate);
   const preferences = 'START_TIME' in c ? compilePreferences(c) : undefined;
   const discovery = c.AVAILABILITY_DISCOVERY_MODE === 'hybrid' && 'MAX_PRICE' in c
-    ? new AvailabilityDiscovery(target.targetDate, c.MAX_PRICE, browserAvailabilityRequest(page, target.targetDate, safety, t), safety, t, preferences) : undefined;
+    ? new AvailabilityDiscovery(target.targetDate, c.MAX_PRICE, releaseAvailabilityRequest(page, target.targetDate, safety, t), safety, t, preferences) : undefined;
   if (dry && !preferences) throw new Error('DRY_CONFIG_REQUIRED');
   if (Date.now() >= target.releaseMs - c.PREFLIGHT_SECONDS_BEFORE * 1000) throw new Error('TOO_LATE_FOR_PREFLIGHT');
   emitUiEvent({ type: 'plan', targetDate: target.targetDate, releaseMs: target.releaseMs, timezone: c.TIMEZONE });
