@@ -1,9 +1,9 @@
 import type { Page } from 'playwright';
 import type { AvailabilitySnapshot, BookingPlan } from './types.js';
 import type { CheckoutCustomer, VerifiedTwoHourHold } from './two-hour-reservation.js';
-import { selectedTwoHours, TwoHourReservationAdapter } from './two-hour-reservation.js';
+import { selectedStandardHours, TwoHourReservationAdapter } from './two-hour-reservation.js';
 import { DurableSubmissionJournal } from './durable-submission-journal.js';
-import { OndaBrowserSessionTransport } from './browser-session-transport.js';
+import { OndaBrowserSessionTransport, type CheckoutResponseCapture } from './browser-session-transport.js';
 import { calendarFreeSecurityContext } from './calendar-free-security-context.js';
 import { THIRSTY_PICKLE_FACILITY_ID } from './live-availability-provider.js';
 import { THIRSTY_PICKLE_CLIENT_ID } from './local-customer.js';
@@ -11,20 +11,20 @@ import { THIRSTY_PICKLE_CLIENT_ID } from './local-customer.js';
 export interface ApprovedCalendarFreeAttempt {
   court: number; date: string; startTime: string; endTime: string; maximumAmount: number;
   customerId: string; approvalReference: string;
-  /** Reference to an authoritative Onda record resolving the earlier unknown submission. */
-  priorReconciliationReference: string;
 }
 
 /** A supervised entry point; the caller must supply a fresh journal with a new one-shot permit. */
 export async function submitCalendarFreeTwoHourCheckout(input: {
   page: Page; plan: BookingPlan; availability: AvailabilitySnapshot; customer: CheckoutCustomer;
   approval: ApprovedCalendarFreeAttempt; journal: DurableSubmissionJournal;
+  captureCheckoutResponse?: CheckoutResponseCapture;
 }): Promise<VerifiedTwoHourHold> {
   if (process.env.ONDA_CALENDAR_FREE_CHECKOUT !== 'APPROVED_ONE_SHOT' ||
     process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT !== 'SUPERVISED_ONE_SHOT')
     throw Error('CALENDAR_FREE_SUBMISSION_DISABLED');
   const { plan, availability, customer, approval } = input;
-  const [first, second] = selectedTwoHours(plan);
+  const hours = selectedStandardHours(plan);
+  const first = hours[0]!, last = hours.at(-1)!;
   const age = Date.now() - Date.parse(availability.capturedAt);
   if (availability.fixtureKind !== 'live' || !Number.isFinite(age) || age < 0 || age > 15_000 ||
     availability.incompleteDates.includes(plan.targetDate) || availability.returnedDates[plan.targetDate] !== true ||
@@ -33,12 +33,12 @@ export async function submitCalendarFreeTwoHourCheckout(input: {
       current.endTime === slot.endTime && current.isAvailable && current.price === slot.price)))
     throw Error('CALENDAR_FREE_FRESH_AVAILABILITY_REQUIRED');
   if (approval.court !== plan.courts[0]!.court || approval.date !== plan.targetDate ||
-    approval.startTime !== first.startTime || approval.endTime !== second.endTime ||
+    approval.startTime !== first.startTime || approval.endTime !== last.endTime ||
     approval.customerId !== customer.customerId || !Number.isFinite(approval.maximumAmount) ||
     plan.totalPrice > approval.maximumAmount || !approval.approvalReference.trim() ||
-    !approval.priorReconciliationReference.trim() ||
-    first.spaceId !== second.spaceId || customer.clientId !== THIRSTY_PICKLE_CLIENT_ID)
+    hours.some(hour => hour.spaceId !== first.spaceId) || customer.clientId !== THIRSTY_PICKLE_CLIENT_ID)
     throw Error('CALENDAR_FREE_APPROVAL_MISMATCH');
-  const transport = new OndaBrowserSessionTransport(input.page, calendarFreeSecurityContext(input.page));
+  const transport = new OndaBrowserSessionTransport(input.page, calendarFreeSecurityContext(input.page),
+    input.captureCheckoutResponse);
   return new TwoHourReservationAdapter(transport, input.journal).submit(plan, customer, { supervisedOneShot: true });
 }

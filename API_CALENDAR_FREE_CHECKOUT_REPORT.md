@@ -1,4 +1,32 @@
-# Calendar-free checkout experiment, September 18, 2026
+# Calendar-free checkout experiment, September 18–19, 2026
+
+## September 19 live result
+
+One newly authorized, calendar-independent reservation POST was sent for
+Thirsty Pickle Court 2, September 20, 12:00–13:00 Asia/Manila, PHP 700.
+Fresh live availability and an exact-hour slot proof preceded the POST.
+Onda returned HTTP 200 with one pending booking, booking number `BK-B99B5BE8`,
+booking ID `b99b5be8-f927-4ff8-a5e7-864b33ae5e8a`, a pending PHP 700
+transaction, and a hold expiry of September 19, 05:41:33 Asia/Manila.
+
+The initial one-hour validator rejected the response because the booking object
+omitted `facility_id`. The response did include the correct facility ID in its
+booking session. The transport had already saved the raw HTTP result in the
+ignored, private one-shot journal, so the ID and checkout token were recovered
+without another POST. The validator now accepts an omitted booking-level
+`facility_id` while checking any supplied value and the required session value.
+The one-hour offline test covers this observed response shape.
+
+The saved checkout token granted official booking access via HTTP 200. The
+verified Chrome profile opened Onda's booking-ID route and displayed Pending,
+a live hold countdown, a PHP 700 order summary, and its QRPH payment panel.
+No payment was made. The screenshot and raw checkout response are in the ignored
+`.local/api-booking/submission-journal-session-20260919-second/` directory;
+the raw file contains private checkout data and must not be published. The
+original Court 5 and Court 6 journals remain separate and unresolved.
+
+The following sections describe the earlier September 18 state and remain as
+historical context.
 
 ## Outcome
 

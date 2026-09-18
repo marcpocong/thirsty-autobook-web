@@ -60,7 +60,7 @@ export class HeaderlessAssessmentTransport implements TwoHourTransport {
     const [first, second] = request.items;
     if (request.items.length !== 2 || request.facilityId !== this.approved.facilityId ||
       request.customerId !== this.approved.customerId || request.clientId !== this.approved.clientId ||
-      first.spaceId !== this.approved.spaceId ||
+      !first || !second || first.spaceId !== this.approved.spaceId ||
       second.spaceId !== this.approved.spaceId || first.date !== this.approved.date || second.date !== this.approved.date ||
       first.startTime !== this.approved.startTime || second.endTime !== this.approved.endTime ||
       first.endTime !== second.startTime ||

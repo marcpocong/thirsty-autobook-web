@@ -18,6 +18,9 @@ export interface CurrentCheckoutHeaders {
 
 /** Values must come from the current normal site flow immediately before checkout; this transport cannot create them. */
 export type CurrentCheckoutHeadersProvider = () => Promise<CurrentCheckoutHeaders>;
+export interface CheckoutHttpResponse { status: number; contentType: string; server: string;
+  cloudflareRay: string; cfMitigated: string; body: string }
+export type CheckoutResponseCapture = (response: CheckoutHttpResponse) => Promise<void>;
 
 export class BrowserSessionTransportError extends SubmissionDispatchError {
   constructor(code: string, dispatched = false, diagnostic?: SubmissionDispatchError['diagnostic']) {
@@ -38,7 +41,8 @@ function securityContextError(error: unknown): BrowserSessionTransportError {
 export class OndaBrowserSessionTransport implements TwoHourTransport {
   private preparedHeaders?: CurrentCheckoutHeaders;
   private preparedAt?: number;
-  constructor(private readonly page: Page, private readonly currentCheckoutHeaders: CurrentCheckoutHeadersProvider) {}
+  constructor(private readonly page: Page, private readonly currentCheckoutHeaders: CurrentCheckoutHeadersProvider,
+    private readonly captureCheckoutResponse?: CheckoutResponseCapture) {}
 
   async prepareCheckoutContext(): Promise<void> {
     this.assertPage();
@@ -61,8 +65,7 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
   private async post(path: typeof SLOT_PATH | typeof CHECKOUT_PATH, body: unknown,
     extraHeaders?: Record<string, string>): Promise<unknown> {
     this.assertPage();
-    let result: { status: number; contentType: string; server: string; cloudflareRay: string;
-      cfMitigated: string; body: string };
+    let result: CheckoutHttpResponse;
     try {
       result = await this.page.evaluate(async ({ url, payload, headers }) => {
         const response = await fetch(url, { method: 'POST', credentials: 'same-origin', redirect: 'error',
@@ -74,6 +77,10 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
           body: await response.text() };
       }, { url: `${ORIGIN}${path}`, payload: body, headers: extraHeaders ?? {} });
     } catch { throw new BrowserSessionTransportError('ONDA_TRANSPORT_FAILED', true); }
+    if (path === CHECKOUT_PATH && this.captureCheckoutResponse) {
+      try { await this.captureCheckoutResponse(result); }
+      catch { throw new BrowserSessionTransportError('CHECKOUT_RESPONSE_CAPTURE_FAILED', true); }
+    }
     try { this.assertPage(); }
     catch { throw new BrowserSessionTransportError('ONDA_SESSION_DISCONNECTED_AFTER_DISPATCH', true); }
     if (result.status !== 200) throw new BrowserSessionTransportError('ONDA_HTTP_STATUS_INVALID', true,
@@ -110,8 +117,10 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
       Date.now() - preparedAt > 120_000)
       throw new BrowserSessionTransportError('CURRENT_CHECKOUT_HEADERS_STALE');
     this.assertPage();
-    const [first, second] = request.items;
-    const expectedKey = DurableSubmissionJournal.key(request.facilityId, first.spaceId, first.date, first.startTime, second.endTime);
+    const [first] = request.items;
+    const last = request.items.at(-1);
+    if (!first || !last || request.items.length > 2) throw new BrowserSessionTransportError('CHECKOUT_ITEMS_INVALID');
+    const expectedKey = DurableSubmissionJournal.key(request.facilityId, first.spaceId, first.date, first.startTime, last.endTime);
     consumeSubmissionPermit(permit, expectedKey);
     // The header values are ephemeral and never logged or stored by this adapter.
     return this.post(CHECKOUT_PATH, request, {

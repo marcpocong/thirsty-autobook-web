@@ -17,7 +17,7 @@ const plan = planBooking(availability, { mode: 'standard', targetDate: date, dur
 const customer = { clientId: THIRSTY_PICKLE_CLIENT_ID, customerId: 'synthetic-customer',
   customerFirstName: 'Synthetic', customerLastName: 'Guest', customerEmail: 'test@example.invalid', customerPhone: '0000000000' };
 const approval = { court: 3, date, startTime: '12:00', endTime: '14:00', maximumAmount: 1200,
-  customerId: customer.customerId, approvalReference: 'offline-only', priorReconciliationReference: 'offline-only' };
+  customerId: customer.customerId, approvalReference: 'offline-only' };
 
 describe('calendar-free checkout approval boundary', () => {
   it('cannot enter the reservation path with its gate closed', async () => {

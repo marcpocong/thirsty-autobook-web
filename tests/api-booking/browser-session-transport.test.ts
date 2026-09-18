@@ -93,6 +93,20 @@ describe('browser session transport, offline', () => {
     expect(evaluate).toHaveBeenCalledOnce();
   });
 
+  it('captures a checkout response before rejecting an unexpected content type', async () => {
+    const captured = vi.fn(async (_response: unknown) => undefined);
+    const evaluate = vi.fn(async () => ({ status: 200, contentType: 'text/plain', server: '',
+      cloudflareRay: '', cfMitigated: '', body: '{"success":true,"bookings":[{"id":"synthetic-booking"}]}' }));
+    const page = { isClosed: () => false, url: () => 'https://app.onda.fit/book/thirsty-pickle', evaluate } as unknown as Page;
+    const transport = new OndaBrowserSessionTransport(page,
+      async () => ({ turnstileToken: 'synthetic-current-token', publicFingerprint: 'synthetic-visitor' }), captured);
+    process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT = 'SUPERVISED_ONE_SHOT';
+    await expect(transport.publicCheckout(checkout, await permit())).rejects.toThrow('ONDA_CONTENT_TYPE_INVALID');
+    expect(captured).toHaveBeenCalledOnce();
+    expect(captured.mock.calls[0]![0]).toMatchObject({ status: 200,
+      body: '{"success":true,"bookings":[{"id":"synthetic-booking"}]}' });
+  });
+
   it('blocks checkout when current security headers are unavailable or page is wrong', async () => {
     const { page, evaluate } = fakePage();
     process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT = 'SUPERVISED_ONE_SHOT';

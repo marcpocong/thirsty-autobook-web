@@ -21,7 +21,20 @@ export interface SubmissionRecord {
   updatedAt: string;
   attempt: SanitizedSubmissionAttempt;
   diagnostic?: CheckoutDiagnostic;
+  observedResponse?: ObservedCheckoutResponse;
+  failureCode?: string;
   // Deliberately excludes proofs, credentials, checkout tokens, and customer data.
+}
+export interface ObservedCheckoutResponse {
+  success: boolean;
+  bookingIds: string[];
+  bookingNumbers: string[];
+  bookingSessionIds: string[];
+  holdExpiresAt: string[];
+  transactionId?: string;
+  transactionAmount?: number;
+  trustedTotalAmount?: number;
+  validationCode: string;
 }
 export interface SubmissionPermit { readonly key: string }
 const unspentPermits = new WeakSet<SubmissionPermit>();
@@ -83,7 +96,8 @@ export class DurableSubmissionJournal {
   }
 
   async mark(key: string, state: Exclude<SubmissionState, 'dispatching'>, now = new Date(),
-    diagnostic?: SubmissionRecord['diagnostic']): Promise<void> {
+    diagnostic?: SubmissionRecord['diagnostic'], observedResponse?: ObservedCheckoutResponse,
+    failureCode?: string): Promise<void> {
     const path = this.path(key);
     const prior = JSON.parse(await readFile(path, 'utf8')) as SubmissionRecord;
     if (prior.key !== key || prior.state !== 'dispatching') throw Error('SUBMISSION_STATE_INVALID');
@@ -95,11 +109,27 @@ export class DurableSubmissionJournal {
       (diagnostic.applicationCode !== undefined && !/^[A-Z][A-Z0-9_]{0,63}$/.test(diagnostic.applicationCode)) ||
       (diagnostic.cloudflareRay !== undefined && !/^[a-f0-9]{8,32}(?:-[A-Za-z0-9]{2,8})?$/.test(diagnostic.cloudflareRay))))
       throw Error('SUBMISSION_DIAGNOSTIC_INVALID');
+    const safeId = (value: string) => /^[A-Za-z0-9_-]{1,200}$/.test(value);
+    if (observedResponse && (typeof observedResponse.success !== 'boolean' ||
+      ![observedResponse.bookingIds, observedResponse.bookingNumbers, observedResponse.bookingSessionIds]
+        .every(values => Array.isArray(values) && values.length <= 12 &&
+          values.every(value => typeof value === 'string' && safeId(value))) ||
+      !Array.isArray(observedResponse.holdExpiresAt) || observedResponse.holdExpiresAt.length > 12 ||
+      observedResponse.holdExpiresAt.some(value => typeof value !== 'string' || value.length > 40 ||
+        !Number.isFinite(Date.parse(value))) ||
+      (observedResponse.transactionId !== undefined && !safeId(observedResponse.transactionId)) ||
+      (observedResponse.transactionAmount !== undefined && !Number.isFinite(observedResponse.transactionAmount)) ||
+      (observedResponse.trustedTotalAmount !== undefined && !Number.isFinite(observedResponse.trustedTotalAmount)) ||
+      !/^[A-Z][A-Z0-9_]{0,63}$/.test(observedResponse.validationCode)))
+      throw Error('SUBMISSION_OBSERVATION_INVALID');
+    if (failureCode !== undefined && !/^[A-Z][A-Z0-9_]{0,79}$/.test(failureCode))
+      throw Error('SUBMISSION_FAILURE_CODE_INVALID');
     const handle = await open(path, 'r+');
     try {
       await handle.truncate(0);
       await handle.writeFile(JSON.stringify({ ...prior, state, updatedAt: now.toISOString(),
-        ...(diagnostic ? { diagnostic } : {}) } satisfies SubmissionRecord));
+      ...(diagnostic ? { diagnostic } : {}), ...(observedResponse ? { observedResponse } : {}),
+      ...(failureCode ? { failureCode } : {}) } satisfies SubmissionRecord));
       await handle.sync();
     } finally { await handle.close(); }
   }

@@ -39,12 +39,34 @@ async function setup(response: unknown = reply()) {
   const checkSlot = vi.fn(async (request: SlotCheckRequest) => proof(request.startTime === '08:00' ? 0 : 1));
   const publicCheckout = vi.fn(async (_items: unknown) => response);
   const adapter = new TwoHourReservationAdapter({ checkSlot, publicCheckout }, new DurableSubmissionJournal(path), () => now);
-  return { adapter, checkSlot, publicCheckout };
+  return { adapter, checkSlot, publicCheckout, path };
 }
 
 describe('offline two-hour adapter', () => {
+  it('captures a one-hour booking through the same one-shot journal', async () => {
+    const onePlan = planBooking(snapshot, { mode: 'standard', targetDate: date, durationHours: 1,
+      preferredStartTimes: ['08:00'], fallbackStartTimes: [], courtPriority: [3], fallbackCourts: [], courtCount: 1,
+      maximumTotalPrice: 600, currency: 'PHP' });
+    const oneReply = reply();
+    oneReply.bookings = oneReply.bookings.slice(0, 1);
+    oneReply.bookingSessions[0]!.endTime = '09:00:00';
+    oneReply.bookingSessions[0]!.durationHours = 1;
+    oneReply.bookingSessions[0]!.bookingIds = ['synthetic-booking-0'];
+    oneReply.transaction.amount = 600;
+    oneReply.trustedTotalAmount = 600;
+    const { adapter, checkSlot, publicCheckout, path } = await setup(oneReply);
+    process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT = 'SUPERVISED_ONE_SHOT';
+    await expect(adapter.submit(onePlan, customer, { supervisedOneShot: true })).resolves.toMatchObject({
+      bookingIds: ['synthetic-booking-0'], transactionId: 'synthetic-transaction' });
+    expect(checkSlot).toHaveBeenCalledOnce();
+    expect(publicCheckout).toHaveBeenCalledOnce();
+    const key = DurableSubmissionJournal.key('5f8786bd-dc61-4509-b893-74cda8f783f7',
+      hours[0].spaceId, date, '08:00', '09:00');
+    expect((await new DurableSubmissionJournal(path).read(key)).observedResponse).toMatchObject({
+      bookingIds: ['synthetic-booking-0'], validationCode: 'CHECKOUT_RESPONSE_VERIFIED' });
+  });
   it('requires an explicit supervised gate and obtains distinct exact-hour proofs before one submission', async () => {
-    const { adapter, checkSlot, publicCheckout } = await setup();
+    const { adapter, checkSlot, publicCheckout, path } = await setup();
     await expect(adapter.submit(plan, customer, { supervisedOneShot: true })).rejects.toThrow('LIVE_SUBMISSION_DISABLED');
     expect(checkSlot).not.toHaveBeenCalled();
     process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT = 'SUPERVISED_ONE_SHOT';
@@ -52,6 +74,10 @@ describe('offline two-hour adapter', () => {
     expect(checkSlot.mock.calls.map(([request]) => request)).toEqual(hours.map(hour => ({ ...hour,
       clientId: customer.clientId, facilityId: '5f8786bd-dc61-4509-b893-74cda8f783f7' })));
     expect(publicCheckout).toHaveBeenCalledOnce();
+    const key = DurableSubmissionJournal.key('5f8786bd-dc61-4509-b893-74cda8f783f7',
+      hours[0].spaceId, date, hours[0].startTime, hours[1].endTime);
+    expect((await new DurableSubmissionJournal(path).read(key)).observedResponse).toMatchObject({
+      bookingIds: ['synthetic-booking-0', 'synthetic-booking-1'], validationCode: 'CHECKOUT_RESPONSE_VERIFIED' });
     expect(publicCheckout.mock.calls[0]![0]).toMatchObject({ bookingType: 'online', customerId: customer.customerId,
       items: hours.map((hour, index) => ({ ...hour, availabilityProof: `synthetic-proof-${index}`,
         sessionRef: 'session_1', duration: 60, rate: 600, chargedAmount: 600 })) });
@@ -70,9 +96,15 @@ describe('offline two-hour adapter', () => {
   it('blocks replay after an uncertain response and rejects three-hour plans', async () => {
     const malformed = reply();
     malformed.transaction.status = 'paid';
-    const { adapter, publicCheckout } = await setup(malformed);
+    const { adapter, publicCheckout, path } = await setup(malformed);
     process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT = 'SUPERVISED_ONE_SHOT';
     await expect(adapter.submit(plan, customer, { supervisedOneShot: true })).rejects.toThrow('SUBMISSION_OUTCOME_UNKNOWN_RECONCILIATION_REQUIRED');
+    const key = DurableSubmissionJournal.key('5f8786bd-dc61-4509-b893-74cda8f783f7',
+      hours[0].spaceId, date, hours[0].startTime, hours[1].endTime);
+    expect((await new DurableSubmissionJournal(path).read(key)).observedResponse).toMatchObject({
+      success: true, bookingIds: ['synthetic-booking-0', 'synthetic-booking-1'],
+      bookingNumbers: ['synthetic-number-0', 'synthetic-number-1'],
+      validationCode: 'CHECKOUT_RESPONSE_INVALID' });
     await expect(adapter.submit(plan, customer, { supervisedOneShot: true })).rejects.toThrow('DUPLICATE_LOGICAL_BOOKING_BLOCKED');
     expect(publicCheckout).toHaveBeenCalledOnce();
     const three = planBooking(snapshot, { mode: 'standard', targetDate: date, durationHours: 3,

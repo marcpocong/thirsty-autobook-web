@@ -145,7 +145,8 @@ export function validatePublicCheckoutResponse(
     const validBooking = booking!;
     if (!nonempty(validBooking.id) || !nonempty(validBooking.booking_no) || validBooking.booking_status !== 'pending' ||
       validBooking.payment_status !== 'pending' || validBooking.booking_session_id !== session.bookingSessionId ||
-      validBooking.customer_id !== request.customerId || validBooking.space_id !== item.spaceId || validBooking.facility_id !== item.facilityId ||
+      validBooking.customer_id !== request.customerId || validBooking.space_id !== item.spaceId ||
+      (validBooking.facility_id !== undefined && validBooking.facility_id !== item.facilityId) ||
       validBooking.date !== item.date || validBooking.start_time !== seconds(item.startTime) || validBooking.end_time !== seconds(item.endTime) ||
       validBooking.duration !== 60 || !sameAmount(validBooking.rate, item.rate) || validBooking.guest_count !== 1 ||
       !nonempty(validBooking.hold_expires_at) || !Number.isFinite(Date.parse(validBooking.hold_expires_at)) ||
