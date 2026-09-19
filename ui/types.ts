@@ -11,7 +11,8 @@ import type {PreparedContext} from '../src/prepared-context.js';
 import type {FallbackReconciliation} from '../src/booking-setup.js';
 import type {ScheduledReleaseContext} from '../src/scheduled-release.js';
 export type DualPracticeCommand = { kind:'dualDry'; date:string } | { kind:'dualPractice'|'dualFullPractice'; input:DualPracticeInput };
-export type Command = {kind:'resetPrepare';input:PreparationInput} | {kind:'testBooking';input:TestBookingInput} | {kind:'apiPreview';date:string} | DualPracticeCommand | 'chromeDual' | 'dualReadiness' | 'dualPrepare' | {kind:'fullPractice';input:FullPracticeInput} | 'chrome' | 'inspect' | 'observe' | { kind:'selection' | 'dry'; planHash:string } | {kind:'full';context:ScheduledReleaseContext;authorizeTerms:true} | { kind:'practice'; input:PracticeInput };
+export interface ApiRunPreferences {date:string;start:string;duration:number;maximum:number;priority:number[];fallbackStarts:string[]}
+export type Command = {kind:'resetPrepare';input:PreparationInput} | {kind:'testBooking';input:TestBookingInput} | {kind:'apiRun';mode:'prepare'|'dry'|'live'|'live-now';date:string;fingerprint:string;releaseMs?:number;preferences?:ApiRunPreferences} | {kind:'apiPreview';date:string} | DualPracticeCommand | 'chromeDual' | 'dualReadiness' | 'dualPrepare' | {kind:'fullPractice';input:FullPracticeInput} | 'chrome' | 'inspect' | 'observe' | { kind:'selection' | 'dry'; planHash:string } | {kind:'full';context:ScheduledReleaseContext;authorizeTerms:true} | { kind:'practice'; input:PracticeInput };
 export type Inspection = Extract<UiEvent, { type: 'inspection' }>;
 export interface Activity { at: string; text: string; level: 'info' | 'error' }
 export interface Dashboard {
@@ -32,6 +33,7 @@ export interface Dashboard {
   inspection: Inspection | null; clock: ReturnType<typeof clockStatus> | null;
   plan: Extract<UiEvent, { type: 'plan' }> | null; logs: Activity[]; liveRace: boolean;
   booking: BookingView | null; termsAuthorized: boolean; apiFirstReady?: boolean;
+  apiStage?:Extract<UiEvent,{type:'apiStage'}>|null;
   bookingAdjustment?:FallbackReconciliation|null;
   scheduledRelease?:ScheduledReleaseContext|null;
   sleepProtection?:boolean;
@@ -42,7 +44,7 @@ export interface Dashboard {
 }
 export interface Bridge {
   resetPrepare(input:PreparationInput):Promise<void>;
-  apiPreview():Promise<void>;
+  apiPreview(date:string):Promise<void>;
   testBooking(input:TestBookingInput):Promise<void>;
   setWorkflow(workflow:'test'|'release'):Promise<void>;
   invalidatePreparation():Promise<void>;

@@ -11,8 +11,10 @@ export const cdpCodes = ['CDP_WRONG_PORT', 'CDP_NOT_LISTENING', 'CDP_UNSAFE_BIND
   'CDP_PROCESS_METADATA_UNAVAILABLE', 'CDP_PROCESS_NOT_CHROME', 'CDP_PROFILE_MISSING', 'CDP_WRONG_PROFILE'] as const;
 export interface BrowserIdentity { workerId: 'A' | 'B'; cdpUrl: string; port: number; expectedProfile: string }
 const endpointPath=()=>resolve('.local/browser-endpoints.json');
-const defaultPort=(workerId:'A'|'B')=>workerId==='A'?9222:9223;
-const profile=(workerId:'A'|'B')=>workerId==='A'?'.local/onda-chrome-profile':'.local/onda-chrome-profile-b';
+const defaultPort=(workerId:'A'|'B')=>process.env.THIRSTY_API_TEST_INSTALLATION==='1'?(workerId==='A'?19444:19445):(workerId==='A'?9222:9223);
+const profile=(workerId:'A'|'B')=>process.env.THIRSTY_API_TEST_INSTALLATION==='1'
+  ? (workerId==='A'?'.local/api-first-chrome-profile':'.local/api-first-chrome-profile-b')
+  : (workerId==='A'?'.local/onda-chrome-profile':'.local/onda-chrome-profile-b');
 function storedPorts():Partial<Record<'A'|'B',number>>{
   try{
     const parsed=JSON.parse(readFileSync(endpointPath(),'utf8')) as {version?:unknown;A?:unknown;B?:unknown};

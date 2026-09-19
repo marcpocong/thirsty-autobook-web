@@ -19,7 +19,8 @@ export function contactBinding(fullName: string, phone: string, email: string): 
 
 export function loadLocalCheckoutCustomer(): CheckoutCustomer {
   const person = primaryPlayer(loadConfig());
-  const local = existsSync('.env.local') ? parseEnv(readFileSync('.env.local')) : {};
+  const privatePath = process.env.THIRSTY_API_TEST_INSTALLATION === '1' ? '.local/private/.env.local' : '.env.local';
+  const local = existsSync(privatePath) ? parseEnv(readFileSync(privatePath)) : {};
   const customerId = local.ONDA_CUSTOMER_ID ?? process.env.ONDA_CUSTOMER_ID;
   const binding = local.ONDA_CUSTOMER_CONTACT_SHA256 ?? process.env.ONDA_CUSTOMER_CONTACT_SHA256;
   if (typeof customerId !== 'string' || !uuid.test(customerId) ||

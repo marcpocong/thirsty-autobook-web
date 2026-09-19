@@ -70,6 +70,7 @@ const errors: Record<string, string> = {
 export interface Dependencies {
   confirmStopPrepare?:()=>Promise<boolean>;
   confirmBooking?:(plan:BookingPlan,maximum:number)=>Promise<boolean>;
+  confirmApiTest?:(input:{date:string;start:string;duration:number;maximum:number;priority:number[]})=>Promise<boolean>;
   runner: Runner; lock(): Promise<boolean>; cdp(): Promise<boolean>; clock: typeof readClock;
   browserHealth?():Promise<{A:boolean;B:boolean}>;
   playerStatus?():{primary:boolean;extended:boolean};
@@ -96,6 +97,7 @@ export class Controller {
   private generation = 0;
   private scheduledTimer?:ReturnType<typeof setTimeout>;
   private sleepBlockerId?:number;
+  private apiTestFingerprint?:string;
   private polling = false;
   constructor(private deps: Dependencies) {}
   private players(){if(this.deps.playerStatus)return this.deps.playerStatus();try{const b=this.deps.booking();return {primary:b.playerConfigured,extended:b.extendedPlayerConfigured};}catch{return {primary:false,extended:false};}}
@@ -104,7 +106,7 @@ export class Controller {
     if(!parsed.success){this.state.headline='BOOKING SETTINGS NEED ATTENTION';this.state.detail=`Check the highlighted booking fields and press Reset & Prepare again.\n${bookingSetupProblem(repaired.setup)??'The current Release booking settings are invalid.'}`;throw Error('BOOKING_SETTINGS_INVALID');}
     return {setup:parsed.data,reconciliation:repaired.reconciliation};
   }
-  private clearPreparation(){this.state.preparedContext=null;this.state.preparedAt=undefined;this.state.apiFirstReady=false;this.state.ready=false;this.state.termsAuthorized=false;}
+  private clearPreparation(){this.state.preparedContext=null;this.state.preparedAt=undefined;this.state.apiFirstReady=false;this.apiTestFingerprint=undefined;this.state.ready=false;this.state.termsAuthorized=false;}
   private stopSleepProtection(){if(this.sleepBlockerId!==undefined)this.deps.stopSleepProtection?.(this.sleepBlockerId);this.sleepBlockerId=undefined;this.state.sleepProtection=false;}
   private clearScheduled(){if(this.scheduledTimer)clearTimeout(this.scheduledTimer);this.scheduledTimer=undefined;this.state.scheduledRelease=null;this.state.scheduleStatus=null;this.stopSleepProtection();}
   async cancelScheduledRelease(reason='SCHEDULE CANCELLED'){
@@ -149,7 +151,8 @@ export class Controller {
       if(scheduled&&this.state.operation==='scheduled'&&Date.now()>=scheduled.releaseMs){await this.cancelScheduledRelease('RELEASE MISSED');return;}
       if(scheduled&&this.state.operation==='scheduled'&&this.state.booking?.fingerprint!==scheduled.configFingerprint){await this.cancelScheduledRelease('SCHEDULE CANCELLED - SETTINGS CHANGED');return;}
       const context=this.state.preparedContext,required=context?.requiredBrowsers??[];
-      const apiFirstReady=this.state.workflow==='release'&&this.state.booking?.setup.BOOKING_METHOD==='api-first'&&this.state.apiFirstReady;
+      const apiFirstReady=this.state.apiFirstReady&&health.A&&!lock&&(
+        this.state.workflow==='test'?!!this.apiTestFingerprint:this.state.booking?.setup.BOOKING_METHOD==='api-first');
       this.state.ready=!!apiFirstReady||!!context&&context.workflow===this.state.workflow&&!lock&&(this.state.operation==='scheduled'||required.every(id=>health[id]));
       if(context&&this.state.operation==='idle'&&!this.state.ready)this.clearPreparation();
       if (wasReady && !this.state.ready && this.state.operation === 'idle') {
@@ -160,6 +163,20 @@ export class Controller {
     } finally { this.polling = false; }
   }
   private event = (event: UiEvent) => {
+    if(event.type==='apiStage'){
+      this.state.apiStage=event;
+      const labels:Record<string,string>={PREPARING_BROWSER:'Preparing isolated Chrome',BROWSER_READY:'API browser ready',
+        WAITING_FOR_RELEASE:'Waiting for release',RELEASE_TRIGGERED:'Release reached',FETCHING_AVAILABILITY:'Fetching live API availability',
+        CANDIDATE_READY:'API candidate ready',DRY_RUN_COMPLETE:'API dry run complete',FRESH_VERIFICATION_AND_PROOFS:'Fresh verification and slot proofs',
+        PENDING_HOLD:'Pending reservation captured',OFFICIAL_QRPH_HANDOFF:'Official QRPH checkout open',FAILED:'API run needs attention'};
+      labels.HUMAN_VERIFICATION_REQUIRED='Human verification required in Chrome';
+      this.state.headline=labels[event.stage]??event.stage.replaceAll('_',' ');
+      this.state.detail=event.stage==='CANDIDATE_READY'?`Court ${event.court} · ${event.date} · ${event.startTime} · ${event.durationHours} hour(s) · PHP ${event.price}`:
+        event.stage==='PENDING_HOLD'||event.stage==='OFFICIAL_QRPH_HANDOFF'?`Booking ${event.bookingNo} · ID ${event.bookingId} · Hold until ${event.holdExpiresAt} · PHP ${event.price}. Payment is manual.`:
+        event.stage==='FAILED'?event.code??'API_FIRST_RUN_FAILED':`Elapsed ${event.elapsedMs} ms`;
+      this.log(`${labels[event.stage]??event.stage.replaceAll('_',' ')} · ${this.state.detail}`);
+      this.publish();return;
+    }
     if(event.type==='preparationResult'){this.preparationResult=event.result;this.publish();return;}
     if(event.type==='preparationProgress'){
       const labels={starting:'Starting required browser(s)...','previous-session':'Checking previous session...','holds':'Checking payment holds...','onda':'Preparing Onda...','calendar':'Verifying calendar...','grids':'Verifying grids...','availability':'Checking booking availability...','final':'Final readiness check...'};
@@ -241,18 +258,18 @@ export class Controller {
     }
   }
   private async noLock() { this.state.lock = await this.deps.lock(); if (this.state.lock) throw new Error('AUTOMATION_LOCK_EXISTS'); }
-  apiPreview() { return this.operation('apiPreview', async gen => {
+  apiPreview(value:unknown) { const date=z.iso.date().parse(value); return this.operation('apiPreview', async gen => {
     await this.noLock();
     const plan=this.deps.booking();
     if(plan.setup.BOOKING_METHOD!=='api-first') throw Error('API_FIRST_METHOD_REQUIRED');
-    this.state.booking=plan; this.state.apiFirstReady=true;
+    this.state.booking=plan;
     this.state.headline='RETRIEVING API AVAILABILITY';
     this.state.detail='Read-only API availability is being checked without waiting for the visual calendar.';
     this.publish();
-    await this.run({kind:'apiPreview',date:plan.targetDate},gen);
+    await this.run({kind:'apiRun',mode:'dry',date,fingerprint:plan.fingerprint},gen);
     if(gen!==this.generation)return;
-    this.state.headline='API-FIRST CANDIDATE PREVIEW COMPLETE';
-    this.state.detail='Availability planning ran without the visual calendar. Live reservation submission remains disabled until supported verification and official checkout restoration are established.';
+    this.state.headline='API DRY RUN COMPLETE';
+    this.state.detail='A live API candidate was planned with checkout submission blocked. Review the candidate in Activity.';
   }); }
   startChrome() { return this.operation('chrome', async gen => {
     // The launcher only starts or reuses the dedicated browser; it does not
@@ -291,6 +308,20 @@ export class Controller {
       }
       await this.operation('prepare',async gen=>{
         let release:BookingView|undefined;
+        if(input.workflow==='test'&&input.method==='api-first'){
+          if(input.request.strategy!=='standard'||input.request.courtCount!==1||input.request.duration>3)
+            throw Error('API_FIRST_STANDARD_ONE_COURT_REQUIRED');
+          const players=this.players();if(!players.primary)throw Error('PLAYER_INFO_MISSING');
+          const fingerprint=expectedPreparationFingerprint(input);
+          this.state.workflow='test';this.state.headline='PREPARING API BROWSER';this.publish();
+          await this.run({kind:'apiRun',mode:'prepare',date:input.request.date,fingerprint,
+            preferences:{date:input.request.date,start:input.request.start,duration:input.request.duration,
+              maximum:input.maximum,priority:input.request.priority,fallbackStarts:input.request.fallbackStarts}},gen);
+          this.apiTestFingerprint=fingerprint;this.state.apiFirstReady=true;this.state.ready=true;
+          this.state.headline='API READY TO TEST';
+          this.state.detail='The isolated API browser is minimized. Authorize Terms, then Run Test to QR. Chrome will be shown when QRPH is ready.';
+          return;
+        }
         if(input.workflow==='release'){
           const existing=this.deps.booking(),candidate=this.releaseSetup(input.setup??existing.setup);
           const removed=candidate.reconciliation.removed.length?candidate.reconciliation.removed:existing.fallbackReconciliation.removed;
@@ -298,8 +329,11 @@ export class Controller {
           this.state.bookingAdjustment=removed.length?{valid:release.setup.FALLBACK_TIMES,removed}:null;
            if(release.setup.BOOKING_TYPE!==input.strategy)throw Error('BOOKING_PLAN_CHANGED');this.state.booking=release;
            if(release.setup.BOOKING_METHOD==='api-first'){
-             this.state.workflow='release';this.state.apiFirstReady=true;this.state.ready=true;this.state.headline='API-FIRST READ-ONLY READY';
-             this.state.detail='API availability planning is prepared without a browser grid. Use API Preview to retrieve live candidates. Reservation submission and checkout handoff are blocked until supported current verification is available.';
+             if(release.setup.BOOKING_TYPE!=='standard'||release.setup.COURT_COUNT!==1)throw Error('API_FIRST_STANDARD_ONE_COURT_REQUIRED');
+             this.state.workflow='release';this.state.headline='PREPARING API BROWSER';this.publish();
+             await this.run({kind:'apiRun',mode:'prepare',date:release.targetDate,fingerprint:release.fingerprint},gen);
+             this.state.apiFirstReady=true;this.state.ready=true;this.state.headline='API BROWSER READY';
+             this.state.detail='The isolated browser is ready. Use API Dry Run for a non-submitting check or authorize and arm the next release.';
              return;
            }
         }
@@ -310,7 +344,8 @@ export class Controller {
         this.pendingPreparation={input,fingerprint,release,players};
         this.state.workflow=input.workflow;this.state.inspection=null;this.state.handoff=null;this.state.bookingResult=undefined;
         this.state.headline='PREPARING';this.publish();
-        const commandInput:PreparationInput=input.workflow==='release'?{workflow:'release',strategy}:input;
+        const commandInput:PreparationInput=input.workflow==='release'?{workflow:'release',strategy}:
+          input.method==='browser'?{workflow:'test',request:input.request,maximum:input.maximum}:input;
         await this.run({kind:'resetPrepare',input:commandInput},gen);await this.noLock();
         const result=this.preparationResult;if(!result||result.fingerprint!==fingerprint||result.workflow!==input.workflow||result.strategy!==strategy)throw Error('PREPARATION_RESULT_MISMATCH');
         const health=await this.health(),required=strategy==='extended'?['A','B'] as const:['A'] as const;if(required.some(id=>!health[id]))throw Error('RESET_REQUIRED');
@@ -325,7 +360,21 @@ export class Controller {
   }
   testBooking(value:unknown){const input=TestBookingSchema.parse(value),authorized=this.state.termsAuthorized;this.state.termsAuthorized=false;return this.operation('fullPractice',async gen=>{
     const players=this.players();if(!players.primary)throw Error('PLAYER_INFO_MISSING');if(input.request.strategy==='extended'&&!players.extended)throw Error('EXTENDED_PLAYER_INFO_MISSING');
-    await this.requirePrepared('test',expectedPreparationFingerprint({workflow:'test',request:input.request,maximum:input.maximum}),input.request.strategy);
+    const preparation={workflow:'test' as const,method:input.method,request:input.request,maximum:input.maximum};
+    if(input.method==='api-first'){
+      const fingerprint=expectedPreparationFingerprint(preparation);
+      if(!this.state.apiFirstReady||this.apiTestFingerprint!==fingerprint)throw Error('RESET_REQUIRED');
+      if(!authorized)throw Error('TERMS_AUTHORIZATION_REQUIRED');
+      if(!await this.deps.confirmApiTest?.({date:input.request.date,start:input.request.start,duration:input.request.duration,
+        maximum:input.maximum,priority:input.request.priority}))return;
+      await this.noLock();this.state.handoff=null;this.state.bookingResult=undefined;
+      this.state.headline='Checking API availability';this.state.detail='The isolated browser remains minimized while availability and proofs are checked.';
+      await this.run({kind:'apiRun',mode:'live-now',date:input.request.date,fingerprint,
+        preferences:{date:input.request.date,start:input.request.start,duration:input.request.duration,
+          maximum:input.maximum,priority:input.request.priority,fallbackStarts:input.request.fallbackStarts}},gen);
+      return;
+    }
+    await this.requirePrepared('test',expectedPreparationFingerprint(preparation),input.request.strategy);
     if(!authorized)throw Error('TERMS_AUTHORIZATION_REQUIRED');
     this.state.handoff=null;this.state.bookingResult=undefined;
     this.state.headline='Checking availability';this.state.detail='Resolving your courts and time ranges before confirmation.';
@@ -374,12 +423,32 @@ export class Controller {
   async authorizeTerms(value:unknown){
     if(typeof value!=='boolean')throw new Error('INVALID_TERMS_AUTHORIZATION');
     if(this.state.operation!=='idle')throw new Error('OPERATION_ALREADY_RUNNING');
-    if(value&&(!fullBookingReady(this.state.capabilities)||this.state.lock||!this.state.ready||!this.state.preparedContext||this.state.preparedContext.workflow!==this.state.workflow))throw new Error('TERMS_AUTHORIZATION_NOT_ALLOWED');
+    const apiReady=this.state.apiFirstReady&&(
+      this.state.workflow==='test'?!!this.apiTestFingerprint:this.state.booking?.setup.BOOKING_METHOD==='api-first');
+    if(value&&((!apiReady&&!fullBookingReady(this.state.capabilities))||this.state.lock||!this.state.ready||(!apiReady&&(!this.state.preparedContext||this.state.preparedContext.workflow!==this.state.workflow))))throw new Error('TERMS_AUTHORIZATION_NOT_ALLOWED');
     this.state.termsAuthorized=value;this.publish();
   }
   async armFullBooking(){
     const authorized=this.state.termsAuthorized;this.state.termsAuthorized=false;
-    try{await this.armScheduledRelease(authorized);}catch(error){if(this.state.scheduledRelease){this.clearScheduled();this.clearPreparation();this.state.operation='idle';}const code=error instanceof Error?error.message:'SCHEDULE_FAILED';this.state.headline='Needs attention';this.state.detail=errors[code]??code;this.log(code,true);}
+    try{if(this.deps.booking().setup.BOOKING_METHOD==='api-first')await this.armApiRelease(authorized);
+      else await this.armScheduledRelease(authorized);}catch(error){if(this.state.scheduledRelease){this.clearScheduled();this.clearPreparation();this.state.operation='idle';}const code=error instanceof Error?error.message:'SCHEDULE_FAILED';this.state.headline='Needs attention';this.state.detail=errors[code]??code;this.log(code,true);}
+  }
+  private async armApiRelease(authorized:boolean){
+    if(process.env.THIRSTY_API_TEST_INSTALLATION!=='1')throw Error('API_TEST_INSTALLATION_REQUIRED');
+    if(this.state.operation!=='idle'||!this.state.apiFirstReady||!this.state.ready)throw Error('RESET_REQUIRED');
+    if(!authorized)throw Error('TERMS_AUTHORIZATION_REQUIRED');
+    await this.noLock();
+    const plan=this.deps.booking(),clock=this.deps.clock();
+    if(plan.setup.BOOKING_TYPE!=='standard'||plan.setup.COURT_COUNT!==1||!plan.playerConfigured)
+      throw Error('API_FIRST_STANDARD_ONE_COURT_REQUIRED');
+    if(clock.releaseMs<=Date.now())throw Error('RELEASE_MISSED');
+    const confirmed=await this.deps.confirm('full',plan);if(!confirmed)return;
+    if(this.deps.booking().fingerprint!==plan.fingerprint||this.deps.clock().releaseMs!==clock.releaseMs)
+      throw Error('SCHEDULE_CONTEXT_MISMATCH');
+    await this.operation('full',async gen=>{
+      this.state.headline='API FIRST ARMED';this.state.detail='The isolated browser will wait for release. Checkout verification is acquired fresh after release.';this.publish();
+      await this.run({kind:'apiRun',mode:'live',date:plan.targetDate,fingerprint:plan.fingerprint,releaseMs:clock.releaseMs},gen);
+    });
   }
   private async armScheduledRelease(authorized:boolean){
     if(this.state.scheduledRelease){await this.cancelScheduledRelease();return;}

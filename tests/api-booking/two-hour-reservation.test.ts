@@ -6,7 +6,7 @@ import { availabilityFixture } from '../availability-fixture.js';
 import { parseAvailability } from '../../src/api-booking/availability-parser.js';
 import { planBooking } from '../../src/api-booking/booking-planner.js';
 import { DurableSubmissionJournal } from '../../src/api-booking/durable-submission-journal.js';
-import { selectedTwoHours, TwoHourReservationAdapter, type SlotCheckRequest } from '../../src/api-booking/two-hour-reservation.js';
+import { selectedStandardHours, selectedTwoHours, TwoHourReservationAdapter, type SlotCheckRequest } from '../../src/api-booking/two-hour-reservation.js';
 
 const date = '2026-09-18';
 const now = new Date('2026-09-18T00:00:00.000Z');
@@ -64,6 +64,30 @@ describe('offline two-hour adapter', () => {
       hours[0].spaceId, date, '08:00', '09:00');
     expect((await new DurableSubmissionJournal(path).read(key)).observedResponse).toMatchObject({
       bookingIds: ['synthetic-booking-0'], validationCode: 'CHECKOUT_RESPONSE_VERIFIED' });
+  });
+
+  it('implements a three-hour standard checkout with three distinct proofs', async () => {
+    const threePlan = planBooking(snapshot, { mode: 'standard', targetDate: date, durationHours: 3,
+      preferredStartTimes: ['08:00'], fallbackStartTimes: [], courtPriority: [3], fallbackCourts: [], courtCount: 1,
+      maximumTotalPrice: 1_800, currency: 'PHP' });
+    const threeHours = selectedStandardHours(threePlan);
+    const response = { success: true, bookings: threeHours.map((hour, index) => ({
+      id: `three-booking-${index}`, booking_no: `three-number-${index}`, customer_id: customer.customerId,
+      space_id: hour.spaceId, date: hour.date, start_time: `${hour.startTime}:00`, end_time: `${hour.endTime}:00`,
+      duration: 60, rate: 600, guest_count: 1, booking_status: 'pending', payment_status: 'pending',
+      booking_session_id: 'three-session', hold_expires_at: holdUntil })),
+      bookingSessions: [{ date, startTime: '08:00:00', endTime: '11:00:00', spaceId: threeHours[0]!.spaceId,
+        bookingIds: threeHours.map((_, index) => `three-booking-${index}`), facilityId: '5f8786bd-dc61-4509-b893-74cda8f783f7',
+        durationHours: 3, bookingSessionId: 'three-session', requestSessionRef: 'session_1' }],
+      transaction: { id: 'three-transaction', reference: 'three-number-0', amount: 1800, status: 'pending' },
+      trustedTotalAmount: 1800 };
+    const { adapter, checkSlot, publicCheckout } = await setup(response);
+    checkSlot.mockImplementation(async request => proof(Number(request.startTime.slice(0, 2)) - 8));
+    process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT = 'SUPERVISED_ONE_SHOT';
+    await expect(adapter.submit(threePlan, customer, { supervisedOneShot: true })).resolves.toMatchObject({
+      bookingIds: ['three-booking-0', 'three-booking-1', 'three-booking-2'], transactionId: 'three-transaction' });
+    expect(checkSlot).toHaveBeenCalledTimes(3);
+    expect((publicCheckout.mock.calls[0]![0] as { items: unknown[] }).items).toHaveLength(3);
   });
   it('requires an explicit supervised gate and obtains distinct exact-hour proofs before one submission', async () => {
     const { adapter, checkSlot, publicCheckout, path } = await setup();

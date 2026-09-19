@@ -14,6 +14,11 @@ export const ReleasePerformanceSchema=z.object({workers:z.object({A:workerPerfor
 
 // Opt-in stdout protocol. Ordinary CLI output and buffered telemetry remain intact.
 export const UiEventSchema = z.discriminatedUnion('type', [
+  z.object({type:z.literal('apiStage'),stage:z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/),elapsedMs:z.number().int().nonnegative(),
+    code:z.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/).optional(),port:z.number().int().optional(),releaseMs:z.number().int().optional(),
+    date:z.iso.date().optional(),court:z.number().int().min(1).max(7).optional(),startTime:z.string().optional(),
+    durationHours:z.number().int().min(1).max(3).optional(),price:z.number().finite().optional(),availabilityMs:z.number().int().optional(),
+    bookingId:z.string().optional(),bookingNo:z.string().optional(),holdExpiresAt:z.string().optional()}).strict(),
   z.object({type:z.literal('preparationResult'),result:PreparationResultSchema}).strict(),
   z.object({type:z.literal('preparationProgress'),step:z.enum(['starting','previous-session','holds','onda','calendar','grids','availability','final'])}).strict(),
   z.object({type:z.literal('preparationBlocked'),browser:z.enum(['A','B']),hold:z.enum(['Active','Expired','Not detected','Unknown']),countdownSeconds:z.number().int().nonnegative().nullable()}).strict(),

@@ -73,21 +73,24 @@ export function selectedTwoHours(plan: BookingPlan): [HourIdentity, HourIdentity
   return court.slots.map(slot => ({ spaceId: slot.spaceId, date: slot.date, startTime: slot.startTime, endTime: slot.endTime })) as [HourIdentity, HourIdentity];
 }
 
-/** One or two exact hours from a live, single-court standard plan. */
+/** One to three exact hours from a live, single-court standard plan. */
 export function selectedStandardHours(plan: BookingPlan): HourIdentity[] {
   if (plan.durationHours === 2) return selectedTwoHours(plan);
-  const court = plan.courts[0], slot = court?.slots[0];
-  if (plan.mode !== 'standard' || plan.durationHours !== 1 || plan.courts.length !== 1 ||
-    plan.chunks.length !== 1 || plan.chunks[0]?.durationHours !== 1 ||
-    plan.chunks[0]?.courts.length !== 1 || !court || !slot || court.slots.length !== 1 ||
+  const court = plan.courts[0];
+  if (plan.mode !== 'standard' || ![1, 3].includes(plan.durationHours) || plan.courts.length !== 1 ||
+    plan.chunks.length !== 1 || plan.chunks[0]?.durationHours !== plan.durationHours ||
+    plan.chunks[0]?.courts.length !== 1 || !court || court.slots.length !== plan.durationHours ||
     COURT_TO_SPACE_ID[court.court as keyof typeof COURT_TO_SPACE_ID] !== court.spaceId ||
-    court.durationMinutes !== 60 || court.date !== plan.targetDate ||
+    court.durationMinutes !== plan.durationHours * 60 || court.date !== plan.targetDate ||
     court.startTime !== plan.startTime || court.endTime !== plan.endTime ||
-    slot.spaceId !== court.spaceId || slot.court !== court.court || slot.date !== court.date ||
-    slot.bookingDate !== court.date || slot.startTime !== court.startTime || slot.endTime !== court.endTime ||
-    !slot.isAvailable || slot.currency !== 'PHP' || plan.currency !== 'PHP' ||
-    plan.totalPrice !== slot.price || court.price !== slot.price) fail('ONE_HOUR_PLAN_INVALID');
-  return [{ spaceId: slot.spaceId, date: slot.date, startTime: slot.startTime, endTime: slot.endTime }];
+    court.slots.some((slot, index) => slot.spaceId !== court.spaceId || slot.court !== court.court ||
+      slot.date !== court.date || slot.bookingDate !== court.date || !slot.isAvailable ||
+      slot.currency !== 'PHP' || slot.startTime !== (index ? court.slots[index - 1]!.endTime : court.startTime)) ||
+    court.slots.at(-1)?.endTime !== court.endTime || plan.currency !== 'PHP' ||
+    plan.totalPrice !== court.slots.reduce((sum, slot) => sum + slot.price, 0) ||
+    court.price !== plan.totalPrice) fail('STANDARD_PLAN_INVALID');
+  return court.slots.map(slot => ({ spaceId: slot.spaceId, date: slot.date,
+    startTime: slot.startTime, endTime: slot.endTime }));
 }
 
 /** Validates the observed two-booking, one-session pending response. No checkout handoff is inferred. */
@@ -168,12 +171,9 @@ export class TwoHourReservationAdapter {
       const raw = await this.transport.publicCheckout(request, permit);
       let verified: VerifiedTwoHourHold;
       try {
-        if (hours.length === 2) verified = validateTwoHourResponse(raw, request, this.clock());
-        else {
-          const one = validatePublicCheckoutResponse(raw, request, plan, this.clock(), plan.totalPrice);
-          verified = { bookingIds: one.bookingIds, sessionId: one.sessionId,
-            holdExpiresAt: one.holdExpiresAt, transactionId: one.transactionId };
-        }
+        const response = validatePublicCheckoutResponse(raw, request, plan, this.clock(), plan.totalPrice);
+        verified = { bookingIds: response.bookingIds, sessionId: response.sessionId,
+          holdExpiresAt: response.holdExpiresAt, transactionId: response.transactionId };
       }
       catch (error) {
         const code = error instanceof Error && 'code' in error && typeof error.code === 'string'
