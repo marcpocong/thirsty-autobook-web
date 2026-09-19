@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { join, resolve } from 'node:path';
-import { mkdir, open } from 'node:fs/promises';
+import { access, mkdir, open } from 'node:fs/promises';
 import { performance } from 'node:perf_hooks';
 import { chromium } from 'playwright';
 import { z } from 'zod';
@@ -16,6 +16,7 @@ import { submitCalendarFreeTwoHourCheckout } from './calendar-free-checkout.js';
 import { officialCheckoutUrl } from './checkout-restoration.js';
 import type { BookingPreferences } from './types.js';
 import type { CheckoutHttpResponse } from './browser-session-transport.js';
+import { firstUnjournaledCandidate } from './candidate-journal.js';
 
 const preferencesSchema = z.object({ date: z.iso.date(), start: z.string().regex(/^(0[89]|1\d|2[0-3]):00$/),
   duration: z.number().int().min(1).max(3), maximum: z.number().finite().positive(),
@@ -99,14 +100,20 @@ try {
     const discovery = await discoverApiAvailability(new OndaLiveAvailabilityProvider(), preferences);
     ensureActive();
     if (!discovery.candidates.length) throw Error('API_NO_AVAILABLE_CANDIDATE');
-    stage('CANDIDATE_READY', { date: command.date, court: discovery.candidates[0]!.courts[0]!.court,
-      startTime: discovery.candidates[0]!.startTime, durationHours: requested?.duration ?? config.DURATION_HOURS,
-      price: discovery.candidates[0]!.totalPrice, availabilityMs: Math.round(discovery.timing.totalMs ?? 0) });
+    const selected = command.mode === 'dry' ? { plan: discovery.candidates[0]! } :
+      await firstUnjournaledCandidate(discovery.candidates, THIRSTY_PICKLE_FACILITY_ID, async key => {
+        try { await access(resolve('.local/api-booking/api-first-journals', key, `${key}.json`)); return true; }
+        catch { return false; }
+      });
+    if (!selected) throw Error('API_NO_UNUSED_CANDIDATE');
+    const plan = selected.plan;
+    stage('CANDIDATE_READY', { date: command.date, court: plan.courts[0]!.court,
+      startTime: plan.startTime, durationHours: requested?.duration ?? config.DURATION_HOURS,
+      price: plan.totalPrice, availabilityMs: Math.round(discovery.timing.totalMs ?? 0) });
     if (command.mode === 'dry') {
       // The dry path has no customer lookup, checkout security context, or submission permit.
       stage('DRY_RUN_COMPLETE');
     } else {
-      const plan = discovery.candidates[0]!;
       const customer = loadLocalCheckoutCustomer();
       const court = plan.courts[0]!;
       const key = DurableSubmissionJournal.key(THIRSTY_PICKLE_FACILITY_ID, court.spaceId,

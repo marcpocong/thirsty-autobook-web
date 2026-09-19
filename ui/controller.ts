@@ -66,6 +66,8 @@ const errors: Record<string, string> = {
   TODAYS_RELEASE_PASSED:"TODAY'S RELEASE HAS PASSED. This release can no longer be armed today.",
   API_FIRST_METHOD_REQUIRED:'API-FIRST EXPERIMENTAL must be selected before running the read-only API preview.',
   API_FIRST_LIVE_CHECKOUT_BLOCKED:'API-FIRST reservation submission is disabled until Oonda provides a supported current security context and checkout handoff.',
+  DUPLICATE_LOGICAL_BOOKING_BLOCKED:'This exact court, date, and time already has a durable submission record. The API runner will use another available court after Reset & Prepare.',
+  API_NO_UNUSED_CANDIDATE:'Every available candidate for this request already has a durable submission record. Choose another time or date.',
 };
 export interface Dependencies {
   confirmStopPrepare?:()=>Promise<boolean>;
@@ -244,7 +246,7 @@ export class Controller {
     catch (error) {
       if (generation === this.generation) {
         const code = error instanceof Error ? error.message : 'OPERATION_FAILED';
-        const hadSpecificFailure = Object.values(preparationHeadlines).includes(this.state.headline)||['PARTIAL SUCCESS','BOOKING FAILED'].includes(this.state.bookingResult?.status??'')||this.state.dualResult?.status==='DUAL_PARTIAL_SUCCESS'||this.state.dualResult?.status==='DUAL_FAILED'||this.state.headline === 'Needs attention'||this.state.headline.includes('FAILED')||this.state.headline==='HANDOFF STATUS UNKNOWN';
+        const hadSpecificFailure = this.state.apiStage?.stage==='FAILED'||Object.values(preparationHeadlines).includes(this.state.headline)||['PARTIAL SUCCESS','BOOKING FAILED'].includes(this.state.bookingResult?.status??'')||this.state.dualResult?.status==='DUAL_PARTIAL_SUCCESS'||this.state.dualResult?.status==='DUAL_FAILED'||this.state.headline === 'Needs attention'||this.state.headline.includes('FAILED')||this.state.headline==='HANDOFF STATUS UNKNOWN';
         if(code==='HANDOFF_STATUS_UNKNOWN')this.state.headline='HANDOFF STATUS UNKNOWN';
         else if(code==='BOOKING_SETTINGS_INVALID')this.state.headline='BOOKING SETTINGS NEED ATTENTION';
         else if(!hadSpecificFailure)this.state.headline = 'Needs attention';
