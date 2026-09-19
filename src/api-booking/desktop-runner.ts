@@ -154,7 +154,7 @@ try {
       await page.goto(officialCheckoutUrl(hold.bookingIds[0]!), { waitUntil: 'domcontentloaded', timeout: 45_000 });
       await page.getByText('QRPH', { exact: true }).first().waitFor({ state: 'visible', timeout: 20_000 });
       const body = await page.locator('body').innerText();
-      if (!body.includes('Pending') || !body.includes(plan.totalPrice.toFixed(2)))
+      if (!body.includes('Pending') || !body.replaceAll(',', '').includes(plan.totalPrice.toFixed(2)))
         throw Error('OFFICIAL_CHECKOUT_STATE_MISMATCH');
       await windowState(page, 'normal'); await page.bringToFront();
       stage('OFFICIAL_QRPH_HANDOFF', { bookingId: hold.bookingIds[0]!, bookingNo,

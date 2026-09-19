@@ -29,6 +29,14 @@ describe('standard public-checkout builder and validator', () => {
     expect(validatePublicCheckoutResponse(reply(), request, plan, now, 1_200)).toMatchObject({ bookingIds: ['booking-0', 'booking-1'], sessionId: 'session', trustedTotalAmount: 1_200 });
   });
 
+  it('accepts one consistent server-resolved guest id and rejects mixed response customers', () => {
+    const resolved = reply();
+    for (const booking of resolved.bookings) booking.customer_id = 'server-resolved-customer';
+    expect(validatePublicCheckoutResponse(resolved, request, plan, now, 1_200).bookingIds).toEqual(['booking-0', 'booking-1']);
+    resolved.bookings[1]!.customer_id = 'different-server-customer';
+    expect(() => validatePublicCheckoutResponse(resolved, request, plan, now, 1_200)).toThrowError('CHECKOUT_BOOKING_INVALID');
+  });
+
   it.each([
     ['wrong court', (raw: any) => { raw.bookings[0].space_id = 'other'; }, 'CHECKOUT_BOOKING_INVALID'],
     ['wrong date', (raw: any) => { raw.bookings[0].date = '2026-09-19'; }, 'CHECKOUT_BOOKING_INVALID'],
@@ -37,6 +45,7 @@ describe('standard public-checkout builder and validator', () => {
     ['expired hold', (raw: any) => { raw.bookings[0].hold_expires_at = '2026-09-17T23:59:00.000Z'; }, 'CHECKOUT_BOOKING_INVALID'],
     ['transaction mismatch', (raw: any) => { raw.transaction.reference = 'other'; }, 'CHECKOUT_GROUPING_INVALID'],
     ['duplicate booking', (raw: any) => { raw.bookings[1].id = raw.bookings[0].id; }, 'CHECKOUT_BOOKING_DUPLICATE'],
+    ['malformed response customer', (raw: any) => { raw.bookings[0].customer_id = 'not safe!'; }, 'CHECKOUT_BOOKING_INVALID'],
   ])('rejects %s', (_label, mutate, expected) => {
     const raw = reply(); mutate(raw);
     expect(() => validatePublicCheckoutResponse(raw, request, plan, now, 1_200)).toThrowError(expected);

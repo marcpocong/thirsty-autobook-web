@@ -56,6 +56,7 @@ export class PublicCheckoutValidationError extends Error {
 const object = (value: unknown): Record<string, unknown> | null =>
   value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
 const nonempty = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0;
+const safeIdentifier = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(value);
 const seconds = (time: string) => `${time}:00`;
 const cents = (value: number) => Math.round(value * 100);
 const sameAmount = (a: unknown, b: number) => typeof a === 'number' && Number.isFinite(a) && cents(a) === cents(b);
@@ -138,14 +139,19 @@ export function validatePublicCheckoutResponse(
     !Array.isArray(session.bookingIds) || session.bookingIds.length !== bookings.length) fail('CHECKOUT_SESSION_INVALID');
   const sessionBookingIds = session.bookingIds as unknown[];
   const bookingIds: string[] = [], bookingNumbers: string[] = [], keys = new Set<string>();
+  let responseCustomerId: string | undefined;
   let holdExpiresAt: string | undefined;
   for (const [index, rawBooking] of bookings.entries()) {
     const booking = object(rawBooking), item = request.items[index]!;
     if (!booking) fail('CHECKOUT_BOOKING_INVALID');
     const validBooking = booking!;
+    const returnedCustomerId = typeof validBooking.customer_id === 'string' ? validBooking.customer_id : '';
+    if (!safeIdentifier(returnedCustomerId)) fail('CHECKOUT_BOOKING_INVALID');
+    if (responseCustomerId !== undefined && returnedCustomerId !== responseCustomerId) fail('CHECKOUT_BOOKING_INVALID');
+    responseCustomerId = returnedCustomerId;
     if (!nonempty(validBooking.id) || !nonempty(validBooking.booking_no) || validBooking.booking_status !== 'pending' ||
       validBooking.payment_status !== 'pending' || validBooking.booking_session_id !== session.bookingSessionId ||
-      validBooking.customer_id !== request.customerId || validBooking.space_id !== item.spaceId ||
+      validBooking.space_id !== item.spaceId ||
       (validBooking.facility_id !== undefined && validBooking.facility_id !== item.facilityId) ||
       validBooking.date !== item.date || validBooking.start_time !== seconds(item.startTime) || validBooking.end_time !== seconds(item.endTime) ||
       validBooking.duration !== 60 || !sameAmount(validBooking.rate, item.rate) || validBooking.guest_count !== 1 ||
