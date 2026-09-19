@@ -22,8 +22,8 @@ export function sanitizeLine(text: string): string {
 export function commandSpec(command: Command, root: string, node: string) {
   if (typeof command === 'object' && command !== null) {
     if(command.kind==='apiRun'){
-      const preferences=z.object({date:z.iso.date(),start:z.string().regex(/^(0[89]|1\d|2[0-3]):00$/),duration:z.number().int().min(1).max(3),
-        maximum:z.number().finite().positive(),priority:z.array(z.number().int().min(1).max(7)).min(1),fallbackStarts:z.array(z.string().regex(/^(0[89]|1\d|2[0-3]):00$/))}).strict();
+      const preferences=z.object({strategy:z.enum(['standard','extended']),date:z.iso.date(),start:z.string().regex(/^(0[89]|1\d|2[0-3]):00$/),duration:z.number().int().min(1).max(6),courtCount:z.literal(1),
+        maximum:z.number().finite().positive(),priority:z.array(z.number().int().min(1).max(7)).min(1),fallbackStarts:z.array(z.string().regex(/^(0[89]|1\d|2[0-3]):00$/)),exact:z.array(z.array(z.number().int().min(1).max(7))).optional()}).strict();
       const c=z.object({kind:z.literal('apiRun'),mode:z.enum(['prepare','dry','live','live-now']),date:z.iso.date(),
         fingerprint:z.string().regex(/^[a-f0-9]{64}$/),releaseMs:z.number().int().positive().optional(),preferences:preferences.optional()}).strict().parse(command);
       if(process.env.THIRSTY_API_TEST_INSTALLATION!=='1')throw Error('API_TEST_INSTALLATION_REQUIRED');

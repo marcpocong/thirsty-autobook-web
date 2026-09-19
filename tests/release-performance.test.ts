@@ -25,6 +25,8 @@ it('keeps one run ID, tags worker events, leaves coordinator events unscoped and
   expect(A.runID).toBe(t.runID);expect(B.runID).toBe(t.runID);expect(t.events.map(x=>x.workerId)).toEqual(['A',undefined,'B']);
   expect(UiEventSchema.safeParse({type:'telemetry',event:'slot1ClickStarted',wall:new Date().toISOString(),workerId:'A'}).success).toBe(true);
   expect(UiEventSchema.safeParse({type:'telemetry',event:'slot1ClickStarted',wall:new Date().toISOString(),workerId:'A',metadata:{email:'private@example.com'}}).success).toBe(false);
+  expect(UiEventSchema.safeParse({type:'apiStage',stage:'CANDIDATE_READY',elapsedMs:1,workerId:'A',
+    date:'2026-09-22',court:7,startTime:'12:00',durationHours:6,price:3600}).success).toBe(true);
 });
 it('documents an immediate rate-limit failure without private evidence expansion',()=>{
   const t=new Telemetry(),A=t.worker('A');A.mark('releaseTriggerFired',4);A.mark('reloadStarted');A.mark('reloadCommitted');

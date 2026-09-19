@@ -11,7 +11,7 @@ import type {PreparedContext} from '../src/prepared-context.js';
 import type {FallbackReconciliation} from '../src/booking-setup.js';
 import type {ScheduledReleaseContext} from '../src/scheduled-release.js';
 export type DualPracticeCommand = { kind:'dualDry'; date:string } | { kind:'dualPractice'|'dualFullPractice'; input:DualPracticeInput };
-export interface ApiRunPreferences {date:string;start:string;duration:number;maximum:number;priority:number[];fallbackStarts:string[]}
+export interface ApiRunPreferences {strategy:'standard'|'extended';date:string;start:string;duration:number;courtCount:1;maximum:number;priority:number[];fallbackStarts:string[];exact?:number[][]}
 export type Command = {kind:'resetPrepare';input:PreparationInput} | {kind:'testBooking';input:TestBookingInput} | {kind:'apiRun';mode:'prepare'|'dry'|'live'|'live-now';date:string;fingerprint:string;releaseMs?:number;preferences?:ApiRunPreferences} | {kind:'apiPreview';date:string} | DualPracticeCommand | 'chromeDual' | 'dualReadiness' | 'dualPrepare' | {kind:'fullPractice';input:FullPracticeInput} | 'chrome' | 'inspect' | 'observe' | { kind:'selection' | 'dry'; planHash:string } | {kind:'full';context:ScheduledReleaseContext;authorizeTerms:true} | { kind:'practice'; input:PracticeInput };
 export type Inspection = Extract<UiEvent, { type: 'inspection' }>;
 export interface Activity { at: string; text: string; level: 'info' | 'error' }

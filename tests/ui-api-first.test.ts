@@ -43,7 +43,29 @@ describe('API-first UI boundary', () => {
     expect(controller.state).toMatchObject({ workflow: 'test', ready: true, apiFirstReady: true, headline: 'API READY TO TEST' });
     await controller.authorizeTerms(true);
     await controller.testBooking({ method: preparation.method, request: preparation.request, maximum: preparation.maximum, authorizeTerms: true });
-    expect(confirms).toEqual([{ date: '2026-09-20', start: '12:00', duration: 1, maximum: 1200, priority: [7, 6, 5, 4, 3, 2, 1] }]);
+    expect(confirms).toEqual([{ strategy: 'standard', date: '2026-09-20', start: '12:00', duration: 1, maximum: 1200, priority: [7, 6, 5, 4, 3, 2, 1] }]);
     expect(calls.at(-1)).toMatchObject({ kind: 'apiRun', mode: 'live-now', date: '2026-09-20', preferences: { start: '12:00', duration: 1 } });
+  });
+
+  it('prepares Extended API Test Now with both players and routes two-checkout preferences', async () => {
+    const view = bookingView(ConfigSchema.parse({ ...defaultSetup, BOOKING_TYPE: 'extended', DURATION_HOURS: 4,
+      PLAYER_FULL_NAME: 'Fixture Primary', PLAYER_PHONE: '09123456789', PLAYER_EMAIL: 'primary@example.invalid',
+      PLAYER_B_FULL_NAME: 'Fixture Extended', PLAYER_B_PHONE: '09987654321', PLAYER_B_EMAIL: 'extended@example.invalid' }));
+    const calls: Command[] = [];
+    const runner: Runner = command => { calls.push(command); return { pid: 1, done: Promise.resolve(0), stop: async () => undefined }; };
+    const controller = new Controller({ runner, lock: async () => false, cdp: async () => true,
+      browserHealth: async () => ({ A: true, B: true }), playerStatus: () => ({ primary: true, extended: true }),
+      clock: () => clockStatus(ObservationSchema.parse({}), DateTime.fromISO('2026-09-19T08:00:00+08:00')),
+      confirm: async () => true, confirmApiTest: async () => true, publish: () => undefined,
+      booking: () => view, saveBooking: () => view });
+    const preparation = { workflow: 'test' as const, method: 'api-first' as const, request: { strategy: 'extended' as const,
+      date: '2026-09-21', start: '12:00', duration: 4, courtCount: 1 as const,
+      priority: [7, 6, 5, 4, 3, 2, 1], fallbackStarts: [] }, maximum: 1800 };
+    await controller.resetPrepare(preparation);
+    expect(calls[0]).toMatchObject({ kind: 'apiRun', mode: 'prepare', preferences: { strategy: 'extended', duration: 4, courtCount: 1 } });
+    await controller.refresh(); expect(controller.state.ready).toBe(true);
+    await controller.authorizeTerms(true);
+    await controller.testBooking({ method: 'api-first', request: preparation.request, maximum: 1800, authorizeTerms: true });
+    expect(calls.at(-1)).toMatchObject({ kind: 'apiRun', mode: 'live-now', preferences: { strategy: 'extended', duration: 4, courtCount: 1 } });
   });
 });
