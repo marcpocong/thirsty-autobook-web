@@ -321,7 +321,7 @@ export class Controller {
               maximum:input.maximum,priority:input.request.priority,fallbackStarts:input.request.fallbackStarts}},gen);
           this.apiTestFingerprint=fingerprint;this.state.apiFirstReady=true;this.state.ready=true;
           this.state.headline='API READY TO TEST';
-          this.state.detail='The isolated API browser is minimized. Authorize Terms, then Run Test to QR. Chrome will be shown when QRPH is ready.';
+          this.state.detail='The dedicated API browser is open and remains visible. Authorize Terms, then Run Test to QR.';
           return;
         }
         if(input.workflow==='release'){
@@ -370,7 +370,7 @@ export class Controller {
       if(!await this.deps.confirmApiTest?.({date:input.request.date,start:input.request.start,duration:input.request.duration,
         maximum:input.maximum,priority:input.request.priority}))return;
       await this.noLock();this.state.handoff=null;this.state.bookingResult=undefined;
-      this.state.headline='Checking API availability';this.state.detail='The isolated browser remains minimized while availability and proofs are checked.';
+      this.state.headline='Checking API availability';this.state.detail='The dedicated API browser remains visible while availability and proofs are checked.';
       await this.run({kind:'apiRun',mode:'live-now',date:input.request.date,fingerprint,
         preferences:{date:input.request.date,start:input.request.start,duration:input.request.duration,
           maximum:input.maximum,priority:input.request.priority,fallbackStarts:input.request.fallbackStarts}},gen);

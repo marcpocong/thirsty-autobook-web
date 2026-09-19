@@ -41,16 +41,15 @@ const saveOnce = async (directory: string, filename: string, content: unknown) =
   try { await file.writeFile(JSON.stringify(content)); await file.sync(); }
   finally { await file.close(); }
 };
-async function windowState(page: import('playwright').Page, state: 'minimized' | 'normal'): Promise<void> {
+async function showWindow(page: import('playwright').Page): Promise<void> {
   const session = await page.context().newCDPSession(page);
   try {
-    const { windowId } = await session.send('Browser.getWindowForTarget');
-    await session.send('Browser.setWindowBounds', { windowId, bounds: { windowState: state } });
-    if (state === 'normal') await session.send('Browser.setWindowBounds',
-      { windowId, bounds: { left: 40, top: 40, width: 1200, height: 900 } });
+    const { windowId, bounds } = await session.send('Browser.getWindowForTarget');
+    if (bounds.windowState === 'minimized')
+      await session.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'normal' } });
   } finally { await session.detach(); }
+  await page.bringToFront();
 }
-
 try {
   if (process.env.THIRSTY_API_TEST_INSTALLATION !== '1') throw Error('API_TEST_INSTALLATION_REQUIRED');
   const config = loadConfig();
@@ -77,7 +76,7 @@ try {
   await page.getByTestId('public-booking-hero-title').first().waitFor({ state: 'visible', timeout: 45_000 });
   if ((await page.getByTestId('public-booking-hero-title').first().innerText()).trim() !== VENUE)
     throw Error('WRONG_VENUE');
-  await windowState(page, 'minimized');
+  await showWindow(page);
   stage('BROWSER_READY', { port: identity.port });
   if (command.mode === 'prepare') { process.exitCode = 0; }
   else {
@@ -136,17 +135,16 @@ try {
           approvalReference: `desktop-api-first-${key}` }, journal, captureCheckoutResponse: capture,
         onHumanVerificationRequired: async () => {
           await page.evaluate(() => { document.title = 'THIRSTY BOT - VERIFY HERE'; });
-          await windowState(page, 'normal'); await page.bringToFront();
+          await showWindow(page);
           stage('HUMAN_VERIFICATION_REQUIRED');
         },
         onHumanVerificationCompleted: async () => {
           stage('HUMAN_VERIFICATION_COMPLETE');
-          await windowState(page, 'minimized');
         } });
       } catch (error) {
         const code = error instanceof Error ? error.message : '';
         if (/TURNSTILE|SECURITY_CONTEXT|CHALLENGE/.test(code)) {
-          await windowState(page, 'normal'); await page.bringToFront();
+          await showWindow(page);
           stage('HUMAN_VERIFICATION_REQUIRED', { code });
         }
         throw error;
@@ -166,7 +164,7 @@ try {
       const body = await page.locator('body').innerText();
       if (!body.includes('Pending') || !body.replaceAll(',', '').includes(plan.totalPrice.toFixed(2)))
         throw Error('OFFICIAL_CHECKOUT_STATE_MISMATCH');
-      await windowState(page, 'normal'); await page.bringToFront();
+      await showWindow(page);
       stage('OFFICIAL_QRPH_HANDOFF', { bookingId: hold.bookingIds[0]!, bookingNo,
         holdExpiresAt: hold.holdExpiresAt, price: plan.totalPrice });
     }

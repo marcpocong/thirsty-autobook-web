@@ -37,7 +37,6 @@ $arguments = @(
   "--user-data-dir=`"$profilePath`"", '--no-first-run', '--no-default-browser-check',
   'https://app.onda.fit/book/thirsty-pickle'
 )
-if ($env:THIRSTY_API_TEST_INSTALLATION -eq '1') { $arguments = @('--start-minimized') + $arguments }
 Start-Process -FilePath $chromePath -ArgumentList $arguments
 $deadline = [DateTime]::UtcNow.AddSeconds(15)
 do {
