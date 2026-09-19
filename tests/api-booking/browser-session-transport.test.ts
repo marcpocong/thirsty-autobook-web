@@ -143,6 +143,22 @@ describe('browser session transport, offline', () => {
     expect(evaluate).not.toHaveBeenCalled();
   });
 
+  it('shows one identified browser while a visible Cloudflare challenge is pending, then continues', async () => {
+    process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT = 'SUPERVISED_ONE_SHOT';
+    let finish: ((headers: { turnstileToken: string; publicFingerprint: string }) => void) | undefined;
+    const current = vi.fn(() => new Promise<{ turnstileToken: string; publicFingerprint: string }>(resolve => { finish = resolve; }));
+    const required = vi.fn(async () => { finish?.({ turnstileToken: 'human-token', publicFingerprint: 'human-fingerprint' }); });
+    const completed = vi.fn(async () => undefined);
+    const page = { isClosed: () => false, url: () => 'https://app.onda.fit/book/thirsty-pickle',
+      locator: () => ({ count: async () => 1 }) } as unknown as Page;
+    const transport = new OndaBrowserSessionTransport(page, current, undefined,
+      { onHumanVerificationRequired: required, onHumanVerificationCompleted: completed });
+    await transport.prepareCheckoutContext();
+    expect(current).toHaveBeenCalledOnce();
+    expect(required).toHaveBeenCalledOnce();
+    expect(completed).toHaveBeenCalledOnce();
+  });
+
   it('stops before proof checks or a journal claim when normal verification fails', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'onda-context-failure-'));
     directories.push(directory);

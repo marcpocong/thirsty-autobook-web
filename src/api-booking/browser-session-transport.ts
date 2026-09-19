@@ -15,6 +15,10 @@ export interface CurrentCheckoutHeaders {
   turnstileToken: string;
   publicFingerprint: string;
 }
+export interface CheckoutContextHooks {
+  onHumanVerificationRequired?(): Promise<void>;
+  onHumanVerificationCompleted?(): Promise<void>;
+}
 
 /** Values must come from the current normal site flow immediately before checkout; this transport cannot create them. */
 export type CurrentCheckoutHeadersProvider = () => Promise<CurrentCheckoutHeaders>;
@@ -42,14 +46,32 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
   private preparedHeaders?: CurrentCheckoutHeaders;
   private preparedAt?: number;
   constructor(private readonly page: Page, private readonly currentCheckoutHeaders: CurrentCheckoutHeadersProvider,
-    private readonly captureCheckoutResponse?: CheckoutResponseCapture) {}
+    private readonly captureCheckoutResponse?: CheckoutResponseCapture, private readonly contextHooks: CheckoutContextHooks = {}) {}
+
+  private async acquireCheckoutHeaders(): Promise<CurrentCheckoutHeaders> {
+    let settled = false, verificationShown = false;
+    const acquisition = this.currentCheckoutHeaders().finally(() => { settled = true; });
+    while (!settled) {
+      await Promise.race([acquisition.then(() => undefined, () => undefined),
+        new Promise<void>(resolve => setTimeout(resolve, 200))]);
+      if (settled) break;
+      const challengeVisible = await this.page.locator('iframe[src*="challenges.cloudflare.com"]:visible').count().then(count => count > 0).catch(() => false);
+      if (challengeVisible && !verificationShown) {
+        verificationShown = true;
+        await this.contextHooks.onHumanVerificationRequired?.();
+      }
+    }
+    const headers = await acquisition;
+    if (verificationShown) await this.contextHooks.onHumanVerificationCompleted?.();
+    return headers;
+  }
 
   async prepareCheckoutContext(): Promise<void> {
     this.assertPage();
     if (process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT !== 'SUPERVISED_ONE_SHOT')
       throw new BrowserSessionTransportError('LIVE_SUBMISSION_DISABLED');
     let current: CurrentCheckoutHeaders;
-    try { current = await this.currentCheckoutHeaders(); }
+    try { current = await this.acquireCheckoutHeaders(); }
     catch (error) { throw securityContextError(error); }
     if (!usable(current?.turnstileToken) || !usable(current?.publicFingerprint))
       throw new BrowserSessionTransportError('CURRENT_CHECKOUT_HEADERS_INVALID');
@@ -106,7 +128,7 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
     this.preparedHeaders = undefined;
     this.preparedAt = undefined;
     if (!current) {
-      try { current = await this.currentCheckoutHeaders(); }
+      try { current = await this.acquireCheckoutHeaders(); }
       catch (error) { throw securityContextError(error); }
       preparedAt = Date.now();
     }

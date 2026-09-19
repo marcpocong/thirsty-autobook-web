@@ -69,15 +69,17 @@ try {
   const browser = await chromium.connectOverCDP(identity.cdpUrl);
   const context = browser.contexts()[0];
   if (!context) throw Error('API_BROWSER_CONTEXT_MISSING');
-  const page = await context.newPage();
-  await page.goto(ONDA_URL, { waitUntil: 'domcontentloaded', timeout: 45_000 });
+  const matchingPages = context.pages().filter(candidate => candidate.url() === ONDA_URL);
+  const page = matchingPages[0] ?? await context.newPage();
+  await Promise.all(matchingPages.slice(1).map(duplicate => duplicate.close().catch(() => undefined)));
+  if (page.url() !== ONDA_URL) await page.goto(ONDA_URL, { waitUntil: 'domcontentloaded', timeout: 45_000 });
   await page.bringToFront();
   await page.getByTestId('public-booking-hero-title').first().waitFor({ state: 'visible', timeout: 45_000 });
   if ((await page.getByTestId('public-booking-hero-title').first().innerText()).trim() !== VENUE)
     throw Error('WRONG_VENUE');
   await windowState(page, 'minimized');
   stage('BROWSER_READY', { port: identity.port });
-  if (command.mode === 'prepare') { await page.close(); process.exitCode = 0; }
+  if (command.mode === 'prepare') { process.exitCode = 0; }
   else {
     if (command.mode === 'live') {
       const releaseMs = command.releaseMs!;
@@ -104,7 +106,6 @@ try {
     if (command.mode === 'dry') {
       // The dry path has no customer lookup, checkout security context, or submission permit.
       stage('DRY_RUN_COMPLETE');
-      await page.close();
     } else {
       const plan = discovery.candidates[0]!;
       const customer = loadLocalCheckoutCustomer();
@@ -132,7 +133,16 @@ try {
       try { hold = await submitCalendarFreeTwoHourCheckout({ page, plan, availability: discovery.snapshot,
         customer, approval: { court: court.court, date: command.date, startTime: plan.startTime,
           endTime: plan.endTime, maximumAmount: requested?.maximum ?? config.MAX_PRICE, customerId: customer.customerId,
-          approvalReference: `desktop-api-first-${key}` }, journal, captureCheckoutResponse: capture });
+          approvalReference: `desktop-api-first-${key}` }, journal, captureCheckoutResponse: capture,
+        onHumanVerificationRequired: async () => {
+          await page.evaluate(() => { document.title = 'THIRSTY BOT - VERIFY HERE'; });
+          await windowState(page, 'normal'); await page.bringToFront();
+          stage('HUMAN_VERIFICATION_REQUIRED');
+        },
+        onHumanVerificationCompleted: async () => {
+          stage('HUMAN_VERIFICATION_COMPLETE');
+          await windowState(page, 'minimized');
+        } });
       } catch (error) {
         const code = error instanceof Error ? error.message : '';
         if (/TURNSTILE|SECURITY_CONTEXT|CHALLENGE/.test(code)) {

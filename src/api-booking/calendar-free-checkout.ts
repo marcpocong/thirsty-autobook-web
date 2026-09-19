@@ -18,6 +18,8 @@ export async function submitCalendarFreeTwoHourCheckout(input: {
   page: Page; plan: BookingPlan; availability: AvailabilitySnapshot; customer: CheckoutCustomer;
   approval: ApprovedCalendarFreeAttempt; journal: DurableSubmissionJournal;
   captureCheckoutResponse?: CheckoutResponseCapture;
+  onHumanVerificationRequired?(): Promise<void>;
+  onHumanVerificationCompleted?(): Promise<void>;
 }): Promise<VerifiedTwoHourHold> {
   if (process.env.ONDA_CALENDAR_FREE_CHECKOUT !== 'APPROVED_ONE_SHOT' ||
     process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT !== 'SUPERVISED_ONE_SHOT')
@@ -38,7 +40,8 @@ export async function submitCalendarFreeTwoHourCheckout(input: {
     plan.totalPrice > approval.maximumAmount || !approval.approvalReference.trim() ||
     hours.some(hour => hour.spaceId !== first.spaceId) || customer.clientId !== THIRSTY_PICKLE_CLIENT_ID)
     throw Error('CALENDAR_FREE_APPROVAL_MISMATCH');
-  const transport = new OndaBrowserSessionTransport(input.page, calendarFreeSecurityContext(input.page),
-    input.captureCheckoutResponse);
+  const transport = new OndaBrowserSessionTransport(input.page, () => calendarFreeSecurityContext(input.page)(),
+    input.captureCheckoutResponse, { onHumanVerificationRequired: input.onHumanVerificationRequired,
+      onHumanVerificationCompleted: input.onHumanVerificationCompleted });
   return new TwoHourReservationAdapter(transport, input.journal).submit(plan, customer, { supervisedOneShot: true });
 }

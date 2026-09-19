@@ -170,9 +170,11 @@ export class Controller {
         CANDIDATE_READY:'API candidate ready',DRY_RUN_COMPLETE:'API dry run complete',FRESH_VERIFICATION_AND_PROOFS:'Fresh verification and slot proofs',
         PENDING_HOLD:'Pending reservation captured',OFFICIAL_QRPH_HANDOFF:'Official QRPH checkout open',FAILED:'API run needs attention'};
       labels.HUMAN_VERIFICATION_REQUIRED='Human verification required in Chrome';
+      labels.HUMAN_VERIFICATION_COMPLETE='Human verification complete';
       this.state.headline=labels[event.stage]??event.stage.replaceAll('_',' ');
       this.state.detail=event.stage==='CANDIDATE_READY'?`Court ${event.court} · ${event.date} · ${event.startTime} · ${event.durationHours} hour(s) · PHP ${event.price}`:
         event.stage==='PENDING_HOLD'||event.stage==='OFFICIAL_QRPH_HANDOFF'?`Booking ${event.bookingNo} · ID ${event.bookingId} · Hold until ${event.holdExpiresAt} · PHP ${event.price}. Payment is manual.`:
+        event.stage==='HUMAN_VERIFICATION_REQUIRED'?'Use the Chrome window titled THIRSTY BOT - VERIFY HERE. This API run is waiting for you to finish the Cloudflare check.':
         event.stage==='FAILED'?event.code??'API_FIRST_RUN_FAILED':`Elapsed ${event.elapsedMs} ms`;
       this.log(`${labels[event.stage]??event.stage.replaceAll('_',' ')} · ${this.state.detail}`);
       this.publish();return;
