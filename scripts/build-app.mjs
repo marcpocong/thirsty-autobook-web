@@ -7,7 +7,12 @@ import { fileURLToPath } from 'node:url';
 
 if (process.platform !== 'win32') throw Error('WINDOWS_BUILD_REQUIRED');
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const output = resolve(root, '..', 'Thirsty Pickle Bot');
+const parent = resolve(root, '..');
+// Support both the legacy sibling source layout and the consolidated
+// `Thirsty Pickle Bot/Source` layout without copying the repository into itself.
+const output = existsSync(join(parent, 'Thirsty Pickle Bot.exe'))
+  ? parent
+  : resolve(parent, 'Thirsty Pickle Bot');
 const updating=existsSync(output);
 if(updating&&(!existsSync(join(output,'Thirsty Pickle Bot.exe'))||!existsSync(join(output,'.local/private'))))throw Error('APP_OUTPUT_UNRECOGNIZED');
 const hash = async path => createHash('sha256').update(await readFile(path)).digest('hex').toUpperCase();
