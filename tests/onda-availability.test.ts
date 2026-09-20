@@ -51,9 +51,9 @@ it('rejects holes, unavailable hours and noncontiguous candidates', () => {
   api.slots.forEach(s => { s.available = false; }); expect(apiCandidates(api, preferences, 1200)).toEqual([]);
   expect(apiCandidates(parse(), [{ court: 7, hours: ['18:00', '20:00'] }], 1200)).toEqual([]);
 });
-it('sums known PHP prices, tolerates optional pricing and preserves the early maximum on UI fallback', () => {
-  expect(apiCandidates(parse(), preferences, 1199)).toEqual([]);
-  expect(hybridPreferences(parse(), date, availabilityCells(), preferences, 1199).preferences).toEqual([]);
+it('keeps available courts regardless of known PHP price and tolerates optional pricing', () => {
+  expect(apiCandidates(parse(), preferences, 1)).toEqual(preferences);
+  expect(hybridPreferences(parse(), date, availabilityCells(), preferences, 1).preferences).toEqual(preferences);
   const raw: any = availabilityFixture();
   Object.values(raw.data.slotsBySpace).forEach((slots: any) => slots.forEach((s: any) => { delete s.pricing; delete s.isNightRate; }));
   expect(apiCandidates(parseAvailability(raw, date), preferences, 1199)).toEqual(preferences);

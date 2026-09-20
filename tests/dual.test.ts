@@ -43,7 +43,7 @@ it.each([0,3,-1,1.5,'2',null,true])('rejects arbitrary court count %s',count=>ex
 it('fingerprints change with count; single view otherwise retains compiled semantics',()=>{
   const a=bookingView(config({COURT_COUNT:1})),b=bookingView(config());
   expect(a.fingerprint).not.toBe(b.fingerprint);expect(a.preferences).toEqual(b.preferences);expect(a.slots).toEqual(b.slots);
-  expect({...a.setup,COURT_COUNT:2}).toEqual(b.setup);expect(describePlan(b)).toContain('Maximum possible combined: PHP 2400');
+  expect({...a.setup,COURT_COUNT:2}).toEqual(b.setup);expect(describePlan(b)).toContain('No price ceiling');
   expect(dualValidationFingerprint(config())).not.toBe(dualValidationFingerprint(config({MAX_PRICE:1300})));
 });
 it('the Standard single-court release retains its direct path and the new router does not use the legacy dual runtime',()=>{
@@ -105,12 +105,12 @@ it('B conflict causes both cleanups before A7+B5 replan',async()=>{
 it.each(['unknown','foreign','changed-date','failed-click'])('unsafe %s cleanup cannot replan or Proceed',async(kind)=>{
   const h=harness(),click=h.workers[1].port.click;
   h.workers[1].port.click=async(...args)=>{await click(...args);if(kind==='unknown')h.grids[1].cells[0]!.state='unknown';if(kind==='foreign')set(h.grids[1],1,'08:00','selected');if(kind==='changed-date')h.grids[1].rows[0]!.date='2026-09-15';if(kind==='failed-click'&&args[3]==='SELECTED')throw Error('conflict');};
-  if(kind==='failed-click')h.workers[1].port.summary=async()=>({count:'1 Court • 2 Slots',amount:'PHP 1201',actionable:true});
+  if(kind==='failed-click')h.workers[1].port.summary=async()=>({count:'1 Court • 2 Slots',amount:'PHP 0',actionable:true});
   await expect(h.run()).rejects.toThrow('DUAL_CLEANUP_UNVERIFIED');expect(h.calls.some(c=>c.includes('Proceed'))).toBe(false);
 });
 it('pair attempts are bounded and failed assignments never repeat',async()=>{const h=harness({MAX_SELECTION_ATTEMPTS:2});h.workers[1].port.click=async(_d,c,hour)=>{h.calls.push(`lost:${c}/${hour}`);throw Error('conflict');};await expect(h.run()).rejects.toThrow('DUAL_PAIR_ATTEMPTS_EXHAUSTED');expect(h.calls.filter(c=>c.startsWith('lost:'))).toEqual(['lost:6/10:00','lost:5/10:00']);});
-it.each(['A','B'])('each worker enforces its own maximum in selection summary (%s)',async id=>{
-  const h=harness({MAX_SELECTION_ATTEMPTS:1});h.workers[id==='A'?0:1].port.summary=async()=>({count:'1 Court • 2 Slots',amount:'PHP 1201',actionable:true});await expect(h.run()).rejects.toThrow('DUAL_PAIR_ATTEMPTS_EXHAUSTED');expect(h.calls.some(c=>c.includes('Proceed'))).toBe(false);
+it.each(['A','B'])('each worker rejects a nonpositive selection amount (%s)',async id=>{
+  const h=harness({MAX_SELECTION_ATTEMPTS:1});h.workers[id==='A'?0:1].port.summary=async()=>({count:'1 Court • 2 Slots',amount:'PHP 0',actionable:true});await expect(h.run()).rejects.toThrow('DUAL_PAIR_ATTEMPTS_EXHAUSTED');expect(h.calls.some(c=>c.includes('Proceed'))).toBe(false);
 });
 it('one checkout failure retains the other hold and never cancels it',async()=>{const h=harness();h.workers[1].checkout=vi.fn(async()=>{throw Error('checkout failed');});const r=await h.run();expect(r.status).toBe('DUAL_PARTIAL_SUCCESS');expect(r.workers).toEqual(['hold','failed']);expect(h.workers[0].safety.boundary).toBe(true);expect(h.calls.filter(c=>c.endsWith('/SELECTED'))).toEqual([]);});
 it('selection only retains two verified selections and never Proceed',async()=>{const h=harness();expect((await h.run('selection')).status).toBe('DUAL_SELECTION_VERIFIED');expect(h.grids.map(g=>g.cells.filter(c=>c.state==='selected').length)).toEqual([2,2]);expect(h.calls.some(c=>c.includes('Proceed'))).toBe(false);});

@@ -19,9 +19,10 @@
       <label>Courts to book<select id="court-count"><option value="1">1 Court</option><option value="2">2 Courts</option></select></label>
       <label>Start time<select id="start-time"></select></label>
       <label>Duration (hours)<input id="duration" type="number" min="1" max="3" value="2"></label>
-      <label>Maximum per court (PHP)<input id="maximum" type="number" min="1" step="0.01" value="1200"></label>
+      <input id="maximum" type="hidden" value="1200">
       <label>Maximum candidate attempts<input id="attempts" type="number" min="1" max="5" value="3"></label>
     </div>
+    <div id="player-details" class="player-details" aria-label="Player details used for booking"></div>
     <div class="setup-grid editors"><div><h3>Court priority</h3><ol id="court-order"></ol></div><div><h3>Fallback starts · in order</h3><div class="button-row"><select id="fallback-time" aria-label="Add fallback start time"></select><button id="add-fallback" class="secondary">Add</button></div><ol id="fallback-order"></ol><p class="small">Primary time × court order, then each fallback × court order.</p></div></div>
     <button id="save-booking" class="secondary">Save booking plan</button><span id="edit-status" class="small"></span></fieldset>
     <div id="booking-adjustment" class="readiness" role="status" hidden></div>
@@ -54,7 +55,7 @@
     <section class="panel controls"><div class="section-title"><h2>Booking operations</h2><span class="small">PREPARE & ARM</span></div>
       <div class="button-row"><button id="chrome" class="secondary">Start / Attach Chrome</button><button id="inspect" class="secondary">Inspect Onda</button></div>
       <button id="prepare" class="prepare">Prepare Booking <span aria-hidden="true">→</span></button>
-      <div id="api-dry-controls" hidden><label>API dry-run date<input id="api-dry-date" type="date"></label><button id="api-preview" class="secondary">Run API Dry Run</button><p class="small">Uses saved court priority, hours, duration and price. Checkout submission is blocked.</p></div>
+      <div id="api-dry-controls" hidden><label>API dry-run date<input id="api-dry-date" type="date"></label><button id="api-preview" class="secondary">Run API Dry Run</button><p class="small">Uses saved court priority, hours and duration. Checkout submission is blocked.</p></div>
       <div class="readiness" id="readiness" role="status"><strong id="headline">Prepare your session</strong><p id="detail">Start dedicated Chrome, then verify the page before arming.</p></div>
       <p id="blocked-reason" class="small" role="status"></p><button id="arm" class="arm">Arm Booking Selection</button>
       <p class="small hint" id="arm-description">Explicit confirmation · selects at release · stops before Proceed</p>
@@ -68,7 +69,7 @@
     <fieldset id="practice-fields"><div class="setup-grid"><label>Date<input id="practice-date" type="date"></label><label>Court<select id="practice-court"></select></label><label>Start<select id="practice-start"></select></label><label>Duration (hours)<input id="practice-duration" type="number" min="1" max="16" value="2"></label></div><button id="practice" class="secondary">Run Practice — Select then Deselect</button></fieldset><p class="small">Tests slot interaction only. Does not continue to booking. Select → verify → deselect → verify clean. Never Proceed.</p>
   </section>
   <section class="panel practice"><div class="section-title"><h2>FULL FLOW PRACTICE ? QR</h2><button id="reset-practice" class="secondary">Reset Practice Session</button></div>
-    <fieldset id="full-practice-fields"><div class="setup-grid"><label>Date<input id="full-date" type="date"></label><label>Court<select id="full-court"></select></label><label>Start<select id="full-start"></select></label><label>Duration (hours)<input id="full-duration" type="number" min="1" max="16" value="2"></label><label>Expected max price (PHP)<input id="full-maximum" type="number" min="1" step="0.01" value="1200"></label></div>
+    <fieldset id="full-practice-fields"><div class="setup-grid"><label>Date<input id="full-date" type="date"></label><label>Court<select id="full-court"></select></label><label>Start<select id="full-start"></select></label><label>Duration (hours)<input id="full-duration" type="number" min="1" max="16" value="2"></label><input id="full-maximum" type="hidden" value="1200"></div>
     <label><input id="full-terms" type="checkbox"> I authorize accepting Onda Terms for this practice run</label>
     <button id="full-practice" class="secondary">Run Full Flow Practice to QR</button></fieldset>
     <p class="small">Uses the exact selected court/time. Does not wait for 08:00. Continues through Onda to QR Checkout. Payment is NOT automated. Reset closes and reopens the dedicated practice browser when a safe local reset is possible.</p><p id="practice-blocked" class="small"></p>
@@ -81,7 +82,7 @@
       <label>Date<input id="dual-date" type="date"></label>
       <label>Court A<select id="dual-court-a"></select></label><label>Court B<select id="dual-court-b"></select></label>
       <label>Start<select id="dual-start"></select></label><label>Duration (hours)<input id="dual-duration" type="number" min="1" max="16" value="1"></label>
-      <label>Maximum per court (PHP)<input id="dual-maximum" type="number" min="1" step="0.01" value="1200"></label>
+      <input id="dual-maximum" type="hidden" value="1200">
     </div>
     <label class="terms-choice"><input id="dual-noncompetitive" type="checkbox"> These exact courts and hours are available non-prime practice slots</label>
     <div class="button-row"><button id="dual-dry" class="secondary">Dual Dry Pair</button><button id="dual-selection" class="secondary">Dual Selection Practice</button></div>

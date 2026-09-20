@@ -79,7 +79,7 @@ export interface Dependencies {
   confirmApiTest?:(input:{strategy:'standard'|'extended';date:string;start:string;duration:number;courtCount:1|2;maximum:number;priority:number[]})=>Promise<boolean>;
   runner: Runner; lock(): Promise<boolean>; cdp(): Promise<boolean>; clock: typeof readClock;
   browserHealth?():Promise<{A:boolean;B:boolean}>;
-  playerStatus?():{primary:boolean;extended:boolean};
+  playerStatus?():{primary:boolean;extended:boolean;primaryDetails?:{fullName:string;phone:string;email:string};extendedDetails?:{fullName:string;phone:string;email:string}};
   confirm(kind?: 'observe'|'selection'|'dry'|'full', plan?:BookingView): Promise<boolean>; publish(status: Dashboard): void;
   booking(): BookingView; saveBooking(input:unknown): BookingView;
   reviewLock?(owned:boolean):Promise<LockReview>;

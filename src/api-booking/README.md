@@ -129,7 +129,7 @@ Read-only candidate preview:
 npx tsx src/api-booking/preview-live.ts 2026-09-18 18:00 3 1 1800 7,6,5,4,3,2,1
 ```
 
-Arguments are target date, start time, duration in hours, court count, maximum PHP price per court per chunk, and comma-separated court priority. This performs one public availability GET and prints a candidate or a no-candidate reason; it cannot create a booking. The provider pins `https://app.onda.fit`, omits credentials, refuses redirects and non-JSON responses, and validates the response before planning. `capturedAt` is the local receipt time, not a server-signed freshness proof.
+Arguments are target date, start time, duration in hours, court count, a legacy price argument, and comma-separated court priority. The legacy price argument is accepted for compatibility and does not filter courts. This performs one public availability GET and prints a candidate or a no-candidate reason; it cannot create a booking. The provider pins `https://app.onda.fit`, omits credentials, refuses redirects and non-JSON responses, and validates the response before planning. `capturedAt` is the local receipt time, not a server-signed freshness proof.
 
 ## Fixtures
 
@@ -151,7 +151,7 @@ association. `public-checkout.ts` builds and validates standard one- or two-cour
 hour observed-schema requests; it is a preparation boundary, not authorization
 to submit them.
 
-The live availability provider and fixture-backed mock share the parser and planner. Standard plans require 1-3 consecutive hours. Extended plans use two sequential checkout chunks, in the same split order as the Chrome planner: 3+1, 2+2, 1+3 for four hours; 3+2, 2+3 for five; and 3+3 for six. Each chunk selects its own courts, with overlap preferred. `maximumTotalPrice` is retained as a legacy field name but means a limit **per court in each chunk**. This models Chrome product behavior, not an observed Onda multi-hour API contract.
+The live availability provider and fixture-backed mock share the parser and planner. Standard plans require 1-3 consecutive hours. Extended plans use two sequential checkout chunks, in the same split order as the Chrome planner: 3+1, 2+2, 1+3 for four hours; 3+2, 2+3 for five; and 3+3 for six. The planner prioritizes the same courts across both chunks when availability permits. `maximumTotalPrice` remains in the legacy input contract but does not filter courts. Checkout still verifies the selected amount and reports it before submission. This models Chrome product behavior, not an observed Onda multi-hour API contract.
 
 The existing mock coordinator creates a stable logical booking identity independent of run ID and records intent states: submitting, confirmed failure, unknown, partial, held, checkout failure, and handoff ready. Confirmed mock hold evidence is retained before checkout preparation. Unknown, partial, expired, and checkout-failed outcomes remain blocked for reconciliation within its intent store. That coordinator's default store is **in memory only**; passing the same store to multiple coordinators only shares protection inside one process. The separate two-hour adapter now has a durable journal, but it is not wired into the mock coordinator. There is no provider idempotency or authoritative reconciliation implementation. The mock response fields and expiration checks are offline contracts, not proof of Onda's live behavior.
 

@@ -45,6 +45,9 @@ main { padding: 14px 24px 90px; }
 .section-title .secondary { flex: 0 0 auto; }
 h2 { font-size: 13px; font-weight: 650; margin: 0; letter-spacing: .15px; }
 .small { font-size: 10px; color: #91aa9a; line-height: 1.6; }
+.player-details { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px; margin: 10px 0; }
+.player-details > div { border: 1px solid var(--line); border-radius: 7px; padding: 9px; font-size: 11px; line-height: 1.55; overflow-wrap: anywhere; }
+.player-details strong { color: var(--brand-bright); }
 .section-title .small { font-size: 9px; letter-spacing: .4px; }
 
 dl { margin: 0; }

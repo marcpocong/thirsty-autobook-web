@@ -86,7 +86,7 @@ export function selectionAmount(summary: SelectionSummary, duration: number, max
   if (!new RegExp(`^${courtCount} Court${courtCount === 1 ? '' : 's'}\\s*•\\s*${duration} Slots?$`).test(summary.count)) throw new Error('SELECTION_SUMMARY_MISMATCH');
   if (!/^(?:₱|PHP)\s*(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{2})?$/.test(summary.amount)) throw new Error('SELECTION_AMOUNT_UNKNOWN');
   const amount = Number(summary.amount.replace(/^(?:₱|PHP)\s*/, '').replaceAll(',', ''));
-  if (!Number.isFinite(amount) || amount <= 0 || amount > maxPrice) throw new Error('SELECTION_PRICE_MISMATCH');
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error('SELECTION_PRICE_MISMATCH');
   return amount;
 }
 const key = (p: Preference) => `${p.court}:${p.hours.join(',')}`;

@@ -31,12 +31,13 @@ export function planBooking(snapshot: AvailabilitySnapshot, p: BookingPreference
   if (!Object.hasOwn(snapshot.returnedDates, p.targetDate)) throw new BookingPlanningError('BOOKING_TARGET_DATE_MISSING');
   const index = new Map(snapshot.slots.map(slot => [`${slot.court}/${slot.date}/${slot.startTime}`, slot]));
   let enoughCourts = false;
-  let affordable = false;
   for (const startTime of unique([...p.preferredStartTimes, ...p.fallbackStartTimes])) {
     if (!/^([01]\d|2[0-3]):00$/.test(startTime)) continue;
     const start = Number(startTime.slice(0, 2));
     if (start < 8 || start + p.durationHours > 24) continue;
-    for (const split of patterns(p.durationHours)) {
+    // Keep the same courts across both checkouts whenever any valid split permits it.
+    // Only then consider a split that changes courts.
+    for (const requireContinuity of [true, false]) for (const split of patterns(p.durationHours)) {
       let offset = start;
       const options: PlannedCourt[][][] = [];
       let completeCourtPattern = true;
@@ -53,15 +54,15 @@ export function planBooking(snapshot: AvailabilitySnapshot, p: BookingPreference
         }
         if (candidates.length < p.courtCount) completeCourtPattern = false;
         const combinations = p.exactCourts ? (candidates.length === p.courtCount ? [candidates] : []) : groups(candidates, p.courtCount);
-        options.push(combinations.filter(cs => cs.every(c => cents(c.price) <= cents(p.maximumTotalPrice))));
+        options.push(combinations);
         offset += duration;
       }
       if (completeCourtPattern) enoughCourts = true;
       if (options.some(o => !o.length)) continue;
-      affordable = true;
       for (const a of options[0]!) {
         const seconds = split.length === 1 ? [[]] : [...options[1]!].sort((x, y) => y.filter(c => a.some(first => first.court === c.court)).length - x.filter(c => a.some(first => first.court === c.court)).length);
         for (const b of seconds) {
+          if (requireContinuity && split.length > 1 && !p.exactCourts && !b.every(c => a.some(first => first.court === c.court))) continue;
           const selected = split.length === 1 ? [a] : [a, b];
           const key = JSON.stringify(selected.map(cs => [cs[0]!.startTime, cs[0]!.endTime, cs.map(c => [c.court, c.spaceId])]));
           if (excluded.has(key)) continue;
@@ -72,7 +73,7 @@ export function planBooking(snapshot: AvailabilitySnapshot, p: BookingPreference
       }
     }
   }
-  throw new BookingPlanningError(affordable ? 'BOOKING_CANDIDATES_EXCLUDED' : enoughCourts ? 'BOOKING_MAXIMUM_PRICE_EXCEEDED' : 'BOOKING_NO_CONSECUTIVE_AVAILABILITY');
+  throw new BookingPlanningError(enoughCourts ? 'BOOKING_CANDIDATES_EXCLUDED' : 'BOOKING_NO_CONSECUTIVE_AVAILABILITY');
 }
 
 /**

@@ -221,8 +221,8 @@ describe('offline API booking coordinator', () => {
   });
 
   it('never submits when planning fails', async () => {
-    const { run, reservation } = setup('verified', { maximumTotalPrice: 1 });
-    await expect(run()).rejects.toThrow('BOOKING_MAXIMUM_PRICE_EXCEEDED');
+    const { run, reservation } = setup('verified', { durationHours: 4 });
+    await expect(run()).rejects.toThrow('BOOKING_DURATION_INVALID');
     expect(reservation.submissions).toHaveLength(0);
   });
 });

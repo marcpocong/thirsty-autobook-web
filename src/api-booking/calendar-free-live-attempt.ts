@@ -75,12 +75,12 @@ try {
     courtCount: 1, maximumTotalPrice: config.MAX_PRICE, currency: 'PHP' });
   const journal = new DurableSubmissionJournal(journalDirectory);
   console.log(JSON.stringify({ stage: 'EXACT_ATTEMPT', court, date, startTime, durationHours,
-    endTime: plan.endTime, price: plan.totalPrice, maximumPrice: config.MAX_PRICE,
+    endTime: plan.endTime, price: plan.totalPrice,
     possiblePendingHold: true, journalDirectory, submitted: false }));
   let hold;
   try { hold = await submitCalendarFreeTwoHourCheckout({ page, plan, availability, customer,
     approval: { courts: [court], date: date!, startTime: startTime!, endTime: plan.endTime,
-      maximumAmount: config.MAX_PRICE, customerId: customer.customerId,
+      maximumAmount: plan.totalPrice, customerId: customer.customerId,
       approvalReference: 'user-session-2026-09-19-second-live-reservation' }, journal,
     captureCheckoutResponse }); }
   finally { await Promise.allSettled(networkCaptures); }

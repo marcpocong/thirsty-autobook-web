@@ -37,9 +37,9 @@ it.each([2,1])('falls back to %i hour first chunk before declaring unavailable',
   only(a,first===2?['20:00']:['19:00','20:00'],[]);
   expect(resolveBookingPlan(request(),[a,b])!.chunks.map(c=>c.duration)).toEqual([first,4-first]);
 });
-it.each([[[7,6],[7,6]],[[7,5,4],[7,5]],[[4,3],[4,3]]])('preserves maximum available overlap or switches the entire pair', (available,expected)=>{
+it.each([[[7,6],[7,6],[7,6]],[[7,5,4],[7,4],[7,4]],[[4,3],[7,6],[4,3]]])('keeps the same pair whenever it is available', (available,expectedA,expectedB)=>{
   const a=grid(),b=grid();only(a,['18:00','19:00','20:00'],[7,6,4]);only(b,['21:00'],available);
-  const plan=resolveBookingPlan(request(),[a,b])!;expect(plan.chunks[0]!.courts).toEqual([7,6]);expect(plan.chunks[1]!.courts).toEqual(expected);
+  const plan=resolveBookingPlan(request(),[a,b])!;expect(plan.chunks[0]!.courts).toEqual(expectedA);expect(plan.chunks[1]!.courts).toEqual(expectedB);
 });
 it('does not switch courts inside a chunk',()=>{const a=grid(),b=grid();only(a,['18:00'],[7]);only(a,['19:00'],[6]);only(a,['20:00'],[5]);expect(resolveBookingPlan({...request(6,1)},[a,b])).toBeUndefined();});
 it('moves the entire block to a fallback start',()=>{const a=grid(),b=grid();only(a,['18:00'],[]);const p=resolveBookingPlan({...request(),fallbackStarts:['19:00']},[a,b])!;expect(p.requestedStart).toBe('19:00');expect(p.chunks.flatMap(c=>c.hours)).toEqual(['19:00','20:00','21:00','22:00']);});
@@ -58,12 +58,12 @@ it('preserves a post-confirmation full-guard failure without attempting a slot c
   ]);
 });
 it('confirmed Test Now retries a safe conflict with just one confirmation',async()=>{const h=harness(),confirm=vi.fn(async()=>true),click=h.workers[1]!.port.click;let failed=false;h.workers[1]!.port.click=async(...a)=>{if(!failed){failed=true;set(h.grids[1]!,a[1],a[2],'unavailable');throw Error('conflict');}await click(...a);};expect((await h.run(confirm)).status).toBe('PAYMENT HOLD ACTIVE');expect(confirm).toHaveBeenCalledOnce();});
-it('an over-limit second checkout prevents both Proceeds despite a lower first-checkout total',async()=>{const h=harness();h.workers[1]!.port.summary=async()=>({count:'2 Courts • 2 Slots',amount:'PHP 2001',actionable:true});await expect(h.run()).rejects.toThrow('UNSAFE_FOR_RECOVERY');expect(h.calls.filter(c=>c.endsWith('Proceed'))).toHaveLength(0);});
+it('an invalid second checkout amount prevents both Proceeds',async()=>{const h=harness();h.workers[1]!.port.summary=async()=>({count:'2 Courts • 2 Slots',amount:'PHP 0',actionable:true});await expect(h.run()).rejects.toThrow('UNSAFE_FOR_RECOVERY');expect(h.calls.filter(c=>c.endsWith('Proceed'))).toHaveLength(0);});
 it('a durable write failure prevents final dispatch',async()=>{const s=new Safety(),action=vi.fn(async()=>{});s.persistStage=async()=>{throw Error('DISK_WRITE_FAILED');};await expect(s.finalAction(action)).rejects.toThrow('DISK_WRITE_FAILED');expect(action).not.toHaveBeenCalled();});
 it('failed second chunk cleans both before a fresh bounded replan',async()=>{const h=harness(),click=h.workers[1]!.port.click;let failed=false;h.workers[1]!.port.click=async(...a)=>{if(!failed){failed=true;set(h.grids[1]!,a[1],a[2],'unavailable');throw Error('conflict');}await click(...a);};expect((await h.run()).status).toBe('PAYMENT HOLD ACTIVE');expect(h.calls.some(c=>c.endsWith('SELECTED'))).toBe(true);});
 it('foreign selection stops without cleanup or Proceed',async()=>{const h=harness(),click=h.workers[1]!.port.click;h.workers[1]!.port.click=async(...a)=>{await click(...a);set(h.grids[1]!,1,'08:00','selected');};await expect(h.run()).rejects.toThrow('UNSAFE_FOR_RECOVERY');expect(h.calls.some(c=>c.endsWith('SELECTED')||c.endsWith('Proceed'))).toBe(false);});
 it('partial success preserves first hold and reports second failure',async()=>{const h=harness();h.workers[1]!.checkout=async()=>{throw Error('PAYMENT_FAILED');};const r=await h.run();expect(r.status).toBe('PARTIAL SUCCESS');expect(r.outcomes).toEqual(['PAYMENT HOLD ACTIVE','FAILED']);});
-it.each([1,2])('enforces maximum independently for each %i court checkout',count=>{expect(selectionAmount({count:`${count} Court${count===1?'':'s'} • 3 Slots`,amount:`PHP ${count*1000}`,actionable:true},3,count*1000,count)).toBe(count*1000);expect(()=>selectionAmount({count:`${count} Court${count===1?'':'s'} • 3 Slots`,amount:`PHP ${count*1000+1}`,actionable:true},3,count*1000,count)).toThrow('PRICE');});
+it.each([1,2])('accepts any positive amount for each %i court checkout',count=>{expect(selectionAmount({count:`${count} Court${count===1?'':'s'} • 3 Slots`,amount:`PHP ${count*1000}`,actionable:true},3,1,count)).toBe(count*1000);expect(()=>selectionAmount({count:`${count} Court${count===1?'':'s'} • 3 Slots`,amount:'PHP 0',actionable:true},3,1,count)).toThrow('PRICE');});
 it('validates multi-court review identities, full hours and reservation count',()=>{
   const card={venue:VENUE,fullDate:'Tuesday, September 15, 2026',shortDate:'Tue, Sep 15',court:'Court 7: Mango Wing',times:['8:00 PM - 9:00 PM','9:00 PM - 10:00 PM']};
   expect(reviewBundleSummary({count:'Your Reservations (4)',cards:[card,{...card,court:'Court 6: Mango Wing'}]},2000).courts).toEqual([7,6]);

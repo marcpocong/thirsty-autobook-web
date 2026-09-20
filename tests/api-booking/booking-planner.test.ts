@@ -28,7 +28,7 @@ describe('deterministic booking planning', () => {
       chrome.chunks.map(chunk => [chunk.start, chunk.duration, [7]]));
   });
 
-  it('applies the price cap per court in each checkout and reports court shortages separately', () => {
+  it('requires enough courts in each checkout regardless of price', () => {
     const two = planBooking(synthetic, { ...base, courtCount: 2, maximumTotalPrice: 1_800 });
     expect(two.chunks[0]!.totalPrice).toBe(3_600);
     const raw = availabilityFixture('2026-09-18');
@@ -74,18 +74,18 @@ describe('deterministic booking planning', () => {
     expect(planBooking(snapshot, base).startTime).toBe('12:00');
   });
 
-  it('enforces maximum total price', () => {
-    expect(() => planBooking(synthetic, { ...base, maximumTotalPrice: 1_799 })).toThrowError('BOOKING_MAXIMUM_PRICE_EXCEEDED');
+  it('does not reject an available preferred court for its price', () => {
+    expect(planBooking(synthetic, { ...base, maximumTotalPrice: 1 }).courts[0]!.court).toBe(7);
   });
 
-  it('uses a cheaper fallback court when a preferred court exceeds the total maximum', () => {
+  it('keeps the preferred court when its price exceeds the old maximum', () => {
     const raw = availabilityFixture('2026-09-18');
     for (const slot of raw.data.slotsBySpace[COURT_TO_SPACE_ID[7]]!.filter(slot => ['10:00', '11:00', '12:00'].includes(slot.startTime))) slot.pricing.amount = 1_000;
     const snapshot = parseAvailability(raw, {
       startDate: '2026-09-18', endDate: '2026-09-18', capturedAt: '2026-09-18T00:00:00Z',
       fixtureKind: 'synthetic', label: 'SYNTHETIC PRICE FALLBACK FIXTURE', now: new Date('2026-09-18T00:00:01Z'), maximumAgeMs: 5_000,
     });
-    expect(planBooking(snapshot, base).courts[0]!.court).toBe(3);
+    expect(planBooking(snapshot, base).courts[0]!.court).toBe(7);
   });
 
   it('plans Extended as two sequential checkout chunks', () => {
@@ -96,6 +96,17 @@ describe('deterministic booking planning', () => {
       ['18:00', '21:00', [7, 3]], ['21:00', '22:00', [7, 3]],
     ]);
     expect(plan.totalPrice).toBe(4_800);
+  });
+
+  it('keeps the same two courts when the highest ranked court is unavailable in the second checkout', () => {
+    const raw = availabilityFixture('2026-09-18');
+    raw.data.slotsBySpace[COURT_TO_SPACE_ID[7]]!.find(slot => slot.startTime === '13:00')!.isAvailable = false;
+    const snapshot = parseAvailability(raw, { startDate: base.targetDate, endDate: base.targetDate,
+      capturedAt: '2026-09-18T00:00:00Z', fixtureKind: 'synthetic', label: 'continuous courts',
+      now: new Date('2026-09-18T00:00:01Z'), maximumAgeMs: 5_000 });
+    const plan = planBooking(snapshot, { ...base, mode: 'extended', durationHours: 4,
+      courtCount: 2, courtPriority: [7, 6, 5], fallbackCourts: [], preferredStartTimes: ['10:00'], fallbackStartTimes: [] });
+    expect(plan.chunks.map(chunk => chunk.courts.map(court => court.court))).toEqual([[6, 5], [6, 5]]);
   });
 
   it('requires the mode-specific duration range', () => {

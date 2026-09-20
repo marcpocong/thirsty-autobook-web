@@ -21,7 +21,7 @@ export interface Dashboard {
   preparedAt?:number;
   preparedContext?:PreparedContext|null;
   browserHealth?:{A:boolean;B:boolean};
-  playerStatus?:{primary:boolean;extended:boolean};
+  playerStatus?:{primary:boolean;extended:boolean;primaryDetails?:{fullName:string;phone:string;email:string};extendedDetails?:{fullName:string;phone:string;email:string}};
   dualWorkers?:Partial<Record<'A'|'B',Extract<UiEvent,{type:'dualWorker'}>>>;
   dualResult?:Extract<UiEvent,{type:'dualResult'}>|null;
   dualValidation?:{selection:boolean;full:boolean};

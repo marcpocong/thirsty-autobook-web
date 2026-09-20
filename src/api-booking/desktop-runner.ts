@@ -160,7 +160,7 @@ try {
         try { hold = await submitCalendarFreeTwoHourCheckout({ page: session.page, plan: chunkPlan, availability: discovery.snapshot,
           customer, approval: { courts: chunkPlan.courts.map(court => court.court), date: command.date,
             startTime: chunkPlan.startTime, endTime: chunkPlan.endTime,
-            maximumAmount: (requested?.maximum ?? config.MAX_PRICE) * courtCount, customerId: customer.customerId,
+            maximumAmount: chunkPlan.totalPrice, customerId: customer.customerId,
             approvalReference: `desktop-api-first-${workerId}-${key}` }, journal,
           additionalJournals: journals.slice(1), captureCheckoutResponse: capture,
           onHumanVerificationRequired: async () => {

@@ -145,7 +145,7 @@ export function releaseCalendarOn(c: Pick<Config, 'TIMEZONE' | 'RELEASE_TIME' | 
   return {targetDate:release.startOf('day').plus({days:c.BOOKING_HORIZON_DAYS}).toISODate()!,releaseMs:release.toMillis(),releaseISO:release.toISO()!};
 }
 
-// Profile values remain local; only readiness booleans cross the UI boundary.
+// Profile values are exposed only to the local desktop UI for operator review.
 const PlayerSchema=z.object({fullName:z.string().trim().min(2),phone:z.string().trim().regex(/^(?:0|\+?63)?9\d{9}$/),email:z.email()});
 type PlayerFields=Pick<Config,'PLAYER_FULL_NAME'|'PLAYER_PHONE'|'PLAYER_EMAIL'|'PLAYER_B_FULL_NAME'|'PLAYER_B_PHONE'|'PLAYER_B_EMAIL'>;
 export function primaryPlayer(c:PlayerFields){
@@ -169,6 +169,14 @@ export function playerReadiness(c:PlayerFields){
 export function loadPlayerReadiness(){
   const env=environment();
   return playerReadiness({PLAYER_FULL_NAME:String(env.PLAYER_FULL_NAME??''),PLAYER_PHONE:String(env.PLAYER_PHONE??''),PLAYER_EMAIL:String(env.PLAYER_EMAIL??''),PLAYER_B_FULL_NAME:typeof env.PLAYER_B_FULL_NAME==='string'?env.PLAYER_B_FULL_NAME:undefined,PLAYER_B_PHONE:typeof env.PLAYER_B_PHONE==='string'?env.PLAYER_B_PHONE:undefined,PLAYER_B_EMAIL:typeof env.PLAYER_B_EMAIL==='string'?env.PLAYER_B_EMAIL:undefined});
+}
+export function loadPlayerProfiles(){
+  const env=environment();
+  const fields:PlayerFields={PLAYER_FULL_NAME:String(env.PLAYER_FULL_NAME??''),PLAYER_PHONE:String(env.PLAYER_PHONE??''),PLAYER_EMAIL:String(env.PLAYER_EMAIL??''),PLAYER_B_FULL_NAME:typeof env.PLAYER_B_FULL_NAME==='string'?env.PLAYER_B_FULL_NAME:undefined,PLAYER_B_PHONE:typeof env.PLAYER_B_PHONE==='string'?env.PLAYER_B_PHONE:undefined,PLAYER_B_EMAIL:typeof env.PLAYER_B_EMAIL==='string'?env.PLAYER_B_EMAIL:undefined};
+  let primary:ReturnType<typeof primaryPlayer>|undefined,extended:ReturnType<typeof extendedPlayer>|undefined;
+  try{primary=primaryPlayer(fields);}catch{}
+  try{extended=extendedPlayer(fields);}catch{}
+  return {primary:!!primary,extended:!!extended,primaryDetails:primary,extendedDetails:extended};
 }
 export function bookingPlayers(c:Config,strategy:'standard'|'extended'){
   return strategy==='extended'?{A:primaryPlayer(c),B:extendedPlayer(c)}:{A:primaryPlayer(c),B:undefined};
