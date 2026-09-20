@@ -116,20 +116,26 @@ it('shows both local player profiles used for checkout',async()=>{
  expect(details).toContain(extendedDetails.fullName);expect(details).toContain(extendedDetails.phone);expect(details).toContain(extendedDetails.email);
  await p.close();
 });
-it('keeps the Manila clock and timestamped API progress visible during Test Now',async()=>{
+it('shows a millisecond timer and labeled Activity timeline for every booking method',async()=>{
  const p=await renderer(false,{clock:clockStatus(ObservationSchema.parse({}),DateTime.fromISO('2026-09-21T08:00:00+08:00'))});
- await p.locator('#booking-method').selectOption('api-first');
  await p.evaluate(()=>{
    const state=(window as any).fixtureState;
    state.operation='fullPractice';
-   state.apiStage={type:'apiStage',stage:'FETCHING_AVAILABILITY',at:new Date().toISOString(),elapsedMs:1500,sincePreviousMs:900};
-   state.logs=[{at:state.apiStage.at,text:'Fetching live API availability · 1500 ms total · +900 ms since prior stage',level:'info'}];
+   state.runTiming={runId:'fixture',label:'BROWSER TEST',startedAt:new Date(Date.now()-1500).toISOString(),elapsedMs:0};
+   state.logs=[{at:new Date().toISOString(),text:'Target grid ready',level:'info',elapsedMs:1500,deltaMs:900}];
    (window as any).fixturePublish(state);
  });
  expect(await p.locator('.hero').isVisible()).toBe(true);
  expect(await p.locator('.activity').isVisible()).toBe(true);
- expect(await p.locator('#countdown-label').innerText()).toBe('API RUN ELAPSED');
- expect(await p.locator('#log').innerText()).toContain('+900 ms since prior stage');
+ expect(await p.locator('#countdown-label').innerText()).toBe('BROWSER TEST ELAPSED');
+ expect(await p.locator('#countdown').innerText()).toMatch(/^00:00:01\.\d{3}$/);
+ expect(await p.locator('#log').innerText()).toContain('Elapsed 1.500 seconds (1500 milliseconds)');
+ expect(await p.locator('#log').innerText()).toContain('Step +0.900 seconds (900 milliseconds)');
+ await p.locator('#activity-expand').click();
+ expect(await p.locator('.activity').evaluate(e=>e.classList.contains('expanded'))).toBe(true);
+ expect(await p.locator('#activity-expand').getAttribute('aria-expanded')).toBe('true');
+ await p.keyboard.press('Escape');
+ expect(await p.locator('.activity').evaluate(e=>e.classList.contains('expanded'))).toBe(false);
  expect(await p.locator('#clock').innerText()).toMatch(/^\d{2}:\d{2}:\d{2}$/);
  await p.close();
 });

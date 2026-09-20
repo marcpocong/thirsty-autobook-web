@@ -6,6 +6,9 @@ declare global { interface Window { thirsty: Bridge } }
 const byId = (id: string) => document.getElementById(id)!;
 let latest: Dashboard | undefined;
 let renderedLogs = '';
+let timingRunId='';
+let timingStartedMono=0;
+let timingInitialMs=0;
 let dirty=false, loadedPlan='';
 let courtOrder=[7,6,5,4,3,2,1], fallbackTimes:string[]=[];
 const input=(id:string)=>byId(id) as HTMLInputElement;
@@ -162,12 +165,14 @@ function render(state: Dashboard) {
     renderedLogs = signature; const log = byId('log'); const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
     if (state.logs.length) log.replaceChildren(...state.logs.map(line => {
       const p = document.createElement('p'); p.className = line.level;
-      const time = document.createElement('time'); time.textContent = new Date(line.at).toLocaleTimeString('en-GB', { timeZone: 'Asia/Manila',hour:'2-digit',minute:'2-digit',second:'2-digit',fractionalSecondDigits:3 });
-      p.append(time, document.createTextNode(line.text)); return p;
+      const time = document.createElement('time'); time.textContent = `${new Date(line.at).toLocaleTimeString('en-GB', { timeZone: 'Asia/Manila',hour:'2-digit',minute:'2-digit',second:'2-digit',fractionalSecondDigits:3 })} Manila`;
+      p.append(time);
+      if(line.elapsedMs!==undefined){const metrics=document.createElement('span');metrics.className='timing';metrics.textContent=`Elapsed ${(line.elapsedMs/1000).toFixed(3)} seconds (${line.elapsedMs} milliseconds) · Step +${(Number(line.deltaMs??0)/1000).toFixed(3)} seconds (${line.deltaMs??0} milliseconds) · `;p.append(metrics);}
+      p.append(document.createTextNode(line.text)); return p;
     }));
     if (atBottom) log.scrollTop = log.scrollHeight;
   }
-  byId('activity-state').textContent = busy ? `${state.operation.toUpperCase()} · PROCESS ACTIVE` : 'LOCAL PROCESS OUTPUT';
+  byId('activity-state').textContent = busy ? `${state.operation.toUpperCase()} · PROCESS ACTIVE` : state.runTiming?.logPath?'TIMING LOG SAVED LOCALLY':'LOCAL PROCESS OUTPUT';
   byId('mode-label').textContent=workflow==='test'?'TEST NOW':'RELEASE BOOKING';
    byId('prepare').firstChild!.textContent='RESET & PREPARE ';
    const apiFirst=input('booking-method').value==='api-first';
@@ -228,14 +233,15 @@ function tick() {
   byId('clock').textContent = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Manila', hourCycle: 'h23' }).format(now);
   byId('clock-date').textContent = new Intl.DateTimeFormat('en-US', { weekday:'long',month:'long',day:'numeric',year:'numeric',timeZone:'Asia/Manila' }).format(now);
   if (!latest) return;
-  if(workflow==='test'&&input('booking-method').value==='api-first'){
-    const stage=latest.apiStage;
-    const elapsed=stage?latest.operation==='idle'?stage.elapsedMs:Math.max(stage.elapsedMs,stage.elapsedMs+Date.now()-Date.parse(stage.at??now.toISOString())):0;
+  if(latest.runTiming){
+    const run=latest.runTiming;
+    if(timingRunId!==run.runId){timingRunId=run.runId;timingStartedMono=performance.now();timingInitialMs=Math.max(0,Date.now()-Date.parse(run.startedAt));}
+    const elapsed=run.endedAt?run.elapsedMs:Math.max(0,timingInitialMs+performance.now()-timingStartedMono);
     const seconds=Math.floor(elapsed/1000);
-    byId('countdown').textContent=[Math.floor(seconds/3600),Math.floor(seconds/60)%60,seconds%60].map(v=>String(v).padStart(2,'0')).join(':');
-    byId('countdown-label').textContent=latest.operation==='idle'?'LAST API RUN':'API RUN ELAPSED';
-    byId('release-time').textContent=`${Math.round(elapsed)} ms`;
-    byId('release-zone').textContent='elapsed';
+    byId('countdown').textContent=`${[Math.floor(seconds/3600),Math.floor(seconds/60)%60,seconds%60].map(v=>String(v).padStart(2,'0')).join(':')}.${String(Math.floor(elapsed%1000)).padStart(3,'0')}`;
+    byId('countdown-label').textContent=run.endedAt?'LAST RUN ELAPSED':`${run.label.toUpperCase()} ELAPSED`;
+    byId('release-time').textContent=`${(elapsed/1000).toFixed(3)} seconds`;
+    byId('release-zone').textContent=`${Math.round(elapsed)} milliseconds`;
     return;
   }
   if (!latest.clock) return;
@@ -280,4 +286,9 @@ function testRequest(){return {method:input('booking-method').value as 'browser'
 byId('test-booking').onclick=()=>{const authorized=input('terms').checked;input('terms').checked=false;void window.thirsty.testBooking({...testRequest(),authorizeTerms:authorized as true}).catch(()=>{byId('detail').textContent='Check booking fields and Terms authorization.';});};
 window.thirsty.onStatus(render);
 void window.thirsty.getStatus().then(render);
-setInterval(tick, 1000);
+setInterval(tick, 100);
+const activity=document.querySelector<HTMLElement>('.activity')!;
+const expand=byId('activity-expand') as HTMLButtonElement;
+function setActivityExpanded(value:boolean){activity.classList.toggle('expanded',value);expand.setAttribute('aria-expanded',String(value));expand.textContent=value?'Restore':'Maximize';}
+expand.addEventListener('click',()=>setActivityExpanded(!activity.classList.contains('expanded')));
+document.addEventListener('keydown',event=>{if(event.key==='Escape'&&activity.classList.contains('expanded'))setActivityExpanded(false);});

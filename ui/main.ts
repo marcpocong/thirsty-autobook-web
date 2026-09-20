@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { Controller } from './controller.js';
 import { createRunner } from './processes.js';
+import { ActivityJournal } from './activity-journal.js';
 import { readLock, readHandoff, probeCdp, probeBrowserHealth, readClock } from './status.js';
 import { readBooking, saveBooking, describePlan } from './booking.js';
 import { resetPracticeSession } from './practice-reset.js';
@@ -25,7 +26,7 @@ const controller = new Controller({
   confirmStopPrepare:async()=>(await dialog.showMessageBox(window,{type:'question',title:'Reset & Prepare',message:'An automation is currently running.',detail:'Stop it and prepare a new session?',buttons:['Cancel','Stop and prepare'],defaultId:0,cancelId:0})).response===1,
   confirmBooking:async(plan,maximum)=>(await dialog.showMessageBox(window,{type:'question',title:`${plan.strategy.toUpperCase()} TEST TO QR`,message:'Create temporary payment holds?',detail:describeBookingPlan(plan,maximum)+'\nIf availability changes before Proceed, the planner may retry other courts or valid splits within this requested time range and court count. Exact courts, when specified, are never substituted.\nTerms authorized for this test. Payment will NOT be automated.',buttons:['Cancel','Run Test to QR'],defaultId:0,cancelId:0})).response===1,
   confirmApiTest:async input=>(await dialog.showMessageBox(window,{type:'warning',title:'API-FIRST TEST TO QR',message:`Create ${input.strategy==='extended'?'two':'one'} temporary API checkout hold${input.strategy==='extended'?'s':''}?`,detail:`Type: ${input.strategy.toUpperCase()}\nCourts per checkout: ${input.courtCount}\nDate: ${input.date}\nStart: ${input.start}\nDuration: ${input.duration} hour(s)\nNo price ceiling; the actual price is reported before checkout.\nCourt priority: ${input.priority.join(' -> ')}\nSame courts are prioritized across both checkouts.\nPlayers: ${input.strategy==='extended'?'Primary + Extended':'Primary'} configured\nTerms authorization: YES\n\n${input.strategy==='extended'?'Two dedicated API Chrome windows':'The dedicated API Chrome window'} remain${input.strategy==='extended'?'':'s'} visible throughout the run. If Cloudflare requests human verification, use the tab titled THIRSTY BOT A or B - VERIFY HERE. Payment will NOT be automated.`,buttons:['Cancel','Run API Test to QR'],defaultId:0,cancelId:0,noLink:true})).response===1,
-  runner: createRunner(root, node), lock: () => readLock(root), cdp: probeCdp, clock: readClock,
+  runner: createRunner(root, node), activityJournal:new ActivityJournal(root), lock: () => readLock(root), cdp: probeCdp, clock: readClock,
   reviewLock:owned=>reviewLock(root,owned,browserProbe(root,node),undefined,browserProbe(root,node,'B')),
   clearLock:(fingerprint,owned)=>clearVerifiedLock(root,fingerprint,owned,browserProbe(root,node),undefined,browserProbe(root,node,'B')),
   resetPractice:()=>resetPracticeSession(root,()=>reviewLock(root,false,browserProbe(root,node)),browserProbe(root,node),probeCdp),

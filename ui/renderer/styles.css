@@ -85,11 +85,16 @@ dd::before { content: ""; display: inline-block; width: 5px; height: 5px; border
 .locked button { border: 1px solid #466452; border-radius: 5px; background: transparent; color: #afbeb4; font-size: 8px; padding: 7px; opacity: .7; white-space: nowrap; }
 
 .activity { margin-top: 16px; padding-bottom: 9px; }
-.activity .section-title { margin-bottom: 8px; }
-#log { height: 145px; overflow: auto; scrollbar-width: thin; font-family: Consolas, monospace; font-size: 10px; line-height: 1.75; }
+.activity .section-title { margin-bottom: 8px; display:flex; align-items:center; gap:12px; }
+.activity .section-title h2 { margin-right:auto; }
+.activity-expand { border:1px solid var(--line); border-radius:6px; background:#1b3427; color:#d9f2df; padding:7px 11px; cursor:pointer; }
+#log { height: 240px; overflow: auto; scrollbar-width: thin; font-family: Consolas, monospace; font-size: 11px; line-height: 1.65; }
 #log:has(.empty) { height: 24px; }
+.activity.expanded { position:fixed; inset:12px; z-index:30; margin:0; display:flex; flex-direction:column; background:#102319; box-shadow:0 12px 60px #000b; }
+.activity.expanded #log { flex:1; height:auto; min-height:0; }
 #log p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 #log time { color: #718f7c; margin-right: 10px; }
+#log .timing { color:#a9c9ae; }
 #log .error { color: var(--danger); }
 #log .empty { color: #6f8c79; font-family: "Segoe UI", sans-serif; }
 footer { position: fixed; bottom: 0; left: 0; right: 0; z-index: 10; display: flex; justify-content: space-between; align-items: center; gap: 14px; margin: 0; padding: 13px 28px; background: rgba(7, 20, 15, .98); border-top: 1px solid var(--line); }
@@ -150,5 +155,5 @@ pre { white-space: pre-wrap; font: 12px/1.5 "Segoe UI", sans-serif; background: 
 #release-readiness-card[data-state="armed"] { border-color: var(--brand); box-shadow: inset 3px 0 0 var(--brand); }
 #sleep-warning { margin-top: 10px; color: #f0ce91; }
 
-@media (min-height: 850px) { #log { height: 150px; } .panel { padding: 18px; } .hero { margin-bottom: 28px; } }
+@media (min-height: 850px) { #log { height: 300px; } .panel { padding: 18px; } .hero { margin-bottom: 28px; } }
 @media (max-width: 850px) { main { padding: 18px 18px 90px; } header { padding: 8px 18px; } .panel { padding: 14px; } .content { gap: 12px; } .section-title .small { font-size: 8px; } .setup-grid { grid-template-columns: repeat(2, 1fr); } }

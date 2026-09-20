@@ -7,6 +7,8 @@ import type {LockReview} from './locks.js';
 import type { UiEvent } from '../src/ui-events.js';
 import type { Runner, RunningCommand } from './processes.js';
 import type { Command, Dashboard } from './types.js';
+import type { ActivityJournal } from './activity-journal.js';
+import { randomUUID } from 'node:crypto';
 import type { readClock } from './status.js';
 import type { BookingView } from './booking.js';
 import { PracticeSchema } from '../src/practice.js';
@@ -74,6 +76,7 @@ const errors: Record<string, string> = {
   API_NO_UNUSED_CANDIDATE:'Available courts still have active or unresolved submission records. Verified holds become reusable after their timer expires and live availability confirms the slots are open.',
 };
 export interface Dependencies {
+  activityJournal?:Pick<ActivityJournal,'begin'|'record'|'end'>;
   confirmStopPrepare?:()=>Promise<boolean>;
   confirmBooking?:(plan:BookingPlan,maximum:number)=>Promise<boolean>;
   confirmApiTest?:(input:{strategy:'standard'|'extended';date:string;start:string;duration:number;courtCount:1|2;maximum:number;priority:number[]})=>Promise<boolean>;
@@ -106,6 +109,8 @@ export class Controller {
   private apiTestFingerprint?:string;
   private apiTestStrategy?:'standard'|'extended';
   private polling = false;
+  private runStartedMono = 0;
+  private lastLogMono = 0;
   constructor(private deps: Dependencies) {}
   private players(){if(this.deps.playerStatus)return this.deps.playerStatus();try{const b=this.deps.booking();return {primary:b.playerConfigured,extended:b.extendedPlayerConfigured};}catch{return {primary:false,extended:false};}}
   private releaseSetup(input:unknown):{setup:ReturnType<typeof BookingSetupSchema.parse>;reconciliation:FallbackReconciliation}{
@@ -120,7 +125,7 @@ export class Controller {
     if(!this.state.scheduledRelease&&this.state.operation!=='scheduled')return;
     ++this.generation;this.clearScheduled();this.state.termsAuthorized=false;this.clearPreparation();
     const active=this.active;this.active=undefined;if(active)await active.stop().catch(()=>{});
-    this.state.operation='idle';this.state.headline=reason;this.state.detail=reason==='RELEASE MISSED'?'The exact armed release time passed. No booking action was started. Reset & Prepare and explicitly arm a new run.':'The armed release was cancelled. Terms and preparation were cleared.';this.publish();
+    this.log(reason,true);this.finishRun('cancelled');this.state.operation='idle';this.state.headline=reason;this.state.detail=reason==='RELEASE MISSED'?'The exact armed release time passed. No booking action was started. Reset & Prepare and explicitly arm a new run.':'The armed release was cancelled. Terms and preparation were cleared.';this.publish();
   }
   async invalidatePreparation(){if(this.state.scheduledRelease){await this.cancelScheduledRelease('SCHEDULE CANCELLED - SETTINGS CHANGED');return;}if(this.state.operation!=='idle')throw Error('OPERATION_ALREADY_RUNNING');this.clearPreparation();this.state.headline='SETTINGS CHANGED';this.state.detail='Press Reset & Prepare to prepare these settings.';this.publish();}
   private async health(){const h=this.deps.browserHealth?await this.deps.browserHealth():await this.deps.cdp().then(A=>({A,B:A}));this.state.browserHealth=h;this.state.cdp=h.A;return h;}
@@ -133,8 +138,28 @@ export class Controller {
   }
   private publish() { this.deps.publish(structuredClone(this.state)); }
   private clearApiStage() { this.state.apiStage=null; }
+  private beginRun(label:string) {
+    const at=new Date().toISOString();
+    const journal=this.deps.activityJournal?.begin(label,at);
+    this.runStartedMono=performance.now(); this.lastLogMono=this.runStartedMono;
+    this.state.runTiming={runId:journal?.runId??randomUUID(),label,startedAt:at,elapsedMs:0,...(journal?{logPath:journal.path}:{})};
+    this.log(`Run started: ${label}${journal?` · Timing log: ${journal.path}`:''}`);
+  }
+  private finishRun(outcome:string) {
+    const run=this.state.runTiming;
+    if(!run||run.endedAt)return;
+    this.log(`Run finished: ${outcome}`,outcome==='failed');
+    const elapsedMs=Math.max(0,Math.round(performance.now()-this.runStartedMono));
+    run.elapsedMs=elapsedMs;run.endedAt=new Date().toISOString();
+    try {this.deps.activityJournal?.end(run.runId,run.endedAt,elapsedMs,outcome);}
+    catch {this.state.logs.push({at:new Date().toISOString(),text:'TIMING_LOG_WRITE_FAILED',level:'error'});}
+    this.publish();
+  }
   private log(text: string, error = false, at = new Date().toISOString()) {
-    this.state.logs.push({ at, text, level: error ? 'error' : 'info' });
+    const run=this.state.runTiming,mono=performance.now(),active=!!run&&!run.endedAt;
+    const entry={ at, text, level: error ? 'error' as const : 'info' as const,...(active?{elapsedMs:Math.max(0,Math.round(mono-this.runStartedMono)),deltaMs:Math.max(0,Math.round(mono-this.lastLogMono))}:{})};
+    if(active){this.lastLogMono=mono;try{this.deps.activityJournal?.record(run.runId,entry);}catch{entry.text+=' · TIMING_LOG_WRITE_FAILED';}}
+    this.state.logs.push(entry);
     if (this.state.logs.length > 400) this.state.logs.splice(0, this.state.logs.length - 400);
     this.publish();
   }
@@ -195,25 +220,25 @@ export class Controller {
     if(event.type==='preparationResult'){this.preparationResult=event.result;this.publish();return;}
     if(event.type==='preparationProgress'){
       const labels={starting:'Starting required browser(s)...','previous-session':'Checking previous session...','holds':'Checking payment holds...','onda':'Preparing Onda...','calendar':'Verifying calendar...','grids':'Verifying grids...','availability':'Checking booking availability...','final':'Final readiness check...'};
-      this.state.headline='PREPARING';this.state.detail=labels[event.step];this.publish();return;
+      this.state.headline='PREPARING';this.state.detail=labels[event.step];this.log(`Preparation: ${this.state.detail}`);return;
     }
     if(event.type==='preparationBlocked'){
       this.state.headline=event.hold==='Active'?'PAYMENT HOLD ACTIVE':'ONDA NEEDS ATTENTION';
       const remaining=event.countdownSeconds===null?'remaining time unknown':`${Math.floor(event.countdownSeconds/60)}:${String(event.countdownSeconds%60).padStart(2,'0')} remaining`;
-      this.state.detail=`Browser ${event.browser} · ${remaining}\nWait for expiry, then press Reset & Prepare again.`;this.publish();return;
+      this.state.detail=`Browser ${event.browser} · ${remaining}\nWait for expiry, then press Reset & Prepare again.`;this.log(`Preparation blocked: ${this.state.detail}`,true);return;
     }
-    if(event.type==='bookingResult'){this.state.bookingResult=event;this.state.headline=event.status;this.state.detail=event.description+'\n'+event.outcomes.map((v,i)=>`Checkout ${i+1}: ${v}`).join('\n')+(event.outcomes.includes('FAILED')?'\nCheck both Onda windows manually; a failed checkout may still have an active hold.':'');this.publish();return;}
+    if(event.type==='bookingResult'){this.state.bookingResult=event;this.state.headline=event.status;this.state.detail=event.description+'\n'+event.outcomes.map((v,i)=>`Checkout ${i+1}: ${v}`).join('\n')+(event.outcomes.includes('FAILED')?'\nCheck both Onda windows manually; a failed checkout may still have an active hold.':'');this.log(`Booking result: ${event.status} · ${this.state.detail}`,event.status.includes('FAILED'));return;}
     if(event.type==='error'&&this.state.bookingResult&&['PARTIAL SUCCESS','BOOKING FAILED'].includes(this.state.bookingResult.status)){this.state.ready=false;this.log(event.code,true);return;}
-    if(event.type==='dualWorker'){this.state.dualWorkers={...this.state.dualWorkers,[event.workerId]:event};this.publish();return;}
-    if(event.type==='dualResult'){this.state.dualResult=event;this.state.headline=event.status.replaceAll('_',' ');this.state.detail=['DUAL_DRY_PASS','DUAL_SELECTION_PASS'].includes(event.status)?'No Proceed clicks. Both browsers clean.':'Automation stopped. Inspect BOTH browsers manually. Locks retained; payment stays manual.';this.publish();return;}
+    if(event.type==='dualWorker'){this.state.dualWorkers={...this.state.dualWorkers,[event.workerId]:event};this.log(`Browser ${event.workerId}: ${event.state}`);return;}
+    if(event.type==='dualResult'){this.state.dualResult=event;this.state.headline=event.status.replaceAll('_',' ');this.state.detail=['DUAL_DRY_PASS','DUAL_SELECTION_PASS'].includes(event.status)?'No Proceed clicks. Both browsers clean.':'Automation stopped. Inspect BOTH browsers manually. Locks retained; payment stays manual.';this.log(`Dual result: ${event.status}`);return;}
     if(event.type==='error'&&this.state.dualActive&&['DUAL_PARTIAL_SUCCESS','DUAL_FAILED'].includes(this.state.dualResult?.status??'')){this.state.ready=false;this.log(event.code,true);return;}
     if(this.state.dualActive&&['handoff','selection','releasePerformance'].includes(event.type))return;
 
-    if (event.type === 'releasePerformance') { this.state.releasePerformance = event.summary; this.publish(); }
-    if (event.type === 'selection') { this.state.selection=event; this.state.headline='SLOTS SELECTED'; this.state.detail=['full','fullPractice'].includes(this.state.operation)?'Continuing to Review Booking. Selection is not yet a reservation.':'AUTOMATION STOPPED BEFORE PROCEED. USER CONTROL RESTORED. Selection is not a reservation; the lock remains active.'; this.publish(); }
-    if(event.type==='handoff'){this.state.handoff=event;this.state.headline='PAYMENT HOLD ACTIVE';this.state.detail='FULL BOOKING COMPLETE TO PAYMENT HANDOFF. AUTOMATION STOPPED. Complete payment manually in Chrome. AUTOMATION LOCK RETAINED.';this.publish();}
+    if (event.type === 'releasePerformance') { this.state.releasePerformance = event.summary; this.log('Release performance measurements received'); }
+    if (event.type === 'selection') { this.state.selection=event; this.state.headline='SLOTS SELECTED'; this.state.detail=['full','fullPractice'].includes(this.state.operation)?'Continuing to Review Booking. Selection is not yet a reservation.':'AUTOMATION STOPPED BEFORE PROCEED. USER CONTROL RESTORED. Selection is not a reservation; the lock remains active.'; this.log(`Slots selected · ${this.state.detail}`); }
+    if(event.type==='handoff'){this.state.handoff=event;this.state.headline='PAYMENT HOLD ACTIVE';this.state.detail='FULL BOOKING COMPLETE TO PAYMENT HANDOFF. AUTOMATION STOPPED. Complete payment manually in Chrome. AUTOMATION LOCK RETAINED.';this.log('Payment handoff verified. Payment remains manual.');}
     if (event.type === 'inspection') { this.state.inspection = event; this.log('Onda URL and venue verified. Inspection results received.'); }
-    if (event.type === 'plan') { this.state.plan = event; this.publish(); }
+    if (event.type === 'plan') { this.state.plan = event; this.log('Booking plan received'); }
     if (event.type === 'error') {
       this.state.ready = false;
       if(event.code==='PAYMENT_HOLD_MAY_BE_ACTIVE'&&this.state.headline==='PAYMENT HOLD ACTIVE'){this.log(event.code,true);return;}
@@ -224,7 +249,7 @@ export class Controller {
     if (event.type === 'telemetry') {
       const labels: Record<string, string> = { chromeConnected: 'Dedicated Chrome and Onda tab verified', preflightStarted: 'Preflight started', preflightCompleted: 'Preflight passed',
         armed: 'ARMED — final preflight passed', releaseTriggerFired: 'Release trigger fired', reloadStarted: 'Reload started', reloadCommitted: 'Reload committed', targetGridReady: 'Target grid verified', gridSnapshotCompleted: 'Availability snapshot completed', automationStopped: 'Command completed' };
-      this.log(`${event.workerId?`Browser ${event.workerId} · `:''}${labels[event.event]??event.event}`);
+      this.log(`${event.workerId?`Browser ${event.workerId} · `:''}${labels[event.event]??event.event}`,false,event.wall);
       if(['full','fullPractice'].includes(this.state.operation)){
         const stages:Record<string,string>={armed:'Full Booking armed',reviewValidated:'BOOKING REVIEWED',playerFillCompleted:'PLAYER INFORMATION VERIFIED',paymentSummaryValidated:'READY TO CREATE PAYMENT HOLD',finalOndaActionStarted:'Creating payment hold',finalOndaButtonClicked:'Checking QR handoff — read only'};
         if(stages[event.event])this.state.headline=stages[event.event]!;
@@ -240,21 +265,27 @@ export class Controller {
   };
   private async run(command: Command, generation: number) {
     if (generation !== this.generation) throw new Error('CANCELLED');
+    const descriptor=typeof command==='string'?command:command.kind==='testBooking'?`testBooking · ${command.input.method}`:command.kind==='apiRun'?`apiRun · ${command.mode}`:command.kind;
+    if(this.state.runTiming&&!this.state.runTiming.endedAt&&!this.state.runTiming.label.startsWith('release ·'))this.state.runTiming.label=typeof command==='object'&&command.kind==='testBooking'?`${(command.input.method??'browser').toUpperCase()} TEST`:typeof command==='object'&&command.kind==='apiRun'?`API ${command.mode.toUpperCase()}`:descriptor;
+    this.log(`Process started: ${descriptor}`);
     const active = this.deps.runner(command, this.event, (line, error) => this.log(line, error),async plan=>{if(generation!==this.generation)return false;const answer=await this.deps.confirmBooking?.(plan,typeof command==='object'&&command.kind==='testBooking'?command.input.maximum:0)??false;return generation===this.generation&&answer;});
     this.active = active;
     try {
       const code = await active.done;
       if (generation !== this.generation) throw new Error('CANCELLED');
       if (code !== 0) throw new Error('COMMAND_FAILED');
+      this.log(`Process completed: ${descriptor} · exit code ${code}`);
     } finally { if (this.active === active) this.active = undefined; }
   }
   private async operation(kind: Dashboard['operation'], work: (generation: number) => Promise<void>) {
     if (this.state.operation !== 'idle') throw new Error('OPERATION_ALREADY_RUNNING');
     const generation = ++this.generation;
     if (['observe', 'dry', 'selection', 'full'].includes(kind)) this.state.releasePerformance = null;
-    this.state.dualActive=false; this.state.operation = kind; this.state.ready = false; this.state.plan = null; this.clearApiStage(); this.state.termsAuthorized=false; this.publish();
-    try { await work(generation); }
+    this.state.dualActive=false; this.state.operation = kind; this.state.ready = false; this.state.plan = null; this.clearApiStage(); this.state.termsAuthorized=false;
+    let outcome='complete';
+    try {this.beginRun(kind);await work(generation); }
     catch (error) {
+      outcome='failed';
       if (generation === this.generation) {
         const code = error instanceof Error ? error.message : 'OPERATION_FAILED';
         const hadSpecificFailure = this.state.apiStage?.stage==='FAILED'||Object.values(preparationHeadlines).includes(this.state.headline)||['PARTIAL SUCCESS','BOOKING FAILED'].includes(this.state.bookingResult?.status??'')||this.state.dualResult?.status==='DUAL_PARTIAL_SUCCESS'||this.state.dualResult?.status==='DUAL_FAILED'||this.state.headline === 'Needs attention'||this.state.headline.includes('FAILED')||this.state.headline==='HANDOFF STATUS UNKNOWN';
@@ -269,7 +300,7 @@ export class Controller {
         this.log(code, true);
       }
     } finally {
-      if (generation === this.generation) { this.state.operation = 'idle'; this.state.termsAuthorized=false; await this.refresh(); this.publish(); }
+      if (generation === this.generation) { this.finishRun(outcome);this.state.operation = 'idle'; this.state.termsAuthorized=false; await this.refresh(); this.publish(); }
     }
   }
   private async noLock() { this.state.lock = await this.deps.lock(); if (this.state.lock) throw new Error('AUTOMATION_LOCK_EXISTS'); }
@@ -319,7 +350,7 @@ export class Controller {
           await active.stop();
           await Promise.race([active.done,new Promise<never>((_,reject)=>{const timer=setTimeout(()=>reject(Error('STOP_NOT_CONFIRMED')),3500);timer.unref();})]);
         }catch{this.state.headline='STOP NOT CONFIRMED';this.state.detail='Stop the existing automation before preparing.';this.publish();throw Error('STOP_NOT_CONFIRMED');}
-        this.active=undefined;this.state.operation='idle';
+        this.active=undefined;this.log('Previous run stopped for Reset & Prepare');this.finishRun('replaced');this.state.operation='idle';
       }
       await this.operation('prepare',async gen=>{
         let release:BookingView|undefined;
@@ -492,8 +523,10 @@ export class Controller {
   }
   private async executeScheduled(context:ScheduledReleaseContext,generation:number){
     this.scheduledTimer=undefined;
+    let outcome='complete';
     try{
       if(generation!==this.generation||this.state.scheduledRelease?.generation!==context.generation)return;
+      this.beginRun(`release · ${context.strategy}`);
       if(Date.now()>=context.releaseMs)throw Error('RELEASE_MISSED');
       const plan=this.deps.booking(),clock=this.deps.clock();
       if(plan.fingerprint!==context.configFingerprint||clock.releaseMs!==context.releaseMs||clock.targetDate!==context.targetDate)throw Error('SCHEDULE_CONTEXT_MISMATCH');
@@ -508,12 +541,13 @@ export class Controller {
       await this.run({kind:'full',context,authorizeTerms:true},generation);
       if(!this.state.handoff&&!this.state.bookingResult)throw Error('HANDOFF_STATUS_UNKNOWN');
     }catch(error){
+      outcome='failed';
       if(generation!==this.generation)return;
       const code=error instanceof Error?error.message:'SCHEDULE_FAILED';
       this.state.headline=code==='RELEASE_MISSED'?'RELEASE MISSED':code==='SCHEDULE_CONTEXT_MISMATCH'||code==='PREPARED_FINGERPRINT_MISMATCH'?'SCHEDULE CANCELLED - SETTINGS CHANGED':'Needs attention';
       this.state.detail=code==='RELEASE_MISSED'?'The exact armed timestamp passed. No late booking was attempted and the run was not moved to another day.':errors[code]??code;this.log(code,true);
     }finally{
-      if(generation===this.generation){this.clearScheduled();this.clearPreparation();this.state.operation='idle';await this.refresh();this.publish();}
+      if(generation===this.generation){this.finishRun(outcome);this.clearScheduled();this.clearPreparation();this.state.operation='idle';await this.refresh();this.publish();}
     }
   }
   private armBooking(kind:'selection'|'dry') { return this.operation('confirming', async gen => {
@@ -598,7 +632,7 @@ export class Controller {
     try {
       await this.active?.stop(); this.active = undefined;
       this.state.operation = 'idle'; this.state.headline = 'Automation aborted'; this.state.detail = 'USER CONTROL RESTORED. Chrome remains open. Check the retained lock manually before another run.';
-      this.log('AUTOMATION ABORTED — USER CONTROL RESTORED'); await this.refresh();
+      this.log('AUTOMATION ABORTED — USER CONTROL RESTORED');this.finishRun('aborted'); await this.refresh();
     } catch { this.state.headline = 'Stop not confirmed'; this.state.detail = 'The automation process has not exited. Retry Emergency Stop; check Task Manager.'; this.log('STOP_NOT_CONFIRMED', true); }
     this.publish();
   }
