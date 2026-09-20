@@ -14,12 +14,14 @@ interface FormDraft {method:'browser'|'hybrid'|'api-first';strategy:'standard'|'
 let testDraft:FormDraft|undefined,releaseDraft:FormDraft|undefined,testDirty=false,releaseDirty=false;
 let releaseAdjustment:FallbackReconciliation|undefined;
 byId('simple-status').append(byId('readiness'));
+byId('simple-status').before(document.querySelector('.hero')!);
+byId('simple-status').after(document.querySelector('.activity')!);
 const primary=byId('primary-actions');
 primary.prepend(byId('prepare'),byId('terms').parentElement!);
 primary.append(byId('api-dry-controls'),byId('arm'),byId('blocked-reason'),byId('selection-result'),byId('handoff-result'));
 byId('release-schedule').after(primary);
 const advanced=byId('advanced-extra');
-advanced.append(byId('lock-card'),document.querySelector('.hero')!,document.querySelector('.mode-options')!,document.querySelector('.editors')!,byId('attempts').parentElement!,byId('save-booking'),byId('edit-status'));
+advanced.append(byId('lock-card'),document.querySelector('.mode-options')!,document.querySelector('.editors')!,byId('attempts').parentElement!,byId('save-booking'),byId('edit-status'));
 input('test-date').value=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Manila',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 input('api-dry-date').value=input('test-date').value;
 
@@ -160,7 +162,7 @@ function render(state: Dashboard) {
     renderedLogs = signature; const log = byId('log'); const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
     if (state.logs.length) log.replaceChildren(...state.logs.map(line => {
       const p = document.createElement('p'); p.className = line.level;
-      const time = document.createElement('time'); time.textContent = new Date(line.at).toLocaleTimeString('en-GB', { timeZone: 'Asia/Manila' });
+      const time = document.createElement('time'); time.textContent = new Date(line.at).toLocaleTimeString('en-GB', { timeZone: 'Asia/Manila',hour:'2-digit',minute:'2-digit',second:'2-digit',fractionalSecondDigits:3 });
       p.append(time, document.createTextNode(line.text)); return p;
     }));
     if (atBottom) log.scrollTop = log.scrollHeight;
@@ -222,8 +224,21 @@ function render(state: Dashboard) {
 }
 function tick() {
   // Display only; never launches a command. Authoritative release plan comes from main/CLI.
-  if (!latest?.clock) return;
-  byId('clock').textContent = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Manila', hourCycle: 'h23' }).format(new Date());
+  const now=new Date();
+  byId('clock').textContent = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Manila', hourCycle: 'h23' }).format(now);
+  byId('clock-date').textContent = new Intl.DateTimeFormat('en-US', { weekday:'long',month:'long',day:'numeric',year:'numeric',timeZone:'Asia/Manila' }).format(now);
+  if (!latest) return;
+  if(workflow==='test'&&input('booking-method').value==='api-first'){
+    const stage=latest.apiStage;
+    const elapsed=stage?latest.operation==='idle'?stage.elapsedMs:Math.max(stage.elapsedMs,stage.elapsedMs+Date.now()-Date.parse(stage.at??now.toISOString())):0;
+    const seconds=Math.floor(elapsed/1000);
+    byId('countdown').textContent=[Math.floor(seconds/3600),Math.floor(seconds/60)%60,seconds%60].map(v=>String(v).padStart(2,'0')).join(':');
+    byId('countdown-label').textContent=latest.operation==='idle'?'LAST API RUN':'API RUN ELAPSED';
+    byId('release-time').textContent=`${Math.round(elapsed)} ms`;
+    byId('release-zone').textContent='elapsed';
+    return;
+  }
+  if (!latest.clock) return;
   const release = latest.scheduledRelease?.releaseMs??(latest.plan && ['observe','dry','selection','full'].includes(latest.operation) ? latest.plan.releaseMs : latest.clock.releaseMs);
   const seconds = Math.max(0, Math.ceil((release - Date.now()) / 1000));
   byId('countdown').textContent = [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60].map(v => String(v).padStart(2, '0')).join(':');

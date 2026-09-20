@@ -86,7 +86,8 @@ dd::before { content: ""; display: inline-block; width: 5px; height: 5px; border
 
 .activity { margin-top: 16px; padding-bottom: 9px; }
 .activity .section-title { margin-bottom: 8px; }
-#log { height: 94px; overflow: auto; scrollbar-width: thin; font-family: Consolas, monospace; font-size: 10px; line-height: 1.75; }
+#log { height: 145px; overflow: auto; scrollbar-width: thin; font-family: Consolas, monospace; font-size: 10px; line-height: 1.75; }
+#log:has(.empty) { height: 24px; }
 #log p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 #log time { color: #718f7c; margin-right: 10px; }
 #log .error { color: var(--danger); }

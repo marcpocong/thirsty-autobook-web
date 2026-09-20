@@ -116,6 +116,23 @@ it('shows both local player profiles used for checkout',async()=>{
  expect(details).toContain(extendedDetails.fullName);expect(details).toContain(extendedDetails.phone);expect(details).toContain(extendedDetails.email);
  await p.close();
 });
+it('keeps the Manila clock and timestamped API progress visible during Test Now',async()=>{
+ const p=await renderer(false,{clock:clockStatus(ObservationSchema.parse({}),DateTime.fromISO('2026-09-21T08:00:00+08:00'))});
+ await p.locator('#booking-method').selectOption('api-first');
+ await p.evaluate(()=>{
+   const state=(window as any).fixtureState;
+   state.operation='fullPractice';
+   state.apiStage={type:'apiStage',stage:'FETCHING_AVAILABILITY',at:new Date().toISOString(),elapsedMs:1500,sincePreviousMs:900};
+   state.logs=[{at:state.apiStage.at,text:'Fetching live API availability · 1500 ms total · +900 ms since prior stage',level:'info'}];
+   (window as any).fixturePublish(state);
+ });
+ expect(await p.locator('.hero').isVisible()).toBe(true);
+ expect(await p.locator('.activity').isVisible()).toBe(true);
+ expect(await p.locator('#countdown-label').innerText()).toBe('API RUN ELAPSED');
+ expect(await p.locator('#log').innerText()).toContain('+900 ms since prior stage');
+ expect(await p.locator('#clock').innerText()).toMatch(/^\d{2}:\d{2}:\d{2}$/);
+ await p.close();
+});
 it('Reset & Prepare stays accessible while a UI booking worker is running',async()=>{
  const p=await renderer(false,{operation:'fullPractice',ready:false});
  expect(await p.locator('#prepare').isEnabled()).toBe(true);

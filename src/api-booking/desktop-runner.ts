@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { join, resolve } from 'node:path';
-import { access, mkdir, open } from 'node:fs/promises';
+import { mkdir, open } from 'node:fs/promises';
 import { performance } from 'node:perf_hooks';
 import { chromium, type Browser, type Page } from 'playwright';
 import { z } from 'zod';
@@ -19,6 +19,7 @@ import type { CheckoutHttpResponse } from './browser-session-transport.js';
 import { firstUnjournaledCandidate } from './candidate-journal.js';
 import { standardCheckoutChunks } from './extended-checkout.js';
 import { standardPlanJournalKeys } from './two-hour-reservation.js';
+import { ApiRunProgressLog } from './run-progress-log.js';
 
 const preferencesSchema = z.object({ strategy: z.enum(['standard', 'extended']), date: z.iso.date(), start: z.string().regex(/^(0[89]|1\d|2[0-3]):00$/),
   duration: z.number().int().min(1).max(6), courtCount: z.union([z.literal(1), z.literal(2)]), maximum: z.number().finite().positive(),
@@ -32,8 +33,13 @@ const abort = new AbortController();
 process.on('message', message => { if ((message as { type?: string })?.type === 'abort') abort.abort(); });
 const started = performance.now();
 const stamp = () => Math.round(performance.now() - started);
-const stage = (name: string, extra: Record<string, string | number | boolean> = {}) =>
-  emitUiEvent({ type: 'apiStage', stage: name, elapsedMs: stamp(), ...extra });
+const progressLog = new ApiRunProgressLog(command.mode, command.date);
+const stage = (name: string, extra: Record<string, string | number | boolean> = {}) => {
+  const entry = progressLog.record(name, new Date().toISOString(), stamp(), extra);
+  emitUiEvent({ type: 'apiStage', stage: name, at: entry.at, elapsedMs: entry.elapsedMs,
+    sincePreviousMs: entry.sincePreviousMs, ...(name === 'RUN_STARTED' ? { runId: progressLog.runId } : {}), ...extra });
+};
+stage('RUN_STARTED');
 const ensureActive = () => { if (abort.signal.aborted) throw Error('USER_ABORT'); };
 const pause = (ms: number) => new Promise<void>((done, fail) => {
   const timer = setTimeout(done, ms);
@@ -118,8 +124,10 @@ try {
     if (!discovery.candidates.length) throw Error('API_NO_AVAILABLE_CANDIDATE');
     const selected = command.mode === 'dry' ? { plan: discovery.candidates[0]! } :
       await firstUnjournaledCandidate(discovery.candidates, THIRSTY_PICKLE_FACILITY_ID, async key => {
-        try { await access(resolve('.local/api-booking/api-first-journals', key, `${key}.json`)); return true; }
-        catch { return false; }
+        const directory = resolve('.local/api-booking/api-first-journals', key);
+        const disposition = await new DurableSubmissionJournal(directory).recycleExpiredVerified(key);
+        if (disposition === 'reused') stage('EXPIRED_HOLD_REUSABLE');
+        return disposition === 'blocked';
       });
     if (!selected) throw Error('API_NO_UNUSED_CANDIDATE');
     const plan = selected.plan;
@@ -204,5 +212,7 @@ try {
   // This process attaches to a browser owned by the desktop installation.
   // Closing a CDP attachment closes its transport; the independently launched Chrome windows stay open.
   await Promise.allSettled(connectedBrowsers.map(browser => browser.close()));
+  progressLog.record('PROCESS_EXIT', new Date().toISOString(), stamp(), { exitCode: process.exitCode ?? 0 });
+  progressLog.close();
   if (process.connected) process.disconnect();
 }

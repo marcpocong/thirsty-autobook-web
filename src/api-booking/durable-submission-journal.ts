@@ -1,6 +1,6 @@
-import { createHash } from 'node:crypto';
-import { mkdir, open, readFile } from 'node:fs/promises';
-import { resolve, join } from 'node:path';
+import { createHash, randomUUID } from 'node:crypto';
+import { mkdir, open, readFile, rename } from 'node:fs/promises';
+import { resolve, join, dirname } from 'node:path';
 import type { CheckoutDiagnostic } from './checkout-diagnostics.js';
 
 export type SubmissionState = 'dispatching' | 'unknown' | 'verified' | 'rejected';
@@ -136,5 +136,24 @@ export class DurableSubmissionJournal {
 
   async read(key: string): Promise<SubmissionRecord> {
     return JSON.parse(await readFile(this.path(key), 'utf8')) as SubmissionRecord;
+  }
+
+  /** Preserve a verified, elapsed hold before permitting a new attempt for the same block. */
+  async recycleExpiredVerified(key: string, now = new Date()): Promise<'unused' | 'reused' | 'blocked'> {
+    let record: SubmissionRecord;
+    try { record = await this.read(key); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'unused';
+      throw error;
+    }
+    const expiries = record.observedResponse?.holdExpiresAt;
+    if (record.key !== key || record.attempt?.attemptId !== key || record.state !== 'verified' ||
+      !expiries?.length || expiries.length !== record.attempt.expectedBookingCount ||
+      !Number.isFinite(now.getTime()) || expiries.some(value => !Number.isFinite(Date.parse(value)) || Date.parse(value) > now.getTime()))
+      return 'blocked';
+    const archiveRoot = join(dirname(resolve(this.directory)), 'expired-holds');
+    await mkdir(archiveRoot, { recursive: true, mode: 0o700 });
+    await rename(resolve(this.directory), join(archiveRoot, `${key}-${now.toISOString().replace(/[:.]/g, '-')}-${randomUUID()}`));
+    return 'reused';
   }
 }

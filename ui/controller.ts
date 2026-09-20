@@ -71,7 +71,7 @@ const errors: Record<string, string> = {
   LOCAL_EXTENDED_CUSTOMER_ID_UNVERIFIED:'Extended API customer binding is missing or does not match the configured Extended player.',
   API_EXTENDED_WORKER_MISSING:'Both dedicated API browsers and both player profiles are required for Extended.',
   DUPLICATE_LOGICAL_BOOKING_BLOCKED:'This exact court, date, and time already has a durable submission record. The API runner will use another available court after Reset & Prepare.',
-  API_NO_UNUSED_CANDIDATE:'Every available candidate for this request already has a durable submission record. Choose another time or date.',
+  API_NO_UNUSED_CANDIDATE:'Available courts still have active or unresolved submission records. Verified holds become reusable after their timer expires and live availability confirms the slots are open.',
 };
 export interface Dependencies {
   confirmStopPrepare?:()=>Promise<boolean>;
@@ -132,8 +132,9 @@ export class Controller {
     if(required.some(id=>!h[id])){this.clearPreparation();throw Error('RESET_REQUIRED');}
   }
   private publish() { this.deps.publish(structuredClone(this.state)); }
-  private log(text: string, error = false) {
-    this.state.logs.push({ at: new Date().toISOString(), text, level: error ? 'error' : 'info' });
+  private clearApiStage() { this.state.apiStage=null; }
+  private log(text: string, error = false, at = new Date().toISOString()) {
+    this.state.logs.push({ at, text, level: error ? 'error' : 'info' });
     if (this.state.logs.length > 400) this.state.logs.splice(0, this.state.logs.length - 400);
     this.publish();
   }
@@ -173,7 +174,7 @@ export class Controller {
   private event = (event: UiEvent) => {
     if(event.type==='apiStage'){
       this.state.apiStage=event;
-      const labels:Record<string,string>={PREPARING_BROWSER:'Preparing isolated Chrome',BROWSER_READY:'API browser ready',
+      const labels:Record<string,string>={RUN_STARTED:'API run started',EXPIRED_HOLD_REUSABLE:'Expired verified hold released for a new test',PREPARING_BROWSER:'Preparing isolated Chrome',BROWSER_READY:'API browser ready',
         WAITING_FOR_RELEASE:'Waiting for release',RELEASE_TRIGGERED:'Release reached',FETCHING_AVAILABILITY:'Fetching live API availability',
         CANDIDATE_READY:'API candidate ready',DRY_RUN_COMPLETE:'API dry run complete',FRESH_VERIFICATION_AND_PROOFS:'Fresh verification and slot proofs',
         PENDING_HOLD:'Pending reservation captured',OFFICIAL_QRPH_HANDOFF:'Official QRPH checkout open',FAILED:'API run needs attention'};
@@ -181,11 +182,14 @@ export class Controller {
       labels.HUMAN_VERIFICATION_COMPLETE='Human verification complete';
       this.state.headline=labels[event.stage]??event.stage.replaceAll('_',' ');
       const worker=event.workerId?`Checkout ${event.workerId} · `:'';
-      this.state.detail=event.stage==='CANDIDATE_READY'?`Court${event.courtB?'s':''} ${event.court}${event.courtB?` + ${event.courtB}`:''} · ${event.date} · ${event.startTime} · ${event.durationHours} hour(s) · PHP ${event.price}`:
+      this.state.detail=event.stage==='RUN_STARTED'?`Timing log: .local/api-booking/run-progress/${event.runId}.ndjson`:
+        event.stage==='CANDIDATE_READY'?`Court${event.courtB?'s':''} ${event.court}${event.courtB?` + ${event.courtB}`:''} · ${event.date} · ${event.startTime} · ${event.durationHours} hour(s) · PHP ${event.price}`:
         event.stage==='PENDING_HOLD'||event.stage==='OFFICIAL_QRPH_HANDOFF'?`${worker}Booking ${event.bookingNo} · ID ${event.bookingId} · Hold until ${event.holdExpiresAt} · PHP ${event.price}. Payment is manual.`:
         event.stage==='HUMAN_VERIFICATION_REQUIRED'?`Use the Chrome window titled THIRSTY BOT ${event.workerId??'A'} - VERIFY HERE. This API run is waiting for you to finish the Cloudflare check.`:
-        event.stage==='FAILED'?event.code??'API_FIRST_RUN_FAILED':`Elapsed ${event.elapsedMs} ms`;
-      this.log(`${labels[event.stage]??event.stage.replaceAll('_',' ')} · ${this.state.detail}`);
+        event.stage==='FAILED'?event.code??'API_FIRST_RUN_FAILED':`Progress recorded`;
+      const timing=`${event.elapsedMs} ms total · +${event.sincePreviousMs??0} ms since prior stage`;
+      this.state.detail+=` · ${timing}`;
+      this.log(`${labels[event.stage]??event.stage.replaceAll('_',' ')} · ${this.state.detail}`,event.stage==='FAILED',event.at);
       this.publish();return;
     }
     if(event.type==='preparationResult'){this.preparationResult=event.result;this.publish();return;}
@@ -248,7 +252,7 @@ export class Controller {
     if (this.state.operation !== 'idle') throw new Error('OPERATION_ALREADY_RUNNING');
     const generation = ++this.generation;
     if (['observe', 'dry', 'selection', 'full'].includes(kind)) this.state.releasePerformance = null;
-    this.state.dualActive=false; this.state.operation = kind; this.state.ready = false; this.state.plan = null; this.state.termsAuthorized=false; this.publish();
+    this.state.dualActive=false; this.state.operation = kind; this.state.ready = false; this.state.plan = null; this.clearApiStage(); this.state.termsAuthorized=false; this.publish();
     try { await work(generation); }
     catch (error) {
       if (generation === this.generation) {
