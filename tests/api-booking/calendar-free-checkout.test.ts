@@ -16,7 +16,7 @@ const plan = planBooking(availability, { mode: 'standard', targetDate: date, dur
   maximumTotalPrice: 1200, currency: 'PHP' });
 const customer = { clientId: THIRSTY_PICKLE_CLIENT_ID, customerId: 'synthetic-customer',
   customerFirstName: 'Synthetic', customerLastName: 'Guest', customerEmail: 'test@example.invalid', customerPhone: '0000000000' };
-const approval = { court: 3, date, startTime: '12:00', endTime: '14:00', maximumAmount: 1200,
+const approval = { courts: [3], date, startTime: '12:00', endTime: '14:00', maximumAmount: 1200,
   customerId: customer.customerId, approvalReference: 'offline-only' };
 
 describe('calendar-free checkout approval boundary', () => {
@@ -38,7 +38,7 @@ describe('calendar-free checkout approval boundary', () => {
       const journal = {} as DurableSubmissionJournal;
       await expect(submitCalendarFreeTwoHourCheckout({ page, plan,
         availability: { ...availability, fixtureKind: 'live', capturedAt: new Date().toISOString() },
-        customer, approval: { ...approval, court: 4 }, journal })).rejects.toThrow('CALENDAR_FREE_APPROVAL_MISMATCH');
+        customer, approval: { ...approval, courts: [4] }, journal })).rejects.toThrow('CALENDAR_FREE_APPROVAL_MISMATCH');
       expect(page.evaluate).not.toHaveBeenCalled();
     } finally {
       if (prior === undefined) delete process.env.ONDA_CALENDAR_FREE_CHECKOUT;

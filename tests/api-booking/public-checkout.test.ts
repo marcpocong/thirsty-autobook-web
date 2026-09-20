@@ -29,6 +29,37 @@ describe('standard public-checkout builder and validator', () => {
     expect(validatePublicCheckoutResponse(reply(), request, plan, now, 1_200)).toMatchObject({ bookingIds: ['booking-0', 'booking-1'], sessionId: 'session', trustedTotalAmount: 1_200 });
   });
 
+  it('builds and validates two continuous court sessions in one checkout transaction', () => {
+    const twoCourtPlan = planBooking(snapshot, { mode: 'standard', targetDate: date, durationHours: 2,
+      preferredStartTimes: ['12:00'], fallbackStartTimes: [], courtPriority: [3, 2], fallbackCourts: [],
+      courtCount: 2, maximumTotalPrice: 1_200, currency: 'PHP' });
+    const orderedCourts = [...twoCourtPlan.courts].sort((a, b) => a.spaceId.localeCompare(b.spaceId));
+    const twoProofs: FreshSlotProof[] = orderedCourts.flatMap(planned => planned.slots.map(slot => ({
+      spaceId: slot.spaceId, date: slot.date, startTime: slot.startTime, endTime: slot.endTime,
+      availabilityProof: `proof-${slot.spaceId}-${slot.startTime}`, requestedAt: now.toISOString(), receivedAt: now.toISOString() })));
+    const twoRequest = buildStandardPublicCheckoutRequest(twoCourtPlan, customer, 'facility', twoProofs);
+    const ids = twoRequest.items.map((_item, index) => `two-booking-${index}`);
+    const sessions = ['session_1', 'session_2'].map((ref, index) => {
+      const sessionItems = twoRequest.items.map((item, itemIndex) => ({ item, itemIndex })).filter(entry => entry.item.sessionRef === ref);
+      return { requestSessionRef: ref, bookingSessionId: `two-session-${index + 1}`, facilityId: 'facility',
+        spaceId: sessionItems[0]!.item.spaceId, date, startTime: '12:00:00', endTime: '14:00:00', durationHours: 2,
+        bookingIds: sessionItems.map(entry => ids[entry.itemIndex]!) };
+    });
+    const response = { success: true, bookings: twoRequest.items.map((item, index) => ({ id: ids[index],
+      booking_no: `two-number-${index}`, customer_id: customer.customerId, space_id: item.spaceId,
+      facility_id: item.facilityId, date: item.date, start_time: `${item.startTime}:00`, end_time: `${item.endTime}:00`,
+      duration: 60, rate: item.rate, guest_count: 1, booking_status: 'pending', payment_status: 'pending',
+      booking_session_id: `two-session-${Number(item.sessionRef.slice(8))}`,
+      hold_expires_at: '2026-09-18T00:05:00.000Z' })), bookingSessions: sessions,
+      transaction: { id: 'two-transaction', reference: 'two-number-0', amount: 2_400, status: 'pending' },
+      trustedTotalAmount: 2_400 };
+    expect(twoRequest.items.map(item => item.sessionRef)).toEqual(['session_1', 'session_1', 'session_2', 'session_2']);
+    expect(validatePublicCheckoutResponse(response, twoRequest, twoCourtPlan, now, 2_400)).toMatchObject({
+      bookingIds: ids, sessionIds: ['two-session-1', 'two-session-2'], trustedTotalAmount: 2_400 });
+    response.bookingSessions[1]!.bookingIds = [ids[0]!, ids[3]!];
+    expect(() => validatePublicCheckoutResponse(response, twoRequest, twoCourtPlan, now, 2_400)).toThrowError('CHECKOUT_GROUPING_INVALID');
+  });
+
   it('accepts one consistent server-resolved guest id and rejects mixed response customers', () => {
     const resolved = reply();
     for (const booking of resolved.bookings) booking.customer_id = 'server-resolved-customer';

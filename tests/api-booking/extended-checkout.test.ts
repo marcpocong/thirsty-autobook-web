@@ -18,4 +18,17 @@ describe('Extended API checkout chunks', () => {
     expect(chunks[0]!.endTime).toBe(chunks[1]!.startTime);
     expect(chunks.reduce((sum, chunk) => sum + chunk.totalPrice, 0)).toBe(plan.totalPrice);
   });
+
+  it('keeps both courts together in each Extended checkout chunk', () => {
+    const date = '2026-09-21', now = new Date('2026-09-19T00:00:00.000Z');
+    const snapshot = parseAvailability(availabilityFixture(date), { startDate: date, endDate: date,
+      capturedAt: now.toISOString(), fixtureKind: 'synthetic', label: 'offline', now, maximumAgeMs: 1000 });
+    const plan = planBooking(snapshot, { mode: 'extended', targetDate: date, durationHours: 5,
+      preferredStartTimes: ['12:00'], fallbackStartTimes: [], courtPriority: [7, 6, 5], fallbackCourts: [],
+      courtCount: 2, maximumTotalPrice: 1800, currency: 'PHP' });
+    const chunks = standardCheckoutChunks(plan);
+    expect(chunks.map(chunk => [chunk.durationHours, chunk.courts.map(court => court.court)])).toEqual([
+      [3, [7, 6]], [2, [7, 6]]]);
+    expect(chunks.map(chunk => chunk.totalPrice)).toEqual([3600, 2400]);
+  });
 });

@@ -6,7 +6,7 @@ import { availabilityFixture } from '../availability-fixture.js';
 import { parseAvailability } from '../../src/api-booking/availability-parser.js';
 import { planBooking } from '../../src/api-booking/booking-planner.js';
 import { DurableSubmissionJournal } from '../../src/api-booking/durable-submission-journal.js';
-import { selectedStandardHours, selectedTwoHours, TwoHourReservationAdapter, type SlotCheckRequest } from '../../src/api-booking/two-hour-reservation.js';
+import { selectedStandardHours, selectedTwoHours, standardPlanJournalKeys, TwoHourReservationAdapter, type SlotCheckRequest } from '../../src/api-booking/two-hour-reservation.js';
 
 const date = '2026-09-18';
 const now = new Date('2026-09-18T00:00:00.000Z');
@@ -88,6 +88,42 @@ describe('offline two-hour adapter', () => {
       bookingIds: ['three-booking-0', 'three-booking-1', 'three-booking-2'], transactionId: 'three-transaction' });
     expect(checkSlot).toHaveBeenCalledTimes(3);
     expect((publicCheckout.mock.calls[0]![0] as { items: unknown[] }).items).toHaveLength(3);
+  });
+
+  it('submits two courts as two sessions and writes a durable journal for each court', async () => {
+    const twoCourtPlan = planBooking(snapshot, { mode: 'standard', targetDate: date, durationHours: 2,
+      preferredStartTimes: ['08:00'], fallbackStartTimes: [], courtPriority: [3, 2], fallbackCourts: [], courtCount: 2,
+      maximumTotalPrice: 1_200, currency: 'PHP' });
+    const twoHours = selectedStandardHours(twoCourtPlan);
+    const refs = twoHours.map((_hour, index) => index < 2 ? 'session_1' : 'session_2');
+    const ids = twoHours.map((_hour, index) => `dual-booking-${index}`);
+    const response = { success: true, bookings: twoHours.map((hour, index) => ({ id: ids[index],
+      booking_no: `dual-number-${index}`, customer_id: customer.customerId, space_id: hour.spaceId, date: hour.date,
+      start_time: `${hour.startTime}:00`, end_time: `${hour.endTime}:00`, duration: 60, rate: 600, guest_count: 1,
+      booking_status: 'pending', payment_status: 'pending', booking_session_id: `dual-${refs[index]}`,
+      hold_expires_at: holdUntil })), bookingSessions: ['session_1', 'session_2'].map(ref => {
+        const indexes = refs.map((value, index) => value === ref ? index : -1).filter(index => index >= 0);
+        return { date, startTime: '08:00:00', endTime: '10:00:00', spaceId: twoHours[indexes[0]!]!.spaceId,
+          bookingIds: indexes.map(index => ids[index]!), facilityId: '5f8786bd-dc61-4509-b893-74cda8f783f7',
+          durationHours: 2, bookingSessionId: `dual-${ref}`, requestSessionRef: ref };
+      }), transaction: { id: 'dual-transaction', reference: 'dual-number-0', amount: 2400, status: 'pending' },
+      trustedTotalAmount: 2400 };
+    const paths = [await mkdtemp(join(tmpdir(), 'onda-dual-court-a-')), await mkdtemp(join(tmpdir(), 'onda-dual-court-b-'))];
+    directories.push(...paths);
+    const journals = paths.map(path => new DurableSubmissionJournal(path));
+    const checkSlot = vi.fn(async (request: SlotCheckRequest) => ({ success: true,
+      availabilityProof: `proof-${request.spaceId}-${request.startTime}` }));
+    const publicCheckout = vi.fn(async (_request: unknown) => response);
+    const adapter = new TwoHourReservationAdapter({ checkSlot, publicCheckout }, journals[0]!, () => now, 15_000, [journals[1]!]);
+    process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT = 'SUPERVISED_ONE_SHOT';
+    await expect(adapter.submit(twoCourtPlan, customer, { supervisedOneShot: true })).resolves.toMatchObject({
+      bookingIds: ids, transactionId: 'dual-transaction' });
+    expect(checkSlot).toHaveBeenCalledTimes(4);
+    expect((publicCheckout.mock.calls[0]![0] as { items: Array<{ sessionRef: string }> }).items.map(item => item.sessionRef))
+      .toEqual(refs);
+    const keys = standardPlanJournalKeys(twoCourtPlan, '5f8786bd-dc61-4509-b893-74cda8f783f7');
+    expect((await journals[0]!.read(keys[0]!)).state).toBe('verified');
+    expect((await journals[1]!.read(keys[1]!)).state).toBe('verified');
   });
   it('requires an explicit supervised gate and obtains distinct exact-hour proofs before one submission', async () => {
     const { adapter, checkSlot, publicCheckout, path } = await setup();

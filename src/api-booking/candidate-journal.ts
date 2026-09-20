@@ -2,10 +2,10 @@ import type { BookingPlan } from './types.js';
 import { DurableSubmissionJournal } from './durable-submission-journal.js';
 
 export function candidateJournalKeys(plan: BookingPlan, facilityId: string): string[] {
-  return plan.chunks.map(chunk => {
-    const court = chunk.courts[0];
-    if (!court) throw Error('API_CANDIDATE_COURT_MISSING');
-    return DurableSubmissionJournal.key(facilityId, court.spaceId, plan.targetDate, chunk.startTime, chunk.endTime);
+  return plan.chunks.flatMap(chunk => {
+    if (!chunk.courts.length) throw Error('API_CANDIDATE_COURT_MISSING');
+    return chunk.courts.map(court => DurableSubmissionJournal.key(facilityId, court.spaceId,
+      plan.targetDate, chunk.startTime, chunk.endTime));
   });
 }
 

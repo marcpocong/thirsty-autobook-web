@@ -141,7 +141,7 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
     this.assertPage();
     const [first] = request.items;
     const last = request.items.at(-1);
-    if (!first || !last || request.items.length > 3) throw new BrowserSessionTransportError('CHECKOUT_ITEMS_INVALID');
+    if (!first || !last || request.items.length > 6) throw new BrowserSessionTransportError('CHECKOUT_ITEMS_INVALID');
     const expectedKey = DurableSubmissionJournal.key(request.facilityId, first.spaceId, first.date, first.startTime, last.endTime);
     consumeSubmissionPermit(permit, expectedKey);
     // The header values are ephemeral and never logged or stored by this adapter.

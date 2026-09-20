@@ -79,7 +79,7 @@ try {
     possiblePendingHold: true, journalDirectory, submitted: false }));
   let hold;
   try { hold = await submitCalendarFreeTwoHourCheckout({ page, plan, availability, customer,
-    approval: { court, date: date!, startTime: startTime!, endTime: plan.endTime,
+    approval: { courts: [court], date: date!, startTime: startTime!, endTime: plan.endTime,
       maximumAmount: config.MAX_PRICE, customerId: customer.customerId,
       approvalReference: 'user-session-2026-09-19-second-live-reservation' }, journal,
     captureCheckoutResponse }); }

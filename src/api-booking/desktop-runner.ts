@@ -18,9 +18,10 @@ import type { BookingPreferences } from './types.js';
 import type { CheckoutHttpResponse } from './browser-session-transport.js';
 import { firstUnjournaledCandidate } from './candidate-journal.js';
 import { standardCheckoutChunks } from './extended-checkout.js';
+import { standardPlanJournalKeys } from './two-hour-reservation.js';
 
 const preferencesSchema = z.object({ strategy: z.enum(['standard', 'extended']), date: z.iso.date(), start: z.string().regex(/^(0[89]|1\d|2[0-3]):00$/),
-  duration: z.number().int().min(1).max(6), courtCount: z.literal(1), maximum: z.number().finite().positive(),
+  duration: z.number().int().min(1).max(6), courtCount: z.union([z.literal(1), z.literal(2)]), maximum: z.number().finite().positive(),
   priority: z.array(z.number().int().min(1).max(7)).min(1),
   fallbackStarts: z.array(z.string().regex(/^(0[89]|1\d|2[0-3]):00$/)),
   exact: z.array(z.array(z.number().int().min(1).max(7))).optional() }).strict();
@@ -44,6 +45,7 @@ const saveOnce = async (directory: string, filename: string, content: unknown) =
   try { await file.writeFile(JSON.stringify(content)); await file.sync(); }
   finally { await file.close(); }
 };
+const connectedBrowsers: Browser[] = [];
 async function showWindow(page: import('playwright').Page): Promise<void> {
   const session = await page.context().newCDPSession(page);
   try {
@@ -62,6 +64,7 @@ async function prepareWorker(workerId: 'A' | 'B'): Promise<WorkerSession> {
   { cwd: process.cwd(), windowsHide: true, timeout: 30_000 });
   verifyDedicatedChrome(identity);
   const browser = await chromium.connectOverCDP(identity.cdpUrl);
+  connectedBrowsers.push(browser);
   const context = browser.contexts()[0];
   if (!context) throw Error('API_BROWSER_CONTEXT_MISSING');
   const matchingPages = context.pages().filter(candidate => candidate.url() === ONDA_URL);
@@ -82,8 +85,9 @@ try {
   const duration = requested?.duration ?? config.DURATION_HOURS;
   const courtCount = requested?.courtCount ?? config.COURT_COUNT;
   if (!command.preferences && config.BOOKING_METHOD !== 'api-first') throw Error('API_FIRST_METHOD_REQUIRED');
-  if (courtCount !== 1 || strategy === 'standard' && (duration < 1 || duration > 3) ||
-    strategy === 'extended' && (duration < 4 || duration > 6)) throw Error('API_FIRST_ONE_COURT_REQUIRED');
+  if (strategy === 'standard' && (courtCount !== 1 || duration < 1 || duration > 3) ||
+    strategy === 'extended' && (duration < 4 || duration > 6 || ![1, 2].includes(courtCount)))
+    throw Error('API_FIRST_COURT_COUNT_UNSUPPORTED');
   if (!command.preferences && command.fingerprint !== planFingerprint(config)) throw Error('API_PLAN_CHANGED');
   if ((command.mode === 'live' || command.mode === 'live-now') && process.env.ONDA_API_FIRST_LIVE !== 'ARMED')
     throw Error('API_LIVE_NOT_ARMED');
@@ -106,8 +110,8 @@ try {
       durationHours: duration, preferredStartTimes: [requested?.start ?? config.START_TIME],
       fallbackStartTimes: requested?.fallbackStarts ?? config.FALLBACK_TIMES,
       courtPriority: requested?.priority ?? config.PREFERRED_COURTS,
-      fallbackCourts: requested ? [] : config.FALLBACK_COURTS, courtCount: 1, exactCourts: requested?.exact,
-      maximumTotalPrice: (requested?.maximum ?? config.MAX_PRICE) * (strategy === 'extended' ? 2 : 1), currency: 'PHP' };
+      fallbackCourts: requested ? [] : config.FALLBACK_COURTS, courtCount, exactCourts: requested?.exact,
+      maximumTotalPrice: requested?.maximum ?? config.MAX_PRICE, currency: 'PHP' };
     stage('FETCHING_AVAILABILITY');
     const discovery = await discoverApiAvailability(new OndaLiveAvailabilityProvider(), preferences);
     ensureActive();
@@ -120,6 +124,7 @@ try {
     if (!selected) throw Error('API_NO_UNUSED_CANDIDATE');
     const plan = selected.plan;
     stage('CANDIDATE_READY', { date: command.date, court: plan.courts[0]!.court,
+      ...(plan.courts[1] ? { courtB: plan.courts[1].court } : {}),
       startTime: plan.startTime, durationHours: duration,
       price: plan.totalPrice, availabilityMs: Math.round(discovery.timing.totalMs ?? 0) });
     if (command.mode === 'dry') {
@@ -135,17 +140,16 @@ try {
         const workerId = index === 0 ? 'A' : 'B';
         const session = sessions[index]; const customer = customers?.[workerId];
         if (!session || !customer) throw Error('API_EXTENDED_WORKER_MISSING');
-        const court = chunkPlan.courts[0]!;
-        const key = DurableSubmissionJournal.key(THIRSTY_PICKLE_FACILITY_ID, court.spaceId,
-          command.date, chunkPlan.startTime, chunkPlan.endTime);
-        const directory = resolve('.local/api-booking/api-first-journals', key);
-        const journal = new DurableSubmissionJournal(directory);
+        const keys = standardPlanJournalKeys(chunkPlan, THIRSTY_PICKLE_FACILITY_ID);
+        const directories = keys.map(key => resolve('.local/api-booking/api-first-journals', key));
+        const journals = directories.map(directory => new DurableSubmissionJournal(directory));
+        const key = keys[0]!, directory = directories[0]!, journal = journals[0]!;
         let token: string | undefined, bookingNo: string | undefined;
         const capture = async (response: CheckoutHttpResponse) => {
           await saveOnce(directory, 'checkout-response-private.json', { capturedAt: new Date().toISOString(), ...response });
           try {
             const value = JSON.parse(response.body) as { success?: boolean; bookings?: Array<{ id?: string; booking_no?: string; checkoutToken?: string }> };
-            if (value.success === true && value.bookings?.length === chunkPlan.durationHours &&
+            if (value.success === true && value.bookings?.length === chunkPlan.durationHours * chunkPlan.courts.length &&
               value.bookings[0]?.id && value.bookings[0]?.booking_no && value.bookings[0]?.checkoutToken) {
               token = value.bookings[0].checkoutToken; bookingNo = value.bookings[0].booking_no;
             }
@@ -154,9 +158,11 @@ try {
         stage('FRESH_VERIFICATION_AND_PROOFS', { workerId });
         let hold;
         try { hold = await submitCalendarFreeTwoHourCheckout({ page: session.page, plan: chunkPlan, availability: discovery.snapshot,
-          customer, approval: { court: court.court, date: command.date, startTime: chunkPlan.startTime,
-            endTime: chunkPlan.endTime, maximumAmount: requested?.maximum ?? config.MAX_PRICE, customerId: customer.customerId,
-            approvalReference: `desktop-api-first-${workerId}-${key}` }, journal, captureCheckoutResponse: capture,
+          customer, approval: { courts: chunkPlan.courts.map(court => court.court), date: command.date,
+            startTime: chunkPlan.startTime, endTime: chunkPlan.endTime,
+            maximumAmount: (requested?.maximum ?? config.MAX_PRICE) * courtCount, customerId: customer.customerId,
+            approvalReference: `desktop-api-first-${workerId}-${key}` }, journal,
+          additionalJournals: journals.slice(1), captureCheckoutResponse: capture,
           onHumanVerificationRequired: async () => {
             await session.page.evaluate(id => { document.title = `THIRSTY BOT ${id} - VERIFY HERE`; }, workerId);
             await showWindow(session.page); stage('HUMAN_VERIFICATION_REQUIRED', { workerId });
@@ -196,6 +202,7 @@ try {
   process.exitCode = 1;
 } finally {
   // This process attaches to a browser owned by the desktop installation.
-  // Exiting disconnects the CDP client while leaving that visible browser open.
-  setImmediate(() => process.exit(process.exitCode ?? 0));
+  // Closing a CDP attachment closes its transport; the independently launched Chrome windows stay open.
+  await Promise.allSettled(connectedBrowsers.map(browser => browser.close()));
+  if (process.connected) process.disconnect();
 }

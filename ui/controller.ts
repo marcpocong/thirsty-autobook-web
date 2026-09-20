@@ -66,7 +66,7 @@ const errors: Record<string, string> = {
   TODAYS_RELEASE_PASSED:"TODAY'S RELEASE HAS PASSED. This release can no longer be armed today.",
   API_FIRST_METHOD_REQUIRED:'API-FIRST EXPERIMENTAL must be selected before running the read-only API preview.',
   API_FIRST_LIVE_CHECKOUT_BLOCKED:'API-FIRST reservation submission is disabled until Oonda provides a supported current security context and checkout handoff.',
-  API_FIRST_ONE_COURT_REQUIRED:'API-FIRST currently supports one court. Extended uses two sequential checkouts and two players for that court.',
+  API_FIRST_COURT_COUNT_UNSUPPORTED:'API-FIRST supports one court for Standard and one or two courts for Extended.',
   LOCAL_CUSTOMER_ID_UNVERIFIED:'Primary API customer binding is missing or does not match the configured primary player.',
   LOCAL_EXTENDED_CUSTOMER_ID_UNVERIFIED:'Extended API customer binding is missing or does not match the configured Extended player.',
   API_EXTENDED_WORKER_MISSING:'Both dedicated API browsers and both player profiles are required for Extended.',
@@ -76,7 +76,7 @@ const errors: Record<string, string> = {
 export interface Dependencies {
   confirmStopPrepare?:()=>Promise<boolean>;
   confirmBooking?:(plan:BookingPlan,maximum:number)=>Promise<boolean>;
-  confirmApiTest?:(input:{strategy:'standard'|'extended';date:string;start:string;duration:number;maximum:number;priority:number[]})=>Promise<boolean>;
+  confirmApiTest?:(input:{strategy:'standard'|'extended';date:string;start:string;duration:number;courtCount:1|2;maximum:number;priority:number[]})=>Promise<boolean>;
   runner: Runner; lock(): Promise<boolean>; cdp(): Promise<boolean>; clock: typeof readClock;
   browserHealth?():Promise<{A:boolean;B:boolean}>;
   playerStatus?():{primary:boolean;extended:boolean};
@@ -181,7 +181,7 @@ export class Controller {
       labels.HUMAN_VERIFICATION_COMPLETE='Human verification complete';
       this.state.headline=labels[event.stage]??event.stage.replaceAll('_',' ');
       const worker=event.workerId?`Checkout ${event.workerId} · `:'';
-      this.state.detail=event.stage==='CANDIDATE_READY'?`Court ${event.court} · ${event.date} · ${event.startTime} · ${event.durationHours} hour(s) · PHP ${event.price}`:
+      this.state.detail=event.stage==='CANDIDATE_READY'?`Court${event.courtB?'s':''} ${event.court}${event.courtB?` + ${event.courtB}`:''} · ${event.date} · ${event.startTime} · ${event.durationHours} hour(s) · PHP ${event.price}`:
         event.stage==='PENDING_HOLD'||event.stage==='OFFICIAL_QRPH_HANDOFF'?`${worker}Booking ${event.bookingNo} · ID ${event.bookingId} · Hold until ${event.holdExpiresAt} · PHP ${event.price}. Payment is manual.`:
         event.stage==='HUMAN_VERIFICATION_REQUIRED'?`Use the Chrome window titled THIRSTY BOT ${event.workerId??'A'} - VERIFY HERE. This API run is waiting for you to finish the Cloudflare check.`:
         event.stage==='FAILED'?event.code??'API_FIRST_RUN_FAILED':`Elapsed ${event.elapsedMs} ms`;
@@ -320,13 +320,15 @@ export class Controller {
       await this.operation('prepare',async gen=>{
         let release:BookingView|undefined;
         if(input.workflow==='test'&&input.method==='api-first'){
-          if(input.request.courtCount!==1)throw Error('API_FIRST_ONE_COURT_REQUIRED');
+          if(input.request.strategy==='standard'&&input.request.courtCount!==1 ||
+            input.request.strategy==='extended'&&![1,2].includes(input.request.courtCount))
+            throw Error('API_FIRST_COURT_COUNT_UNSUPPORTED');
           const players=this.players();if(!players.primary)throw Error('PLAYER_INFO_MISSING');
           if(input.request.strategy==='extended'&&!players.extended)throw Error('EXTENDED_PLAYER_INFO_MISSING');
           const fingerprint=expectedPreparationFingerprint(input);
           this.state.workflow='test';this.state.headline='PREPARING API BROWSER';this.publish();
           await this.run({kind:'apiRun',mode:'prepare',date:input.request.date,fingerprint,
-            preferences:{strategy:input.request.strategy,date:input.request.date,start:input.request.start,duration:input.request.duration,courtCount:1,
+            preferences:{strategy:input.request.strategy,date:input.request.date,start:input.request.start,duration:input.request.duration,courtCount:input.request.courtCount,
               maximum:input.maximum,priority:input.request.priority,fallbackStarts:input.request.fallbackStarts,...(input.request.exact?{exact:input.request.exact}:{})}},gen);
           this.apiTestFingerprint=fingerprint;this.apiTestStrategy=input.request.strategy;this.state.apiFirstReady=true;this.state.ready=true;
           this.state.headline='API READY TO TEST';
@@ -340,7 +342,9 @@ export class Controller {
           this.state.bookingAdjustment=removed.length?{valid:release.setup.FALLBACK_TIMES,removed}:null;
            if(release.setup.BOOKING_TYPE!==input.strategy)throw Error('BOOKING_PLAN_CHANGED');this.state.booking=release;
            if(release.setup.BOOKING_METHOD==='api-first'){
-             if(release.setup.COURT_COUNT!==1)throw Error('API_FIRST_ONE_COURT_REQUIRED');
+             if(release.setup.BOOKING_TYPE==='standard'&&release.setup.COURT_COUNT!==1 ||
+               release.setup.BOOKING_TYPE==='extended'&&![1,2].includes(release.setup.COURT_COUNT))
+               throw Error('API_FIRST_COURT_COUNT_UNSUPPORTED');
              if(release.setup.BOOKING_TYPE==='extended'&&!release.extendedPlayerConfigured)throw Error('EXTENDED_PLAYER_INFO_MISSING');
              this.state.workflow='release';this.state.headline='PREPARING API BROWSER';this.publish();
              await this.run({kind:'apiRun',mode:'prepare',date:release.targetDate,fingerprint:release.fingerprint},gen);
@@ -377,12 +381,12 @@ export class Controller {
       const fingerprint=expectedPreparationFingerprint(preparation);
       if(!this.state.apiFirstReady||this.apiTestFingerprint!==fingerprint)throw Error('RESET_REQUIRED');
       if(!authorized)throw Error('TERMS_AUTHORIZATION_REQUIRED');
-      if(!await this.deps.confirmApiTest?.({strategy:input.request.strategy,date:input.request.date,start:input.request.start,duration:input.request.duration,
+      if(!await this.deps.confirmApiTest?.({strategy:input.request.strategy,date:input.request.date,start:input.request.start,duration:input.request.duration,courtCount:input.request.courtCount,
         maximum:input.maximum,priority:input.request.priority}))return;
       await this.noLock();this.state.handoff=null;this.state.bookingResult=undefined;
       this.state.headline='Checking API availability';this.state.detail='The dedicated API browser remains visible while availability and proofs are checked.';
       await this.run({kind:'apiRun',mode:'live-now',date:input.request.date,fingerprint,
-        preferences:{strategy:input.request.strategy,date:input.request.date,start:input.request.start,duration:input.request.duration,courtCount:1,
+        preferences:{strategy:input.request.strategy,date:input.request.date,start:input.request.start,duration:input.request.duration,courtCount:input.request.courtCount,
           maximum:input.maximum,priority:input.request.priority,fallbackStarts:input.request.fallbackStarts,...(input.request.exact?{exact:input.request.exact}:{})}},gen);
       return;
     }
@@ -451,8 +455,10 @@ export class Controller {
     if(!authorized)throw Error('TERMS_AUTHORIZATION_REQUIRED');
     await this.noLock();
     const plan=this.deps.booking(),clock=this.deps.clock();
-    if(plan.setup.COURT_COUNT!==1||!plan.playerConfigured||plan.setup.BOOKING_TYPE==='extended'&&!plan.extendedPlayerConfigured)
-      throw Error('API_FIRST_ONE_COURT_REQUIRED');
+    if(plan.setup.BOOKING_TYPE==='standard'&&plan.setup.COURT_COUNT!==1 ||
+      plan.setup.BOOKING_TYPE==='extended'&&![1,2].includes(plan.setup.COURT_COUNT) ||
+      !plan.playerConfigured||plan.setup.BOOKING_TYPE==='extended'&&!plan.extendedPlayerConfigured)
+      throw Error('API_FIRST_COURT_COUNT_UNSUPPORTED');
     if(clock.releaseMs<=Date.now())throw Error('RELEASE_MISSED');
     const confirmed=await this.deps.confirm('full',plan);if(!confirmed)return;
     if(this.deps.booking().fingerprint!==plan.fingerprint||this.deps.clock().releaseMs!==clock.releaseMs)

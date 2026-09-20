@@ -12,7 +12,7 @@ export interface SlotCheckRequest extends HourIdentity { clientId: string; facil
 export interface CheckoutCustomer { clientId: string; customerId: string; customerFirstName: string; customerLastName: string; customerEmail: string; customerPhone: string }
 export interface TwoHourItem extends HourIdentity {
   activityKey: null; activityLabel: null; availabilityProof: string; chargedAmount: number; duration: 60;
-  facilityId: string; guestCount: 1; promotionId: null; rate: number; sessionRef: 'session_1';
+  facilityId: string; guestCount: 1; promotionId: null; rate: number; sessionRef: `session_${number}`;
 }
 export interface TwoHourCheckoutRequest extends Omit<CheckoutCustomer, 'customerFirstName' | 'customerLastName'> {
   bookingType: 'online'; customerFirstName: null; customerLastName: null; facilityId: string;
@@ -75,22 +75,30 @@ export function selectedTwoHours(plan: BookingPlan): [HourIdentity, HourIdentity
 
 /** One to three exact hours from a live, single-court standard plan. */
 export function selectedStandardHours(plan: BookingPlan): HourIdentity[] {
-  if (plan.durationHours === 2) return selectedTwoHours(plan);
-  const court = plan.courts[0];
-  if (plan.mode !== 'standard' || ![1, 3].includes(plan.durationHours) || plan.courts.length !== 1 ||
-    plan.chunks.length !== 1 || plan.chunks[0]?.durationHours !== plan.durationHours ||
-    plan.chunks[0]?.courts.length !== 1 || !court || court.slots.length !== plan.durationHours ||
-    COURT_TO_SPACE_ID[court.court as keyof typeof COURT_TO_SPACE_ID] !== court.spaceId ||
-    court.durationMinutes !== plan.durationHours * 60 || court.date !== plan.targetDate ||
-    court.startTime !== plan.startTime || court.endTime !== plan.endTime ||
-    court.slots.some((slot, index) => slot.spaceId !== court.spaceId || slot.court !== court.court ||
-      slot.date !== court.date || slot.bookingDate !== court.date || !slot.isAvailable ||
-      slot.currency !== 'PHP' || slot.startTime !== (index ? court.slots[index - 1]!.endTime : court.startTime)) ||
-    court.slots.at(-1)?.endTime !== court.endTime || plan.currency !== 'PHP' ||
-    plan.totalPrice !== court.slots.reduce((sum, slot) => sum + slot.price, 0) ||
-    court.price !== plan.totalPrice) fail('STANDARD_PLAN_INVALID');
-  return court.slots.map(slot => ({ spaceId: slot.spaceId, date: slot.date,
-    startTime: slot.startTime, endTime: slot.endTime }));
+  const chunk = plan.chunks[0];
+  if (plan.mode !== 'standard' || ![1, 2, 3].includes(plan.durationHours) || ![1, 2].includes(plan.courts.length) ||
+    plan.chunks.length !== 1 || chunk?.durationHours !== plan.durationHours || chunk.courts.length !== plan.courts.length ||
+    new Set(plan.courts.map(court => court.spaceId)).size !== plan.courts.length ||
+    plan.courts.some((court, courtIndex) => chunk.courts[courtIndex]?.spaceId !== court.spaceId ||
+      COURT_TO_SPACE_ID[court.court as keyof typeof COURT_TO_SPACE_ID] !== court.spaceId ||
+      court.durationMinutes !== plan.durationHours * 60 || court.date !== plan.targetDate ||
+      court.startTime !== plan.startTime || court.endTime !== plan.endTime || court.slots.length !== plan.durationHours ||
+      court.slots.some((slot, index) => slot.spaceId !== court.spaceId || slot.court !== court.court ||
+        slot.date !== court.date || slot.bookingDate !== court.date || !slot.isAvailable || slot.currency !== 'PHP' ||
+        slot.startTime !== (index ? court.slots[index - 1]!.endTime : court.startTime)) ||
+      court.slots.at(-1)?.endTime !== court.endTime ||
+      court.price !== court.slots.reduce((sum, slot) => sum + slot.price, 0)) || plan.currency !== 'PHP' ||
+    plan.totalPrice !== plan.courts.reduce((sum, court) => sum + court.price, 0)) fail('STANDARD_PLAN_INVALID');
+  return [...plan.courts].sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime) ||
+    a.spaceId.localeCompare(b.spaceId)).flatMap(court => court.slots.map(slot => ({ spaceId: slot.spaceId,
+      date: slot.date, startTime: slot.startTime, endTime: slot.endTime })));
+}
+
+export function standardPlanJournalKeys(plan: BookingPlan, facilityId: string): string[] {
+  selectedStandardHours(plan);
+  return [...plan.courts].sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime) ||
+    a.spaceId.localeCompare(b.spaceId)).map(court => DurableSubmissionJournal.key(facilityId, court.spaceId,
+      plan.targetDate, plan.startTime, plan.endTime));
 }
 
 /** Validates the observed two-booking, one-session pending response. No checkout handoff is inferred. */
@@ -140,7 +148,8 @@ export function validateTwoHourResponse(raw: unknown, request: TwoHourCheckoutRe
 
 export class TwoHourReservationAdapter {
   constructor(private readonly transport: TwoHourTransport, private readonly journal: DurableSubmissionJournal,
-    private readonly clock: () => Date = () => new Date(), private readonly maximumProofAgeMs = 15_000) {}
+    private readonly clock: () => Date = () => new Date(), private readonly maximumProofAgeMs = 15_000,
+    private readonly additionalJournals: DurableSubmissionJournal[] = []) {}
 
   async submit(plan: BookingPlan, customer: CheckoutCustomer, control: { supervisedOneShot: true }): Promise<VerifiedTwoHourHold> {
     if (control?.supervisedOneShot !== true || process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT !== 'SUPERVISED_ONE_SHOT')
@@ -156,17 +165,35 @@ export class TwoHourReservationAdapter {
       maximumAgeMs: this.maximumProofAgeMs, concurrency: 2 });
     const request = buildStandardPublicCheckoutRequest(plan, customer, THIRSTY_PICKLE_FACILITY_ID, proofs);
     const now = this.clock();
-    const key = DurableSubmissionJournal.key(THIRSTY_PICKLE_FACILITY_ID, hours[0]!.spaceId, hours[0]!.date,
-      hours[0]!.startTime, hours.at(-1)!.endTime);
+    const keys = standardPlanJournalKeys(plan, THIRSTY_PICKLE_FACILITY_ID);
+    const journals = [this.journal, ...this.additionalJournals];
+    if (journals.length !== keys.length) fail('SUBMISSION_JOURNAL_COUNT_INVALID');
+    const key = keys[0]!;
     const planFingerprint = createHash('sha256').update(JSON.stringify({ mode: plan.mode, targetDate: plan.targetDate,
       durationHours: plan.durationHours, courts: plan.courts.map(court => ({ court: court.court, spaceId: court.spaceId,
         date: court.date, startTime: court.startTime, endTime: court.endTime, price: court.price })) })).digest('hex');
-    await this.journal.begin(key, now, { attemptId: key, planFingerprint, targetDate: plan.targetDate,
-      courtIds: [plan.courts[0]!.court], hourlyBoundaries: hours.map(hour => ({ startTime: hour.startTime, endTime: hour.endTime })),
-      expectedBookingCount: request.items.length, maximumAmount: plan.totalPrice, stage: 'dispatching' });
+    const begun: Array<{ journal: DurableSubmissionJournal; key: string }> = [];
+    try {
+      for (const [index, currentKey] of keys.entries()) {
+        const journal = journals[index]!;
+        await journal.begin(currentKey, now, { attemptId: currentKey, planFingerprint, targetDate: plan.targetDate,
+          courtIds: plan.courts.map(court => court.court),
+          hourlyBoundaries: hours.map(hour => ({ startTime: hour.startTime, endTime: hour.endTime })),
+          expectedBookingCount: request.items.length, maximumAmount: plan.totalPrice, stage: 'dispatching' });
+        begun.push({ journal, key: currentKey });
+      }
+    } catch (error) {
+      await Promise.allSettled(begun.map(entry => entry.journal.mark(entry.key, 'rejected', this.clock(),
+        undefined, undefined, 'DUPLICATE_LOGICAL_BOOKING_BLOCKED')));
+      throw error;
+    }
+    const markAll = async (state: 'unknown' | 'verified' | 'rejected', diagnostic?: Parameters<DurableSubmissionJournal['mark']>[3],
+      observed?: ObservedCheckoutResponse, failureCode?: string) => {
+      await Promise.all(begun.map(entry => entry.journal.mark(entry.key, state, this.clock(), diagnostic, observed, failureCode)));
+    };
     let permit: SubmissionPermit;
     try { permit = await this.journal.claimSupervisedOneShot(key, now); }
-    catch (error) { await this.journal.mark(key, 'rejected', this.clock()); throw error; }
+    catch (error) { await markAll('rejected'); throw error; }
     try {
       const raw = await this.transport.publicCheckout(request, permit);
       let verified: VerifiedTwoHourHold;
@@ -178,18 +205,17 @@ export class TwoHourReservationAdapter {
       catch (error) {
         const code = error instanceof Error && 'code' in error && typeof error.code === 'string'
           ? error.code : 'CHECKOUT_RESPONSE_VALIDATION_FAILED';
-        await this.journal.mark(key, 'unknown', this.clock(), undefined, observedResponse(raw, code), code);
+        await markAll('unknown', undefined, observedResponse(raw, code), code);
         fail('SUBMISSION_OUTCOME_UNKNOWN_RECONCILIATION_REQUIRED');
       }
-      await this.journal.mark(key, 'verified', this.clock(), undefined,
-        observedResponse(raw, 'CHECKOUT_RESPONSE_VERIFIED'));
+      await markAll('verified', undefined, observedResponse(raw, 'CHECKOUT_RESPONSE_VERIFIED'));
       return verified;
     } catch (error) {
       // A sent request may have succeeded even when its response was lost or malformed.
       const dispatched = !(error instanceof SubmissionDispatchError) || error.dispatched;
       const failureCode = error instanceof SubmissionDispatchError || error instanceof TwoHourReservationError
         ? error.code : 'CHECKOUT_UNEXPECTED_ERROR';
-      await this.journal.mark(key, dispatched ? 'unknown' : 'rejected', this.clock(),
+      await markAll(dispatched ? 'unknown' : 'rejected',
         error instanceof SubmissionDispatchError ? error.diagnostic : undefined,
         undefined, failureCode).catch(() => undefined);
       if (!dispatched) throw error;

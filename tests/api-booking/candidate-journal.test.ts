@@ -39,4 +39,19 @@ describe('durable candidate selection', () => {
     expect(keys).toHaveLength(2); expect(new Set(keys).size).toBe(2);
     await expect(firstUnjournaledCandidate([extended], 'facility', async key => key === keys[1])).resolves.toBeUndefined();
   });
+
+  it('guards every court in both Extended checkout chunks', () => {
+    const firstA = candidate(7, 'court-7').courts[0]!;
+    const firstB = candidate(6, 'court-6').courts[0]!;
+    const secondA = { ...firstA, startTime: '15:00', endTime: '17:00', durationMinutes: 120, slots: [] };
+    const secondB = { ...firstB, startTime: '15:00', endTime: '17:00', durationMinutes: 120, slots: [] };
+    const extended: BookingPlan = { mode: 'extended', targetDate: '2026-09-21', startTime: '12:00', endTime: '17:00',
+      durationHours: 5, courts: [firstA, firstB, secondA, secondB], chunks: [
+        { startTime: '12:00', endTime: '15:00', durationHours: 3, courts: [firstA, firstB], totalPrice: 3600 },
+        { startTime: '15:00', endTime: '17:00', durationHours: 2, courts: [secondA, secondB], totalPrice: 2400 }],
+      totalPrice: 6000, currency: 'PHP' };
+    const keys = candidateJournalKeys(extended, 'facility');
+    expect(keys).toHaveLength(4);
+    expect(new Set(keys).size).toBe(4);
+  });
 });

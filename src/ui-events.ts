@@ -16,7 +16,7 @@ export const ReleasePerformanceSchema=z.object({workers:z.object({A:workerPerfor
 export const UiEventSchema = z.discriminatedUnion('type', [
   z.object({type:z.literal('apiStage'),stage:z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/),elapsedMs:z.number().int().nonnegative(),
     code:z.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/).optional(),workerId:z.enum(['A','B']).optional(),port:z.number().int().optional(),releaseMs:z.number().int().optional(),
-    date:z.iso.date().optional(),court:z.number().int().min(1).max(7).optional(),startTime:z.string().optional(),
+    date:z.iso.date().optional(),court:z.number().int().min(1).max(7).optional(),courtB:z.number().int().min(1).max(7).optional(),startTime:z.string().optional(),
     durationHours:z.number().int().min(1).max(6).optional(),price:z.number().finite().optional(),availabilityMs:z.number().int().optional(),
     bookingId:z.string().optional(),bookingNo:z.string().optional(),holdExpiresAt:z.string().optional()}).strict(),
   z.object({type:z.literal('preparationResult'),result:PreparationResultSchema}).strict(),

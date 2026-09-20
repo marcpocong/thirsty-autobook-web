@@ -1,5 +1,11 @@
 # API-first booking experiment
 
+## Two-court Extended API checkpoint (September 21, 2026)
+
+The separate API Test installation now accepts Extended bookings of 4–6 consecutive hours on one or two courts. For two courts, the availability planner selects both courts for each of two consecutive time chunks. Browser A uses the primary player for the first chunk; Browser B uses the Extended player for the second. Each browser sends one checkout containing two continuous court sessions, with a separate `sessionRef` and fresh hourly proof for each court. The response validator checks both session groups, every booking, the combined price, and the pending hold. Each court and chunk has its own durable collision journal, so a prior submission record on any of the four parts blocks that candidate.
+
+The packaged app reached **API READY TO TEST** with two courts and both Onda windows open while Terms remained unchecked. A read-only availability run previously found Courts 7 and 6 for September 21, 12:00–16:00, split 3+1, PHP 4,800 total; it did not submit. That historical availability is not a current booking opportunity. The two-court checkout and response contract has offline tests, but no live two-court reservation or QR handoff has been verified. Two checkout POSTs can create partial success if the second fails. Payment remains manual, and an uncertain outcome must be reconciled before any retry. This experiment runs only from the separate API Test installation.
+
 ## Genuine Onda checkout dry run
 
 `real-checkout-hybrid.ts` carries a fresh, exact one-court API plan into Onda's
@@ -141,7 +147,7 @@ exact-date provider request, parses the response, ranks bounded deterministic
 candidates, and records monotonic request/response/parse/selection timings. It
 does not import Playwright or wait for the visual calendar. `slot-proofs.ts`
 performs bounded fresh proof acquisition and preserves the proof-to-hour
-association. `public-checkout.ts` builds and validates standard one-court 1–3
+association. `public-checkout.ts` builds and validates standard one- or two-court 1–3
 hour observed-schema requests; it is a preparation boundary, not authorization
 to submit them.
 
