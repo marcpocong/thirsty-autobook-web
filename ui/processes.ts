@@ -21,8 +21,22 @@ export function sanitizeLine(text: string): string {
 }
 export function commandSpec(command: Command, root: string, node: string) {
   if (typeof command === 'object' && command !== null) {
+    if(command.kind==='apiRun'){
+      const preferences=z.object({strategy:z.enum(['standard','extended']),date:z.iso.date(),start:z.string().regex(/^(0[89]|1\d|2[0-3]):00$/),duration:z.number().int().min(1).max(6),courtCount:z.union([z.literal(1),z.literal(2)]),
+        maximum:z.number().finite().positive(),priority:z.array(z.number().int().min(1).max(7)).min(1),fallbackStarts:z.array(z.string().regex(/^(0[89]|1\d|2[0-3]):00$/)),exact:z.array(z.array(z.number().int().min(1).max(7))).optional()}).strict();
+      const c=z.object({kind:z.literal('apiRun'),mode:z.enum(['prepare','dry','live','live-now']),date:z.iso.date(),
+        fingerprint:z.string().regex(/^[a-f0-9]{64}$/),releaseMs:z.number().int().positive().optional(),preferences:preferences.optional()}).strict().parse(command);
+      if(process.env.THIRSTY_API_INSTALLATION!=='1'&&process.env.THIRSTY_API_TEST_INSTALLATION!=='1')throw Error('API_INSTALLATION_REQUIRED');
+      return {executable:node,args:['--import','tsx',resolve(root,'src/api-booking/desktop-runner.ts'),
+        JSON.stringify({mode:c.mode,date:c.date,fingerprint:c.fingerprint,...(c.releaseMs?{releaseMs:c.releaseMs}:{}),
+          ...(c.preferences?{preferences:c.preferences}:{})})],automation:true,apiLive:c.mode==='live'||c.mode==='live-now'};
+    }
     if(command.kind==='resetPrepare')return {executable:node,args:['--import','tsx',resolve(root,'src/booking-entry.ts'),'prepare',JSON.stringify(PreparationSchema.parse(command.input))],automation:true};
     if(command.kind==='testBooking')return {executable:node,args:['--import','tsx',resolve(root,'src/booking-entry.ts'),'test',JSON.stringify(TestBookingSchema.parse(command.input))],automation:true};
+    if(command.kind==='apiPreview'){
+      const c=z.object({kind:z.literal('apiPreview'),date:z.iso.date()}).strict().parse(command);
+      return {executable:node,args:['--import','tsx',resolve(root,'src/api-booking/preview-config.ts'),c.date],automation:true};
+    }
     if(command.kind==='dualDry') {
       const c=z.object({kind:z.literal('dualDry'),date:z.iso.date()}).strict().parse(command);
       return {executable:node,args:['--import','tsx',resolve(root,'src/dual-entry.ts'),'dry','--date',c.date],automation:true};
@@ -63,6 +77,7 @@ export function createRunner(root: string, node: string): Runner {
   return (command, onEvent, onLine, confirmBooking) => {
     const spec = commandSpec(command, root, node);
     const env: NodeJS.ProcessEnv = { ...process.env, THIRSTY_UI_EVENTS: '1', THIRSTY_UI_PARENT_PID: String(process.pid) };
+    if('apiLive' in spec && spec.apiLive)env.ONDA_API_FIRST_LIVE='ARMED';
     delete env.ELECTRON_RUN_AS_NODE;
     const child = spawn(spec.executable, spec.args, { cwd: root, env, windowsHide: true, shell: false,
       stdio: spec.automation ? ['ignore', 'pipe', 'pipe', 'ipc'] : ['ignore', 'pipe', 'pipe'] });

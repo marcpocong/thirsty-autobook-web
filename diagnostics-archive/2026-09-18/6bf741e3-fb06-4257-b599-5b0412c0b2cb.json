@@ -1,0 +1,44 @@
+{
+  "runID": "6bf741e3-fb06-4257-b599-5b0412c0b2cb",
+  "events": [
+    {
+      "event": "processStarted",
+      "wall": "2026-09-11T03:03:42.565Z",
+      "monoMs": 521.0779
+    },
+    {
+      "event": "chromeConnected",
+      "wall": "2026-09-11T03:03:43.856Z",
+      "monoMs": 1811.9834
+    },
+    {
+      "event": "ondaTabResolved",
+      "wall": "2026-09-11T03:03:43.856Z",
+      "monoMs": 1811.993
+    },
+    {
+      "event": "preopenStabilityStarted",
+      "wall": "2026-09-11T03:03:43.872Z",
+      "monoMs": 1827.6264
+    },
+    {
+      "event": "preopenStabilitySample",
+      "wall": "2026-09-11T03:03:44.116Z",
+      "monoMs": 2072.3844,
+      "value": 0
+    },
+    {
+      "event": "preopenStabilitySample",
+      "wall": "2026-09-11T03:03:59.151Z",
+      "monoMs": 17107.3007,
+      "value": 15000
+    },
+    {
+      "event": "failed",
+      "wall": "2026-09-11T03:04:14.131Z",
+      "monoMs": 32087.1538
+    }
+  ],
+  "releasePerformance": null,
+  "failure": "PREOPEN_CHECK_CALENDAR_CLOSED"
+}

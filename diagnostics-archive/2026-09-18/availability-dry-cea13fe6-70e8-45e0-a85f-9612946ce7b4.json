@@ -1,0 +1,22 @@
+{
+  "date": "2026-09-12",
+  "discoveryMode": "HYBRID",
+  "candidateSource": "API+UI",
+  "configuredPrimaryStart": "08:00",
+  "configuredDuration": 1,
+  "chosen": {
+    "court": 4,
+    "hours": [
+      "08:00"
+    ]
+  },
+  "estimatedApiPrice": 700,
+  "uiCandidateAvailability": "verified",
+  "apiUiAgreement": true,
+  "pass": true,
+  "slotClicks": 0,
+  "proceedClicks": 0,
+  "requestDurationMs": 344.9512,
+  "planScope": "USER_REQUESTED_TEMPORARY_OVERRIDE",
+  "savedPlanChanged": false
+}

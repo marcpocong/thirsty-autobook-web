@@ -27,13 +27,13 @@ async function renderer(old=false, extra:Record<string,unknown>={}){
 }
 it('reproduces the previous retained-lock editor and Save disabling in the actual renderer',async()=>{const p=await renderer(true);expect(await p.locator('#duration').isDisabled()).toBe(true);expect(await p.locator('#save-booking').isDisabled()).toBe(true);await p.close();});
 it('actual renderer keeps all setup controls, Save, Review and Stop enabled while booking actions remain blocked',async()=>{
- const p=await renderer();await p.locator('#workflow-release').click();await p.locator('#advanced > summary').click();for(const id of ['start-time','duration','maximum','attempts','fallback-time','save-booking','review-lock','reset-practice','stop'])expect(await p.locator('#'+id).isEnabled(),id).toBe(true);
+ const p=await renderer();await p.locator('#workflow-release').click();await p.locator('#advanced > summary').click();for(const id of ['start-time','duration','attempts','fallback-time','save-booking','review-lock','reset-practice','stop'])expect(await p.locator('#'+id).isEnabled(),id).toBe(true);
  expect(await p.locator('#court-order button').nth(1).isEnabled()).toBe(true);
  for(const id of ['arm','dry','observe','practice','full-practice'])expect(await p.locator('#'+id).isDisabled(),id).toBe(true);
  expect(await p.locator('#chrome').isEnabled()).toBe(true);
  expect(await p.locator('#full-terms').isEnabled()).toBe(true);
  expect(await p.locator('#full-date').isEnabled()).toBe(true);
- await p.locator('#duration').fill('3');await p.locator('#maximum').fill('1800');await p.locator('#start-time').selectOption('10:00');await p.locator('#save-booking').click();await p.waitForFunction(()=>document.getElementById('edit-status')?.textContent==='BOOKING PLAN SAVED');expect(await p.locator('#duration').inputValue()).toBe('3');await p.close();
+ await p.locator('#duration').fill('3');await p.locator('#start-time').selectOption('10:00');await p.locator('#save-booking').click();await p.waitForFunction(()=>document.getElementById('edit-status')?.textContent==='BOOKING PLAN SAVED');expect(await p.locator('#duration').inputValue()).toBe('3');await p.close();
 });
 it('default renderer keeps engineering diagnostics collapsed',async()=>{
  const p=await renderer();
@@ -67,15 +67,16 @@ it('real config save/reload persists duration, price, start, attempts, courts an
  const reload=execFileSync(process.execPath,['--import','tsx','--input-type=module','-e',`import {readBooking} from ${JSON.stringify(booking)};process.chdir(${JSON.stringify(root)});console.log(JSON.stringify(readBooking().setup));`],{encoding:'utf8'});expect(JSON.parse(reload)).toEqual(setup);
  }finally{if(!root.startsWith(resolve('.local')+sep))throw Error('UNSAFE_TEST_PATH');await rm(root,{recursive:true,force:true});}
 });
-it('EXE delegates to the same npm UI entry and main resolves project root independently of cwd',async()=>{
- expect(await readFile('scripts/ThirstyLauncher.cs','utf8')).toContain('scripts/run-ui.mjs');expect(await readFile('scripts/ThirstyLauncher.cs','utf8')).toContain('start.WorkingDirectory = root');expect(await readFile('ui/main.ts','utf8')).toContain("resolve(dirname(fileURLToPath(import.meta.url)), '../..')");
+it('canonical EXE delegates to the self-contained API-first UI and resolves its own root',async()=>{
+ const launcher=await readFile('scripts/ThirstyPickleBotLauncher.cs','utf8'),runner=await readFile('scripts/run-thirsty-pickle-bot.mjs','utf8');
+ expect(launcher).toContain('scripts/run-thirsty-pickle-bot.mjs');expect(launcher).toContain('start.WorkingDirectory = root');expect(runner).toContain("THIRSTY_API_INSTALLATION: '1'");expect(await readFile('ui/main.ts','utf8')).toContain("resolve(dirname(fileURLToPath(import.meta.url)), '../..')");
 });
 it('Standard two courts shows one checkout; Extended has no historical evidence gate in the normal flow',async()=>{
  const dualPlan=bookingView(ConfigSchema.parse({...defaultSetup,COURT_COUNT:2,PLAYER_FULL_NAME:'Fixture Player',PLAYER_PHONE:'09123456789',PLAYER_EMAIL:'fixture@example.invalid'}));
  const p=await renderer(false,{booking:dualPlan,lock:false,ready:true,termsAuthorized:true,dualValidation:{selection:false,full:false}});
  await p.locator('#workflow-release').click();
  expect(await p.locator('#booking-preview').innerText()).toContain('1 checkout');
- expect(await p.locator('#booking-preview').innerText()).toContain('Maximum per checkout: PHP 2,400');
+ expect(await p.locator('#booking-preview').innerText()).toContain('No price ceiling');
  expect(await p.locator('#dual-panel').isVisible()).toBe(false);
  expect(await p.locator('#prepare').isEnabled()).toBe(true);
  await p.addStyleTag({content:await readFile('ui/renderer/styles.css','utf8')});await p.setViewportSize({width:1010,height:800});
@@ -95,7 +96,7 @@ it('after today release the normal screen shows tomorrow, target, plan, readines
  const p=await renderer(false,{clock,booking:plan,lock:false,ready:false,playerStatus:{primary:true,extended:false}});await p.locator('#workflow-release').click();await p.addStyleTag({content:await readFile('ui/renderer/styles.css','utf8')});await p.setViewportSize({width:1010,height:800});
  expect(await p.locator('#release-passed').innerText()).toContain('HAS PASSED');expect(await p.locator('#next-release').innerText()).toContain('September 16');expect(await p.locator('#next-target').innerText()).toContain('September 18');
  expect(await p.locator('#booking-preview').innerText()).toContain('RELEASE PLAN');expect(await p.locator('#release-readiness-card').isVisible()).toBe(true);expect(await p.locator('#prepare').isEnabled()).toBe(true);expect(await p.locator('#advanced').getAttribute('open')).toBeNull();expect(await p.locator('body').innerText()).not.toContain('ZodError');
- expect(await p.locator('#booking-preview').innerText()).toContain('Maximum per court: PHP 1,200');expect(await p.locator('#booking-preview').innerText()).toContain('Maximum per checkout: PHP 1,200');
+ expect(await p.locator('#booking-preview').innerText()).toContain('No price ceiling');
  await mkdir('.local',{recursive:true});await p.screenshot({path:'.local/phase8-release-ui.png',fullPage:true});await p.close();
 });
 it('renderer shows only missing/configured player status and blocks Extended without B',async()=>{
@@ -106,6 +107,45 @@ it('renderer shows only missing/configured player status and blocks Extended wit
  expect(await p.locator('#test-booking').isDisabled()).toBe(true);
  expect(await p.locator('#arm').isDisabled()).toBe(true);
  expect(await p.locator('body').innerText()).not.toContain('fixture@example.invalid');await p.close();
+});
+it('shows both local player profiles used for checkout',async()=>{
+ const primaryDetails={fullName:'Primary Fixture',phone:'09123456789',email:'primary@example.invalid'};
+ const extendedDetails={fullName:'Extended Fixture',phone:'09987654321',email:'extended@example.invalid'};
+ const p=await renderer(false,{playerStatus:{primary:true,extended:true,primaryDetails,extendedDetails}});
+ const details=await p.locator('#player-details').innerText();
+ expect(details).toContain(primaryDetails.fullName);expect(details).toContain(primaryDetails.phone);expect(details).toContain(primaryDetails.email);
+ expect(details).toContain(extendedDetails.fullName);expect(details).toContain(extendedDetails.phone);expect(details).toContain(extendedDetails.email);
+ await p.close();
+});
+it('shows a millisecond timer and labeled Activity timeline for every booking method',async()=>{
+ const p=await renderer(false,{clock:clockStatus(ObservationSchema.parse({}),DateTime.fromISO('2026-09-21T08:00:00+08:00'))});
+ await p.evaluate(()=>{
+   const state=(window as any).fixtureState;
+   state.operation='fullPractice';
+   state.runTiming={runId:'fixture',label:'BROWSER TEST',startedAt:new Date(Date.now()-5000).toISOString(),readyAt:new Date(Date.now()-1500).toISOString(),elapsedMs:0,readyElapsedMs:0};
+   state.runHistory=[{runId:'previous',label:'API LIVE-NOW',startedAt:'2026-09-20T19:00:00.000Z',endedAt:'2026-09-20T19:00:01.234Z',outcome:'complete',totalElapsedMs:4000,readyAt:'2026-09-20T19:00:00.500Z',readyElapsedMs:1234}];
+   state.logs=[{at:new Date().toISOString(),text:'Target grid ready',level:'info',elapsedMs:1500,deltaMs:900}];
+   (window as any).fixturePublish(state);
+ });
+ expect(await p.locator('.hero').isVisible()).toBe(true);
+ expect(await p.locator('.activity').isVisible()).toBe(true);
+ expect(await p.locator('#countdown-label').innerText()).toBe('BROWSER TEST · BROWSER READY');
+ expect(await p.locator('#countdown').innerText()).toMatch(/^00:00:01\.\d{3}$/);
+ expect(await p.locator('#log').innerText()).toContain('TOTAL 1.500s');
+ expect(await p.locator('#log').innerText()).toContain('STEP 0.900s');
+ expect(await p.locator('#advanced').getAttribute('open')).toBeNull();
+ expect(await p.locator('.run-history').isVisible()).toBe(true);
+ expect(await p.locator('#run-history-list').innerText()).toContain('1.234 seconds');
+ expect(await p.locator('#run-history-list').innerText()).toContain('preparation excluded');
+ await p.addStyleTag({content:await readFile('ui/renderer/styles.css','utf8')});await p.setViewportSize({width:1010,height:900});
+ await mkdir('.local',{recursive:true});await p.screenshot({path:'.local/activity-history-ui.png',fullPage:true});
+ await p.locator('#activity-expand').click();
+ expect(await p.locator('.activity').evaluate(e=>e.classList.contains('expanded'))).toBe(true);
+ expect(await p.locator('#activity-expand').getAttribute('aria-expanded')).toBe('true');
+ await p.keyboard.press('Escape');
+ expect(await p.locator('.activity').evaluate(e=>e.classList.contains('expanded'))).toBe(false);
+ expect(await p.locator('#clock').innerText()).toMatch(/^\d{2}:\d{2}:\d{2}$/);
+ await p.close();
 });
 it('Reset & Prepare stays accessible while a UI booking worker is running',async()=>{
  const p=await renderer(false,{operation:'fullPractice',ready:false});

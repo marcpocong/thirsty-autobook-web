@@ -1,0 +1,20 @@
+import type { BookingPlan } from './types.js';
+import { DurableSubmissionJournal } from './durable-submission-journal.js';
+
+export function candidateJournalKeys(plan: BookingPlan, facilityId: string): string[] {
+  return plan.chunks.flatMap(chunk => {
+    if (!chunk.courts.length) throw Error('API_CANDIDATE_COURT_MISSING');
+    return chunk.courts.map(court => DurableSubmissionJournal.key(facilityId, court.spaceId,
+      plan.targetDate, chunk.startTime, chunk.endTime));
+  });
+}
+
+export async function firstUnjournaledCandidate(
+  candidates: readonly BookingPlan[], facilityId: string, hasRecord: (key: string) => Promise<boolean>,
+): Promise<{ plan: BookingPlan; key: string } | undefined> {
+  for (const plan of candidates) {
+    const keys = candidateJournalKeys(plan, facilityId);
+    if (!(await Promise.all(keys.map(hasRecord))).some(Boolean)) return { plan, key: keys[0]! };
+  }
+  return undefined;
+}

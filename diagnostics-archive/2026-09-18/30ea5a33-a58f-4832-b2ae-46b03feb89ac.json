@@ -1,0 +1,54 @@
+{
+  "runID": "30ea5a33-a58f-4832-b2ae-46b03feb89ac",
+  "events": [
+    {
+      "event": "processStarted",
+      "wall": "2026-09-11T23:26:36.204Z",
+      "monoMs": 661.1642
+    },
+    {
+      "event": "chromeConnected",
+      "wall": "2026-09-11T23:26:38.397Z",
+      "monoMs": 2854.1246
+    },
+    {
+      "event": "ondaTabResolved",
+      "wall": "2026-09-11T23:26:38.397Z",
+      "monoMs": 2854.2056
+    },
+    {
+      "event": "preflightStarted",
+      "wall": "2026-09-11T23:26:38.400Z",
+      "monoMs": 2857.1116
+    },
+    {
+      "event": "preflightCompleted",
+      "wall": "2026-09-11T23:26:38.437Z",
+      "monoMs": 2893.8761
+    },
+    {
+      "event": "thirdPartyRateLimited",
+      "wall": "2026-09-11T23:27:20.787Z",
+      "monoMs": 45243.8285,
+      "evidence": {
+        "reason": "RATE_LIMITED",
+        "timestamp": "2026-09-11T23:27:20.787Z",
+        "monoMs": 45243.6718,
+        "hostname": "[REDACTED]",
+        "status": 429,
+        "resourceType": "fetch",
+        "navigation": false,
+        "retryAfterPresent": true,
+        "sameOndaSite": false
+      }
+    },
+    {
+      "event": "aborted",
+      "wall": "2026-09-11T23:27:22.603Z",
+      "monoMs": 47059.9615
+    }
+  ],
+  "releasePerformance": null,
+  "availabilityPerformance": null,
+  "failure": "USER_ABORT"
+}

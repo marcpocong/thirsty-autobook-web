@@ -1,0 +1,35 @@
+{
+  "runID": "5afa1994-4575-40a4-89a6-64f363ead2a9",
+  "events": [
+    {
+      "event": "processStarted",
+      "wall": "2026-09-09T21:16:03.662Z",
+      "monoMs": 532.4665
+    },
+    {
+      "event": "chromeConnected",
+      "wall": "2026-09-09T21:16:05.353Z",
+      "monoMs": 2222.5772
+    },
+    {
+      "event": "ondaTabResolved",
+      "wall": "2026-09-09T21:16:05.353Z",
+      "monoMs": 2222.5819
+    },
+    {
+      "event": "preflightStarted",
+      "wall": "2026-09-09T21:16:05.368Z",
+      "monoMs": 2237.7503
+    },
+    {
+      "event": "preflightCompleted",
+      "wall": "2026-09-09T21:16:05.402Z",
+      "monoMs": 2271.5871
+    },
+    {
+      "event": "aborted",
+      "wall": "2026-09-09T21:16:18.851Z",
+      "monoMs": 15720.8193
+    }
+  ]
+}

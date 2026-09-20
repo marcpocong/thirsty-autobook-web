@@ -22,7 +22,7 @@ export function validateSummary(actual: BookingSummary, expected: BookingSummary
   for (const key of ['venue', 'date', 'start', 'end', 'duration', 'currency'] as const) {
     if (actual[key] !== expected[key]) throw new Error(`${stage}_MISMATCH`);
   }
-  if (!Number.isFinite(actual.amount) || actual.amount <= 0 || actual.amount > maximumPrice || (stage === 'PAYMENT' && actual.amount !== expected.amount)) throw new Error(`${stage}_PRICE_MISMATCH`);
+  if (!Number.isFinite(actual.amount) || actual.amount <= 0 || actual.amount !== expected.amount) throw new Error(`${stage}_PRICE_MISMATCH`);
 }
 export async function checkout(adapter: CheckoutAdapter, safety: Safety, t: Telemetry, expected: BookingSummary, player: Player, maximumPrice: number, authorizeTerms: boolean) {
   const step=async<T>(code:string,work:()=>Promise<T>):Promise<T>=>{

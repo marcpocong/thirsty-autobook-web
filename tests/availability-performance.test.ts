@@ -6,7 +6,7 @@ it('keeps per-request measurements separate and missing endpoints null', () => {
   const result = availabilityPerformance([e('releaseTriggerFired', 0), e('availabilityRequestStarted', 1),
     e('availabilityResponseReceived', 100), e('availabilityParsed', 102, 2), e('targetGridReady', 150),
     e('availabilityCandidateResolved', 151, 1), e('availabilityRequestStarted', 200), e('failed', 210)])!;
-  expect(result.requests).toEqual([{ durationMs: 99, parseMs: 2, responseToCandidateMs: 51, outcome: 'PARSED' }, { durationMs: null, parseMs: null, responseToCandidateMs: null, outcome: 'PENDING_AT_STOP' }]);
+  expect(result.requests).toEqual([{ durationMs: 99, parseMs: 2, responseToCandidateMs: 51, outcome: 'PARSED', cause: null }, { durationMs: null, parseMs: null, responseToCandidateMs: null, outcome: 'PENDING_AT_STOP', cause: null }]);
   expect(result.releaseToGridMs).toBe(150); expect(result.gridToFirstClickMs).toBeNull();
   expect(result.selectionToProceedMs).toBeNull(); expect(result.candidateResolutionMs).toBe(1);
   expect(availabilityPerformance([])).toBeNull();
@@ -24,4 +24,6 @@ it('summarizes no-refresh, early API candidates, source and selection-to-hold ti
     e('selectionVerified',10),e('qrHandoffVerified',30)])!;
   expect(result).toMatchObject({targetEnabledWithoutReload:true,apiCandidateExistedBeforeGrid:true,candidateSource:'API+UI',selectionToQrHoldMs:20});
   expect(availabilityPerformance([e('availabilityRequestStarted',0),e('availabilityFallbackToUi',1)])!.requests[0]!.outcome).toBe('CANCELED_OR_FAILED');
+  expect(availabilityPerformance([e('availabilityRequestStarted',0),e('availabilityPageContextDestroyed',1),
+    e('availabilityFallbackToUi',2)])!.requests[0]!.cause).toBe('availabilityPageContextDestroyed');
 });

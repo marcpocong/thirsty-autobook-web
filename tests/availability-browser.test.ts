@@ -1,10 +1,10 @@
-import { beforeAll, beforeEach, afterEach, afterAll, it, expect } from 'vitest';
+import { beforeAll, beforeEach, afterEach, afterAll, it, expect, vi } from 'vitest';
 import { chromium, type Browser, type Page } from 'playwright';
 import { readFile } from 'node:fs/promises';
 import { ONDA_URL } from '../src/config.js';
 import { Safety } from '../src/safety.js';
 import { Telemetry } from '../src/telemetry.js';
-import { browserAvailabilityRequest } from '../src/availability-discovery.js';
+import { browserAvailabilityRequest, releaseAvailabilityRequest } from '../src/availability-discovery.js';
 import { compareCurrentAvailability } from '../src/availability-compare.js';
 import { COURT_TO_SPACE_ID } from '../src/onda-availability.js';
 import { availabilityFixture, availabilityDate as date } from './availability-fixture.js';
@@ -78,9 +78,46 @@ it('a reload-destroyed browser request is not retried', async () => {
   const pending = new Promise<void>(resolve => { finish = resolve; });
   await page.route('**/date-availability?*', async r => { await pending; await r.fulfill({ json: availabilityFixture() }).catch(() => {}); });
   const requestSeen = page.waitForRequest(r => r.url().includes('/date-availability?'));
-  const request = browserAvailabilityRequest(page, date, new Safety(), new Telemetry())();
+  const t = new Telemetry();
+  const request = browserAvailabilityRequest(page, date, new Safety(), t)();
   await requestSeen; await page.reload({ waitUntil: 'commit' });
   try { expect(await request).toBeUndefined(); } finally { finish(); }
+  expect(t.events.map(e => e.event)).toContain('availabilityPageContextDestroyed');
+});
+it('release request parses a post-release response despite a simultaneous page reload', async () => {
+  const t = new Telemetry(), safety = new Safety();
+  const get = vi.spyOn(page.context().request, 'get').mockImplementation(async () => {
+    await new Promise(resolve => setTimeout(resolve, 100));
+    return { status: () => 200, headers: () => ({ 'content-type': 'application/json' }),
+      body: async () => Buffer.from(JSON.stringify(availabilityFixture())) } as any;
+  });
+  try {
+    const request = releaseAvailabilityRequest(page, date, safety, t)();
+    await page.reload({ waitUntil: 'commit' });
+    const result = await request;
+    expect(result?.targetDate).toBe(date);
+    expect(result?.slots).toHaveLength(112);
+    expect(t.events.map(e => e.event)).toContain('availabilityParsed');
+    expect(t.events.map(e => e.event)).not.toContain('availabilityFallbackToUi');
+    expect(get).toHaveBeenCalledOnce();
+  } finally { get.mockRestore(); }
+});
+it('retries the exact unreleased empty response and uses the first fresh released snapshot', async () => {
+  let calls = 0;
+  const get = vi.spyOn(page.context().request, 'get').mockImplementation(async () => {
+    const raw = ++calls === 1 ? { success: true, data: { dates: {}, slotsBySpace: {} } } : availabilityFixture();
+    return { status: () => 200, headers: () => ({ 'content-type': 'application/json' }),
+      body: async () => Buffer.from(JSON.stringify(raw)) } as any;
+  });
+  const t = new Telemetry();
+  try {
+    const result = await releaseAvailabilityRequest(page, date, new Safety(), t)();
+    expect(calls).toBe(2);
+    expect(result?.released).toBe(true);
+    expect(result?.slots).toHaveLength(112);
+    expect(t.events.map(event => event.event)).toContain('availabilityDateNotReleased');
+    expect(t.events.map(event => event.event)).not.toContain('availabilityFallbackToUi');
+  } finally { get.mockRestore(); }
 });
 it('refuses a dirty compare before any availability request', async () => {
   await page.getByTestId('court-schedule-slot-cell').first().click();

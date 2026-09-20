@@ -1,0 +1,25 @@
+{
+  "runID": "9d0058c5-2633-454c-b996-3d8cf011845f",
+  "events": [
+    {
+      "event": "processStarted",
+      "wall": "2026-09-10T23:36:55.166Z",
+      "monoMs": 454.3569
+    },
+    {
+      "event": "chromeConnected",
+      "wall": "2026-09-10T23:36:56.316Z",
+      "monoMs": 1604.3185
+    },
+    {
+      "event": "ondaTabResolved",
+      "wall": "2026-09-10T23:36:56.316Z",
+      "monoMs": 1604.3776
+    },
+    {
+      "event": "automationStopped",
+      "wall": "2026-09-10T23:36:56.375Z",
+      "monoMs": 1663.2636
+    }
+  ]
+}

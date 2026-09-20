@@ -2,11 +2,29 @@ import {readFile,unlink} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {createHash} from 'node:crypto';
 import {execFile} from 'node:child_process';
+import {execFileSync} from 'node:child_process';
 import {promisify} from 'node:util';
 import {unknownBrowser,type BrowserReview} from '../src/lock-browser.js';
 export interface DualWorkerReview extends BrowserReview { id:'A'|'B'; pid:number|null; alive:boolean|null; recordedState:string }
 export interface LockReview extends BrowserReview {mode?:'single'|'dual';workers?:DualWorkerReview[];runID:string;pid:number|null;alive:boolean|null;owned:boolean;fingerprint:string;reason:string;canClear:boolean;verifiedAt:string}
-export function pidAlive(pid:number):boolean|null {try{process.kill(pid,0);return true;}catch(e){return (e as NodeJS.ErrnoException).code==='ESRCH'?false:null;}}
+export function pidAlive(pid:number):boolean|null {
+  if(!Number.isSafeInteger(pid)||pid<=0)return null;
+  try{process.kill(pid,0);return true;}catch(error){
+    const code=(error as NodeJS.ErrnoException).code;
+    if(code==='ESRCH')return false;
+    // On Windows, Node can report EPERM for a PID that does not exist.
+    // Resolve that ambiguity with Windows process metadata; fail closed if it is unavailable.
+    if(process.platform==='win32'&&code==='EPERM'){
+      try{
+        const result=execFileSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',
+          `(Get-CimInstance Win32_Process -Filter 'ProcessId=${pid}' -ErrorAction Stop) -ne $null`],
+          {encoding:'utf8',windowsHide:true,timeout:5000,stdio:['ignore','pipe','ignore']}).trim();
+        return result==='True'?true:result==='False'?false:null;
+      }catch{return null;}
+    }
+    return null;
+  }
+}
 export function lockReason(r:Pick<LockReview,'pid'|'alive'|'owned'|'clean'|'page'|'selected'|'hold'>){
   if(r.alive===true||r.owned)return 'LOCK_PID_RUNNING';
   if(r.hold==='Active')return 'LOCK_PAYMENT_HOLD_ACTIVE';
@@ -20,7 +38,16 @@ export async function reviewLock(root:string,owned:boolean,probe:()=>Promise<Bro
   try {const data=JSON.parse(raw);if(Number.isSafeInteger(data.pid)&&data.pid>0)pid=data.pid;if(typeof data.runID==='string'&&/^[a-zA-Z0-9-]{1,80}$/.test(data.runID))runID=data.runID;}catch{}
   const data = (()=>{try{return JSON.parse(raw);}catch{return {};}})();
   if(data.mode==='extended')return {...unknownBrowser,runID,pid,alive:pid===null?null:alive(pid),owned,fingerprint:createHash('sha256').update(raw).digest('hex'),verifiedAt:new Date().toISOString(),reason:'USE_RESET_AND_PREPARE',canClear:false};
-  if(data.stage==='FINAL_ACTION_DISPATCHING'||data.stage==='HOLD_VERIFIED'||data.handoff||data.state==='hold')return {...unknownBrowser,runID,pid,alive:pid===null?null:alive(pid),owned,fingerprint:createHash('sha256').update(raw).digest('hex'),verifiedAt:new Date().toISOString(),reason:'USE_RESET_AND_PREPARE',canClear:false};
+  if(data.stage==='FINAL_ACTION_DISPATCHING')return {...unknownBrowser,runID,pid,alive:pid===null?null:alive(pid),owned,fingerprint:createHash('sha256').update(raw).digest('hex'),verifiedAt:new Date().toISOString(),reason:'PAYMENT_HOLD_MAY_BE_ACTIVE',canClear:false};
+  if(data.stage==='HOLD_VERIFIED'||data.handoff||data.state==='hold'){
+    const expiry=typeof data.holdExpiresAt==='string'?Date.parse(data.holdExpiresAt):NaN;
+    const base={runID,pid,alive:pid===null?null:alive(pid),owned,fingerprint:createHash('sha256').update(raw).digest('hex'),verifiedAt:new Date().toISOString()};
+    if(!Number.isFinite(expiry)||expiry>Date.now())return {...unknownBrowser,...base,reason:'LOCK_PAYMENT_HOLD_ACTIVE',canClear:false};
+    const browser=await probe().catch(()=>unknownBrowser);
+    const reviewed={...browser,...base};
+    const reason=lockReason(reviewed);
+    return {...reviewed,reason,canClear:reason==='VERIFIED_STALE_LOCK'};
+  }
   if(data.mode==='dual')return reviewDual(root,raw,data,owned,probe,probeB,alive);
   const browser=await probe().catch(()=>unknownBrowser);
   const r={...browser,runID,pid,alive:pid===null?null:alive(pid),owned,fingerprint:createHash('sha256').update(raw).digest('hex'),verifiedAt:new Date().toISOString()};

@@ -10,6 +10,15 @@ export async function readLock(root: string): Promise<boolean> {
   try { await access(resolve(root, '.local/automation.lock')); return true; }
   catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false; return true; }
 }
+export interface RetainedHoldStatus { stage:'HOLD_VERIFIED'|'FINAL_ACTION_DISPATCHING'; expiresAt:string|null; remainingSeconds:number|null }
+export async function readRetainedHold(root:string,now=Date.now()):Promise<RetainedHoldStatus|null>{
+  try{
+    const lock=JSON.parse(await readFile(resolve(root,'.local/automation.lock'),'utf8')) as Record<string,unknown>;
+    if(lock.stage!=='HOLD_VERIFIED'&&lock.stage!=='FINAL_ACTION_DISPATCHING')return null;
+    const expiresAt=typeof lock.holdExpiresAt==='string'&&Number.isFinite(Date.parse(lock.holdExpiresAt))?lock.holdExpiresAt:null;
+    return {stage:lock.stage,expiresAt,remainingSeconds:expiresAt?Math.max(0,Math.ceil((Date.parse(expiresAt)-now)/1000)):null};
+  }catch{return null;}
+}
 export async function readHandoff(root:string):Promise<Dashboard['handoff']>{
   try {const lock=JSON.parse(await readFile(resolve(root,'.local/automation.lock'),'utf8'));const event=UiEventSchema.safeParse(lock.handoff);return event.success&&event.data.type==='handoff'?event.data:null;}catch{return null;}
 }

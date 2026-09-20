@@ -8,7 +8,7 @@ import { ReleaseShellFailure, releaseNavigationTarget, waitForBookingShellForRel
 import { Safety, waitUntil } from './safety.js';
 import { Telemetry } from './telemetry.js';
 import { emitUiEvent } from './ui-events.js';
-import { AvailabilityDiscovery, browserAvailabilityRequest } from './availability-discovery.js';
+import { AvailabilityDiscovery, releaseAvailabilityRequest } from './availability-discovery.js';
 
 export async function boundedRelease<T>(maximum: number, retryDelay: number, signal: AbortSignal, attempt: (n: number) => Promise<T | undefined>): Promise<T> {
   if (!Number.isInteger(maximum) || maximum < 1 || maximum > 2) throw new Error('INVALID_RELOAD_LIMIT');
@@ -20,13 +20,24 @@ export async function boundedRelease<T>(maximum: number, retryDelay: number, sig
   }
   throw new Error('RELEASE_HORIZON_UNAVAILABLE');
 }
+async function untilStopped<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  signal.throwIfAborted();
+  let onAbort!: () => void;
+  const stopped = new Promise<never>((_, reject) => {
+    onAbort = () => reject(signal.reason);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+  try { return await Promise.race([work, stopped]); }
+  finally { signal.removeEventListener('abort', onAbort); }
+}
 export interface ReleaseGate { target: ReturnType<typeof releaseCalendar>; beforeArmed(): Promise<void>; verifyContext?():void; onRelease?():void }
 export async function observeRelease(page: Page, c: Config | ReleaseSettings, safety: Safety, t: Telemetry, dry: boolean, selecting = false, gate?: ReleaseGate) {
   const target = gate?.target ?? releaseCalendar(c);
+  t.recordReleaseContext(target.targetDate,c.AVAILABILITY_DISCOVERY_MODE==='hybrid'?'hybrid':'browser');
   const navigationTarget = releaseNavigationTarget(target.targetDate);
   const preferences = 'START_TIME' in c ? compilePreferences(c) : undefined;
   const discovery = c.AVAILABILITY_DISCOVERY_MODE === 'hybrid' && 'MAX_PRICE' in c
-    ? new AvailabilityDiscovery(target.targetDate, c.MAX_PRICE, browserAvailabilityRequest(page, target.targetDate, safety, t), safety, t, preferences) : undefined;
+    ? new AvailabilityDiscovery(target.targetDate, c.MAX_PRICE, releaseAvailabilityRequest(page, target.targetDate, safety, t), safety, t, preferences) : undefined;
   if (dry && !preferences) throw new Error('DRY_CONFIG_REQUIRED');
   if (Date.now() >= target.releaseMs - c.PREFLIGHT_SECONDS_BEFORE * 1000) throw new Error('TOO_LATE_FOR_PREFLIGHT');
   emitUiEvent({ type: 'plan', targetDate: target.targetDate, releaseMs: target.releaseMs, timezone: c.TIMEZONE });
@@ -74,7 +85,8 @@ export async function observeRelease(page: Page, c: Config | ReleaseSettings, sa
   if (!readyWithoutReload) grid=await boundedRelease(c.MAX_RELEASE_RELOADS, c.RELEASE_RETRY_DELAY_MS, safety.signal, async attempt => {
     safety.check(); t.mark('reloadStarted');
     let response:Awaited<ReturnType<Page['reload']>>;
-    try{response=await page.reload({ waitUntil: 'commit' });}
+    // A slow reload must not inherit the 15-second critical-step navigation limit.
+    try{response=await untilStopped(page.reload({ waitUntil: 'commit', timeout: 0 }), safety.signal);}
     catch(error){
       const timeout=error instanceof Error&&(error.name==='TimeoutError'||/timeout/i.test(error.name));
       let code=timeout?'RELEASE_PAGE_LOAD_TIMEOUT':'RELEASE_NAVIGATION_FAILED',classification=timeout?'PAGE_LOADING_TIMEOUT':'NAVIGATION_FAILED';
@@ -84,7 +96,8 @@ export async function observeRelease(page: Page, c: Config | ReleaseSettings, sa
       throw Error(code,{cause:error});
     }
     const httpStatus=response?.status();t.recordNavigation(response?'HTTP_RESPONSE':'NO_RESPONSE',httpStatus);t.mark('reloadCommitted');
-    try{await waitForBookingShellForRelease(page, safety, c.CRITICAL_STEP_TIMEOUT_MS, t, {httpStatus});}
+    // Shell rendering may continue well after navigation commits.
+    try{await untilStopped(waitForBookingShellForRelease(page, safety, 0, t, {httpStatus}), safety.signal);}
     catch(error){if(error instanceof ReleaseShellFailure&&error.recoverableBeforeSelection&&attempt<c.MAX_RELEASE_RELOADS){safety.check();t.mark('releaseShellRecoveryAllowed');return undefined;}throw error;}
     const result = await navigateReleasedTargetDate(page, navigationTarget, safety, t, c.CRITICAL_STEP_TIMEOUT_MS);
     if (result === 'TARGET_DATE_NOT_RELEASED') return undefined;

@@ -14,6 +14,9 @@ import { lifecycleWriter, removeOwnedRecord } from './checkout-lifecycle.js';
 import { type PlanRequest, type BookingPlan, describeBookingPlan } from './booking-plan.js';
 import { emitUiEvent } from './ui-events.js';
 import {DateTime} from 'luxon';
+import { observePassiveReleaseNetwork } from './passive-release-network.js';
+import { observePreferredCells } from './passive-target-cells.js';
+import { releaseNavigationTarget } from './release-navigation.js';
 
 export async function runBooking(config:Config,mode:'test'|'race'|'race:dry'|'race:selection',safety:Safety,t:Telemetry,options:{request?:PlanRequest;maximum?:number;authorizeTerms?:boolean;confirm?:(plan:BookingPlan)=>Promise<boolean>;scheduledTarget?:ReturnType<typeof releaseCalendar>;scheduledFingerprint?:string}={}){
   if(options.scheduledTarget){t.mark('scheduledWorkerWake');t.mark('workerStart');}
@@ -35,6 +38,7 @@ export async function runBooking(config:Config,mode:'test'|'race'|'race:dry'|'ra
   const abort=()=>safeties.forEach(s=>s.stop('USER_ABORT'));
   safety.signal.addEventListener('abort',abort,{once:true});
   let clean=false;
+  const diagnosticCleanup:Array<()=>void>=[];
   try{
     for(const [i,b] of identities.entries()){
       const path=identities.length===1?'.local/automation.lock':`.local/dual/worker-${b.workerId.toLowerCase()}.lock`;
@@ -44,6 +48,15 @@ export async function runBooking(config:Config,mode:'test'|'race'|'race:dry'|'ra
     const workerTelemetry=identities.map(b=>t.worker(b.workerId));
     const connected=await Promise.allSettled(identities.map((b,i)=>attach(safeties[i]!,workerTelemetry[i],b)));
     const connections=connected.map(c=>{if(c.status==='rejected')throw c.reason;return c.value;});
+    if(mode!=='test')for(const [i,connection] of connections.entries()){
+      try{diagnosticCleanup.push(observePassiveReleaseNetwork(connection.page,workerTelemetry[i]!));}catch{/* passive */}
+      const preferred=request.priority[0];
+      if(preferred!==undefined)try{
+        const heading=releaseNavigationTarget(request.date).heading;
+        diagnosticCleanup.push(await observePreferredCells(connection.page,workerTelemetry[i]!,{
+          date:request.date,heading,court:preferred,hours:Array.from({length:request.duration},(_,offset)=>`${String(Number(request.start.slice(0,2))+offset).padStart(2,'0')}:00`)}));
+      }catch{/* passive */}
+    }
     if(options.scheduledTarget)connections.forEach((_,i)=>workerTelemetry[i]!.mark('browserAttached'));
     if(identities.length===2){const paths=await Promise.all(identities.map(i=>realpath(i.expectedProfile)));if(paths[0]!.toLowerCase()===paths[1]!.toLowerCase())throw Error('DUAL_PROFILE_NOT_ISOLATED');}
     const workers=connections.map((c,i):DualWorker=>({id:identities[i]!.workerId,safety:safeties[i]!,telemetry:workerTelemetry[i]!,port:selectionPort(c.page,safeties[i]!),state:async()=>{},checkout:async selected=>{
@@ -70,6 +83,7 @@ export async function runBooking(config:Config,mode:'test'|'race'|'race:dry'|'ra
     if(['PARTIAL SUCCESS','BOOKING FAILED'].includes(result.status))throw Error(result.status==='PARTIAL SUCCESS'?'PARTIAL_SUCCESS':'BOOKING_FAILED');
     return result;
   }finally{
+    for(const cleanup of diagnosticCleanup)try{cleanup();}catch{/* passive */}
     safety.signal.removeEventListener('abort',abort);
     if(clean){for(const path of records)await removeOwnedRecord(path,identity.pid,identity.runID);await removeOwnedRecord('.local/automation.lock',identity.pid,identity.runID);}
   }

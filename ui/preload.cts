@@ -3,6 +3,7 @@ import type { Dashboard, Bridge } from './types.js';
 const bridge: Bridge = {
   resetPrepare:strategy=>ipcRenderer.invoke('thirsty:resetPrepare',strategy),
   testBooking:input=>ipcRenderer.invoke('thirsty:testBooking',input),
+  apiPreview:date=>ipcRenderer.invoke('thirsty:apiPreview',date),
   setWorkflow:workflow=>ipcRenderer.invoke('thirsty:setWorkflow',workflow),
   invalidatePreparation:()=>ipcRenderer.invoke('thirsty:invalidatePreparation'),
   prepareDual:()=>ipcRenderer.invoke('thirsty:prepareDual'),

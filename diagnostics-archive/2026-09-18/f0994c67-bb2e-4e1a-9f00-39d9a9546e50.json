@@ -1,0 +1,71 @@
+{
+  "runID": "f0994c67-bb2e-4e1a-9f00-39d9a9546e50",
+  "events": [
+    {
+      "event": "processStarted",
+      "wall": "2026-09-11T22:06:03.490Z",
+      "monoMs": 907.076
+    },
+    {
+      "event": "chromeConnected",
+      "wall": "2026-09-11T22:06:06.499Z",
+      "monoMs": 3915.9767
+    },
+    {
+      "event": "ondaTabResolved",
+      "wall": "2026-09-11T22:06:06.499Z",
+      "monoMs": 3915.9969
+    },
+    {
+      "event": "availabilityRequestStarted",
+      "wall": "2026-09-11T22:06:07.592Z",
+      "monoMs": 5008.8376
+    },
+    {
+      "event": "availabilityResponseReceived",
+      "wall": "2026-09-11T22:06:08.871Z",
+      "monoMs": 6287.7909,
+      "value": 1278.9388
+    },
+    {
+      "event": "availabilityParsed",
+      "wall": "2026-09-11T22:06:08.874Z",
+      "monoMs": 6291.463,
+      "value": 3.6282000000001062
+    },
+    {
+      "event": "availabilityUnknownSpaces",
+      "wall": "2026-09-11T22:06:08.874Z",
+      "monoMs": 6291.4757,
+      "value": 0
+    },
+    {
+      "event": "automationStopped",
+      "wall": "2026-09-11T22:06:08.910Z",
+      "monoMs": 6327.3182
+    }
+  ],
+  "releasePerformance": null,
+  "availabilityPerformance": {
+    "requests": [
+      {
+        "durationMs": 1278.9533000000001,
+        "parseMs": 3.6282000000001062,
+        "responseToCandidateMs": null
+      }
+    ],
+    "releaseToRequestMs": null,
+    "releaseToGridMs": null,
+    "apiCandidateReadyToGridMs": null,
+    "apiCandidateResolutionMs": null,
+    "gridToFirstClickMs": null,
+    "releaseToFirstClickMs": null,
+    "releaseToSelectionMs": null,
+    "selectionToProceedMs": null,
+    "proceedToReviewMs": null,
+    "reviewToPlayerCompletedMs": null,
+    "playerProceedToSummaryMs": null,
+    "finalActionToHoldMs": null,
+    "candidateResolutionMs": null
+  }
+}

@@ -1,0 +1,83 @@
+{
+  "runID": "928af2e5-24af-4a94-9088-dd438e54506b",
+  "events": [
+    {
+      "event": "processStarted",
+      "wall": "2026-09-11T03:04:53.985Z",
+      "monoMs": 451.1582
+    },
+    {
+      "event": "chromeConnected",
+      "wall": "2026-09-11T03:04:55.186Z",
+      "monoMs": 1652.4494
+    },
+    {
+      "event": "ondaTabResolved",
+      "wall": "2026-09-11T03:04:55.186Z",
+      "monoMs": 1652.4588
+    },
+    {
+      "event": "preopenStabilityStarted",
+      "wall": "2026-09-11T03:04:55.202Z",
+      "monoMs": 1668.2631
+    },
+    {
+      "event": "preopenStabilitySample",
+      "wall": "2026-09-11T03:04:55.322Z",
+      "monoMs": 1788.8498,
+      "value": 0
+    },
+    {
+      "event": "thirdPartyRateLimited",
+      "wall": "2026-09-11T03:04:58.204Z",
+      "monoMs": 4670.1829,
+      "evidence": {
+        "reason": "RATE_LIMITED",
+        "timestamp": "2026-09-11T03:04:58.204Z",
+        "monoMs": 4670.1181,
+        "hostname": "[REDACTED]",
+        "status": 429,
+        "resourceType": "fetch",
+        "navigation": false,
+        "retryAfterPresent": true,
+        "sameOndaSite": false
+      }
+    },
+    {
+      "event": "preopenStabilitySample",
+      "wall": "2026-09-11T03:05:10.384Z",
+      "monoMs": 16850.1577,
+      "value": 15000
+    },
+    {
+      "event": "preopenStabilitySample",
+      "wall": "2026-09-11T03:05:25.368Z",
+      "monoMs": 31833.9555,
+      "value": 30000
+    },
+    {
+      "event": "preopenStabilitySample",
+      "wall": "2026-09-11T03:05:40.367Z",
+      "monoMs": 46833.7277,
+      "value": 45000
+    },
+    {
+      "event": "preopenStabilitySample",
+      "wall": "2026-09-11T03:05:55.369Z",
+      "monoMs": 61835.2705,
+      "value": 60000
+    },
+    {
+      "event": "preopenStabilityPassed",
+      "wall": "2026-09-11T03:05:55.443Z",
+      "monoMs": 61909.7557,
+      "value": 60046.4663
+    },
+    {
+      "event": "automationStopped",
+      "wall": "2026-09-11T03:05:55.445Z",
+      "monoMs": 61911.0765
+    }
+  ],
+  "releasePerformance": null
+}

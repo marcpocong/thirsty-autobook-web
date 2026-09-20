@@ -3,7 +3,7 @@ import { writeFileSync } from 'node:fs';
 import { mkdir as mkdirAsync, open as openAsync, unlink as unlinkAsync,writeFile as writeFileAsync } from 'node:fs/promises';
 import { Safety, requireArmed } from './safety.js';
 import { Telemetry, sanitizedOperationFailureCode } from './telemetry.js';
-import { loadConfig, loadObservationConfig, planFingerprint, expandHours, type Config, type ReleaseSettings } from './config.js';
+import { loadConfig, loadObservationConfig, planFingerprint, expandHours, releaseCalendar, type Config, type ReleaseSettings } from './config.js';
 import { attach } from './browser.js';
 import { inspect } from './inspector.js';
 import { practice, PracticeSchema } from './practice.js';
@@ -19,6 +19,9 @@ import { dryCurrentAvailability } from './availability-dry.js';
 import { compareCurrentAvailability } from './availability-compare.js';
 import { assertAvailabilityDate } from './onda-availability.js';
 import {ScheduledReleaseContextSchema} from './scheduled-release.js';
+import {observePassiveReleaseNetwork} from './passive-release-network.js';
+import {observePreferredCells} from './passive-target-cells.js';
+import {releaseNavigationTarget} from './release-navigation.js';
 
 const safety = new Safety();
 const telemetry = new Telemetry();
@@ -28,6 +31,7 @@ let failureCode: string | undefined;
 let ownsLock = false;
 let retainSelection = false;
 let stopDual: (()=>void) | undefined;
+const diagnosticCleanup:Array<()=>void>=[];
 const lockPath = '.local/automation.lock';
 const retainedHandoff=(hold:{countdown:string;verifiedAt:string})=>{const [m,s]=hold.countdown.split(':').map(Number);return {stage:'HOLD_VERIFIED',stageAt:new Date().toISOString(),holdVerifiedAt:hold.verifiedAt,holdExpiresAt:new Date(Date.parse(hold.verifiedAt)+(m!*60+s!)*1000).toISOString()};};
 // Exiting the Playwright-owning process cancels its outstanding local action tasks.
@@ -93,6 +97,16 @@ try {
   const { lifecycleWriter } = await import('./checkout-lifecycle.js');
   safety.persistStage=lifecycleWriter(lockPath,{pid:process.pid,runID:telemetry.runID});
   const { page } = await attach(safety, telemetry); telemetry.mark('chromeConnected'); telemetry.mark('ondaTabResolved');
+  if(['release:observe','race:dry','selection:armed','race'].includes(mode)&&config){
+    try{diagnosticCleanup.push(observePassiveReleaseNetwork(page,telemetry));}catch{/* passive */}
+    if('MAX_PRICE' in config)try{
+      const bookingConfig=config as Config;
+      const preferredDate=scheduled?.targetDate??releaseCalendar(bookingConfig).targetDate;
+      diagnosticCleanup.push(await observePreferredCells(page,telemetry,{
+        date:preferredDate,heading:releaseNavigationTarget(preferredDate).heading,
+        court:bookingConfig.PREFERRED_COURTS[0]!,hours:expandHours(bookingConfig.START_TIME,bookingConfig.DURATION_HOURS)}));
+    }catch{/* passive */}
+  }
   if (scheduled) telemetry.mark('browserAttached', 1);
   if (mode === 'inspect') await inspect(page);
   else if (compareDate !== undefined) {
@@ -158,6 +172,7 @@ try {
   emitUiEvent({ type: 'error', code: failureCode });
   console.error(e.name === 'ZodError' ? `INVALID_PRACTICE_ARGUMENTS: ${e.issues?.map(i => i.path.join('.')).join(', ')}` : e.message?.startsWith('CONFIG_INVALID') || /^[A-Z_]+(?::|$)/.test(e.message ?? '') ? e.message : 'OPERATION_FAILED — no automatic recovery. Check the browser manually.');
 } finally {
+  for(const cleanup of diagnosticCleanup)try{cleanup();}catch{/* passive */}
   await telemetry.flush(failureCode, safety.stopEvidence);
   // Keep lock after failures as selection state can be uncertain.
   if (ownsLock && exitCode === 0 && !retainSelection) await unlinkAsync(lockPath);

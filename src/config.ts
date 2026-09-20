@@ -10,6 +10,7 @@ export const VENUE = 'Thirsty Pickle | SM Seaside';
 const hour = z.string().regex(/^(0[89]|1[0-9]|2[0-3]):00$/);
 const courts = z.array(z.number().int().min(1).max(7));
 export const ConfigSchema = z.object({
+  BOOKING_METHOD: z.enum(['browser','hybrid','api-first']).default('browser'),
   BOOKING_TYPE: z.enum(['standard','extended']).default('standard'),
   COURT_COUNT: z.union([z.literal(1), z.literal(2)]).default(1),
   ONDA_URL: z.literal(ONDA_URL).default(ONDA_URL),
@@ -65,7 +66,8 @@ export const ObservationSchema = z.object({
 });
 export type ReleaseSettings = z.infer<typeof ObservationSchema>;
 function environment() {
-  return { ...process.env, ...(existsSync('.env.local') ? parseEnv(readFileSync('.env.local')) : {}) };
+  const privatePath=process.env.THIRSTY_API_INSTALLATION==='1'||process.env.THIRSTY_API_TEST_INSTALLATION==='1'?'.local/private/.env.local':'.env.local';
+  return { ...process.env, ...(existsSync(privatePath) ? parseEnv(readFileSync(privatePath)) : {}) };
 }
 export function loadObservationConfig(): ReleaseSettings {
   const parsed = ObservationSchema.safeParse(environment());
@@ -99,6 +101,7 @@ export function loadConfigWithReconciliation(){return parseConfig(true);}
 export function loadTestRuntimeConfig(test:TestRuntimeSetup):Config{return parseConfig(false,test).config;}
 // Narrow, PII-free local settings; renderer cannot change URLs, release timing or player data.
 export const BookingSetupSchema = z.object({
+  BOOKING_METHOD: ConfigSchema.shape.BOOKING_METHOD,
   BOOKING_TYPE: ConfigSchema.shape.BOOKING_TYPE,
   COURT_COUNT: ConfigSchema.shape.COURT_COUNT,
   START_TIME: hour, DURATION_HOURS: z.number().int().min(1).max(6),
@@ -125,7 +128,7 @@ export function calculateTarget(c: Pick<Config, 'TIMEZONE' | 'RELEASE_TIME' | 'B
   return { ...releaseCalendar(c, now), preferences: compilePreferences(c) };
 }
 export function planFingerprint(c: Config) {
-  return createHash('sha256').update(JSON.stringify({ strategy:c.BOOKING_TYPE, courtCount:c.COURT_COUNT, schedule: ObservationSchema.parse(c), target: calculateTarget(c), maximum:c.MAX_PRICE, attempts:c.MAX_SELECTION_ATTEMPTS })).digest('hex');
+  return createHash('sha256').update(JSON.stringify({ method:c.BOOKING_METHOD, strategy:c.BOOKING_TYPE, courtCount:c.COURT_COUNT, schedule: ObservationSchema.parse(c), target: calculateTarget(c), maximum:c.MAX_PRICE, attempts:c.MAX_SELECTION_ATTEMPTS })).digest('hex');
 }
 export function releaseCalendar(c: Pick<Config, 'TIMEZONE' | 'RELEASE_TIME' | 'BOOKING_HORIZON_DAYS'>, now: DateTime = DateTime.now()) {
   const local = now.setZone(c.TIMEZONE);
@@ -142,7 +145,7 @@ export function releaseCalendarOn(c: Pick<Config, 'TIMEZONE' | 'RELEASE_TIME' | 
   return {targetDate:release.startOf('day').plus({days:c.BOOKING_HORIZON_DAYS}).toISODate()!,releaseMs:release.toMillis(),releaseISO:release.toISO()!};
 }
 
-// Profile values remain local; only readiness booleans cross the UI boundary.
+// Profile values are exposed only to the local desktop UI for operator review.
 const PlayerSchema=z.object({fullName:z.string().trim().min(2),phone:z.string().trim().regex(/^(?:0|\+?63)?9\d{9}$/),email:z.email()});
 type PlayerFields=Pick<Config,'PLAYER_FULL_NAME'|'PLAYER_PHONE'|'PLAYER_EMAIL'|'PLAYER_B_FULL_NAME'|'PLAYER_B_PHONE'|'PLAYER_B_EMAIL'>;
 export function primaryPlayer(c:PlayerFields){
@@ -166,6 +169,14 @@ export function playerReadiness(c:PlayerFields){
 export function loadPlayerReadiness(){
   const env=environment();
   return playerReadiness({PLAYER_FULL_NAME:String(env.PLAYER_FULL_NAME??''),PLAYER_PHONE:String(env.PLAYER_PHONE??''),PLAYER_EMAIL:String(env.PLAYER_EMAIL??''),PLAYER_B_FULL_NAME:typeof env.PLAYER_B_FULL_NAME==='string'?env.PLAYER_B_FULL_NAME:undefined,PLAYER_B_PHONE:typeof env.PLAYER_B_PHONE==='string'?env.PLAYER_B_PHONE:undefined,PLAYER_B_EMAIL:typeof env.PLAYER_B_EMAIL==='string'?env.PLAYER_B_EMAIL:undefined});
+}
+export function loadPlayerProfiles(){
+  const env=environment();
+  const fields:PlayerFields={PLAYER_FULL_NAME:String(env.PLAYER_FULL_NAME??''),PLAYER_PHONE:String(env.PLAYER_PHONE??''),PLAYER_EMAIL:String(env.PLAYER_EMAIL??''),PLAYER_B_FULL_NAME:typeof env.PLAYER_B_FULL_NAME==='string'?env.PLAYER_B_FULL_NAME:undefined,PLAYER_B_PHONE:typeof env.PLAYER_B_PHONE==='string'?env.PLAYER_B_PHONE:undefined,PLAYER_B_EMAIL:typeof env.PLAYER_B_EMAIL==='string'?env.PLAYER_B_EMAIL:undefined};
+  let primary:ReturnType<typeof primaryPlayer>|undefined,extended:ReturnType<typeof extendedPlayer>|undefined;
+  try{primary=primaryPlayer(fields);}catch{}
+  try{extended=extendedPlayer(fields);}catch{}
+  return {primary:!!primary,extended:!!extended,primaryDetails:primary,extendedDetails:extended};
 }
 export function bookingPlayers(c:Config,strategy:'standard'|'extended'){
   return strategy==='extended'?{A:primaryPlayer(c),B:extendedPlayer(c)}:{A:primaryPlayer(c),B:undefined};

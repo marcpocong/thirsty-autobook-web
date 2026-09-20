@@ -6,12 +6,12 @@ import { availabilityCells, availabilityFixture, availabilityDate as date } from
 const config = ConfigSchema.parse({ START_TIME:'17:00', DURATION_HOURS:3, PREFERRED_COURTS:[6,5,7],
   FALLBACK_COURTS:[1], FALLBACK_TIMES:['18:00'], MAX_PRICE:1800,
   PLAYER_FULL_NAME:'Fixture Player', PLAYER_PHONE:'09123456789', PLAYER_EMAIL:'fixture@example.test' });
-it('uses production preference order, duration and maximum with fully known price', () => {
+it('uses production preference order and duration regardless of price', () => {
   const api = parseAvailability(availabilityFixture(), date), cells = availabilityCells();
   cells.find(c => c.court === 6 && c.hour === '17:00')!.state = 'TAKEN';
   api.slots.find(c => c.court === 6 && c.startTime === '17:00')!.available = false;
   expect(dryCandidate(date, cells, api, config)).toMatchObject({pass:true, chosen:{court:5,hours:['17:00','18:00','19:00']}, estimatedApiPrice:1800});
-  expect(dryCandidate(date, cells, api, {...config,MAX_PRICE:1799})).toMatchObject({pass:false,chosen:null});
+  expect(dryCandidate(date, cells, api, {...config,MAX_PRICE:1})).toMatchObject({pass:true,chosen:{court:5}});
 });
 it.each(['missing','wrong-date'] as const)('falls back safely for %s API and cannot pass rollout', kind => {
   const api = kind === 'missing' ? undefined : parseAvailability(availabilityFixture('2026-09-12'), '2026-09-12');

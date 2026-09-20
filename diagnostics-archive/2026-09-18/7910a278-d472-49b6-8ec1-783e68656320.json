@@ -1,0 +1,44 @@
+{
+  "runID": "7910a278-d472-49b6-8ec1-783e68656320",
+  "events": [
+    {
+      "event": "preferenceResolved",
+      "wall": "2026-09-16T19:36:41.094Z",
+      "monoMs": 4195.8418,
+      "workerId": "A"
+    },
+    {
+      "event": "selectionInitialGridValidationStarted",
+      "wall": "2026-09-16T19:36:41.095Z",
+      "monoMs": 4196.1918,
+      "workerId": "A"
+    },
+    {
+      "event": "selectionInitialGridValidationCompleted",
+      "wall": "2026-09-16T19:36:41.095Z",
+      "monoMs": 4196.7237,
+      "workerId": "A"
+    },
+    {
+      "event": "fullGuardStarted",
+      "wall": "2026-09-16T19:36:41.095Z",
+      "monoMs": 4196.7558,
+      "workerId": "A"
+    }
+  ],
+  "releasePerformance": null,
+  "availabilityPerformance": null,
+  "selectionFailures": [
+    {
+      "stage": "FULL_BROWSER_GUARD",
+      "code": "UNCLASSIFIED_SELECTION_FAILURE",
+      "workerId": "A"
+    },
+    {
+      "stage": "SELECTION_COORDINATION",
+      "code": "UNCLASSIFIED_SELECTION_FAILURE",
+      "workerId": "A"
+    }
+  ],
+  "failure": "SELECTION_UNSAFE_FOR_RECOVERY"
+}

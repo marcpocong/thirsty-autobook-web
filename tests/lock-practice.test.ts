@@ -6,6 +6,7 @@ import {Controller} from '../ui/controller.js';
 import {bookingView,defaultSetup} from '../ui/booking.js';
 import {ConfigSchema,ObservationSchema} from '../src/config.js';
 import {clockStatus} from '../ui/status.js';
+import {readRetainedHold} from '../ui/status.js';
 import {DateTime} from 'luxon';
 import {FullPracticeSchema} from '../src/full-practice.js';
 import {commandSpec} from '../ui/processes.js';
@@ -18,6 +19,7 @@ it.each([
  [{page:'Payment Summary'},'LOCK_BROWSER_STATE_UNKNOWN'],[{},'VERIFIED_STALE_LOCK']
 ])('fails closed for lock state %j', (change,reason)=>{expect(lockReason({...safe,...change} as typeof safe)).toBe(reason);});
 it('PID check identifies the current live process',()=>expect(pidAlive(process.pid)).toBe(true));
+it.skipIf(process.platform!=='win32')('PID check confirms a nonexistent Windows process',()=>expect(pidAlive(2147483647)).toBe(false));
 it('reads without mutation, rechecks on clear and preserves changed locks',async()=>{
  await mkdir('.local',{recursive:true});const root=await mkdtemp(resolve('.local/lock-review-test-'));
  try{
@@ -28,6 +30,30 @@ it('reads without mutation, rechecks on clear and preserves changed locks',async
   await expect(clearVerifiedLock(root,review.fingerprint,()=>false,probe,()=>true)).rejects.toThrow('LOCK_PID_RUNNING');
   await writeFile(path,JSON.stringify({pid:124,runID:'replacement'}));await expect(clearVerifiedLock(root,review.fingerprint,()=>false,probe,dead)).rejects.toThrow('LOCK_BROWSER_STATE_UNKNOWN');
   await writeFile(path,raw);await clearVerifiedLock(root,review.fingerprint,()=>false,probe,dead);await expect(readFile(path)).rejects.toThrow();
+ }finally{if(!root.startsWith(resolve('.local')+sep))throw Error('UNSAFE_TEST_PATH');await rm(root,{recursive:true,force:true});}
+});
+it('keeps an active verified hold locked, then clears it only after expiry and a clean browser review',async()=>{
+ await mkdir('.local',{recursive:true});const root=await mkdtemp(resolve('.local/expired-hold-review-'));
+ try{
+  await mkdir(resolve(root,'.local'));const path=resolve(root,'.local/automation.lock');
+  const raw=JSON.stringify({pid:123,runID:'fixture',mode:'standard',stage:'HOLD_VERIFIED',holdExpiresAt:new Date(Date.now()+60000).toISOString()});
+  await writeFile(path,raw);
+  const probe=vi.fn(async()=>clean),dead=()=>false;
+  const active=await reviewLock(root,false,probe,dead);
+  expect(active.canClear).toBe(false);expect(active.reason).toBe('LOCK_PAYMENT_HOLD_ACTIVE');expect(probe).not.toHaveBeenCalled();
+  await expect(clearVerifiedLock(root,active.fingerprint,()=>false,probe,dead)).rejects.toThrow('LOCK_PAYMENT_HOLD_ACTIVE');
+  await writeFile(path,JSON.stringify({pid:123,runID:'fixture',mode:'standard',stage:'HOLD_VERIFIED',holdExpiresAt:new Date(Date.now()-1000).toISOString()}));
+  const expired=await reviewLock(root,false,probe,dead);
+  expect(expired).toMatchObject({canClear:true,reason:'VERIFIED_STALE_LOCK',page:'Schedule',selected:0,hold:'Not detected'});
+  await clearVerifiedLock(root,expired.fingerprint,()=>false,probe,dead);
+  await expect(readFile(path)).rejects.toThrow();
+ }finally{if(!root.startsWith(resolve('.local')+sep))throw Error('UNSAFE_TEST_PATH');await rm(root,{recursive:true,force:true});}
+});
+it('reads the retained hold expiry as an absolute timestamp for the panel',async()=>{
+ await mkdir('.local',{recursive:true});const root=await mkdtemp(resolve('.local/hold-clock-'));
+ try{await mkdir(resolve(root,'.local'));await writeFile(resolve(root,'.local/automation.lock'),JSON.stringify({stage:'HOLD_VERIFIED',holdExpiresAt:'2026-09-20T19:16:19.000Z'}));
+  expect(await readRetainedHold(root,Date.parse('2026-09-20T19:06:19.000Z'))).toMatchObject({remainingSeconds:600});
+  expect(await readRetainedHold(root,Date.parse('2026-09-20T19:16:19.000Z'))).toMatchObject({remainingSeconds:0});
  }finally{if(!root.startsWith(resolve('.local')+sep))throw Error('UNSAFE_TEST_PATH');await rm(root,{recursive:true,force:true});}
 });
 function harness(locked=true,confirmed=true){

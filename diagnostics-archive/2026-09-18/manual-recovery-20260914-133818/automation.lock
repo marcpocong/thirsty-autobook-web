@@ -1,0 +1,10 @@
+{
+  "pid": "[REDACTED]",
+  "runID": "73751b90-3bc7-4b6a-bf13-611bcfb54909",
+  "mode": "extended",
+  "stage": "SELECTION",
+  "workers": [
+    "A",
+    "B"
+  ]
+}

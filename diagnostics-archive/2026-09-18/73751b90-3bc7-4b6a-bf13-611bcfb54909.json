@@ -1,0 +1,187 @@
+{
+  "runID": "73751b90-3bc7-4b6a-bf13-611bcfb54909",
+  "events": [
+    {
+      "event": "bookingProceedStarted",
+      "wall": "2026-09-13T19:58:38.469Z",
+      "monoMs": 6772.2946
+    },
+    {
+      "event": "bookingProceedStarted",
+      "wall": "2026-09-13T19:58:38.474Z",
+      "monoMs": 6776.8891
+    },
+    {
+      "event": "bookingProceedClicked",
+      "wall": "2026-09-13T19:58:38.668Z",
+      "monoMs": 6970.9812
+    },
+    {
+      "event": "proceedClicked",
+      "wall": "2026-09-13T19:58:38.668Z",
+      "monoMs": 6971.0347
+    },
+    {
+      "event": "reviewDetected",
+      "wall": "2026-09-13T19:58:38.681Z",
+      "monoMs": 6983.5253
+    },
+    {
+      "event": "bookingProceedClicked",
+      "wall": "2026-09-13T19:58:38.696Z",
+      "monoMs": 6998.9285
+    },
+    {
+      "event": "proceedClicked",
+      "wall": "2026-09-13T19:58:38.696Z",
+      "monoMs": 6998.9789
+    },
+    {
+      "event": "reviewDetected",
+      "wall": "2026-09-13T19:58:38.705Z",
+      "monoMs": 7008.1091
+    },
+    {
+      "event": "reviewValidated",
+      "wall": "2026-09-13T19:58:38.722Z",
+      "monoMs": 7024.7574
+    },
+    {
+      "event": "playerFillStarted",
+      "wall": "2026-09-13T19:58:38.722Z",
+      "monoMs": 7024.8751
+    },
+    {
+      "event": "reviewValidated",
+      "wall": "2026-09-13T19:58:38.723Z",
+      "monoMs": 7026.2784
+    },
+    {
+      "event": "playerFillStarted",
+      "wall": "2026-09-13T19:58:38.723Z",
+      "monoMs": 7026.3246
+    },
+    {
+      "event": "playerFormDetected",
+      "wall": "2026-09-13T19:58:38.729Z",
+      "monoMs": 7032.1946
+    },
+    {
+      "event": "playerFormDetected",
+      "wall": "2026-09-13T19:58:38.730Z",
+      "monoMs": 7033.404
+    },
+    {
+      "event": "playerFillCompleted",
+      "wall": "2026-09-13T19:58:38.782Z",
+      "monoMs": 7085.465
+    },
+    {
+      "event": "playerProceedStarted",
+      "wall": "2026-09-13T19:58:38.783Z",
+      "monoMs": 7085.5105
+    },
+    {
+      "event": "playerFillCompleted",
+      "wall": "2026-09-13T19:58:38.794Z",
+      "monoMs": 7096.9961
+    },
+    {
+      "event": "playerProceedStarted",
+      "wall": "2026-09-13T19:58:38.794Z",
+      "monoMs": 7097.0323
+    },
+    {
+      "event": "playerProceedClicked",
+      "wall": "2026-09-13T19:58:39.594Z",
+      "monoMs": 7897.4352
+    },
+    {
+      "event": "playerProceedClicked",
+      "wall": "2026-09-13T19:58:39.678Z",
+      "monoMs": 7981.4288
+    },
+    {
+      "event": "paymentSummaryDetected",
+      "wall": "2026-09-13T19:58:43.961Z",
+      "monoMs": 12263.7816
+    },
+    {
+      "event": "paymentSummaryValidated",
+      "wall": "2026-09-13T19:58:44.003Z",
+      "monoMs": 12305.9203
+    },
+    {
+      "event": "termsCheckStarted",
+      "wall": "2026-09-13T19:58:44.003Z",
+      "monoMs": 12306.0733
+    },
+    {
+      "event": "paymentSummaryDetected",
+      "wall": "2026-09-13T19:58:44.240Z",
+      "monoMs": 12542.6028
+    },
+    {
+      "event": "paymentSummaryValidated",
+      "wall": "2026-09-13T19:58:44.251Z",
+      "monoMs": 12554.1468
+    },
+    {
+      "event": "termsCheckStarted",
+      "wall": "2026-09-13T19:58:44.251Z",
+      "monoMs": 12554.2011
+    },
+    {
+      "event": "termsChecked",
+      "wall": "2026-09-13T19:58:44.586Z",
+      "monoMs": 12889.4659
+    },
+    {
+      "event": "finalOndaActionStarted",
+      "wall": "2026-09-13T19:58:44.612Z",
+      "monoMs": 12915.0402
+    },
+    {
+      "event": "finalOndaButtonClicked",
+      "wall": "2026-09-13T19:58:44.636Z",
+      "monoMs": 12938.658
+    },
+    {
+      "event": "paymentBoundaryReached",
+      "wall": "2026-09-13T19:58:44.636Z",
+      "monoMs": 12938.6961
+    },
+    {
+      "event": "automationStopped",
+      "wall": "2026-09-13T19:58:44.636Z",
+      "monoMs": 12938.7024
+    },
+    {
+      "event": "termsChecked",
+      "wall": "2026-09-13T19:58:45.098Z",
+      "monoMs": 13400.9907
+    },
+    {
+      "event": "finalOndaActionStarted",
+      "wall": "2026-09-13T19:58:45.132Z",
+      "monoMs": 13435.1901
+    },
+    {
+      "event": "finalOndaButtonClicked",
+      "wall": "2026-09-13T19:58:45.200Z",
+      "monoMs": 13503.3669
+    },
+    {
+      "event": "paymentBoundaryReached",
+      "wall": "2026-09-13T19:58:45.200Z",
+      "monoMs": 13503.406
+    },
+    {
+      "event": "automationStopped",
+      "wall": "2026-09-13T19:58:45.200Z",
+      "monoMs": 13503.4128
+    }
+  ],
+  "releasePerformance": null,
+  "availabilityPerformance": null
+}

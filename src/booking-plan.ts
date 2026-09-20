@@ -29,7 +29,9 @@ export function resolveBookingPlan(input:PlanRequest,grids:Snapshot[],excluded=n
   const r=PlanRequestSchema.parse(input);
   if(grids.length!==(r.strategy==='standard'?1:2))throw Error('BROWSER_COUNT_MISMATCH');
   const cells=grids.map(g=>{const cs=validateSnapshot(g,r.date);if(cs.some(c=>c.state==='UNKNOWN'))throw Error('SELECTION_STATE_UNKNOWN');if(cs.some(c=>c.state==='SELECTED'))throw Error('PREEXISTING_SELECTION');return cs;});
-  for(const plan of candidatePlans(r)){
+  const plans=candidatePlans(r);
+  // Honor the preferred start first, then favor continuous courts across all splits.
+  for(const start of [r.start,...r.fallbackStarts]) for(const requireContinuity of [true,false]) for(const plan of plans.filter(p=>p.requestedStart===start)){
     const options=plan.chunks.map((chunk,i)=>{
       const available=(r.exact?.[i]??r.priority).filter(court=>chunk.hours.every(hour=>cells[i]!.some(c=>c.court===court&&c.hour===hour&&c.state==='OPEN')));
       if(r.exact)return available.length===r.courtCount?[available]:[];
@@ -39,21 +41,21 @@ export function resolveBookingPlan(input:PlanRequest,grids:Snapshot[],excluded=n
     // This intentionally preserves the user's 7+6 / 7+5 example over 7+4 / 7+4.
     for(const a of options[0]!){
       const bs=plan.chunks.length===1?[[]]:[...options[1]!].sort((x,y)=>y.filter(c=>a.includes(c)).length-x.filter(c=>a.includes(c)).length);
-      for(const b of bs){const resolved={...plan,chunks:plan.chunks.map((c,i)=>({...c,courts:i===0?a:b}))};if(!excluded.has(bookingPlanKey(resolved)))return resolved;}
+      for(const b of bs){if(requireContinuity&&plan.chunks.length>1&&!r.exact&&!b.every(c=>a.includes(c)))continue;const resolved={...plan,chunks:plan.chunks.map((c,i)=>({...c,courts:i===0?a:b}))};if(!excluded.has(bookingPlanKey(resolved)))return resolved;}
     }
   }
 }
-export function describeBookingPlan(p:BookingPlan,maximum:number){return `${p.strategy.toUpperCase()} BOOKING\n${p.date} · ${p.courtCount} court(s) · ${p.requestedDuration} hours\n`+p.chunks.map((c,i)=>`Checkout ${c.browser}: ${c.browser==='A'?'Primary player':'Extended player'} | ${c.start}–${String(Number(c.start.slice(0,2))+c.duration).padStart(2,'0')}:00 · ${c.courts?.map(n=>`Court ${n}`).join(' + ')??'Court priority'}\nMaximum: PHP ${maximum*p.courtCount}`).join('\n')+`\n${p.chunks.length} checkout(s), ${p.chunks.length} temporary payment hold(s). Payment is manual.`;}
+export function describeBookingPlan(p:BookingPlan,_maximum:number){return `${p.strategy.toUpperCase()} BOOKING\n${p.date} · ${p.courtCount} court(s) · ${p.requestedDuration} hours\n`+p.chunks.map(c=>`Checkout ${c.browser}: ${c.browser==='A'?'Primary player':'Extended player'} | ${c.start}–${String(Number(c.start.slice(0,2))+c.duration).padStart(2,'0')}:00 · ${c.courts?.map(n=>`Court ${n}`).join(' + ')??'Court priority'}`).join('\n')+`\n${p.chunks.length} checkout(s), ${p.chunks.length} temporary payment hold(s). Payment is manual. No price ceiling.`;}
 
 export const BookingPlanSchema=z.object({strategy:z.enum(['standard','extended']),date:z.iso.date(),requestedStart:z.string(),requestedDuration:z.number().int().min(1).max(6),courtCount:z.union([z.literal(1),z.literal(2)]),chunks:z.array(z.object({browser:z.enum(['A','B']),start:z.string(),duration:z.number().int().min(1).max(3),hours:z.array(z.string()).min(1).max(3),requiredCourtCount:z.union([z.literal(1),z.literal(2)]),courts:z.array(z.number().int().min(1).max(7)).min(1).max(2)}).strict()).min(1).max(2)}).strict();
-export const TestBookingSchema=z.object({request:PlanRequestSchema,maximum:z.number().finite().positive(),authorizeTerms:z.literal(true)}).strict();
-export type TestBookingInput=z.infer<typeof TestBookingSchema>;
+export const TestBookingSchema=z.object({method:z.enum(['browser','hybrid','api-first']).default('browser'),request:PlanRequestSchema,maximum:z.number().finite().positive(),authorizeTerms:z.literal(true)}).strict();
+export type TestBookingInput=z.input<typeof TestBookingSchema>;
 
 export const PreparationSchema=z.discriminatedUnion('workflow',[
-  z.object({workflow:z.literal('test'),request:PlanRequestSchema,maximum:z.number().finite().positive()}).strict(),
+  z.object({workflow:z.literal('test'),method:z.enum(['browser','hybrid','api-first']).default('browser'),request:PlanRequestSchema,maximum:z.number().finite().positive()}).strict(),
   z.object({workflow:z.literal('release'),strategy:z.enum(['standard','extended']),setup:z.unknown().optional()}).strict(),
 ]);
-export type PreparationInput=z.infer<typeof PreparationSchema>;
+export type PreparationInput=z.input<typeof PreparationSchema>;
 
 export const PreparedBrowserSchema=z.object({
   id:z.enum(['A','B']),dedicatedProfileVerified:z.literal(true),ondaVerified:z.literal(true),

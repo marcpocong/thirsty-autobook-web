@@ -77,8 +77,7 @@ export function apiCandidates(api: AvailabilitySnapshot, preferences: Preference
     if (!api.released || !p.hours.length || JSON.stringify(expandHours(p.hours[0]!, p.hours.length)) !== JSON.stringify(p.hours)) return false;
     const components = p.hours.map(hour => slots.get(`${p.court}/${hour}`));
     if (components.some(s => !s || !s.available || s.date !== api.targetDate || s.bookingDate !== api.targetDate)) return false;
-    const priced = components.every(s => s!.price !== undefined && s!.currency === 'PHP');
-    return !priced || components.reduce((sum, s) => sum + s!.price!, 0) <= maximum;
+    return true;
   });
 }
 export function compareAvailability(api: AvailabilitySnapshot, cells: Cell[]) {
@@ -97,10 +96,7 @@ export function hybridPreferences(api: AvailabilitySnapshot | undefined, targetD
   if (cells.some(c => c.date !== targetDate)) throw Error('AVAILABILITY_UI_DATE_MISMATCH');
   if (!api || api.targetDate !== targetDate) return { preferences, source: 'UI_ONLY' as const };
   const slots = new Map(api.slots.map(s => [`${s.court}/${s.startTime}`, s]));
-  const withinKnownPrice = preferences.filter(p => {
-    const parts = p.hours.map(hour => slots.get(`${p.court}/${hour}`));
-    return !parts.every(s => s?.price !== undefined && s.currency === 'PHP') || parts.reduce((sum, s) => sum + s!.price!, 0) <= maximum;
-  });
+  const withinKnownPrice = preferences;
   const available = earlyCandidates ?? apiCandidates(api, withinKnownPrice, maximum);
   const intersected = withinKnownPrice.filter(p => available.some(a => a.court === p.court && a.hours.join(',') === p.hours.join(',')) && !!resolvePreference(cells, [p]));
   // If the server's view is stale/closed but the strict UI is open, use ordinary UI discovery.

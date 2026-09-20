@@ -11,27 +11,33 @@ import type {PreparedContext} from '../src/prepared-context.js';
 import type {FallbackReconciliation} from '../src/booking-setup.js';
 import type {ScheduledReleaseContext} from '../src/scheduled-release.js';
 export type DualPracticeCommand = { kind:'dualDry'; date:string } | { kind:'dualPractice'|'dualFullPractice'; input:DualPracticeInput };
-export type Command = {kind:'resetPrepare';input:PreparationInput} | {kind:'testBooking';input:TestBookingInput} | DualPracticeCommand | 'chromeDual' | 'dualReadiness' | 'dualPrepare' | {kind:'fullPractice';input:FullPracticeInput} | 'chrome' | 'inspect' | 'observe' | { kind:'selection' | 'dry'; planHash:string } | {kind:'full';context:ScheduledReleaseContext;authorizeTerms:true} | { kind:'practice'; input:PracticeInput };
+export interface ApiRunPreferences {strategy:'standard'|'extended';date:string;start:string;duration:number;courtCount:1|2;maximum:number;priority:number[];fallbackStarts:string[];exact?:number[][]}
+export type Command = {kind:'resetPrepare';input:PreparationInput} | {kind:'testBooking';input:TestBookingInput} | {kind:'apiRun';mode:'prepare'|'dry'|'live'|'live-now';date:string;fingerprint:string;releaseMs?:number;preferences?:ApiRunPreferences} | {kind:'apiPreview';date:string} | DualPracticeCommand | 'chromeDual' | 'dualReadiness' | 'dualPrepare' | {kind:'fullPractice';input:FullPracticeInput} | 'chrome' | 'inspect' | 'observe' | { kind:'selection' | 'dry'; planHash:string } | {kind:'full';context:ScheduledReleaseContext;authorizeTerms:true} | { kind:'practice'; input:PracticeInput };
 export type Inspection = Extract<UiEvent, { type: 'inspection' }>;
-export interface Activity { at: string; text: string; level: 'info' | 'error' }
+export interface Activity { at: string; text: string; level: 'info' | 'error'; elapsedMs?:number; deltaMs?:number }
+export interface RunTiming { runId:string; label:string; startedAt:string; elapsedMs:number; endedAt?:string; logPath?:string; readyAt?:string; readyElapsedMs?:number }
+export interface RunHistoryEntry { runId:string; label:string; startedAt:string; endedAt:string; outcome:string; totalElapsedMs:number; readyAt?:string; readyElapsedMs?:number }
 export interface Dashboard {
   bookingResult?:Extract<UiEvent,{type:'bookingResult'}>;
   workflow?:'test'|'release';
   preparedAt?:number;
   preparedContext?:PreparedContext|null;
   browserHealth?:{A:boolean;B:boolean};
-  playerStatus?:{primary:boolean;extended:boolean};
+  playerStatus?:{primary:boolean;extended:boolean;primaryDetails?:{fullName:string;phone:string;email:string};extendedDetails?:{fullName:string;phone:string;email:string}};
   dualWorkers?:Partial<Record<'A'|'B',Extract<UiEvent,{type:'dualWorker'}>>>;
   dualResult?:Extract<UiEvent,{type:'dualResult'}>|null;
   dualValidation?:{selection:boolean;full:boolean};
   dualActive?:boolean;
   releasePerformance?: Extract<UiEvent, { type: 'releasePerformance' }>['summary'] | null;
   lockReview?:LockReview|null;
-  operation: 'idle' | 'scheduled' | 'chrome' | 'inspect' | 'prepare' | 'confirming' | 'observe' | 'selection' | 'full' | 'dry' | 'practice' | 'stopping' | 'saving' | 'reviewing' | 'clearing' | 'resetting' | 'fullPractice';
+  operation: 'idle' | 'scheduled' | 'chrome' | 'inspect' | 'prepare' | 'confirming' | 'observe' | 'selection' | 'full' | 'dry' | 'practice' | 'stopping' | 'saving' | 'reviewing' | 'clearing' | 'resetting' | 'fullPractice' | 'apiPreview';
   headline: string; detail: string; ready: boolean; cdp: boolean; lock: boolean;
   inspection: Inspection | null; clock: ReturnType<typeof clockStatus> | null;
   plan: Extract<UiEvent, { type: 'plan' }> | null; logs: Activity[]; liveRace: boolean;
-  booking: BookingView | null; termsAuthorized: boolean;
+  booking: BookingView | null; termsAuthorized: boolean; apiFirstReady?: boolean;
+  apiStage?:Extract<UiEvent,{type:'apiStage'}>|null;
+  runTiming?:RunTiming|null;
+  runHistory?:RunHistoryEntry[];
   bookingAdjustment?:FallbackReconciliation|null;
   scheduledRelease?:ScheduledReleaseContext|null;
   sleepProtection?:boolean;
@@ -42,6 +48,7 @@ export interface Dashboard {
 }
 export interface Bridge {
   resetPrepare(input:PreparationInput):Promise<void>;
+  apiPreview(date:string):Promise<void>;
   testBooking(input:TestBookingInput):Promise<void>;
   setWorkflow(workflow:'test'|'release'):Promise<void>;
   invalidatePreparation():Promise<void>;

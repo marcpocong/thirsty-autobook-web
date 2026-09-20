@@ -10,8 +10,9 @@ if ($port -eq 0 -and (Test-Path -LiteralPath $endpointFile)) {
     if ($saved.version -eq 1 -and $candidate -ge 1024 -and $candidate -le 65535) { $port = [int]$candidate }
   } catch {}
 }
-if ($port -eq 0) { $port = if ($Worker -eq 'B') { 9223 } else { 9222 } }
-$profile = if ($Worker -eq 'B') { '.local\onda-chrome-profile-b' } else { '.local\onda-chrome-profile' }
+$apiInstallation = $env:THIRSTY_API_INSTALLATION -eq '1' -or $env:THIRSTY_API_TEST_INSTALLATION -eq '1'
+if ($port -eq 0) { $port = if ($apiInstallation) { if ($Worker -eq 'B') { 19445 } else { 19444 } } else { if ($Worker -eq 'B') { 9223 } else { 9222 } } }
+$profile = if ($apiInstallation) { if ($Worker -eq 'B') { '.local\api-first-chrome-profile-b' } else { '.local\api-first-chrome-profile' } } else { if ($Worker -eq 'B') { '.local\onda-chrome-profile-b' } else { '.local\onda-chrome-profile' } }
 $profilePath = Join-Path $projectRoot $profile
 $candidates = @(
   "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
@@ -32,11 +33,12 @@ if ($verification -ne 'CDP_NOT_LISTENING') {
 }
 New-Item -ItemType Directory -Force -Path $profilePath | Out-Null
 # This is the visible, interactive browser requested by the user.
-Start-Process -FilePath $chromePath -ArgumentList @(
+$arguments = @(
   "--remote-debugging-port=$port", '--remote-debugging-address=127.0.0.1',
   "--user-data-dir=`"$profilePath`"", '--no-first-run', '--no-default-browser-check',
   'https://app.onda.fit/book/thirsty-pickle'
 )
+Start-Process -FilePath $chromePath -ArgumentList $arguments
 $deadline = [DateTime]::UtcNow.AddSeconds(15)
 do {
   Start-Sleep -Milliseconds 200

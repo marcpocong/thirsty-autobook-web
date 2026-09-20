@@ -1,0 +1,10 @@
+{
+  "date": "2026-09-09T21:45:56.371Z",
+  "observerPid": "[REDACTED]",
+  "workerExited": true,
+  "lockRetained": true,
+  "chromeSurvived": true,
+  "selected": 0,
+  "confirmationResponses": "simulated Cancel then Arm; native dialog options inspected",
+  "actualReleaseRun": false
+}
