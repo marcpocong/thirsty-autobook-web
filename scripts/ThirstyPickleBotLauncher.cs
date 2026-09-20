@@ -3,7 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows.Forms;
 
-internal static class ApiTestLauncher
+internal static class ThirstyPickleBotLauncher
 {
     [STAThread]
     private static int Main()
@@ -11,10 +11,10 @@ internal static class ApiTestLauncher
         try
         {
             string root = AppDomain.CurrentDomain.BaseDirectory;
-            foreach (string file in new[] { "scripts/run-api-test-ui.mjs", "dist/ui/main.js", "node_modules/electron/dist/electron.exe", ".local/runtime/node.exe" })
+            foreach (string file in new[] { "scripts/run-thirsty-pickle-bot.mjs", "dist/ui/main.js", "node_modules/electron/dist/electron.exe", ".local/runtime/node.exe" })
                 if (!File.Exists(Path.Combine(root, file)))
-                    throw new InvalidOperationException("The API Test application folder is incomplete. Rebuild its separate installation.");
-            var start = new ProcessStartInfo(Path.Combine(root, ".local/runtime/node.exe"), "\"scripts/run-api-test-ui.mjs\"");
+                    throw new InvalidOperationException("The Thirsty Pickle Bot application folder is incomplete. Rebuild the self-contained installation.");
+            var start = new ProcessStartInfo(Path.Combine(root, ".local/runtime/node.exe"), "\"scripts/run-thirsty-pickle-bot.mjs\"");
             start.WorkingDirectory = root;
             start.UseShellExecute = false;
             start.CreateNoWindow = true;
@@ -29,13 +29,13 @@ internal static class ApiTestLauncher
                 process.BeginErrorReadLine();
                 process.WaitForExit();
                 if (process.ExitCode != 0)
-                    throw new InvalidOperationException("The API Test app exited unexpectedly. Check its private installation and runtime assets.");
+                    throw new InvalidOperationException("Thirsty Pickle Bot exited unexpectedly. Check its private installation and runtime assets.");
             }
             return 0;
         }
         catch (Exception error)
         {
-            MessageBox.Show(error.Message, "Thirsty Bot API Test", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(error.Message, "Thirsty Pickle Bot", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 1;
         }
     }

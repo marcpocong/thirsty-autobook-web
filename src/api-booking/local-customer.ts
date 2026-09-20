@@ -20,7 +20,7 @@ export function contactBinding(fullName: string, phone: string, email: string): 
 export function loadLocalCheckoutCustomer(worker: 'A' | 'B' = 'A'): CheckoutCustomer {
   const config = loadConfig();
   const person = worker === 'A' ? bookingPlayers(config, 'standard').A : bookingPlayers(config, 'extended').B!;
-  const privatePath = process.env.THIRSTY_API_TEST_INSTALLATION === '1' ? '.local/private/.env.local' : '.env.local';
+  const privatePath = process.env.THIRSTY_API_INSTALLATION === '1' || process.env.THIRSTY_API_TEST_INSTALLATION === '1' ? '.local/private/.env.local' : '.env.local';
   const local = existsSync(privatePath) ? parseEnv(readFileSync(privatePath)) : {};
   const customerId = local[worker === 'A' ? 'ONDA_CUSTOMER_ID' : 'ONDA_CUSTOMER_B_ID'] ??
     process.env[worker === 'A' ? 'ONDA_CUSTOMER_ID' : 'ONDA_CUSTOMER_B_ID'];

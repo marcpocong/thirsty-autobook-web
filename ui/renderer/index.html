@@ -13,7 +13,7 @@
   <section class="hero" aria-label="Release clock"><div><p class="eyebrow">ASIA / MANILA</p><div id="clock" class="clock">--:--:--</div><p id="clock-date" class="muted">Reading local clock…</p></div><div class="countdown-block"><p class="eyebrow" id="countdown-label">NEXT RELEASE IN</p><div id="countdown" class="countdown">--:--:--</div><p class="muted"><span id="release-time">08:00:00</span> <span id="release-zone">Asia/Manila</span></p></div></section>
   <section class="panel setup"><div class="section-title"><h2>Booking setup</h2><span id="player-status" class="small">Player information · Checking</span></div>
     <fieldset id="setup-fields"><div class="setup-grid">
-      <label>Booking method<select id="booking-method"><option value="browser">NORMAL BROWSER</option><option value="hybrid">HYBRID AVAILABILITY</option><option value="api-first">API-FIRST EXPERIMENTAL</option></select></label>
+      <label>Booking method<select id="booking-method"><option value="api-first">API-FIRST</option><option value="browser">NORMAL BROWSER</option><option value="hybrid">HYBRID AVAILABILITY</option></select></label>
       <label>Booking type<select id="booking-type"><option value="standard">STANDARD · 1–3 hours</option><option value="extended">EXTENDED · 4–6 hours</option></select></label>
       <label id="test-date-label">Test date<input id="test-date" type="date"></label>
       <label>Courts to book<select id="court-count"><option value="1">1 Court</option><option value="2">2 Courts</option></select></label>
@@ -36,6 +36,8 @@
   </section>
   <section id="release-readiness-card" class="panel" hidden><h2>RELEASE READINESS</h2><div id="release-readiness"></div></section>
   <section id="primary-actions" class="panel"><button id="test-booking" class="arm">RUN TEST TO QR</button><p id="sleep-warning" class="small" hidden>Keep the PC powered on. Do not hibernate or close the laptop lid if Windows is configured to sleep on lid close.</p></section>
+  <section class="panel run-history"><div class="section-title"><div><h2>Previous runs</h2><p class="small">Browser-ready to finish. Startup and Reset &amp; Prepare are excluded.</p></div><span class="small">SAVED LOCALLY</span></div><div id="run-history-list" aria-live="polite"><p class="empty">No completed browser-ready runs recorded yet.</p></div></section>
+  <section class="panel activity"><div class="section-title"><div><h2>Activity</h2><p class="small">Live milestones and exact timing for the current run.</p></div><span class="small" id="activity-state">LOCAL PROCESS OUTPUT</span><button id="activity-expand" class="activity-expand" type="button" aria-expanded="false">Maximize</button></div><div id="log" role="log" aria-live="polite" aria-label="Activity log"><p class="empty">Activity will appear here as commands run.</p></div></section>
   <details id="advanced"><summary>Advanced / Diagnostics</summary><div id="advanced-extra"></div>
   <section class="panel"><h2>Exact courts for Test Now (optional)</h2><p class="small">Leave both blank to use court priority. Exact courts are never substituted. For two courts, enter two distinct numbers separated by a comma.</p><div class="setup-grid"><label>Checkout 1<input id="exact-a" type="text" placeholder="7,6" autocomplete="off"></label><label>Checkout 2 · Extended only<input id="exact-b" type="text" placeholder="7,5" autocomplete="off"></label></div></section>
   <div class="content">
@@ -91,7 +93,6 @@
     <label class="terms-choice"><input id="dual-terms" type="checkbox"> I authorize accepting Onda Terms and creating two temporary holds for this test</label>
     <button id="dual-full" class="secondary">Dual Full Flow Practice to QR</button></fieldset>
   </section>
-  <section class="panel activity"><div class="section-title"><h2>Activity</h2><span class="small" id="activity-state">LOCAL PROCESS OUTPUT</span><button id="activity-expand" class="activity-expand" type="button" aria-expanded="false">Maximize</button></div><div id="log" role="log" aria-live="polite" aria-label="Activity log"><p class="empty">Activity will appear here as commands run.</p></div></section>
   <section class="panel"><h2>Release performance</h2><pre id="release-performance">No release measurements in this session.</pre></section>
   </details>
   <footer><div><span class="dot"></span><span>Selection is not a reservation. Payment stays manual.</span></div><button id="stop" class="stop">■ &nbsp; Emergency Stop</button></footer>

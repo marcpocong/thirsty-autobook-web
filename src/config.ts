@@ -66,7 +66,7 @@ export const ObservationSchema = z.object({
 });
 export type ReleaseSettings = z.infer<typeof ObservationSchema>;
 function environment() {
-  const privatePath=process.env.THIRSTY_API_TEST_INSTALLATION==='1'?'.local/private/.env.local':'.env.local';
+  const privatePath=process.env.THIRSTY_API_INSTALLATION==='1'||process.env.THIRSTY_API_TEST_INSTALLATION==='1'?'.local/private/.env.local':'.env.local';
   return { ...process.env, ...(existsSync(privatePath) ? parseEnv(readFileSync(privatePath)) : {}) };
 }
 export function loadObservationConfig(): ReleaseSettings {

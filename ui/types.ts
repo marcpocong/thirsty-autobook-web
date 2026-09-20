@@ -15,7 +15,8 @@ export interface ApiRunPreferences {strategy:'standard'|'extended';date:string;s
 export type Command = {kind:'resetPrepare';input:PreparationInput} | {kind:'testBooking';input:TestBookingInput} | {kind:'apiRun';mode:'prepare'|'dry'|'live'|'live-now';date:string;fingerprint:string;releaseMs?:number;preferences?:ApiRunPreferences} | {kind:'apiPreview';date:string} | DualPracticeCommand | 'chromeDual' | 'dualReadiness' | 'dualPrepare' | {kind:'fullPractice';input:FullPracticeInput} | 'chrome' | 'inspect' | 'observe' | { kind:'selection' | 'dry'; planHash:string } | {kind:'full';context:ScheduledReleaseContext;authorizeTerms:true} | { kind:'practice'; input:PracticeInput };
 export type Inspection = Extract<UiEvent, { type: 'inspection' }>;
 export interface Activity { at: string; text: string; level: 'info' | 'error'; elapsedMs?:number; deltaMs?:number }
-export interface RunTiming { runId:string; label:string; startedAt:string; elapsedMs:number; endedAt?:string; logPath?:string }
+export interface RunTiming { runId:string; label:string; startedAt:string; elapsedMs:number; endedAt?:string; logPath?:string; readyAt?:string; readyElapsedMs?:number }
+export interface RunHistoryEntry { runId:string; label:string; startedAt:string; endedAt:string; outcome:string; totalElapsedMs:number; readyAt?:string; readyElapsedMs?:number }
 export interface Dashboard {
   bookingResult?:Extract<UiEvent,{type:'bookingResult'}>;
   workflow?:'test'|'release';
@@ -36,6 +37,7 @@ export interface Dashboard {
   booking: BookingView | null; termsAuthorized: boolean; apiFirstReady?: boolean;
   apiStage?:Extract<UiEvent,{type:'apiStage'}>|null;
   runTiming?:RunTiming|null;
+  runHistory?:RunHistoryEntry[];
   bookingAdjustment?:FallbackReconciliation|null;
   scheduledRelease?:ScheduledReleaseContext|null;
   sleepProtection?:boolean;

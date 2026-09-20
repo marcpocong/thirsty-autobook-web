@@ -67,8 +67,9 @@ it('real config save/reload persists duration, price, start, attempts, courts an
  const reload=execFileSync(process.execPath,['--import','tsx','--input-type=module','-e',`import {readBooking} from ${JSON.stringify(booking)};process.chdir(${JSON.stringify(root)});console.log(JSON.stringify(readBooking().setup));`],{encoding:'utf8'});expect(JSON.parse(reload)).toEqual(setup);
  }finally{if(!root.startsWith(resolve('.local')+sep))throw Error('UNSAFE_TEST_PATH');await rm(root,{recursive:true,force:true});}
 });
-it('EXE delegates to the same npm UI entry and main resolves project root independently of cwd',async()=>{
- expect(await readFile('scripts/ThirstyLauncher.cs','utf8')).toContain('scripts/run-ui.mjs');expect(await readFile('scripts/ThirstyLauncher.cs','utf8')).toContain('start.WorkingDirectory = root');expect(await readFile('ui/main.ts','utf8')).toContain("resolve(dirname(fileURLToPath(import.meta.url)), '../..')");
+it('canonical EXE delegates to the self-contained API-first UI and resolves its own root',async()=>{
+ const launcher=await readFile('scripts/ThirstyPickleBotLauncher.cs','utf8'),runner=await readFile('scripts/run-thirsty-pickle-bot.mjs','utf8');
+ expect(launcher).toContain('scripts/run-thirsty-pickle-bot.mjs');expect(launcher).toContain('start.WorkingDirectory = root');expect(runner).toContain("THIRSTY_API_INSTALLATION: '1'");expect(await readFile('ui/main.ts','utf8')).toContain("resolve(dirname(fileURLToPath(import.meta.url)), '../..')");
 });
 it('Standard two courts shows one checkout; Extended has no historical evidence gate in the normal flow',async()=>{
  const dualPlan=bookingView(ConfigSchema.parse({...defaultSetup,COURT_COUNT:2,PLAYER_FULL_NAME:'Fixture Player',PLAYER_PHONE:'09123456789',PLAYER_EMAIL:'fixture@example.invalid'}));
@@ -121,16 +122,23 @@ it('shows a millisecond timer and labeled Activity timeline for every booking me
  await p.evaluate(()=>{
    const state=(window as any).fixtureState;
    state.operation='fullPractice';
-   state.runTiming={runId:'fixture',label:'BROWSER TEST',startedAt:new Date(Date.now()-1500).toISOString(),elapsedMs:0};
+   state.runTiming={runId:'fixture',label:'BROWSER TEST',startedAt:new Date(Date.now()-5000).toISOString(),readyAt:new Date(Date.now()-1500).toISOString(),elapsedMs:0,readyElapsedMs:0};
+   state.runHistory=[{runId:'previous',label:'API LIVE-NOW',startedAt:'2026-09-20T19:00:00.000Z',endedAt:'2026-09-20T19:00:01.234Z',outcome:'complete',totalElapsedMs:4000,readyAt:'2026-09-20T19:00:00.500Z',readyElapsedMs:1234}];
    state.logs=[{at:new Date().toISOString(),text:'Target grid ready',level:'info',elapsedMs:1500,deltaMs:900}];
    (window as any).fixturePublish(state);
  });
  expect(await p.locator('.hero').isVisible()).toBe(true);
  expect(await p.locator('.activity').isVisible()).toBe(true);
- expect(await p.locator('#countdown-label').innerText()).toBe('BROWSER TEST ELAPSED');
+ expect(await p.locator('#countdown-label').innerText()).toBe('BROWSER TEST · BROWSER READY');
  expect(await p.locator('#countdown').innerText()).toMatch(/^00:00:01\.\d{3}$/);
- expect(await p.locator('#log').innerText()).toContain('Elapsed 1.500 seconds (1500 milliseconds)');
- expect(await p.locator('#log').innerText()).toContain('Step +0.900 seconds (900 milliseconds)');
+ expect(await p.locator('#log').innerText()).toContain('TOTAL 1.500s');
+ expect(await p.locator('#log').innerText()).toContain('STEP 0.900s');
+ expect(await p.locator('#advanced').getAttribute('open')).toBeNull();
+ expect(await p.locator('.run-history').isVisible()).toBe(true);
+ expect(await p.locator('#run-history-list').innerText()).toContain('1.234 seconds');
+ expect(await p.locator('#run-history-list').innerText()).toContain('preparation excluded');
+ await p.addStyleTag({content:await readFile('ui/renderer/styles.css','utf8')});await p.setViewportSize({width:1010,height:900});
+ await mkdir('.local',{recursive:true});await p.screenshot({path:'.local/activity-history-ui.png',fullPage:true});
  await p.locator('#activity-expand').click();
  expect(await p.locator('.activity').evaluate(e=>e.classList.contains('expanded'))).toBe(true);
  expect(await p.locator('#activity-expand').getAttribute('aria-expanded')).toBe('true');

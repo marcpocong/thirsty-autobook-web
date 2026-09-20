@@ -20,6 +20,8 @@ import { firstUnjournaledCandidate } from './candidate-journal.js';
 import { standardCheckoutChunks } from './extended-checkout.js';
 import { standardPlanJournalKeys } from './two-hour-reservation.js';
 import { ApiRunProgressLog } from './run-progress-log.js';
+import { ApiAutomationLock } from './api-automation-lock.js';
+import { assertApiReleaseFresh } from './api-release.js';
 
 const preferencesSchema = z.object({ strategy: z.enum(['standard', 'extended']), date: z.iso.date(), start: z.string().regex(/^(0[89]|1\d|2[0-3]):00$/),
   duration: z.number().int().min(1).max(6), courtCount: z.union([z.literal(1), z.literal(2)]), maximum: z.number().finite().positive(),
@@ -52,6 +54,7 @@ const saveOnce = async (directory: string, filename: string, content: unknown) =
   finally { await file.close(); }
 };
 const connectedBrowsers: Browser[] = [];
+let liveLock:ApiAutomationLock|undefined,retainLiveLock=false,verifiedHold=false;
 async function showWindow(page: import('playwright').Page): Promise<void> {
   const session = await page.context().newCDPSession(page);
   try {
@@ -84,7 +87,7 @@ async function prepareWorker(workerId: 'A' | 'B'): Promise<WorkerSession> {
   return { workerId, browser, page, port: identity.port };
 }
 try {
-  if (process.env.THIRSTY_API_TEST_INSTALLATION !== '1') throw Error('API_TEST_INSTALLATION_REQUIRED');
+  if (process.env.THIRSTY_API_INSTALLATION !== '1' && process.env.THIRSTY_API_TEST_INSTALLATION !== '1') throw Error('API_INSTALLATION_REQUIRED');
   const config = loadConfig();
   const requested = command.preferences;
   const strategy = requested?.strategy ?? config.BOOKING_TYPE;
@@ -98,6 +101,7 @@ try {
   if ((command.mode === 'live' || command.mode === 'live-now') && process.env.ONDA_API_FIRST_LIVE !== 'ARMED')
     throw Error('API_LIVE_NOT_ARMED');
   if (command.mode === 'live' && !command.releaseMs) throw Error('API_RELEASE_TIME_REQUIRED');
+  if(command.mode==='live'||command.mode==='live-now')liveLock=await ApiAutomationLock.acquire(strategy,strategy==='extended'?['A','B']:['A']);
   const customers = command.mode === 'dry' ? undefined : { A: loadLocalCheckoutCustomer('A'),
     ...(strategy === 'extended' ? { B: loadLocalCheckoutCustomer('B') } : {}) };
   const sessions = [await prepareWorker('A')];
@@ -109,6 +113,7 @@ try {
       if (releaseMs <= Date.now()) throw Error('RELEASE_MISSED');
       stage('WAITING_FOR_RELEASE', { releaseMs });
       while (Date.now() < releaseMs) { ensureActive(); await pause(Math.min(500, releaseMs - Date.now())); }
+      assertApiReleaseFresh(releaseMs);
       stage('RELEASE_TRIGGERED');
     }
     ensureActive();
@@ -165,6 +170,7 @@ try {
         };
         stage('FRESH_VERIFICATION_AND_PROOFS', { workerId });
         let hold;
+        await liveLock?.dispatching();retainLiveLock=true;
         try { hold = await submitCalendarFreeTwoHourCheckout({ page: session.page, plan: chunkPlan, availability: discovery.snapshot,
           customer, approval: { courts: chunkPlan.courts.map(court => court.court), date: command.date,
             startTime: chunkPlan.startTime, endTime: chunkPlan.endTime,
@@ -177,12 +183,15 @@ try {
           },
           onHumanVerificationCompleted: async () => { stage('HUMAN_VERIFICATION_COMPLETE', { workerId }); } });
         } catch (error) {
+          const states=await Promise.all(journals.map((currentJournal,currentIndex)=>currentJournal.read(keys[currentIndex]!).then(record=>record.state).catch(()=> 'unknown' as const)));
+          if(!verifiedHold&&states.every(state=>state==='rejected')){retainLiveLock=false;await liveLock?.release();liveLock=undefined;}
           const code = error instanceof Error ? error.message : '';
           if (/TURNSTILE|SECURITY_CONTEXT|CHALLENGE/.test(code)) {
             await showWindow(session.page); stage('HUMAN_VERIFICATION_REQUIRED', { workerId, code });
           }
           throw error;
         }
+        await liveLock?.held(hold.holdExpiresAt);verifiedHold=true;retainLiveLock=true;
         stage('PENDING_HOLD', { workerId, bookingId: hold.bookingIds[0]!, bookingNo: bookingNo ?? '',
           holdExpiresAt: hold.holdExpiresAt, price: chunkPlan.totalPrice });
         if (!token || !bookingNo) throw Error('OFFICIAL_CHECKOUT_TOKEN_MISSING');
@@ -212,6 +221,7 @@ try {
   // This process attaches to a browser owned by the desktop installation.
   // Closing a CDP attachment closes its transport; the independently launched Chrome windows stay open.
   await Promise.allSettled(connectedBrowsers.map(browser => browser.close()));
+  if(liveLock&&!retainLiveLock)await liveLock.release().catch(()=>undefined);
   progressLog.record('PROCESS_EXIT', new Date().toISOString(), stamp(), { exitCode: process.exitCode ?? 0 });
   progressLog.close();
   if (process.connected) process.disconnect();

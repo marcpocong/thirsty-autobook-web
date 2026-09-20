@@ -6,9 +6,9 @@ declare global { interface Window { thirsty: Bridge } }
 const byId = (id: string) => document.getElementById(id)!;
 let latest: Dashboard | undefined;
 let renderedLogs = '';
-let timingRunId='';
-let timingStartedMono=0;
-let timingInitialMs=0;
+let timingReadyKey='';
+let timingReadyStartedMono=0;
+let timingReadyInitialMs=0;
 let dirty=false, loadedPlan='';
 let courtOrder=[7,6,5,4,3,2,1], fallbackTimes:string[]=[];
 const input=(id:string)=>byId(id) as HTMLInputElement;
@@ -164,15 +164,26 @@ function render(state: Dashboard) {
   if (signature !== renderedLogs) {
     renderedLogs = signature; const log = byId('log'); const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
     if (state.logs.length) log.replaceChildren(...state.logs.map(line => {
-      const p = document.createElement('p'); p.className = line.level;
-      const time = document.createElement('time'); time.textContent = `${new Date(line.at).toLocaleTimeString('en-GB', { timeZone: 'Asia/Manila',hour:'2-digit',minute:'2-digit',second:'2-digit',fractionalSecondDigits:3 })} Manila`;
-      p.append(time);
-      if(line.elapsedMs!==undefined){const metrics=document.createElement('span');metrics.className='timing';metrics.textContent=`Elapsed ${(line.elapsedMs/1000).toFixed(3)} seconds (${line.elapsedMs} milliseconds) · Step +${(Number(line.deltaMs??0)/1000).toFixed(3)} seconds (${line.deltaMs??0} milliseconds) · `;p.append(metrics);}
-      p.append(document.createTextNode(line.text)); return p;
+      const p = document.createElement('div'); p.className = `activity-row ${line.level}`;
+      const time = document.createElement('time'); time.textContent = new Date(line.at).toLocaleTimeString('en-GB', { timeZone: 'Asia/Manila',hour:'2-digit',minute:'2-digit',second:'2-digit',fractionalSecondDigits:3 });
+      const message=document.createElement('span');message.className='activity-message';message.textContent=line.text;
+      const metrics=document.createElement('span');metrics.className='activity-metrics';
+      if(line.elapsedMs!==undefined){for(const [label,value] of [['TOTAL',line.elapsedMs],['STEP',Number(line.deltaMs??0)]] as const){const chip=document.createElement('span');chip.className='timing-chip';chip.textContent=`${label} ${(value/1000).toFixed(3)}s`;metrics.append(chip);}}
+      p.append(time,message,metrics); return p;
     }));
     if (atBottom) log.scrollTop = log.scrollHeight;
   }
   byId('activity-state').textContent = busy ? `${state.operation.toUpperCase()} · PROCESS ACTIVE` : state.runTiming?.logPath?'TIMING LOG SAVED LOCALLY':'LOCAL PROCESS OUTPUT';
+  const history=byId('run-history-list');
+  const completed=(state.runHistory??[]).filter(run=>run.readyElapsedMs!==undefined&&!/\bprepare\b/i.test(run.label));
+  if(!completed.length)history.replaceChildren(Object.assign(document.createElement('p'),{className:'empty',textContent:'No completed browser-ready runs recorded yet.'}));
+  else history.replaceChildren(...completed.map(run=>{
+    const row=document.createElement('div');row.className='run-history-item';row.dataset.outcome=run.outcome;
+    const label=document.createElement('strong');label.textContent=run.label.replaceAll('·',' / ').toUpperCase();
+    const duration=document.createElement('span');duration.className='run-time';duration.textContent=`${(run.readyElapsedMs!/1000).toFixed(3)} seconds`;
+    const meta=document.createElement('span');meta.className='run-meta';meta.textContent=`${new Date(run.startedAt).toLocaleString('en-GB',{timeZone:'Asia/Manila',dateStyle:'medium',timeStyle:'medium'})} Manila · ${run.outcome.toUpperCase()} · browser-ready → finish · preparation excluded`;
+    row.append(label,duration,meta);return row;
+  }));
   byId('mode-label').textContent=workflow==='test'?'TEST NOW':'RELEASE BOOKING';
    byId('prepare').firstChild!.textContent='RESET & PREPARE ';
    const apiFirst=input('booking-method').value==='api-first';
@@ -204,7 +215,7 @@ function render(state: Dashboard) {
   const duration=Number(input('duration').value),start=Number(input('start-time').value.slice(0,2)),strategy=input('booking-type').value;
   byId('booking-preview').textContent=`${workflow==='release'?'Target: '+(state.booking?.targetDate??'Not configured')+'\n':''}${strategy.toUpperCase()} | ${input('court-count').value} court(s) | ${input('start-time').value}-${String(start+duration).padStart(2,'0')}:00\nFallback starts: ${fallbackTimes.map(friendly).join(', ')||'None'}\n${strategy==='extended'?'2 browsers | 2 checkouts | 2 payment holds\nPreferred split: '+(duration===4?'3 + 1; alternatives 2 + 2, 1 + 3':duration===5?'3 + 2; alternative 2 + 3':'3 + 3')+'\nSame courts prioritized across checkouts.':'1 browser | 1 checkout | 1 payment hold'}\nNo price ceiling | Payment manual`;
   const count=Number(input('court-count').value),releaseText=state.clock?new Date(state.clock.releaseMs).toLocaleString('en-US',{timeZone:state.clock.timezone,month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'Calculating';
-   const method=input('booking-method').value==='browser'?'NORMAL BROWSER':input('booking-method').value==='hybrid'?'HYBRID AVAILABILITY':'API-FIRST EXPERIMENTAL';
+   const method=input('booking-method').value==='browser'?'NORMAL BROWSER':input('booking-method').value==='hybrid'?'HYBRID AVAILABILITY':'API-FIRST';
    byId('booking-preview').textContent=`${workflow==='release'?`RELEASE PLAN\nRelease: ${releaseText}\nTarget: ${state.clock?dateLabel(state.clock.targetDate):'Not configured'}\n`:''}${method}\n${strategy.toUpperCase()} | ${count} COURT${count===1?'':'S'}\n${friendly(input('start-time').value)} -> ${endFriendly(input('start-time').value,duration)} | ${duration} hours\nFallback starts: ${fallbackTimes.map(friendly).join(' -> ')||'None'}\nCourt priority: ${courtOrder.join(' -> ')}\n${strategy==='extended'?`Extended split: ${duration===4?'3h + 1h (alternatives 2h + 2h, 1h + 3h)':duration===5?'3h + 2h (alternative 2h + 3h)':'3h + 3h'}\n2 browsers | 2 checkouts | Same courts prioritized | Players: Primary + Extended`:'Browser: A | 1 checkout | Player: Primary'}\nNo price ceiling\nAttempts: ${input('attempts').value} | Payment: MANUAL${input('booking-method').value==='api-first'?'\nAPI first: dry run available; live runs once at the armed release.':''}`;
   if(duration>6){byId('booking-preview').textContent='Extended two-browser booking currently supports up to 6 consecutive hours.';input('test-booking').disabled=true;input('arm').disabled=true;}
   const playersReady=playerStatus.primary&&(strategy!=='extended'||playerStatus.extended);
@@ -233,15 +244,17 @@ function tick() {
   byId('clock').textContent = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Manila', hourCycle: 'h23' }).format(now);
   byId('clock-date').textContent = new Intl.DateTimeFormat('en-US', { weekday:'long',month:'long',day:'numeric',year:'numeric',timeZone:'Asia/Manila' }).format(now);
   if (!latest) return;
-  if(latest.runTiming){
+  if(latest.runTiming&&(!latest.runTiming.endedAt||latest.runTiming.readyAt)){
     const run=latest.runTiming;
-    if(timingRunId!==run.runId){timingRunId=run.runId;timingStartedMono=performance.now();timingInitialMs=Math.max(0,Date.now()-Date.parse(run.startedAt));}
-    const elapsed=run.endedAt?run.elapsedMs:Math.max(0,timingInitialMs+performance.now()-timingStartedMono);
+    if(!run.readyAt){byId('countdown').textContent='--:--:--.---';byId('countdown-label').textContent=run.endedAt?'READY TIMING UNAVAILABLE':`${run.label.toUpperCase()} · WAITING FOR BROWSER`;byId('release-time').textContent='Timing starts when browser is ready';byId('release-zone').textContent='startup excluded';return;}
+    const readyKey=`${run.runId}:${run.readyAt}`;
+    if(timingReadyKey!==readyKey){timingReadyKey=readyKey;timingReadyStartedMono=performance.now();timingReadyInitialMs=Math.max(0,Date.now()-Date.parse(run.readyAt));}
+    const elapsed=run.endedAt?run.readyElapsedMs??0:Math.max(0,timingReadyInitialMs+performance.now()-timingReadyStartedMono);
     const seconds=Math.floor(elapsed/1000);
     byId('countdown').textContent=`${[Math.floor(seconds/3600),Math.floor(seconds/60)%60,seconds%60].map(v=>String(v).padStart(2,'0')).join(':')}.${String(Math.floor(elapsed%1000)).padStart(3,'0')}`;
-    byId('countdown-label').textContent=run.endedAt?'LAST RUN ELAPSED':`${run.label.toUpperCase()} ELAPSED`;
+    byId('countdown-label').textContent=run.endedAt?'LAST RUN · BROWSER READY → FINISH':`${run.label.toUpperCase()} · BROWSER READY`;
     byId('release-time').textContent=`${(elapsed/1000).toFixed(3)} seconds`;
-    byId('release-zone').textContent=`${Math.round(elapsed)} milliseconds`;
+    byId('release-zone').textContent=`${Math.round(elapsed)} milliseconds · preparation excluded`;
     return;
   }
   if (!latest.clock) return;

@@ -26,7 +26,7 @@ export function commandSpec(command: Command, root: string, node: string) {
         maximum:z.number().finite().positive(),priority:z.array(z.number().int().min(1).max(7)).min(1),fallbackStarts:z.array(z.string().regex(/^(0[89]|1\d|2[0-3]):00$/)),exact:z.array(z.array(z.number().int().min(1).max(7))).optional()}).strict();
       const c=z.object({kind:z.literal('apiRun'),mode:z.enum(['prepare','dry','live','live-now']),date:z.iso.date(),
         fingerprint:z.string().regex(/^[a-f0-9]{64}$/),releaseMs:z.number().int().positive().optional(),preferences:preferences.optional()}).strict().parse(command);
-      if(process.env.THIRSTY_API_TEST_INSTALLATION!=='1')throw Error('API_TEST_INSTALLATION_REQUIRED');
+      if(process.env.THIRSTY_API_INSTALLATION!=='1'&&process.env.THIRSTY_API_TEST_INSTALLATION!=='1')throw Error('API_INSTALLATION_REQUIRED');
       return {executable:node,args:['--import','tsx',resolve(root,'src/api-booking/desktop-runner.ts'),
         JSON.stringify({mode:c.mode,date:c.date,fingerprint:c.fingerprint,...(c.releaseMs?{releaseMs:c.releaseMs}:{}),
           ...(c.preferences?{preferences:c.preferences}:{})})],automation:true,apiLive:c.mode==='live'||c.mode==='live-now'};

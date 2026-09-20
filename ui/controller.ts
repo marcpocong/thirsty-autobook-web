@@ -67,7 +67,7 @@ const errors: Record<string, string> = {
   COURT_FILTER_NOT_ALL: 'Select All Courts in Chrome, then Prepare again.',
   RESET_REQUIRED:'RESET REQUIRED. Press Reset & Prepare for these settings.',
   TODAYS_RELEASE_PASSED:"TODAY'S RELEASE HAS PASSED. This release can no longer be armed today.",
-  API_FIRST_METHOD_REQUIRED:'API-FIRST EXPERIMENTAL must be selected before running the read-only API preview.',
+  API_FIRST_METHOD_REQUIRED:'API-FIRST must be selected before running the read-only API preview.',
   API_FIRST_LIVE_CHECKOUT_BLOCKED:'API-FIRST reservation submission is disabled until Oonda provides a supported current security context and checkout handoff.',
   API_FIRST_COURT_COUNT_UNSUPPORTED:'API-FIRST supports one court for Standard and one or two courts for Extended.',
   LOCAL_CUSTOMER_ID_UNVERIFIED:'Primary API customer binding is missing or does not match the configured primary player.',
@@ -77,7 +77,7 @@ const errors: Record<string, string> = {
   API_NO_UNUSED_CANDIDATE:'Available courts still have active or unresolved submission records. Verified holds become reusable after their timer expires and live availability confirms the slots are open.',
 };
 export interface Dependencies {
-  activityJournal?:Pick<ActivityJournal,'begin'|'record'|'end'>;
+  activityJournal?:Pick<ActivityJournal,'begin'|'record'|'ready'|'end'|'history'>;
   confirmStopPrepare?:()=>Promise<boolean>;
   confirmBooking?:(plan:BookingPlan,maximum:number)=>Promise<boolean>;
   confirmApiTest?:(input:{strategy:'standard'|'extended';date:string;start:string;duration:number;courtCount:1|2;maximum:number;priority:number[]})=>Promise<boolean>;
@@ -113,7 +113,8 @@ export class Controller {
   private polling = false;
   private runStartedMono = 0;
   private lastLogMono = 0;
-  constructor(private deps: Dependencies) {}
+  private runReadyMono?:number;
+  constructor(private deps: Dependencies) {this.state.runHistory=this.deps.activityJournal?.history?.()??[];}
   private players(){if(this.deps.playerStatus)return this.deps.playerStatus();try{const b=this.deps.booking();return {primary:b.playerConfigured,extended:b.extendedPlayerConfigured};}catch{return {primary:false,extended:false};}}
   private releaseSetup(input:unknown):{setup:ReturnType<typeof BookingSetupSchema.parse>;reconciliation:FallbackReconciliation}{
     const repaired=reconcileBookingSetupFallbacks(input),parsed=BookingSetupSchema.safeParse(repaired.setup);
@@ -153,8 +154,8 @@ export class Controller {
     if(!this.deps.reviewLock||!this.deps.clearLock)throw Error('LOCK_BROWSER_STATE_UNKNOWN');
     this.state.headline='CHECKING RETAINED SESSION';this.state.detail='Checking the old worker, Onda browser, selected slots, and payment hold before API preparation.';this.log(this.state.detail);
     const review=await this.deps.reviewLock(false);this.state.lockReview=review;
-    if(review.reason==='USE_RESET_AND_PREPARE'){
-      this.log('Extended retained session requires both browsers to be checked by Reset & Prepare.');
+    if(review.reason==='USE_RESET_AND_PREPARE'||hold?.remainingSeconds===0&&review.reason==='LOCK_BROWSER_STATE_UNKNOWN'){
+      this.log(review.reason==='USE_RESET_AND_PREPARE'?'Extended retained session requires both browsers to be checked by Reset & Prepare.':'Expired API hold requires Reset & Prepare to normalize the checkout browser safely.');
       await this.run({kind:'resetPrepare',input},generation);
       await this.noLock();this.state.lockReview=null;this.state.handoff=null;
       this.log('Extended retained session verified clean. Continuing API preparation.');
@@ -173,9 +174,15 @@ export class Controller {
   private beginRun(label:string) {
     const at=new Date().toISOString();
     const journal=this.deps.activityJournal?.begin(label,at);
-    this.runStartedMono=performance.now(); this.lastLogMono=this.runStartedMono;
+    this.runStartedMono=performance.now(); this.lastLogMono=this.runStartedMono;this.runReadyMono=undefined;
     this.state.runTiming={runId:journal?.runId??randomUUID(),label,startedAt:at,elapsedMs:0,...(journal?{logPath:journal.path}:{})};
     this.log(`Run started: ${label}${journal?` · Timing log: ${journal.path}`:''}`);
+  }
+  private markBrowserReady(at=new Date().toISOString()){
+    const run=this.state.runTiming;if(!run||run.endedAt||run.readyAt)return;
+    const mono=performance.now(),elapsedMs=Math.max(0,Math.round(mono-this.runStartedMono));
+    this.runReadyMono=mono;run.readyAt=at;run.readyElapsedMs=0;
+    try{this.deps.activityJournal?.ready(run.runId,at,elapsedMs);}catch{this.state.logs.push({at:new Date().toISOString(),text:'TIMING_LOG_WRITE_FAILED',level:'error'});}
   }
   private finishRun(outcome:string) {
     const run=this.state.runTiming;
@@ -183,7 +190,8 @@ export class Controller {
     this.log(`Run finished: ${outcome}`,outcome==='failed');
     const elapsedMs=Math.max(0,Math.round(performance.now()-this.runStartedMono));
     run.elapsedMs=elapsedMs;run.endedAt=new Date().toISOString();
-    try {this.deps.activityJournal?.end(run.runId,run.endedAt,elapsedMs,outcome);}
+    if(this.runReadyMono!==undefined)run.readyElapsedMs=Math.max(0,Math.round(performance.now()-this.runReadyMono));
+    try {this.deps.activityJournal?.end(run.runId,run.endedAt,elapsedMs,outcome,run.readyElapsedMs,run.label);this.state.runHistory=this.deps.activityJournal?.history?.()??this.state.runHistory;}
     catch {this.state.logs.push({at:new Date().toISOString(),text:'TIMING_LOG_WRITE_FAILED',level:'error'});}
     this.publish();
   }
@@ -234,6 +242,7 @@ export class Controller {
   }
   private event = (event: UiEvent) => {
     if(event.type==='apiStage'){
+      if(event.stage==='BROWSER_READY'&&this.state.operation!=='prepare')this.markBrowserReady(event.at);
       this.state.apiStage=event;
       const labels:Record<string,string>={RUN_STARTED:'API run started',EXPIRED_HOLD_REUSABLE:'Expired verified hold released for a new test',PREPARING_BROWSER:'Preparing isolated Chrome',BROWSER_READY:'API browser ready',
         WAITING_FOR_RELEASE:'Waiting for release',RELEASE_TRIGGERED:'Release reached',FETCHING_AVAILABILITY:'Fetching live API availability',
@@ -457,6 +466,7 @@ export class Controller {
       if(!authorized)throw Error('TERMS_AUTHORIZATION_REQUIRED');
       if(!await this.deps.confirmApiTest?.({strategy:input.request.strategy,date:input.request.date,start:input.request.start,duration:input.request.duration,courtCount:input.request.courtCount,
         maximum:input.maximum,priority:input.request.priority}))return;
+      this.markBrowserReady();
       await this.noLock();this.state.handoff=null;this.state.bookingResult=undefined;
       this.state.headline='Checking API availability';this.state.detail='The dedicated API browser remains visible while availability and proofs are checked.';
       await this.run({kind:'apiRun',mode:'live-now',date:input.request.date,fingerprint,
@@ -466,6 +476,7 @@ export class Controller {
     }
     await this.requirePrepared('test',expectedPreparationFingerprint(preparation),input.request.strategy);
     if(!authorized)throw Error('TERMS_AUTHORIZATION_REQUIRED');
+    this.markBrowserReady();
     this.state.handoff=null;this.state.bookingResult=undefined;
     this.state.headline='Checking availability';this.state.detail='Resolving your courts and time ranges before confirmation.';
     await this.run({kind:'testBooking',input},gen);
@@ -524,7 +535,7 @@ export class Controller {
       else await this.armScheduledRelease(authorized);}catch(error){if(this.state.scheduledRelease){this.clearScheduled();this.clearPreparation();this.state.operation='idle';}const code=error instanceof Error?error.message:'SCHEDULE_FAILED';this.state.headline='Needs attention';this.state.detail=errors[code]??code;this.log(code,true);}
   }
   private async armApiRelease(authorized:boolean){
-    if(process.env.THIRSTY_API_TEST_INSTALLATION!=='1')throw Error('API_TEST_INSTALLATION_REQUIRED');
+    if(process.env.THIRSTY_API_INSTALLATION!=='1'&&process.env.THIRSTY_API_TEST_INSTALLATION!=='1')throw Error('API_INSTALLATION_REQUIRED');
     if(this.state.operation!=='idle'||!this.state.apiFirstReady||!this.state.ready)throw Error('RESET_REQUIRED');
     if(!authorized)throw Error('TERMS_AUTHORIZATION_REQUIRED');
     await this.noLock();
@@ -537,10 +548,11 @@ export class Controller {
     const confirmed=await this.deps.confirm('full',plan);if(!confirmed)return;
     if(this.deps.booking().fingerprint!==plan.fingerprint||this.deps.clock().releaseMs!==clock.releaseMs)
       throw Error('SCHEDULE_CONTEXT_MISMATCH');
-    await this.operation('full',async gen=>{
-      this.state.headline='API FIRST ARMED';this.state.detail='The isolated browser will wait for release. Checkout verification is acquired fresh after release.';this.publish();
+    if(this.deps.startSleepProtection){this.sleepBlockerId=this.deps.startSleepProtection();this.state.sleepProtection=true;}
+    try{await this.operation('full',async gen=>{
+      this.state.headline='API FIRST ARMED';this.state.detail='The isolated browser will wait for release. Sleep protection is active; checkout verification is acquired fresh after release.';this.publish();
       await this.run({kind:'apiRun',mode:'live',date:plan.targetDate,fingerprint:plan.fingerprint,releaseMs:clock.releaseMs},gen);
-    });
+    });}finally{this.stopSleepProtection();this.publish();}
   }
   private async armScheduledRelease(authorized:boolean){
     if(this.state.scheduledRelease){await this.cancelScheduledRelease();return;}
@@ -576,6 +588,7 @@ export class Controller {
       const result=this.preparationResult as PreparationResult|undefined;
       if(!result||result.fingerprint!==context.preparedFingerprint||result.releaseMs!==context.releaseMs||result.releaseTargetDate!==context.targetDate)throw Error('PREPARED_FINGERPRINT_MISMATCH');
       if(Date.now()>=context.releaseMs)throw Error('RELEASE_MISSED');
+      this.markBrowserReady();
       this.state.scheduleStatus='FINAL PREFLIGHT';this.state.operation='full';this.state.headline='FINAL PREFLIGHT';this.publish();
       await this.run({kind:'full',context,authorizeTerms:true},generation);
       if(!this.state.handoff&&!this.state.bookingResult)throw Error('HANDOFF_STATUS_UNKNOWN');
@@ -600,6 +613,7 @@ export class Controller {
     await this.noLock();
     if(this.deps.booking().fingerprint!==plan.fingerprint)throw new Error('BOOKING_PLAN_CHANGED');
     if(!this.deps.clock().canArmToday)throw new Error('TOO_LATE_FOR_PREFLIGHT');
+    this.markBrowserReady();
     this.state.operation=kind;this.state.inspection=null;this.state.handoff=null;this.state.headline=kind==='selection'?'Selection scheduled':'Dry Race scheduled';
     this.state.detail=kind==='selection'?'At release the engine may select slots. It will stop before Proceed.':'Release, date, grid and preference checks only. No slots will be selected.';this.publish();
     await this.run({kind,planHash:plan.fingerprint},gen);
@@ -637,6 +651,7 @@ export class Controller {
     try{if(!this.deps.booking().playerConfigured)throw Error();}catch{throw Error('PLAYER_INFO_MISSING');}
     if(!this.deps.confirmPractice||!await this.deps.confirmPractice(parsed)||gen!==this.generation)return;
     await this.noLock();
+    this.markBrowserReady();
     this.state.operation='fullPractice';this.state.handoff=null;this.state.selection=null;this.state.inspection=null;
     this.state.headline='Full Flow Practice running';this.state.detail='Exact target, immediate start. Automation stops at QR Checkout.';this.publish();
     await this.run({kind:'fullPractice',input:parsed},gen);
@@ -652,7 +667,7 @@ export class Controller {
     if(command.kind==='dualFullPractice')requireDualFullAuthorization(command.input);
     await this.noLock();
     if(command.kind==='dualFullPractice'&&(!this.deps.confirmDualPractice||!await this.deps.confirmDualPractice(command)||gen!==this.generation))return;
-    await this.noLock();this.state.dualActive=true;this.state.dualResult=null;this.state.dualWorkers={};
+    await this.noLock();this.markBrowserReady();this.state.dualActive=true;this.state.dualResult=null;this.state.dualWorkers={};
     this.state.headline=command.kind==='dualFullPractice'?'TWO REAL TEMPORARY HOLDS AUTHORIZED':'Dual practice running';this.publish();
     await this.run(command,gen);
     if(!this.state.dualResult)throw Error('DUAL_RESULT_MISSING');
@@ -660,6 +675,7 @@ export class Controller {
   runPractice(input:unknown) { return this.operation('practice', async gen => {
     const parsed=PracticeSchema.parse(input); await this.noLock();this.state.selection=null;this.state.inspection=null;
     this.state.headline='Safe practice running';this.state.detail='Select → verify → deselect → verify clean. Never Proceed.';
+    this.markBrowserReady();
     await this.run({kind:'practice',input:parsed},gen);
     this.state.headline='Practice complete';this.state.detail='Selection verified and cleared. Proceed was never clicked.';
   }); }
