@@ -10,6 +10,7 @@ import type { Command, Dashboard } from './types.js';
 import type { ActivityJournal } from './activity-journal.js';
 import { randomUUID } from 'node:crypto';
 import type { readClock } from './status.js';
+import type { RetainedHoldStatus } from './status.js';
 import type { BookingView } from './booking.js';
 import { PracticeSchema } from '../src/practice.js';
 import { BookingSetupSchema } from '../src/config.js';
@@ -22,7 +23,7 @@ import {scheduledReleaseContext,type ScheduledReleaseContext} from '../src/sched
 const preparationHeadlines:Record<string,string>={EXTENDED_PLAYER_INFO_MISSING:'EXTENDED PLAYER REQUIRED',PLAYER_INFO_MISSING:'PLAYER CONFIGURATION REQUIRED',TARGET_DATE_UNAVAILABLE:'TARGET NOT AVAILABLE',TARGET_NOT_AVAILABLE:'TARGET NOT AVAILABLE',PAYMENT_HOLD_MAY_BE_ACTIVE:'PAYMENT HOLD ACTIVE',LOCK_PID_RUNNING:'AUTOMATION STILL RUNNING',TODAYS_RELEASE_PASSED:"TODAY'S RELEASE HAS PASSED",CHROME_NOT_INSTALLED:'CHROME NOT INSTALLED',CHROME_START_TIMEOUT:'DEDICATED CHROME DID NOT START',CHROME_START_FAILED:'DEDICATED CHROME DID NOT START',CDP_ENDPOINT_UNAVAILABLE:'DEDICATED CHROME UNAVAILABLE',ONDA_TAB_AMBIGUOUS_OR_MISSING:'ONDA TAB NOT READY',WRONG_VENUE:'WRONG VENUE'};
 const errors: Record<string, string> = {
   EXTENDED_DURATION_LIMIT:'Extended two-browser booking currently supports up to 6 consecutive hours.',
-  PAYMENT_HOLD_MAY_BE_ACTIVE:'PAYMENT HOLD MAY BE ACTIVE. Reset & Prepare checked every required browser but could not prove a clean schedule with zero selections and no hold.',
+  PAYMENT_HOLD_MAY_BE_ACTIVE:'A retained payment hold may still be active. Reset & Prepare cannot clear it until its timer has elapsed and the browser is verified clean.',
   TARGET_NOT_AVAILABLE:'TARGET NOT AVAILABLE. No booking was created.',
   LOCK_PID_RUNNING:'AUTOMATION STILL RUNNING. Stop the external run first, then Reset & Prepare.',
   AUTOMATION_STILL_RUNNING:'AUTOMATION STILL RUNNING. Stop the external run first, then Reset & Prepare.',
@@ -81,6 +82,7 @@ export interface Dependencies {
   confirmBooking?:(plan:BookingPlan,maximum:number)=>Promise<boolean>;
   confirmApiTest?:(input:{strategy:'standard'|'extended';date:string;start:string;duration:number;courtCount:1|2;maximum:number;priority:number[]})=>Promise<boolean>;
   runner: Runner; lock(): Promise<boolean>; cdp(): Promise<boolean>; clock: typeof readClock;
+  retainedHold?():Promise<RetainedHoldStatus|null>;
   browserHealth?():Promise<{A:boolean;B:boolean}>;
   playerStatus?():{primary:boolean;extended:boolean;primaryDetails?:{fullName:string;phone:string;email:string};extendedDetails?:{fullName:string;phone:string;email:string}};
   confirm(kind?: 'observe'|'selection'|'dry'|'full', plan?:BookingView): Promise<boolean>; publish(status: Dashboard): void;
@@ -138,6 +140,36 @@ export class Controller {
   }
   private publish() { this.deps.publish(structuredClone(this.state)); }
   private clearApiStage() { this.state.apiStage=null; }
+  private holdDetail(hold:RetainedHoldStatus){
+    if(!hold.expiresAt)return 'A retained checkout lock has no verified expiry. Inspect the Onda browser and use Review Lock; no new test can start.';
+    const until=new Date(hold.expiresAt).toLocaleString('en-GB',{timeZone:'Asia/Manila',dateStyle:'medium',timeStyle:'medium'});
+    return hold.remainingSeconds!>0?`A previous payment hold is recorded until ${until} Manila (${Math.floor(hold.remainingSeconds!/60)}:${String(hold.remainingSeconds!%60).padStart(2,'0')} remaining). Payment remains manual. Reset & Prepare can recheck after expiry.`:
+      `The recorded hold timer elapsed at ${until} Manila. Reset & Prepare will verify the browser, selected slots, and old worker before clearing the stale lock.`;
+  }
+  private async reconcileLockForApiPrepare(generation:number,input:PreparationInput){
+    if(!await this.deps.lock())return;
+    const hold=await this.deps.retainedHold?.();
+    if(hold&&hold.remainingSeconds!==0){this.state.headline='PAYMENT HOLD ACTIVE';this.state.detail=this.holdDetail(hold);this.log(this.state.detail,true);throw Error('PAYMENT_HOLD_MAY_BE_ACTIVE');}
+    if(!this.deps.reviewLock||!this.deps.clearLock)throw Error('LOCK_BROWSER_STATE_UNKNOWN');
+    this.state.headline='CHECKING RETAINED SESSION';this.state.detail='Checking the old worker, Onda browser, selected slots, and payment hold before API preparation.';this.log(this.state.detail);
+    const review=await this.deps.reviewLock(false);this.state.lockReview=review;
+    if(review.reason==='USE_RESET_AND_PREPARE'){
+      this.log('Extended retained session requires both browsers to be checked by Reset & Prepare.');
+      await this.run({kind:'resetPrepare',input},generation);
+      await this.noLock();this.state.lockReview=null;this.state.handoff=null;
+      this.log('Extended retained session verified clean. Continuing API preparation.');
+      return;
+    }
+    if(!review.canClear){
+      this.state.headline=review.reason==='LOCK_PID_RUNNING'?'AUTOMATION STILL RUNNING':review.reason==='LOCK_PAYMENT_HOLD_ACTIVE'?'PAYMENT HOLD ACTIVE':'ONDA NEEDS ATTENTION';
+      this.state.detail=errors[review.reason]??`Retained lock cannot be cleared: ${review.reason}. Inspect Onda and use Review Lock.`;
+      this.log(this.state.detail,true);throw Error(review.reason);
+    }
+    await this.deps.clearLock(review.fingerprint,()=>!!this.active||generation!==this.generation);
+    this.state.lockReview=null;this.state.handoff=null;this.state.lock=false;
+    this.log('Expired hold and stale lock verified clean and cleared. Continuing API preparation.');
+    await this.noLock();
+  }
   private beginRun(label:string) {
     const at=new Date().toISOString();
     const journal=this.deps.activityJournal?.begin(label,at);
@@ -170,6 +202,7 @@ export class Controller {
       const wasReady = this.state.ready;
       const [lock, health] = await Promise.all([this.deps.lock(), this.deps.browserHealth?this.deps.browserHealth():this.deps.cdp().then(A=>({A,B:A}))]);
       this.state.lock = lock; this.state.browserHealth=health;this.state.cdp = health.A;this.state.playerStatus=this.players();
+      const retained=lock&&this.state.operation==='idle'?await this.deps.retainedHold?.():null;
       if(lock&&!this.state.handoff&&this.state.operation==='idle'&&this.deps.handoff){
         this.state.handoff=await this.deps.handoff();
         if(this.state.handoff){this.state.headline='Payment handoff recorded';this.state.detail='Automation stopped. Lock retained. Check the last observed hold and complete payment manually in Chrome.';}
@@ -192,6 +225,9 @@ export class Controller {
       if (wasReady && !this.state.ready && this.state.operation === 'idle') {
         this.state.headline = 'Preparation needs rechecking';
         this.state.detail = lock ? errors.AUTOMATION_LOCK_EXISTS! : required.some(id=>!health[id]) ? 'A required browser disconnected. Press Reset & Prepare again.' : !this.state.clock?.canArmToday ? errors.TODAYS_RELEASE_PASSED! : errors.RESET_REQUIRED!;
+      }
+      if(retained&&['RESET REQUIRED','Preparation needs rechecking','PAYMENT HOLD ACTIVE','API BROWSER READY','API READY TO TEST','HOLD TIMER ELAPSED'].includes(this.state.headline)){
+        this.state.headline=retained.remainingSeconds===0?'HOLD TIMER ELAPSED':'PAYMENT HOLD ACTIVE';this.state.detail=this.holdDetail(retained);
       }
       this.publish();
     } finally { this.polling = false; }
@@ -294,7 +330,8 @@ export class Controller {
         else if(!hadSpecificFailure)this.state.headline = 'Needs attention';
         if(code==='HANDOFF_STATUS_UNKNOWN')this.state.detail='DO NOT START ANOTHER BOOKING. CHECK CHROME MANUALLY. Lock retained; final action is never retried.';
         else if(code==='BOOKING_SETTINGS_INVALID')this.state.detail ||= 'Check the highlighted booking fields and press Reset & Prepare again.';
-        else if (code !== 'COMMAND_FAILED') this.state.detail = errors[code] ?? code;
+        else if(code==='PAYMENT_HOLD_MAY_BE_ACTIVE'&&this.state.headline==='PAYMENT HOLD ACTIVE'){}
+        else if (code !== 'COMMAND_FAILED'&&!['ONDA NEEDS ATTENTION','AUTOMATION STILL RUNNING'].includes(this.state.headline)) this.state.detail = errors[code] ?? code;
         else if (!hadSpecificFailure) this.state.detail = 'The command failed. See the sanitized process output in Activity.';
         if(preparationHeadlines[code])this.state.headline=preparationHeadlines[code]!;
         this.log(code, true);
@@ -360,6 +397,7 @@ export class Controller {
             throw Error('API_FIRST_COURT_COUNT_UNSUPPORTED');
           const players=this.players();if(!players.primary)throw Error('PLAYER_INFO_MISSING');
           if(input.request.strategy==='extended'&&!players.extended)throw Error('EXTENDED_PLAYER_INFO_MISSING');
+          await this.reconcileLockForApiPrepare(gen,input);
           const fingerprint=expectedPreparationFingerprint(input);
           this.state.workflow='test';this.state.headline='PREPARING API BROWSER';this.publish();
           await this.run({kind:'apiRun',mode:'prepare',date:input.request.date,fingerprint,
@@ -381,6 +419,7 @@ export class Controller {
                release.setup.BOOKING_TYPE==='extended'&&![1,2].includes(release.setup.COURT_COUNT))
                throw Error('API_FIRST_COURT_COUNT_UNSUPPORTED');
              if(release.setup.BOOKING_TYPE==='extended'&&!release.extendedPlayerConfigured)throw Error('EXTENDED_PLAYER_INFO_MISSING');
+             await this.reconcileLockForApiPrepare(gen,input);
              this.state.workflow='release';this.state.headline='PREPARING API BROWSER';this.publish();
              await this.run({kind:'apiRun',mode:'prepare',date:release.targetDate,fingerprint:release.fingerprint},gen);
              this.state.apiFirstReady=true;this.state.ready=true;this.state.headline='API BROWSER READY';

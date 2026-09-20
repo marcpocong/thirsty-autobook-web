@@ -8,6 +8,41 @@ import type { Runner } from '../ui/processes.js';
 import type { Command } from '../ui/types.js';
 
 describe('API-first UI boundary', () => {
+  it('makes Reset & Prepare respect an active QR hold and recover a verified expired stale lock',async()=>{
+    const view=bookingView(ConfigSchema.parse({...defaultSetup,PLAYER_FULL_NAME:'Fixture Player',PLAYER_PHONE:'09123456789',PLAYER_EMAIL:'fixture@example.invalid'}));
+    const calls:Command[]=[];let locked=true;
+    let remainingSeconds=120;
+    const expiresAt=new Date(Date.now()+120000).toISOString();
+    const runner:Runner=command=>{calls.push(command);return {pid:1,done:Promise.resolve(0),stop:async()=>undefined};};
+    const controller=new Controller({runner,lock:async()=>locked,retainedHold:async()=>({stage:'HOLD_VERIFIED',expiresAt,remainingSeconds}),
+      reviewLock:async()=>({runID:'fixture',pid:1,alive:false,owned:false,fingerprint:'fixture',verifiedAt:new Date().toISOString(),reason:'VERIFIED_STALE_LOCK',canClear:true,page:'Schedule',selected:0,hold:'Not detected',clean:true}),
+      clearLock:async fingerprint=>{expect(fingerprint).toBe('fixture');locked=false;},
+      cdp:async()=>true,browserHealth:async()=>({A:true,B:false}),playerStatus:()=>({primary:true,extended:false}),
+      clock:()=>clockStatus(ObservationSchema.parse({}),DateTime.fromISO('2026-09-21T08:00:00+08:00')),
+      confirm:async()=>true,publish:()=>undefined,booking:()=>view,saveBooking:()=>view});
+    const input={workflow:'test' as const,method:'api-first' as const,request:{strategy:'standard' as const,date:'2026-09-22',start:'12:00',duration:1,courtCount:1 as const,priority:[7,6,5,4,3,2,1],fallbackStarts:[]},maximum:1200};
+    await controller.resetPrepare(input);
+    expect(calls).toEqual([]);expect(controller.state).toMatchObject({headline:'PAYMENT HOLD ACTIVE',ready:false,lock:true});
+    expect(controller.state.detail).toContain('remaining');
+    remainingSeconds=0;
+    await controller.resetPrepare(input);
+    expect(calls).toHaveLength(1);expect(calls[0]).toMatchObject({kind:'apiRun',mode:'prepare'});
+    expect(controller.state).toMatchObject({headline:'API READY TO TEST',ready:true,lock:false});
+  });
+  it('routes an Extended retained lock through the existing two-browser reset checks before API preparation',async()=>{
+    const view=bookingView(ConfigSchema.parse({...defaultSetup,PLAYER_FULL_NAME:'Fixture Player',PLAYER_PHONE:'09123456789',PLAYER_EMAIL:'fixture@example.invalid'}));
+    const calls:Command[]=[];let locked=true;
+    const runner:Runner=command=>{calls.push(command);if(typeof command==='object'&&command.kind==='resetPrepare')locked=false;return {pid:1,done:Promise.resolve(0),stop:async()=>undefined};};
+    const controller=new Controller({runner,lock:async()=>locked,retainedHold:async()=>null,
+      reviewLock:async()=>({runID:'fixture',pid:1,alive:false,owned:false,fingerprint:'fixture',verifiedAt:new Date().toISOString(),reason:'USE_RESET_AND_PREPARE',canClear:false,page:'Unknown',selected:null,hold:'Unknown',clean:false}),
+      clearLock:async()=>{throw Error('UNEXPECTED_DIRECT_CLEAR');},
+      cdp:async()=>true,browserHealth:async()=>({A:true,B:true}),playerStatus:()=>({primary:true,extended:true}),
+      clock:()=>clockStatus(ObservationSchema.parse({}),DateTime.fromISO('2026-09-21T08:00:00+08:00')),
+      confirm:async()=>true,publish:()=>undefined,booking:()=>view,saveBooking:()=>view});
+    await controller.resetPrepare({workflow:'test',method:'api-first',request:{strategy:'extended',date:'2026-09-22',start:'12:00',duration:4,courtCount:2,priority:[7,6,5,4,3,2,1],fallbackStarts:[]},maximum:4800});
+    expect(calls.map(command=>typeof command==='string'?command:command.kind),controller.state.detail).toEqual(['resetPrepare','apiRun']);
+    expect(controller.state).toMatchObject({headline:'API READY TO TEST',ready:true,lock:false});
+  });
   it('prepares the API browser and sends an explicit non-submitting dry run to the real runner', async () => {
     const view = bookingView(ConfigSchema.parse({ ...defaultSetup, BOOKING_METHOD: 'api-first', PLAYER_FULL_NAME: 'Fixture Player', PLAYER_PHONE: '09123456789', PLAYER_EMAIL: 'fixture@example.invalid' }));
     const calls: Command[] = [];
