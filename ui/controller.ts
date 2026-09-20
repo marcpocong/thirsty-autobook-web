@@ -360,8 +360,8 @@ export class Controller {
     this.publish();
     await this.run({kind:'apiRun',mode:'dry',date,fingerprint:plan.fingerprint},gen);
     if(gen!==this.generation)return;
-    this.state.headline='API DRY RUN COMPLETE';
-    this.state.detail='A live API candidate was planned with checkout submission blocked. Review the candidate in Activity.';
+    this.state.headline='API AVAILABILITY CHECK COMPLETE';
+    this.state.detail='A currently available candidate was found using the saved booking preferences. No hold or booking was created. Review the candidate in Activity.';
   }); }
   startChrome() { return this.operation('chrome', async gen => {
     // The launcher only starts or reuses the dedicated browser; it does not
@@ -432,7 +432,7 @@ export class Controller {
              this.state.workflow='release';this.state.headline='PREPARING API BROWSER';this.publish();
              await this.run({kind:'apiRun',mode:'prepare',date:release.targetDate,fingerprint:release.fingerprint},gen);
              this.state.apiFirstReady=true;this.state.ready=true;this.state.headline='API BROWSER READY';
-             this.state.detail=`${release.setup.BOOKING_TYPE==='extended'?'Both API browsers are':'The API browser is'} ready. Use API Dry Run for a non-submitting check or authorize and arm the next release.`;
+             this.state.detail=`${release.setup.BOOKING_TYPE==='extended'?'Both API browsers are':'The API browser is'} ready. Check current API availability without creating a hold, or authorize and arm the next release.`;
              return;
            }
         }

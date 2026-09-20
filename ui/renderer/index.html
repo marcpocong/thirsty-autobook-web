@@ -57,7 +57,7 @@
     <section class="panel controls"><div class="section-title"><h2>Booking operations</h2><span class="small">PREPARE & ARM</span></div>
       <div class="button-row"><button id="chrome" class="secondary">Start / Attach Chrome</button><button id="inspect" class="secondary">Inspect Onda</button></div>
       <button id="prepare" class="prepare">Prepare Booking <span aria-hidden="true">→</span></button>
-      <div id="api-dry-controls" hidden><label>API dry-run date<input id="api-dry-date" type="date"></label><button id="api-preview" class="secondary">Run API Dry Run</button><p class="small">Uses saved court priority, hours and duration. Checkout submission is blocked.</p></div>
+      <div id="api-dry-controls" hidden><label>Availability date<input id="api-dry-date" type="date"></label><button id="api-preview" class="secondary">Check Current API Availability</button><p class="small">Checks the saved court priority, hours and duration against availability for this date. No hold or booking will be created.</p></div>
       <div class="readiness" id="readiness" role="status"><strong id="headline">Prepare your session</strong><p id="detail">Start dedicated Chrome, then verify the page before arming.</p></div>
       <p id="blocked-reason" class="small" role="status"></p><button id="arm" class="arm">Arm Booking Selection</button>
       <p class="small hint" id="arm-description">Explicit confirmation · selects at release · stops before Proceed</p>

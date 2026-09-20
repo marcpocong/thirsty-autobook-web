@@ -68,7 +68,7 @@ describe('API-first UI boundary', () => {
     expect(controller.state).toMatchObject({ ready: true, apiFirstReady: true, headline: 'API BROWSER READY' });
     await controller.apiPreview(view.targetDate);
     expect(calls.at(-1)).toEqual({ kind: 'apiRun', mode: 'dry', date: view.targetDate, fingerprint: view.fingerprint });
-    expect(controller.state.headline).toBe('API DRY RUN COMPLETE');
+    expect(controller.state.headline).toBe('API AVAILABILITY CHECK COMPLETE');
   });
 
   it('uses the same API runner for a saved release plan with only an exact release wait added',async()=>{
