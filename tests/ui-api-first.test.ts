@@ -56,18 +56,21 @@ describe('API-first UI boundary', () => {
     expect(controller.state).toMatchObject({headline:'API READY TO TEST',ready:true,lock:false});
   });
   it('prepares the API browser and sends an explicit non-submitting dry run to the real runner', async () => {
-    const view = bookingView(ConfigSchema.parse({ ...defaultSetup, BOOKING_METHOD: 'api-first', PLAYER_FULL_NAME: 'Fixture Player', PLAYER_PHONE: '09123456789', PLAYER_EMAIL: 'fixture@example.invalid' }));
+    const view = bookingView(ConfigSchema.parse({ ...defaultSetup, PLAYER_FULL_NAME: 'Fixture Player', PLAYER_PHONE: '09123456789', PLAYER_EMAIL: 'fixture@example.invalid' }));
     const calls: Command[] = [];
     const runner: Runner = command => { calls.push(command); return { pid: 1, done: Promise.resolve(0), stop: async () => undefined }; };
     const controller = new Controller({ runner, lock: async () => false, cdp: async () => true,
       browserHealth: async () => ({ A: true, B: false }),
       clock: () => ({ ...clockStatus(ObservationSchema.parse({}), DateTime.fromISO('2026-09-17T07:00:00+08:00')), releaseMs: view.releaseMs, targetDate: view.targetDate }),
       confirm: async () => true, publish: () => undefined, booking: () => view, saveBooking: () => view });
-    await controller.resetPrepare({ workflow: 'release', strategy: 'standard', setup: view.setup });
-    expect(calls).toEqual([{ kind: 'apiRun', mode: 'prepare', date: view.targetDate, fingerprint: view.fingerprint }]);
-    expect(controller.state).toMatchObject({ ready: true, apiFirstReady: true, headline: 'API BROWSER READY' });
-    await controller.apiPreview(view.targetDate);
-    expect(calls.at(-1)).toEqual({ kind: 'apiRun', mode: 'dry', date: view.targetDate, fingerprint: view.fingerprint });
+    const preparation = { workflow: 'test' as const, method: 'api-first' as const, request: { strategy: 'standard' as const,
+      date: '2026-09-20', start: '12:00', duration: 1, courtCount: 1 as const,
+      priority: [7, 6, 5, 4, 3, 2, 1], fallbackStarts: ['13:00'] }, maximum: 1200 };
+    await controller.resetPrepare(preparation);
+    expect(calls[0]).toMatchObject({ kind: 'apiRun', mode: 'prepare', date: preparation.request.date, preferences: { start: '12:00', duration: 1 } });
+    expect(controller.state).toMatchObject({ workflow: 'test', ready: true, apiFirstReady: true, headline: 'API READY TO TEST' });
+    await controller.apiPreview(preparation.request.date);
+    expect(calls.at(-1)).toMatchObject({ kind: 'apiRun', mode: 'dry', date: preparation.request.date, preferences: { start: '12:00', duration: 1 } });
     expect(controller.state.headline).toBe('API AVAILABILITY CHECK COMPLETE');
   });
 
@@ -81,7 +84,10 @@ describe('API-first UI boundary', () => {
         clock:()=>({...clockStatus(ObservationSchema.parse({}),DateTime.fromISO('2026-09-21T07:00:00+08:00')),releaseMs:Date.parse('2026-09-21T08:00:00+08:00'),targetDate:view.targetDate}),
         startSleepProtection:()=>{started.push(77);return 77;},stopSleepProtection:id=>{stopped.push(id);},
         confirm:async()=>true,publish:()=>undefined,booking:()=>view,saveBooking:()=>view});
-      await controller.resetPrepare({workflow:'release',strategy:'standard',setup:view.setup});await controller.authorizeTerms(true);await controller.armFullBooking();
+      await controller.resetPrepare({workflow:'release',strategy:'standard',setup:view.setup});
+      const preparedCallCount=calls.length;await controller.apiPreview(view.targetDate);
+      expect(calls).toHaveLength(preparedCallCount);expect(controller.state.detail).toBe('RESET REQUIRED. Press Reset & Prepare for these settings.');
+      await controller.authorizeTerms(true);await controller.armFullBooking();
       expect(calls).toEqual([{kind:'apiRun',mode:'prepare',date:view.targetDate,fingerprint:view.fingerprint},
         {kind:'apiRun',mode:'live',date:view.targetDate,fingerprint:view.fingerprint,releaseMs:Date.parse('2026-09-21T08:00:00+08:00')}]);
       expect(started).toEqual([77]);expect(stopped).toEqual([77]);expect(controller.state.sleepProtection).toBe(false);

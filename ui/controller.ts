@@ -6,7 +6,7 @@ import {FullPracticeSchema,type FullPracticeInput} from '../src/full-practice.js
 import type {LockReview} from './locks.js';
 import type { UiEvent } from '../src/ui-events.js';
 import type { Runner, RunningCommand } from './processes.js';
-import type { Command, Dashboard } from './types.js';
+import type { ApiRunPreferences, Command, Dashboard } from './types.js';
 import type { ActivityJournal } from './activity-journal.js';
 import { randomUUID } from 'node:crypto';
 import type { readClock } from './status.js';
@@ -110,6 +110,7 @@ export class Controller {
   private sleepBlockerId?:number;
   private apiTestFingerprint?:string;
   private apiTestStrategy?:'standard'|'extended';
+  private apiTestPreferences?:ApiRunPreferences;
   private polling = false;
   private runStartedMono = 0;
   private lastLogMono = 0;
@@ -121,7 +122,7 @@ export class Controller {
     if(!parsed.success){this.state.headline='BOOKING SETTINGS NEED ATTENTION';this.state.detail=`Check the highlighted booking fields and press Reset & Prepare again.\n${bookingSetupProblem(repaired.setup)??'The current Release booking settings are invalid.'}`;throw Error('BOOKING_SETTINGS_INVALID');}
     return {setup:parsed.data,reconciliation:repaired.reconciliation};
   }
-  private clearPreparation(){this.state.preparedContext=null;this.state.preparedAt=undefined;this.state.apiFirstReady=false;this.apiTestFingerprint=undefined;this.apiTestStrategy=undefined;this.state.ready=false;this.state.termsAuthorized=false;}
+  private clearPreparation(){this.state.preparedContext=null;this.state.preparedAt=undefined;this.state.apiFirstReady=false;this.apiTestFingerprint=undefined;this.apiTestStrategy=undefined;this.apiTestPreferences=undefined;this.state.ready=false;this.state.termsAuthorized=false;}
   private stopSleepProtection(){if(this.sleepBlockerId!==undefined)this.deps.stopSleepProtection?.(this.sleepBlockerId);this.sleepBlockerId=undefined;this.state.sleepProtection=false;}
   private clearScheduled(){if(this.scheduledTimer)clearTimeout(this.scheduledTimer);this.scheduledTimer=undefined;this.state.scheduledRelease=null;this.state.scheduleStatus=null;this.stopSleepProtection();}
   async cancelScheduledRelease(reason='SCHEDULE CANCELLED'){
@@ -352,13 +353,12 @@ export class Controller {
   private async noLock() { this.state.lock = await this.deps.lock(); if (this.state.lock) throw new Error('AUTOMATION_LOCK_EXISTS'); }
   apiPreview(value:unknown) { const date=z.iso.date().parse(value); return this.operation('apiPreview', async gen => {
     await this.noLock();
-    const plan=this.deps.booking();
-    if(plan.setup.BOOKING_METHOD!=='api-first') throw Error('API_FIRST_METHOD_REQUIRED');
-    this.state.booking=plan;
+    const fingerprint=this.apiTestFingerprint,preferences=this.apiTestPreferences;
+    if(this.state.workflow!=='test'||!this.state.apiFirstReady||!fingerprint||!preferences||date!==preferences.date)throw Error('RESET_REQUIRED');
     this.state.headline='RETRIEVING API AVAILABILITY';
-    this.state.detail='Read-only API availability is being checked without waiting for the visual calendar.';
+    this.state.detail='The current Test Now plan is being checked without creating a hold or booking.';
     this.publish();
-    await this.run({kind:'apiRun',mode:'dry',date,fingerprint:plan.fingerprint},gen);
+    await this.run({kind:'apiRun',mode:'dry',date,fingerprint,preferences},gen);
     if(gen!==this.generation)return;
     this.state.headline='API AVAILABILITY CHECK COMPLETE';
     this.state.detail='A currently available candidate was found using the saved booking preferences. No hold or booking was created. Review the candidate in Activity.';
@@ -409,10 +409,10 @@ export class Controller {
           await this.reconcileLockForApiPrepare(gen,input);
           const fingerprint=expectedPreparationFingerprint(input);
           this.state.workflow='test';this.state.headline='PREPARING API BROWSER';this.publish();
-          await this.run({kind:'apiRun',mode:'prepare',date:input.request.date,fingerprint,
-            preferences:{strategy:input.request.strategy,date:input.request.date,start:input.request.start,duration:input.request.duration,courtCount:input.request.courtCount,
-              maximum:input.maximum,priority:input.request.priority,fallbackStarts:input.request.fallbackStarts,...(input.request.exact?{exact:input.request.exact}:{})}},gen);
-          this.apiTestFingerprint=fingerprint;this.apiTestStrategy=input.request.strategy;this.state.apiFirstReady=true;this.state.ready=true;
+          const preferences:ApiRunPreferences={strategy:input.request.strategy,date:input.request.date,start:input.request.start,duration:input.request.duration,courtCount:input.request.courtCount,
+            maximum:input.maximum,priority:input.request.priority,fallbackStarts:input.request.fallbackStarts,...(input.request.exact?{exact:input.request.exact}:{})};
+          await this.run({kind:'apiRun',mode:'prepare',date:input.request.date,fingerprint,preferences},gen);
+          this.apiTestFingerprint=fingerprint;this.apiTestStrategy=input.request.strategy;this.apiTestPreferences=preferences;this.state.apiFirstReady=true;this.state.ready=true;
           this.state.headline='API READY TO TEST';
           this.state.detail=`${input.request.strategy==='extended'?'Both dedicated API browsers are':'The dedicated API browser is'} open and remain${input.request.strategy==='extended'?'':'s'} visible. Authorize Terms, then Run Test to QR.`;
           return;
@@ -432,7 +432,7 @@ export class Controller {
              this.state.workflow='release';this.state.headline='PREPARING API BROWSER';this.publish();
              await this.run({kind:'apiRun',mode:'prepare',date:release.targetDate,fingerprint:release.fingerprint},gen);
              this.state.apiFirstReady=true;this.state.ready=true;this.state.headline='API BROWSER READY';
-             this.state.detail=`${release.setup.BOOKING_TYPE==='extended'?'Both API browsers are':'The API browser is'} ready. Check current API availability without creating a hold, or authorize and arm the next release.`;
+             this.state.detail=`${release.setup.BOOKING_TYPE==='extended'?'Both API browsers are':'The API browser is'} ready. Authorize Terms, then arm the next release.`;
              return;
            }
         }
