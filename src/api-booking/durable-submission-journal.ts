@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, open, readFile, rename } from 'node:fs/promises';
+import { mkdir, open, readFile, rename, rmdir } from 'node:fs/promises';
 import { resolve, join, dirname } from 'node:path';
 import type { CheckoutDiagnostic } from './checkout-diagnostics.js';
 
@@ -140,20 +140,31 @@ export class DurableSubmissionJournal {
 
   /** Preserve a verified, elapsed hold before permitting a new attempt for the same block. */
   async recycleExpiredVerified(key: string, now = new Date()): Promise<'unused' | 'reused' | 'blocked'> {
-    let record: SubmissionRecord;
-    try { record = await this.read(key); }
+    if (!/^[a-f0-9]{64}$/.test(key)) throw Error('SUBMISSION_KEY_INVALID');
+    const parent = dirname(resolve(this.directory));
+    const lockRoot = join(parent, 'recycle-locks'), lock = join(lockRoot, key);
+    await mkdir(lockRoot, { recursive: true, mode: 0o700 });
+    try { await mkdir(lock); }
     catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'unused';
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') return 'blocked';
       throw error;
     }
-    const expiries = record.observedResponse?.holdExpiresAt;
-    if (record.key !== key || record.attempt?.attemptId !== key || record.state !== 'verified' ||
-      !expiries?.length || expiries.length !== record.attempt.expectedBookingCount ||
-      !Number.isFinite(now.getTime()) || expiries.some(value => !Number.isFinite(Date.parse(value)) || Date.parse(value) > now.getTime()))
-      return 'blocked';
-    const archiveRoot = join(dirname(resolve(this.directory)), 'expired-holds');
-    await mkdir(archiveRoot, { recursive: true, mode: 0o700 });
-    await rename(resolve(this.directory), join(archiveRoot, `${key}-${now.toISOString().replace(/[:.]/g, '-')}-${randomUUID()}`));
-    return 'reused';
+    try {
+      let record: SubmissionRecord;
+      try { record = await this.read(key); }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'unused';
+        throw error;
+      }
+      const expiries = record.observedResponse?.holdExpiresAt;
+      if (record.key !== key || record.attempt?.attemptId !== key || record.state !== 'verified' ||
+        !expiries?.length || expiries.length !== record.attempt.expectedBookingCount ||
+        !Number.isFinite(now.getTime()) || expiries.some(value => !Number.isFinite(Date.parse(value)) || Date.parse(value) > now.getTime()))
+        return 'blocked';
+      const archiveRoot = join(parent, 'expired-holds');
+      await mkdir(archiveRoot, { recursive: true, mode: 0o700 });
+      await rename(resolve(this.directory), join(archiveRoot, `${key}-${now.toISOString().replace(/[:.]/g, '-')}-${randomUUID()}`));
+      return 'reused';
+    } finally { await rmdir(lock); }
   }
 }

@@ -51,6 +51,17 @@ describe('expired API hold reuse', () => {
     }finally{await cleanup(root);}
   });
 
+  it('archives a prior hold only once when two selectors race for the same key', async () => {
+    const root=await mkdtemp(join(tmpdir(),'thirsty-recycle-race-'));
+    try {
+      const directory=join(root,key),journal=new DurableSubmissionJournal(directory);
+      await mkdir(directory);await writeFile(join(directory,`${key}.json`),JSON.stringify(record('verified',['2026-09-21T03:59:59.000Z'])));
+      const outcomes=await Promise.all([journal.recycleExpiredVerified(key,now),journal.recycleExpiredVerified(key,now)]);
+      expect(outcomes.filter(value=>value==='reused')).toHaveLength(1);
+      expect((await readdir(join(root,'expired-holds')))).toHaveLength(1);
+    }finally{await cleanup(root);}
+  });
+
   it.each([
     ['active', 'verified', ['2026-09-21T04:00:01.000Z']],
     ['unknown', 'unknown', ['2026-09-21T03:59:59.000Z']],
