@@ -98,7 +98,7 @@ function validatePreference(p: Preference) {
 // The initial snapshot is the exact validated release snapshot; subsequent reads occur only
 // to verify clicks or resolve a bounded conflict. This function never invokes Proceed.
 export async function selectResolvedPreference(port: SelectionPort, targetDate: string, initial: Snapshot, preferences: Preference[], maximumPrice: number, maximumAttempts: number, safety: Safety, t: Telemetry, discovery?: CandidateDiscovery): Promise<SelectionResult> {
-  if (!Number.isInteger(maximumAttempts) || maximumAttempts < 1 || maximumAttempts > 5 || !Number.isFinite(maximumPrice) || maximumPrice <= 0) throw new Error('INVALID_SELECTION_LIMIT');
+  if (!Number.isInteger(maximumAttempts) || maximumAttempts < 1 || maximumAttempts > 5) throw new Error('INVALID_SELECTION_LIMIT');
   preferences.forEach(validatePreference);
   t.mark('selectionInitialGridValidationStarted');
   let cells:Cell[];

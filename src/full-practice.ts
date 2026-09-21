@@ -6,7 +6,7 @@ import { navigateDate, snapshot, validateSnapshot, resolvePreference } from './g
 import { selectionPort, selectResolvedPreference } from './selection.js';
 import type { Safety } from './safety.js';
 import type { Telemetry } from './telemetry.js';
-export const FullPracticeSchema = z.object({ target: PracticeSchema, maximum: z.number().finite().positive(), authorizeTerms: z.literal(true) }).strict();
+export const FullPracticeSchema = z.object({ target: PracticeSchema, maximum: z.number().optional(), authorizeTerms: z.literal(true) }).strict();
 export type FullPracticeInput = z.infer<typeof FullPracticeSchema>;
 export async function selectExactPractice(page:Page,input:FullPracticeInput,safety:Safety,t:Telemetry){
   const parsed=FullPracticeSchema.parse(input), target=parsed.target;
@@ -20,5 +20,5 @@ export async function selectExactPractice(page:Page,input:FullPracticeInput,safe
   const grid=await snapshot(page), cells=validateSnapshot(grid,target.date);
   const exact={court:target.court,hours:expandHours(target.start,target.duration)};
   if(!resolvePreference(cells,[exact]))throw Error('PRACTICE_TARGET_UNAVAILABLE');
-  return selectResolvedPreference(port,target.date,grid,[exact],parsed.maximum,1,safety,t);
+  return selectResolvedPreference(port,target.date,grid,[exact],parsed.maximum??Infinity,1,safety,t);
 }

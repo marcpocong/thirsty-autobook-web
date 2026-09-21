@@ -12,19 +12,47 @@ let timingReadyInitialMs=0;
 let dirty=false, loadedPlan='';
 let courtOrder=[7,6,5,4,3,2,1], fallbackTimes:string[]=[];
 const input=(id:string)=>byId(id) as HTMLInputElement;
-let workflow:'test'|'release'='test';
-interface FormDraft {method:'browser'|'hybrid'|'api-first';strategy:'standard'|'extended';date:string;courtCount:1|2;start:string;duration:number;maximum:number;attempts:number;courtOrder:number[];fallbackTimes:string[];exactA:string;exactB:string}
+let workflow:'test'|'release'='release';
+type View = 'release'|'plan'|'tests'|'runs';
+let currentView:View='release';
+interface FormDraft {method:'browser'|'hybrid'|'api-first';strategy:'standard'|'extended';date:string;courtCount:1|2;start:string;duration:number;attempts:number;courtOrder:number[];fallbackTimes:string[];exactA:string;exactB:string}
 let testDraft:FormDraft|undefined,releaseDraft:FormDraft|undefined,testDirty=false,releaseDirty=false;
 let releaseAdjustment:FallbackReconciliation|undefined;
 byId('simple-status').append(byId('readiness'));
-byId('simple-status').before(document.querySelector('.hero')!);
-byId('simple-status').after(document.querySelector('.activity')!);
 const primary=byId('primary-actions');
 primary.prepend(byId('prepare'),byId('terms').parentElement!);
 primary.append(byId('api-dry-controls'),byId('arm'),byId('blocked-reason'),byId('selection-result'),byId('handoff-result'));
-byId('release-schedule').after(primary);
 const advanced=byId('advanced-extra');
-advanced.append(byId('lock-card'),document.querySelector('.mode-options')!,document.querySelector('.editors')!,byId('attempts').parentElement!,byId('save-booking'),byId('edit-status'));
+advanced.append(document.querySelector('.mode-options')!);
+byId('setup-fields').append(document.querySelector('.editors')!,byId('attempts').parentElement!,byId('save-booking'),byId('edit-status'));
+const releaseView=byId('view-release'),planView=byId('view-plan'),testsView=byId('view-tests'),runsView=byId('view-runs');
+releaseView.prepend(byId('release-schedule'),byId('simple-status'));
+releaseView.append(byId('release-readiness-card'),primary);
+releaseView.querySelector('.release-action')!.after(byId('lock-card'));
+planView.append(document.querySelector('.setup')!);
+const testAction=testsView.querySelector('.test-action')!,testResults=byId('test-results');
+const releaseAction=releaseView.querySelector('.release-action')!;
+releaseAction.append(byId('terms').parentElement!);
+testsView.querySelector('.test-date-card')!.append(byId('test-date-label'));
+testAction.append(byId('test-booking'));
+byId('test-availability').append(byId('api-dry-controls'));
+runsView.append(document.querySelector('.run-history')!,document.querySelector('.activity')!,byId('previous-holds'),byId('advanced'));
+runsView.append(document.querySelector('.hero')!);
+const legacyControls=document.querySelector('.controls')!;
+runsView.querySelector('#advanced-extra')!.append(legacyControls.parentElement!,...document.querySelectorAll('main > .practice'),byId('performance-card'));
+function showView(view:View){
+  if(latest&&latest.operation!=='idle'&&latest.operation!=='scheduled'&&view!=='runs'&&!(view==='tests'&&workflow==='test'))return;
+  currentView=view;
+  for(const id of ['release','plan','tests','runs'] as const){byId(`view-${id}`).hidden=id!==view;document.querySelector(`[data-view="${id}"]`)!.setAttribute('aria-current',id===view?'page':'false');}
+  const nextWorkflow=view==='tests'?'test':view==='runs'?workflow:'release';
+  if(nextWorkflow!==workflow){storeDraft();workflow=nextWorkflow;if(workflow==='test'&&latest?.booking){const s=latest.booking.setup;applyDraft({method:s.BOOKING_METHOD,strategy:s.BOOKING_TYPE,date:testDraft?.date??input('test-date').value,courtCount:s.COURT_COUNT,start:s.START_TIME,duration:s.DURATION_HOURS,attempts:s.MAX_SELECTION_ATTEMPTS,courtOrder:[...s.PREFERRED_COURTS],fallbackTimes:[...s.FALLBACK_TIMES],exactA:'',exactB:''});testDirty=false;}if(workflow==='release'&&releaseDraft)applyDraft(releaseDraft);dirty=workflow==='test'?testDirty:releaseDirty;input('terms').checked=false;void window.thirsty.setWorkflow(workflow).then(()=>window.thirsty.getStatus()).then(render);}
+  const terms=byId('terms').parentElement!;
+  (view==='tests'?testAction:releaseAction).append(terms);
+  (view==='tests'?testResults:primary).append(byId('observed-price'),byId('selection-result'),byId('handoff-result'));
+  (view==='tests'?testsView:releaseView).append(byId('lock-card'));
+  if(latest)render(latest);
+}
+for(const button of document.querySelectorAll<HTMLButtonElement>('[data-view]'))button.onclick=()=>showView(button.dataset.view as View);
 input('test-date').value=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Manila',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 
 const friendly=(h:string)=>`${Number(h.slice(0,2))%12||12}:00 ${Number(h.slice(0,2))<12?'AM':'PM'}`;
@@ -38,8 +66,8 @@ input('full-date').value=input('practice-date').value;
 input('dual-date').value=input('practice-date').value;
 for(const id of ['dual-court-a','dual-court-b'])(byId(id) as HTMLSelectElement).replaceChildren(...Array.from({length:7},(_,i)=>new Option(`Court ${i+1}`,String(i+1))));
 input('dual-court-a').value='7';input('dual-court-b').value='6';
-function formDraft():FormDraft{return {method:input('booking-method').value as 'browser'|'hybrid'|'api-first',strategy:input('booking-type').value as 'standard'|'extended',date:input('test-date').value,courtCount:Number(input('court-count').value) as 1|2,start:input('start-time').value,duration:Number(input('duration').value),maximum:Number(input('maximum').value),attempts:Number(input('attempts').value),courtOrder:[...courtOrder],fallbackTimes:[...fallbackTimes],exactA:input('exact-a').value,exactB:input('exact-b').value};}
-function applyDraft(d:FormDraft){input('booking-method').value=d.method;input('booking-type').value=d.strategy;input('test-date').value=d.date;input('court-count').value=String(d.courtCount);input('start-time').value=d.start;input('duration').value=String(d.duration);input('maximum').value=String(d.maximum);input('attempts').value=String(d.attempts);courtOrder=[...d.courtOrder];fallbackTimes=[...d.fallbackTimes];input('exact-a').value=d.exactA;input('exact-b').value=d.exactB;editors();}
+function formDraft():FormDraft{return {method:input('booking-method').value as 'browser'|'hybrid'|'api-first',strategy:input('booking-type').value as 'standard'|'extended',date:input('test-date').value,courtCount:Number(input('court-count').value) as 1|2,start:input('start-time').value,duration:Number(input('duration').value),attempts:Number(input('attempts').value),courtOrder:[...courtOrder],fallbackTimes:[...fallbackTimes],exactA:input('exact-a').value,exactB:input('exact-b').value};}
+function applyDraft(d:FormDraft){input('booking-method').value=d.method;input('booking-type').value=d.strategy;input('test-date').value=d.date;input('court-count').value=String(d.courtCount);input('start-time').value=d.start;input('duration').value=String(d.duration);input('attempts').value=String(d.attempts);courtOrder=[...d.courtOrder];fallbackTimes=[...d.fallbackTimes];input('exact-a').value=d.exactA;input('exact-b').value=d.exactB;editors();}
 function storeDraft(){const d=formDraft();if(workflow==='test')testDraft=d;else releaseDraft=d;}
 function reconcileReleaseDraft(){
   if(workflow!=='release')return;
@@ -103,6 +131,7 @@ function render(state: Dashboard) {
   // still prepare the next exact target and its one-run Terms authorization.
   for(const id of ['practice-fields','full-practice-fields']) (byId(id) as HTMLFieldSetElement).disabled=busy;
   byId('lock-card').hidden=!state.lock;
+  byId('lock-note').textContent=state.canPrepareOverHold?'The previous payment hold remains recorded. Reset & Prepare can open a fresh schedule for another run in this bot. Payment stays manual.':'Booking actions are blocked. You can still edit and save your next booking plan locally.';
   (byId('review-lock') as HTMLButtonElement).disabled=busy;
   byId('clear-lock').hidden=!state.lockReview?.canClear;
   (byId('clear-lock') as HTMLButtonElement).disabled=busy;
@@ -126,7 +155,7 @@ function render(state: Dashboard) {
   byId('capability-status').textContent=`Selection ${state.capabilities.selectionReady?'ready':'unverified'} · checkout ${state.capabilities.checkoutReady?'verified':'unverified'} · payment handoff ${state.capabilities.paymentBoundaryReady?'verified':'unverified'}`;
   const b=state.booking;
   if(b){
-     if(!releaseDirty&&loadedPlan!==b.fingerprint){loadedPlan=b.fingerprint;releaseDraft={method:b.setup.BOOKING_METHOD??'browser',strategy:b.setup.BOOKING_TYPE??'standard',date:testDraft?.date??input('test-date').value,courtCount:b.setup.COURT_COUNT,start:b.setup.START_TIME,duration:b.setup.DURATION_HOURS,maximum:b.setup.MAX_PRICE,attempts:b.setup.MAX_SELECTION_ATTEMPTS,courtOrder:[...b.setup.PREFERRED_COURTS],fallbackTimes:[...b.setup.FALLBACK_TIMES],exactA:'',exactB:''};if(b.fallbackReconciliation.removed.length){releaseAdjustment=b.fallbackReconciliation;releaseDirty=true;}if(workflow==='release'){applyDraft(releaseDraft);dirty=releaseDirty;}}
+     if(!releaseDirty&&loadedPlan!==b.fingerprint){loadedPlan=b.fingerprint;releaseDraft={method:b.setup.BOOKING_METHOD??'browser',strategy:b.setup.BOOKING_TYPE??'standard',date:testDraft?.date??input('test-date').value,courtCount:b.setup.COURT_COUNT,start:b.setup.START_TIME,duration:b.setup.DURATION_HOURS,attempts:b.setup.MAX_SELECTION_ATTEMPTS,courtOrder:[...b.setup.PREFERRED_COURTS],fallbackTimes:[...b.setup.FALLBACK_TIMES],exactA:'',exactB:''};if(b.fallbackReconciliation.removed.length){releaseAdjustment=b.fallbackReconciliation;releaseDirty=true;}if(workflow==='release'){applyDraft(releaseDraft);dirty=releaseDirty;}}
     byId('booking-preview').textContent=`${dual?'2 COURTS / SAME TIME BLOCK\n':''}TARGET  ${dateLabel(b.targetDate)}\nREQUIRED SLOTS  ${b.slots.join(' · ')}\nCOURT ORDER  ${b.setup.PREFERRED_COURTS.join(' → ')}\nFALLBACK STARTS  ${b.setup.FALLBACK_TIMES.map(friendly).join(' → ')||'None'}\n${b.setup.MAX_SELECTION_ATTEMPTS} candidate attempts · No price ceiling\nPLAYER  Configured ✓`;
   }
 
@@ -183,11 +212,20 @@ function render(state: Dashboard) {
     const meta=document.createElement('span');meta.className='run-meta';meta.textContent=`${new Date(run.startedAt).toLocaleString('en-GB',{timeZone:'Asia/Manila',dateStyle:'medium',timeStyle:'medium'})} Manila · ${run.outcome.toUpperCase()} · browser-ready → finish · preparation excluded`;
     row.append(label,duration,meta);return row;
   }));
+  const previousHolds=state.previousHolds??[];
+  byId('previous-holds').hidden=!previousHolds.length;
+  byId('previous-holds-list').replaceChildren(...previousHolds.map(hold=>{
+    const row=document.createElement('div');row.className='previous-hold-item';
+    const label=document.createElement('strong');label.textContent=`Run ${hold.runID}`;
+    const detail=document.createElement('span');detail.textContent=`Recorded expiry: ${hold.expiresAt?new Date(hold.expiresAt).toLocaleString('en-GB',{timeZone:'Asia/Manila'}):'Unknown'} Manila · Retained ${new Date(hold.archivedAt).toLocaleString('en-GB',{timeZone:'Asia/Manila'})}`;
+    row.append(label,detail);return row;
+  }));
   byId('mode-label').textContent=workflow==='test'?'TEST NOW':'RELEASE BOOKING';
    byId('prepare').firstChild!.textContent='RESET & PREPARE ';
    const apiFirst=input('booking-method').value==='api-first';
    byId('test-booking').textContent=apiFirst?'RUN API TEST TO QR':'RUN TEST TO QR';
    byId('api-dry-controls').hidden=!apiFirst||workflow!=='test';
+   byId('test-availability').hidden=!apiFirst;
    (byId('api-preview') as HTMLButtonElement).disabled=busy||state.lock||!state.apiFirstReady;
   const draftProblem=workflow==='release'?bookingSetupProblem(currentSetup()):undefined;
   byId('configuration-status').hidden=workflow!=='release';
@@ -230,19 +268,61 @@ function render(state: Dashboard) {
     const finalAt=(armed?state.scheduledRelease!.releaseMs:state.clock.releaseMs)-state.clock.preflightSecondsBefore*1000;
     byId('schedule-meta').textContent=`Final preflight: ${new Date(finalAt).toLocaleTimeString('en-US',{timeZone:state.clock.timezone,hour:'numeric',minute:'2-digit',second:'2-digit'})} | System: ${state.scheduleStatus??(armed?'WAITING':'NOT ARMED')}`;
   }
-  const prepared=!!state.preparedContext&&state.preparedContext.workflow==='release'&&state.preparedContext.configFingerprint===state.booking?.fingerprint;
+  const apiPrepared=!!state.apiFirstReady&&!!state.ready&&!!state.booking&&state.booking.setup.BOOKING_METHOD==='api-first'&&!state.lock;
+  const prepared=apiPrepared||!!state.preparedContext&&state.preparedContext.workflow==='release'&&state.preparedContext.configFingerprint===state.booking?.fingerprint;
   const required=strategy==='extended'?['A','B'] as const:['A'] as const;
-  const gates:[string,boolean][]=[['Configuration valid',!draftProblem],['Next release calculated',!!state.clock],['Booking target calculated',!!state.clock?.targetDate],['Primary player configured',playerStatus.primary],...(strategy==='extended'?[['Extended player configured',playerStatus.extended] as [string,boolean]]:[]),...required.map(id=>[`Browser ${id} prepared`,prepared&&!!state.preparedContext?.browsers.some(b=>b.id===id)] as [string,boolean]),['Onda verified',prepared],['All Courts verified',prepared],['Selected slots: 0',prepared],['Payment holds: none',prepared&&!state.lock],['Automation lock clear',!state.lock],['Prepared fingerprint matches',prepared],['Terms authorized for this run',state.termsAuthorized||armed],['Armed for next release',armed]];
+  const verificationGates:[string,boolean][]=apiFirst
+    ? [['Onda venue verified',apiPrepared],['Availability checked at release',state.apiStage?.stage==='CANDIDATE_READY'||!!state.observedPrice]]
+    : [['Onda verified',prepared],['All Courts verified',prepared],['Selected slots: 0',prepared],['Payment holds: none',prepared&&!state.lock]];
+  const gates:[string,boolean][]=[['Configuration valid',!draftProblem],['Next release calculated',!!state.clock],['Booking target calculated',!!state.clock?.targetDate],['Primary player configured',playerStatus.primary],...(strategy==='extended'?[['Extended player configured',playerStatus.extended] as [string,boolean]]:[]),...required.map(id=>[`Browser ${id} prepared`,apiFirst?apiPrepared&&!!state.browserHealth?.[id]:prepared&&!!state.preparedContext?.browsers.some(b=>b.id===id)] as [string,boolean]),...verificationGates,['Automation lock clear',!state.lock],['Prepared fingerprint matches',prepared],['Terms authorized for this run',state.termsAuthorized||armed],['Armed for next release',armed||state.apiStage?.stage==='WAITING_FOR_RELEASE']];
   const readiness=byId('release-readiness');readiness.replaceChildren(...gates.map(([label,ok])=>{const e=document.createElement('div');e.className=`gate ${ok?'good':'warn'}`;e.textContent=`${ok?'OK':'--'} ${label}`;return e;}));readiness.className='gate-list';
   byId('release-readiness-card').dataset.state=armed?'armed':prepared?'prepared':'draft';byId('sleep-warning').hidden=!armed;byId('sleep-warning').textContent=`Sleep protection: ${state.sleepProtection?'ACTIVE':'NOT AVAILABLE'} | Keep the PC powered on. Do not hibernate or close the laptop lid if Windows sleeps on lid close.`;
+  byId('saved-plan-summary').textContent=state.booking?`${state.booking.setup.BOOKING_METHOD.toUpperCase()} · ${state.booking.setup.BOOKING_TYPE.toUpperCase()} · ${state.booking.setup.COURT_COUNT} court${state.booking.setup.COURT_COUNT===1?'':'s'}\n${friendly(state.booking.setup.START_TIME)}–${endFriendly(state.booking.setup.START_TIME,state.booking.setup.DURATION_HOURS)} · ${state.booking.setup.DURATION_HOURS} hours\nCourt priority: ${state.booking.setup.PREFERRED_COURTS.join(' → ')}\nFallback starts: ${state.booking.setup.FALLBACK_TIMES.map(friendly).join(', ')||'None'}\nTarget: ${dateLabel(state.booking.targetDate)}`:'No saved plan available.';
+  const actualAmount=state.handoff?.amount??state.observedPrice??state.selection?.amount;
+  byId('observed-price').hidden=actualAmount===undefined||actualAmount===null;
+  if(actualAmount!==undefined&&actualAmount!==null)byId('observed-price').textContent=`Observed booking price: ₱${actualAmount.toLocaleString()} · Review the amount in Onda before final booking authorization. Payment stays manual.`;
+  const action=input('main-action'),hold=!!state.handoff||!!state.lock,blockedHold=hold&&!state.canPrepareOverHold;
+  const apiWaiting=state.operation==='full'&&state.apiStage?.stage==='WAITING_FOR_RELEASE';
+  const actionState=apiWaiting?'armed':busy?'running':blockedHold?'hold':armed?'armed':state.ready&&!dirty?'review':'prepare';
+  action.textContent=actionState==='prepare'&&state.canPrepareOverHold?'Prepare New Run':{hold:'Review Hold',running:'Running',armed:'Armed',review:'Review & Arm',prepare:'Prepare'}[actionState];
+  action.disabled=actionState==='running'||actionState==='armed'||actionState==='prepare'&&!!input('prepare').disabled;
+  byId('main-action-hint').textContent=state.canPrepareOverHold?'The verified hold stays recorded. Prepare a fresh schedule in the same bot before another run.':blockedHold?'Review the retained lock before any new action.':actionState==='review'?'Review Terms and authorize this exact run before arming.':actionState==='armed'?'Release is scheduled. Use Emergency Stop to cancel.':actionState==='running'?'Current booking operation is in progress.':'Check the plan, then prepare the required browser or browsers.';
+  byId('primary-actions').hidden=currentView!=='tests'&&!state.selection&&!state.handoff&&!state.bookingResult&&!armed;
+  const testDate=input('test-date').value;
+  input('test-date').disabled=busy;
+  const testPrepared=!!state.ready&&!testDirty&&state.workflow==='test'&&!!b&&(
+    b.setup.BOOKING_METHOD==='api-first'&&!!state.apiFirstReady ||
+    !!state.preparedContext&&state.preparedContext.workflow==='test'&&state.preparedContext.date===testDate);
+  const testBrowsers=b?.setup.BOOKING_TYPE==='extended'?['A','B'] as const:['A'] as const;
+  const testGates:[string,boolean][]=[
+    ['Test date selected',!!testDate],['Saved booking plan',!!b],['Primary player configured',playerStatus.primary],
+    ...(b?.setup.BOOKING_TYPE==='extended'?[['Extended player configured',playerStatus.extended] as [string,boolean]]:[]),
+    ...testBrowsers.map(id=>[`Browser ${id} prepared`,testPrepared&&!!state.browserHealth?.[id]] as [string,boolean]),
+    ['Automation lock clear',!state.lock],['Preparation matches this date and plan',testPrepared],
+    ['Terms authorized for this test',!!state.termsAuthorized]
+  ];
+  byId('test-readiness').replaceChildren(...testGates.map(([label,ok])=>{const row=document.createElement('div');row.className=`gate ${ok?'good':'warn'}`;row.textContent=`${ok?'OK':'--'} ${label}`;return row;}));
+  byId('test-plan-summary').textContent=b?`${b.setup.BOOKING_METHOD.toUpperCase()} · ${b.setup.BOOKING_TYPE.toUpperCase()} · ${b.setup.COURT_COUNT} court${b.setup.COURT_COUNT===1?'':'s'}\n${friendly(b.setup.START_TIME)}–${endFriendly(b.setup.START_TIME,b.setup.DURATION_HOURS)} · ${b.setup.DURATION_HOURS} hours\nCourt priority: ${b.setup.PREFERRED_COURTS.join(' → ')}\nFallback starts: ${b.setup.FALLBACK_TIMES.map(friendly).join(', ')||'None'}\nTest date: ${testDate?dateLabel(testDate):'Choose a date'}${input('exact-a').value.trim()||input('exact-b').value.trim()?`\nAdvanced exact court override: ${[input('exact-a').value,input('exact-b').value].filter(Boolean).join(' / ')}`:''}`:'No saved booking plan available.';
+  byId('test-headline').textContent=workflow==='test'&&state.workflow==='test'?state.headline:state.lock?'Review retained hold':testPrepared?'Ready to test':'Prepare to test';
+  byId('test-detail').textContent=workflow==='test'&&state.workflow==='test'?state.detail:state.lock?'Review the existing browser and payment hold before testing again.':testPrepared?'Review Terms, then run the saved plan.':'Choose a date, then prepare the saved booking plan.';
+  const testState=busy?'running':blockedHold?'hold':testPrepared?'review':'prepare';
+  const testButton=input('test-main-action');
+  testButton.textContent=testState==='prepare'&&state.canPrepareOverHold?'Prepare New Run':{running:'Running',hold:'Review Hold',review:'Review & Test',prepare:'Prepare'}[testState];
+  testButton.disabled=testState==='running'||testState==='prepare'&&(!b||!testDate||blockedHold);
+  byId('test-main-action-hint').textContent=state.canPrepareOverHold?'The verified hold stays recorded. Preparing opens a fresh schedule in the same bot.':blockedHold?'Review the retained lock before another test.':testState==='review'?'This test can create real temporary payment holds. Review Terms and confirm the test before continuing.':testState==='running'?'The current test is in progress.':'Prepare the required browser or browsers for the selected date.';
+  testResults.hidden=!!byId('observed-price').hidden&&!!byId('selection-result').hidden&&!!byId('handoff-result').hidden;
   syncViableControls();tick();
 }
+byId('main-action').onclick=()=>{if(!latest)return;if((latest.lock||latest.handoff)&&!latest.canPrepareOverHold){void window.thirsty.reviewLock().catch(()=>{});return;}if(latest.ready&&!dirty){if(input('terms').checked)input('arm').click();else byId('terms').focus();}else input('prepare').click();};
+byId('test-main-action').onclick=()=>{if(!latest)return;if((latest.lock||latest.handoff)&&!latest.canPrepareOverHold){void window.thirsty.reviewLock().catch(()=>{});return;}if(input('test-main-action').textContent==='Review & Test'){if(input('terms').checked)input('test-booking').click();else byId('terms').focus();}else input('prepare').click();};
 function tick() {
   // Display only; never launches a command. Authoritative release plan comes from main/CLI.
   const now=new Date();
   byId('clock').textContent = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Manila', hourCycle: 'h23' }).format(now);
   byId('clock-date').textContent = new Intl.DateTimeFormat('en-US', { weekday:'long',month:'long',day:'numeric',year:'numeric',timeZone:'Asia/Manila' }).format(now);
   if (!latest) return;
+  if(latest.clock){const remaining=Math.max(0,Math.ceil(((latest.scheduledRelease?.releaseMs??latest.clock.releaseMs)-Date.now())/1000));byId('next-release-countdown').textContent=[Math.floor(remaining/3600),Math.floor(remaining/60)%60,remaining%60].map(v=>String(v).padStart(2,'0')).join(':');}
+  byId('run-timing').textContent=latest.runTiming?.readyAt?`${((latest.runTiming.endedAt?latest.runTiming.readyElapsedMs??0:Math.max(0,Date.now()-Date.parse(latest.runTiming.readyAt)))/1000).toFixed(3)} seconds · ${latest.runTiming.endedAt?'finished':'running'}`:latest.runTiming?'Waiting for browser ready':'No browser-ready run active';
   if(latest.runTiming&&(!latest.runTiming.endedAt||latest.runTiming.readyAt)){
     const run=latest.runTiming;
     if(!run.readyAt){byId('countdown').textContent='--:--:--.---';byId('countdown-label').textContent=run.endedAt?'READY TIMING UNAVAILABLE':`${run.label.toUpperCase()} · WAITING FOR BROWSER`;byId('release-time').textContent='Timing starts when browser is ready';byId('release-zone').textContent='startup excluded';return;}
@@ -268,49 +348,45 @@ function tick() {
     byId('handoff-result').textContent=`${active?'PAYMENT HOLD ACTIVE — VERIFIED AT HANDOFF':'HOLD NEEDS MANUAL REVIEW'}\nVenue: Thirsty Pickle | SM Seaside\nCourt ${hold.court} · ${hold.date}\nTime: ${hold.hours[0]}–${String(Number(hold.hours.at(-1)!.slice(0,2))+1).padStart(2,'0')}:00\nAmount: ₱${hold.amount.toLocaleString()}\nLast observed status: Pending\nHold countdown at verification: ${hold.countdown}\nVerified: ${new Date(hold.verifiedAt).toLocaleString('en-GB',{timeZone:'Asia/Manila'})}\n${active?'Complete payment manually in Chrome.':'The observed countdown has elapsed. Check Chrome manually.'}\nAUTOMATION STOPPED · AUTOMATION LOCK RETAINED`;
   }
 }
- for (const [id, action] of Object.entries({ 'review-lock':()=>window.thirsty.reviewLock(),'clear-lock':()=>window.thirsty.clearLock(),'reset-practice':()=>window.thirsty.resetPractice(),'dual-prepare':()=>window.thirsty.prepareDual(),'api-preview':()=>window.thirsty.apiPreview(input('test-date').value),'full-practice':async()=>{const authorized=input('full-terms').checked;input('full-terms').checked=false;await window.thirsty.runFullPractice({target:{date:input('full-date').value,court:Number(input('full-court').value),start:input('full-start').value,duration:Number(input('full-duration').value)},maximum:Number(input('full-maximum').value),authorizeTerms:authorized as true});}, chrome: () => window.thirsty.startChrome(), inspect: () => window.thirsty.inspectOnda(), prepare: async () => {input('terms').checked=false;storeDraft();await window.thirsty.resetPrepare(workflow==='test'?{workflow:'test',...testRequest()}:{workflow:'release',strategy:input('booking-type').value as 'standard'|'extended',setup:currentSetup()});const state=await window.thirsty.getStatus();if(state.ready){if(workflow==='test')testDirty=false;else releaseDirty=false;dirty=false;}render(state);}, arm: () => window.thirsty.armFullBooking(), dry:()=>window.thirsty.dryRace(), observe:()=>window.thirsty.armObservation(), stop: () => window.thirsty.abortAutomation(), practice:()=>window.thirsty.runPractice({date:input('practice-date').value,court:Number(input('practice-court').value),start:input('practice-start').value,duration:Number(input('practice-duration').value)}) })) {
+ for (const [id, action] of Object.entries({ 'review-lock':()=>window.thirsty.reviewLock(),'clear-lock':()=>window.thirsty.clearLock(),'reset-practice':()=>window.thirsty.resetPractice(),'dual-prepare':()=>window.thirsty.prepareDual(),'api-preview':()=>window.thirsty.apiPreview(input('test-date').value),'full-practice':async()=>{const authorized=input('full-terms').checked;input('full-terms').checked=false;await window.thirsty.runFullPractice({target:{date:input('full-date').value,court:Number(input('full-court').value),start:input('full-start').value,duration:Number(input('full-duration').value)},authorizeTerms:authorized as true});}, chrome: () => window.thirsty.startChrome(), inspect: () => window.thirsty.inspectOnda(), prepare: async () => {input('terms').checked=false;storeDraft();await window.thirsty.resetPrepare(workflow==='test'?{workflow:'test',...testRequest()}:{workflow:'release',strategy:input('booking-type').value as 'standard'|'extended',setup:currentSetup()});const state=await window.thirsty.getStatus();if(state.ready){if(workflow==='test')testDirty=false;else releaseDirty=false;dirty=false;}render(state);}, arm: () => window.thirsty.armFullBooking(), dry:()=>window.thirsty.dryRace(), observe:()=>window.thirsty.armObservation(), stop: () => window.thirsty.abortAutomation(), practice:()=>window.thirsty.runPractice({date:input('practice-date').value,court:Number(input('practice-court').value),start:input('practice-start').value,duration:Number(input('practice-duration').value)}) })) {
   byId(id).addEventListener('click', () => { void action().catch(async() => { render(await window.thirsty.getStatus()); }); });
 }
 byId('full-terms').addEventListener('change',()=>{if(latest)render(latest);});
-for(const id of ['full-date','full-court','full-start','full-duration','full-maximum'])byId(id).addEventListener('change',()=>{input('full-terms').checked=false;if(latest)render(latest);});
+for(const id of ['full-date','full-court','full-start','full-duration'])byId(id).addEventListener('change',()=>{input('full-terms').checked=false;if(latest)render(latest);});
 byId('mode-full').addEventListener('change',()=>{void window.thirsty.setMode('full').catch(()=>{});});
 byId('mode-selection').addEventListener('change',()=>{void window.thirsty.setMode('selection').catch(()=>{});});
 byId('terms').addEventListener('change',()=>{void window.thirsty.authorizeTerms(input('terms').checked).catch(()=>{input('terms').checked=false;});});
- for(const id of ['booking-method','test-date','court-count','start-time','duration','maximum','attempts','exact-a','exact-b'])byId(id).addEventListener('change',changed);
+ for(const id of ['booking-method','test-date','court-count','start-time','duration','attempts','exact-a','exact-b'])byId(id).addEventListener('change',changed);
 byId('booking-type').addEventListener('change',()=>{const extended=input('booking-type').value==='extended',d=Number(input('duration').value);if(extended&&d<4)input('duration').value='4';if(!extended&&d>3)input('duration').value='3';syncViableControls();changed();});
 byId('add-fallback').onclick=()=>{const h=input('fallback-time').value;if(h===input('start-time').value||fallbackTimes.includes(h)){byId('edit-status').textContent='Choose a different fallback start.';return;}if(workflow==='release'){const reconciliation=reconcileFallbackTimes(input('start-time').value,Number(input('duration').value),[...fallbackTimes,h]);if(reconciliation.removed.length){releaseAdjustment=reconciliation;byId('edit-status').textContent=bookingSetupProblem({...currentSetup(),FALLBACK_TIMES:[...fallbackTimes,h]})??'That fallback does not fit the current booking.';if(latest)render(latest);return;}}fallbackTimes.push(h);editors();changed();};
 byId('save-booking').onclick=()=>{void(async()=>{
-   const setup:BookingSetup={BOOKING_METHOD:input('booking-method').value as 'browser'|'hybrid'|'api-first',BOOKING_TYPE:input('booking-type').value as 'standard'|'extended',COURT_COUNT:Number(input('court-count').value) as 1|2,START_TIME:input('start-time').value,DURATION_HOURS:Number(input('duration').value),PREFERRED_COURTS:courtOrder,FALLBACK_COURTS:[],FALLBACK_TIMES:fallbackTimes,MAX_PRICE:Number(input('maximum').value),MAX_SELECTION_ATTEMPTS:Number(input('attempts').value)};
+   const setup:BookingSetup={BOOKING_METHOD:input('booking-method').value as 'browser'|'hybrid'|'api-first',BOOKING_TYPE:input('booking-type').value as 'standard'|'extended',COURT_COUNT:Number(input('court-count').value) as 1|2,START_TIME:input('start-time').value,DURATION_HOURS:Number(input('duration').value),PREFERRED_COURTS:courtOrder,FALLBACK_COURTS:[],FALLBACK_TIMES:fallbackTimes,MAX_SELECTION_ATTEMPTS:Number(input('attempts').value)};
   await window.thirsty.saveBooking(setup);const state=await window.thirsty.getStatus();
   if(state.headline==='Booking plan saved'){releaseDirty=false;if(workflow==='release')dirty=false;loadedPlan='';byId('edit-status').textContent='BOOKING PLAN SAVED';render(state);}else byId('edit-status').textContent='Plan rejected. Check duration and unique times.';
 })().catch(()=>{byId('edit-status').textContent='Could not save booking setup.';});};
 byId('dual-dry').onclick=()=>{void window.thirsty.runDualPractice({kind:'dualDry',date:input('dual-date').value}).catch(()=>{});};
 for(const [id,kind] of [['dual-selection','dualPractice'],['dual-full','dualFullPractice']] as const)byId(id).onclick=()=>{
   const authorized=input('dual-terms').checked;input('dual-terms').checked=false;
-  void window.thirsty.runDualPractice({kind,input:{target:{date:input('dual-date').value,court:Number(input('dual-court-a').value),start:input('dual-start').value,duration:Number(input('dual-duration').value)},courtB:Number(input('dual-court-b').value),maximum:Number(input('dual-maximum').value),noncompetitive:input('dual-noncompetitive').checked as true,authorizeTerms:kind==='dualFullPractice'&&authorized,armed:kind==='dualFullPractice'}}).catch(()=>{});
+  void window.thirsty.runDualPractice({kind,input:{target:{date:input('dual-date').value,court:Number(input('dual-court-a').value),start:input('dual-start').value,duration:Number(input('dual-duration').value)},courtB:Number(input('dual-court-b').value),noncompetitive:input('dual-noncompetitive').checked as true,authorizeTerms:kind==='dualFullPractice'&&authorized,armed:kind==='dualFullPractice'}}).catch(()=>{});
 };
-for(const id of ['dual-date','dual-court-a','dual-court-b','dual-start','dual-duration','dual-maximum','dual-noncompetitive'])byId(id).addEventListener('change',()=>{input('dual-terms').checked=false;if(latest)render(latest);});
+for(const id of ['dual-date','dual-court-a','dual-court-b','dual-start','dual-duration','dual-noncompetitive'])byId(id).addEventListener('change',()=>{input('dual-terms').checked=false;if(latest)render(latest);});
 byId('dual-terms').addEventListener('change',()=>{if(latest)render(latest);});
 
 for(const [id,mode] of [['workflow-test','test'],['workflow-release','release']] as const)byId(id).onclick=()=>{storeDraft();workflow=mode;if(mode==='test'&&testDraft)applyDraft(testDraft);if(mode==='release'&&releaseDraft)applyDraft(releaseDraft);dirty=mode==='test'?testDirty:releaseDirty;input('terms').checked=false;void window.thirsty.setWorkflow(mode);if(latest)render(latest);};
-function testRequest(){return {method:input('booking-method').value as 'browser'|'hybrid'|'api-first',request:{strategy:input('booking-type').value as 'standard'|'extended',date:input('test-date').value,start:input('start-time').value,duration:Number(input('duration').value),courtCount:Number(input('court-count').value) as 1|2,priority:courtOrder,fallbackStarts:[...fallbackTimes],...((input('exact-a').value.trim()||input('exact-b').value.trim())?{exact:(input('booking-type').value==='extended'?['exact-a','exact-b']:['exact-a']).map(id=>input(id).value.split(',').map(v=>Number(v.trim())))}:{})},maximum:Number(input('maximum').value)};}
- function currentSetup():BookingSetup{return {BOOKING_METHOD:input('booking-method').value as 'browser'|'hybrid'|'api-first',BOOKING_TYPE:input('booking-type').value as 'standard'|'extended',COURT_COUNT:Number(input('court-count').value) as 1|2,START_TIME:input('start-time').value,DURATION_HOURS:Number(input('duration').value),PREFERRED_COURTS:courtOrder,FALLBACK_COURTS:[],FALLBACK_TIMES:fallbackTimes,MAX_PRICE:Number(input('maximum').value),MAX_SELECTION_ATTEMPTS:Number(input('attempts').value)};}
+function testRequest(){
+  const setup=latest?.booking?.setup;
+  if(!setup)throw Error('BOOKING_PLAN_MISSING');
+  const exactA=input('exact-a').value.trim(),exactB=input('exact-b').value.trim();
+  const exact=exactA||exactB?{exact:(setup.BOOKING_TYPE==='extended'?[exactA,exactB]:[exactA]).map(value=>value.split(',').map(court=>Number(court.trim())))}:{};
+  return {method:setup.BOOKING_METHOD,request:{strategy:setup.BOOKING_TYPE,date:input('test-date').value,start:setup.START_TIME,duration:setup.DURATION_HOURS,courtCount:setup.COURT_COUNT,priority:[...setup.PREFERRED_COURTS],fallbackStarts:[...setup.FALLBACK_TIMES],...exact}};
+}
+ function currentSetup():BookingSetup{return {BOOKING_METHOD:input('booking-method').value as 'browser'|'hybrid'|'api-first',BOOKING_TYPE:input('booking-type').value as 'standard'|'extended',COURT_COUNT:Number(input('court-count').value) as 1|2,START_TIME:input('start-time').value,DURATION_HOURS:Number(input('duration').value),PREFERRED_COURTS:courtOrder,FALLBACK_COURTS:[],FALLBACK_TIMES:fallbackTimes,MAX_SELECTION_ATTEMPTS:Number(input('attempts').value)};}
 byId('test-booking').onclick=()=>{const authorized=input('terms').checked;input('terms').checked=false;void window.thirsty.testBooking({...testRequest(),authorizeTerms:authorized as true}).catch(()=>{byId('detail').textContent='Check booking fields and Terms authorization.';});};
 window.thirsty.onStatus(render);
 void window.thirsty.getStatus().then(render);
 setInterval(tick, 100);
 const activity=document.querySelector<HTMLElement>('.activity')!;
 const expand=byId('activity-expand') as HTMLButtonElement;
-const activityLog=byId('log');
-const resizeHandle=byId('activity-resize-handle');
-let resizePointer:number|undefined,resizeStartY=0,resizeStartHeight=0;
-function setActivityHeight(value:number){const height=Math.round(Math.max(72,Math.min(Math.max(120,window.innerHeight-180),value)));activityLog.style.height=`${height}px`;activityLog.style.maxHeight='none';resizeHandle.setAttribute('aria-valuenow',String(height));}
-resizeHandle.addEventListener('pointerdown',event=>{if(activity.classList.contains('expanded'))return;resizePointer=event.pointerId;resizeStartY=event.clientY;resizeStartHeight=activityLog.getBoundingClientRect().height;resizeHandle.setPointerCapture(event.pointerId);activity.classList.add('resizing');event.preventDefault();});
-resizeHandle.addEventListener('pointermove',event=>{if(event.pointerId===resizePointer)setActivityHeight(resizeStartHeight+event.clientY-resizeStartY);});
-function finishResize(event:PointerEvent){if(event.pointerId!==resizePointer)return;resizePointer=undefined;activity.classList.remove('resizing');if(resizeHandle.hasPointerCapture(event.pointerId))resizeHandle.releasePointerCapture(event.pointerId);}
-resizeHandle.addEventListener('pointerup',finishResize);resizeHandle.addEventListener('pointercancel',finishResize);
-resizeHandle.addEventListener('dblclick',()=>{activityLog.style.height='';activityLog.style.maxHeight='';resizeHandle.removeAttribute('aria-valuenow');});
-resizeHandle.addEventListener('keydown',event=>{if(event.key==='ArrowUp'||event.key==='ArrowDown'){setActivityHeight(activityLog.getBoundingClientRect().height+(event.key==='ArrowDown'?24:-24));event.preventDefault();}else if(event.key==='Home'){activityLog.style.height='';activityLog.style.maxHeight='';resizeHandle.removeAttribute('aria-valuenow');event.preventDefault();}});
 function setActivityExpanded(value:boolean){activity.classList.toggle('expanded',value);expand.setAttribute('aria-expanded',String(value));expand.textContent=value?'Restore':'Maximize';}
 expand.addEventListener('click',()=>setActivityExpanded(!activity.classList.contains('expanded')));
 document.addEventListener('keydown',event=>{if(event.key==='Escape'&&activity.classList.contains('expanded'))setActivityExpanded(false);});

@@ -89,7 +89,7 @@ try {
   }
   if (scheduled) { telemetry.mark('scheduledWorkerWake'); telemetry.mark('workerStart'); }
   const practiceInput = mode === 'practice' ? PracticeSchema.parse({ date: value('--date'), court: value('--court'), start: value('--start'), duration: value('--duration') }) : undefined;
-  const fullPractice=mode==='practice:full'?FullPracticeSchema.parse({target:{date:value('--date'),court:value('--court'),start:value('--start'),duration:value('--duration')},maximum:Number(value('--maximum')),authorizeTerms:args.includes('--authorize-terms')}):undefined;
+  const fullPractice=mode==='practice:full'?FullPracticeSchema.parse({target:{date:value('--date'),court:value('--court'),start:value('--start'),duration:value('--duration')},...(args.includes('--maximum')?{maximum:Number(value('--maximum'))}:{}),authorizeTerms:args.includes('--authorize-terms')}):undefined;
   const handoffInput=mode==='handoff:test'?PracticeSchema.parse({date:value('--date'),court:value('--court'),start:value('--start'),duration:value('--duration')}):undefined;
   await mkdirAsync('.local', { recursive: true }); await mkdirAsync('DiagnosticsLocal', { recursive: true });
   const lock = await openAsync(lockPath, 'wx').catch(() => { throw new Error('AUTOMATION_LOCK_EXISTS: verify no bot is running and selections are clean before removing .local/automation.lock'); });
@@ -131,7 +131,7 @@ try {
     const booking=config as Config;
     const result=await selectExactPractice(page,fullPractice,safety,telemetry);
     retainSelection=true;emitUiEvent({type:'selection',...result});
-    const hold=await fullBookingToQr(page,result,{fullName:booking.PLAYER_FULL_NAME,phone:booking.PLAYER_PHONE,email:booking.PLAYER_EMAIL},fullPractice.maximum,true,booking.PAYMENT_HANDOFF_VERIFY_TIMEOUT_MS,safety,telemetry,booking.PAYMENT_SUMMARY_READY_TIMEOUT_MS);
+    const hold=await fullBookingToQr(page,result,{fullName:booking.PLAYER_FULL_NAME,phone:booking.PLAYER_PHONE,email:booking.PLAYER_EMAIL},fullPractice.maximum??Infinity,true,booking.PAYMENT_HANDOFF_VERIFY_TIMEOUT_MS,safety,telemetry,booking.PAYMENT_SUMMARY_READY_TIMEOUT_MS);
     await writeFileAsync(lockPath,JSON.stringify({pid:process.pid,runID:telemetry.runID,...retainedHandoff(hold),handoff:{type:'handoff',date:result.date,court:result.court,hours:result.hours,...hold}}));
   }
   else if(handoffInput&&config){

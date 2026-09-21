@@ -33,16 +33,24 @@ const reply = () => ({ success: true, bookings: hours.map((hour, index) => ({
 const directories: string[] = [];
 afterEach(async () => { delete process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT;
   for (const path of directories.splice(0)) await rm(path, { recursive: true, force: true }); });
-async function setup(response: unknown = reply()) {
+async function setup(response: unknown = reply(), onPhase?:ConstructorParameters<typeof TwoHourReservationAdapter>[5]) {
   const path = await mkdtemp(join(tmpdir(), 'onda-two-hour-'));
   directories.push(path);
   const checkSlot = vi.fn(async (request: SlotCheckRequest) => proof(request.startTime === '08:00' ? 0 : 1));
   const publicCheckout = vi.fn(async (_items: unknown) => response);
-  const adapter = new TwoHourReservationAdapter({ checkSlot, publicCheckout }, new DurableSubmissionJournal(path), () => now);
+  const adapter = new TwoHourReservationAdapter({ checkSlot, publicCheckout }, new DurableSubmissionJournal(path), () => now,
+    undefined, undefined, onPhase);
   return { adapter, checkSlot, publicCheckout, path };
 }
 
 describe('offline two-hour adapter', () => {
+  it('reports the three measured network phases in order without changing submission',async()=>{
+    const phases:string[]=[];
+    const {adapter}=await setup(reply(),phase=>phases.push(phase));
+    process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT='SUPERVISED_ONE_SHOT';
+    await adapter.submit(plan,customer,{supervisedOneShot:true});
+    expect(phases).toEqual(['SECURITY_CONTEXT_READY','SLOT_PROOFS_READY','CHECKOUT_RESPONSE_RECEIVED']);
+  });
   it('captures a one-hour booking through the same one-shot journal', async () => {
     const onePlan = planBooking(snapshot, { mode: 'standard', targetDate: date, durationHours: 1,
       preferredStartTimes: ['08:00'], fallbackStartTimes: [], courtPriority: [3], fallbackCourts: [], courtCount: 1,

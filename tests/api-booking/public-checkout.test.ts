@@ -82,9 +82,9 @@ describe('standard public-checkout builder and validator', () => {
     expect(() => validatePublicCheckoutResponse(raw, request, plan, now, 1_200)).toThrowError(expected);
   });
 
-  it('rejects proof identity, missing customer names, and a price limit violation before dispatch', () => {
+  it('rejects proof identity and missing customer names, while accepting the actual price', () => {
     expect(() => buildStandardPublicCheckoutRequest(plan, customer, 'facility', [{ ...proofs[0]!, startTime: '13:00' }, proofs[1]!])).toThrowError('AVAILABILITY_PROOF_SLOT_MISMATCH');
     expect(() => buildStandardPublicCheckoutRequest(plan, { ...customer, customerFirstName: '' }, 'facility', proofs)).toThrowError('CHECKOUT_CUSTOMER_INVALID');
-    expect(() => validatePublicCheckoutResponse(reply(), request, plan, now, 1_199)).toThrowError('CHECKOUT_MAXIMUM_PRICE_EXCEEDED');
+    expect(validatePublicCheckoutResponse(reply(), request, plan, now, 1_199).trustedTotalAmount).toBe(1_200);
   });
 });

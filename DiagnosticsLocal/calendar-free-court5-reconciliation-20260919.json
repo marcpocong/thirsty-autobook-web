@@ -1,0 +1,26 @@
+{
+  "kind": "read-only-reconciliation-evidence",
+  "facility": "Thirsty Pickle | SM Seaside",
+  "court": 5,
+  "courtName": "Court 5: Mango Wing",
+  "bookingDate": "2026-09-20",
+  "startTime": "10:00",
+  "endTime": "12:00",
+  "timezone": "Asia/Manila",
+  "expectedAmountPhp": 1400,
+  "submissionStartedAtUtc": "2026-09-18T20:51:35.555Z",
+  "submissionOutcomeRecordedAtUtc": "2026-09-18T20:51:36.848Z",
+  "checkoutResourceStatus": 200,
+  "checkoutResourceDurationMs": 1283,
+  "slotObservations": [
+    { "observedAtUtc": "2026-09-18T20:52:07.530Z", "firstHourAvailable": false, "secondHourAvailable": false },
+    { "observedAtUtc": "2026-09-18T20:59:57.190Z", "firstHourStatus": "pending", "secondHourStatus": "pending" },
+    { "observedAtUtc": "2026-09-18T21:01:43.080Z", "firstHourStatus": "absent", "secondHourStatus": "absent" },
+    { "observedAtUtc": "2026-09-18T21:01:51.217Z", "firstHourAvailable": true, "secondHourAvailable": true }
+  ],
+  "journalState": "unknown",
+  "oneShotPermit": "consumed",
+  "bookingId": null,
+  "transactionId": null,
+  "interpretation": "A temporary two-hour pending hold appeared after the HTTP 200 checkout response and later disappeared. Public data does not identify its customer or transaction."
+}

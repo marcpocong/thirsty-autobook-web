@@ -8,25 +8,47 @@ import type { Runner } from '../ui/processes.js';
 import type { Command } from '../ui/types.js';
 
 describe('API-first UI boundary', () => {
-  it('makes Reset & Prepare respect an active QR hold and recover a verified expired stale lock',async()=>{
+  it('starts extended API run timing only after both dedicated browsers are ready',async()=>{
+    const view=bookingView(ConfigSchema.parse({...defaultSetup,BOOKING_METHOD:'api-first',BOOKING_TYPE:'extended',DURATION_HOURS:4,
+      PLAYER_FULL_NAME:'Fixture Player',PLAYER_PHONE:'09123456789',PLAYER_EMAIL:'fixture@example.invalid',
+      PLAYER_B_FULL_NAME:'Second Fixture',PLAYER_B_PHONE:'09987654321',PLAYER_B_EMAIL:'second@example.invalid'}));
+    let readyAfterA:string|undefined,readyAfterB:string|undefined;
+    let controller:Controller;
+    const runner:Runner=(command,event)=>{
+      if(typeof command==='object'&&command.kind==='apiRun'&&command.mode==='live-now'){
+        event({type:'apiStage',stage:'RUN_STARTED',elapsedMs:0});
+        event({type:'apiStage',stage:'BROWSER_READY',workerId:'A',elapsedMs:1,at:new Date().toISOString()});
+        readyAfterA=controller.state.runTiming?.readyAt;
+        event({type:'apiStage',stage:'BROWSER_READY',workerId:'B',elapsedMs:2,at:new Date().toISOString()});
+        readyAfterB=controller.state.runTiming?.readyAt;
+      }
+      return {pid:1,done:Promise.resolve(0),stop:async()=>undefined};
+    };
+    controller=new Controller({runner,lock:async()=>false,cdp:async()=>true,browserHealth:async()=>({A:true,B:true}),
+      playerStatus:()=>({primary:true,extended:true}),confirmApiTest:async()=>true,
+      clock:()=>clockStatus(ObservationSchema.parse({}),DateTime.fromISO('2026-09-21T08:00:00+08:00')),
+      confirm:async()=>true,publish:()=>undefined,booking:()=>view,saveBooking:()=>view});
+    const request={strategy:'extended' as const,date:'2026-09-22',start:'12:00',duration:4,courtCount:2 as const,priority:[7,6,5,4,3,2,1],fallbackStarts:[]};
+    await controller.setWorkflow('test');
+    await controller.resetPrepare({workflow:'test',method:'api-first',request});
+    await controller.authorizeTerms(true);
+    await controller.testBooking({method:'api-first',request,authorizeTerms:true});
+    expect(readyAfterA).toBeUndefined();expect(readyAfterB).toBeDefined();
+  });
+  it('prepares another API test beside a verified active hold through the normal reset path',async()=>{
     const view=bookingView(ConfigSchema.parse({...defaultSetup,PLAYER_FULL_NAME:'Fixture Player',PLAYER_PHONE:'09123456789',PLAYER_EMAIL:'fixture@example.invalid'}));
     const calls:Command[]=[];let locked=true;
-    let remainingSeconds=120;
     const expiresAt=new Date(Date.now()+120000).toISOString();
-    const runner:Runner=command=>{calls.push(command);return {pid:1,done:Promise.resolve(0),stop:async()=>undefined};};
-    const controller=new Controller({runner,lock:async()=>locked,retainedHold:async()=>({stage:'HOLD_VERIFIED',expiresAt,remainingSeconds}),
+    const runner:Runner=command=>{calls.push(command);if(typeof command==='object'&&command.kind==='resetPrepare')locked=false;return {pid:1,done:Promise.resolve(0),stop:async()=>undefined};};
+    const controller=new Controller({runner,lock:async()=>locked,retainedHold:async()=>({stage:'HOLD_VERIFIED',expiresAt,remainingSeconds:120}),
       reviewLock:async()=>({runID:'fixture',pid:1,alive:false,owned:false,fingerprint:'fixture',verifiedAt:new Date().toISOString(),reason:'VERIFIED_STALE_LOCK',canClear:true,page:'Schedule',selected:0,hold:'Not detected',clean:true}),
-      clearLock:async fingerprint=>{expect(fingerprint).toBe('fixture');locked=false;},
+      clearLock:async()=>{throw Error('VERIFIED_HOLD_MUST_BE_ARCHIVED');},
       cdp:async()=>true,browserHealth:async()=>({A:true,B:false}),playerStatus:()=>({primary:true,extended:false}),
       clock:()=>clockStatus(ObservationSchema.parse({}),DateTime.fromISO('2026-09-21T08:00:00+08:00')),
       confirm:async()=>true,publish:()=>undefined,booking:()=>view,saveBooking:()=>view});
     const input={workflow:'test' as const,method:'api-first' as const,request:{strategy:'standard' as const,date:'2026-09-22',start:'12:00',duration:1,courtCount:1 as const,priority:[7,6,5,4,3,2,1],fallbackStarts:[]},maximum:1200};
     await controller.resetPrepare(input);
-    expect(calls).toEqual([]);expect(controller.state).toMatchObject({headline:'PAYMENT HOLD ACTIVE',ready:false,lock:true});
-    expect(controller.state.detail).toContain('remaining');
-    remainingSeconds=0;
-    await controller.resetPrepare(input);
-    expect(calls).toHaveLength(1);expect(calls[0]).toMatchObject({kind:'apiRun',mode:'prepare'});
+    expect(calls.map(command=>typeof command==='string'?command:command.kind)).toEqual(['resetPrepare','apiRun']);
     expect(controller.state).toMatchObject({headline:'API READY TO TEST',ready:true,lock:false});
   });
   it('routes an Extended retained lock through the existing two-browser reset checks before API preparation',async()=>{

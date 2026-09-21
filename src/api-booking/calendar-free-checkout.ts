@@ -2,6 +2,7 @@ import type { Page } from 'playwright';
 import type { AvailabilitySnapshot, BookingPlan } from './types.js';
 import type { CheckoutCustomer, VerifiedTwoHourHold } from './two-hour-reservation.js';
 import { selectedStandardHours, TwoHourReservationAdapter } from './two-hour-reservation.js';
+import type { ReservationPhase } from './two-hour-reservation.js';
 import { DurableSubmissionJournal } from './durable-submission-journal.js';
 import { OndaBrowserSessionTransport, type CheckoutResponseCapture } from './browser-session-transport.js';
 import { calendarFreeSecurityContext } from './calendar-free-security-context.js';
@@ -19,6 +20,7 @@ export async function submitCalendarFreeTwoHourCheckout(input: {
   approval: ApprovedCalendarFreeAttempt; journal: DurableSubmissionJournal;
   additionalJournals?: DurableSubmissionJournal[];
   captureCheckoutResponse?: CheckoutResponseCapture;
+  onPhase?(phase:ReservationPhase):void;
   onHumanVerificationRequired?(): Promise<void>;
   onHumanVerificationCompleted?(): Promise<void>;
 }): Promise<VerifiedTwoHourHold> {
@@ -46,5 +48,5 @@ export async function submitCalendarFreeTwoHourCheckout(input: {
     input.captureCheckoutResponse, { onHumanVerificationRequired: input.onHumanVerificationRequired,
       onHumanVerificationCompleted: input.onHumanVerificationCompleted });
   return new TwoHourReservationAdapter(transport, input.journal, undefined, undefined,
-    input.additionalJournals).submit(plan, customer, { supervisedOneShot: true });
+    input.additionalJournals, input.onPhase).submit(plan, customer, { supervisedOneShot: true });
 }

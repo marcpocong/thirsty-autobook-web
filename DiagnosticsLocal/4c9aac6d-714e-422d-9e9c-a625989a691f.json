@@ -1,0 +1,15 @@
+{
+  "runID": "4c9aac6d-714e-422d-9e9c-a625989a691f",
+  "events": [
+    {
+      "event": "processStarted",
+      "wall": "2026-09-10T07:19:12.116Z",
+      "monoMs": 498.7351
+    },
+    {
+      "event": "failed",
+      "wall": "2026-09-10T07:19:12.117Z",
+      "monoMs": 499.2079
+    }
+  ]
+}

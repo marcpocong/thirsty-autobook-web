@@ -1,0 +1,111 @@
+{
+  "runID": "484e9beb-b668-425f-9554-5376ca712033",
+  "events": [
+    {
+      "event": "targetGridReady",
+      "wall": "2026-09-10T07:57:43.118Z",
+      "monoMs": 2725.5889
+    },
+    {
+      "event": "gridSnapshotStarted",
+      "wall": "2026-09-10T07:57:43.118Z",
+      "monoMs": 2725.6314
+    },
+    {
+      "event": "gridSnapshotCompleted",
+      "wall": "2026-09-10T07:57:43.128Z",
+      "monoMs": 2735.3404
+    },
+    {
+      "event": "preferenceResolved",
+      "wall": "2026-09-10T07:57:43.130Z",
+      "monoMs": 2737.7524
+    },
+    {
+      "event": "selectionAttemptStarted",
+      "wall": "2026-09-10T07:57:43.141Z",
+      "monoMs": 2747.8559,
+      "value": 1
+    },
+    {
+      "event": "slot1ClickStarted",
+      "wall": "2026-09-10T07:57:43.141Z",
+      "monoMs": 2747.8735
+    },
+    {
+      "event": "slot1Selected",
+      "wall": "2026-09-10T07:57:43.188Z",
+      "monoMs": 2795.2945
+    },
+    {
+      "event": "slot2ClickStarted",
+      "wall": "2026-09-10T07:57:43.188Z",
+      "monoMs": 2795.309
+    },
+    {
+      "event": "slot2Selected",
+      "wall": "2026-09-10T07:57:43.233Z",
+      "monoMs": 2840.4577
+    },
+    {
+      "event": "selectionVerified",
+      "wall": "2026-09-10T07:57:43.257Z",
+      "monoMs": 2864.6741
+    },
+    {
+      "event": "proceedActionable",
+      "wall": "2026-09-10T07:57:43.257Z",
+      "monoMs": 2864.6843
+    },
+    {
+      "event": "proceedClicked",
+      "wall": "2026-09-10T07:57:44.119Z",
+      "monoMs": 3725.798
+    },
+    {
+      "event": "reviewDetected",
+      "wall": "2026-09-10T07:57:44.139Z",
+      "monoMs": 3746.7161
+    },
+    {
+      "event": "reviewValidated",
+      "wall": "2026-09-10T07:57:44.140Z",
+      "monoMs": 3746.7869
+    },
+    {
+      "event": "playerFormDetected",
+      "wall": "2026-09-10T07:57:44.140Z",
+      "monoMs": 3746.7926
+    },
+    {
+      "event": "playerFillStarted",
+      "wall": "2026-09-10T07:57:44.140Z",
+      "monoMs": 3746.7976
+    },
+    {
+      "event": "playerFillCompleted",
+      "wall": "2026-09-10T07:57:44.186Z",
+      "monoMs": 3793.0447
+    },
+    {
+      "event": "playerProceedClicked",
+      "wall": "2026-09-10T07:57:48.901Z",
+      "monoMs": 8507.9149
+    },
+    {
+      "event": "paymentSummaryDetected",
+      "wall": "2026-09-10T07:57:48.913Z",
+      "monoMs": 8520.7725
+    },
+    {
+      "event": "paymentSummaryValidated",
+      "wall": "2026-09-10T07:57:48.914Z",
+      "monoMs": 8520.7986
+    },
+    {
+      "event": "automationStopped",
+      "wall": "2026-09-10T07:57:48.914Z",
+      "monoMs": 8520.8075
+    }
+  ]
+}

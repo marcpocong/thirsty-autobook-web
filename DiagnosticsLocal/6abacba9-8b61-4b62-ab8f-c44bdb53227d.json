@@ -1,0 +1,121 @@
+{
+  "runID": "6abacba9-8b61-4b62-ab8f-c44bdb53227d",
+  "events": [
+    {
+      "event": "processStarted",
+      "wall": "2026-09-10T19:48:44.267Z",
+      "monoMs": 459.6803
+    },
+    {
+      "event": "chromeConnected",
+      "wall": "2026-09-10T19:48:45.418Z",
+      "monoMs": 1610.5879
+    },
+    {
+      "event": "ondaTabResolved",
+      "wall": "2026-09-10T19:48:45.418Z",
+      "monoMs": 1610.6349
+    },
+    {
+      "event": "preferenceResolved",
+      "wall": "2026-09-10T19:48:46.086Z",
+      "monoMs": 2279.4517
+    },
+    {
+      "event": "selectionAttemptStarted",
+      "wall": "2026-09-10T19:48:46.094Z",
+      "monoMs": 2287.21,
+      "value": 1
+    },
+    {
+      "event": "slot1ClickStarted",
+      "wall": "2026-09-10T19:48:46.094Z",
+      "monoMs": 2287.2628
+    },
+    {
+      "event": "slot1Selected",
+      "wall": "2026-09-10T19:48:46.145Z",
+      "monoMs": 2338.5192
+    },
+    {
+      "event": "selectionVerified",
+      "wall": "2026-09-10T19:48:46.169Z",
+      "monoMs": 2362.0842
+    },
+    {
+      "event": "proceedActionable",
+      "wall": "2026-09-10T19:48:46.169Z",
+      "monoMs": 2362.126
+    },
+    {
+      "event": "bookingProceedStarted",
+      "wall": "2026-09-10T19:48:46.194Z",
+      "monoMs": 2386.6308
+    },
+    {
+      "event": "bookingProceedClicked",
+      "wall": "2026-09-10T19:48:47.025Z",
+      "monoMs": 3217.6712
+    },
+    {
+      "event": "proceedClicked",
+      "wall": "2026-09-10T19:48:47.025Z",
+      "monoMs": 3217.7015
+    },
+    {
+      "event": "reviewDetected",
+      "wall": "2026-09-10T19:48:47.044Z",
+      "monoMs": 3237.0833
+    },
+    {
+      "event": "reviewValidated",
+      "wall": "2026-09-10T19:48:47.044Z",
+      "monoMs": 3237.1666
+    },
+    {
+      "event": "playerFillStarted",
+      "wall": "2026-09-10T19:48:47.044Z",
+      "monoMs": 3237.1807
+    },
+    {
+      "event": "playerFormDetected",
+      "wall": "2026-09-10T19:48:47.050Z",
+      "monoMs": 3242.7895
+    },
+    {
+      "event": "playerFillCompleted",
+      "wall": "2026-09-10T19:48:47.093Z",
+      "monoMs": 3286.4285
+    },
+    {
+      "event": "playerProceedStarted",
+      "wall": "2026-09-10T19:48:47.093Z",
+      "monoMs": 3286.4601
+    },
+    {
+      "event": "playerProceedClicked",
+      "wall": "2026-09-10T19:48:47.912Z",
+      "monoMs": 4104.9326
+    },
+    {
+      "event": "paymentSummaryDetected",
+      "wall": "2026-09-10T19:48:51.791Z",
+      "monoMs": 7984.1276
+    },
+    {
+      "event": "paymentSummaryValidated",
+      "wall": "2026-09-10T19:48:51.791Z",
+      "monoMs": 7984.1651
+    },
+    {
+      "event": "termsCheckStarted",
+      "wall": "2026-09-10T19:48:51.791Z",
+      "monoMs": 7984.2218
+    },
+    {
+      "event": "failed",
+      "wall": "2026-09-10T19:48:51.984Z",
+      "monoMs": 8177.2345
+    }
+  ]
+}

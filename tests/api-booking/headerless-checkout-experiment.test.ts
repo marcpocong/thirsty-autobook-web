@@ -42,9 +42,8 @@ describe('headerless checkout experiment, offline only', () => {
     expect('send' in proposal || 'fetch' in proposal || 'publicCheckout' in proposal).toBe(false);
   });
 
-  it('retains plan, customer, proof, and maximum amount validation', () => {
-    expect(() => buildHeaderlessCheckoutExperiment(plan, customer, facilityId, proofs, 1_199))
-      .toThrow('CHECKOUT_MAXIMUM_PRICE_EXCEEDED');
+  it('retains customer and proof validation without a price ceiling', () => {
+    expect(buildHeaderlessCheckoutExperiment(plan, customer, facilityId, proofs, 1_199).body.items).toHaveLength(2);
     expect(() => buildHeaderlessCheckoutExperiment(plan, { ...customer, customerFirstName: '' }, facilityId, proofs, 1_200))
       .toThrow('CHECKOUT_CUSTOMER_INVALID');
     expect(() => buildHeaderlessCheckoutExperiment(plan, customer, facilityId,

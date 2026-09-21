@@ -1,0 +1,15 @@
+{
+  "date": "2026-09-13",
+  "discoveryMode": "HYBRID",
+  "candidateSource": "UI_ONLY",
+  "configuredPrimaryStart": "17:00",
+  "configuredDuration": 3,
+  "chosen": null,
+  "estimatedApiPrice": null,
+  "uiCandidateAvailability": "unavailable",
+  "apiUiAgreement": true,
+  "pass": false,
+  "slotClicks": 0,
+  "proceedClicks": 0,
+  "requestDurationMs": 486.1814999999997
+}

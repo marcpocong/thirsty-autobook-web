@@ -22,10 +22,10 @@ import { standardPlanJournalKeys } from './two-hour-reservation.js';
 import { ApiRunProgressLog } from './run-progress-log.js';
 import { ApiAutomationLock } from './api-automation-lock.js';
 import { assertApiReleaseFresh } from './api-release.js';
-import { canReleaseApiLockAfterFailure } from './api-lock-outcome.js';
+import { canReleaseApiLockAfterParallelFailure } from './api-lock-outcome.js';
 
 const preferencesSchema = z.object({ strategy: z.enum(['standard', 'extended']), date: z.iso.date(), start: z.string().regex(/^(0[89]|1\d|2[0-3]):00$/),
-  duration: z.number().int().min(1).max(6), courtCount: z.union([z.literal(1), z.literal(2)]), maximum: z.number().finite().positive(),
+  duration: z.number().int().min(1).max(6), courtCount: z.union([z.literal(1), z.literal(2)]), maximum: z.number().optional(),
   priority: z.array(z.number().int().min(1).max(7)).min(1),
   fallbackStarts: z.array(z.string().regex(/^(0[89]|1\d|2[0-3]):00$/)),
   exact: z.array(z.array(z.number().int().min(1).max(7))).optional() }).strict();
@@ -69,10 +69,15 @@ interface WorkerSession { workerId: 'A' | 'B'; browser: Browser; page: Page; por
 async function prepareWorker(workerId: 'A' | 'B'): Promise<WorkerSession> {
   const identity = browserIdentity(workerId);
   stage('PREPARING_BROWSER', { workerId });
-  await promisify(execFile)('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
-    resolve('scripts/start-onda-chrome.ps1'), '-Worker', workerId, '-Port', String(identity.port)],
-  { cwd: process.cwd(), windowsHide: true, timeout: 30_000 });
-  verifyDedicatedChrome(identity);
+  try { verifyDedicatedChrome(identity); }
+  catch(error){
+    if(!(error instanceof Error)||error.message!=='CDP_NOT_LISTENING')throw error;
+    await promisify(execFile)('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+      resolve('scripts/start-onda-chrome.ps1'), '-Worker', workerId, '-Port', String(identity.port)],
+    { cwd: process.cwd(), windowsHide: true, timeout: 30_000 });
+    // The starter exits successfully only after verifying the new listener,
+    // Chrome process, port, and exact dedicated profile.
+  }
   const browser = await chromium.connectOverCDP(identity.cdpUrl);
   connectedBrowsers.push(browser);
   const context = browser.contexts()[0];
@@ -105,8 +110,12 @@ try {
   if(command.mode==='live'||command.mode==='live-now')liveLock=await ApiAutomationLock.acquire(strategy,strategy==='extended'?['A','B']:['A']);
   const customers = command.mode === 'dry' ? undefined : { A: loadLocalCheckoutCustomer('A'),
     ...(strategy === 'extended' ? { B: loadLocalCheckoutCustomer('B') } : {}) };
-  const sessions = [await prepareWorker('A')];
-  if (strategy === 'extended') sessions.push(await prepareWorker('B'));
+  // The dedicated profiles are independent. Wait for both checks to settle so
+  // a failure in one browser cannot leave an unobserved preparation running.
+  const prepared=await Promise.allSettled((strategy==='extended'?['A','B'] as const:['A'] as const).map(prepareWorker));
+  const failure=prepared.find((result):result is PromiseRejectedResult=>result.status==='rejected');
+  if(failure)throw failure.reason;
+  const sessions=prepared.map(result=>{if(result.status!=='fulfilled')throw Error('API_BROWSER_PREPARATION_FAILED');return result.value;});
   if (command.mode === 'prepare') { process.exitCode = 0; }
   else {
     if (command.mode === 'live') {
@@ -149,14 +158,22 @@ try {
       process.env.ONDA_CALENDAR_FREE_CHECKOUT = 'APPROVED_ONE_SHOT';
       process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT = 'SUPERVISED_ONE_SHOT';
       const checkoutPlans = standardCheckoutChunks(plan);
-      for (const [index, chunkPlan] of checkoutPlans.entries()) {
-        ensureActive();
-        const workerId = index === 0 ? 'A' : 'B';
+      const attempts=checkoutPlans.map((chunkPlan,index)=>{
+        const workerId = index === 0 ? 'A' as const : 'B' as const;
         const session = sessions[index]; const customer = customers?.[workerId];
         if (!session || !customer) throw Error('API_EXTENDED_WORKER_MISSING');
         const keys = standardPlanJournalKeys(chunkPlan, THIRSTY_PICKLE_FACILITY_ID);
         const directories = keys.map(key => resolve('.local/api-booking/api-first-journals', key));
-        const journals = directories.map(directory => new DurableSubmissionJournal(directory));
+        return {chunkPlan,workerId,session,customer,keys,directories,
+          journals:directories.map(directory => new DurableSubmissionJournal(directory))};
+      });
+      const verifiedHolds:Array<{holdExpiresAt:string}>=[];
+      await liveLock?.dispatching();retainLiveLock=true;
+      const outcomes=await Promise.allSettled(attempts.map(async attempt=>{
+        const {chunkPlan,workerId,session,customer,keys,directories,journals}=attempt;
+        ensureActive();
+        const workerStarted=performance.now();
+        const workerTiming=()=>({workerId,workerElapsedMs:Math.round(performance.now()-workerStarted)});
         const key = keys[0]!, directory = directories[0]!, journal = journals[0]!;
         let token: string | undefined, bookingNo: string | undefined;
         const capture = async (response: CheckoutHttpResponse) => {
@@ -171,29 +188,27 @@ try {
         };
         stage('FRESH_VERIFICATION_AND_PROOFS', { workerId });
         let hold;
-        await liveLock?.dispatching();retainLiveLock=true;
         try { hold = await submitCalendarFreeTwoHourCheckout({ page: session.page, plan: chunkPlan, availability: discovery.snapshot,
           customer, approval: { courts: chunkPlan.courts.map(court => court.court), date: command.date,
             startTime: chunkPlan.startTime, endTime: chunkPlan.endTime,
             maximumAmount: chunkPlan.totalPrice, customerId: customer.customerId,
             approvalReference: `desktop-api-first-${workerId}-${key}` }, journal,
           additionalJournals: journals.slice(1), captureCheckoutResponse: capture,
+          onPhase: phase => stage(phase, workerTiming()),
           onHumanVerificationRequired: async () => {
             await session.page.evaluate(id => { document.title = `THIRSTY BOT ${id} - VERIFY HERE`; }, workerId);
             await showWindow(session.page); stage('HUMAN_VERIFICATION_REQUIRED', { workerId });
           },
           onHumanVerificationCompleted: async () => { stage('HUMAN_VERIFICATION_COMPLETE', { workerId }); } });
         } catch (error) {
-          const states=await Promise.all(journals.map((currentJournal,currentIndex)=>currentJournal.read(keys[currentIndex]!).then(record=>record.state).catch(()=> 'unknown' as const)));
-          if(canReleaseApiLockAfterFailure(verifiedHold,error,states)){retainLiveLock=false;await liveLock?.release();liveLock=undefined;}
           const code = error instanceof Error ? error.message : '';
           if (/TURNSTILE|SECURITY_CONTEXT|CHALLENGE/.test(code)) {
             await showWindow(session.page); stage('HUMAN_VERIFICATION_REQUIRED', { workerId, code });
           }
           throw error;
         }
-        await liveLock?.held(hold.holdExpiresAt);verifiedHold=true;retainLiveLock=true;
-        stage('PENDING_HOLD', { workerId, bookingId: hold.bookingIds[0]!, bookingNo: bookingNo ?? '',
+        verifiedHolds.push({holdExpiresAt:hold.holdExpiresAt});verifiedHold=true;retainLiveLock=true;
+        stage('PENDING_HOLD', { ...workerTiming(), bookingId: hold.bookingIds[0]!, bookingNo: bookingNo ?? '',
           holdExpiresAt: hold.holdExpiresAt, price: chunkPlan.totalPrice });
         if (!token || !bookingNo) throw Error('OFFICIAL_CHECKOUT_TOKEN_MISSING');
         const grant = await session.page.evaluate(async ({ bookingNo, token }) => {
@@ -208,8 +223,24 @@ try {
         if (!body.includes('Pending') || !body.replaceAll(',', '').includes(chunkPlan.totalPrice.toFixed(2)))
           throw Error('OFFICIAL_CHECKOUT_STATE_MISMATCH');
         await showWindow(session.page);
-        stage('OFFICIAL_QRPH_HANDOFF', { workerId, bookingId: hold.bookingIds[0]!, bookingNo,
+        stage('OFFICIAL_QRPH_HANDOFF', { ...workerTiming(), bookingId: hold.bookingIds[0]!, bookingNo,
           holdExpiresAt: hold.holdExpiresAt, price: chunkPlan.totalPrice });
+        return hold;
+      }));
+      if(verifiedHolds.length){
+        const holdExpiresAt=verifiedHolds.map(hold=>hold.holdExpiresAt).sort((a,b)=>Date.parse(b)-Date.parse(a))[0]!;
+        await liveLock?.held(holdExpiresAt);
+      }
+      const failures=outcomes.filter((outcome):outcome is PromiseRejectedResult=>outcome.status==='rejected');
+      if(failures.length){
+        if(!verifiedHold){
+          const states=(await Promise.all(attempts.flatMap(attempt=>attempt.journals.map((journal,index)=>
+            journal.read(attempt.keys[index]!).then(record=>record.state).catch(()=> 'unknown' as const)))));
+          if(canReleaseApiLockAfterParallelFailure(false,failures.map(failure=>failure.reason),states,attempts.length)){
+            retainLiveLock=false;await liveLock?.release();liveLock=undefined;
+          }
+        }
+        throw failures[0]!.reason;
       }
     }
   }

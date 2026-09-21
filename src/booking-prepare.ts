@@ -1,7 +1,8 @@
 import { resolve } from 'node:path';
 import type { Page } from 'playwright';
 import type { BrowserIdentity } from './browser.js';
-import { readFile, open, unlink } from 'node:fs/promises';
+import { readFile, open, unlink, mkdir } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createServer } from 'node:net';
@@ -28,6 +29,9 @@ export function assertResetSafe(record:RetainedRecord|undefined,browser:BrowserR
   }
   if(!record?.stage&&['checkout','unknown'].includes(record?.state??''))throw Error('PAYMENT_HOLD_MAY_BE_ACTIVE');
   if(record?.stage==='HOLD_VERIFIED'||record?.handoff||record?.state==='hold'){
+    // A verified hold is already a known outcome. A fresh, clean schedule tab
+    // may be prepared while its QR tab and durable evidence remain available.
+    if(record.stage==='HOLD_VERIFIED'&&Number.isFinite(Date.parse(record.holdExpiresAt??''))&&browser.clean&&browser.page==='Schedule'&&browser.selected===0&&browser.hold==='Not detected')return;
     if(browser.hold==='Expired')return;
     const expires=Date.parse(record.holdExpiresAt??'');
     if(Number.isFinite(expires)&&expires<=now&&browser.clean&&browser.page==='Schedule'&&browser.hold==='Not detected')return;
@@ -88,8 +92,10 @@ export async function resetAndPrepare(strategy:'standard'|'extended',safety:Safe
     }
     const browsers:PreparedBrowser[]=[];
     deps.progress?.('onda');
-    for(const b of identities){
-      const prepared=await (deps.inspect??inspectForPreparation)(b,safety);
+    for(const [i,b] of identities.entries()){
+      const workerRecord=sharedExtended?record:legacy||record?.mode==='extended'?records[i]:i===0?record:undefined;
+      const preserveHold=workerRecord?.stage==='HOLD_VERIFIED'&&Number.isFinite(Date.parse(workerRecord.holdExpiresAt??''));
+      const prepared=await (deps.inspect??((identity,guard)=>inspectForPreparation(identity,guard,preserveHold)))(b,safety);
       browsers.push(prepared);
     }
     // Inspect every required browser before deciding whether any state is safe
@@ -105,7 +111,17 @@ export async function resetAndPrepare(strategy:'standard'|'extended',safety:Safe
     const normalized:ResetPreparation['browsers']=[];
     for(const [i,browser] of browsers.entries()){await same();safety.check();const prepared=await browser.normalize(date);normalized.push({id:i===0?'A':'B',...(prepared?{snapshot:prepared}:{})});}
     deps.progress?.('grids');
-    if(raw){await same();for(const [i,r] of subordinate.entries())if(r)await unlink(workerPaths[i]!);await unlink(path);}
+    if(raw){
+      await same();
+      const verifiedHold=record?.stage==='HOLD_VERIFIED'||records.some(r=>r?.stage==='HOLD_VERIFIED');
+      if(verifiedHold){
+        const directory=resolve(root,'.local/retained-holds');await mkdir(directory,{recursive:true,mode:0o700});
+        const archive=await open(resolve(directory,`${randomUUID()}.json`),'wx',0o600);
+        try{await archive.writeFile(JSON.stringify({archivedAt:new Date().toISOString(),lock:record,workers:records.filter(Boolean)}));await archive.sync();}finally{await archive.close();}
+      }
+      for(const [i,r] of subordinate.entries())if(r)await unlink(workerPaths[i]!);
+      await unlink(path);
+    }
     result={browsers:normalized};
     return result;
   }finally{
@@ -114,12 +130,16 @@ export async function resetAndPrepare(strategy:'standard'|'extended',safety:Safe
   }
 }
 
-async function inspectForPreparation(b:BrowserIdentity,safety:Safety):Promise<PreparedBrowser>{
+async function inspectForPreparation(b:BrowserIdentity,safety:Safety,preserveVerifiedHold=false):Promise<PreparedBrowser>{
   safety.check();verifyDedicatedChrome(b);
   const browser=await chromium.connectOverCDP(b.cdpUrl,{timeout:10000}).catch(()=>{throw Error('CDP_ENDPOINT_UNAVAILABLE');});
   const candidates=browser.contexts().flatMap(c=>c.pages()).filter(p=>{try{return new URL(p.url()).origin===new URL(ONDA_URL).origin;}catch{return false;}});
-  if(candidates.length!==1)throw Error('ONDA_TAB_AMBIGUOUS_OR_MISSING');
-  const page=candidates[0]!;page.setDefaultTimeout(10000);monitorConnection(browser,page,safety);
+  const schedulePages=candidates.filter(p=>p.url()===ONDA_URL);
+  if(!preserveVerifiedHold&&candidates.length!==1||preserveVerifiedHold&&schedulePages.length>1)throw Error('ONDA_TAB_AMBIGUOUS_OR_MISSING');
+  const context=browser.contexts()[0];if(!context)throw Error('CDP_BROWSER_CONTEXT_MISSING');
+  const page=preserveVerifiedHold?(schedulePages[0]??await context.newPage()):candidates[0]!;
+  if(preserveVerifiedHold&&page.url()!==ONDA_URL)await page.goto(ONDA_URL,{waitUntil:'domcontentloaded'});
+  page.setDefaultTimeout(10000);monitorConnection(browser,page,safety);
   const reason=securityReason(await page.locator('body').innerText());if(reason)throw Error(reason);
   const observed=await inspectLockPage(page);
   if(['Review Booking','Payment Summary'].includes(observed.page)&&(page.url()!==ONDA_URL||await page.locator('h2').count()!==1||(await page.locator('h2').innerText()).trim()!==VENUE))throw Error('WRONG_VENUE');

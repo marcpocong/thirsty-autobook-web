@@ -23,7 +23,7 @@ export function commandSpec(command: Command, root: string, node: string) {
   if (typeof command === 'object' && command !== null) {
     if(command.kind==='apiRun'){
       const preferences=z.object({strategy:z.enum(['standard','extended']),date:z.iso.date(),start:z.string().regex(/^(0[89]|1\d|2[0-3]):00$/),duration:z.number().int().min(1).max(6),courtCount:z.union([z.literal(1),z.literal(2)]),
-        maximum:z.number().finite().positive(),priority:z.array(z.number().int().min(1).max(7)).min(1),fallbackStarts:z.array(z.string().regex(/^(0[89]|1\d|2[0-3]):00$/)),exact:z.array(z.array(z.number().int().min(1).max(7))).optional()}).strict();
+        maximum:z.number().optional(),priority:z.array(z.number().int().min(1).max(7)).min(1),fallbackStarts:z.array(z.string().regex(/^(0[89]|1\d|2[0-3]):00$/)),exact:z.array(z.array(z.number().int().min(1).max(7))).optional()}).strict();
       const c=z.object({kind:z.literal('apiRun'),mode:z.enum(['prepare','dry','live','live-now']),date:z.iso.date(),
         fingerprint:z.string().regex(/^[a-f0-9]{64}$/),releaseMs:z.number().int().positive().optional(),preferences:preferences.optional()}).strict().parse(command);
       if(process.env.THIRSTY_API_INSTALLATION!=='1'&&process.env.THIRSTY_API_TEST_INSTALLATION!=='1')throw Error('API_INSTALLATION_REQUIRED');
@@ -44,12 +44,12 @@ export function commandSpec(command: Command, root: string, node: string) {
     if(command.kind==='dualPractice'||command.kind==='dualFullPractice') {
       const c=z.object({kind:z.enum(['dualPractice','dualFullPractice']),input:DualPracticeSchema}).strict().parse(command), p=c.input, t=p.target;
       if(c.kind==='dualFullPractice')requireDualFullAuthorization(p);
-      return {executable:node,args:['--import','tsx',resolve(root,'src/dual-entry.ts'),c.kind==='dualPractice'?'practice':'full','--date',t.date,'--court-a',String(t.court),'--court-b',String(p.courtB),'--start',t.start,'--duration',String(t.duration),'--maximum-per-court',String(p.maximum),'--noncompetitive',...(c.kind==='dualFullPractice'?['--armed','--authorize-terms']:[])],automation:true};
+      return {executable:node,args:['--import','tsx',resolve(root,'src/dual-entry.ts'),c.kind==='dualPractice'?'practice':'full','--date',t.date,'--court-a',String(t.court),'--court-b',String(p.courtB),'--start',t.start,'--duration',String(t.duration),...(p.maximum===undefined?[]:['--maximum-per-court',String(p.maximum)]),'--noncompetitive',...(c.kind==='dualFullPractice'?['--armed','--authorize-terms']:[])],automation:true};
     }
     if(command.kind==='fullPractice'){
       const {input}=z.object({kind:z.literal('fullPractice'),input:FullPracticeSchema}).strict().parse(command);
       requireCapability('practice:full');const t=input.target;
-      return {executable:node,args:['--import','tsx',resolve(root,'src/index.ts'),'practice:full','--armed','--authorize-terms','--date',t.date,'--court',String(t.court),'--start',t.start,'--duration',String(t.duration),'--maximum',String(input.maximum)],automation:true};
+      return {executable:node,args:['--import','tsx',resolve(root,'src/index.ts'),'practice:full','--armed','--authorize-terms','--date',t.date,'--court',String(t.court),'--start',t.start,'--duration',String(t.duration),...(input.maximum===undefined?[]:['--maximum',String(input.maximum)])],automation:true};
     }
     if(command.kind==='full'){
       const c=z.object({kind:z.literal('full'),context:ScheduledReleaseContextSchema,authorizeTerms:z.literal(true)}).strict().parse(command);

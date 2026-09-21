@@ -44,7 +44,7 @@ it('fingerprints change with count; single view otherwise retains compiled seman
   const a=bookingView(config({COURT_COUNT:1})),b=bookingView(config());
   expect(a.fingerprint).not.toBe(b.fingerprint);expect(a.preferences).toEqual(b.preferences);expect(a.slots).toEqual(b.slots);
   expect({...a.setup,COURT_COUNT:2}).toEqual(b.setup);expect(describePlan(b)).toContain('No price ceiling');
-  expect(dualValidationFingerprint(config())).not.toBe(dualValidationFingerprint(config({MAX_PRICE:1300})));
+  expect(dualValidationFingerprint(config())).toBe(dualValidationFingerprint(config({MAX_PRICE:1300})));
 });
 it('the Standard single-court release retains its direct path and the new router does not use the legacy dual runtime',()=>{
   const source=readFileSync('src/index.ts','utf8');expect(source).toContain("BOOKING_TYPE === 'extended' || config.COURT_COUNT === 2");
@@ -124,5 +124,6 @@ it('dual arming barrier waits for both workers and fails on abort',async()=>{
   const aborted=new Safety(),failed=dualArmGate({releaseMs:Date.now()+5000},aborted,new Telemetry())('A');aborted.stop('USER_ABORT');await expect(failed).rejects.toThrow('DUAL_PREFLIGHT_FAILED');
 });
 const fullArgs=['--armed','--authorize-terms','--noncompetitive','--date',date,'--court-a','7','--court-b','6','--start','10:00','--duration','1','--maximum-per-court','600'];
-it.each(['--armed','--authorize-terms','--noncompetitive','--date','--court-a','--court-b','--start','--duration','--maximum-per-court'])('full practice requires explicit %s',flag=>{const args=[...fullArgs],index=args.indexOf(flag);args.splice(index,['--armed','--authorize-terms','--noncompetitive'].includes(flag)?1:2);expect(()=>parseDualCommand('full',args)).toThrow();});
+it.each(['--armed','--authorize-terms','--noncompetitive','--date','--court-a','--court-b','--start','--duration'])('full practice requires explicit %s',flag=>{const args=[...fullArgs],index=args.indexOf(flag);args.splice(index,['--armed','--authorize-terms','--noncompetitive'].includes(flag)?1:2);expect(()=>parseDualCommand('full',args)).toThrow();});
+it('full practice accepts no price ceiling argument',()=>expect(parseDualCommand('full',fullArgs.slice(0,-2)).maximum).toBeUndefined());
 it('full practice accepts exact authorized inputs only, distinct courts, no fallbacks',()=>{expect(parseDualCommand('full',fullArgs).exact?.b.court).toBe(6);expect(()=>parseDualCommand('full',fullArgs.map((v,i)=>fullArgs[i-1]==='--court-b'?'7':v))).toThrow();expect(()=>parseDualCommand('full',[...fullArgs,'--fallback','14:00'])).toThrow();expect(()=>parseDualCommand('race:dry',[])).toThrow('ARMED_FLAG_REQUIRED');});

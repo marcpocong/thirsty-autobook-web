@@ -80,6 +80,6 @@ describe('selection-only engine',()=>{
   });
 });
 it('validates schedule bounds, court permutations and fallback ordering at the settings boundary',()=>{
-  const base={START_TIME:'22:00',DURATION_HOURS:2,PREFERRED_COURTS:[7,6,5,4,3,2,1],FALLBACK_TIMES:[],MAX_PRICE:1200};expect(BookingSetupSchema.safeParse(base).success).toBe(true);
+  const base={START_TIME:'22:00',DURATION_HOURS:2,PREFERRED_COURTS:[7,6,5,4,3,2,1],FALLBACK_TIMES:[]};expect(BookingSetupSchema.safeParse(base).success).toBe(true);
   for(const invalid of [{DURATION_HOURS:3},{START_TIME:'07:00'},{PREFERRED_COURTS:[7,7,5,4,3,2,1]},{FALLBACK_TIMES:['22:00']},{MAX_SELECTION_ATTEMPTS:6},{PLAYER_FULL_NAME:'not permitted'}])expect(BookingSetupSchema.safeParse({...base,...invalid}).success).toBe(false);
 });

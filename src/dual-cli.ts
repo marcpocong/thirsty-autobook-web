@@ -26,7 +26,7 @@ export function parseDualCommand(mode: string | undefined, args: string[]) {
   if (typeof date !== 'string' || DateTime.fromISO(date).toISODate() !== date) throw Error('EXPLICIT_DATE_REQUIRED');
   if (mode === 'dry') return { mode:mode as DualMode, date };
   const input = DualPracticeSchema.parse({ target:{ date, court:parsed.get('--court-a'), start:parsed.get('--start'), duration:parsed.get('--duration') },
-    courtB:parsed.get('--court-b'), maximum:mode === 'full' ? Number(parsed.get('--maximum-per-court')) : parsed.has('--maximum-per-court') ? Number(parsed.get('--maximum-per-court')) : 1200,
+    courtB:parsed.get('--court-b'), ...(parsed.has('--maximum-per-court')?{maximum:Number(parsed.get('--maximum-per-court'))}:{}),
     noncompetitive:true, authorizeTerms:parsed.has('--authorize-terms'), armed:parsed.has('--armed') });
   if (mode === 'full') requireDualFullAuthorization(input);
   return { mode:mode as DualMode, date, exact:practicePair(input), maximum:parsed.has('--maximum-per-court')?input.maximum:undefined, authorizeTerms:input.authorizeTerms };

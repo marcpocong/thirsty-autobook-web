@@ -1,0 +1,69 @@
+{
+  "coordinator": {
+    "runID": "6823166a-ad86-46f0-95ff-56714ba14d61",
+    "events": [
+      {
+        "event": "dualRunStarted",
+        "wall": "2026-09-13T19:08:46.175Z",
+        "monoMs": 686.2944
+      },
+      {
+        "event": "dualPreflightStarted",
+        "wall": "2026-09-13T19:08:46.176Z",
+        "monoMs": 686.4963
+      },
+      {
+        "event": "workerAGridReady",
+        "wall": "2026-09-13T19:08:50.376Z",
+        "monoMs": 4886.1141
+      },
+      {
+        "event": "workerBGridReady",
+        "wall": "2026-09-13T19:08:50.493Z",
+        "monoMs": 5004.0222
+      },
+      {
+        "event": "bothGridsReady",
+        "wall": "2026-09-13T19:08:50.494Z",
+        "monoMs": 5004.1556
+      }
+    ],
+    "releasePerformance": null,
+    "availabilityPerformance": null
+  },
+  "workers": [
+    {
+      "runID": "6da0cd83-5306-41a9-a443-132f1a1b6200",
+      "events": [],
+      "releasePerformance": null,
+      "availabilityPerformance": null
+    },
+    {
+      "runID": "d9f92ec7-5e9f-4249-ae36-9f2dc05baf9b",
+      "events": [],
+      "releasePerformance": null,
+      "availabilityPerformance": null
+    }
+  ],
+  "metrics": {
+    "releaseToWorkerGrids": [
+      null,
+      null
+    ],
+    "releaseToBothGrids": null,
+    "bothGridsToPair": null,
+    "pairToFirstClicks": [
+      null,
+      null
+    ],
+    "releaseToBothSelections": null,
+    "selectionsToBothProceed": null,
+    "selectionToHold": [
+      null,
+      null
+    ],
+    "releaseToFirstHold": null,
+    "releaseToSecondHold": null,
+    "releaseToBothHolds": null
+  }
+}

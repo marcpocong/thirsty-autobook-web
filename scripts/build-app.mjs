@@ -33,7 +33,8 @@ await copyFile(join(root, 'assets/brand/thirsty-pickle-bot.png'), join(output, '
 await copyFile(join(root, 'src/api-booking/calendar-free-security-context-browser.js'),
   join(output, 'dist/src/api-booking/calendar-free-security-context-browser.js'));
 const savedSetup = JSON.parse(await readFile(resolve(updating?output:root, 'config.local.json'), 'utf8'));
-await writeFile(join(output, 'config.local.json'), JSON.stringify({ ...savedSetup, BOOKING_METHOD: 'api-first' }, null, 2) + '\n');
+const {MAX_PRICE: _legacyPriceLimit, ...savedSetupWithoutPriceLimit}=savedSetup;
+await writeFile(join(output, 'config.local.json'), JSON.stringify({ ...savedSetupWithoutPriceLimit, BOOKING_METHOD: 'api-first' }, null, 2) + '\n');
 if(!existsSync(join(output,'.local/runtime/node.exe')))await copyFile(process.execPath, join(output, '.local/runtime/node.exe'));
 const windows = process.env.SystemRoot;
 if (!windows) throw Error('WINDOWS_SYSTEM_ROOT_MISSING');

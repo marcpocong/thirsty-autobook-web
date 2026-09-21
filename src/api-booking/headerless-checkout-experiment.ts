@@ -2,7 +2,6 @@ import type { BookingPlan } from './types.js';
 import type { FreshSlotProof } from './slot-proofs.js';
 import {
   buildStandardPublicCheckoutRequest,
-  PublicCheckoutValidationError,
   type PublicCheckoutRequest,
   type ResolvedGuestCustomer,
 } from './public-checkout.js';
@@ -27,8 +26,6 @@ export function buildHeaderlessCheckoutExperiment(
   proofs: readonly FreshSlotProof[],
   maximumAmount: number,
 ): HeaderlessCheckoutExperiment {
-  if (!Number.isFinite(maximumAmount) || maximumAmount <= 0 || plan.totalPrice > maximumAmount)
-    throw new PublicCheckoutValidationError('CHECKOUT_MAXIMUM_PRICE_EXCEEDED');
   const body = buildStandardPublicCheckoutRequest(plan, customer, facilityId, proofs);
   return {
     mode: 'OFFLINE_HEADERLESS_CONSTRUCTION', dispatchAllowed: false,

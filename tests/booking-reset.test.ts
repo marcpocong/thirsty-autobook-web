@@ -1,5 +1,5 @@
 import {it,expect,vi} from 'vitest';
-import {mkdtemp,mkdir,readFile,writeFile,rm} from 'node:fs/promises';
+import {mkdtemp,mkdir,readFile,writeFile,rm,readdir} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {resetAndPrepare,type PreparedBrowser} from '../src/booking-prepare.js';
@@ -23,6 +23,27 @@ it('uses the endpoint identity returned by preparation startup',()=>fixture(asyn
 it.each(['SELECTION','REVIEW','PAYMENT_SUMMARY'])('recovers a dead Standard %s record',stage=>fixture(async h=>{await h.record('standard',stage);h.inspect.mockImplementation(async()=>({observed:{page:stage==='SELECTION'?'Schedule':'Payment Summary',selected:stage==='SELECTION'?2:null,hold:'Not detected',clean:false},normalize:h.normalize}));await h.run();expect(h.normalize).toHaveBeenCalledOnce();await expect(readFile(h.path)).rejects.toThrow();}));
 it.each(['extended','dual'])('recovers safe stale %s state before preparing Standard',mode=>fixture(async h=>{await h.record(mode,'SELECTION');await h.run();expect(h.inspect.mock.calls.map(c=>c[0].workerId)).toEqual(['A','B']);for(const p of ['automation.lock','dual/worker-a.lock','dual/worker-b.lock'])await expect(readFile(join(h.root,'.local',p))).rejects.toThrow();}));
 it('refuses an active PID before inspecting or normalizing',()=>fixture(async h=>{await h.record('standard','SELECTION');await expect(resetAndPrepare('standard',new Safety(),{root:h.root,alive:()=>true,inspect:h.inspect})).rejects.toThrow('LOCK_PID_RUNNING');expect(h.inspect).not.toHaveBeenCalled();}));
+it('archives a verified active hold before preparing another run in the same bot',()=>fixture(async h=>{
+  const expiry=new Date(Date.now()+120000).toISOString();
+  await writeFile(h.path,JSON.stringify({pid:123,runID:'fixture',mode:'standard',stage:'HOLD_VERIFIED',holdExpiresAt:expiry}));
+  await h.run();
+  expect(h.normalize).toHaveBeenCalledOnce();
+  const files=await readdir(join(h.root,'.local/retained-holds'));expect(files).toHaveLength(1);
+  expect(JSON.parse(await readFile(join(h.root,'.local/retained-holds',files[0]!),'utf8')).lock).toMatchObject({runID:'fixture',stage:'HOLD_VERIFIED',holdExpiresAt:expiry});
+  await expect(readFile(h.path)).rejects.toThrow();
+}));
+it('keeps a verified hold in place when the old worker is still active',()=>fixture(async h=>{
+  await writeFile(h.path,JSON.stringify({pid:123,runID:'fixture',mode:'standard',stage:'HOLD_VERIFIED',holdExpiresAt:new Date(Date.now()+120000).toISOString()}));
+  await expect(resetAndPrepare('standard',new Safety(),{root:h.root,alive:()=>true,inspect:h.inspect})).rejects.toThrow('LOCK_PID_RUNNING');
+  expect((await readdir(join(h.root,'.local'))).includes('retained-holds')).toBe(false);
+}));
+it('does not archive or clear a verified hold when fresh schedule preparation fails',()=>fixture(async h=>{
+  await writeFile(h.path,JSON.stringify({pid:123,runID:'fixture',mode:'standard',stage:'HOLD_VERIFIED',holdExpiresAt:new Date(Date.now()+120000).toISOString()}));
+  h.normalize.mockRejectedValue(Error('TARGET_DATE_UNAVAILABLE'));
+  await expect(h.run()).rejects.toThrow('TARGET_DATE_UNAVAILABLE');
+  expect(JSON.parse(await readFile(h.path,'utf8')).stage).toBe('HOLD_VERIFIED');
+  expect((await readdir(join(h.root,'.local'))).includes('retained-holds')).toBe(false);
+}));
 it.each(['FINAL_ACTION_DISPATCHING','HOLD_VERIFIED'])('blocks Extended %s in B without resetting A',stage=>fixture(async h=>{await h.record('extended','SELECTION');await writeFile(join(h.root,'.local/dual/worker-b.lock'),JSON.stringify({pid:123,runID:'fixture',stage}));h.inspect.mockImplementation(async b=>({observed:b.workerId==='B'?{page:'QR Checkout',selected:null,hold:'Active',clean:false}:clean,expired:false,normalize:h.normalize}));await expect(h.run('extended')).rejects.toThrow('PAYMENT_HOLD_MAY_BE_ACTIVE');expect(h.normalize).not.toHaveBeenCalled();}));
 it('both explicitly expired verified holds allow later one-click recovery',()=>fixture(async h=>{await h.record('extended','HOLD_VERIFIED');h.inspect.mockImplementation(async()=>({observed:{page:'QR Checkout',selected:null,hold:'Expired',countdownSeconds:0,clean:false},normalize:h.normalize}));await h.run('extended');expect(h.normalize).toHaveBeenCalledTimes(2);}));
 it('replacement during normalization is retained',()=>fixture(async h=>{await h.record('standard','REVIEW');h.normalize.mockImplementation(async()=>{await writeFile(h.path,JSON.stringify({pid:456,runID:'replacement'}));});await expect(h.run()).rejects.toThrow('LOCK_REPLACED');expect(JSON.parse(await readFile(h.path,'utf8')).runID).toBe('replacement');}));

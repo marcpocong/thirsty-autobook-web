@@ -21,7 +21,8 @@ export const ConfigSchema = z.object({
   DURATION_HOURS: z.coerce.number().int().min(1).max(6),
   PREFERRED_COURTS: courts.min(1), FALLBACK_COURTS: courts.default([]),
   FALLBACK_TIMES: z.array(hour).default([]),
-  MAX_PRICE: z.coerce.number().finite().positive(),
+  // Legacy runtime argument only. Availability and checkout never cap price.
+  MAX_PRICE: z.number().default(Infinity),
   MAX_SELECTION_ATTEMPTS: z.coerce.number().int().min(1).max(5).default(3),
   PAYMENT_HANDOFF_VERIFY_TIMEOUT_MS: z.coerce.number().int().min(1000).max(30000).default(10000),
   PAYMENT_SUMMARY_READY_TIMEOUT_MS: z.coerce.number().int().min(3000).max(120000).default(60000),
@@ -74,12 +75,12 @@ export function loadObservationConfig(): ReleaseSettings {
   if (!parsed.success) throw new Error(`CONFIG_INVALID: ${parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
   return parsed.data;
 }
-type TestRuntimeSetup={strategy:'standard'|'extended';courtCount:1|2;start:string;duration:number;priority:number[];fallbackStarts:string[];maximum:number};
+type TestRuntimeSetup={strategy:'standard'|'extended';courtCount:1|2;start:string;duration:number;priority:number[];fallbackStarts:string[];maximum?:number};
 function parseConfig(includeSaved:boolean,test?:TestRuntimeSetup):{config:Config;fallbackReconciliation:FallbackReconciliation} {
   const env = environment();
   let fallbackReconciliation:FallbackReconciliation={valid:[],removed:[]};
-  const raw: Record<string, unknown> = { START_TIME:'08:00', DURATION_HOURS:2, PREFERRED_COURTS:[7,6,5,4,3,2,1], FALLBACK_COURTS:[], FALLBACK_TIMES:[], MAX_PRICE:1200 };
-  for (const key of Object.keys(ConfigSchema.shape)) if (env[key] !== undefined) raw[key] = env[key];
+  const raw: Record<string, unknown> = { START_TIME:'08:00', DURATION_HOURS:2, PREFERRED_COURTS:[7,6,5,4,3,2,1], FALLBACK_COURTS:[], FALLBACK_TIMES:[] };
+  for (const key of Object.keys(ConfigSchema.shape)) if (key!=='MAX_PRICE'&&env[key] !== undefined) raw[key] = env[key];
   for (const key of ['PREFERRED_COURTS', 'FALLBACK_COURTS', 'FALLBACK_TIMES']) {
     if (typeof raw[key] === 'string') raw[key] = (raw[key] as string).split(',').map(s => s.trim()).filter(Boolean).map(s => key === 'FALLBACK_TIMES' ? s : Number(s));
   }
@@ -89,7 +90,7 @@ function parseConfig(includeSaved:boolean,test?:TestRuntimeSetup):{config:Config
     fallbackReconciliation=repaired.reconciliation;
     Object.assign(raw, BookingSetupSchema.parse(repaired.setup));
   }
-  if(test)Object.assign(raw,{BOOKING_TYPE:test.strategy,COURT_COUNT:test.courtCount,START_TIME:test.start,DURATION_HOURS:test.duration,PREFERRED_COURTS:test.priority,FALLBACK_COURTS:[],FALLBACK_TIMES:test.fallbackStarts,MAX_PRICE:test.maximum});
+  if(test)Object.assign(raw,{BOOKING_TYPE:test.strategy,COURT_COUNT:test.courtCount,START_TIME:test.start,DURATION_HOURS:test.duration,PREFERRED_COURTS:test.priority,FALLBACK_COURTS:[],FALLBACK_TIMES:test.fallbackStarts});
   const parsed = ConfigSchema.safeParse(raw);
   if (!parsed.success) throw new Error(`CONFIG_INVALID: ${parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
   return {config:parsed.data,fallbackReconciliation};
@@ -106,7 +107,7 @@ export const BookingSetupSchema = z.object({
   COURT_COUNT: ConfigSchema.shape.COURT_COUNT,
   START_TIME: hour, DURATION_HOURS: z.number().int().min(1).max(6),
   PREFERRED_COURTS: courts.length(7), FALLBACK_COURTS: z.array(z.never()).default([]),
-  FALLBACK_TIMES: z.array(hour).max(15), MAX_PRICE: z.number().finite().positive(),
+  FALLBACK_TIMES: z.array(hour).max(15),
   MAX_SELECTION_ATTEMPTS: z.number().int().min(1).max(5).default(3),
 }).strict().superRefine((c, ctx) => {
   if(c.BOOKING_TYPE==='standard'?c.DURATION_HOURS>3:c.DURATION_HOURS<4)ctx.addIssue({code:'custom',message:c.BOOKING_TYPE==='standard'?'Standard bookings must be 1–3 hours.':'Extended bookings must be 4–6 hours.',path:['DURATION_HOURS']});
@@ -128,7 +129,7 @@ export function calculateTarget(c: Pick<Config, 'TIMEZONE' | 'RELEASE_TIME' | 'B
   return { ...releaseCalendar(c, now), preferences: compilePreferences(c) };
 }
 export function planFingerprint(c: Config) {
-  return createHash('sha256').update(JSON.stringify({ method:c.BOOKING_METHOD, strategy:c.BOOKING_TYPE, courtCount:c.COURT_COUNT, schedule: ObservationSchema.parse(c), target: calculateTarget(c), maximum:c.MAX_PRICE, attempts:c.MAX_SELECTION_ATTEMPTS })).digest('hex');
+  return createHash('sha256').update(JSON.stringify({ method:c.BOOKING_METHOD, strategy:c.BOOKING_TYPE, courtCount:c.COURT_COUNT, schedule: ObservationSchema.parse(c), target: calculateTarget(c), attempts:c.MAX_SELECTION_ATTEMPTS })).digest('hex');
 }
 export function releaseCalendar(c: Pick<Config, 'TIMEZONE' | 'RELEASE_TIME' | 'BOOKING_HORIZON_DAYS'>, now: DateTime = DateTime.now()) {
   const local = now.setZone(c.TIMEZONE);

@@ -19,7 +19,7 @@ import { abortDualWorkers } from './dual-coordinator.js';
 export type DualMode = 'readiness' | 'dry' | 'practice' | 'selection' | 'full' | 'race:dry' | 'race:selection' | 'race';
 export const dualEvidencePath = '.local/dual/evidence.json';
 export function dualValidationFingerprint(c: Config) {
-  return createHash('sha256').update(JSON.stringify({ count:c.COURT_COUNT, start:c.START_TIME, duration:c.DURATION_HOURS, courts:[...c.PREFERRED_COURTS,...c.FALLBACK_COURTS], times:c.FALLBACK_TIMES, maximum:c.MAX_PRICE, attempts:c.MAX_SELECTION_ATTEMPTS })).digest('hex');
+  return createHash('sha256').update(JSON.stringify({ count:c.COURT_COUNT, start:c.START_TIME, duration:c.DURATION_HOURS, courts:[...c.PREFERRED_COURTS,...c.FALLBACK_COURTS], times:c.FALLBACK_TIMES, attempts:c.MAX_SELECTION_ATTEMPTS })).digest('hex');
 }
 export async function readDualEvidence(fingerprint: string) {
   try { const e = JSON.parse(await readFile(dualEvidencePath, 'utf8')); return e.fingerprint === fingerprint ? e : {}; } catch { return {}; }
@@ -38,7 +38,6 @@ export async function runDual(config: Config, mode: DualMode, safety: Safety, t:
   options: { date?:string; exact?:DualCandidate; authorizeTerms?:boolean; maximum?:number; registerAbort?:(abort:()=>void)=>void } = {}) {
   if (mode !== 'readiness' && (config.BOOKING_TYPE !== 'standard' || config.COURT_COUNT !== 2)) throw Error('DUAL_CONFIG_REQUIRED');
   if (['full','practice'].includes(mode) && !options.exact) throw Error('EXACT_DUAL_TARGET_REQUIRED');
-  if (options.maximum !== undefined && (!Number.isFinite(options.maximum) || options.maximum <= 0)) throw Error('INVALID_SELECTION_LIMIT');
   if (['full','race'].includes(mode) && !options.authorizeTerms) throw Error('TERMS_AUTHORIZATION_REQUIRED');
   const fingerprint = planFingerprint(config), validationFingerprint = dualValidationFingerprint(config), target = releaseCalendar(config);
   if (mode === 'race' || mode === 'race:selection') await requireDualEvidence(validationFingerprint, mode === 'race');

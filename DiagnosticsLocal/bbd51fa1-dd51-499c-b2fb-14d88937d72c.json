@@ -1,0 +1,55 @@
+{
+  "runID": "bbd51fa1-dd51-499c-b2fb-14d88937d72c",
+  "events": [
+    {
+      "event": "processStarted",
+      "wall": "2026-09-10T12:40:20.224Z",
+      "monoMs": 488.2938
+    },
+    {
+      "event": "chromeConnected",
+      "wall": "2026-09-10T12:40:21.544Z",
+      "monoMs": 1808.7381
+    },
+    {
+      "event": "ondaTabResolved",
+      "wall": "2026-09-10T12:40:21.544Z",
+      "monoMs": 1808.8543
+    },
+    {
+      "event": "slot1ClickStarted",
+      "wall": "2026-09-10T12:40:21.920Z",
+      "monoMs": 2184.5013
+    },
+    {
+      "event": "slot1Clicked",
+      "wall": "2026-09-10T12:40:21.960Z",
+      "monoMs": 2223.9357
+    },
+    {
+      "event": "slot2ClickStarted",
+      "wall": "2026-09-10T12:40:21.972Z",
+      "monoMs": 2236.8256
+    },
+    {
+      "event": "slot2Clicked",
+      "wall": "2026-09-10T12:40:22.015Z",
+      "monoMs": 2279.2954
+    },
+    {
+      "event": "practiceSelectionVerified",
+      "wall": "2026-09-10T12:40:22.020Z",
+      "monoMs": 2284.8383
+    },
+    {
+      "event": "practiceCleanStateVerified",
+      "wall": "2026-09-10T12:40:22.454Z",
+      "monoMs": 2717.885
+    },
+    {
+      "event": "automationStopped",
+      "wall": "2026-09-10T12:40:22.454Z",
+      "monoMs": 2718.0914
+    }
+  ]
+}

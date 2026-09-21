@@ -55,7 +55,7 @@ it('prepared readiness does not expire after 61 seconds without a state change',
   vi.useFakeTimers();vi.setSystemTime(new Date('2026-09-10T00:00:00Z'));try{const h=controllerHarness();await h.c.resetPrepare(testInput('standard',1));vi.advanceTimersByTime(61000);await h.c.refresh();expect(h.c.state.ready).toBe(true);expect(h.c.state.preparedContext).not.toBeNull();}finally{vi.useRealTimers();}
 });
 it('Release Reset & Prepare validates, saves, re-reads and prepares the current draft',async()=>{
-  const h=controllerHarness(),setup:BookingSetup={...defaultSetup,BOOKING_TYPE:'extended',COURT_COUNT:2,START_TIME:'20:00',DURATION_HOURS:4,MAX_PRICE:1800,FALLBACK_TIMES:['19:00'],MAX_SELECTION_ATTEMPTS:2};
+  const h=controllerHarness(),setup:BookingSetup={...defaultSetup,BOOKING_TYPE:'extended',COURT_COUNT:2,START_TIME:'20:00',DURATION_HOURS:4,FALLBACK_TIMES:['19:00'],MAX_SELECTION_ATTEMPTS:2};
   await h.c.setWorkflow('release');await h.c.resetPrepare({workflow:'release',strategy:'extended',setup});
   expect(h.saved).toEqual([setup]);expect(h.view().setup).toEqual(setup);expect(h.c.state).toMatchObject({ready:true,headline:'READY TO ARM'});expect(h.c.state.preparedContext?.configFingerprint).toBe(h.view().fingerprint);
 });
@@ -83,9 +83,9 @@ it.each([['05:00','Active',300],['00:00','Expired',0]] as const)('classifies the
 it('fails closed when hold countdown association is missing or ambiguous',async()=>{
   const page=await browser.newPage();await page.setContent('<h1>Checkout</h1><div><p>Slot reserved for</p></div><span>05:00</span>');expect((await inspectLockPage(page)).hold).toBe('Unknown');await page.setContent('<h1>Checkout</h1><div><p>Slot reserved for</p><p>05:00</p><p>04:59</p></div>');expect((await inspectLockPage(page)).hold).toBe('Unknown');await page.close();
 });
-it('protects recorded holds before expiry and legacy final dispatch on clean Schedule',()=>{
+it('allows a new clean schedule beside a verified hold but blocks uncertain final dispatch',()=>{
   const clean={page:'Schedule' as const,selected:0,hold:'Not detected' as const,clean:true};
-  expect(()=>assertResetSafe({stage:'HOLD_VERIFIED',holdExpiresAt:new Date(Date.now()+60000).toISOString()},clean)).toThrow('PAYMENT_HOLD_MAY_BE_ACTIVE');
+  expect(()=>assertResetSafe({stage:'HOLD_VERIFIED',holdExpiresAt:new Date(Date.now()+60000).toISOString()},clean)).not.toThrow();
   expect(()=>assertResetSafe({stage:'HOLD_VERIFIED',holdExpiresAt:new Date(Date.now()-1).toISOString()},clean)).not.toThrow();
   expect(()=>assertResetSafe({stage:'FINAL_ACTION_DISPATCHING'},clean)).toThrow('PAYMENT_HOLD_MAY_BE_ACTIVE');
   expect(()=>assertResetSafe({stage:'FINAL_ACTION_DISPATCHING'},{page:'QR Checkout',selected:null,hold:'Expired',countdownSeconds:0,clean:false})).not.toThrow();

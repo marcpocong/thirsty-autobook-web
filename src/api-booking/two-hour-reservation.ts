@@ -19,6 +19,7 @@ export interface TwoHourCheckoutRequest extends Omit<CheckoutCustomer, 'customer
   items: TwoHourItem[]; usedCustomerMembershipId: null; userId: null;
 }
 export interface VerifiedTwoHourHold { bookingIds: string[]; sessionId: string; holdExpiresAt: string; transactionId: string }
+export type ReservationPhase = 'SECURITY_CONTEXT_READY' | 'SLOT_PROOFS_READY' | 'CHECKOUT_RESPONSE_RECEIVED';
 
 /** An observed-schema transport must implement both calls; this contract never generates proofs. */
 export interface TwoHourTransport {
@@ -149,7 +150,10 @@ export function validateTwoHourResponse(raw: unknown, request: TwoHourCheckoutRe
 export class TwoHourReservationAdapter {
   constructor(private readonly transport: TwoHourTransport, private readonly journal: DurableSubmissionJournal,
     private readonly clock: () => Date = () => new Date(), private readonly maximumProofAgeMs = 15_000,
-    private readonly additionalJournals: DurableSubmissionJournal[] = []) {}
+    private readonly additionalJournals: DurableSubmissionJournal[] = [],
+    private readonly onPhase?: (phase:ReservationPhase)=>void) {}
+
+  private phase(value:ReservationPhase){try{this.onPhase?.(value);}catch{/* Timing must never change booking outcome. */}}
 
   async submit(plan: BookingPlan, customer: CheckoutCustomer, control: { supervisedOneShot: true }): Promise<VerifiedTwoHourHold> {
     if (control?.supervisedOneShot !== true || process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT !== 'SUPERVISED_ONE_SHOT')
@@ -159,10 +163,12 @@ export class TwoHourReservationAdapter {
       fail('CHECKOUT_CUSTOMER_INVALID');
     if (!Number.isFinite(this.maximumProofAgeMs) || this.maximumProofAgeMs <= 0) fail('PROOF_AGE_INVALID');
     await this.transport.prepareCheckoutContext?.();
+    this.phase('SECURITY_CONTEXT_READY');
     // Each hour has its own fresh check. Any failed check stops before the durable dispatch record.
     const proofs = await acquireFreshSlotProofs(hours, { clientId: customer.clientId,
       facilityId: THIRSTY_PICKLE_FACILITY_ID, transport: this.transport, clock: this.clock,
       maximumAgeMs: this.maximumProofAgeMs, concurrency: 2 });
+    this.phase('SLOT_PROOFS_READY');
     const request = buildStandardPublicCheckoutRequest(plan, customer, THIRSTY_PICKLE_FACILITY_ID, proofs);
     const now = this.clock();
     const keys = standardPlanJournalKeys(plan, THIRSTY_PICKLE_FACILITY_ID);
@@ -196,6 +202,7 @@ export class TwoHourReservationAdapter {
     catch (error) { await markAll('rejected'); throw error; }
     try {
       const raw = await this.transport.publicCheckout(request, permit);
+      this.phase('CHECKOUT_RESPONSE_RECEIVED');
       let verified: VerifiedTwoHourHold;
       try {
         const response = validatePublicCheckoutResponse(raw, request, plan, this.clock(), plan.totalPrice);

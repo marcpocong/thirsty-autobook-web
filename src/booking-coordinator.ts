@@ -5,7 +5,7 @@ import type { Snapshot } from './grid.js';
 
 export async function coordinateBooking(workers:DualWorker[],request:PlanRequest,grids:Snapshot[],maximum:number,attempts:number,mode:'dry'|'selection'|'full',confirm?:(plan:BookingPlan)=>Promise<boolean>){
   if(workers.some((w,i)=>w.id!==(i===0?'A':'B'))||workers.length!==(request.strategy==='standard'?1:2)||new Set(workers.map(w=>w.safety)).size!==workers.length||new Set(workers.map(w=>w.port)).size!==workers.length)throw Error('BOOKING_ISOLATION_REQUIRED');
-  if(!Number.isInteger(attempts)||attempts<1||attempts>5||!Number.isFinite(maximum)||maximum<=0)throw Error('INVALID_SELECTION_LIMIT');
+  if(!Number.isInteger(attempts)||attempts<1||attempts>5)throw Error('INVALID_SELECTION_LIMIT');
   const excluded=new Set<string>();
   let confirmed=false;
   for(let attempt=1;attempt<=(request.exact?1:attempts);attempt++){

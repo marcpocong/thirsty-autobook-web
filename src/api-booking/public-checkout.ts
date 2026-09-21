@@ -137,7 +137,6 @@ export function validatePublicCheckoutResponse(
   const root = requiredObject(raw, 'CHECKOUT_RESPONSE_INVALID');
   const bookingsValue = root.bookings, sessionsValue = root.bookingSessions, transaction = object(root.transaction);
   const total = request.items.reduce((sum, item) => sum + item.chargedAmount, 0);
-  if (maximumAmount !== undefined && (!Number.isFinite(maximumAmount) || total > maximumAmount + 1e-7)) fail('CHECKOUT_MAXIMUM_PRICE_EXCEEDED');
   if (root.success !== true || !Array.isArray(bookingsValue) || bookingsValue.length !== request.items.length ||
     !Array.isArray(sessionsValue) || sessionsValue.length !== courts.length || !transaction || transaction.status !== 'pending' ||
     !nonempty(transaction.id) || !sameAmount(transaction.amount, total) || !sameAmount(root.trustedTotalAmount, total))

@@ -79,10 +79,11 @@ const errors: Record<string, string> = {
 export interface Dependencies {
   activityJournal?:Pick<ActivityJournal,'begin'|'record'|'ready'|'end'|'history'>;
   confirmStopPrepare?:()=>Promise<boolean>;
-  confirmBooking?:(plan:BookingPlan,maximum:number)=>Promise<boolean>;
-  confirmApiTest?:(input:{strategy:'standard'|'extended';date:string;start:string;duration:number;courtCount:1|2;maximum:number;priority:number[]})=>Promise<boolean>;
+  confirmBooking?:(plan:BookingPlan,maximum?:number)=>Promise<boolean>;
+  confirmApiTest?:(input:{strategy:'standard'|'extended';date:string;start:string;duration:number;courtCount:1|2;maximum?:number;priority:number[]})=>Promise<boolean>;
   runner: Runner; lock(): Promise<boolean>; cdp(): Promise<boolean>; clock: typeof readClock;
   retainedHold?():Promise<RetainedHoldStatus|null>;
+  previousHolds?():Promise<Dashboard['previousHolds']>;
   browserHealth?():Promise<{A:boolean;B:boolean}>;
   playerStatus?():{primary:boolean;extended:boolean;primaryDetails?:{fullName:string;phone:string;email:string};extendedDetails?:{fullName:string;phone:string;email:string}};
   confirm(kind?: 'observe'|'selection'|'dry'|'full', plan?:BookingView): Promise<boolean>; publish(status: Dashboard): void;
@@ -100,7 +101,7 @@ export interface Dependencies {
   stopSleepProtection?(id:number):void;
 }
 export class Controller {
-  readonly state: Dashboard = { operation: 'idle', headline: 'RESET REQUIRED', workflow:'test', detail: 'Configure your booking, then Reset & Prepare.', ready: false,
+  readonly state: Dashboard = { operation: 'idle', headline: 'RESET REQUIRED', workflow:'release', detail: 'Configure your booking, then Reset & Prepare.', ready: false,
     cdp: false, lock: false, inspection: null, clock: null, plan: null, logs: [], liveRace: fullBookingReady(), booking:null, termsAuthorized:false, apiFirstReady:false, capabilities, selection:null,mode:fullBookingReady()?'full':'selection',handoff:null,preparedContext:null,browserHealth:{A:false,B:false},playerStatus:{primary:false,extended:false},scheduledRelease:null,sleepProtection:false,scheduleStatus:null };
   private active?: RunningCommand;
   private pendingPreparation?:{input:PreparationInput;fingerprint:string;release?:BookingView;players:{primary:boolean;extended:boolean}};
@@ -115,6 +116,7 @@ export class Controller {
   private runStartedMono = 0;
   private lastLogMono = 0;
   private runReadyMono?:number;
+  private apiReadyWorkers=new Set<'A'|'B'>();
   constructor(private deps: Dependencies) {this.state.runHistory=this.deps.activityJournal?.history?.()??[];}
   private players(){if(this.deps.playerStatus)return this.deps.playerStatus();try{const b=this.deps.booking();return {primary:b.playerConfigured,extended:b.extendedPlayerConfigured};}catch{return {primary:false,extended:false};}}
   private releaseSetup(input:unknown):{setup:ReturnType<typeof BookingSetupSchema.parse>;reconciliation:FallbackReconciliation}{
@@ -141,8 +143,9 @@ export class Controller {
     if(required.some(id=>!h[id])){this.clearPreparation();throw Error('RESET_REQUIRED');}
   }
   private publish() { this.deps.publish(structuredClone(this.state)); }
-  private clearApiStage() { this.state.apiStage=null; }
+  private clearApiStage() { this.state.apiStage=null;this.state.observedPrice=null; }
   private holdDetail(hold:RetainedHoldStatus){
+    if(hold.stage==='HOLD_VERIFIED')return `A verified payment hold remains recorded${hold.expiresAt?` until ${new Date(hold.expiresAt).toLocaleString('en-GB',{timeZone:'Asia/Manila',dateStyle:'medium',timeStyle:'medium'})} Manila`:''}. Payment is manual. Reset & Prepare can make a fresh schedule in the same bot while retaining the previous hold and QR tab.`;
     if(!hold.expiresAt)return hold.stage==='FINAL_ACTION_DISPATCHING'
       ? 'The previous checkout stopped while its final action was unresolved. Reset & Prepare will inspect every required Onda browser and will recover only after the safety window has passed and all browsers are conclusively clean.'
       : 'A retained payment hold has no verified expiry. Inspect the Onda browser and use Review Lock; no new test can start.';
@@ -153,16 +156,15 @@ export class Controller {
   private async reconcileLockForApiPrepare(generation:number,input:PreparationInput){
     if(!await this.deps.lock())return;
     const hold=await this.deps.retainedHold?.();
-    if(hold&&hold.remainingSeconds!==null&&hold.remainingSeconds>0){this.state.headline='PAYMENT HOLD ACTIVE';this.state.detail=this.holdDetail(hold);this.log(this.state.detail,true);throw Error('PAYMENT_HOLD_MAY_BE_ACTIVE');}
     if(!this.deps.reviewLock||!this.deps.clearLock)throw Error('LOCK_BROWSER_STATE_UNKNOWN');
     this.state.headline='CHECKING RETAINED SESSION';this.state.detail='Checking the old worker, Onda browser, selected slots, and payment hold before API preparation.';this.log(this.state.detail);
     const review=await this.deps.reviewLock(false);this.state.lockReview=review;
     const unresolvedFinalAction=hold?.stage==='FINAL_ACTION_DISPATCHING'&&hold.remainingSeconds===null;
-    if(review.reason==='USE_RESET_AND_PREPARE'||unresolvedFinalAction||hold?.remainingSeconds===0&&review.reason==='LOCK_BROWSER_STATE_UNKNOWN'){
-      this.log(unresolvedFinalAction?'Unresolved final action requires every API browser to be inspected by Reset & Prepare.':review.reason==='USE_RESET_AND_PREPARE'?'Extended retained session requires both browsers to be checked by Reset & Prepare.':'Expired API hold requires Reset & Prepare to normalize the checkout browser safely.');
+    if(review.reason==='USE_RESET_AND_PREPARE'||unresolvedFinalAction||hold?.stage==='HOLD_VERIFIED'||hold?.remainingSeconds===0&&review.reason==='LOCK_BROWSER_STATE_UNKNOWN'){
+      this.log(hold?.stage==='HOLD_VERIFIED'?'Preparing a fresh schedule while retaining the previous verified hold record and QR tab.':unresolvedFinalAction?'Unresolved final action requires every API browser to be inspected by Reset & Prepare.':review.reason==='USE_RESET_AND_PREPARE'?'Extended retained session requires both browsers to be checked by Reset & Prepare.':'Expired API hold requires Reset & Prepare to normalize the checkout browser safely.');
       await this.run({kind:'resetPrepare',input},generation);
       await this.noLock();this.state.lockReview=null;this.state.handoff=null;
-      this.log('Retained session verified clean. Continuing API preparation.');
+      this.log('New schedule verified. Continuing API preparation; previous verified holds remain recorded.');
       return;
     }
     if(!review.canClear){
@@ -215,6 +217,8 @@ export class Controller {
       const [lock, health] = await Promise.all([this.deps.lock(), this.deps.browserHealth?this.deps.browserHealth():this.deps.cdp().then(A=>({A,B:A}))]);
       this.state.lock = lock; this.state.browserHealth=health;this.state.cdp = health.A;this.state.playerStatus=this.players();
       const retained=lock&&this.state.operation==='idle'?await this.deps.retainedHold?.():null;
+      this.state.canPrepareOverHold=!!lock&&retained?.stage==='HOLD_VERIFIED'&&!!retained.expiresAt;
+      this.state.previousHolds=await this.deps.previousHolds?.()??[];
       if(lock&&!this.state.handoff&&this.state.operation==='idle'&&this.deps.handoff){
         this.state.handoff=await this.deps.handoff();
         if(this.state.handoff){this.state.headline='Payment handoff recorded';this.state.detail='Automation stopped. Lock retained. Check the last observed hold and complete payment manually in Chrome.';}
@@ -246,7 +250,13 @@ export class Controller {
   }
   private event = (event: UiEvent) => {
     if(event.type==='apiStage'){
-      if(event.stage==='BROWSER_READY'&&this.state.operation!=='prepare')this.markBrowserReady(event.at);
+      if(event.price!==undefined)this.state.observedPrice=event.price;
+      if(event.stage==='RUN_STARTED')this.apiReadyWorkers.clear();
+      if(event.stage==='BROWSER_READY'&&this.state.operation!=='prepare'&&event.workerId){
+        this.apiReadyWorkers.add(event.workerId);
+        const strategy=this.state.workflow==='test'?this.apiTestStrategy:this.state.booking?.setup.BOOKING_TYPE;
+        if(this.apiReadyWorkers.has('A')&&(strategy!=='extended'||this.apiReadyWorkers.has('B')))this.markBrowserReady(event.at);
+      }
       this.state.apiStage=event;
       const labels:Record<string,string>={RUN_STARTED:'API run started',EXPIRED_HOLD_REUSABLE:'Expired verified hold released for a new test',PREPARING_BROWSER:'Preparing isolated Chrome',BROWSER_READY:'API browser ready',
         WAITING_FOR_RELEASE:'Waiting for release',RELEASE_TRIGGERED:'Release reached',FETCHING_AVAILABILITY:'Fetching live API availability',
@@ -469,7 +479,6 @@ export class Controller {
       if(!authorized)throw Error('TERMS_AUTHORIZATION_REQUIRED');
       if(!await this.deps.confirmApiTest?.({strategy:input.request.strategy,date:input.request.date,start:input.request.start,duration:input.request.duration,courtCount:input.request.courtCount,
         maximum:input.maximum,priority:input.request.priority}))return;
-      this.markBrowserReady();
       await this.noLock();this.state.handoff=null;this.state.bookingResult=undefined;
       this.state.headline='Checking API availability';this.state.detail='The dedicated API browser remains visible while availability and proofs are checked.';
       await this.run({kind:'apiRun',mode:'live-now',date:input.request.date,fingerprint,

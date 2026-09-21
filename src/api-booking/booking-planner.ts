@@ -16,7 +16,6 @@ function patterns(duration: number): number[][] {
 function validate(p: BookingPreferences) {
   if (!Number.isInteger(p.durationHours) || (p.mode === 'standard' ? p.durationHours < 1 || p.durationHours > 3 : p.durationHours < 4 || p.durationHours > 6)) throw new BookingPlanningError('BOOKING_DURATION_INVALID');
   if (p.courtCount !== 1 && p.courtCount !== 2) throw new BookingPlanningError('BOOKING_COURT_COUNT_INVALID');
-  if (!Number.isFinite(p.maximumTotalPrice) || p.maximumTotalPrice < 0 || Math.abs(cents(p.maximumTotalPrice) - p.maximumTotalPrice * 100) > 1e-7) throw new BookingPlanningError('BOOKING_MAXIMUM_PRICE_INVALID');
   if (!p.preferredStartTimes.length || !p.courtPriority.length || [...p.courtPriority, ...p.fallbackCourts].some(c => !Number.isInteger(c) || c < 1 || c > 7)) throw new BookingPlanningError('BOOKING_PREFERENCES_INVALID');
   if (p.exactCourts && (p.exactCourts.length !== (p.mode === 'standard' ? 1 : 2) || p.exactCourts.some(cs => cs.length !== p.courtCount || unique(cs).length !== cs.length || cs.some(c => !Number.isInteger(c) || c < 1 || c > 7)))) throw new BookingPlanningError('BOOKING_EXACT_COURTS_INVALID');
 }
@@ -91,7 +90,7 @@ export function rankBookingCandidates(snapshot: AvailabilitySnapshot, p: Booking
       if (excluded.has(key)) throw new BookingPlanningError('BOOKING_CANDIDATE_ENUMERATION_FAILED');
       excluded.add(key); candidates.push(candidate);
     } catch (error) {
-      if (error instanceof BookingPlanningError && (error.code === 'BOOKING_CANDIDATES_EXCLUDED' || error.code === 'BOOKING_NO_CONSECUTIVE_AVAILABILITY' || error.code === 'BOOKING_MAXIMUM_PRICE_EXCEEDED')) break;
+      if (error instanceof BookingPlanningError && (error.code === 'BOOKING_CANDIDATES_EXCLUDED' || error.code === 'BOOKING_NO_CONSECUTIVE_AVAILABILITY')) break;
       throw error;
     }
   }

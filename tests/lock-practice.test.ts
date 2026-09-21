@@ -6,7 +6,7 @@ import {Controller} from '../ui/controller.js';
 import {bookingView,defaultSetup} from '../ui/booking.js';
 import {ConfigSchema,ObservationSchema} from '../src/config.js';
 import {clockStatus} from '../ui/status.js';
-import {readRetainedHold} from '../ui/status.js';
+import {readRetainedHold,readPreviousHolds} from '../ui/status.js';
 import {DateTime} from 'luxon';
 import {FullPracticeSchema} from '../src/full-practice.js';
 import {commandSpec} from '../ui/processes.js';
@@ -56,6 +56,19 @@ it('reads the retained hold expiry as an absolute timestamp for the panel',async
   expect(await readRetainedHold(root,Date.parse('2026-09-20T19:16:19.000Z'))).toMatchObject({remainingSeconds:0});
  }finally{if(!root.startsWith(resolve('.local')+sep))throw Error('UNSAFE_TEST_PATH');await rm(root,{recursive:true,force:true});}
 });
+it('reads verified holds from both extended workers and archived records',async()=>{
+ await mkdir('.local',{recursive:true});const root=await mkdtemp(resolve('.local/multiple-holds-'));
+ try{
+  const expiry=new Date(Date.now()+120000).toISOString();
+  await mkdir(resolve(root,'.local/dual'),{recursive:true});await mkdir(resolve(root,'.local/retained-holds'));
+  await writeFile(resolve(root,'.local/automation.lock'),JSON.stringify({pid:123,runID:'current',mode:'extended',stage:'SELECTION'}));
+  await writeFile(resolve(root,'.local/dual/worker-a.lock'),JSON.stringify({pid:123,runID:'current',stage:'HOLD_VERIFIED',holdExpiresAt:expiry}));
+  await writeFile(resolve(root,'.local/dual/worker-b.lock'),JSON.stringify({pid:123,runID:'current',stage:'SELECTION'}));
+  await writeFile(resolve(root,'.local/retained-holds/00000000-0000-4000-8000-000000000000.json'),JSON.stringify({archivedAt:new Date().toISOString(),lock:{runID:'previous',stage:'HOLD_VERIFIED',holdExpiresAt:expiry},workers:[]}));
+  expect(await readRetainedHold(root)).toMatchObject({stage:'HOLD_VERIFIED',expiresAt:expiry});
+  expect(await readPreviousHolds(root)).toMatchObject([{runID:'previous',expiresAt:expiry}]);
+ }finally{if(!root.startsWith(resolve('.local')+sep))throw Error('UNSAFE_TEST_PATH');await rm(root,{recursive:true,force:true});}
+});
 function harness(locked=true,confirmed=true){
  const plan=bookingView(ConfigSchema.parse({...defaultSetup,PLAYER_FULL_NAME:'Fixture Player',PLAYER_PHONE:'09123456789',PLAYER_EMAIL:'fixture@example.invalid'}));
  const run=vi.fn((command:unknown,event:(e:any)=>void)=>{event({type:'handoff',date:'2026-09-11',court:7,hours:['10:00','11:00'],amount:1200,currency:'PHP',status:'Pending',countdown:'09:57',verifiedAt:new Date().toISOString()});return {pid:42,done:Promise.resolve(0),stop:async()=>{}};});
@@ -63,7 +76,7 @@ function harness(locked=true,confirmed=true){
  const deps={runner:run,lock:async()=>locked,cdp:async()=>true,clock:()=>clockStatus(ObservationSchema.parse({}),DateTime.fromISO('2026-09-11T20:00:00+08:00')),booking:()=>plan,saveBooking:vi.fn(()=>plan),publish:()=>{},confirm:vi.fn(async()=>confirmed),confirmPractice:vi.fn(async()=>confirmed),reviewLock:vi.fn(async()=>review),clearLock:vi.fn(async()=>{locked=false;}),confirmClear:vi.fn(async()=>confirmed),resetPractice:vi.fn(async()=>{locked=false;}),confirmReset:vi.fn(async()=>confirmed)};
  return {c:new Controller(deps),deps};
 }
-it('locked configuration save is local only and review remains available',async()=>{const {c,deps}=harness();await c.saveBooking({...defaultSetup,DURATION_HOURS:3,MAX_PRICE:1800});expect(deps.saveBooking).toHaveBeenCalledOnce();expect(deps.runner).not.toHaveBeenCalled();expect(c.state.lock).toBe(true);await c.reviewLock();expect(deps.reviewLock).toHaveBeenCalled();});
+it('locked configuration save is local only and review remains available',async()=>{const {c,deps}=harness();await c.saveBooking({...defaultSetup,DURATION_HOURS:3});expect(deps.saveBooking).toHaveBeenCalledOnce();expect(deps.runner).not.toHaveBeenCalled();expect(c.state.lock).toBe(true);await c.reviewLock();expect(deps.reviewLock).toHaveBeenCalled();});
 it('requires clear confirmation, then refreshes state',async()=>{const {c,deps}=harness();await c.clearLock();expect(deps.confirmClear).toHaveBeenCalledOnce();expect(deps.clearLock).toHaveBeenCalledOnce();expect(c.state.lock).toBe(false);const no=harness(true,false);await no.c.clearLock();expect(no.deps.clearLock).not.toHaveBeenCalled();});
 it('resets a practice session through the dedicated browser reset path',async()=>{const {c,deps}=harness(false);await c.resetPractice();expect(deps.confirmReset).toHaveBeenCalledOnce();expect(deps.resetPractice).toHaveBeenCalledOnce();expect(c.state).toMatchObject({headline:'Practice session reset',lock:false,cdp:true,ready:false});});
 it('does not reset practice when the operator cancels',async()=>{const {c,deps}=harness(false);deps.confirmReset=vi.fn(async()=>false);await c.resetPractice();expect(deps.resetPractice).not.toHaveBeenCalled();expect(c.state.headline).toBe('Practice reset cancelled');});

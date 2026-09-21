@@ -1,0 +1,4 @@
+{"stage":"API_CANDIDATE_READY","elapsedMs":1761,"date":"2026-09-19","court":3,"hour":"23:00","price":700}
+{"stage":"VENUE_SHELL_READY","elapsedMs":2993,"route":"https://app.onda.fit/book/thirsty-pickle?d=2026-09-19&bookingId=thirsty-probe-no-booking&bookingUi=court-v2","bookingReads":[]}
+{"stage":"SLOT_PROOF_READ","elapsedMs":3790,"success":true,"hasProof":true,"error":null,"milestones":{"pickerEnabled":null,"targetCellsOpen":null,"fullGridRendered":null,"targetActionable":null,"fullGridReady":null}}
+{"stage":"ROUTE_PROBE_COMPLETE","elapsedMs":9934,"stages":{"review":false,"payment":false,"url":"https://app.onda.fit/book/thirsty-pickle"},"bookingReads":[{"status":400,"elapsedMs":3088}],"milestones":{"pickerEnabled":9917,"targetCellsOpen":9917,"fullGridRendered":9917,"targetActionable":9917,"fullGridReady":9917},"delayGridMs":5000,"submitted":false}

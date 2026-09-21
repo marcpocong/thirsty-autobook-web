@@ -50,7 +50,8 @@ export function reconcileBookingSetupFallbacks(input: unknown): { setup: unknown
   const times = setup.FALLBACK_TIMES;
   if (!times.every((time): time is string => typeof time === 'string')) return { setup: input, reconciliation: { valid: [], removed: [] } };
   const reconciliation = reconcileFallbackTimes(setup.START_TIME, setup.DURATION_HOURS, times);
-  return { setup: { ...setup, FALLBACK_TIMES: reconciliation.valid }, reconciliation };
+  const {MAX_PRICE: _legacyPriceLimit, ...withoutPriceLimit}=setup;
+  return { setup: { ...withoutPriceLimit, FALLBACK_TIMES: reconciliation.valid }, reconciliation };
 }
 
 export interface BookingSetupDraft {
@@ -61,7 +62,6 @@ export interface BookingSetupDraft {
   DURATION_HOURS: number;
   PREFERRED_COURTS: number[];
   FALLBACK_TIMES: string[];
-  MAX_PRICE: number;
   MAX_SELECTION_ATTEMPTS: number;
 }
 
@@ -77,7 +77,6 @@ export function bookingSetupProblem(input: unknown): string | undefined {
   if (setup.BOOKING_TYPE === 'extended' && setup.DURATION_HOURS < 4) return 'Extended bookings must be 4–6 hours.';
   if (Number(setup.START_TIME.slice(0, 2)) + setup.DURATION_HOURS > 24) return 'The main booking would end after midnight.';
   if (!Array.isArray(setup.PREFERRED_COURTS)||setup.PREFERRED_COURTS.length !== 7 || new Set(setup.PREFERRED_COURTS).size !== 7 || setup.PREFERRED_COURTS.some(court => !Number.isInteger(court) || court < 1 || court > 7)) return 'Court priority is invalid.';
-  if (typeof setup.MAX_PRICE!=='number'||!Number.isFinite(setup.MAX_PRICE) || setup.MAX_PRICE <= 0) return 'Enter a valid maximum price.';
   if (typeof setup.MAX_SELECTION_ATTEMPTS!=='number'||!Number.isInteger(setup.MAX_SELECTION_ATTEMPTS) || setup.MAX_SELECTION_ATTEMPTS < 1 || setup.MAX_SELECTION_ATTEMPTS > 5) return 'Attempt count must be from 1 to 5.';
   if(!Array.isArray(setup.FALLBACK_TIMES)||!setup.FALLBACK_TIMES.every((time):time is string=>typeof time==='string'))return 'Fallback starts are invalid.';
   const reconciliation = reconcileFallbackTimes(setup.START_TIME, setup.DURATION_HOURS, setup.FALLBACK_TIMES);

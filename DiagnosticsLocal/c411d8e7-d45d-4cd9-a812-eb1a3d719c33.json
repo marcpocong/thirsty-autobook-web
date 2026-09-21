@@ -1,0 +1,76 @@
+{
+  "runID": "c411d8e7-d45d-4cd9-a812-eb1a3d719c33",
+  "events": [
+    {
+      "event": "processStarted",
+      "wall": "2026-09-17T18:32:29.919Z",
+      "monoMs": 503.439
+    },
+    {
+      "event": "chromeConnected",
+      "wall": "2026-09-17T18:32:34.198Z",
+      "monoMs": 4781.5818
+    },
+    {
+      "event": "ondaTabResolved",
+      "wall": "2026-09-17T18:32:34.198Z",
+      "monoMs": 4781.6057
+    },
+    {
+      "event": "availabilityRequestStarted",
+      "wall": "2026-09-17T18:32:35.151Z",
+      "monoMs": 5735.3762
+    },
+    {
+      "event": "availabilityResponseReceived",
+      "wall": "2026-09-17T18:32:35.519Z",
+      "monoMs": 6103.4237,
+      "value": 368.04349999999977
+    },
+    {
+      "event": "availabilityParsed",
+      "wall": "2026-09-17T18:32:35.522Z",
+      "monoMs": 6106.1369,
+      "value": 2.6778000000003885
+    },
+    {
+      "event": "availabilityUnknownSpaces",
+      "wall": "2026-09-17T18:32:35.522Z",
+      "monoMs": 6106.1468,
+      "value": 0
+    },
+    {
+      "event": "automationStopped",
+      "wall": "2026-09-17T18:32:35.553Z",
+      "monoMs": 6136.9667
+    }
+  ],
+  "releasePerformance": null,
+  "availabilityPerformance": {
+    "requests": [
+      {
+        "durationMs": 368.0475000000006,
+        "parseMs": 2.6778000000003885,
+        "outcome": "PARSED",
+        "responseToCandidateMs": null
+      }
+    ],
+    "releaseToRequestMs": null,
+    "targetEnabledWithoutReload": false,
+    "apiCandidateExistedBeforeGrid": false,
+    "candidateSource": null,
+    "releaseToGridMs": null,
+    "apiCandidateReadyToGridMs": null,
+    "apiCandidateResolutionMs": null,
+    "gridToFirstClickMs": null,
+    "releaseToFirstClickMs": null,
+    "releaseToSelectionMs": null,
+    "selectionToQrHoldMs": null,
+    "selectionToProceedMs": null,
+    "proceedToReviewMs": null,
+    "reviewToPlayerCompletedMs": null,
+    "playerProceedToSummaryMs": null,
+    "finalActionToHoldMs": null,
+    "candidateResolutionMs": null
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "runID": "0f434c54-2657-47d3-916b-1e044623a016",
+  "events": [
+    {
+      "event": "preferenceResolved",
+      "wall": "2026-09-16T19:11:56.548Z",
+      "monoMs": 4676.1244,
+      "workerId": "A"
+    }
+  ],
+  "releasePerformance": null,
+  "availabilityPerformance": null
+}

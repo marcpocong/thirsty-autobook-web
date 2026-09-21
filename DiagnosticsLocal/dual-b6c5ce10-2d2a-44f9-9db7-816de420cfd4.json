@@ -1,0 +1,54 @@
+{
+  "coordinator": {
+    "runID": "b6c5ce10-2d2a-44f9-9db7-816de420cfd4",
+    "events": [
+      {
+        "event": "dualRunStarted",
+        "wall": "2026-09-13T19:03:58.864Z",
+        "monoMs": 758.3568
+      },
+      {
+        "event": "dualPreflightStarted",
+        "wall": "2026-09-13T19:03:58.864Z",
+        "monoMs": 758.4315
+      }
+    ],
+    "releasePerformance": null,
+    "availabilityPerformance": null
+  },
+  "workers": [
+    {
+      "runID": "ee75047c-a9b8-4fdb-81b4-38742b0a8008",
+      "events": [],
+      "releasePerformance": null,
+      "availabilityPerformance": null
+    },
+    {
+      "runID": "29942ea7-d33f-4f9d-ba09-b11f5b1f0d17",
+      "events": [],
+      "releasePerformance": null,
+      "availabilityPerformance": null
+    }
+  ],
+  "metrics": {
+    "releaseToWorkerGrids": [
+      null,
+      null
+    ],
+    "releaseToBothGrids": null,
+    "bothGridsToPair": null,
+    "pairToFirstClicks": [
+      null,
+      null
+    ],
+    "releaseToBothSelections": null,
+    "selectionsToBothProceed": null,
+    "selectionToHold": [
+      null,
+      null
+    ],
+    "releaseToFirstHold": null,
+    "releaseToSecondHold": null,
+    "releaseToBothHolds": null
+  }
+}

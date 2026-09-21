@@ -2,7 +2,9 @@ param([ValidateRange(1024,65535)][int]$Port = 9222, [string]$ExpectedProfile = (
 $ErrorActionPreference = 'Stop'
 # Only a closed diagnostic code crosses the process boundary. Never print metadata.
 function Get-DedicatedChromeCode {
-  try { $listeners = @(Get-NetTCPConnection -State Listen | Where-Object LocalPort -eq $Port) }
+  # Query the one expected port directly. Enumerating every listener added about
+  # half a second to each browser verification on the production machine.
+  try { $listeners = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue) }
   catch { return 'CDP_PROCESS_METADATA_UNAVAILABLE' }
   if ($listeners.Count -eq 0) { return 'CDP_NOT_LISTENING' }
   if ($listeners | Where-Object { $_.LocalAddress -notin @('127.0.0.1','::1') }) { return 'CDP_UNSAFE_BIND' }

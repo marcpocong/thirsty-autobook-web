@@ -1,4 +1,4 @@
-import { access,readFile } from 'node:fs/promises';
+import { access,readFile,readdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { DateTime } from 'luxon';
 import { loadObservationConfig, releaseCalendar, releaseCalendarOn, type ReleaseSettings } from '../src/config.js';
@@ -11,12 +11,32 @@ export async function readLock(root: string): Promise<boolean> {
   catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false; return true; }
 }
 export interface RetainedHoldStatus { stage:'HOLD_VERIFIED'|'FINAL_ACTION_DISPATCHING'; expiresAt:string|null; remainingSeconds:number|null }
+export interface PreviousHold { runID:string; archivedAt:string; expiresAt:string|null }
+export async function readPreviousHolds(root:string):Promise<PreviousHold[]>{
+  const directory=resolve(root,'.local/retained-holds');
+  const names=await readdir(directory).catch(()=>[] as string[]);
+  const holds=await Promise.all(names.filter(name=>/^[a-f0-9-]{36}\.json$/.test(name)).map(async name=>{
+    try{
+      const value=JSON.parse(await readFile(resolve(directory,name),'utf8')) as {archivedAt?:unknown;lock?:Record<string,unknown>;workers?:Record<string,unknown>[]};
+      if(typeof value.archivedAt!=='string'||!Number.isFinite(Date.parse(value.archivedAt)))return null;
+      const records=[value.lock??{},...(Array.isArray(value.workers)?value.workers:[])];
+      const expiries=records.filter(record=>record.stage==='HOLD_VERIFIED').map(record=>record.holdExpiresAt).filter((v):v is string=>typeof v==='string'&&Number.isFinite(Date.parse(v)));
+      const runID=typeof value.lock?.runID==='string'?value.lock.runID:'Unknown';
+      return {runID,archivedAt:value.archivedAt,expiresAt:expiries.sort((a,b)=>Date.parse(b)-Date.parse(a))[0]??null};
+    }catch{return null;}
+  }));
+  return holds.filter((hold):hold is PreviousHold=>!!hold).sort((a,b)=>Date.parse(b.archivedAt)-Date.parse(a.archivedAt));
+}
 export async function readRetainedHold(root:string,now=Date.now()):Promise<RetainedHoldStatus|null>{
   try{
     const lock=JSON.parse(await readFile(resolve(root,'.local/automation.lock'),'utf8')) as Record<string,unknown>;
-    if(lock.stage!=='HOLD_VERIFIED'&&lock.stage!=='FINAL_ACTION_DISPATCHING')return null;
-    const expiresAt=typeof lock.holdExpiresAt==='string'&&Number.isFinite(Date.parse(lock.holdExpiresAt))?lock.holdExpiresAt:null;
-    return {stage:lock.stage,expiresAt,remainingSeconds:expiresAt?Math.max(0,Math.ceil((Date.parse(expiresAt)-now)/1000)):null};
+    const workers:Record<string,unknown>[]=lock.mode==='extended'?await Promise.all(['a','b'].map(id=>readFile(resolve(root,`.local/dual/worker-${id}.lock`),'utf8').then(raw=>JSON.parse(raw) as Record<string,unknown>).catch(()=>({} as Record<string,unknown>)))):[];
+    const records:Record<string,unknown>[]=[lock,...workers];
+    const stage=records.some(record=>record.stage==='FINAL_ACTION_DISPATCHING')?'FINAL_ACTION_DISPATCHING':records.some(record=>record.stage==='HOLD_VERIFIED')?'HOLD_VERIFIED':null;
+    if(!stage)return null;
+    const expiries=records.filter(record=>record.stage==='HOLD_VERIFIED').map(record=>record.holdExpiresAt).filter((value):value is string=>typeof value==='string'&&Number.isFinite(Date.parse(value)));
+    const expiresAt=expiries.sort((a,b)=>Date.parse(b)-Date.parse(a))[0]??null;
+    return {stage,expiresAt,remainingSeconds:expiresAt?Math.max(0,Math.ceil((Date.parse(expiresAt)-now)/1000)):null};
   }catch{return null;}
 }
 export async function readHandoff(root:string):Promise<Dashboard['handoff']>{

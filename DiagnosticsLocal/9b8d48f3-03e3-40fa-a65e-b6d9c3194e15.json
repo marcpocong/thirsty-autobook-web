@@ -1,0 +1,67 @@
+{
+  "runID": "9b8d48f3-03e3-40fa-a65e-b6d9c3194e15",
+  "events": [
+    {
+      "event": "processStarted",
+      "wall": "2026-09-10T21:25:18.220Z",
+      "monoMs": 575.4218
+    },
+    {
+      "event": "chromeConnected",
+      "wall": "2026-09-10T21:25:19.625Z",
+      "monoMs": 1976.1924
+    },
+    {
+      "event": "ondaTabResolved",
+      "wall": "2026-09-10T21:25:19.625Z",
+      "monoMs": 1976.2495
+    },
+    {
+      "event": "preferenceResolved",
+      "wall": "2026-09-10T21:25:20.646Z",
+      "monoMs": 2997.5201
+    },
+    {
+      "event": "selectionAttemptStarted",
+      "wall": "2026-09-10T21:25:20.654Z",
+      "monoMs": 3004.9839,
+      "value": 1
+    },
+    {
+      "event": "slot1ClickStarted",
+      "wall": "2026-09-10T21:25:20.654Z",
+      "monoMs": 3005.0349
+    },
+    {
+      "event": "slot1Selected",
+      "wall": "2026-09-10T21:25:20.757Z",
+      "monoMs": 3108.2994
+    },
+    {
+      "event": "slot2ClickStarted",
+      "wall": "2026-09-10T21:25:20.757Z",
+      "monoMs": 3108.4287
+    },
+    {
+      "event": "slot2Selected",
+      "wall": "2026-09-10T21:25:20.823Z",
+      "monoMs": 3174.3627
+    },
+    {
+      "event": "slot3ClickStarted",
+      "wall": "2026-09-10T21:25:20.823Z",
+      "monoMs": 3174.4325
+    },
+    {
+      "event": "slot3Selected",
+      "wall": "2026-09-10T21:25:20.870Z",
+      "monoMs": 3221.4334
+    },
+    {
+      "event": "failed",
+      "wall": "2026-09-10T21:25:20.894Z",
+      "monoMs": 3245.4033
+    }
+  ],
+  "failure": "SELECTION_PRICE_MISMATCH"
+}

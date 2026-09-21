@@ -1,0 +1,224 @@
+{
+  "observedAt": "2026-09-11T23:25:44.177Z",
+  "page": "Thirsty Pickle booking",
+  "structure": [
+    {
+      "tag": "button",
+      "role": null,
+      "disabled": false,
+      "ariaDisabled": null,
+      "ariaSelected": null,
+      "ariaExpanded": null
+    },
+    {
+      "tag": "div",
+      "role": null,
+      "testid": "public-booking-root",
+      "disabled": false,
+      "ariaDisabled": null,
+      "ariaSelected": null,
+      "ariaExpanded": null
+    },
+    {
+      "tag": "div",
+      "role": null,
+      "testid": "public-booking-hero-overlay",
+      "disabled": false,
+      "ariaDisabled": null,
+      "ariaSelected": null,
+      "ariaExpanded": null
+    },
+    {
+      "tag": "button",
+      "role": null,
+      "disabled": false,
+      "ariaDisabled": null,
+      "ariaSelected": null,
+      "ariaExpanded": null
+    },
+    {
+      "tag": "div",
+      "role": null,
+      "testid": "public-booking-client-logo",
+      "disabled": false,
+      "ariaDisabled": null,
+      "ariaSelected": null,
+      "ariaExpanded": null
+    },
+    {
+      "tag": "img",
+      "role": null,
+      "testid": "public-booking-client-logo-image",
+      "disabled": false,
+      "ariaDisabled": null,
+      "ariaSelected": null,
+      "ariaExpanded": null
+    },
+    {
+      "tag": "h1",
+      "role": null,
+      "text": "Thirsty Pickle | SM Seaside",
+      "testid": "public-booking-hero-title",
+      "disabled": false,
+      "ariaDisabled": null,
+      "ariaSelected": null,
+      "ariaExpanded": null
+    },
+    {
+      "tag": "button",
+      "role": null,
+      "disabled": false,
+      "ariaDisabled": null,
+      "ariaSelected": null,
+      "ariaExpanded": null
+    },
+    {
+      "tag": "div",
+      "role": null,
+      "testid": "booking-content-surface",
+      "disabled": false,
+      "ariaDisabled": null,
+      "ariaSelected": null,
+      "ariaExpanded": null
+    },
+    {
+      "tag": "div",
+      "id": "booking-grid",
+      "role": null,
+      "testid": "booking-grid",
+      "disabled": false,
+      "ariaDisabled": null,
+      "ariaSelected": null,
+      "ariaExpanded": null
+    },
+    {
+      "tag": "h3",
+      "role": null,
+      "text": "Court Schedule",
+      "testid": "booking-schedule-title",
+      "disabled": false,
+      "ariaDisabled": null,
+      "ariaSelected": null,
+      "ariaExpanded": null
+    },
+    {
+      "tag": "button",
+      "role": null,
+      "text": "All Courts",
+      "disabled": false,
+      "ariaDisabled": null,
+      "ariaSelected": null,
+      "ariaExpanded": "false"
+    },
+    {
+      "tag": "span",
+      "role": null,
+      "text": "All Courts",
+      "testid": "booking-court-filter-label",
+      "disabled": false,
+      "ariaDisabled": null,
+      "ariaSelected": null,
+      "ariaExpanded": null
+    },
+    {
+      "tag": "div",
+      "role": null,
+      "testid": "booking-slot-legend",
+      "disabled": false,
+      "ariaDisabled": null,
+      "ariaSelected": null,
+      "ariaExpanded": null
+    },
+    {
+      "tag": "svg",
+      "role": null,
+      "testid": "booking-selected-date-icon",
+      "disabled": false,
+      "ariaDisabled": null,
+      "ariaSelected": null,
+      "ariaExpanded": null
+    },
+    {
+      "tag": "h3",
+      "role": null,
+      "text": "Sat, September 12",
+      "testid": "booking-selected-date-label",
+      "disabled": false,
+      "ariaDisabled": null,
+      "ariaSelected": null,
+      "ariaExpanded": null
+    },
+    {
+      "tag": "button",
+      "role": null,
+      "name": "Previous day",
+      "disabled": true,
+      "ariaDisabled": "true",
+      "ariaSelected": null,
+      "ariaExpanded": null
+    },
+    {
+      "tag": "button",
+      "role": null,
+      "name": "Select booking date",
+      "disabled": true,
+      "ariaDisabled": "true",
+      "ariaSelected": null,
+      "ariaExpanded": "false"
+    },
+    {
+      "tag": "svg",
+      "role": null,
+      "testid": "booking-date-picker-icon",
+      "disabled": false,
+      "ariaDisabled": null,
+      "ariaSelected": null,
+      "ariaExpanded": null
+    },
+    {
+      "tag": "button",
+      "role": null,
+      "name": "Next day",
+      "disabled": false,
+      "ariaDisabled": null,
+      "ariaSelected": null,
+      "ariaExpanded": null
+    },
+    {
+      "tag": "div",
+      "role": null,
+      "testid": "booking-grid-body",
+      "disabled": false,
+      "ariaDisabled": null,
+      "ariaSelected": null,
+      "ariaExpanded": null
+    },
+    {
+      "tag": "div",
+      "role": null,
+      "testid": "court-schedule-sticky-header",
+      "disabled": false,
+      "ariaDisabled": null,
+      "ariaSelected": null,
+      "ariaExpanded": null
+    },
+    {
+      "tag": "div",
+      "role": null,
+      "testid": "court-schedule-body-scroll",
+      "disabled": false,
+      "ariaDisabled": null,
+      "ariaSelected": null,
+      "ariaExpanded": null
+    },
+    {
+      "tag": "div",
+      "role": null,
+      "testid": "court-schedule-grid-content",
+      "disabled": false,
+      "ariaDisabled": null,
+      "ariaSelected": null,
+      "ariaExpanded": null
+    }
+  ]
+}

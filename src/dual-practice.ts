@@ -4,7 +4,7 @@ import { expandHours } from './config.js';
 import type { DualCandidate } from './dual-coordinator.js';
 export const DualPracticeSchema = z.object({
   target: PracticeSchema, courtB:z.coerce.number().int().min(1).max(7),
-  maximum:z.number().finite().positive(), noncompetitive:z.literal(true),
+  maximum:z.number().optional(), noncompetitive:z.literal(true),
   authorizeTerms:z.boolean().default(false), armed:z.boolean().default(false),
 }).strict().refine(p => p.target.court !== p.courtB, 'Distinct courts required');
 export type DualPracticeInput = z.infer<typeof DualPracticeSchema>;
