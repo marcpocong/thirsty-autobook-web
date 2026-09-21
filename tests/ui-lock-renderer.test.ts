@@ -138,6 +138,10 @@ it('shows a millisecond timer and labeled Activity timeline for every booking me
  expect(await p.locator('#run-history-list').innerText()).toContain('1.234 seconds');
  expect(await p.locator('#run-history-list').innerText()).toContain('preparation excluded');
  await p.addStyleTag({content:await readFile('ui/renderer/styles.css','utf8')});await p.setViewportSize({width:1010,height:900});
+ const beforeResize=await p.locator('#log').boundingBox(),handle=await p.locator('#activity-resize-handle').boundingBox();
+ expect(beforeResize).not.toBeNull();expect(handle).not.toBeNull();
+ await p.mouse.move(handle!.x+handle!.width/2,handle!.y+handle!.height/2);await p.mouse.down();await p.mouse.move(handle!.x+handle!.width/2,handle!.y+handle!.height/2+120);await p.mouse.up();
+ const afterResize=await p.locator('#log').boundingBox();expect(afterResize!.height).toBeGreaterThan(beforeResize!.height+100);
  await mkdir('.local',{recursive:true});await p.screenshot({path:'.local/activity-history-ui.png',fullPage:true});
  await p.locator('#activity-expand').click();
  expect(await p.locator('.activity').evaluate(e=>e.classList.contains('expanded'))).toBe(true);

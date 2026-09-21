@@ -301,6 +301,16 @@ void window.thirsty.getStatus().then(render);
 setInterval(tick, 100);
 const activity=document.querySelector<HTMLElement>('.activity')!;
 const expand=byId('activity-expand') as HTMLButtonElement;
+const activityLog=byId('log');
+const resizeHandle=byId('activity-resize-handle');
+let resizePointer:number|undefined,resizeStartY=0,resizeStartHeight=0;
+function setActivityHeight(value:number){const height=Math.round(Math.max(72,Math.min(Math.max(120,window.innerHeight-180),value)));activityLog.style.height=`${height}px`;activityLog.style.maxHeight='none';resizeHandle.setAttribute('aria-valuenow',String(height));}
+resizeHandle.addEventListener('pointerdown',event=>{if(activity.classList.contains('expanded'))return;resizePointer=event.pointerId;resizeStartY=event.clientY;resizeStartHeight=activityLog.getBoundingClientRect().height;resizeHandle.setPointerCapture(event.pointerId);activity.classList.add('resizing');event.preventDefault();});
+resizeHandle.addEventListener('pointermove',event=>{if(event.pointerId===resizePointer)setActivityHeight(resizeStartHeight+event.clientY-resizeStartY);});
+function finishResize(event:PointerEvent){if(event.pointerId!==resizePointer)return;resizePointer=undefined;activity.classList.remove('resizing');if(resizeHandle.hasPointerCapture(event.pointerId))resizeHandle.releasePointerCapture(event.pointerId);}
+resizeHandle.addEventListener('pointerup',finishResize);resizeHandle.addEventListener('pointercancel',finishResize);
+resizeHandle.addEventListener('dblclick',()=>{activityLog.style.height='';activityLog.style.maxHeight='';resizeHandle.removeAttribute('aria-valuenow');});
+resizeHandle.addEventListener('keydown',event=>{if(event.key==='ArrowUp'||event.key==='ArrowDown'){setActivityHeight(activityLog.getBoundingClientRect().height+(event.key==='ArrowDown'?24:-24));event.preventDefault();}else if(event.key==='Home'){activityLog.style.height='';activityLog.style.maxHeight='';resizeHandle.removeAttribute('aria-valuenow');event.preventDefault();}});
 function setActivityExpanded(value:boolean){activity.classList.toggle('expanded',value);expand.setAttribute('aria-expanded',String(value));expand.textContent=value?'Restore':'Maximize';}
 expand.addEventListener('click',()=>setActivityExpanded(!activity.classList.contains('expanded')));
 document.addEventListener('keydown',event=>{if(event.key==='Escape'&&activity.classList.contains('expanded'))setActivityExpanded(false);});
