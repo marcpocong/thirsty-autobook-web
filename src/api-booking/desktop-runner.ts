@@ -22,6 +22,7 @@ import { standardPlanJournalKeys } from './two-hour-reservation.js';
 import { ApiRunProgressLog } from './run-progress-log.js';
 import { ApiAutomationLock } from './api-automation-lock.js';
 import { assertApiReleaseFresh } from './api-release.js';
+import { canReleaseApiLockAfterFailure } from './api-lock-outcome.js';
 
 const preferencesSchema = z.object({ strategy: z.enum(['standard', 'extended']), date: z.iso.date(), start: z.string().regex(/^(0[89]|1\d|2[0-3]):00$/),
   duration: z.number().int().min(1).max(6), courtCount: z.union([z.literal(1), z.literal(2)]), maximum: z.number().finite().positive(),
@@ -184,7 +185,7 @@ try {
           onHumanVerificationCompleted: async () => { stage('HUMAN_VERIFICATION_COMPLETE', { workerId }); } });
         } catch (error) {
           const states=await Promise.all(journals.map((currentJournal,currentIndex)=>currentJournal.read(keys[currentIndex]!).then(record=>record.state).catch(()=> 'unknown' as const)));
-          if(!verifiedHold&&states.every(state=>state==='rejected')){retainLiveLock=false;await liveLock?.release();liveLock=undefined;}
+          if(canReleaseApiLockAfterFailure(verifiedHold,error,states)){retainLiveLock=false;await liveLock?.release();liveLock=undefined;}
           const code = error instanceof Error ? error.message : '';
           if (/TURNSTILE|SECURITY_CONTEXT|CHALLENGE/.test(code)) {
             await showWindow(session.page); stage('HUMAN_VERIFICATION_REQUIRED', { workerId, code });

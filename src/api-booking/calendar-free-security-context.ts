@@ -16,8 +16,11 @@ export function calendarFreeSecurityContext(page: Page): CurrentCheckoutHeadersP
     if (page.isClosed() || page.url() !== ONDA_URL) throw new CalendarFreeSecurityError('SECURITY_CONTEXT_PAGE_INVALID');
     const scripts = await page.locator('script[src]').evaluateAll(elements =>
       elements.map(element => (element as HTMLScriptElement).src));
-    if (!scripts.some(src => src.endsWith('/445pzov5_5spg.js')) ||
-      !scripts.some(src => src.endsWith('/1y9e760opu2ka.js')))
+    const origin = new URL(ONDA_URL).origin;
+    if (!scripts.some(src => {
+      try { const url = new URL(src); return url.origin === origin && url.pathname.startsWith('/_next/static/immutable/chunks/'); }
+      catch { return false; }
+    }))
       throw new CalendarFreeSecurityError('ONDA_SECURITY_BUNDLE_CHANGED');
     try {
       const source = await readFile(new URL('./calendar-free-security-context-browser.js', import.meta.url), 'utf8');
