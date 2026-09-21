@@ -143,7 +143,9 @@ export class Controller {
   private publish() { this.deps.publish(structuredClone(this.state)); }
   private clearApiStage() { this.state.apiStage=null; }
   private holdDetail(hold:RetainedHoldStatus){
-    if(!hold.expiresAt)return 'A retained checkout lock has no verified expiry. Inspect the Onda browser and use Review Lock; no new test can start.';
+    if(!hold.expiresAt)return hold.stage==='FINAL_ACTION_DISPATCHING'
+      ? 'The previous checkout stopped while its final action was unresolved. Reset & Prepare will inspect every required Onda browser and will recover only after the safety window has passed and all browsers are conclusively clean.'
+      : 'A retained payment hold has no verified expiry. Inspect the Onda browser and use Review Lock; no new test can start.';
     const until=new Date(hold.expiresAt).toLocaleString('en-GB',{timeZone:'Asia/Manila',dateStyle:'medium',timeStyle:'medium'});
     return hold.remainingSeconds!>0?`A previous payment hold is recorded until ${until} Manila (${Math.floor(hold.remainingSeconds!/60)}:${String(hold.remainingSeconds!%60).padStart(2,'0')} remaining). Payment remains manual. Reset & Prepare can recheck after expiry.`:
       `The recorded hold timer elapsed at ${until} Manila. Reset & Prepare will verify the browser, selected slots, and old worker before clearing the stale lock.`;
@@ -151,15 +153,16 @@ export class Controller {
   private async reconcileLockForApiPrepare(generation:number,input:PreparationInput){
     if(!await this.deps.lock())return;
     const hold=await this.deps.retainedHold?.();
-    if(hold&&hold.remainingSeconds!==0){this.state.headline='PAYMENT HOLD ACTIVE';this.state.detail=this.holdDetail(hold);this.log(this.state.detail,true);throw Error('PAYMENT_HOLD_MAY_BE_ACTIVE');}
+    if(hold&&hold.remainingSeconds!==null&&hold.remainingSeconds>0){this.state.headline='PAYMENT HOLD ACTIVE';this.state.detail=this.holdDetail(hold);this.log(this.state.detail,true);throw Error('PAYMENT_HOLD_MAY_BE_ACTIVE');}
     if(!this.deps.reviewLock||!this.deps.clearLock)throw Error('LOCK_BROWSER_STATE_UNKNOWN');
     this.state.headline='CHECKING RETAINED SESSION';this.state.detail='Checking the old worker, Onda browser, selected slots, and payment hold before API preparation.';this.log(this.state.detail);
     const review=await this.deps.reviewLock(false);this.state.lockReview=review;
-    if(review.reason==='USE_RESET_AND_PREPARE'||hold?.remainingSeconds===0&&review.reason==='LOCK_BROWSER_STATE_UNKNOWN'){
-      this.log(review.reason==='USE_RESET_AND_PREPARE'?'Extended retained session requires both browsers to be checked by Reset & Prepare.':'Expired API hold requires Reset & Prepare to normalize the checkout browser safely.');
+    const unresolvedFinalAction=hold?.stage==='FINAL_ACTION_DISPATCHING'&&hold.remainingSeconds===null;
+    if(review.reason==='USE_RESET_AND_PREPARE'||unresolvedFinalAction||hold?.remainingSeconds===0&&review.reason==='LOCK_BROWSER_STATE_UNKNOWN'){
+      this.log(unresolvedFinalAction?'Unresolved final action requires every API browser to be inspected by Reset & Prepare.':review.reason==='USE_RESET_AND_PREPARE'?'Extended retained session requires both browsers to be checked by Reset & Prepare.':'Expired API hold requires Reset & Prepare to normalize the checkout browser safely.');
       await this.run({kind:'resetPrepare',input},generation);
       await this.noLock();this.state.lockReview=null;this.state.handoff=null;
-      this.log('Extended retained session verified clean. Continuing API preparation.');
+      this.log('Retained session verified clean. Continuing API preparation.');
       return;
     }
     if(!review.canClear){

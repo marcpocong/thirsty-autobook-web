@@ -43,6 +43,18 @@ describe('API-first UI boundary', () => {
     expect(calls.map(command=>typeof command==='string'?command:command.kind),controller.state.detail).toEqual(['resetPrepare','apiRun']);
     expect(controller.state).toMatchObject({headline:'API READY TO TEST',ready:true,lock:false});
   });
+  it('routes an unresolved final API action through safe browser inspection instead of blocking forever',async()=>{
+    const view=bookingView(ConfigSchema.parse({...defaultSetup,PLAYER_FULL_NAME:'Fixture Player',PLAYER_PHONE:'09123456789',PLAYER_EMAIL:'fixture@example.invalid'}));
+    const calls:Command[]=[];let locked=true;
+    const runner:Runner=command=>{calls.push(command);if(typeof command==='object'&&command.kind==='resetPrepare')locked=false;return {pid:1,done:Promise.resolve(0),stop:async()=>undefined};};
+    const controller=new Controller({runner,lock:async()=>locked,retainedHold:async()=>({stage:'FINAL_ACTION_DISPATCHING',expiresAt:null,remainingSeconds:null}),
+      reviewLock:async()=>({runID:'fixture',pid:1,alive:false,owned:false,fingerprint:'fixture',verifiedAt:new Date().toISOString(),reason:'PAYMENT_HOLD_MAY_BE_ACTIVE',canClear:false,page:'Unknown',selected:null,hold:'Unknown',clean:false}),
+      clearLock:async()=>{throw Error('UNEXPECTED_DIRECT_CLEAR');},cdp:async()=>true,browserHealth:async()=>({A:true,B:false}),playerStatus:()=>({primary:true,extended:false}),
+      clock:()=>clockStatus(ObservationSchema.parse({}),DateTime.fromISO('2026-09-21T08:00:00+08:00')),confirm:async()=>true,publish:()=>undefined,booking:()=>view,saveBooking:()=>view});
+    await controller.resetPrepare({workflow:'test',method:'api-first',request:{strategy:'standard',date:'2026-09-22',start:'12:00',duration:1,courtCount:1,priority:[7,6,5,4,3,2,1],fallbackStarts:[]},maximum:1200});
+    expect(calls.map(command=>typeof command==='string'?command:command.kind)).toEqual(['resetPrepare','apiRun']);
+    expect(controller.state).toMatchObject({headline:'API READY TO TEST',ready:true,lock:false});
+  });
   it('normalizes an expired Standard API QR page through Reset & Prepare before API preparation',async()=>{
     const view=bookingView(ConfigSchema.parse({...defaultSetup,PLAYER_FULL_NAME:'Fixture Player',PLAYER_PHONE:'09123456789',PLAYER_EMAIL:'fixture@example.invalid'}));
     const calls:Command[]=[];let locked=true;
@@ -79,9 +91,9 @@ describe('API-first UI boundary', () => {
     try{
       const view=bookingView(ConfigSchema.parse({...defaultSetup,BOOKING_METHOD:'api-first',PLAYER_FULL_NAME:'Fixture Player',PLAYER_PHONE:'09123456789',PLAYER_EMAIL:'fixture@example.invalid'}));
       const calls:Command[]=[];const runner:Runner=command=>{calls.push(command);return {pid:1,done:Promise.resolve(0),stop:async()=>undefined};};
-      const started:number[]=[],stopped:number[]=[];
+      const started:number[]=[],stopped:number[]=[],releaseMs=Date.now()+3600000;
       const controller=new Controller({runner,lock:async()=>false,cdp:async()=>true,browserHealth:async()=>({A:true,B:false}),playerStatus:()=>({primary:true,extended:false}),
-        clock:()=>({...clockStatus(ObservationSchema.parse({}),DateTime.fromISO('2026-09-21T07:00:00+08:00')),releaseMs:Date.parse('2026-09-21T08:00:00+08:00'),targetDate:view.targetDate}),
+        clock:()=>({...clockStatus(ObservationSchema.parse({}),DateTime.fromISO('2026-09-21T07:00:00+08:00')),releaseMs,targetDate:view.targetDate}),
         startSleepProtection:()=>{started.push(77);return 77;},stopSleepProtection:id=>{stopped.push(id);},
         confirm:async()=>true,publish:()=>undefined,booking:()=>view,saveBooking:()=>view});
       await controller.resetPrepare({workflow:'release',strategy:'standard',setup:view.setup});
@@ -89,7 +101,7 @@ describe('API-first UI boundary', () => {
       expect(calls).toHaveLength(preparedCallCount);expect(controller.state.detail).toBe('RESET REQUIRED. Press Reset & Prepare for these settings.');
       await controller.authorizeTerms(true);await controller.armFullBooking();
       expect(calls).toEqual([{kind:'apiRun',mode:'prepare',date:view.targetDate,fingerprint:view.fingerprint},
-        {kind:'apiRun',mode:'live',date:view.targetDate,fingerprint:view.fingerprint,releaseMs:Date.parse('2026-09-21T08:00:00+08:00')}]);
+        {kind:'apiRun',mode:'live',date:view.targetDate,fingerprint:view.fingerprint,releaseMs}]);
       expect(started).toEqual([77]);expect(stopped).toEqual([77]);expect(controller.state.sleepProtection).toBe(false);
     }finally{if(previous===undefined)delete process.env.THIRSTY_API_INSTALLATION;else process.env.THIRSTY_API_INSTALLATION=previous;}
   });

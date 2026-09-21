@@ -44,6 +44,20 @@ it('inspects both Extended browsers and clears aged timestamped final-dispatch r
   expect(h.normalize).toHaveBeenCalledTimes(2);
   await expect(readFile(h.path)).rejects.toThrow();
 }));
+it('recovers an aged shared API-first Extended final-dispatch record only after inspecting both clean browsers',()=>fixture(async h=>{
+  await writeFile(h.path,JSON.stringify({pid:123,runID:'fixture',mode:'extended',workers:['A','B'],stage:'FINAL_ACTION_DISPATCHING',stageAt:new Date(Date.now()-700000).toISOString()}));
+  await h.run('extended');
+  expect(h.inspect.mock.calls.map(c=>c[0].workerId)).toEqual(['A','B']);
+  expect(h.normalize).toHaveBeenCalledTimes(2);
+  await expect(readFile(h.path)).rejects.toThrow();
+}));
+it('retains an aged shared API-first Extended final-dispatch record when either browser is not conclusively clean',()=>fixture(async h=>{
+  await writeFile(h.path,JSON.stringify({pid:123,runID:'fixture',mode:'extended',workers:['A','B'],stage:'FINAL_ACTION_DISPATCHING',stageAt:new Date(Date.now()-700000).toISOString()}));
+  h.inspect.mockImplementation(async b=>({observed:b.workerId==='B'?{page:'Unknown',selected:null,hold:'Unknown',clean:false}:clean,normalize:h.normalize}));
+  await expect(h.run('extended')).rejects.toThrow('PAYMENT_HOLD_MAY_BE_ACTIVE');
+  expect(h.inspect.mock.calls.map(c=>c[0].workerId)).toEqual(['A','B']);expect(h.normalize).not.toHaveBeenCalled();
+  expect(JSON.parse(await readFile(h.path,'utf8')).stage).toBe('FINAL_ACTION_DISPATCHING');
+}));
 it('legacy final dispatch without a timestamp stays blocked on a clean Schedule',()=>fixture(async h=>{await h.record('standard','FINAL_ACTION_DISPATCHING');await expect(h.run()).rejects.toThrow('PAYMENT_HOLD_MAY_BE_ACTIVE');expect(h.normalize).not.toHaveBeenCalled();}));
 it('inspects both Extended browsers but retains final-dispatch records when either browser is not conclusively clean',()=>fixture(async h=>{
   await h.record('extended','FINAL_ACTION_DISPATCHING');

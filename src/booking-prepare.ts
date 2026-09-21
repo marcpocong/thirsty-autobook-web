@@ -54,10 +54,11 @@ export async function resetAndPrepare(strategy:'standard'|'extended',safety:Safe
   const workerPaths=['.local/dual/worker-a.lock','.local/dual/worker-b.lock'].map(p=>resolve(root,p));
   const guardPath=resolve(root,'.local/preparation.lock');
   const subordinate=await Promise.all(workerPaths.map(maybeRead));
+  const sharedExtended=record?.mode==='extended'&&Array.isArray(record.workers)&&record.workers.length===2&&record.workers[0]==='A'&&record.workers[1]==='B'&&subordinate.every(value=>value===undefined);
   if(!record&&subordinate.some(Boolean))throw Error('ORPHAN_WORKER_STATE');
   if(record&&!legacy&&record.mode!=='extended'&&subordinate.some(Boolean))throw Error('ORPHAN_WORKER_STATE');
   const records=subordinate.map(r=>r?JSON.parse(r):undefined);
-  if(legacy||record?.mode==='extended')for(const r of records)if(!r||r.pid!==record.pid||r.runID!==record.runID||alive(r.pid)!==false)throw Error('WORKER_STATE_UNKNOWN');
+  if(legacy||record?.mode==='extended'&&!sharedExtended)for(const r of records)if(!r||r.pid!==record.pid||r.runID!==record.runID||alive(r.pid)!==false)throw Error('WORKER_STATE_UNKNOWN');
   const same=async()=>{
     safety.check();if(await maybeRead(path)!==expectedRaw)throw Error('LOCK_REPLACED');
     const now=await Promise.all(workerPaths.map(maybeRead));if(now.some((r,i)=>r!==subordinate[i]))throw Error('LOCK_REPLACED');
@@ -96,7 +97,7 @@ export async function resetAndPrepare(strategy:'standard'|'extended',safety:Safe
     // not prevent inspection of B's independent Onda checkout.
     deps.progress?.('holds');
     for(const [i,browser] of browsers.entries()){
-      const workerRecord=legacy||record?.mode==='extended'?records[i]:i===0?record:undefined;
+      const workerRecord=sharedExtended?record:legacy||record?.mode==='extended'?records[i]:i===0?record:undefined;
       try{assertResetSafe(workerRecord,browser.observed);}catch(error){throw new PreparationBlockedError(error instanceof Error?error.message:'PAYMENT_HOLD_MAY_BE_ACTIVE',i===0?'A':'B',browser.observed);}
     }
     // Only normalize after all browser state and durable records are safe.
