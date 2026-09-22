@@ -11,6 +11,7 @@ let courtOrder = [7, 6, 5, 4, 3, 2, 1], fallbackTimes = [];
 const input = (id) => byId(id);
 let workflow = 'release';
 let currentView = 'release';
+const browserFocusMessages = {};
 function runDetail(run) {
     const detail = document.createElement('div');
     detail.className = 'run-detail';
@@ -221,6 +222,18 @@ function buildHandoffCard(hold, players) {
         expiry.className = 'small';
         expiry.textContent = `Recorded hold expiry: ${new Date(hold.holdExpiresAt).toLocaleString('en-GB', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })} Manila`;
         card.append(expiry);
+    }
+    if (worker) {
+        const action = document.createElement('button');
+        action.type = 'button';
+        action.className = 'show-browser secondary';
+        action.textContent = `Show Browser ${worker}`;
+        const result = document.createElement('span');
+        result.className = 'show-browser-result';
+        result.setAttribute('role', 'status');
+        result.textContent = browserFocusMessages[worker] ?? '';
+        action.onclick = () => { action.disabled = true; browserFocusMessages[worker] = result.textContent = `Opening Browser ${worker}…`; void window.thirsty.focusBrowser({ workerId: worker, ...(hold.bookingId ? { bookingId: hold.bookingId } : {}) }).then(() => { browserFocusMessages[worker] = result.textContent = `Browser ${worker} is now in front.`; }).catch(() => { browserFocusMessages[worker] = result.textContent = `Browser ${worker} is unavailable or its Onda tab is ambiguous.`; }).finally(() => { action.disabled = false; }); };
+        card.append(action, result);
     }
     return card;
 }

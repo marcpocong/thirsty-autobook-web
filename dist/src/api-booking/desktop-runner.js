@@ -26,9 +26,11 @@ import { ApiAutomationLock } from './api-automation-lock.js';
 import { assertApiReleaseFresh } from './api-release.js';
 import { canReleaseApiLockAfterParallelFailure, conclusiveNoHoldFromStates } from './api-lock-outcome.js';
 import { requiredWorkerIds } from '../workers.js';
+import { showWorkerPage } from '../browser-window.js';
 import { SPECIAL_SESSION_MODE, SPECIAL_SESSION_WORKERS, SPECIAL_SESSION_REQUIRED_WORKERS, SPECIAL_ADAPTIVE_WORKERS, SPECIAL_BONUS_WORKERS, specialSessionCourtAssignment, specialSessionPlans, specialAdaptivePlans, specialBonusLanePlans, specialBonusPlansForCourt } from './special-session.js';
 import { assertDirectDispatchWindow, chooseDirectCourt, DIRECT_COURT_PRIORITY, directPlan, submitDirectCheckout } from './special-direct-checkout.js';
 import { AdaptiveDirectLaneGate } from './adaptive-direct-lane.js';
+import { API_DIRECT_SECURITY_PREWARM_LEAD_MS, API_SECURITY_PREWARM_LEAD_MS, safeApiFailureCode } from './run-observability.js';
 const preferencesSchema = z.object({ strategy: z.enum(['standard', 'extended']), date: z.iso.date(), start: z.string().regex(/^(0[89]|1\d|2[0-3]):00$/),
     duration: z.number().int().min(1).max(6), courtCount: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7)]), maximum: z.number().optional(),
     priority: z.array(z.number().int().min(1).max(7)).min(1),
@@ -41,7 +43,6 @@ const abort = new AbortController();
 process.on('message', message => { if (message?.type === 'abort')
     abort.abort(); });
 const started = performance.now();
-const SECURITY_PREWARM_LEAD_MS = 8_000;
 const SPECIAL_RELEASE_GUARD_MS = 11_000;
 const SPECIAL_VERSION_POLL_MS = 1_000;
 const SPECIAL_AVAILABILITY_POLL_MS = 5_000;
@@ -130,18 +131,6 @@ const persistLatestVerifiedHold = async () => {
     await liveLock.held(latestVerifiedHoldExpiry);
     persistedVerifiedHoldExpiry = latestVerifiedHoldExpiry;
 };
-async function showWindow(page) {
-    const session = await page.context().newCDPSession(page);
-    try {
-        const { windowId, bounds } = await session.send('Browser.getWindowForTarget');
-        if (bounds.windowState === 'minimized')
-            await session.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'normal' } });
-    }
-    finally {
-        await session.detach();
-    }
-    await page.bringToFront();
-}
 async function prepareWorker(workerId) {
     const identity = browserIdentity(workerId);
     stage('PREPARING_BROWSER', { workerId });
@@ -169,7 +158,7 @@ async function prepareWorker(workerId) {
     await page.getByTestId('public-booking-hero-title').first().waitFor({ state: 'visible', timeout: 45_000 });
     if ((await page.getByTestId('public-booking-hero-title').first().innerText()).trim() !== VENUE)
         throw Error('WRONG_VENUE');
-    await showWindow(page);
+    await showWorkerPage(page, workerId);
     stage('BROWSER_READY', { workerId, port: identity.port });
     return { workerId, browser, page, port: identity.port };
 }
@@ -261,6 +250,7 @@ try {
     const specialSession = !requested && config.SESSION_MODE === SPECIAL_SESSION_MODE;
     stage('RUN_CONFIGURATION', { sessionMode: config.SESSION_MODE, bookingMethod: config.BOOKING_METHOD,
         workerCount: specialSession ? SPECIAL_SESSION_REQUIRED_WORKERS.length : requiredWorkerIds(config.BOOKING_TYPE, config.COURT_COUNT).length,
+        prewarmLeadMs: API_SECURITY_PREWARM_LEAD_MS, directPrewarmLeadMs: API_DIRECT_SECURITY_PREWARM_LEAD_MS,
         ...(command.releaseMs ? { releaseMs: command.releaseMs } : {}) });
     if (specialSession && !['prepare', 'live'].includes(command.mode))
         throw Error('SPECIAL_SESSION_RELEASE_ONLY');
@@ -288,9 +278,11 @@ try {
     // The dedicated profiles are independent. Wait for both checks to settle so
     // a failure in one browser cannot leave an unobserved preparation running.
     const prepared = await Promise.allSettled(workerIds.map(prepareWorker));
+    prepared.forEach((result, index) => stage('BROWSER_PREPARATION_OUTCOME', { workerId: workerIds[index], status: result.status,
+        code: result.status === 'fulfilled' ? 'COMPLETED' : safeApiFailureCode(result.reason, 'API_BROWSER_PREPARATION_FAILED') }));
     const failure = prepared.find((result) => result.status === 'rejected');
     if (failure)
-        throw failure.reason;
+        throw Error(safeApiFailureCode(failure.reason, 'API_BROWSER_PREPARATION_FAILED'));
     const sessions = prepared.map(result => { if (result.status !== 'fulfilled')
         throw Error('API_BROWSER_PREPARATION_FAILED'); return result.value; });
     if (command.mode === 'prepare') {
@@ -308,7 +300,7 @@ try {
                 const workerId = session.workerId;
                 releaseTransports.set(workerId, new OndaBrowserSessionTransport(session.page, () => calendarFreeSecurityContext(session.page)(), response => responseCaptures.get(workerId)?.(response) ?? Promise.reject(Error('CHECKOUT_RESPONSE_CAPTURE_MISSING')), { onHumanVerificationRequired: async () => {
                         await session.page.evaluate(id => { document.title = `THIRSTY BOT ${id} - VERIFY HERE`; }, workerId);
-                        await showWindow(session.page);
+                        await showWorkerPage(session.page, workerId);
                         stage('HUMAN_VERIFICATION_REQUIRED', { workerId });
                     }, onHumanVerificationCompleted: async () => { stage('HUMAN_VERIFICATION_COMPLETE', { workerId }); } }));
             }
@@ -361,7 +353,7 @@ try {
                     onPhase: phase => stage(phase, workerTiming()),
                     onHumanVerificationRequired: async () => {
                         await session.page.evaluate(id => { document.title = `THIRSTY BOT ${id} - VERIFY HERE`; }, workerId);
-                        await showWindow(session.page);
+                        await showWorkerPage(session.page, workerId);
                         stage('HUMAN_VERIFICATION_REQUIRED', { workerId });
                     },
                     onHumanVerificationCompleted: async () => { stage('HUMAN_VERIFICATION_COMPLETE', { workerId }); } });
@@ -369,7 +361,7 @@ try {
             catch (error) {
                 const code = error instanceof Error ? error.message : '';
                 if (/TURNSTILE|SECURITY_CONTEXT|CHALLENGE/.test(code)) {
-                    await showWindow(session.page);
+                    await showWorkerPage(session.page, workerId);
                     stage('HUMAN_VERIFICATION_REQUIRED', { workerId, code });
                 }
                 throw error;
@@ -398,7 +390,7 @@ try {
             const body = await session.page.locator('body').innerText();
             if (!body.includes('Pending') || !body.replaceAll(',', '').includes(chunkPlan.totalPrice.toFixed(2)))
                 throw Error('OFFICIAL_CHECKOUT_STATE_MISMATCH');
-            await showWindow(session.page);
+            await showWorkerPage(session.page, workerId);
             stage('OFFICIAL_QRPH_HANDOFF', { ...workerTiming(), ...bookingTarget, bookingId: hold.bookingIds[0], bookingNo,
                 holdExpiresAt: hold.holdExpiresAt, price: chunkPlan.totalPrice });
             return hold;
@@ -407,12 +399,19 @@ try {
             const states = await Promise.all(attempt.journals.map((journal, index) => journal.read(attempt.keys[index]).then(record => record.state).catch(() => undefined)));
             return conclusiveNoHoldFromStates(states, error);
         };
-        const warmWorkers = (workers) => Promise.allSettled(workers.map(async (workerId) => {
+        const warmWorkers = (workers, readyStage) => Promise.allSettled(workers.map(async (workerId) => {
             const transport = releaseTransports.get(workerId);
             if (!transport)
                 throw Error('API_CHECKOUT_WORKER_MISSING');
             await transport.prepareCheckoutContext();
+            if (readyStage)
+                stage(readyStage, { workerId });
         }));
+        const recordWarmFailures = (name, workers, results, fallback) => results.forEach((result, index) => {
+            if (result.status === 'rejected')
+                stage(name, { workerId: workers[index], status: 'rejected',
+                    code: safeApiFailureCode(result.reason, fallback) });
+        });
         let specialDispatchOrder = [];
         let efProofAttempted = false;
         // outcome is for telemetry/summary purposes only: 'skipped' until a court
@@ -458,7 +457,8 @@ try {
             stage('ADAPTIVE_DIRECT_PROOF_AVAILABLE', { court: directCourt, price });
             efProofTask = (async () => {
                 try {
-                    const warmed = await warmWorkers(SPECIAL_ADAPTIVE_WORKERS);
+                    const warmed = await warmWorkers(SPECIAL_ADAPTIVE_WORKERS, 'ADAPTIVE_SECURITY_READY');
+                    recordWarmFailures('ADAPTIVE_SECURITY_FAILED', SPECIAL_ADAPTIVE_WORKERS, warmed, 'ADAPTIVE_PROOF_SECURITY_FAILED');
                     if (warmed.some(result => result.status === 'rejected')) {
                         efGate.releaseProofCommitment();
                         stage('ADAPTIVE_DIRECT_FALLBACK_ELIGIBLE', { code: 'ADAPTIVE_PROOF_SECURITY_FAILED' });
@@ -538,6 +538,7 @@ try {
             if (!warmup)
                 return;
             let results = await warmup;
+            recordWarmFailures('SECURITY_PREWARM_FAILED', warmupWorkers, results, 'SECURITY_PREWARM_FAILED');
             let failure = results.find((result) => result.status === 'rejected');
             if (failure && retryOnce) {
                 const retryWorkers = warmupWorkers;
@@ -545,10 +546,11 @@ try {
                 warmupStartedAt = undefined;
                 startWarmup(retryWorkers);
                 results = await warmup;
+                recordWarmFailures('SECURITY_PREWARM_RETRY_FAILED', warmupWorkers, results, 'SECURITY_PREWARM_FAILED');
                 failure = results.find((result) => result.status === 'rejected');
             }
             if (failure)
-                throw failure.reason;
+                throw Error(safeApiFailureCode(failure.reason, 'SECURITY_PREWARM_FAILED'));
         };
         if (command.mode === 'live' && specialSession) {
             const releaseMs = command.releaseMs;
@@ -587,14 +589,16 @@ try {
                     while (Date.now() < releaseMs) {
                         ensureActive();
                         const remaining = releaseMs - Date.now();
-                        if (remaining <= SECURITY_PREWARM_LEAD_MS)
+                        if (remaining <= API_SECURITY_PREWARM_LEAD_MS)
                             startWarmup(SPECIAL_SESSION_WORKERS);
-                        if (remaining <= 5_000)
+                        if (remaining <= API_DIRECT_SECURITY_PREWARM_LEAD_MS)
                             warmDirect();
-                        await pause(Math.min(250, Math.max(1, remaining), warmup ? 250 : Math.max(1, remaining - SECURITY_PREWARM_LEAD_MS)));
+                        await pause(Math.min(250, Math.max(1, remaining), warmup ? 250 : Math.max(1, remaining - API_SECURITY_PREWARM_LEAD_MS)));
                     }
                     assertApiReleaseFresh(releaseMs);
-                    if ((await warmDirect()).some(result => result.status === 'rejected'))
+                    const directWarmResults = await warmDirect();
+                    recordWarmFailures('DIRECT_SECURITY_FAILED', SPECIAL_ADAPTIVE_WORKERS, directWarmResults, 'DIRECT_SECURITY_PREWARM_FAILED');
+                    if (directWarmResults.some(result => result.status === 'rejected'))
                         throw Error('DIRECT_SECURITY_PREWARM_FAILED');
                     ensureActive();
                     assertDirectDispatchWindow(releaseMs);
@@ -648,7 +652,7 @@ try {
                         const body = await session.page.locator('body').innerText();
                         if (!body.includes('Pending') || !body.replaceAll(',', '').includes(plan.totalPrice.toFixed(2)))
                             throw Error('OFFICIAL_CHECKOUT_STATE_MISMATCH');
-                        await showWindow(session.page);
+                        await showWorkerPage(session.page, workerId);
                         stage('OFFICIAL_QRPH_HANDOFF', { workerId, court: directCourt, date: command.date, startTime: plan.startTime,
                             durationHours: plan.durationHours, bookingId: hold.bookingIds[0], bookingNo, holdExpiresAt: hold.holdExpiresAt,
                             price: plan.totalPrice, workerElapsedMs: Math.round(performance.now() - startedAt) });
@@ -740,7 +744,8 @@ try {
                 }
                 bonusLane.outcome = 'failed';
                 stage('SPECIAL_BONUS_LANE_READY', { court: found.court, price: [...found.plans.values()].reduce((sum, plan) => sum + plan.totalPrice, 0) });
-                const warmed = await warmWorkers(SPECIAL_BONUS_WORKERS);
+                const warmed = await warmWorkers(SPECIAL_BONUS_WORKERS, 'BONUS_SECURITY_READY');
+                recordWarmFailures('BONUS_SECURITY_FAILED', SPECIAL_BONUS_WORKERS, warmed, 'BONUS_SECURITY_PREWARM_FAILED');
                 const warmFailure = warmed.find((result) => result.status === 'rejected');
                 if (warmFailure)
                     throw warmFailure.reason;
@@ -770,13 +775,15 @@ try {
                         while (Date.now() < releaseMs) {
                             ensureActive();
                             const remaining = releaseMs - Date.now();
-                            if (remaining <= SECURITY_PREWARM_LEAD_MS)
-                                retryWarmup ??= warmWorkers(retryWorkers);
+                            if (remaining <= API_SECURITY_PREWARM_LEAD_MS)
+                                retryWarmup ??= warmWorkers(retryWorkers, 'BONUS_RETRY_SECURITY_READY');
                             await pause(Math.min(500, Math.max(1, remaining)));
                         }
                         assertApiReleaseFresh(releaseMs);
-                        retryWarmup ??= warmWorkers(retryWorkers);
-                        const retryWarmFailure = (await retryWarmup).find((result) => result.status === 'rejected');
+                        retryWarmup ??= warmWorkers(retryWorkers, 'BONUS_RETRY_SECURITY_READY');
+                        const retryWarmResults = await retryWarmup;
+                        recordWarmFailures('BONUS_RETRY_SECURITY_FAILED', retryWorkers, retryWarmResults, 'BONUS_SECURITY_PREWARM_FAILED');
+                        const retryWarmFailure = retryWarmResults.find((result) => result.status === 'rejected');
                         if (retryWarmFailure)
                             throw retryWarmFailure.reason;
                         let retryPlans = new Map();
@@ -879,6 +886,8 @@ try {
             while (Date.now() < releaseMs) {
                 ensureActive();
                 const remaining = releaseMs - Date.now();
+                if (remaining <= API_SECURITY_PREWARM_LEAD_MS)
+                    startWarmup(SPECIAL_SESSION_WORKERS);
                 // Do not let a final pre-release GET overlap and delay the official
                 // release fetch. The live provider has a ten-second timeout.
                 if (remaining <= SPECIAL_RELEASE_GUARD_MS) {
@@ -968,9 +977,9 @@ try {
             while (Date.now() < releaseMs) {
                 ensureActive();
                 const remaining = releaseMs - Date.now();
-                if (remaining <= SECURITY_PREWARM_LEAD_MS)
+                if (remaining <= API_SECURITY_PREWARM_LEAD_MS)
                     startWarmup();
-                await pause(Math.min(500, Math.max(1, remaining), warmup ? 500 : Math.max(1, remaining - SECURITY_PREWARM_LEAD_MS)));
+                await pause(Math.min(500, Math.max(1, remaining), warmup ? 500 : Math.max(1, remaining - API_SECURITY_PREWARM_LEAD_MS)));
             }
             assertApiReleaseFresh(releaseMs);
             stage('RELEASE_TRIGGERED');
@@ -1048,9 +1057,9 @@ try {
                     while (Date.now() < command.releaseMs) {
                         ensureActive();
                         const remaining = command.releaseMs - Date.now();
-                        if (remaining <= SECURITY_PREWARM_LEAD_MS)
+                        if (remaining <= API_SECURITY_PREWARM_LEAD_MS)
                             startWarmup(retryWorkers);
-                        await pause(Math.min(500, Math.max(1, remaining), warmup ? 500 : Math.max(1, remaining - SECURITY_PREWARM_LEAD_MS)));
+                        await pause(Math.min(500, Math.max(1, remaining), warmup ? 500 : Math.max(1, remaining - API_SECURITY_PREWARM_LEAD_MS)));
                     }
                     assertApiReleaseFresh(command.releaseMs);
                     stage('RELEASE_TRIGGERED');
@@ -1160,8 +1169,7 @@ try {
     }
 }
 catch (error) {
-    const code = error instanceof Error && /^[A-Z][A-Z0-9_]{0,79}$/.test(error.message)
-        ? error.message : 'API_FIRST_RUN_FAILED';
+    const code = safeApiFailureCode(error, 'API_FIRST_RUN_FAILED');
     stage('FAILED', { code });
     process.exitCode = 1;
 }

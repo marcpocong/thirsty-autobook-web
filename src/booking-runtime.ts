@@ -61,7 +61,7 @@ export async function runBooking(config:Config,mode:'test'|'race'|'race:dry'|'ra
     if(options.scheduledTarget)connections.forEach((_,i)=>workerTelemetry[i]!.mark('browserAttached'));
     if(identities.length===2){const paths=await Promise.all(identities.map(i=>realpath(i.expectedProfile)));if(paths[0]!.toLowerCase()===paths[1]!.toLowerCase())throw Error('DUAL_PROFILE_NOT_ISOLATED');}
     const workers=connections.map((c,i):DualWorker=>{const id=i===0?'A':'B';return {id,safety:safeties[i]!,telemetry:workerTelemetry[i]!,port:selectionPort(c.page,safeties[i]!),state:async()=>{},checkout:async selected=>{
-      await fullBookingToQr(c.page,selected,players[id]!,(options.maximum??config.MAX_PRICE)*request.courtCount,true,config.PAYMENT_HANDOFF_VERIFY_TIMEOUT_MS,safeties[i]!,workerTelemetry[i]!,config.PAYMENT_SUMMARY_READY_TIMEOUT_MS);
+      await fullBookingToQr(c.page,selected,players[id]!,(options.maximum??config.MAX_PRICE)*request.courtCount,true,config.PAYMENT_HANDOFF_VERIFY_TIMEOUT_MS,safeties[i]!,workerTelemetry[i]!,config.PAYMENT_SUMMARY_READY_TIMEOUT_MS,id);
     }};});
     const gate=dualArmGate(target,safety,t);
     const gridResults=await Promise.allSettled(workers.map(async(w,i)=>{

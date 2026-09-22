@@ -10,7 +10,8 @@ import { ActivityJournal } from './activity-journal.js';
 import { readLock, readHandoff, readRetainedHold, readPreviousHolds, readLatestQrHandoffs, probeCdp, probeBrowserHealth, readClock } from './status.js';
 import { readBooking, saveBooking, describePlan } from './booking.js';
 import { resetPracticeSession } from './practice-reset.js';
-import {requiredWorkerIds} from '../src/workers.js';
+import {requiredWorkerIds,WORKER_IDS} from '../src/workers.js';
+import {focusDedicatedBrowser} from '../src/browser-window.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 process.chdir(root);
@@ -72,6 +73,12 @@ else {
   for (const [name,action] of Object.entries({apiPreview:(input:unknown)=>controller.apiPreview(input),resetPrepare:(input:unknown)=>controller.resetPrepare(input),testBooking:(input:unknown)=>controller.testBooking(input),setWorkflow:(input:unknown)=>controller.setWorkflow(input),runDualPractice:(input:unknown)=>controller.runDualPractice(input),runFullPractice:(input:unknown)=>controller.runFullPractice(input),saveBooking:(input:unknown)=>controller.saveBooking(input),runPractice:(input:unknown)=>controller.runPractice(input),setMode:(input:unknown)=>controller.setMode(input),authorizeTerms:(input:unknown)=>controller.authorizeTerms(input)})) ipcMain.handle(`thirsty:${name}`,(event,...args:unknown[])=>{
     if(event.sender!==window.webContents||event.senderFrame!==window.webContents.mainFrame||event.senderFrame.url!==indexUrl||args.length!==1)throw new Error('IPC_NOT_ALLOWED');
     return action(args[0]);
+  });
+  ipcMain.handle('thirsty:focusBrowser',async(event,...args:unknown[])=>{
+    if(event.sender!==window.webContents||event.senderFrame!==window.webContents.mainFrame||event.senderFrame.url!==indexUrl||args.length!==1)throw Error('IPC_NOT_ALLOWED');
+    const request=args[0] as {workerId?:unknown;bookingId?:unknown};
+    if(!request||typeof request!=='object'||!WORKER_IDS.includes(request.workerId as never)||!(request.bookingId===undefined||typeof request.bookingId==='string'&&/^[A-Za-z0-9_-]{1,200}$/.test(request.bookingId)))throw Error('IPC_NOT_ALLOWED');
+    await focusDedicatedBrowser({workerId:request.workerId as import('../src/workers.js').WorkerId,...(typeof request.bookingId==='string'?{bookingId:request.bookingId}:{})});
   });
   window.once('ready-to-show', () => window.show());
   const poll = setInterval(() => { void controller.refresh(); }, 2000);

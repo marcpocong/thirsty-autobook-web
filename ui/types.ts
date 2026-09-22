@@ -56,6 +56,7 @@ export interface Dashboard {
   mode:'selection'|'full'; handoff:Extract<UiEvent,{type:'handoff'}>|null;
 }
 export interface Bridge {
+  focusBrowser(request:{workerId:WorkerId;bookingId?:string}):Promise<void>;
   resetPrepare(input:PreparationInput):Promise<void>;
   apiPreview(date:string):Promise<void>;
   testBooking(input:TestBookingInput):Promise<void>;

@@ -85,7 +85,7 @@ export async function runDual(config: Config, mode: DualMode, safety: Safety, t:
       port:selectionPort(connection.page, workerSafeties[i]!),
       checkout: async selected => { await fullBookingToQr(connection.page, selected,
         { fullName:config.PLAYER_FULL_NAME, phone:config.PLAYER_PHONE, email:config.PLAYER_EMAIL }, config.MAX_PRICE,
-        true, config.PAYMENT_HANDOFF_VERIFY_TIMEOUT_MS, workerSafeties[i]!, workerTelemetry[i]!, config.PAYMENT_SUMMARY_READY_TIMEOUT_MS); },
+        true, config.PAYMENT_HANDOFF_VERIFY_TIMEOUT_MS, workerSafeties[i]!, workerTelemetry[i]!, config.PAYMENT_SUMMARY_READY_TIMEOUT_MS, i===0?'A':'B'); },
       state: async (state, selected?:SelectionResult) => {
         const path=`.local/dual/worker-${i === 0 ? 'a' : 'b'}.lock`;
         const prior=JSON.parse(await readFile(path,'utf8'));

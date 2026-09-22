@@ -104,7 +104,7 @@ export async function runDual(config, mode, safety, t, options = {}) {
             id: i === 0 ? 'A' : 'B', safety: workerSafeties[i], telemetry: workerTelemetry[i],
             port: selectionPort(connection.page, workerSafeties[i]),
             checkout: async (selected) => {
-                await fullBookingToQr(connection.page, selected, { fullName: config.PLAYER_FULL_NAME, phone: config.PLAYER_PHONE, email: config.PLAYER_EMAIL }, config.MAX_PRICE, true, config.PAYMENT_HANDOFF_VERIFY_TIMEOUT_MS, workerSafeties[i], workerTelemetry[i], config.PAYMENT_SUMMARY_READY_TIMEOUT_MS);
+                await fullBookingToQr(connection.page, selected, { fullName: config.PLAYER_FULL_NAME, phone: config.PLAYER_PHONE, email: config.PLAYER_EMAIL }, config.MAX_PRICE, true, config.PAYMENT_HANDOFF_VERIFY_TIMEOUT_MS, workerSafeties[i], workerTelemetry[i], config.PAYMENT_SUMMARY_READY_TIMEOUT_MS, i === 0 ? 'A' : 'B');
             },
             state: async (state, selected) => {
                 const path = `.local/dual/worker-${i === 0 ? 'a' : 'b'}.lock`;

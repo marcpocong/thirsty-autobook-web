@@ -179,6 +179,9 @@ pre { white-space: pre-wrap; font: 12px/1.5 "Segoe UI", sans-serif; background: 
 .qr-summary-phase.pending { color: #f0ce91; }
 .qr-summary-booking { margin-top: 7px; white-space: pre-line; color: #f1f8f2; }
 .qr-summary-amount { margin-top: 6px; font-weight: 700; }
+.show-browser { width:100%; margin-top:9px; color:#102312; background:#9ee75e; border-color:#b6f57d; font-weight:750; }
+.show-browser:hover { color:#07170f; background:#b1f574; border-color:#ceffa2; }
+.show-browser-result { display:block; min-height:1.4em; margin-top:5px; color:#a9cbb1; font-size:9px; }
 #simple-status #detail, #booking-adjustment, #configuration-status { white-space: pre-line; }
 .workflow { margin-bottom: 12px; padding: 10px; }
 .workflow button { font-size: 13px; padding: 10px; }

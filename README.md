@@ -92,7 +92,7 @@ npm test
 npm run ui:build
 ```
 
-The checked-in offline suite currently contains 67 files and 798 tests. It must stay network-isolated: it uses fixtures and test-owned Chromium, never a live booking. `npm run exe:build` is a Windows packaging/deployment command; it refreshes the parent installation as well as the launcher and should be run only when that local installation update is intended.
+The checked-in offline suite currently contains 69 files and 805 tests. It must stay network-isolated: it uses fixtures and test-owned Chromium, never a live booking. `npm run exe:build` is a Windows packaging/deployment command; it refreshes the parent installation as well as the launcher and should be run only when that local installation update is intended.
 
 Practice requires all four explicit target arguments. If either requested slot is unavailable, it stops; it never silently picks another target. On an uncertain selection, failure or abort, inspect and clear selection manually. Only rerun practice for an appropriate noncompetitive target.
 
@@ -177,7 +177,7 @@ Current implementation and validation details are summarized in [REVIEW_GUIDE.md
 
 Payment Summary readiness uses its actual heading with a bounded `PAYMENT_SUMMARY_READY_TIMEOUT_MS` (default 60000); it never retries Player Proceed. Final payment-summary/terms/button checks precede a one-use final dispatch. The active interaction gate seals before that click. A separate passive observer has only a read method and a bounded `PAYMENT_HANDOFF_VERIFY_TIMEOUT_MS` (default 10000). It requires Checkout, Slot reserved for, a plausible active countdown, Pending, matching independent PHP totals, QRPH and QR canvas presence. It stops at the first complete proof. It never reads QR pixels, payloads or URLs, or uses payment controls.
 
-A successful hold retains the filesystem lock and records only safe booking/status metadata. The panel displays the last observed countdown and timestamp, and switches to manual review once that observed countdown has elapsed locally. It never polls Onda for payment status or claims payment succeeded. Unknown final results also retain the lock and must be checked manually; never retry the final click.
+A successful hold retains the filesystem lock and records only safe booking/status metadata. The panel displays the last observed countdown and timestamp, and switches to manual review once that observed countdown has elapsed locally. Each verified QR card also provides **Show Browser X**, which restores, maximizes, and brings that checkout's exact dedicated Chrome window to the front. It never polls Onda for payment status or claims payment succeeded. Unknown final results also retain the lock and must be checked manually; never retry the final click.
 
 For a separately authorized noncompetitive development test only, `npm run handoff:test -- --armed --authorize-terms --noncompetitive --date YYYY-MM-DD --court N --start HH:MM --duration N` requires an explicit available target and allows one selection candidate. The one test authorized for this development phase has already been used; no additional test or payment is scheduled.
 # Pre-open release diagnostic

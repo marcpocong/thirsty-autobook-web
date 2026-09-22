@@ -90,7 +90,7 @@ export async function runBooking(config, mode, safety, t, options = {}) {
         const workers = connections.map((c, i) => {
             const id = i === 0 ? 'A' : 'B';
             return { id, safety: safeties[i], telemetry: workerTelemetry[i], port: selectionPort(c.page, safeties[i]), state: async () => { }, checkout: async (selected) => {
-                    await fullBookingToQr(c.page, selected, players[id], (options.maximum ?? config.MAX_PRICE) * request.courtCount, true, config.PAYMENT_HANDOFF_VERIFY_TIMEOUT_MS, safeties[i], workerTelemetry[i], config.PAYMENT_SUMMARY_READY_TIMEOUT_MS);
+                    await fullBookingToQr(c.page, selected, players[id], (options.maximum ?? config.MAX_PRICE) * request.courtCount, true, config.PAYMENT_HANDOFF_VERIFY_TIMEOUT_MS, safeties[i], workerTelemetry[i], config.PAYMENT_SUMMARY_READY_TIMEOUT_MS, id);
                 } };
         });
         const gate = dualArmGate(target, safety, t);

@@ -7,6 +7,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createServer } from 'node:net';
 import { chromium } from 'playwright';
+import { identifyWorkerPage } from './browser-window.js';
 import { DateTime } from 'luxon';
 import { browserIdentity,candidateBrowserIdentity,cdpCodes,rememberBrowserPort,verifyDedicatedChrome,verifyCandidateChrome,monitorConnection } from './browser.js';
 import { ONDA_URL, VENUE } from './config.js';
@@ -48,6 +49,10 @@ async function maybeRead(path:string){try{return await readFile(path,'utf8');}ca
 export interface PreparedBrowser { observed:BrowserReview; normalize(date?:string):Promise<Snapshot|void> }
 export interface PreparationDependencies { root?:string; alive?:typeof pidAlive; start?:(identity:BrowserIdentity)=>Promise<void|BrowserIdentity>; inspect?:(identity:BrowserIdentity,safety:Safety)=>Promise<PreparedBrowser>; progress?:(step:'starting'|'previous-session'|'holds'|'onda'|'calendar'|'grids'|'availability'|'final')=>void }
 export interface ResetPreparation {browsers:{id:WorkerId;snapshot?:Snapshot}[]}
+function browserPreparationError(workerId:WorkerId,error:unknown){
+  const code=error instanceof Error&&/^[A-Z][A-Z0-9_]{0,63}$/.test(error.message)?error.message:'PREPARATION_FAILED';
+  return Error(`BROWSER_${workerId}_${code}`);
+}
 export async function resetAndPrepare(strategy:'standard'|'extended',safety:Safety,deps:PreparationDependencies={},date?:string,requestedWorkers:readonly WorkerId[]=[]){
   const root=deps.root??'.',alive=deps.alive??pidAlive;
   deps.progress?.('starting');
@@ -99,7 +104,9 @@ export async function resetAndPrepare(strategy:'standard'|'extended',safety:Safe
     for(const [i,b] of identities.entries()){
       const workerRecord=sharedRecord?record:legacy||record?.mode==='extended'?records[i]:i===0?record:undefined;
       const preserveHold=workerRecord?.stage==='HOLD_VERIFIED'&&Number.isFinite(Date.parse(workerRecord.holdExpiresAt??''));
-      const prepared=await (deps.inspect??((identity,guard)=>inspectForPreparation(identity,guard,preserveHold)))(b,safety);
+      let prepared:PreparedBrowser;
+      try{prepared=await (deps.inspect??((identity,guard)=>inspectForPreparation(identity,guard,preserveHold)))(b,safety);}
+      catch(error){throw browserPreparationError(requiredWorkers[i]!,error);}
       browsers.push(prepared);
     }
     // Inspect every required browser before deciding whether any state is safe
@@ -113,7 +120,13 @@ export async function resetAndPrepare(strategy:'standard'|'extended',safety:Safe
     // Only normalize after all browser state and durable records are safe.
     deps.progress?.('calendar');
     const normalized:ResetPreparation['browsers']=[];
-    for(const [i,browser] of browsers.entries()){await same();safety.check();const prepared=await browser.normalize(date);normalized.push({id:requiredWorkers[i]!,...(prepared?{snapshot:prepared}:{})});}
+    for(const [i,browser] of browsers.entries()){
+      await same();safety.check();
+      let prepared:Snapshot|void;
+      try{prepared=await browser.normalize(date);}
+      catch(error){throw browserPreparationError(requiredWorkers[i]!,error);}
+      normalized.push({id:requiredWorkers[i]!,...(prepared?{snapshot:prepared}:{})});
+    }
     deps.progress?.('grids');
     if(raw){
       await same();
@@ -143,11 +156,15 @@ async function inspectForPreparation(b:BrowserIdentity,safety:Safety,preserveVer
   const context=browser.contexts()[0];if(!context)throw Error('CDP_BROWSER_CONTEXT_MISSING');
   const page=preserveVerifiedHold?(schedulePages[0]??await context.newPage()):candidates[0]!;
   if(preserveVerifiedHold&&page.url()!==ONDA_URL)await page.goto(ONDA_URL,{waitUntil:'domcontentloaded'});
-  page.setDefaultTimeout(10000);monitorConnection(browser,page,safety);
+  // Eight-browser preparation must tolerate a newly launched Chrome finishing
+  // its initial Onda render. The command remains bounded, but a single slow
+  // first load no longer fails at the old ten-second locator deadline.
+  page.setDefaultTimeout(30000);page.setDefaultNavigationTimeout(30000);monitorConnection(browser,page,safety);
   const reason=securityReason(await page.locator('body').innerText());if(reason)throw Error(reason);
-  const observed=await inspectLockPage(page);
+  const observed=await inspectLockPage(page,{scheduleHydrationTimeoutMs:30000});
   if(['Review Booking','Payment Summary'].includes(observed.page)&&(page.url()!==ONDA_URL||await page.locator('h2').count()!==1||(await page.locator('h2').innerText()).trim()!==VENUE))throw Error('WRONG_VENUE');
-  return {observed,normalize:async(date)=>prepareSchedule(page,safety,date)};
+  await identifyWorkerPage(page,b.workerId).catch(()=>undefined);
+  return {observed,normalize:async(date)=>{const prepared=await prepareSchedule(page,safety,date);await identifyWorkerPage(page,b.workerId).catch(()=>undefined);return prepared;}};
 }
 async function available(port:number){
   return new Promise<boolean>(resolveAvailable=>{

@@ -10,7 +10,8 @@ import { ActivityJournal } from './activity-journal.js';
 import { readLock, readHandoff, readRetainedHold, readPreviousHolds, readLatestQrHandoffs, probeCdp, probeBrowserHealth, readClock } from './status.js';
 import { readBooking, saveBooking, describePlan } from './booking.js';
 import { resetPracticeSession } from './practice-reset.js';
-import { requiredWorkerIds } from '../src/workers.js';
+import { requiredWorkerIds, WORKER_IDS } from '../src/workers.js';
+import { focusDedicatedBrowser } from '../src/browser-window.js';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 process.chdir(root);
 app.setName('Thirsty Pickle Bot');
@@ -84,6 +85,14 @@ else {
                     throw new Error('IPC_NOT_ALLOWED');
                 return action(args[0]);
             });
+        ipcMain.handle('thirsty:focusBrowser', async (event, ...args) => {
+            if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== indexUrl || args.length !== 1)
+                throw Error('IPC_NOT_ALLOWED');
+            const request = args[0];
+            if (!request || typeof request !== 'object' || !WORKER_IDS.includes(request.workerId) || !(request.bookingId === undefined || typeof request.bookingId === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(request.bookingId)))
+                throw Error('IPC_NOT_ALLOWED');
+            await focusDedicatedBrowser({ workerId: request.workerId, ...(typeof request.bookingId === 'string' ? { bookingId: request.bookingId } : {}) });
+        });
         window.once('ready-to-show', () => window.show());
         const poll = setInterval(() => { void controller.refresh(); }, 2000);
         app.on('before-quit', event => {

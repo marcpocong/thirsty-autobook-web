@@ -15,7 +15,7 @@ import type {Command} from '../ui/types.js';
 import type {Runner} from '../ui/processes.js';
 import {commandSpec} from '../ui/processes.js';
 import {expectedPreparationFingerprint} from '../src/prepared-context.js';
-import {inspectLockPage} from '../src/lock-browser.js';
+import {inspectLockPage,validateObservedSchedule} from '../src/lock-browser.js';
 import {assertResetSafe,resetAndPrepare,type PreparedBrowser} from '../src/booking-prepare.js';
 import {Safety} from '../src/safety.js';
 import {lifecycleWriter} from '../src/checkout-lifecycle.js';
@@ -82,6 +82,9 @@ it.each([['05:00','Active',300],['00:00','Expired',0]] as const)('classifies the
 });
 it('fails closed when hold countdown association is missing or ambiguous',async()=>{
   const page=await browser.newPage();await page.setContent('<h1>Checkout</h1><div><p>Slot reserved for</p></div><span>05:00</span>');expect((await inspectLockPage(page)).hold).toBe('Unknown');await page.setContent('<h1>Checkout</h1><div><p>Slot reserved for</p><p>05:00</p><p>04:59</p></div>');expect((await inspectLockPage(page)).hold).toBe('Unknown');await page.close();
+});
+it('classifies an unhydrated rendered schedule as stale instead of an invalid configured date',()=>{
+  expect(()=>validateObservedSchedule({heading:'',busy:true,rows:[],cells:[]})).toThrow('STALE_OR_INCOMPLETE_GRID');
 });
 it('allows a new clean schedule beside a verified hold but blocks uncertain final dispatch',()=>{
   const clean={page:'Schedule' as const,selected:0,hold:'Not detected' as const,clean:true};

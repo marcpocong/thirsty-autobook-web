@@ -1,7 +1,7 @@
 ﻿import { chromium, type Page } from 'playwright';
 import { verifyDedicatedChrome, browserA, type BrowserIdentity } from './browser.js';
 import { ONDA_URL, VENUE } from './config.js';
-import { snapshot, validateSnapshot } from './grid.js';
+import { snapshot, validateSnapshot, type Cell, type Snapshot } from './grid.js';
 export type HoldState='Active'|'Expired'|'Not detected'|'Unknown';
 export interface BrowserReview { page:'Schedule'|'Review Booking'|'Payment Summary'|'QR Checkout'|'Unknown'; selected:number|null; hold:HoldState; countdownSeconds?:number|null; clean:boolean }
 export const unknownBrowser:BrowserReview={page:'Unknown',selected:null,hold:'Unknown',countdownSeconds:null,clean:false};
@@ -16,7 +16,37 @@ async function holdComponent(page:Page){
     return {present:true,countdown:values.length===1?values[0]!:null,ambiguous:values.length!==1};
   });
 }
-export async function inspectLockPage(page:Page):Promise<BrowserReview>{
+export function validateObservedSchedule(grid:Snapshot):Cell[]{
+  const renderedDate=grid.rows[0]?.date;
+  if(!renderedDate)throw Error('STALE_OR_INCOMPLETE_GRID');
+  try{return validateSnapshot(grid,renderedDate);}
+  catch(error){
+    // The date comes from Onda's rendered grid rather than user input. An
+    // absent/malformed value therefore means the page is still hydrating (or
+    // its structure changed), not that the configured booking date is invalid.
+    if(error instanceof Error&&error.message==='INVALID_TARGET_DATE')throw Error('STALE_OR_INCOMPLETE_GRID');
+    throw error;
+  }
+}
+async function inspectStableSchedule(page:Page,timeoutMs:number):Promise<Cell[]>{
+  const deadline=Date.now()+Math.max(0,timeoutMs);
+  let lastCode='STALE_OR_INCOMPLETE_GRID';
+  for(;;){
+    try{
+      const cells=validateObservedSchedule(await snapshot(page));
+      if(!cells.some(cell=>cell.state==='UNKNOWN'))return cells;
+      lastCode='STALE_OR_INCOMPLETE_GRID';
+    }catch(error){
+      const code=error instanceof Error?error.message:'STALE_OR_INCOMPLETE_GRID';
+      if(!['STALE_OR_INCOMPLETE_GRID','GRID_STRUCTURE_CHANGED'].includes(code))throw error;
+      lastCode=code;
+    }
+    const remaining=deadline-Date.now();
+    if(remaining<=0)throw Error(lastCode);
+    await page.waitForTimeout(Math.min(250,remaining));
+  }
+}
+export async function inspectLockPage(page:Page,options:{scheduleHydrationTimeoutMs?:number}={}):Promise<BrowserReview>{
   const markers=await page.evaluate(()=>({
     checkout:[...document.querySelectorAll('h1')].some(e=>e.textContent?.trim()==='Checkout'&&e.getClientRects().length>0),
     review:[...document.querySelectorAll('h1')].some(e=>e.textContent?.trim()==='Review Booking'&&e.getClientRects().length>0),
@@ -37,8 +67,7 @@ export async function inspectLockPage(page:Page):Promise<BrowserReview>{
   if(page.url()!==ONDA_URL)return unknownBrowser;
   if((await page.getByTestId('public-booking-hero-title').textContent())?.trim()!==VENUE)return unknownBrowser;
   if((await page.getByTestId('booking-court-filter-label').textContent())?.trim()!=='All Courts')return unknownBrowser;
-  const grid=await snapshot(page),cells=validateSnapshot(grid,grid.rows[0]?.date??'');
-  if(cells.some(c=>c.state==='UNKNOWN'))return unknownBrowser;
+  const cells=await inspectStableSchedule(page,options.scheduleHydrationTimeoutMs??0);
   const selected=cells.filter(c=>c.state==='SELECTED').length;
   return {page:'Schedule',selected,hold:'Not detected',countdownSeconds:null,clean:selected===0};
 }

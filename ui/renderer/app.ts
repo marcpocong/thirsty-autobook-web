@@ -16,6 +16,7 @@ const input=(id:string)=>byId(id) as HTMLInputElement;
 let workflow:'test'|'release'='release';
 type View = 'release'|'plan'|'tests'|'runs';
 let currentView:View='release';
+const browserFocusMessages:Partial<Record<WorkerId,string>>={};
 function runDetail(run:RunHistoryEntry){
   const detail=document.createElement('div');detail.className='run-detail';
   const facts=document.createElement('dl');facts.className='run-detail-facts';
@@ -145,6 +146,12 @@ function buildHandoffCard(hold:import('../types.js').QrHandoffSummary,players:Re
   card.append(heading,phase,identity,booking,amount);
   if(hold.bookingNo){const reference=document.createElement('div');reference.className='small';reference.textContent=`Booking reference: ${hold.bookingNo}`;card.append(reference);}
   if(hold.holdExpiresAt&&Number.isFinite(Date.parse(hold.holdExpiresAt))){const expiry=document.createElement('div');expiry.className='small';expiry.textContent=`Recorded hold expiry: ${new Date(hold.holdExpiresAt).toLocaleString('en-GB',{timeZone:'Asia/Manila',dateStyle:'medium',timeStyle:'short'})} Manila`;card.append(expiry);}
+  if(worker){
+    const action=document.createElement('button');action.type='button';action.className='show-browser secondary';action.textContent=`Show Browser ${worker}`;
+    const result=document.createElement('span');result.className='show-browser-result';result.setAttribute('role','status');result.textContent=browserFocusMessages[worker]??'';
+    action.onclick=()=>{action.disabled=true;browserFocusMessages[worker]=result.textContent=`Opening Browser ${worker}…`;void window.thirsty.focusBrowser({workerId:worker,...(hold.bookingId?{bookingId:hold.bookingId}:{})}).then(()=>{browserFocusMessages[worker]=result.textContent=`Browser ${worker} is now in front.`;}).catch(()=>{browserFocusMessages[worker]=result.textContent=`Browser ${worker} is unavailable or its Onda tab is ambiguous.`;}).finally(()=>{action.disabled=false;});};
+    card.append(action,result);
+  }
   return card;
 }
 function renderQrSummary(state:Dashboard){

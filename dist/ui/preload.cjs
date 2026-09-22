@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const electron_1 = require("electron");
 const bridge = {
+    focusBrowser: request => electron_1.ipcRenderer.invoke('thirsty:focusBrowser', request),
     resetPrepare: strategy => electron_1.ipcRenderer.invoke('thirsty:resetPrepare', strategy),
     testBooking: input => electron_1.ipcRenderer.invoke('thirsty:testBooking', input),
     apiPreview: date => electron_1.ipcRenderer.invoke('thirsty:apiPreview', date),

@@ -5,6 +5,7 @@ import { checkout } from './checkout.js';
 import { ondaCheckoutAdapter } from './onda-checkout.js';
 import { createPassiveHandoffReader, observePaymentHandoff } from './payment-handoff.js';
 import { emitUiEvent } from './ui-events.js';
+import { showWorkerPage } from './browser-window.js';
 export async function proceedWithVerifiedSelection(page, selected, player, maximum, authorizeTerms, safety, t, paymentSummaryTimeoutMs = 60000) {
     safety.check();
     if (!safety.locked)
@@ -36,7 +37,7 @@ export async function proceedWithVerifiedSelection(page, selected, player, maxim
     t.mark('proceedClicked');
     return checkout(ondaCheckoutAdapter(page, safety, expected, t, paymentSummaryTimeoutMs), safety, t, expected, player, maximum, authorizeTerms);
 }
-export async function fullBookingToQr(page, selected, player, maximum, authorizeTerms, timeoutMs, safety, t, paymentSummaryTimeoutMs = 60000) {
+export async function fullBookingToQr(page, selected, player, maximum, authorizeTerms, timeoutMs, safety, t, paymentSummaryTimeoutMs = 60000, workerId = 'A') {
     safety.check();
     if (!authorizeTerms)
         throw new Error('TERMS_AUTHORIZATION_REQUIRED');
@@ -54,7 +55,8 @@ export async function fullBookingToQr(page, selected, player, maximum, authorize
         const hold = await observePaymentHandoff(reader, selected.amount, timeoutMs, safety, t);
         const [minutes, seconds] = hold.countdown.split(':').map(Number);
         await safety.stage('HOLD_VERIFIED', { holdVerifiedAt: hold.verifiedAt, holdExpiresAt: new Date(Date.parse(hold.verifiedAt) + (minutes * 60 + seconds) * 1000).toISOString() });
-        emitUiEvent({ type: 'handoff', date: selected.date, court: selected.court, hours: selected.hours, ...hold });
+        await showWorkerPage(page, workerId).catch(() => undefined);
+        emitUiEvent({ type: 'handoff', workerId, date: selected.date, court: selected.court, hours: selected.hours, ...hold });
         return hold;
     }
     catch (error) {

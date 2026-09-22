@@ -475,12 +475,12 @@ export class Controller {
         }
         if (event.type === 'handoff') {
             this.state.handoff = event;
-            const last = event.hours.at(-1);
-            const summary = { status: 'qr-ready', courts: [event.court], date: event.date, startTime: event.hours[0], endTime: `${String(Number(last.slice(0, 2)) + 1).padStart(2, '0')}:00`, amount: event.amount, verifiedAt: event.verifiedAt };
+            const worker = event.workerId ?? 'A', last = event.hours.at(-1);
+            const summary = { checkout: worker, status: 'qr-ready', courts: [event.court], date: event.date, startTime: event.hours[0], endTime: `${String(Number(last.slice(0, 2)) + 1).padStart(2, '0')}:00`, amount: event.amount, verifiedAt: event.verifiedAt };
             this.rememberQrHandoff(summary);
             this.state.headline = 'PAYMENT HOLD ACTIVE';
             this.state.detail = 'FULL BOOKING COMPLETE TO PAYMENT HANDOFF. AUTOMATION STOPPED. Complete payment manually in Chrome. AUTOMATION LOCK RETAINED.';
-            this.log(`Payment handoff verified · Court ${event.court} · ${event.date} · ${summary.startTime}–${summary.endTime} · PHP ${event.amount}. Payment remains manual.`);
+            this.log(`Payment handoff verified · Browser ${worker} · Court ${event.court} · ${event.date} · ${summary.startTime}–${summary.endTime} · PHP ${event.amount}. Payment remains manual.`);
         }
         if (event.type === 'inspection') {
             this.state.inspection = event;

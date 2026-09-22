@@ -20,6 +20,15 @@ it('uses the endpoint identity returned by preparation startup',()=>fixture(asyn
   await resetAndPrepare('standard',new Safety(),{root:h.root,alive:()=>false,start,inspect:h.inspect});
   expect(start).toHaveBeenCalledOnce();expect(h.inspect).toHaveBeenCalledWith(fallback,expect.any(Safety));
 }));
+it('identifies the browser whose inspection fails',()=>fixture(async h=>{
+  h.inspect.mockImplementation(async b=>{if(b.workerId==='B')throw Error('STALE_OR_INCOMPLETE_GRID');return {observed:clean,normalize:h.normalize};});
+  await expect(h.run('extended')).rejects.toThrow('BROWSER_B_STALE_OR_INCOMPLETE_GRID');
+  expect(h.normalize).not.toHaveBeenCalled();
+}));
+it('identifies the browser whose calendar normalization fails',()=>fixture(async h=>{
+  h.normalize.mockRejectedValueOnce(Error('TARGET_DATE_UNAVAILABLE'));
+  await expect(h.run()).rejects.toThrow('BROWSER_A_TARGET_DATE_UNAVAILABLE');
+}));
 it.each(['SELECTION','REVIEW','PAYMENT_SUMMARY'])('recovers a dead Standard %s record',stage=>fixture(async h=>{await h.record('standard',stage);h.inspect.mockImplementation(async()=>({observed:{page:stage==='SELECTION'?'Schedule':'Payment Summary',selected:stage==='SELECTION'?2:null,hold:'Not detected',clean:false},normalize:h.normalize}));await h.run();expect(h.normalize).toHaveBeenCalledOnce();await expect(readFile(h.path)).rejects.toThrow();}));
 it.each(['extended','dual'])('recovers safe stale %s state before preparing Standard',mode=>fixture(async h=>{await h.record(mode,'SELECTION');await h.run();expect(h.inspect.mock.calls.map(c=>c[0].workerId)).toEqual(['A','B']);for(const p of ['automation.lock','dual/worker-a.lock','dual/worker-b.lock'])await expect(readFile(join(h.root,'.local',p))).rejects.toThrow();}));
 it('refuses an active PID before inspecting or normalizing',()=>fixture(async h=>{await h.record('standard','SELECTION');await expect(resetAndPrepare('standard',new Safety(),{root:h.root,alive:()=>true,inspect:h.inspect})).rejects.toThrow('LOCK_PID_RUNNING');expect(h.inspect).not.toHaveBeenCalled();}));

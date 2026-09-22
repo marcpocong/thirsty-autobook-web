@@ -5,6 +5,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createServer } from 'node:net';
 import { chromium } from 'playwright';
+import { identifyWorkerPage } from './browser-window.js';
 import { DateTime } from 'luxon';
 import { browserIdentity, candidateBrowserIdentity, cdpCodes, rememberBrowserPort, verifyDedicatedChrome, verifyCandidateChrome, monitorConnection } from './browser.js';
 import { ONDA_URL, VENUE } from './config.js';
@@ -66,6 +67,10 @@ catch (e) {
         return undefined;
     throw e;
 } }
+function browserPreparationError(workerId, error) {
+    const code = error instanceof Error && /^[A-Z][A-Z0-9_]{0,63}$/.test(error.message) ? error.message : 'PREPARATION_FAILED';
+    return Error(`BROWSER_${workerId}_${code}`);
+}
 export async function resetAndPrepare(strategy, safety, deps = {}, date, requestedWorkers = []) {
     const root = deps.root ?? '.', alive = deps.alive ?? pidAlive;
     deps.progress?.('starting');
@@ -145,7 +150,13 @@ export async function resetAndPrepare(strategy, safety, deps = {}, date, request
         for (const [i, b] of identities.entries()) {
             const workerRecord = sharedRecord ? record : legacy || record?.mode === 'extended' ? records[i] : i === 0 ? record : undefined;
             const preserveHold = workerRecord?.stage === 'HOLD_VERIFIED' && Number.isFinite(Date.parse(workerRecord.holdExpiresAt ?? ''));
-            const prepared = await (deps.inspect ?? ((identity, guard) => inspectForPreparation(identity, guard, preserveHold)))(b, safety);
+            let prepared;
+            try {
+                prepared = await (deps.inspect ?? ((identity, guard) => inspectForPreparation(identity, guard, preserveHold)))(b, safety);
+            }
+            catch (error) {
+                throw browserPreparationError(requiredWorkers[i], error);
+            }
             browsers.push(prepared);
         }
         // Inspect every required browser before deciding whether any state is safe
@@ -167,7 +178,13 @@ export async function resetAndPrepare(strategy, safety, deps = {}, date, request
         for (const [i, browser] of browsers.entries()) {
             await same();
             safety.check();
-            const prepared = await browser.normalize(date);
+            let prepared;
+            try {
+                prepared = await browser.normalize(date);
+            }
+            catch (error) {
+                throw browserPreparationError(requiredWorkers[i], error);
+            }
             normalized.push({ id: requiredWorkers[i], ...(prepared ? { snapshot: prepared } : {}) });
         }
         deps.progress?.('grids');
@@ -228,15 +245,20 @@ async function inspectForPreparation(b, safety, preserveVerifiedHold = false) {
     const page = preserveVerifiedHold ? (schedulePages[0] ?? await context.newPage()) : candidates[0];
     if (preserveVerifiedHold && page.url() !== ONDA_URL)
         await page.goto(ONDA_URL, { waitUntil: 'domcontentloaded' });
-    page.setDefaultTimeout(10000);
+    // Eight-browser preparation must tolerate a newly launched Chrome finishing
+    // its initial Onda render. The command remains bounded, but a single slow
+    // first load no longer fails at the old ten-second locator deadline.
+    page.setDefaultTimeout(30000);
+    page.setDefaultNavigationTimeout(30000);
     monitorConnection(browser, page, safety);
     const reason = securityReason(await page.locator('body').innerText());
     if (reason)
         throw Error(reason);
-    const observed = await inspectLockPage(page);
+    const observed = await inspectLockPage(page, { scheduleHydrationTimeoutMs: 30000 });
     if (['Review Booking', 'Payment Summary'].includes(observed.page) && (page.url() !== ONDA_URL || await page.locator('h2').count() !== 1 || (await page.locator('h2').innerText()).trim() !== VENUE))
         throw Error('WRONG_VENUE');
-    return { observed, normalize: async (date) => prepareSchedule(page, safety, date) };
+    await identifyWorkerPage(page, b.workerId).catch(() => undefined);
+    return { observed, normalize: async (date) => { const prepared = await prepareSchedule(page, safety, date); await identifyWorkerPage(page, b.workerId).catch(() => undefined); return prepared; } };
 }
 async function available(port) {
     return new Promise(resolveAvailable => {

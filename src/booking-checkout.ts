@@ -8,6 +8,8 @@ import { Safety } from './safety.js';
 import { Telemetry } from './telemetry.js';
 import {createPassiveHandoffReader,observePaymentHandoff} from './payment-handoff.js';
 import {emitUiEvent} from './ui-events.js';
+import {showWorkerPage} from './browser-window.js';
+import type {WorkerId} from './workers.js';
 
 export async function proceedWithVerifiedSelection(page:Page, selected:SelectionResult, player:Player, maximum:number, authorizeTerms:boolean, safety:Safety,t:Telemetry,paymentSummaryTimeoutMs=60000){
   safety.check();if(!safety.locked)throw new Error('BOOKING_LOCK_REQUIRED');
@@ -23,7 +25,7 @@ export async function proceedWithVerifiedSelection(page:Page, selected:Selection
   safety.check();t.mark('bookingProceedStarted');await page.getByTestId('booking-selection-summary-proceed-button').click();safety.check();t.mark('bookingProceedClicked');t.mark('proceedClicked');
   return checkout(ondaCheckoutAdapter(page,safety,expected,t,paymentSummaryTimeoutMs),safety,t,expected,player,maximum,authorizeTerms);
 }
-export async function fullBookingToQr(page:Page,selected:SelectionResult,player:Player,maximum:number,authorizeTerms:boolean,timeoutMs:number,safety:Safety,t:Telemetry,paymentSummaryTimeoutMs=60000){
+export async function fullBookingToQr(page:Page,selected:SelectionResult,player:Player,maximum:number,authorizeTerms:boolean,timeoutMs:number,safety:Safety,t:Telemetry,paymentSummaryTimeoutMs=60000,workerId:WorkerId='A'){
   safety.check();if(!authorizeTerms)throw new Error('TERMS_AUTHORIZATION_REQUIRED');
   // Construct the read-only capability before handoff. It exposes no active methods.
   const reader=createPassiveHandoffReader(page,safety);
@@ -37,7 +39,8 @@ export async function fullBookingToQr(page:Page,selected:SelectionResult,player:
     const hold=await observePaymentHandoff(reader,selected.amount,timeoutMs,safety,t);
     const [minutes,seconds]=hold.countdown.split(':').map(Number);
     await safety.stage('HOLD_VERIFIED',{holdVerifiedAt:hold.verifiedAt,holdExpiresAt:new Date(Date.parse(hold.verifiedAt)+(minutes!*60+seconds!)*1000).toISOString()});
-    emitUiEvent({type:'handoff',date:selected.date,court:selected.court,hours:selected.hours,...hold});
+    await showWorkerPage(page,workerId).catch(()=>undefined);
+    emitUiEvent({type:'handoff',workerId,date:selected.date,court:selected.court,hours:selected.hours,...hold});
     return hold;
   }catch(error){
     if(safety.signal.aborted)throw error;

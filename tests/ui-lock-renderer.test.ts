@@ -22,7 +22,7 @@ async function renderer(extra:Record<string,unknown>={}){
     inspection:null,clock:null,plan:null,logs:[],liveRace:true,booking:booking(),termsAuthorized:false,apiFirstReady:false,
     browserHealth:{A:false,B:false},capabilities:{selectionReady:true,checkoutReady:true,paymentBoundaryReady:true},
     selection:null,mode:'full',handoff:null,preparedContext:null,playerStatus:{primary:true,extended:true},...extra};
-  await page.evaluate(value=>{const w=window as any;w.fixtureState=value;w.thirsty={getStatus:async()=>value,onStatus:(callback:any)=>{w.fixturePublish=callback;return ()=>{};},
+  await page.evaluate(value=>{const w=window as any;w.fixtureState=value;w.thirsty={getStatus:async()=>value,onStatus:(callback:any)=>{w.fixturePublish=callback;return ()=>{};},focusBrowser:async(request:unknown)=>{w.fixtureFocusedBrowser=request;},
     setWorkflow:async(workflow:string)=>{value.workflow=workflow;value.ready=false;},invalidatePreparation:async()=>{},
     authorizeTerms:async(authorized:boolean)=>{value.termsAuthorized=authorized;w.fixturePublish(value);},
     resetPrepare:async()=>{},armFullBooking:async()=>{},reviewLock:async()=>{},saveBooking:async()=>{}};},state);
@@ -191,6 +191,12 @@ it('shows verified QR handoffs with the corresponding players in release and tes
   expect(release).toContain('Confirm every court and time slot below');
   expect(release).toContain('A hold is not final booking confirmation');
   expect(release).not.toContain('09123456789');
+  expect(await page.locator('#qr-summary-release .show-browser').allTextContents()).toEqual(['Show Browser A','Show Browser B']);
+  await page.locator('#qr-summary-release .show-browser').nth(1).click();
+  await page.waitForFunction(()=>(window as any).fixtureFocusedBrowser?.workerId==='B');
+  expect(await page.evaluate(()=>(window as any).fixtureFocusedBrowser)).toEqual({workerId:'B'});
+  await page.locator('#qr-summary-release .show-browser-result').nth(1).filter({hasText:'Browser B is now in front'}).waitFor();
+  expect(await page.locator('#qr-summary-release .show-browser-result').nth(1).innerText()).toContain('Browser B is now in front');
   await page.locator('[data-view="tests"]').click();
   await page.evaluate(()=>{const w=window as any;w.fixtureState.workflow='test';w.fixturePublish(w.fixtureState);});
   expect(await page.locator('#qr-summary-test').innerText()).toContain('Browser B · Second Fixture');

@@ -11,8 +11,9 @@ This document is the entry point for human and AI review of the repository state
 - API checkout now prewarms and reuses only a fresh, page-bound genuine security context. Navigation or a different page invalidates it.
 - Confirmed application rejections can be archived and retried safely; uncertain or possibly dispatched outcomes remain blocked. Parallel outcomes are fully settled before lock disposition is decided.
 - API Standard and Extended plans split more than two courts into independent at-most-two-court checkout chunks while retaining exact observed prices.
-- The UI restores and displays per-checkout QR handoffs, player identity, courts, hourly slots, amount, booking reference and hold expiry. Previous runs open into a detailed timeline modal.
+- The UI restores and displays per-checkout QR handoffs, player identity, courts, hourly slots, amount, booking reference and hold expiry. Each QR card can maximize and foreground its exact dedicated browser. Previous runs open into a detailed timeline modal.
 - A release-only `special-friday` mode now spans A-H: four proof-based holds across two core assigned courts (A/B, C/D), a fail-closed E/F adaptive lane that upgrades to proof-based on early availability or otherwise keeps the existing experimental proofless direct request on a third court, and an optional proof-based-only G/H bonus lane on a fourth distinct court that never blocks A-D. The E/F proofless path is intentionally labeled unproven and uses an assumed PHP 700/hour only when Friday pricing is not yet observable.
+- Release traces record sanitized browser-specific preparation and security-prewarm outcomes. Core and E/F security preparation now starts 15 seconds before the boundary; any latency improvement remains projected until a new live trace measures it.
 
 ## Worker allocation
 
@@ -60,7 +61,7 @@ npm run ui:build
 git diff --check
 ```
 
-At publication time, typecheck passed and Vitest reported 67 test files and 798 tests passed. These are offline checks and did not arm a run, select a slot, create a hold, or interact with payment.
+At publication time, typecheck passed and Vitest reported 69 test files and 805 tests passed. These are offline checks and did not arm a run, select a slot, create a hold, or interact with payment.
 
 CI is defined in `.github/workflows/ci.yml` and performs dependency installation, Playwright Chromium setup, typecheck and the offline suite on every push and pull request.
 
