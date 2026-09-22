@@ -59,7 +59,9 @@ export async function reviewLock(root, owned, probe, alive = pidAlive, probeB) {
     catch {
         return {};
     } })();
-    if (data.mode === 'extended')
+    if (data.mode === 'dual')
+        return reviewDual(root, raw, data, owned, probe, probeB, alive);
+    if (data.mode === 'extended' || Array.isArray(data.workers) && data.workers.length > 1)
         return { ...unknownBrowser, runID, pid, alive: pid === null ? null : alive(pid), owned, fingerprint: createHash('sha256').update(raw).digest('hex'), verifiedAt: new Date().toISOString(), reason: 'USE_RESET_AND_PREPARE', canClear: false };
     if (data.stage === 'FINAL_ACTION_DISPATCHING')
         return { ...unknownBrowser, runID, pid, alive: pid === null ? null : alive(pid), owned, fingerprint: createHash('sha256').update(raw).digest('hex'), verifiedAt: new Date().toISOString(), reason: 'PAYMENT_HOLD_MAY_BE_ACTIVE', canClear: false };
@@ -73,8 +75,6 @@ export async function reviewLock(root, owned, probe, alive = pidAlive, probeB) {
         const reason = lockReason(reviewed);
         return { ...reviewed, reason, canClear: reason === 'VERIFIED_STALE_LOCK' };
     }
-    if (data.mode === 'dual')
-        return reviewDual(root, raw, data, owned, probe, probeB, alive);
     const browser = await probe().catch(() => unknownBrowser);
     const r = { ...browser, runID, pid, alive: pid === null ? null : alive(pid), owned, fingerprint: createHash('sha256').update(raw).digest('hex'), verifiedAt: new Date().toISOString() };
     const reason = lockReason(r);

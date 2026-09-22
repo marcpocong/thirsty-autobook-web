@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, open } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { lifecycleWriter, removeOwnedRecord } from '../checkout-lifecycle.js';
+import type { WorkerId } from '../workers.js';
 
 /** Global cross-mode lock for API checkout attempts and retained payment holds. */
 export class ApiAutomationLock {
@@ -12,7 +13,7 @@ export class ApiAutomationLock {
 
   private constructor() {}
 
-  static async acquire(mode:'standard'|'extended',workers:readonly ('A'|'B')[]) {
+  static async acquire(mode:'standard'|'extended',workers:readonly WorkerId[]) {
     const lock=new ApiAutomationLock();
     await mkdir(dirname(lock.path),{recursive:true,mode:0o700});
     const handle=await open(lock.path,'wx',0o600).catch(()=>{throw Error('AUTOMATION_LOCK_EXISTS');});

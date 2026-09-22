@@ -85,7 +85,7 @@ export async function runDual(config, mode, safety, t, options = {}) {
             const w = await attach(workerSafeties[i], workerTelemetry[i], identity);
             await assertDiagnosticSchedule(w.page, workerSafeties[i]);
             const readiness = await readScheduleReadiness(w.page);
-            emitUiEvent({ type: 'dualWorker', workerId: identity.workerId, state: 'ready', verifiedAt: new Date().toISOString() });
+            emitUiEvent({ type: 'dualWorker', workerId: i === 0 ? 'A' : 'B', state: 'ready', verifiedAt: new Date().toISOString() });
             console.log(`Browser ${identity.workerId}: clean visible schedule, zero selections, no hold`);
             return { ...w, readiness };
         }));

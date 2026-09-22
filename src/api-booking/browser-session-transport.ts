@@ -2,6 +2,7 @@ import type { Page } from 'playwright';
 import { ONDA_URL } from '../config.js';
 import { consumeSubmissionPermit, DurableSubmissionJournal, type SubmissionPermit } from './durable-submission-journal.js';
 import type { SlotCheckRequest, TwoHourCheckoutRequest, TwoHourTransport } from './two-hour-reservation.js';
+import type { ProoflessCheckoutRequest } from './special-direct-checkout.js';
 import { SubmissionDispatchError } from './submission-errors.js';
 import { checkoutDiagnostic } from './checkout-diagnostics.js';
 import { CalendarFreeSecurityError } from './calendar-free-security-context.js';
@@ -27,8 +28,8 @@ export interface CheckoutHttpResponse { status: number; contentType: string; ser
 export type CheckoutResponseCapture = (response: CheckoutHttpResponse) => Promise<void>;
 
 export class BrowserSessionTransportError extends SubmissionDispatchError {
-  constructor(code: string, dispatched = false, diagnostic?: SubmissionDispatchError['diagnostic']) {
-    super(code, dispatched, diagnostic); this.name = 'BrowserSessionTransportError'; }
+  constructor(code: string, dispatched = false, diagnostic?: SubmissionDispatchError['diagnostic'], confirmedRejected = false) {
+    super(code, dispatched, diagnostic, confirmedRejected); this.name = 'BrowserSessionTransportError'; }
 }
 
 function usable(value: unknown): value is string {
@@ -41,12 +42,31 @@ function securityContextError(error: unknown): BrowserSessionTransportError {
     : new BrowserSessionTransportError('CURRENT_CHECKOUT_HEADERS_UNAVAILABLE');
 }
 
+function confirmedApplicationConflict(result: CheckoutHttpResponse): boolean {
+  if (![400,409].includes(result.status) || !result.contentType.toLowerCase().includes('application/json')) return false;
+  try {
+    const value = JSON.parse(result.body) as Record<string, unknown>;
+    const explicitRejection=result.status===409 || value.error==='This booking date is not available yet.';
+    return explicitRejection && value.success === false && typeof value.error === 'string' && value.error.length > 0 &&
+      !Object.hasOwn(value, 'bookings') && !Object.hasOwn(value, 'transaction');
+  } catch { return false; }
+}
+
 /** Sends only the two observed POSTs in an existing, verified browser page. It never launches a browser. */
 export class OndaBrowserSessionTransport implements TwoHourTransport {
   private preparedHeaders?: CurrentCheckoutHeaders;
   private preparedAt?: number;
   constructor(private readonly page: Page, private readonly currentCheckoutHeaders: CurrentCheckoutHeadersProvider,
-    private readonly captureCheckoutResponse?: CheckoutResponseCapture, private readonly contextHooks: CheckoutContextHooks = {}) {}
+    private readonly captureCheckoutResponse?: CheckoutResponseCapture, private readonly contextHooks: CheckoutContextHooks = {}) {
+    page.on?.('framenavigated',frame=>{
+      if(frame===page.mainFrame()){
+        this.preparedHeaders=undefined;
+        this.preparedAt=undefined;
+      }
+    });
+  }
+
+  isForPage(page:Page):boolean{return this.page===page;}
 
   private async acquireCheckoutHeaders(): Promise<CurrentCheckoutHeaders> {
     let settled = false, verificationShown = false;
@@ -70,6 +90,12 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
     this.assertPage();
     if (process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT !== 'SUPERVISED_ONE_SHOT')
       throw new BrowserSessionTransportError('LIVE_SUBMISSION_DISABLED');
+    // An armed run may acquire the genuine page context just before release.
+    // Keep it only briefly and consume it once at checkout.
+    if (this.preparedHeaders && this.preparedAt !== undefined && Date.now() - this.preparedAt >= 0 &&
+      Date.now() - this.preparedAt <= 20_000) return;
+    this.preparedHeaders = undefined;
+    this.preparedAt = undefined;
     let current: CurrentCheckoutHeaders;
     try { current = await this.acquireCheckoutHeaders(); }
     catch (error) { throw securityContextError(error); }
@@ -106,7 +132,7 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
     try { this.assertPage(); }
     catch { throw new BrowserSessionTransportError('ONDA_SESSION_DISCONNECTED_AFTER_DISPATCH', true); }
     if (result.status !== 200) throw new BrowserSessionTransportError('ONDA_HTTP_STATUS_INVALID', true,
-      checkoutDiagnostic(result));
+      checkoutDiagnostic(result), confirmedApplicationConflict(result));
     if (!result.contentType.toLowerCase().includes('application/json')) throw new BrowserSessionTransportError('ONDA_CONTENT_TYPE_INVALID', true);
     if (Buffer.byteLength(result.body, 'utf8') > MAX_RESPONSE_BYTES) throw new BrowserSessionTransportError('ONDA_RESPONSE_TOO_LARGE', true);
     try { return JSON.parse(result.body) as unknown; }
@@ -120,6 +146,15 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
   }
 
   async publicCheckout(request: TwoHourCheckoutRequest, permit: SubmissionPermit): Promise<unknown> {
+    return this.submitCheckout(request,permit);
+  }
+
+  async publicCheckoutProofless(request: ProoflessCheckoutRequest, permit: SubmissionPermit): Promise<unknown> {
+    if(request.items.some(item=>item.availabilityProof!==null))throw new BrowserSessionTransportError('DIRECT_PROOFLESS_SHAPE_INVALID');
+    return this.submitCheckout(request,permit);
+  }
+
+  private async submitCheckout(request: TwoHourCheckoutRequest | ProoflessCheckoutRequest, permit: SubmissionPermit): Promise<unknown> {
     this.assertPage();
     if (process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT !== 'SUPERVISED_ONE_SHOT')
       throw new BrowserSessionTransportError('LIVE_SUBMISSION_DISABLED');

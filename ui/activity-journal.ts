@@ -52,7 +52,10 @@ export class ActivityJournal {
           const markerElapsed=marker&&typeof marker.elapsedMs==='number'?marker.elapsedMs:inferredStart?0:undefined;
           const readyElapsedMs=typeof end.readyElapsedMs==='number'?end.readyElapsedMs:markerElapsed===undefined?undefined:Math.max(0,end.elapsedMs-markerElapsed);
           const readyAt=marker&&typeof marker.at==='string'?marker.at:inferredStart?start.at:undefined;
-          return [{runId:start.runId,label:typeof end.label==='string'?end.label:typeof start.label==='string'?start.label:'run',startedAt:start.at,endedAt:end.at,outcome:end.outcome,totalElapsedMs:end.elapsedMs,...(readyAt?{readyAt}:{}),...(readyElapsedMs===undefined?{}:{readyElapsedMs})} satisfies RunHistoryEntry];
+          const activities=rows.flatMap(row=>row.type==='activity'&&typeof row.at==='string'&&typeof row.text==='string'&&(row.level==='info'||row.level==='error')
+            ? [{at:row.at,text:row.text,level:row.level,...(typeof row.elapsedMs==='number'?{elapsedMs:row.elapsedMs}:{}),...(typeof row.deltaMs==='number'?{deltaMs:row.deltaMs}:{})} satisfies Activity]
+            : []);
+          return [{runId:start.runId,label:typeof end.label==='string'?end.label:typeof start.label==='string'?start.label:'run',startedAt:start.at,endedAt:end.at,outcome:end.outcome,totalElapsedMs:end.elapsedMs,...(readyAt?{readyAt}:{}),...(readyElapsedMs===undefined?{}:{readyElapsedMs}),activities} satisfies RunHistoryEntry];
         }catch{return [];}
       }).slice(0,limit);
   }

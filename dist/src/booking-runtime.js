@@ -31,6 +31,8 @@ export async function runBooking(config, mode, safety, t, options = {}) {
     if (options.scheduledTarget && (Date.now() >= target.releaseMs || target.targetDate !== scheduledTargetDate || options.scheduledFingerprint !== planFingerprint(config)))
         throw Error(Date.now() >= target.releaseMs ? 'RELEASE_MISSED' : 'SCHEDULE_CONTEXT_MISMATCH');
     const request = options.request ?? { strategy: config.BOOKING_TYPE, date: target.targetDate, start: config.START_TIME, duration: config.DURATION_HOURS, courtCount: config.COURT_COUNT, priority: [...config.PREFERRED_COURTS, ...config.FALLBACK_COURTS], fallbackStarts: config.FALLBACK_TIMES };
+    if (request.courtCount > 2)
+        throw Error('API_FIRST_METHOD_REQUIRED');
     const players = bookingPlayers(config, request.strategy);
     const identities = request.strategy === 'extended' ? [browserA, browserB] : [browserA];
     await mkdir('.local/dual', { recursive: true });
@@ -58,7 +60,7 @@ export async function runBooking(config, mode, safety, t, options = {}) {
             }
             safeties[i].persistStage = lifecycleWriter(path, identity);
         }
-        const workerTelemetry = identities.map(b => t.worker(b.workerId));
+        const workerTelemetry = identities.map((_, i) => t.worker(i === 0 ? 'A' : 'B'));
         const connected = await Promise.allSettled(identities.map((b, i) => attach(safeties[i], workerTelemetry[i], b)));
         const connections = connected.map(c => { if (c.status === 'rejected')
             throw c.reason; return c.value; });
@@ -85,9 +87,12 @@ export async function runBooking(config, mode, safety, t, options = {}) {
             if (paths[0].toLowerCase() === paths[1].toLowerCase())
                 throw Error('DUAL_PROFILE_NOT_ISOLATED');
         }
-        const workers = connections.map((c, i) => ({ id: identities[i].workerId, safety: safeties[i], telemetry: workerTelemetry[i], port: selectionPort(c.page, safeties[i]), state: async () => { }, checkout: async (selected) => {
-                await fullBookingToQr(c.page, selected, players[identities[i].workerId], (options.maximum ?? config.MAX_PRICE) * request.courtCount, true, config.PAYMENT_HANDOFF_VERIFY_TIMEOUT_MS, safeties[i], workerTelemetry[i], config.PAYMENT_SUMMARY_READY_TIMEOUT_MS);
-            } }));
+        const workers = connections.map((c, i) => {
+            const id = i === 0 ? 'A' : 'B';
+            return { id, safety: safeties[i], telemetry: workerTelemetry[i], port: selectionPort(c.page, safeties[i]), state: async () => { }, checkout: async (selected) => {
+                    await fullBookingToQr(c.page, selected, players[id], (options.maximum ?? config.MAX_PRICE) * request.courtCount, true, config.PAYMENT_HANDOFF_VERIFY_TIMEOUT_MS, safeties[i], workerTelemetry[i], config.PAYMENT_SUMMARY_READY_TIMEOUT_MS);
+                } };
+        });
         const gate = dualArmGate(target, safety, t);
         const gridResults = await Promise.allSettled(workers.map(async (w, i) => {
             if (mode === 'test') {

@@ -8,6 +8,7 @@ import { DurableSubmissionJournal } from '../../src/api-booking/durable-submissi
 import { TwoHourReservationAdapter, type SlotCheckRequest, type TwoHourCheckoutRequest } from '../../src/api-booking/two-hour-reservation.js';
 import { currentHeadersFromNormalSiteHelpers } from '../../src/api-booking/normal-site-security-context.js';
 import { CalendarFreeSecurityError } from '../../src/api-booking/calendar-free-security-context.js';
+import { SubmissionDispatchError } from '../../src/api-booking/submission-errors.js';
 import { availabilityFixture } from '../availability-fixture.js';
 import { parseAvailability } from '../../src/api-booking/availability-parser.js';
 import { planBooking } from '../../src/api-booking/booking-planner.js';
@@ -107,6 +108,44 @@ describe('browser session transport, offline', () => {
       body: '{"success":true,"bookings":[{"id":"synthetic-booking"}]}' });
   });
 
+  it('identifies an explicit application 409 as a confirmed rejection', async () => {
+    const evaluate = vi.fn(async () => ({ status: 409, contentType: 'application/json', server: 'Vercel',
+      cloudflareRay: '', cfMitigated: '', body: JSON.stringify({ success: false, error: 'Checkout rejected.' }) }));
+    const page = { isClosed: () => false, url: () => 'https://app.onda.fit/book/thirsty-pickle', evaluate } as unknown as Page;
+    const transport = new OndaBrowserSessionTransport(page,
+      async () => ({ turnstileToken: 'synthetic-current-token', publicFingerprint: 'synthetic-visitor' }));
+    process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT = 'SUPERVISED_ONE_SHOT';
+    const error = await transport.publicCheckout(checkout, await permit()).catch(value => value);
+    expect(error).toBeInstanceOf(SubmissionDispatchError);
+    expect(error).toMatchObject({ code: 'ONDA_HTTP_STATUS_INVALID', dispatched: true, confirmedRejected: true });
+  });
+
+  it('classifies only the canary-observed unreleased-date 400 as conclusive',async()=>{
+    for(const [body,confirmedRejected] of [
+      [JSON.stringify({success:false,error:'This booking date is not available yet.'}),true],
+      [JSON.stringify({success:false,error:'Unexpected checkout response.'}),false],
+    ] as const){
+      const evaluate=vi.fn(async()=>({status:400,contentType:'application/json',server:'Vercel',
+        cloudflareRay:'',cfMitigated:'',body}));
+      const page={isClosed:()=>false,url:()=> 'https://app.onda.fit/book/thirsty-pickle',evaluate} as unknown as Page;
+      const transport=new OndaBrowserSessionTransport(page,async()=>({turnstileToken:'synthetic-current-token',publicFingerprint:'synthetic-visitor'}));
+      process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT='SUPERVISED_ONE_SHOT';
+      const error=await transport.publicCheckout(checkout,await permit()).catch(value=>value);
+      expect(error).toMatchObject({dispatched:true,confirmedRejected});
+    }
+  });
+
+  it('keeps ambiguous or infrastructure 409 responses unresolved', async () => {
+    const evaluate = vi.fn(async () => ({ status: 409, contentType: 'text/html', server: 'cloudflare',
+      cloudflareRay: 'abc123def4567890-MNL', cfMitigated: 'challenge', body: '<html>Conflict</html>' }));
+    const page = { isClosed: () => false, url: () => 'https://app.onda.fit/book/thirsty-pickle', evaluate } as unknown as Page;
+    const transport = new OndaBrowserSessionTransport(page,
+      async () => ({ turnstileToken: 'synthetic-current-token', publicFingerprint: 'synthetic-visitor' }));
+    process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT = 'SUPERVISED_ONE_SHOT';
+    const error = await transport.publicCheckout(checkout, await permit()).catch(value => value);
+    expect(error).toMatchObject({ dispatched: true, confirmedRejected: false });
+  });
+
   it('blocks checkout when current security headers are unavailable or page is wrong', async () => {
     const { page, evaluate } = fakePage();
     process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT = 'SUPERVISED_ONE_SHOT';
@@ -133,6 +172,42 @@ describe('browser session transport, offline', () => {
       expect(current).toHaveBeenCalledOnce();
       expect(evaluate).not.toHaveBeenCalled();
     } finally { vi.useRealTimers(); }
+  });
+
+  it('reuses a recent genuine prewarm once and reacquires after its short window',async()=>{
+    const {page,evaluate}=fakePage({success:true});
+    const current=vi.fn(async()=>({turnstileToken:'synthetic-current-token',publicFingerprint:'synthetic-current-fingerprint'}));
+    const transport=new OndaBrowserSessionTransport(page,current);
+    process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT='SUPERVISED_ONE_SHOT';
+    const dispatch=await permit();
+    vi.useFakeTimers();
+    try{
+      vi.setSystemTime(new Date('2026-09-18T00:00:00.000Z'));
+      await transport.prepareCheckoutContext();
+      vi.setSystemTime(new Date('2026-09-18T00:00:05.000Z'));
+      await transport.prepareCheckoutContext();
+      expect(current).toHaveBeenCalledOnce();
+      vi.setSystemTime(new Date('2026-09-18T00:00:21.000Z'));
+      await transport.prepareCheckoutContext();
+      expect(current).toHaveBeenCalledTimes(2);
+      await transport.publicCheckout(checkout,dispatch);
+      expect(evaluate).toHaveBeenCalledOnce();
+      await transport.prepareCheckoutContext();
+      expect(current).toHaveBeenCalledTimes(3);
+    }finally{vi.useRealTimers();}
+  });
+
+  it('discards prewarmed security context if the booking page navigates',async()=>{
+    process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT='SUPERVISED_ONE_SHOT';
+    const frame={},handlers=new Map<string,(value:unknown)=>void>();
+    const page={isClosed:()=>false,url:()=> 'https://app.onda.fit/book/thirsty-pickle',
+      mainFrame:()=>frame,on:(event:string,handler:(value:unknown)=>void)=>{handlers.set(event,handler);}} as unknown as Page;
+    const current=vi.fn(async()=>({turnstileToken:'synthetic-current-token',publicFingerprint:'synthetic-current-fingerprint'}));
+    const transport=new OndaBrowserSessionTransport(page,current);
+    await transport.prepareCheckoutContext();
+    handlers.get('framenavigated')?.(frame);
+    await transport.prepareCheckoutContext();
+    expect(current).toHaveBeenCalledTimes(2);
   });
 
   it('preserves a sanitized challenge failure code without starting a proof or checkout request', async () => {

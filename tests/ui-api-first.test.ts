@@ -73,6 +73,8 @@ describe('API-first UI boundary', () => {
       reviewLock:async()=>({runID:'fixture',pid:1,alive:false,owned:false,fingerprint:'fixture',verifiedAt:new Date().toISOString(),reason:'PAYMENT_HOLD_MAY_BE_ACTIVE',canClear:false,page:'Unknown',selected:null,hold:'Unknown',clean:false}),
       clearLock:async()=>{throw Error('UNEXPECTED_DIRECT_CLEAR');},cdp:async()=>true,browserHealth:async()=>({A:true,B:false}),playerStatus:()=>({primary:true,extended:false}),
       clock:()=>clockStatus(ObservationSchema.parse({}),DateTime.fromISO('2026-09-21T08:00:00+08:00')),confirm:async()=>true,publish:()=>undefined,booking:()=>view,saveBooking:()=>view});
+    await controller.refresh();
+    expect(controller.state).toMatchObject({headline:'UNRESOLVED CHECKOUT LOCK',canPrepareOverHold:true,retainedLockStage:'FINAL_ACTION_DISPATCHING'});
     await controller.resetPrepare({workflow:'test',method:'api-first',request:{strategy:'standard',date:'2026-09-22',start:'12:00',duration:1,courtCount:1,priority:[7,6,5,4,3,2,1],fallbackStarts:[]},maximum:1200});
     expect(calls.map(command=>typeof command==='string'?command:command.kind)).toEqual(['resetPrepare','apiRun']);
     expect(controller.state).toMatchObject({headline:'API READY TO TEST',ready:true,lock:false});
@@ -132,7 +134,7 @@ describe('API-first UI boundary', () => {
     const view = bookingView(ConfigSchema.parse({ ...defaultSetup, PLAYER_FULL_NAME: 'Fixture Player', PLAYER_PHONE: '09123456789', PLAYER_EMAIL: 'fixture@example.invalid' }));
     const calls: Command[] = [];
     const confirms: unknown[] = [];
-    const runner: Runner = command => { calls.push(command); return { pid: 1, done: Promise.resolve(0), stop: async () => undefined }; };
+    const runner: Runner = (command,event) => { calls.push(command);if(typeof command==='object'&&command.kind==='apiRun'&&command.mode==='live-now')event({type:'apiStage',stage:'OFFICIAL_QRPH_HANDOFF',elapsedMs:2500,at:'2026-09-19T00:00:02.500Z',workerId:'A',date:'2026-09-20',court:7,startTime:'12:00',durationHours:1,price:600,bookingId:'fixture-booking',bookingNo:'fixture-number',holdExpiresAt:'2026-09-19T00:10:02.500Z'});return { pid: 1, done: Promise.resolve(0), stop: async () => undefined }; };
     const controller = new Controller({ runner, lock: async () => false, cdp: async () => true,
       browserHealth: async () => ({ A: true, B: false }), playerStatus: () => ({ primary: true, extended: false }),
       clock: () => clockStatus(ObservationSchema.parse({}), DateTime.fromISO('2026-09-19T08:00:00+08:00')),
@@ -149,6 +151,30 @@ describe('API-first UI boundary', () => {
     await controller.testBooking({ method: preparation.method, request: preparation.request, maximum: preparation.maximum, authorizeTerms: true });
     expect(confirms).toEqual([{ strategy: 'standard', date: '2026-09-20', start: '12:00', duration: 1, courtCount: 1, maximum: 1200, priority: [7, 6, 5, 4, 3, 2, 1] }]);
     expect(calls.at(-1)).toMatchObject({ kind: 'apiRun', mode: 'live-now', date: '2026-09-20', preferences: { start: '12:00', duration: 1 } });
+    expect(controller.state.qrHandoffs).toEqual([{checkout:'A',status:'qr-ready',courts:[7],date:'2026-09-20',startTime:'12:00',endTime:'13:00',amount:600,verifiedAt:'2026-09-19T00:00:02.500Z',holdExpiresAt:'2026-09-19T00:10:02.500Z',bookingId:'fixture-booking',bookingNo:'fixture-number'}]);
+    expect(controller.state.detail).toContain('Court 7 · 2026-09-20 · 12:00–13:00');
+  });
+
+  it('updates one checkout in real time from payment hold to verified QR details',async()=>{
+    const view=bookingView(ConfigSchema.parse({...defaultSetup,PLAYER_FULL_NAME:'Fixture Player',PLAYER_PHONE:'09123456789',PLAYER_EMAIL:'fixture@example.invalid'}));
+    const snapshots:unknown[]=[];
+    const runner:Runner=(command,event)=>{
+      if(typeof command==='object'&&command.kind==='apiRun'&&command.mode==='live-now'){
+        const base={elapsedMs:1000,workerId:'A' as const,date:'2026-09-20',court:7,startTime:'12:00',durationHours:2,price:1200,bookingId:'fixture-booking',bookingNo:'BK-FIXTURE',holdExpiresAt:'2026-09-19T00:10:00.000Z'};
+        event({type:'apiStage',stage:'PENDING_HOLD',at:'2026-09-19T00:00:01.000Z',...base});snapshots.push(structuredClone(controller.state.qrHandoffs));
+        event({type:'apiStage',stage:'OFFICIAL_QRPH_HANDOFF',at:'2026-09-19T00:00:02.000Z',...base});snapshots.push(structuredClone(controller.state.qrHandoffs));
+      }
+      return {pid:1,done:Promise.resolve(0),stop:async()=>undefined};
+    };
+    const controller=new Controller({runner,lock:async()=>false,cdp:async()=>true,browserHealth:async()=>({A:true,B:false}),playerStatus:()=>({primary:true,extended:false}),
+      clock:()=>clockStatus(ObservationSchema.parse({}),DateTime.fromISO('2026-09-19T08:00:00+08:00')),confirm:async()=>true,confirmApiTest:async()=>true,publish:()=>undefined,booking:()=>view,saveBooking:()=>view});
+    const preparation={workflow:'test' as const,method:'api-first' as const,request:{strategy:'standard' as const,date:'2026-09-20',start:'12:00',duration:2,courtCount:1 as const,priority:[7,6,5,4,3,2,1],fallbackStarts:[]}};
+    await controller.setWorkflow('test');await controller.resetPrepare(preparation);await controller.authorizeTerms(true);await controller.testBooking({method:preparation.method,request:preparation.request,authorizeTerms:true});
+    expect(snapshots).toEqual([
+      [expect.objectContaining({checkout:'A',status:'hold-created',courts:[7],startTime:'12:00',endTime:'14:00',bookingNo:'BK-FIXTURE'})],
+      [expect.objectContaining({checkout:'A',status:'qr-ready',courts:[7],startTime:'12:00',endTime:'14:00',bookingNo:'BK-FIXTURE'})],
+    ]);
+    expect(controller.state.qrHandoffs).toHaveLength(1);
   });
 
   it('prepares Extended API Test Now with both players and routes two-checkout preferences', async () => {

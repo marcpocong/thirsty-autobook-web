@@ -7,6 +7,8 @@ import { runBooking } from './booking-runtime.js';
 import { Safety } from './safety.js';
 import { Telemetry, sanitizedOperationFailureCode } from './telemetry.js';
 import { emitUiEvent } from './ui-events.js';
+import { requiredWorkerIds } from './workers.js';
+import { SPECIAL_SESSION_MODE, SPECIAL_SESSION_REQUIRED_WORKERS } from './api-booking/special-session.js';
 const safety = new Safety(), t = new Telemetry();
 const stop = () => { safety.stop('USER_ABORT'); process.exit(130); };
 process.once('SIGTERM', stop);
@@ -47,18 +49,21 @@ try {
         if (!parsed.success)
             throw Error('PREPARATION_INPUT_INVALID');
         const input = parsed.data;
-        const config = input.workflow === 'test' ? loadTestRuntimeConfig({ ...input.request, maximum: input.maximum }) : loadConfig();
+        const config = input.workflow === 'test' ? loadTestRuntimeConfig({ ...input.request, method: input.method, maximum: input.maximum }) : loadConfig();
         const strategy = input.workflow === 'test' ? input.request.strategy : config.BOOKING_TYPE;
-        bookingPlayers(config, strategy);
+        if (input.workflow !== 'test' || input.method !== 'api-first')
+            bookingPlayers(config, strategy);
         const target = input.workflow === 'release' ? releaseCalendar(config) : undefined;
         if (target && Date.now() >= target.releaseMs - config.PREFLIGHT_SECONDS_BEFORE * 1000)
             throw Error('TODAYS_RELEASE_PASSED');
-        const prepared = await resetAndPrepare(strategy, safety, { progress: step => emitUiEvent({ type: 'preparationProgress', step }) }, input.workflow === 'test' ? input.request.date : undefined);
+        const courtCount = input.workflow === 'test' ? input.request.courtCount : config.COURT_COUNT;
+        const workers = input.workflow === 'release' && config.SESSION_MODE === SPECIAL_SESSION_MODE ? SPECIAL_SESSION_REQUIRED_WORKERS : requiredWorkerIds(strategy, courtCount);
+        const prepared = await resetAndPrepare(strategy, safety, { progress: step => emitUiEvent({ type: 'preparationProgress', step }) }, input.workflow === 'test' ? input.request.date : undefined, workers);
         emitUiEvent({ type: 'preparationProgress', step: 'availability' });
         const snapshots = prepared.browsers.map(b => b.snapshot);
         if (snapshots.some(s => !s))
             throw Error('PREPARATION_RESULT_MISSING');
-        const solution = input.workflow === 'test' ? resolveBookingPlan(input.request, snapshots) !== undefined : true;
+        const solution = input.workflow === 'test' ? (input.method === 'api-first' || resolveBookingPlan(input.request, snapshots) !== undefined) : true;
         if (!solution)
             throw Error('TARGET_NOT_AVAILABLE');
         const fingerprint = expectedPreparationFingerprint(input, input.workflow === 'release' ? planFingerprint(config) : undefined);
@@ -79,7 +84,7 @@ try {
         if (!parsed.success)
             throw Error('BOOKING_INPUT_INVALID');
         const input = parsed.data;
-        await runBooking(loadTestRuntimeConfig({ ...input.request, maximum: input.maximum }), 'test', safety, t, { ...input, confirm });
+        await runBooking(loadTestRuntimeConfig({ ...input.request, method: input.method, maximum: input.maximum }), 'test', safety, t, { ...input, confirm });
     }
     else
         throw Error('MODE_REQUIRED');

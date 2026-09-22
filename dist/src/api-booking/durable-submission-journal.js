@@ -117,8 +117,8 @@ export class DurableSubmissionJournal {
     async read(key) {
         return JSON.parse(await readFile(this.path(key), 'utf8'));
     }
-    /** Preserve a verified, elapsed hold before permitting a new attempt for the same block. */
-    async recycleExpiredVerified(key, now = new Date()) {
+    /** Archive conclusive outcomes before permitting another attempt for the same block. */
+    async recycleReusable(key, now = new Date()) {
         if (!/^[a-f0-9]{64}$/.test(key))
             throw Error('SUBMISSION_KEY_INVALID');
         const parent = dirname(resolve(this.directory));
@@ -143,11 +143,18 @@ export class DurableSubmissionJournal {
                 throw error;
             }
             const expiries = record.observedResponse?.holdExpiresAt;
-            if (record.key !== key || record.attempt?.attemptId !== key || record.state !== 'verified' ||
-                !expiries?.length || expiries.length !== record.attempt.expectedBookingCount ||
-                !Number.isFinite(now.getTime()) || expiries.some(value => !Number.isFinite(Date.parse(value)) || Date.parse(value) > now.getTime()))
+            if (record.key !== key || record.attempt?.attemptId !== key || !Number.isFinite(now.getTime()))
                 return 'blocked';
-            const archiveRoot = join(parent, 'expired-holds');
+            const rejected = record.state === 'rejected' && !record.observedResponse?.success &&
+                !record.observedResponse?.bookingIds?.length && !record.observedResponse?.bookingNumbers?.length &&
+                !record.observedResponse?.bookingSessionIds?.length && !record.observedResponse?.holdExpiresAt?.length &&
+                !record.observedResponse?.transactionId;
+            const expired = record.state === 'verified' && !!expiries?.length &&
+                expiries.length === record.attempt.expectedBookingCount &&
+                expiries.every(value => Number.isFinite(Date.parse(value)) && Date.parse(value) <= now.getTime());
+            if (!rejected && !expired)
+                return 'blocked';
+            const archiveRoot = join(parent, rejected ? 'rejected-attempts' : 'expired-holds');
             await mkdir(archiveRoot, { recursive: true, mode: 0o700 });
             await rename(resolve(this.directory), join(archiveRoot, `${key}-${now.toISOString().replace(/[:.]/g, '-')}-${randomUUID()}`));
             return 'reused';
@@ -155,6 +162,9 @@ export class DurableSubmissionJournal {
         finally {
             await rmdir(lock);
         }
+    }
+    async recycleExpiredVerified(key, now = new Date()) {
+        return this.recycleReusable(key, now);
     }
 }
 //# sourceMappingURL=durable-submission-journal.js.map

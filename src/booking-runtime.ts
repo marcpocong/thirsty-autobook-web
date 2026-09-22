@@ -27,6 +27,7 @@ export async function runBooking(config:Config,mode:'test'|'race'|'race:dry'|'ra
   const scheduledTargetDate=DateTime.fromMillis(target.releaseMs,{zone:config.TIMEZONE}).startOf('day').plus({days:config.BOOKING_HORIZON_DAYS}).toISODate();
   if(options.scheduledTarget&&(Date.now()>=target.releaseMs||target.targetDate!==scheduledTargetDate||options.scheduledFingerprint!==planFingerprint(config)))throw Error(Date.now()>=target.releaseMs?'RELEASE_MISSED':'SCHEDULE_CONTEXT_MISMATCH');
   const request:PlanRequest=options.request??{strategy:config.BOOKING_TYPE,date:target.targetDate,start:config.START_TIME,duration:config.DURATION_HOURS,courtCount:config.COURT_COUNT,priority:[...config.PREFERRED_COURTS,...config.FALLBACK_COURTS],fallbackStarts:config.FALLBACK_TIMES};
+  if(request.courtCount>2)throw Error('API_FIRST_METHOD_REQUIRED');
   const players=bookingPlayers(config,request.strategy);
   const identities=request.strategy==='extended'?[browserA,browserB]:[browserA];
   await mkdir('.local/dual',{recursive:true});await mkdir('DiagnosticsLocal',{recursive:true});
@@ -45,7 +46,7 @@ export async function runBooking(config:Config,mode:'test'|'race'|'race:dry'|'ra
       if(identities.length>1){const f=await open(path,'wx');await f.writeFile(JSON.stringify({...identity,id:b.workerId,stage:'SELECTION',stageAt:new Date().toISOString()}));await f.sync();await f.close();records.push(path);}
       safeties[i]!.persistStage=lifecycleWriter(path,identity);
     }
-    const workerTelemetry=identities.map(b=>t.worker(b.workerId));
+    const workerTelemetry=identities.map((_,i)=>t.worker(i===0?'A':'B'));
     const connected=await Promise.allSettled(identities.map((b,i)=>attach(safeties[i]!,workerTelemetry[i],b)));
     const connections=connected.map(c=>{if(c.status==='rejected')throw c.reason;return c.value;});
     if(mode!=='test')for(const [i,connection] of connections.entries()){
@@ -59,9 +60,9 @@ export async function runBooking(config:Config,mode:'test'|'race'|'race:dry'|'ra
     }
     if(options.scheduledTarget)connections.forEach((_,i)=>workerTelemetry[i]!.mark('browserAttached'));
     if(identities.length===2){const paths=await Promise.all(identities.map(i=>realpath(i.expectedProfile)));if(paths[0]!.toLowerCase()===paths[1]!.toLowerCase())throw Error('DUAL_PROFILE_NOT_ISOLATED');}
-    const workers=connections.map((c,i):DualWorker=>({id:identities[i]!.workerId,safety:safeties[i]!,telemetry:workerTelemetry[i]!,port:selectionPort(c.page,safeties[i]!),state:async()=>{},checkout:async selected=>{
-      await fullBookingToQr(c.page,selected,players[identities[i]!.workerId]!,(options.maximum??config.MAX_PRICE)*request.courtCount,true,config.PAYMENT_HANDOFF_VERIFY_TIMEOUT_MS,safeties[i]!,workerTelemetry[i]!,config.PAYMENT_SUMMARY_READY_TIMEOUT_MS);
-    }}));
+    const workers=connections.map((c,i):DualWorker=>{const id=i===0?'A':'B';return {id,safety:safeties[i]!,telemetry:workerTelemetry[i]!,port:selectionPort(c.page,safeties[i]!),state:async()=>{},checkout:async selected=>{
+      await fullBookingToQr(c.page,selected,players[id]!,(options.maximum??config.MAX_PRICE)*request.courtCount,true,config.PAYMENT_HANDOFF_VERIFY_TIMEOUT_MS,safeties[i]!,workerTelemetry[i]!,config.PAYMENT_SUMMARY_READY_TIMEOUT_MS);
+    }};});
     const gate=dualArmGate(target,safety,t);
     const gridResults=await Promise.allSettled(workers.map(async(w,i)=>{
       if(mode==='test'){await assertDiagnosticSchedule(connections[i]!.page,w.safety);await navigateDate(connections[i]!.page,request.date,w.safety);return snapshot(connections[i]!.page);}

@@ -1,3 +1,5 @@
+import type { CourtCount } from '../workers.js';
+
 export type BookingMode = 'standard' | 'extended';
 export type FixtureKind = 'captured-historical' | 'synthetic' | 'live';
 
@@ -55,7 +57,7 @@ export interface BookingPreferences {
   courtPriority: number[];
   fallbackCourts: number[];
   exactCourts?: number[][];
-  courtCount: 1 | 2;
+  courtCount: CourtCount;
   maximumTotalPrice: number;
   currency: 'PHP';
 }

@@ -1,9 +1,11 @@
 import { playerReadiness, loadConfig, loadObservationConfig } from './config.js';
-import { verifyDedicatedChrome, attach, browserB } from './browser.js';
+import { verifyDedicatedChrome, attach, browserIdentity } from './browser.js';
 import { Safety } from './safety.js';
 import { readScheduleReadiness } from './readiness.js';
 import { clockStatus, readLock } from '../ui/status.js';
 import { loadLocalCheckoutCustomer } from './api-booking/local-customer.js';
+import { requiredWorkerIds } from './workers.js';
+import { SPECIAL_SESSION_MODE, SPECIAL_SESSION_REQUIRED_WORKERS } from './api-booking/special-session.js';
 const result = { cdp: 'BLOCKED', dedicatedProfile: 'NOT VERIFIED', exactTab: 'NOT VERIFIED',
     venue: 'NOT VERIFIED', schedule: 'NOT CLEAN', allCourts: 'NO', selectedSlots: 'UNKNOWN', paymentHold: 'UNKNOWN',
     automationLock: await readLock(process.cwd()) ? 'ACTIVE' : 'CLEAR', playerConfiguration: 'MISSING', bookingPlan: 'INVALID' };
@@ -20,29 +22,42 @@ try {
         result.playerConfiguration = playerReadiness(booking).primary ? 'CONFIGURED' : 'MISSING';
         result.extendedPlayerConfiguration = playerReadiness(booking).extended ? 'CONFIGURED' : 'MISSING';
         result.bookingPlan = 'VALID';
+        const workers = booking.SESSION_MODE === SPECIAL_SESSION_MODE
+            ? [...SPECIAL_SESSION_REQUIRED_WORKERS] : requiredWorkerIds(booking.BOOKING_TYPE, booking.COURT_COUNT);
+        result.requiredWorkers = workers.join(',');
         if (booking.BOOKING_METHOD === 'api-first') {
-            loadLocalCheckoutCustomer('A');
-            if (booking.BOOKING_TYPE === 'extended')
-                loadLocalCheckoutCustomer('B');
-            result.apiCustomerBindings = 'VERIFIED';
+            try {
+                for (const worker of workers)
+                    loadLocalCheckoutCustomer(worker);
+                result.apiCustomerBindings = 'VERIFIED';
+            }
+            catch (error) {
+                result.apiCustomerBindings = 'MISSING';
+                const code = error.message;
+                result.customerBindingBlocker = /^[A-Z][A-Z0-9_]{0,79}$/.test(code) ? code : 'CUSTOMER_BINDING_UNVERIFIED';
+            }
         }
     }
     catch {
         result.bookingPlan = 'INVALID';
     }
-    verifyDedicatedChrome();
-    result.dedicatedProfile = 'VERIFIED';
-    const { page } = await attach(new Safety());
-    result.cdp = 'READY';
-    Object.assign(result, await readScheduleReadiness(page));
-    if (booking?.BOOKING_TYPE === 'extended') {
-        result.browserB = 'NOT VERIFIED';
-        const second = await attach(new Safety(), undefined, browserB);
-        const readiness = await readScheduleReadiness(second.page);
-        result.browserB = readiness;
+    const workers = booking?.SESSION_MODE === SPECIAL_SESSION_MODE
+        ? [...SPECIAL_SESSION_REQUIRED_WORKERS] : booking ? requiredWorkerIds(booking.BOOKING_TYPE, booking.COURT_COUNT) : ['A'];
+    for (const [index, worker] of workers.entries()) {
+        const identity = browserIdentity(worker);
+        verifyDedicatedChrome(identity);
+        const { page } = await attach(new Safety(), undefined, identity);
+        const readiness = await readScheduleReadiness(page);
+        result[`browser${worker}`] = readiness;
+        if (index === 0) {
+            result.dedicatedProfile = 'VERIFIED';
+            result.cdp = 'READY';
+            Object.assign(result, readiness);
+        }
         if (readiness.schedule !== 'CLEAN' || readiness.selectedSlots !== 0 || readiness.paymentHold !== 'NONE')
-            throw Error('DUAL_BROWSER_NOT_READY');
+            throw Error('REQUIRED_BROWSER_NOT_READY');
     }
+    result.requiredBrowsers = `READY ${workers.length}/${workers.length}`;
 }
 catch (error) {
     const message = error.message;

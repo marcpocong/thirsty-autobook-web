@@ -1,6 +1,6 @@
 import { chromium } from 'playwright';
 
-const browser = await chromium.connectOverCDP('http://127.0.0.1:19446');
+const browser = await chromium.connectOverCDP('http://127.0.0.1:19500');
 try {
   const page = browser.contexts()[0]?.pages().find(page => page.url().includes('/Thirsty%20Bot%20API%20Test/dist/ui/renderer/index.html'));
   if (!page) throw Error('PACKAGED_UI_NOT_FOUND');

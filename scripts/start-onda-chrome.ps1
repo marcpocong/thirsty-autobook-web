@@ -1,4 +1,4 @@
-param([ValidateSet('A','B')][string]$Worker = 'A', [ValidateScript({ $_ -eq 0 -or ($_ -ge 1024 -and $_ -le 65535) })][int]$Port = 0)
+param([ValidateSet('A','B','C','D','E','F','G','H')][string]$Worker = 'A', [ValidateScript({ $_ -eq 0 -or ($_ -ge 1024 -and $_ -le 65535) })][int]$Port = 0)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $endpointFile = Join-Path $projectRoot '.local\browser-endpoints.json'
@@ -6,13 +6,15 @@ $port = $Port
 if ($port -eq 0 -and (Test-Path -LiteralPath $endpointFile)) {
   try {
     $saved = Get-Content -LiteralPath $endpointFile -Raw | ConvertFrom-Json
-    $candidate = if ($Worker -eq 'B') { $saved.B } else { $saved.A }
+    $candidate = $saved.$Worker
     if ($saved.version -eq 1 -and $candidate -ge 1024 -and $candidate -le 65535) { $port = [int]$candidate }
   } catch {}
 }
 $apiInstallation = $env:THIRSTY_API_INSTALLATION -eq '1' -or $env:THIRSTY_API_TEST_INSTALLATION -eq '1'
-if ($port -eq 0) { $port = if ($apiInstallation) { if ($Worker -eq 'B') { 19445 } else { 19444 } } else { if ($Worker -eq 'B') { 9223 } else { 9222 } } }
-$profile = if ($apiInstallation) { if ($Worker -eq 'B') { '.local\api-first-chrome-profile-b' } else { '.local\api-first-chrome-profile' } } else { if ($Worker -eq 'B') { '.local\onda-chrome-profile-b' } else { '.local\onda-chrome-profile' } }
+$workerOffset = @{ A = 0; B = 1; C = 2; D = 3; E = 4; F = 5; G = 6; H = 7 }[$Worker]
+if ($port -eq 0) { $port = $(if ($apiInstallation) { 19444 } else { 9222 }) + $workerOffset }
+$profileBase = if ($apiInstallation) { '.local\api-first-chrome-profile' } else { '.local\onda-chrome-profile' }
+$profile = if ($Worker -eq 'A') { $profileBase } else { "$profileBase-$($Worker.ToLowerInvariant())" }
 $profilePath = Join-Path $projectRoot $profile
 $candidates = @(
   "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",

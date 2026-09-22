@@ -4,14 +4,17 @@ import { parse as parseEnv } from 'dotenv';
 import { existsSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { reconcileBookingSetupFallbacks, reconcileFallbackTimes } from './booking-setup.js';
+import { WORKER_IDS } from './workers.js';
+import { SPECIAL_SESSION_MODE, specialSessionFingerprint } from './api-booking/special-session.js';
 export const ONDA_URL = 'https://app.onda.fit/book/thirsty-pickle';
 export const VENUE = 'Thirsty Pickle | SM Seaside';
 const hour = z.string().regex(/^(0[89]|1[0-9]|2[0-3]):00$/);
 const courts = z.array(z.number().int().min(1).max(7));
 export const ConfigSchema = z.object({
+    SESSION_MODE: z.enum(['normal', SPECIAL_SESSION_MODE]).default('normal'),
     BOOKING_METHOD: z.enum(['browser', 'hybrid', 'api-first']).default('browser'),
     BOOKING_TYPE: z.enum(['standard', 'extended']).default('standard'),
-    COURT_COUNT: z.union([z.literal(1), z.literal(2)]).default(1),
+    COURT_COUNT: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7)]).default(1),
     ONDA_URL: z.literal(ONDA_URL).default(ONDA_URL),
     TIMEZONE: z.string().refine(v => IANAZone.isValidZone(v), 'Invalid timezone').default('Asia/Manila'),
     RELEASE_TIME: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/).default('08:00:00'),
@@ -28,6 +31,16 @@ export const ConfigSchema = z.object({
     PLAYER_B_FULL_NAME: z.string().optional(),
     PLAYER_B_PHONE: z.string().optional(),
     PLAYER_B_EMAIL: z.string().optional(),
+    PLAYER_C_FULL_NAME: z.string().optional(),
+    PLAYER_C_PHONE: z.string().optional(),
+    PLAYER_C_EMAIL: z.string().optional(),
+    PLAYER_D_FULL_NAME: z.string().optional(),
+    PLAYER_D_PHONE: z.string().optional(),
+    PLAYER_D_EMAIL: z.string().optional(),
+    PLAYER_E_FULL_NAME: z.string().optional(), PLAYER_E_PHONE: z.string().optional(), PLAYER_E_EMAIL: z.string().optional(),
+    PLAYER_F_FULL_NAME: z.string().optional(), PLAYER_F_PHONE: z.string().optional(), PLAYER_F_EMAIL: z.string().optional(),
+    PLAYER_G_FULL_NAME: z.string().optional(), PLAYER_G_PHONE: z.string().optional(), PLAYER_G_EMAIL: z.string().optional(),
+    PLAYER_H_FULL_NAME: z.string().optional(), PLAYER_H_PHONE: z.string().optional(), PLAYER_H_EMAIL: z.string().optional(),
     PLAYER_FULL_NAME: z.string().trim().min(2),
     PLAYER_PHONE: z.string().trim().regex(/^\+?[0-9][0-9 ()-]{6,19}$/),
     PLAYER_EMAIL: z.email(),
@@ -52,8 +65,13 @@ export const ConfigSchema = z.object({
     SCHEDULE_WAKE_SECONDS_BEFORE: z.coerce.number().int().min(30).max(300).default(90),
     CRITICAL_STEP_TIMEOUT_MS: z.coerce.number().int().min(3000).max(60000).default(15000),
 }).superRefine((c, ctx) => {
+    if (c.SESSION_MODE === SPECIAL_SESSION_MODE && (c.BOOKING_METHOD !== 'api-first' || c.BOOKING_TYPE !== 'extended' || c.COURT_COUNT !== 4 ||
+        c.START_TIME !== '17:00' || c.DURATION_HOURS !== 5 || c.FALLBACK_TIMES.length))
+        ctx.addIssue({ code: 'custom', message: 'Special Friday session settings are inconsistent.', path: ['SESSION_MODE'] });
     if (c.BOOKING_TYPE === 'standard' ? c.DURATION_HOURS > 3 : c.DURATION_HOURS < 4)
         ctx.addIssue({ code: 'custom', message: 'Standard supports 1-3h; Extended supports 4-6h', path: ['DURATION_HOURS'] });
+    if (c.COURT_COUNT > 2 && c.BOOKING_METHOD !== 'api-first')
+        ctx.addIssue({ code: 'custom', message: 'Three to seven courts require API-FIRST.', path: ['COURT_COUNT'] });
     const allCourts = [...c.PREFERRED_COURTS, ...c.FALLBACK_COURTS];
     const times = [c.START_TIME, ...c.FALLBACK_TIMES];
     if (new Set(allCourts).size !== allCourts.length)
@@ -75,7 +93,10 @@ export const ObservationSchema = z.object({
 });
 function environment() {
     const privatePath = process.env.THIRSTY_API_INSTALLATION === '1' || process.env.THIRSTY_API_TEST_INSTALLATION === '1' ? '.local/private/.env.local' : '.env.local';
-    return { ...process.env, ...(existsSync(privatePath) ? parseEnv(readFileSync(privatePath)) : {}) };
+    const extraPlayersPath = process.env.THIRSTY_API_INSTALLATION === '1' || process.env.THIRSTY_API_TEST_INSTALLATION === '1'
+        ? '.local/private/players-e-h.env' : '../.local/private/players-e-h.env';
+    return { ...process.env, ...(existsSync(privatePath) ? parseEnv(readFileSync(privatePath)) : {}),
+        ...(existsSync(extraPlayersPath) ? parseEnv(readFileSync(extraPlayersPath)) : {}) };
 }
 export function loadObservationConfig() {
     const parsed = ObservationSchema.safeParse(environment());
@@ -94,7 +115,7 @@ function parseConfig(includeSaved, test) {
         if (typeof raw[key] === 'string')
             raw[key] = raw[key].split(',').map(s => s.trim()).filter(Boolean).map(s => key === 'FALLBACK_TIMES' ? s : Number(s));
     }
-    if (raw.COURT_COUNT === '1' || raw.COURT_COUNT === '2')
+    if (['1', '2', '3', '4', '5', '6', '7'].includes(String(raw.COURT_COUNT)))
         raw.COURT_COUNT = Number(raw.COURT_COUNT);
     if (includeSaved && existsSync('config.local.json')) {
         const repaired = reconcileBookingSetupFallbacks(JSON.parse(readFileSync('config.local.json', 'utf8')));
@@ -102,7 +123,7 @@ function parseConfig(includeSaved, test) {
         Object.assign(raw, BookingSetupSchema.parse(repaired.setup));
     }
     if (test)
-        Object.assign(raw, { BOOKING_TYPE: test.strategy, COURT_COUNT: test.courtCount, START_TIME: test.start, DURATION_HOURS: test.duration, PREFERRED_COURTS: test.priority, FALLBACK_COURTS: [], FALLBACK_TIMES: test.fallbackStarts });
+        Object.assign(raw, { ...(test.method ? { BOOKING_METHOD: test.method } : {}), BOOKING_TYPE: test.strategy, COURT_COUNT: test.courtCount, START_TIME: test.start, DURATION_HOURS: test.duration, PREFERRED_COURTS: test.priority, FALLBACK_COURTS: [], FALLBACK_TIMES: test.fallbackStarts });
     const parsed = ConfigSchema.safeParse(raw);
     if (!parsed.success)
         throw new Error(`CONFIG_INVALID: ${parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
@@ -115,6 +136,7 @@ export function loadConfigWithReconciliation() { return parseConfig(true); }
 export function loadTestRuntimeConfig(test) { return parseConfig(false, test).config; }
 // Narrow, PII-free local settings; renderer cannot change URLs, release timing or player data.
 export const BookingSetupSchema = z.object({
+    SESSION_MODE: ConfigSchema.shape.SESSION_MODE,
     BOOKING_METHOD: ConfigSchema.shape.BOOKING_METHOD,
     BOOKING_TYPE: ConfigSchema.shape.BOOKING_TYPE,
     COURT_COUNT: ConfigSchema.shape.COURT_COUNT,
@@ -123,8 +145,13 @@ export const BookingSetupSchema = z.object({
     FALLBACK_TIMES: z.array(hour).max(15),
     MAX_SELECTION_ATTEMPTS: z.number().int().min(1).max(5).default(3),
 }).strict().superRefine((c, ctx) => {
+    if (c.SESSION_MODE === SPECIAL_SESSION_MODE && (c.BOOKING_METHOD !== 'api-first' || c.BOOKING_TYPE !== 'extended' || c.COURT_COUNT !== 4 ||
+        c.START_TIME !== '17:00' || c.DURATION_HOURS !== 5 || c.FALLBACK_TIMES.length))
+        ctx.addIssue({ code: 'custom', message: 'Special Friday session settings are inconsistent.', path: ['SESSION_MODE'] });
     if (c.BOOKING_TYPE === 'standard' ? c.DURATION_HOURS > 3 : c.DURATION_HOURS < 4)
         ctx.addIssue({ code: 'custom', message: c.BOOKING_TYPE === 'standard' ? 'Standard bookings must be 1–3 hours.' : 'Extended bookings must be 4–6 hours.', path: ['DURATION_HOURS'] });
+    if (c.COURT_COUNT > 2 && c.BOOKING_METHOD !== 'api-first')
+        ctx.addIssue({ code: 'custom', message: 'Three to seven courts require API-FIRST.', path: ['COURT_COUNT'] });
     if (new Set(c.PREFERRED_COURTS).size !== 7)
         ctx.addIssue({ code: 'custom', message: 'Court priority is invalid.', path: ['PREFERRED_COURTS'] });
     if (Number(c.START_TIME.slice(0, 2)) + c.DURATION_HOURS > 24)
@@ -145,7 +172,10 @@ export function calculateTarget(c, now = DateTime.now()) {
     return { ...releaseCalendar(c, now), preferences: compilePreferences(c) };
 }
 export function planFingerprint(c) {
-    return createHash('sha256').update(JSON.stringify({ method: c.BOOKING_METHOD, strategy: c.BOOKING_TYPE, courtCount: c.COURT_COUNT, schedule: ObservationSchema.parse(c), target: calculateTarget(c), attempts: c.MAX_SELECTION_ATTEMPTS })).digest('hex');
+    return createHash('sha256').update(JSON.stringify({ sessionMode: c.SESSION_MODE,
+        specialSession: c.SESSION_MODE === SPECIAL_SESSION_MODE ? specialSessionFingerprint() : null,
+        method: c.BOOKING_METHOD, strategy: c.BOOKING_TYPE, courtCount: c.COURT_COUNT,
+        schedule: ObservationSchema.parse(c), target: calculateTarget(c), attempts: c.MAX_SELECTION_ATTEMPTS })).digest('hex');
 }
 export function releaseCalendar(c, now = DateTime.now()) {
     const local = now.setZone(c.TIMEZONE);
@@ -180,37 +210,57 @@ export function extendedPlayer(c) {
         throw Error('EXTENDED_PLAYER_INFO_MISSING');
     return b;
 }
+const workerFields = (env) => ({
+    PLAYER_FULL_NAME: String(env.PLAYER_FULL_NAME ?? ''), PLAYER_PHONE: String(env.PLAYER_PHONE ?? ''), PLAYER_EMAIL: String(env.PLAYER_EMAIL ?? ''),
+    PLAYER_B_FULL_NAME: env.PLAYER_B_FULL_NAME, PLAYER_B_PHONE: env.PLAYER_B_PHONE, PLAYER_B_EMAIL: env.PLAYER_B_EMAIL,
+    PLAYER_C_FULL_NAME: env.PLAYER_C_FULL_NAME, PLAYER_C_PHONE: env.PLAYER_C_PHONE, PLAYER_C_EMAIL: env.PLAYER_C_EMAIL,
+    PLAYER_D_FULL_NAME: env.PLAYER_D_FULL_NAME, PLAYER_D_PHONE: env.PLAYER_D_PHONE, PLAYER_D_EMAIL: env.PLAYER_D_EMAIL,
+    PLAYER_E_FULL_NAME: env.PLAYER_E_FULL_NAME, PLAYER_E_PHONE: env.PLAYER_E_PHONE, PLAYER_E_EMAIL: env.PLAYER_E_EMAIL,
+    PLAYER_F_FULL_NAME: env.PLAYER_F_FULL_NAME, PLAYER_F_PHONE: env.PLAYER_F_PHONE, PLAYER_F_EMAIL: env.PLAYER_F_EMAIL,
+    PLAYER_G_FULL_NAME: env.PLAYER_G_FULL_NAME, PLAYER_G_PHONE: env.PLAYER_G_PHONE, PLAYER_G_EMAIL: env.PLAYER_G_EMAIL,
+    PLAYER_H_FULL_NAME: env.PLAYER_H_FULL_NAME, PLAYER_H_PHONE: env.PLAYER_H_PHONE, PLAYER_H_EMAIL: env.PLAYER_H_EMAIL,
+});
+export function playerForWorker(c, worker) {
+    if (worker === 'A')
+        return primaryPlayer(c);
+    if (worker === 'B')
+        return extendedPlayer(c);
+    const suffix = worker;
+    const parsed = PlayerSchema.safeParse({ fullName: c[`PLAYER_${suffix}_FULL_NAME`], phone: c[`PLAYER_${suffix}_PHONE`]?.replace(/[ ()-]/g, ''), email: c[`PLAYER_${suffix}_EMAIL`] });
+    if (!parsed.success)
+        throw Error(`PLAYER_${worker}_INFO_MISSING`);
+    const candidate = parsed.data, prior = WORKER_IDS.slice(0, WORKER_IDS.indexOf(worker)).map(id => playerForWorker(c, id));
+    const phone = (p) => p.replace(/^(?:0|\+?63)/, '');
+    if (prior.some(player => player.email.toLowerCase() === candidate.email.toLowerCase() || phone(player.phone) === phone(candidate.phone)))
+        throw Error(`PLAYER_${worker}_INFO_MISSING`);
+    return candidate;
+}
 export function playerReadiness(c) {
-    let primary = false, extended = false;
-    try {
-        primaryPlayer(c);
-        primary = true;
-    }
-    catch { }
-    try {
-        extendedPlayer(c);
-        extended = true;
-    }
-    catch { }
-    return { primary, extended };
+    const ready = { primary: false, extended: false, third: false, fourth: false, fifth: false, sixth: false, seventh: false, eighth: false };
+    for (const [worker, key] of [['A', 'primary'], ['B', 'extended'], ['C', 'third'], ['D', 'fourth'], ['E', 'fifth'], ['F', 'sixth'], ['G', 'seventh'], ['H', 'eighth']])
+        try {
+            playerForWorker(c, worker);
+            ready[key] = true;
+        }
+        catch { }
+    return ready;
 }
 export function loadPlayerReadiness() {
     const env = environment();
-    return playerReadiness({ PLAYER_FULL_NAME: String(env.PLAYER_FULL_NAME ?? ''), PLAYER_PHONE: String(env.PLAYER_PHONE ?? ''), PLAYER_EMAIL: String(env.PLAYER_EMAIL ?? ''), PLAYER_B_FULL_NAME: typeof env.PLAYER_B_FULL_NAME === 'string' ? env.PLAYER_B_FULL_NAME : undefined, PLAYER_B_PHONE: typeof env.PLAYER_B_PHONE === 'string' ? env.PLAYER_B_PHONE : undefined, PLAYER_B_EMAIL: typeof env.PLAYER_B_EMAIL === 'string' ? env.PLAYER_B_EMAIL : undefined });
+    return playerReadiness(workerFields(env));
 }
 export function loadPlayerProfiles() {
     const env = environment();
-    const fields = { PLAYER_FULL_NAME: String(env.PLAYER_FULL_NAME ?? ''), PLAYER_PHONE: String(env.PLAYER_PHONE ?? ''), PLAYER_EMAIL: String(env.PLAYER_EMAIL ?? ''), PLAYER_B_FULL_NAME: typeof env.PLAYER_B_FULL_NAME === 'string' ? env.PLAYER_B_FULL_NAME : undefined, PLAYER_B_PHONE: typeof env.PLAYER_B_PHONE === 'string' ? env.PLAYER_B_PHONE : undefined, PLAYER_B_EMAIL: typeof env.PLAYER_B_EMAIL === 'string' ? env.PLAYER_B_EMAIL : undefined };
-    let primary, extended;
-    try {
-        primary = primaryPlayer(fields);
-    }
-    catch { }
-    try {
-        extended = extendedPlayer(fields);
-    }
-    catch { }
-    return { primary: !!primary, extended: !!extended, primaryDetails: primary, extendedDetails: extended };
+    const fields = workerFields(env), profiles = {};
+    for (const worker of WORKER_IDS)
+        try {
+            profiles[worker] = playerForWorker(fields, worker);
+        }
+        catch { }
+    return { primary: !!profiles.A, extended: !!profiles.B, third: !!profiles.C, fourth: !!profiles.D,
+        fifth: !!profiles.E, sixth: !!profiles.F, seventh: !!profiles.G, eighth: !!profiles.H,
+        primaryDetails: profiles.A, extendedDetails: profiles.B, thirdDetails: profiles.C, fourthDetails: profiles.D,
+        fifthDetails: profiles.E, sixthDetails: profiles.F, seventhDetails: profiles.G, eighthDetails: profiles.H };
 }
 export function bookingPlayers(c, strategy) {
     return strategy === 'extended' ? { A: primaryPlayer(c), B: extendedPlayer(c) } : { A: primaryPlayer(c), B: undefined };

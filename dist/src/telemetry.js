@@ -26,6 +26,8 @@ export function sanitizedOperationFailureCode(error, fallback = 'OPERATION_FAILE
     for (let depth = 0; depth < 4 && current instanceof Error; depth++) {
         if (/^[A-Z_]{1,80}$/.test(current.message))
             return current.message;
+        if (current.message.startsWith('CONFIG_INVALID:'))
+            return 'CONFIG_INVALID';
         if (current.name === 'TimeoutError')
             return 'PLAYWRIGHT_TIMEOUT';
         current = current.cause;

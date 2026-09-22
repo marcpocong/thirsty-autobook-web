@@ -2,21 +2,21 @@
 
 Windows 11 / Node 24 / TypeScript / Playwright / dedicated Chrome. All files live directly in this project root.
 
-The existing single-court booking flow has live evidence, including the [September 12 production run](RELEASE_RUN_REPORT_2026-09-12.md). Automation stops at the verified QR payment hold; payment remains manual. Phase 7 extends that flow with the validation boundaries documented below.
+The existing single-court booking flow has live evidence, including the [September 12 production run](RELEASE_RUN_REPORT_2026-09-12.md). Automation stops at the verified QR payment hold; payment remains manual. The current tree adds API-first booking, up to seven courts, per-checkout worker isolation, richer run/QR history, and an explicitly experimental Friday-session mode. Start with [REVIEW_GUIDE.md](REVIEW_GUIDE.md) when reviewing the current implementation; the phase reports below are historical checkpoints.
 
 
-## Phase 7: Standard and Extended
+## Current booking model
 
 The normal workflow is **configure → Reset & Prepare → authorize Terms → Run Test to QR / Arm Next Release**. Choose **Test Now** for an exact date without waiting for release, or **Release Booking** for the scheduled run. Engineering tools remain under the collapsed **Advanced / Diagnostics** section.
 
 | Booking type | Duration | Courts | Browsers | Checkouts / QR holds |
 |---|---|---|---|---|
-| Standard | 1-3 consecutive hours | 1 or 2 | A only | 1 |
-| Extended | 4-6 consecutive hours | 1 or 2 | A + B | 2 |
+| Standard | 1-3 consecutive hours | 1-7 | `ceil(courts / 2)` | `ceil(courts / 2)` |
+| Extended | 4-6 consecutive hours | 1-7 | `2 × ceil(courts / 2)` | `2 × ceil(courts / 2)` |
 
-Standard two-court bookings select both courts in one checkout. Extended splits are ranked **3+1 -> 2+2 -> 1+3** for four hours, **3+2 -> 2+3** for five, and **3+3** for six. Each court covers its entire chunk. The second chunk prefers continuity but may switch one or both courts. Fallback starts move the entire continuous block. Midnight is an allowed endpoint; crossing midnight and durations above six hours are rejected.
+Each checkout contains at most two courts. Standard uses one time block and groups requested courts in pairs. Extended uses two time blocks, ranked **3+1 -> 2+2 -> 1+3** for four hours, **3+2 -> 2+3** for five, and **3+3** for six; each time block is also grouped into at-most-two-court checkouts. Each checkout has a distinct player/browser identity. Fallback starts move the entire continuous block. Midnight is an allowed endpoint; crossing midnight and durations above six hours are rejected.
 
-`BOOKING_TYPE` defaults to `standard`; `COURT_COUNT` still defaults to 1. `MAX_PRICE` is the maximum for one court in one checkout chunk. Each checkout independently enforces `COURT_COUNT * MAX_PRICE`.
+`BOOKING_TYPE` defaults to `standard`; `COURT_COUNT` defaults to 1. The current normal UI has no configurable price ceiling: it reports the observed amount and validates that exact amount again before final authorization. `MAX_PRICE` remains a compatibility field for older CLI/test paths and defaults to no ceiling.
 
 Test Now resolves availability before a native confirmation shows the actual courts and chunks. The confirmation permits bounded pre-Proceed replanning within the requested range; exact courts are never substituted. Test settings do not require changing the saved release court count. Reset & Prepare and all relevant edits clear Terms authorization. No historical dual readiness/practice evidence is required for normal Test Now or Release Booking.
 
@@ -26,9 +26,9 @@ Reset & Prepare checks dedicated identities, dead owner state, current browser s
 
 If a preferred local debugging port is already owned by another application or an unverifiable Chrome session, Reset & Prepare leaves that process untouched, allocates a distinct loopback-only fallback endpoint, records it for every subsequent Test and Release process, and starts the same dedicated Thirsty Bot profile there. Repeated preparation reuses the recorded endpoint. The standalone Start Chrome diagnostic remains fail-closed on conflicts.
 
-Preparation emits sanitized per-browser evidence and the controller accepts it only when its fingerprint matches the exact current request. Standard requires Browser A; Extended requires A+B health. Readiness is invalidated by meaningful configuration, workflow, browser, lock, hold, or release-window changes—not merely because 60 seconds passed. Countdown recovery is scoped to the unique visible `Slot reserved for` component, and a visible `00:00` must be stable across a bounded second read.
+Preparation emits sanitized per-browser evidence and the controller accepts it only when its fingerprint matches the exact current request. The required browser set is derived from booking type and court count, from A for a one- or two-court Standard plan through A-H for a seven-court Extended plan. Readiness is invalidated by meaningful configuration, workflow, browser, lock, hold, or release-window changes—not merely because 60 seconds passed. Countdown recovery is scoped to the unique visible `Slot reserved for` component, and a visible `00:00` must be stable across a bounded second read.
 
-**Live validation limit:** the user verified that Onda supports two courts in one checkout, up to three hours per court. The new multi-court Review DOM adapter and simultaneous same-customer Extended holds have only offline validation in this phase. The adapter requires independently verifiable court cards and stops on unsupported markup. No real hold or release was created during implementation. See [Phase 7 details and test results](PHASE7_BOOKING_REPORT.md).
+**Validation boundary:** Onda has been live-verified for at most two courts and three consecutive hours per checkout. Higher court counts are split across independent checkouts and have offline test coverage, but the complete multi-browser combinations are not all live-validated. The adapter requires independently verifiable booking identities and amounts and stops on unsupported markup or uncertain submission outcomes. See [REVIEW_GUIDE.md](REVIEW_GUIDE.md) for the current risk map and [PHASE7_BOOKING_REPORT.md](PHASE7_BOOKING_REPORT.md) for the older Phase 7 evidence.
 
 ## Setup
 
@@ -70,7 +70,10 @@ npm run race -- --armed --authorize-terms
 
 npm run typecheck
 npm test
+npm run ui:build
 ```
+
+The checked-in offline suite currently contains 65 files and 773 tests. It must stay network-isolated: it uses fixtures and test-owned Chromium, never a live booking. `npm run exe:build` is a Windows packaging/deployment command; it refreshes the parent installation as well as the launcher and should be run only when that local installation update is intended.
 
 Practice requires all four explicit target arguments. If either requested slot is unavailable, it stops; it never silently picks another target. On an uncertain selection, failure or abort, inspect and clear selection manually. Only rerun practice for an appropriate noncompetitive target.
 
@@ -80,11 +83,11 @@ After the release reload commits, the engine waits only for the verified venue a
 
 ## Booking configuration
 
-Use **Booking Setup** for start, duration, court order, fallback starts, PHP maximum and maximum candidate attempts. Saved release settings live in ignored `config.local.json`; the CLI loads this same object. Defaults are 08:00, 2 hours, courts 7 through 1, PHP 1,200 and 3 candidate attempts. Save invalidates readiness. Confirmation and the worker compare a plan fingerprint so the authorized plan cannot silently change.
+Use **Edit Plan** for session type, booking method, booking type, court count, start, duration, court order, fallback starts and maximum candidate attempts. Saved release settings live in ignored `config.local.json`; the CLI loads this same object. Defaults are 08:00, 2 hours, courts 7 through 1 and 3 candidate attempts. Save invalidates readiness. Confirmation and the worker compare a plan fingerprint so the authorized plan cannot silently change.
 
 Choose Standard or Extended independently of the court count. Use Reset & Prepare in the normal workflow. The `dual:*` commands below are retained Phase 6 diagnostics; they are not prerequisites for normal bookings.
 
-Store real player fields only in ignored `.env.local`: `PLAYER_FULL_NAME`, `PLAYER_PHONE`, `PLAYER_EMAIL`. Extended additionally requires valid `PLAYER_B_FULL_NAME`, `PLAYER_B_PHONE`, and `PLAYER_B_EMAIL` for Checkout B. Standard uses only the primary profile. Two different profiles are a product requirement; B never falls back to A. Only configured/missing status reaches the dashboard. The dashboard reports **Configured** without sending player values to the renderer. Zod validates configuration before attachment. Primary and fallback starts use the configured court priority. Starts range from 08:00 through 23:00, with Standard supporting 1-3 consecutive hours and Extended supporting 4-6, ending no later than midnight.
+Store real player and customer fields only in ignored `.env.local`. Copy the variable names from `.env.example`; workers A-H use `PLAYER_*` through `PLAYER_H_*` and matching `ONDA_CUSTOMER_*` bindings. Every required checkout must have a distinct validated identity; no worker falls back to another worker's profile. Only configured/missing status and the identity fields needed for the operator's QR review reach the dashboard; phone numbers and customer IDs remain private. Primary and fallback starts use the configured court priority. Starts range from 08:00 through 23:00, with Standard supporting 1-3 consecutive hours and Extended supporting 4-6, ending no later than midnight.
 
 The horizon uses timezone calendar arithmetic, not `now + 48 hours`. Nonzero release lead is rejected until justified by measurements. Observation reads only release settings and ignores player data. Example values are illustrations, not live booking authorization.
 
@@ -117,7 +120,7 @@ The evidence-based checkout adapter validates Review, normalizes the local PH mo
 
 `CDP_PROFILE_OR_BIND_UNVERIFIED` / `WRONG_CHROME_PROFILE`: use the launcher from this root; check port 9222 belongs to this project's Chrome. `ONDA_TAB_AMBIGUOUS_OR_MISSING`: leave exactly one exact booking URL tab. `STALE_OR_INCOMPLETE_GRID`: allow loading to finish, check today/All Courts, then inspect again. `TARGET_DATE_UNAVAILABLE`: normal calendar disables it; do not force it. `CHROME_DISCONNECTED`: no relaunch/retry; user must prepare a new run. `TOO_LATE_FOR_PREFLIGHT`: prepare before the next intended release. Security challenges, access blocks, rate limits or Retry-After stop automation; solve permitted human steps manually and begin a separate run only when appropriate.
 
-Respect Onda's applicable terms and venue rules. Do not defeat restrictions. No private booking APIs, backend availability payload parsing, stealth, fingerprint spoofing, proxies, floods, extra accounts, parallel booking tabs, or payment automation are used.
+Respect Onda's applicable terms and venue rules. Do not defeat restrictions. API-first uses Onda requests from genuine dedicated Chrome sessions and preserves current same-origin security context, but it does not bypass Cloudflare, fabricate security values, automate payment, or treat an HTTP response alone as booking confirmation. Unknown dispatch outcomes remain locked for manual reconciliation and must not be retried.
 
 Tests use test-owned Chrome/Chromium and minimal synthetic HTML with all external requests blocked. `browser.close()` exists only for that test-owned browser, never the user's Chrome. CI runs install/typecheck/offline tests, never the CLI against Onda. On Linux test hosts run `npx playwright install --with-deps chromium` first.
 
@@ -133,10 +136,10 @@ npm run ui
 
 The Electron desktop window uses the existing CLI engine. The first launch may download the Electron runtime; subsequent launches build the small TypeScript UI and open it directly. No installer or additional terminal is needed.
 
-1. Choose **Test Now** or **Release Booking**, booking type, court count, start, duration and per-court maximum. For Test Now choose an explicit date.
+1. Use the four top-level views: **Next Release**, **Edit Plan**, **Tests**, and **Runs**. Choose the session type, booking method, booking type, court count, start and duration in Edit Plan. For Test Now choose an explicit date.
 2. Press **Reset & Prepare**. Test Now verifies the exact requested calendar date and a clean grid in every required browser without selecting reservation slots. Release settings are saved before preparation; Test Now fields remain independent. If a UI-owned run is active, confirm stopping it first. Retained hold and uncertain final-action protections still apply.
 3. Authorize Terms for this run, then press **Run Test to QR** or **Arm Next Release**. Review the native confirmation. The test resolves actual chunk courts before confirmation; release confirms priorities, fallback starts and valid splits.
-4. Keep the dedicated Chrome window(s) visible. Successful automation stops at one Standard QR hold or two Extended QR holds. Payment remains manual.
+4. Keep every required dedicated Chrome window visible. Successful automation stops at one QR hold per checkout; the count is derived from booking type and court count. Payment remains manual.
 5. **Emergency Stop** stops only the UI-owned command and retains uncertain state. It never cancels holds or closes Chrome.
 
 **Dry Race** uses the same release/grid/preference path without selecting. **Observe Release** preserves the original read-only observer. **Run Safe Practice** accepts an explicit date/court/start/duration and reuses the existing select→verify→deselect→verify engine, never Proceed. Each command has the same process ownership and stop controls. Full Booking is now available because all three capability gates have recorded evidence. Select **FULL BOOKING — STOP AT QR PAYMENT**, Prepare, check the terms authorization, then **Arm Full Booking**. Its native confirmation includes the exact plan, terms YES and QR Checkout boundary. Practice and Selection Only retain their distinct stopping points.
@@ -149,7 +152,7 @@ The activity log streams opt-in validated `THIRSTY_EVENT` messages and sanitized
 
 Locks are deliberately retained after an aborted or failed command. The old **Reset Practice Session** diagnostic remains conservative: it refuses a recorded QR/payment hold, selected slots, or an active worker, closes and reopens only the project Chrome profile, and clears local practice page state. Use the normal **Reset & Prepare** action for current booking locks. A development abort test does not authorize silently clearing another run’s lock.
 
-Current implementation and validation details are in [PHASE7_BOOKING_REPORT.md](PHASE7_BOOKING_REPORT.md). Earlier reports are historical checkpoints.
+Current implementation and validation details are summarized in [REVIEW_GUIDE.md](REVIEW_GUIDE.md). Phase, investigation and performance reports are retained as dated evidence and may describe older limits or intermediate designs.
 
 ## QR handoff and retained holds
 

@@ -20,6 +20,7 @@ export async function submitCalendarFreeTwoHourCheckout(input: {
   approval: ApprovedCalendarFreeAttempt; journal: DurableSubmissionJournal;
   additionalJournals?: DurableSubmissionJournal[];
   captureCheckoutResponse?: CheckoutResponseCapture;
+  transport?: OndaBrowserSessionTransport;
   onPhase?(phase:ReservationPhase):void;
   onHumanVerificationRequired?(): Promise<void>;
   onHumanVerificationCompleted?(): Promise<void>;
@@ -44,7 +45,8 @@ export async function submitCalendarFreeTwoHourCheckout(input: {
     plan.totalPrice > approval.maximumAmount || !approval.approvalReference.trim() ||
     new Set(hours.map(hour => hour.spaceId)).size !== plan.courts.length || customer.clientId !== THIRSTY_PICKLE_CLIENT_ID)
     throw Error('CALENDAR_FREE_APPROVAL_MISMATCH');
-  const transport = new OndaBrowserSessionTransport(input.page, () => calendarFreeSecurityContext(input.page)(),
+  if(input.transport&&!input.transport.isForPage(input.page))throw Error('CALENDAR_FREE_TRANSPORT_PAGE_MISMATCH');
+  const transport = input.transport ?? new OndaBrowserSessionTransport(input.page, () => calendarFreeSecurityContext(input.page)(),
     input.captureCheckoutResponse, { onHumanVerificationRequired: input.onHumanVerificationRequired,
       onHumanVerificationCompleted: input.onHumanVerificationCompleted });
   return new TwoHourReservationAdapter(transport, input.journal, undefined, undefined,

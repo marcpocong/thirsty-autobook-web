@@ -37,7 +37,8 @@ export async function reviewLock(root:string,owned:boolean,probe:()=>Promise<Bro
   let pid:number|null=null,runID='Unknown';
   try {const data=JSON.parse(raw);if(Number.isSafeInteger(data.pid)&&data.pid>0)pid=data.pid;if(typeof data.runID==='string'&&/^[a-zA-Z0-9-]{1,80}$/.test(data.runID))runID=data.runID;}catch{}
   const data = (()=>{try{return JSON.parse(raw);}catch{return {};}})();
-  if(data.mode==='extended')return {...unknownBrowser,runID,pid,alive:pid===null?null:alive(pid),owned,fingerprint:createHash('sha256').update(raw).digest('hex'),verifiedAt:new Date().toISOString(),reason:'USE_RESET_AND_PREPARE',canClear:false};
+  if(data.mode==='dual')return reviewDual(root,raw,data,owned,probe,probeB,alive);
+  if(data.mode==='extended'||Array.isArray(data.workers)&&data.workers.length>1)return {...unknownBrowser,runID,pid,alive:pid===null?null:alive(pid),owned,fingerprint:createHash('sha256').update(raw).digest('hex'),verifiedAt:new Date().toISOString(),reason:'USE_RESET_AND_PREPARE',canClear:false};
   if(data.stage==='FINAL_ACTION_DISPATCHING')return {...unknownBrowser,runID,pid,alive:pid===null?null:alive(pid),owned,fingerprint:createHash('sha256').update(raw).digest('hex'),verifiedAt:new Date().toISOString(),reason:'PAYMENT_HOLD_MAY_BE_ACTIVE',canClear:false};
   if(data.stage==='HOLD_VERIFIED'||data.handoff||data.state==='hold'){
     const expiry=typeof data.holdExpiresAt==='string'?Date.parse(data.holdExpiresAt):NaN;
@@ -48,7 +49,6 @@ export async function reviewLock(root:string,owned:boolean,probe:()=>Promise<Bro
     const reason=lockReason(reviewed);
     return {...reviewed,reason,canClear:reason==='VERIFIED_STALE_LOCK'};
   }
-  if(data.mode==='dual')return reviewDual(root,raw,data,owned,probe,probeB,alive);
   const browser=await probe().catch(()=>unknownBrowser);
   const r={...browser,runID,pid,alive:pid===null?null:alive(pid),owned,fingerprint:createHash('sha256').update(raw).digest('hex'),verifiedAt:new Date().toISOString()};
   const reason=lockReason(r);return {...r,reason,canClear:reason==='VERIFIED_STALE_LOCK'};

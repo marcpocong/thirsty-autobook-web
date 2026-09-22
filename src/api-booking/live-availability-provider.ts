@@ -21,6 +21,7 @@ export interface LiveAvailabilityOptions {
   clock?: () => Date;
   timeoutMs?: number;
   maximumAgeMs?: number;
+  allowIncompleteRange?: boolean;
 }
 
 /** Read-only GET adapter. It does not carry customer credentials or reservation state. */
@@ -30,12 +31,14 @@ export class OndaLiveAvailabilityProvider implements AvailabilityProvider {
   private readonly clock: () => Date;
   private readonly timeoutMs: number;
   private readonly maximumAgeMs: number;
+  private readonly allowIncompleteRange: boolean;
 
   constructor(options: LiveAvailabilityOptions = {}) {
     this.fetcher = options.fetcher ?? fetch;
     this.clock = options.clock ?? (() => new Date());
     this.timeoutMs = options.timeoutMs ?? 10_000;
     this.maximumAgeMs = options.maximumAgeMs ?? 15_000;
+    this.allowIncompleteRange = options.allowIncompleteRange ?? false;
     if (!Number.isFinite(this.timeoutMs) || this.timeoutMs <= 0 || !Number.isFinite(this.maximumAgeMs) || this.maximumAgeMs < 0)
       throw new LiveAvailabilityError('AVAILABILITY_OPTIONS_INVALID');
   }
@@ -65,7 +68,7 @@ export class OndaLiveAvailabilityProvider implements AvailabilityProvider {
     const envelope: AvailabilityEnvelope = { raw, capturedAt, fixtureKind: 'live', label: 'ONDA LIVE READ-ONLY AVAILABILITY' };
     // Validate before handing data to the coordinator. The coordinator rechecks freshness.
     parseAvailability(raw, { ...query, capturedAt, fixtureKind: 'live', label: envelope.label,
-      now: this.clock(), maximumAgeMs: this.maximumAgeMs });
+      now: this.clock(), maximumAgeMs: this.maximumAgeMs, requireCompleteRange:!this.allowIncompleteRange });
     return envelope;
   }
 }

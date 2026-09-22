@@ -40,7 +40,7 @@ const nonempty = (value: unknown): value is string => typeof value === 'string' 
 const safeIdentifier = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(value);
 
 /** Retains only recovery identifiers and totals if a successful HTTP response fails strict validation. */
-function observedResponse(raw: unknown, validationCode: string): ObservedCheckoutResponse {
+export function observedResponse(raw: unknown, validationCode: string): ObservedCheckoutResponse {
   const root = object(raw);
   const bookings = Array.isArray(root?.bookings) ? root.bookings.slice(0, 12).map(object) : [];
   const sessions = Array.isArray(root?.bookingSessions) ? root.bookingSessions.slice(0, 12).map(object) : [];
@@ -220,12 +220,13 @@ export class TwoHourReservationAdapter {
     } catch (error) {
       // A sent request may have succeeded even when its response was lost or malformed.
       const dispatched = !(error instanceof SubmissionDispatchError) || error.dispatched;
+      const confirmedRejected = error instanceof SubmissionDispatchError && error.confirmedRejected;
       const failureCode = error instanceof SubmissionDispatchError || error instanceof TwoHourReservationError
         ? error.code : 'CHECKOUT_UNEXPECTED_ERROR';
-      await markAll(dispatched ? 'unknown' : 'rejected',
+      await markAll(dispatched && !confirmedRejected ? 'unknown' : 'rejected',
         error instanceof SubmissionDispatchError ? error.diagnostic : undefined,
         undefined, failureCode).catch(() => undefined);
-      if (!dispatched) throw error;
+      if (!dispatched || confirmedRejected) throw error;
       fail('SUBMISSION_OUTCOME_UNKNOWN_RECONCILIATION_REQUIRED');
     }
   }

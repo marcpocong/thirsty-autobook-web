@@ -55,9 +55,10 @@ export function reconcileBookingSetupFallbacks(input: unknown): { setup: unknown
 }
 
 export interface BookingSetupDraft {
+  SESSION_MODE?: 'normal' | 'special-friday';
   BOOKING_METHOD: 'browser' | 'hybrid' | 'api-first';
   BOOKING_TYPE: 'standard' | 'extended';
-  COURT_COUNT: 1 | 2;
+  COURT_COUNT: 1 | 2 | 3 | 4 | 5 | 6 | 7;
   START_TIME: string;
   DURATION_HOURS: number;
   PREFERRED_COURTS: number[];
@@ -68,9 +69,15 @@ export interface BookingSetupDraft {
 export function bookingSetupProblem(input: unknown): string | undefined {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return 'The booking settings could not be read.';
   const setup=input as Partial<BookingSetupDraft>;
+  if(setup.SESSION_MODE!==undefined&&setup.SESSION_MODE!=='normal'&&setup.SESSION_MODE!=='special-friday')return 'Choose a valid session type.';
+  if(setup.SESSION_MODE==='special-friday'&&(
+    setup.BOOKING_METHOD!=='api-first'||setup.BOOKING_TYPE!=='extended'||setup.COURT_COUNT!==4||
+    setup.START_TIME!=='17:00'||setup.DURATION_HOURS!==5||setup.FALLBACK_TIMES?.length))
+    return 'Special Friday session settings must remain fixed.';
   if (setup.BOOKING_METHOD !== 'browser' && setup.BOOKING_METHOD !== 'hybrid' && setup.BOOKING_METHOD !== 'api-first') return 'Choose a valid booking method.';
   if (setup.BOOKING_TYPE !== 'standard' && setup.BOOKING_TYPE !== 'extended') return 'Choose a valid booking type.';
-  if (setup.COURT_COUNT !== 1 && setup.COURT_COUNT !== 2) return 'Choose one or two courts.';
+  if (![1,2,3,4,5,6,7].includes(setup.COURT_COUNT as number)) return 'Choose between one and seven courts.';
+  if ((setup.COURT_COUNT??0)>2&&setup.BOOKING_METHOD!=='api-first') return 'Three to seven courts require API-FIRST.';
   if (typeof setup.START_TIME!=='string'||!hourPattern.test(setup.START_TIME)) return 'Choose a valid main start time.';
   if (typeof setup.DURATION_HOURS!=='number'||!Number.isInteger(setup.DURATION_HOURS) || setup.DURATION_HOURS < 1 || setup.DURATION_HOURS > 6) return 'Enter a booking duration from 1 to 6 hours.';
   if (setup.BOOKING_TYPE === 'standard' && setup.DURATION_HOURS > 3) return 'Standard bookings must be 1–3 hours.';

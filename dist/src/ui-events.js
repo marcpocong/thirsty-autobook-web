@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { PreparationResultSchema } from './booking-plan.js';
+import { WORKER_IDS } from './workers.js';
+const WorkerIdSchema = z.enum(WORKER_IDS);
 const measurement = z.number().finite().nullable();
 const reload = z.object({ triggerToCommitMs: measurement, commitToVenueMs: measurement, venueToPickerMs: measurement, pickerToTargetMs: measurement }).strict();
 const counters = z.object({ selectionFullGridReads: z.number().int().nonnegative(), preProceedGridReads: z.number().int().nonnegative(), fullGuards: z.number().int().nonnegative(), lightGuards: z.number().int().nonnegative(), slotClicks: z.number().int().nonnegative(), selectionSummaryReads: z.number().int().nonnegative(), reviewParses: z.number().int().nonnegative(), paymentSummaryParses: z.number().int().nonnegative(), termsControlAcquisitions: z.number().int().nonnegative() }).strict();
@@ -15,14 +17,18 @@ export const ReleasePerformanceSchema = z.object({ workers: z.object({ A: worker
 export const UiEventSchema = z.discriminatedUnion('type', [
     z.object({ type: z.literal('apiStage'), stage: z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/), elapsedMs: z.number().int().nonnegative(),
         at: z.iso.datetime().optional(), sincePreviousMs: z.number().int().nonnegative().optional(), runId: z.uuid().optional(),
-        code: z.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/).optional(), workerId: z.enum(['A', 'B']).optional(), port: z.number().int().optional(), releaseMs: z.number().int().optional(),
+        code: z.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/).optional(), workerId: WorkerIdSchema.optional(), workerElapsedMs: z.number().int().nonnegative().optional(), port: z.number().int().optional(), releaseMs: z.number().int().optional(),
+        sessionMode: z.enum(['normal', 'special-friday']).optional(), bookingMethod: z.enum(['browser', 'hybrid', 'api-first']).optional(),
         date: z.iso.date().optional(), court: z.number().int().min(1).max(7).optional(), courtB: z.number().int().min(1).max(7).optional(), startTime: z.string().optional(),
-        durationHours: z.number().int().min(1).max(6).optional(), price: z.number().finite().optional(), availabilityMs: z.number().int().optional(),
+        durationHours: z.number().int().min(1).max(6).optional(), price: z.number().finite().optional(), assumedPrice: z.number().finite().optional(),
+        rateSource: z.enum(['FRIDAY_AVAILABILITY', 'UNVERIFIED_PRIOR_RATE']).optional(), status: z.enum(['fulfilled', 'rejected']).optional(),
+        attempt: z.enum(['initial', 'retry']).optional(), workerCount: z.number().int().optional(), completedWorkers: z.number().int().optional(),
+        failedWorkers: z.number().int().optional(), verifiedHold: z.boolean().optional(), availabilityMs: z.number().int().optional(),
         bookingId: z.string().optional(), bookingNo: z.string().optional(), holdExpiresAt: z.string().optional() }).strict(),
     z.object({ type: z.literal('preparationResult'), result: PreparationResultSchema }).strict(),
     z.object({ type: z.literal('preparationProgress'), step: z.enum(['starting', 'previous-session', 'holds', 'onda', 'calendar', 'grids', 'availability', 'final']) }).strict(),
-    z.object({ type: z.literal('preparationBlocked'), browser: z.enum(['A', 'B']), hold: z.enum(['Active', 'Expired', 'Not detected', 'Unknown']), countdownSeconds: z.number().int().nonnegative().nullable() }).strict(),
-    z.object({ type: z.literal('bookingResult'), status: z.enum(['AVAILABLE', 'CANCELLED', 'SELECTION_VERIFIED', 'PAYMENT HOLD ACTIVE', 'PARTIAL SUCCESS', 'BOOKING FAILED']), description: z.string().max(2000), outcomes: z.array(z.enum(['PAYMENT HOLD ACTIVE', 'FAILED'])).max(2) }).strict(),
+    z.object({ type: z.literal('preparationBlocked'), browser: WorkerIdSchema, hold: z.enum(['Active', 'Expired', 'Not detected', 'Unknown']), countdownSeconds: z.number().int().nonnegative().nullable() }).strict(),
+    z.object({ type: z.literal('bookingResult'), status: z.enum(['AVAILABLE', 'CANCELLED', 'SELECTION_VERIFIED', 'PAYMENT HOLD ACTIVE', 'PARTIAL SUCCESS', 'BOOKING FAILED']), description: z.string().max(2000), outcomes: z.array(z.enum(['PAYMENT HOLD ACTIVE', 'FAILED'])).max(4) }).strict(),
     z.object({ type: z.literal('dualWorker'), workerId: z.enum(['A', 'B']), state: z.enum(['ready', 'clean', 'selection', 'checkout', 'hold', 'unknown']), verifiedAt: z.iso.datetime(), court: z.number().int().min(1).max(7).optional(), date: z.iso.date().optional(), hours: z.array(z.string().regex(/^(0[89]|1\d|2[0-3]):00$/)).max(16).optional(), amount: z.number().positive().optional() }).strict(),
     z.object({ type: z.literal('dualResult'), status: z.enum(['DUAL_DRY_PASS', 'DUAL_SELECTION_PASS', 'DUAL_SELECTION_VERIFIED', 'DUAL_HOLD_VERIFIED', 'DUAL_PARTIAL_SUCCESS', 'DUAL_FAILED']), date: z.iso.date(), start: z.string().regex(/^(0[89]|1\d|2[0-3]):00$/), hours: z.array(z.string().regex(/^(0[89]|1\d|2[0-3]):00$/)).min(1).max(16), courtA: z.number().int().min(1).max(7), courtB: z.number().int().min(1).max(7), candidateSource: z.enum(['UI_ONLY', 'API+UI']) }).strict(),
     z.object({ type: z.literal('releasePerformance'), summary: ReleasePerformanceSchema }).strict(),

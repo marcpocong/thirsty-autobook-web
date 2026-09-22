@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { candidateJournalKeys, firstUnjournaledCandidate } from '../../src/api-booking/candidate-journal.js';
+import { candidateJournalKeys, firstUnjournaledCandidate, firstUnjournaledAvailableCandidate } from '../../src/api-booking/candidate-journal.js';
+import { availabilityFixture } from '../availability-fixture.js';
+import { parseAvailability } from '../../src/api-booking/availability-parser.js';
 import type { BookingPlan } from '../../src/api-booking/types.js';
 
 const candidate = (court: number, spaceId: string): BookingPlan => {
@@ -12,6 +14,19 @@ const candidate = (court: number, spaceId: string): BookingPlan => {
 };
 
 describe('durable candidate selection', () => {
+  it('searches past the preview limit when earlier candidates have journals', async () => {
+    const date='2026-09-21',now=new Date('2026-09-19T00:00:00.000Z');
+    const snapshot=parseAvailability(availabilityFixture(date),{startDate:date,endDate:date,
+      capturedAt:now.toISOString(),fixtureKind:'synthetic',label:'offline',now,maximumAgeMs:1000});
+    let checked=0;
+    const selected=await firstUnjournaledAvailableCandidate(snapshot,{mode:'standard',targetDate:date,durationHours:1,
+      preferredStartTimes:['08:00'],fallbackStartTimes:['09:00','10:00','11:00','12:00','13:00','14:00'],
+      courtPriority:[7,6,5,4,3,2,1],fallbackCourts:[],courtCount:1,maximumTotalPrice:Infinity,currency:'PHP'},
+    'facility',async()=>++checked<=32);
+    expect(checked).toBe(33);
+    expect(selected?.plan.startTime).toBe('12:00');
+    expect(selected?.plan.courts[0]?.court).toBe(3);
+  });
   it('skips a journaled preferred court and selects the next approved candidate', async () => {
     const candidates = [candidate(7, 'court-7'), candidate(6, 'court-6')];
     const seen: string[] = [];

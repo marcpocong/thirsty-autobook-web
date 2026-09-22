@@ -31,7 +31,7 @@ it('launches the confirmed full plan and shows verified handoff with retained lo
   expect(h.calls).toEqual([{kind:'resetPrepare',input:{workflow:'release',strategy:'standard'}}]);
   await vi.advanceTimersByTimeAsync(30001);
   expect(h.calls).toEqual([{kind:'resetPrepare',input:{workflow:'release',strategy:'standard'}},'chrome',{kind:'resetPrepare',input:{workflow:'release',strategy:'standard'}},expect.objectContaining({kind:'full',authorizeTerms:true,context:expect.objectContaining({releaseMs:h.controller.state.booking!.releaseMs})})]);
-  expect(h.controller.state).toMatchObject({headline:'PAYMENT HOLD ACTIVE',termsAuthorized:false,lock:true,handoff:hold,operation:'idle'});
+  expect(h.controller.state).toMatchObject({headline:'PAYMENT HOLD ACTIVE',termsAuthorized:false,lock:true,handoff:hold,operation:'idle',qrHandoffs:[{courts:[7],date:'2026-09-11',startTime:'12:00',endTime:'13:00',amount:600}]});
 });
 it('consumes authorization even when full confirmation is cancelled',async()=>{
   const h=harness(true,false);await prepareRelease(h);await h.controller.authorizeTerms(true);await h.controller.armFullBooking();expect(h.calls).toHaveLength(1);expect(h.controller.state.termsAuthorized).toBe(false);

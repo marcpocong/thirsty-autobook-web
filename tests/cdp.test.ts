@@ -1,7 +1,7 @@
 import { it, expect,vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import {candidateBrowserIdentity} from '../src/browser.js';
+import {browserIdentity,candidateBrowserIdentity} from '../src/browser.js';
 import {startForPreparation} from '../src/booking-prepare.js';
 it.skipIf(process.platform !== 'win32')('classifies listener/profile failures without returning process metadata', () => {
   const script = String.raw`
@@ -40,6 +40,17 @@ it('launcher shares verification, reuses only verified sessions and never kills 
   expect(source).toContain('browser-endpoints.json');
   expect(source).toContain("[ValidateScript({ $_ -eq 0 -or ($_ -ge 1024 -and $_ -le 65535) })][int]$Port");
   expect(source).not.toMatch(/Stop-Process|taskkill/i);
+});
+it('keeps the control panel diagnostic port separate from every API Chrome worker',()=>{
+  const launcher=readFileSync('scripts/run-thirsty-pickle-bot.mjs','utf8');
+  const match=launcher.match(/--remote-debugging-port=(\d+)/);
+  expect(match).not.toBeNull();
+  const panelPort=Number(match![1]);
+  const previous=process.env.THIRSTY_API_TEST_INSTALLATION;
+  try{
+    process.env.THIRSTY_API_TEST_INSTALLATION='1';
+    expect(['A','B','C','D'].map(id=>browserIdentity(id as 'A'|'B'|'C'|'D').port)).not.toContain(panelPort);
+  }finally{if(previous===undefined)delete process.env.THIRSTY_API_TEST_INSTALLATION;else process.env.THIRSTY_API_TEST_INSTALLATION=previous;}
 });
 it.skipIf(process.platform !== 'win32')('B rejects A profile, wrong debugging port, unsafe binding, duplicate owning processes and duplicate profiles',()=>{
   const script=String.raw`

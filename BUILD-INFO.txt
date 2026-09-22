@@ -1,4 +1,4 @@
 Thirsty Pickle Bot self-contained installation
-Built: 2026-09-21T09:27:36.141Z
-Launcher SHA256: DBCB05CCEF1DA52FF7959C0704865D3FFCFCC7BFEC95D437EFC1417F078DC06F
+Built: 2026-09-21T19:22:34.784Z
+Launcher SHA256: 84D9001DACA32805FC4A60FD69AFBB1A18DF9A79091BC68BF36ABB289C1E4D99
 API-first is the primary booking method. Payment remains manual. This folder includes its own Node and Electron runtime and requires installed Chrome.

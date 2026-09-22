@@ -1,11 +1,13 @@
 import { z } from 'zod';
 import { expandHours } from './config.js';
 import { validateSnapshot, type Snapshot } from './grid.js';
+import type {CourtCount} from './workers.js';
 
 export type BookingStrategy = 'standard' | 'extended';
-export interface BookingChunk { browser:'A'|'B'; start:string; duration:number; hours:string[]; requiredCourtCount:1|2; courts?:number[] }
-export interface BookingPlan { strategy:BookingStrategy; date:string; requestedStart:string; requestedDuration:number; courtCount:1|2; chunks:BookingChunk[] }
-export const PlanRequestSchema=z.object({strategy:z.enum(['standard','extended']),date:z.iso.date(),start:z.string().regex(/^(0[89]|1\d|2[0-3]):00$/),duration:z.number().int().min(1).max(6,'Extended two-browser booking currently supports up to 6 consecutive hours.'),courtCount:z.union([z.literal(1),z.literal(2)]),priority:z.array(z.number().int().min(1).max(7)).min(1),fallbackStarts:z.array(z.string().regex(/^(0[89]|1\d|2[0-3]):00$/)).default([]),exact:z.array(z.array(z.number().int().min(1).max(7))).optional()}).strict().superRefine((r,c)=>{
+export interface BookingChunk { browser:'A'|'B'; start:string; duration:number; hours:string[]; requiredCourtCount:CourtCount; courts?:number[] }
+export interface BookingPlan { strategy:BookingStrategy; date:string; requestedStart:string; requestedDuration:number; courtCount:CourtCount; chunks:BookingChunk[] }
+const CourtCountSchema=z.union([z.literal(1),z.literal(2),z.literal(3),z.literal(4),z.literal(5),z.literal(6),z.literal(7)]);
+export const PlanRequestSchema=z.object({strategy:z.enum(['standard','extended']),date:z.iso.date(),start:z.string().regex(/^(0[89]|1\d|2[0-3]):00$/),duration:z.number().int().min(1).max(6,'Extended two-browser booking currently supports up to 6 consecutive hours.'),courtCount:CourtCountSchema,priority:z.array(z.number().int().min(1).max(7)).min(1),fallbackStarts:z.array(z.string().regex(/^(0[89]|1\d|2[0-3]):00$/)).default([]),exact:z.array(z.array(z.number().int().min(1).max(7))).optional()}).strict().superRefine((r,c)=>{
   if(r.strategy==='standard'?r.duration>3:r.duration<4)c.addIssue({code:'custom',message:'Standard supports 1–3 hours; Extended supports 4–6 hours.'});
   if(new Set(r.priority).size!==r.priority.length)c.addIssue({code:'custom',message:'Duplicate court priority'});
   for(const start of [r.start,...r.fallbackStarts]){try{expandHours(start,r.duration);}catch{c.addIssue({code:'custom',message:'Booking crosses midnight or has invalid hours'});}}
@@ -35,7 +37,8 @@ export function resolveBookingPlan(input:PlanRequest,grids:Snapshot[],excluded=n
     const options=plan.chunks.map((chunk,i)=>{
       const available=(r.exact?.[i]??r.priority).filter(court=>chunk.hours.every(hour=>cells[i]!.some(c=>c.court===court&&c.hour===hour&&c.state==='OPEN')));
       if(r.exact)return available.length===r.courtCount?[available]:[];
-      return r.courtCount===1?available.map(c=>[c]):available.flatMap((a,i)=>available.slice(i+1).map(b=>[a,b]));
+      const combinations=(values:number[],count:number):number[][]=>count===0?[[]]:values.flatMap((value,index)=>combinations(values.slice(index+1),count-1).map(rest=>[value,...rest]));
+      return combinations(available,r.courtCount);
     });
     // A follows configured priority. B retains as many of A's courts as possible.
     // This intentionally preserves the user's 7+6 / 7+5 example over 7+4 / 7+4.
@@ -47,8 +50,8 @@ export function resolveBookingPlan(input:PlanRequest,grids:Snapshot[],excluded=n
 }
 export function describeBookingPlan(p:BookingPlan,_maximum?:number){return `${p.strategy.toUpperCase()} BOOKING\n${p.date} · ${p.courtCount} court(s) · ${p.requestedDuration} hours\n`+p.chunks.map(c=>`Checkout ${c.browser}: ${c.browser==='A'?'Primary player':'Extended player'} | ${c.start}–${String(Number(c.start.slice(0,2))+c.duration).padStart(2,'0')}:00 · ${c.courts?.map(n=>`Court ${n}`).join(' + ')??'Court priority'}`).join('\n')+`\n${p.chunks.length} checkout(s), ${p.chunks.length} temporary payment hold(s). Payment is manual. No price ceiling.`;}
 
-export const BookingPlanSchema=z.object({strategy:z.enum(['standard','extended']),date:z.iso.date(),requestedStart:z.string(),requestedDuration:z.number().int().min(1).max(6),courtCount:z.union([z.literal(1),z.literal(2)]),chunks:z.array(z.object({browser:z.enum(['A','B']),start:z.string(),duration:z.number().int().min(1).max(3),hours:z.array(z.string()).min(1).max(3),requiredCourtCount:z.union([z.literal(1),z.literal(2)]),courts:z.array(z.number().int().min(1).max(7)).min(1).max(2)}).strict()).min(1).max(2)}).strict();
-export const TestBookingSchema=z.object({method:z.enum(['browser','hybrid','api-first']).default('browser'),request:PlanRequestSchema,maximum:z.number().optional(),authorizeTerms:z.literal(true)}).strict();
+export const BookingPlanSchema=z.object({strategy:z.enum(['standard','extended']),date:z.iso.date(),requestedStart:z.string(),requestedDuration:z.number().int().min(1).max(6),courtCount:CourtCountSchema,chunks:z.array(z.object({browser:z.enum(['A','B']),start:z.string(),duration:z.number().int().min(1).max(3),hours:z.array(z.string()).min(1).max(3),requiredCourtCount:CourtCountSchema,courts:z.array(z.number().int().min(1).max(7)).min(1).max(4)}).strict()).min(1).max(2)}).strict();
+export const TestBookingSchema=z.object({method:z.enum(['browser','hybrid','api-first']).default('browser'),request:PlanRequestSchema,maximum:z.number().optional(),authorizeTerms:z.literal(true)}).strict().superRefine((value,ctx)=>{if(value.request.courtCount>2&&value.method!=='api-first')ctx.addIssue({code:'custom',message:'Three or four courts require API-FIRST.'});});
 export type TestBookingInput=z.input<typeof TestBookingSchema>;
 
 export const PreparationSchema=z.discriminatedUnion('workflow',[
@@ -58,17 +61,17 @@ export const PreparationSchema=z.discriminatedUnion('workflow',[
 export type PreparationInput=z.input<typeof PreparationSchema>;
 
 export const PreparedBrowserSchema=z.object({
-  id:z.enum(['A','B']),dedicatedProfileVerified:z.literal(true),ondaVerified:z.literal(true),
+  id:z.enum(['A','B','C','D','E','F','G','H']),dedicatedProfileVerified:z.literal(true),ondaVerified:z.literal(true),
   preparedDate:z.iso.date(),gridVerified:z.literal(true),selectedCount:z.literal(0),
   hold:z.literal('Not detected'),
 }).strict();
 export const PreparationResultSchema=z.object({
   workflow:z.enum(['test','release']),strategy:z.enum(['standard','extended']),
-  fingerprint:z.string().regex(/^[a-f0-9]{64}$/),browsers:z.array(PreparedBrowserSchema).min(1).max(2),
+  fingerprint:z.string().regex(/^[a-f0-9]{64}$/),browsers:z.array(PreparedBrowserSchema).min(1).max(8),
   solutionAvailable:z.boolean(),releaseTargetDate:z.iso.date().optional(),releaseMs:z.number().finite().optional(),
 }).strict().superRefine((r,c)=>{
   const ids=r.browsers.map(b=>b.id);
-  if(JSON.stringify(ids)!==JSON.stringify(r.strategy==='extended'?['A','B']:['A']))c.addIssue({code:'custom',message:'Required browser evidence mismatch'});
+  if(new Set(ids).size!==ids.length||ids.some((id,index)=>id!==['A','B','C','D','E','F','G','H'][index]))c.addIssue({code:'custom',message:'Required browser evidence mismatch'});
   if(r.workflow==='test'&&!r.solutionAvailable)c.addIssue({code:'custom',message:'Test preparation requires a solution'});
   if(r.workflow==='release'&&(!r.releaseTargetDate||r.releaseMs===undefined))c.addIssue({code:'custom',message:'Release preparation requires timing evidence'});
 }).readonly();

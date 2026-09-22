@@ -1,26 +1,30 @@
 import { chromium } from 'playwright';
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
+import { promisify } from 'node:util';
 import { readFileSync, renameSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { ONDA_URL, VENUE } from './config.js';
 import { securityReason } from './safety.js';
 import { classifyRateLimit } from './rate-limit.js';
+import { WORKER_IDS } from './workers.js';
 export const cdpCodes = ['CDP_WRONG_PORT', 'CDP_NOT_LISTENING', 'CDP_UNSAFE_BIND', 'CDP_AMBIGUOUS_LISTENER',
     'CDP_PROCESS_METADATA_UNAVAILABLE', 'CDP_PROCESS_NOT_CHROME', 'CDP_PROFILE_MISSING', 'CDP_WRONG_PROFILE'];
 const endpointPath = () => resolve('.local/browser-endpoints.json');
 const apiInstallation = () => process.env.THIRSTY_API_INSTALLATION === '1' || process.env.THIRSTY_API_TEST_INSTALLATION === '1';
-const defaultPort = (workerId) => apiInstallation() ? (workerId === 'A' ? 19444 : 19445) : (workerId === 'A' ? 9222 : 9223);
-const profile = (workerId) => apiInstallation()
-    ? (workerId === 'A' ? '.local/api-first-chrome-profile' : '.local/api-first-chrome-profile-b')
-    : (workerId === 'A' ? '.local/onda-chrome-profile' : '.local/onda-chrome-profile-b');
+const workerIndex = (workerId) => WORKER_IDS.indexOf(workerId);
+const defaultPort = (workerId) => (apiInstallation() ? 19444 : 9222) + workerIndex(workerId);
+const profile = (workerId) => `${apiInstallation() ? '.local/api-first-chrome-profile' : '.local/onda-chrome-profile'}${workerId === 'A' ? '' : `-${workerId.toLowerCase()}`}`;
 function storedPorts() {
     try {
         const parsed = JSON.parse(readFileSync(endpointPath(), 'utf8'));
         if (parsed.version !== 1)
             return {};
         const valid = (value) => Number.isInteger(value) && Number(value) >= 1024 && Number(value) <= 65535;
-        const A = valid(parsed.A) ? Number(parsed.A) : undefined, B = valid(parsed.B) ? Number(parsed.B) : undefined;
-        return A !== B ? { ...(A ? { A } : {}), ...(B ? { B } : {}) } : {};
+        const result = {};
+        for (const id of WORKER_IDS)
+            if (valid(parsed[id]))
+                result[id] = Number(parsed[id]);
+        return new Set(Object.values(result)).size === Object.values(result).length ? result : {};
     }
     catch {
         return {};
@@ -37,24 +41,28 @@ export function candidateBrowserIdentity(workerId, port) {
 }
 export let browserA = browserIdentity('A');
 export let browserB = browserIdentity('B');
+export let browserC = browserIdentity('C');
+export let browserD = browserIdentity('D');
 export function rememberBrowserPort(workerId, port) {
     if (!Number.isInteger(port) || port < 1024 || port > 65535)
         throw Error('CDP_IDENTITY_MISMATCH');
-    const current = storedPorts(), other = workerId === 'A' ? current.B ?? defaultPort('B') : current.A ?? defaultPort('A');
-    if (port === other)
+    const current = storedPorts();
+    if (WORKER_IDS.some(id => id !== workerId && port === (current[id] ?? defaultPort(id))))
         throw Error('CDP_IDENTITY_MISMATCH');
-    const next = { version: 1, A: workerId === 'A' ? port : current.A ?? defaultPort('A'), B: workerId === 'B' ? port : current.B ?? defaultPort('B') };
+    const next = { version: 1, ...Object.fromEntries(WORKER_IDS.map(id => [id, id === workerId ? port : current[id] ?? defaultPort(id)])) };
     const path = endpointPath(), temporary = `${path}.${process.pid}.tmp`;
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(temporary, JSON.stringify(next));
     renameSync(temporary, path);
     browserA = browserIdentity('A');
     browserB = browserIdentity('B');
-    return workerId === 'A' ? browserA : browserB;
+    browserC = browserIdentity('C');
+    browserD = browserIdentity('D');
+    return browserIdentity(workerId);
 }
 export function validateBrowserIdentity(identity) {
-    const expected = identity.workerId === 'A' ? browserIdentity('A') : identity.workerId === 'B' ? browserIdentity('B') : undefined;
-    if (!expected || identity.port !== expected.port || identity.cdpUrl !== expected.cdpUrl || resolve(identity.expectedProfile).toLowerCase() !== resolve(expected.expectedProfile).toLowerCase())
+    const expected = browserIdentity(identity.workerId);
+    if (identity.port !== expected.port || identity.cdpUrl !== expected.cdpUrl || resolve(identity.expectedProfile).toLowerCase() !== resolve(expected.expectedProfile).toLowerCase())
         throw Error('CDP_IDENTITY_MISMATCH');
 }
 function verifyChromeProcess(identity) {
@@ -72,12 +80,28 @@ function verifyChromeProcess(identity) {
         throw new Error(cdpCodes.find(c => c === code) ?? 'CDP_PROCESS_METADATA_UNAVAILABLE');
 }
 export function verifyDedicatedChrome(identity = browserA) { validateBrowserIdentity(identity); verifyChromeProcess(identity); }
+/** Same process/profile checks without blocking independent browser workers on PowerShell startup. */
+export async function verifyDedicatedChromeAsync(identity = browserA) {
+    validateBrowserIdentity(identity);
+    if (process.platform !== 'win32')
+        throw Error('WINDOWS_REQUIRED');
+    let code;
+    try {
+        const result = await promisify(execFile)('powershell.exe', ['-NoProfile', '-File', resolve('scripts/verify-onda-chrome.ps1'),
+            '-Port', String(identity.port), '-ExpectedProfile', resolve(identity.expectedProfile)], { encoding: 'utf8', windowsHide: true, timeout: 60000, maxBuffer: 4096 });
+        code = result.stdout.trim();
+    }
+    catch {
+        throw Error('CDP_PROCESS_METADATA_UNAVAILABLE');
+    }
+    if (code !== 'CDP_VERIFIED')
+        throw Error(cdpCodes.find(value => value === code) ?? 'CDP_PROCESS_METADATA_UNAVAILABLE');
+}
 export function verifyCandidateChrome(identity) {
     const expected = candidateBrowserIdentity(identity.workerId, identity.port);
     if (identity.cdpUrl !== expected.cdpUrl || resolve(identity.expectedProfile).toLowerCase() !== resolve(expected.expectedProfile).toLowerCase())
         throw Error('CDP_IDENTITY_MISMATCH');
-    const other = browserIdentity(identity.workerId === 'A' ? 'B' : 'A');
-    if (identity.port === other.port)
+    if (WORKER_IDS.some(id => id !== identity.workerId && identity.port === browserIdentity(id).port))
         throw Error('CDP_IDENTITY_MISMATCH');
     verifyChromeProcess(identity);
 }

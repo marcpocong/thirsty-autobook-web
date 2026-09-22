@@ -15,7 +15,7 @@ function patterns(duration: number): number[][] {
 
 function validate(p: BookingPreferences) {
   if (!Number.isInteger(p.durationHours) || (p.mode === 'standard' ? p.durationHours < 1 || p.durationHours > 3 : p.durationHours < 4 || p.durationHours > 6)) throw new BookingPlanningError('BOOKING_DURATION_INVALID');
-  if (p.courtCount !== 1 && p.courtCount !== 2) throw new BookingPlanningError('BOOKING_COURT_COUNT_INVALID');
+  if (![1,2,3,4,5,6,7].includes(p.courtCount)) throw new BookingPlanningError('BOOKING_COURT_COUNT_INVALID');
   if (!p.preferredStartTimes.length || !p.courtPriority.length || [...p.courtPriority, ...p.fallbackCourts].some(c => !Number.isInteger(c) || c < 1 || c > 7)) throw new BookingPlanningError('BOOKING_PREFERENCES_INVALID');
   if (p.exactCourts && (p.exactCourts.length !== (p.mode === 'standard' ? 1 : 2) || p.exactCourts.some(cs => cs.length !== p.courtCount || unique(cs).length !== cs.length || cs.some(c => !Number.isInteger(c) || c < 1 || c > 7)))) throw new BookingPlanningError('BOOKING_EXACT_COURTS_INVALID');
 }

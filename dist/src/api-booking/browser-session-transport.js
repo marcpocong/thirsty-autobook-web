@@ -8,8 +8,8 @@ const SLOT_PATH = '/api/public/is-slot-available';
 const CHECKOUT_PATH = '/api/bookings/public-checkout';
 const MAX_RESPONSE_BYTES = 1_000_000;
 export class BrowserSessionTransportError extends SubmissionDispatchError {
-    constructor(code, dispatched = false, diagnostic) {
-        super(code, dispatched, diagnostic);
+    constructor(code, dispatched = false, diagnostic, confirmedRejected = false) {
+        super(code, dispatched, diagnostic, confirmedRejected);
         this.name = 'BrowserSessionTransportError';
     }
 }
@@ -20,6 +20,19 @@ function securityContextError(error) {
     return error instanceof CalendarFreeSecurityError && /^[A-Z][A-Z0-9_]{0,63}$/.test(error.code)
         ? new BrowserSessionTransportError(error.code)
         : new BrowserSessionTransportError('CURRENT_CHECKOUT_HEADERS_UNAVAILABLE');
+}
+function confirmedApplicationConflict(result) {
+    if (![400, 409].includes(result.status) || !result.contentType.toLowerCase().includes('application/json'))
+        return false;
+    try {
+        const value = JSON.parse(result.body);
+        const explicitRejection = result.status === 409 || value.error === 'This booking date is not available yet.';
+        return explicitRejection && value.success === false && typeof value.error === 'string' && value.error.length > 0 &&
+            !Object.hasOwn(value, 'bookings') && !Object.hasOwn(value, 'transaction');
+    }
+    catch {
+        return false;
+    }
 }
 /** Sends only the two observed POSTs in an existing, verified browser page. It never launches a browser. */
 export class OndaBrowserSessionTransport {
@@ -34,7 +47,14 @@ export class OndaBrowserSessionTransport {
         this.currentCheckoutHeaders = currentCheckoutHeaders;
         this.captureCheckoutResponse = captureCheckoutResponse;
         this.contextHooks = contextHooks;
+        page.on?.('framenavigated', frame => {
+            if (frame === page.mainFrame()) {
+                this.preparedHeaders = undefined;
+                this.preparedAt = undefined;
+            }
+        });
     }
+    isForPage(page) { return this.page === page; }
     async acquireCheckoutHeaders() {
         let settled = false, verificationShown = false;
         const acquisition = this.currentCheckoutHeaders().finally(() => { settled = true; });
@@ -58,6 +78,13 @@ export class OndaBrowserSessionTransport {
         this.assertPage();
         if (process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT !== 'SUPERVISED_ONE_SHOT')
             throw new BrowserSessionTransportError('LIVE_SUBMISSION_DISABLED');
+        // An armed run may acquire the genuine page context just before release.
+        // Keep it only briefly and consume it once at checkout.
+        if (this.preparedHeaders && this.preparedAt !== undefined && Date.now() - this.preparedAt >= 0 &&
+            Date.now() - this.preparedAt <= 20_000)
+            return;
+        this.preparedHeaders = undefined;
+        this.preparedAt = undefined;
         let current;
         try {
             current = await this.acquireCheckoutHeaders();
@@ -107,7 +134,7 @@ export class OndaBrowserSessionTransport {
             throw new BrowserSessionTransportError('ONDA_SESSION_DISCONNECTED_AFTER_DISPATCH', true);
         }
         if (result.status !== 200)
-            throw new BrowserSessionTransportError('ONDA_HTTP_STATUS_INVALID', true, checkoutDiagnostic(result));
+            throw new BrowserSessionTransportError('ONDA_HTTP_STATUS_INVALID', true, checkoutDiagnostic(result), confirmedApplicationConflict(result));
         if (!result.contentType.toLowerCase().includes('application/json'))
             throw new BrowserSessionTransportError('ONDA_CONTENT_TYPE_INVALID', true);
         if (Buffer.byteLength(result.body, 'utf8') > MAX_RESPONSE_BYTES)
@@ -125,6 +152,14 @@ export class OndaBrowserSessionTransport {
         return this.post(SLOT_PATH, request);
     }
     async publicCheckout(request, permit) {
+        return this.submitCheckout(request, permit);
+    }
+    async publicCheckoutProofless(request, permit) {
+        if (request.items.some(item => item.availabilityProof !== null))
+            throw new BrowserSessionTransportError('DIRECT_PROOFLESS_SHAPE_INVALID');
+        return this.submitCheckout(request, permit);
+    }
+    async submitCheckout(request, permit) {
         this.assertPage();
         if (process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT !== 'SUPERVISED_ONE_SHOT')
             throw new BrowserSessionTransportError('LIVE_SUBMISSION_DISABLED');

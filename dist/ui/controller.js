@@ -9,6 +9,8 @@ import { bookingSetupProblem, reconcileBookingSetupFallbacks } from '../src/book
 import { capabilities, fullBookingReady } from '../src/capabilities.js';
 import { expectedPreparationFingerprint, makePreparedContext } from '../src/prepared-context.js';
 import { scheduledReleaseContext } from '../src/scheduled-release.js';
+import { requiredWorkerIds } from '../src/workers.js';
+import { SPECIAL_SESSION_MODE, SPECIAL_SESSION_REQUIRED_WORKERS } from '../src/api-booking/special-session.js';
 const preparationHeadlines = { EXTENDED_PLAYER_INFO_MISSING: 'EXTENDED PLAYER REQUIRED', PLAYER_INFO_MISSING: 'PLAYER CONFIGURATION REQUIRED', TARGET_DATE_UNAVAILABLE: 'TARGET NOT AVAILABLE', TARGET_NOT_AVAILABLE: 'TARGET NOT AVAILABLE', PAYMENT_HOLD_MAY_BE_ACTIVE: 'PAYMENT HOLD ACTIVE', LOCK_PID_RUNNING: 'AUTOMATION STILL RUNNING', TODAYS_RELEASE_PASSED: "TODAY'S RELEASE HAS PASSED", CHROME_NOT_INSTALLED: 'CHROME NOT INSTALLED', CHROME_START_TIMEOUT: 'DEDICATED CHROME DID NOT START', CHROME_START_FAILED: 'DEDICATED CHROME DID NOT START', CDP_ENDPOINT_UNAVAILABLE: 'DEDICATED CHROME UNAVAILABLE', ONDA_TAB_AMBIGUOUS_OR_MISSING: 'ONDA TAB NOT READY', WRONG_VENUE: 'WRONG VENUE' };
 const errors = {
     EXTENDED_DURATION_LIMIT: 'Extended two-browser booking currently supports up to 6 consecutive hours.',
@@ -58,17 +60,25 @@ const errors = {
     TODAYS_RELEASE_PASSED: "TODAY'S RELEASE HAS PASSED. This release can no longer be armed today.",
     API_FIRST_METHOD_REQUIRED: 'API-FIRST must be selected before running the read-only API preview.',
     API_FIRST_LIVE_CHECKOUT_BLOCKED: 'API-FIRST reservation submission is disabled until Oonda provides a supported current security context and checkout handoff.',
-    API_FIRST_COURT_COUNT_UNSUPPORTED: 'API-FIRST supports one court for Standard and one or two courts for Extended.',
+    API_FIRST_COURT_COUNT_UNSUPPORTED: 'API-FIRST supports one to four courts.',
     LOCAL_CUSTOMER_ID_UNVERIFIED: 'Primary API customer binding is missing or does not match the configured primary player.',
     LOCAL_EXTENDED_CUSTOMER_ID_UNVERIFIED: 'Extended API customer binding is missing or does not match the configured Extended player.',
+    LOCAL_PLAYER_C_CUSTOMER_ID_UNVERIFIED: 'Player 3 API customer binding is missing or does not match Player 3.',
+    LOCAL_PLAYER_D_CUSTOMER_ID_UNVERIFIED: 'Player 4 API customer binding is missing or does not match Player 4.',
+    LOCAL_PLAYER_E_CUSTOMER_ID_UNVERIFIED: 'Player 5 API customer binding is missing or does not match Player 5.',
+    LOCAL_PLAYER_F_CUSTOMER_ID_UNVERIFIED: 'Player 6 API customer binding is missing or does not match Player 6.',
+    LOCAL_PLAYER_G_CUSTOMER_ID_UNVERIFIED: 'Player 7 API customer binding is missing or does not match Player 7.',
+    LOCAL_PLAYER_H_CUSTOMER_ID_UNVERIFIED: 'Player 8 API customer binding is missing or does not match Player 8.',
+    THIRD_PLAYER_INFO_MISSING: 'Player 3 configuration is missing, invalid, or duplicates another player.',
+    FOURTH_PLAYER_INFO_MISSING: 'Player 4 configuration is missing, invalid, or duplicates another player.',
     API_EXTENDED_WORKER_MISSING: 'Both dedicated API browsers and both player profiles are required for Extended.',
     DUPLICATE_LOGICAL_BOOKING_BLOCKED: 'This exact court, date, and time already has a durable submission record. The API runner will use another available court after Reset & Prepare.',
-    API_NO_UNUSED_CANDIDATE: 'Available courts still have active or unresolved submission records. Verified holds become reusable after their timer expires and live availability confirms the slots are open.',
+    API_NO_UNUSED_CANDIDATE: 'Available courts still have active or unresolved submission records. Expired verified holds and confirmed rejected attempts are archived for reuse; uncertain outcomes remain blocked.',
 };
 export class Controller {
     deps;
     state = { operation: 'idle', headline: 'RESET REQUIRED', workflow: 'release', detail: 'Configure your booking, then Reset & Prepare.', ready: false,
-        cdp: false, lock: false, inspection: null, clock: null, plan: null, logs: [], liveRace: fullBookingReady(), booking: null, termsAuthorized: false, apiFirstReady: false, capabilities, selection: null, mode: fullBookingReady() ? 'full' : 'selection', handoff: null, preparedContext: null, browserHealth: { A: false, B: false }, playerStatus: { primary: false, extended: false }, scheduledRelease: null, sleepProtection: false, scheduleStatus: null };
+        cdp: false, lock: false, inspection: null, clock: null, plan: null, logs: [], liveRace: fullBookingReady(), booking: null, termsAuthorized: false, apiFirstReady: false, capabilities, selection: null, mode: fullBookingReady() ? 'full' : 'selection', handoff: null, qrHandoffs: [], preparedContext: null, browserHealth: { A: false, B: false, C: false, D: false, E: false, F: false, G: false, H: false }, playerStatus: { primary: false, extended: false, third: false, fourth: false }, scheduledRelease: null, sleepProtection: false, scheduleStatus: null };
     active;
     pendingPreparation;
     preparationResult;
@@ -79,6 +89,7 @@ export class Controller {
     apiTestStrategy;
     apiTestPreferences;
     polling = false;
+    qrRecoveryChecked = false;
     runStartedMono = 0;
     lastLogMono = 0;
     runReadyMono;
@@ -88,13 +99,20 @@ export class Controller {
         this.state.runHistory = this.deps.activityJournal?.history?.() ?? [];
     }
     players() { if (this.deps.playerStatus)
-        return this.deps.playerStatus(); try {
+        return { third: false, fourth: false, ...this.deps.playerStatus() }; try {
         const b = this.deps.booking();
-        return { primary: b.playerConfigured, extended: b.extendedPlayerConfigured };
+        return { primary: b.playerConfigured, extended: b.extendedPlayerConfigured, third: b.thirdPlayerConfigured, fourth: b.fourthPlayerConfigured, fifth: b.fifthPlayerConfigured, sixth: b.sixthPlayerConfigured, seventh: b.seventhPlayerConfigured, eighth: b.eighthPlayerConfigured };
     }
     catch {
-        return { primary: false, extended: false };
+        return { primary: false, extended: false, third: false, fourth: false };
     } }
+    requirePlayers(strategy, courtCount, special = false) {
+        const players = this.players(), map = { A: players.primary, B: players.extended, C: players.third, D: players.fourth, E: !!players.fifth, F: !!players.sixth, G: !!players.seventh, H: !!players.eighth };
+        const missing = (special ? SPECIAL_SESSION_REQUIRED_WORKERS : requiredWorkerIds(strategy, courtCount)).find(worker => !map[worker]);
+        if (missing)
+            throw Error(missing === 'A' ? 'PLAYER_INFO_MISSING' : missing === 'B' ? 'EXTENDED_PLAYER_INFO_MISSING' : missing === 'C' ? 'THIRD_PLAYER_INFO_MISSING' : missing === 'D' ? 'FOURTH_PLAYER_INFO_MISSING' : `PLAYER_${missing}_INFO_MISSING`);
+        return players;
+    }
     releaseSetup(input) {
         const repaired = reconcileBookingSetupFallbacks(input), parsed = BookingSetupSchema.safeParse(repaired.setup);
         if (!parsed.success) {
@@ -132,21 +150,30 @@ export class Controller {
         return;
     } if (this.state.operation !== 'idle')
         throw Error('OPERATION_ALREADY_RUNNING'); this.clearPreparation(); this.state.headline = 'SETTINGS CHANGED'; this.state.detail = 'Press Reset & Prepare to prepare these settings.'; this.publish(); }
-    async health() { const h = this.deps.browserHealth ? await this.deps.browserHealth() : await this.deps.cdp().then(A => ({ A, B: A })); this.state.browserHealth = h; this.state.cdp = h.A; return h; }
+    async health() { const observed = this.deps.browserHealth ? await this.deps.browserHealth() : await this.deps.cdp().then(A => ({ A, B: A })); const h = { A: false, B: false, C: false, D: false, E: false, F: false, G: false, H: false, ...observed }; this.state.browserHealth = h; this.state.cdp = h.A; return h; }
     async requirePrepared(workflow, fingerprint, strategy) {
         const context = this.state.preparedContext;
         if (!context || context.workflow !== workflow || context.strategy !== strategy || context.configFingerprint !== fingerprint || this.state.workflow !== workflow)
             throw Error('RESET_REQUIRED');
         if (await this.deps.lock())
             throw Error('RESET_REQUIRED');
-        const h = await this.health(), required = strategy === 'extended' ? ['A', 'B'] : ['A'];
+        const h = await this.health(), required = context.requiredBrowsers;
         if (required.some(id => !h[id])) {
             this.clearPreparation();
             throw Error('RESET_REQUIRED');
         }
     }
     publish() { this.deps.publish(structuredClone(this.state)); }
-    clearApiStage() { this.state.apiStage = null; this.state.observedPrice = null; }
+    clearApiStage() { this.state.apiStage = null; this.state.observedPrice = null; this.state.assumedPrice = null; }
+    rememberQrHandoff(summary) {
+        const same = (value) => value.checkout && summary.checkout
+            ? value.checkout === summary.checkout
+            : value.date === summary.date && value.startTime === summary.startTime && value.endTime === summary.endTime && value.courts.join(',') === summary.courts.join(',');
+        const existing = this.state.qrHandoffs ?? [], previous = existing.find(same);
+        const merged = previous ? { ...previous, ...summary, status: previous.status === 'qr-ready' ? 'qr-ready' : summary.status } : summary;
+        const next = [...existing.filter(value => !same(value)), merged];
+        this.state.qrHandoffs = next.sort((a, b) => (a.checkout ?? 'A').localeCompare(b.checkout ?? 'A'));
+    }
     holdDetail(hold) {
         if (hold.stage === 'HOLD_VERIFIED')
             return `A verified payment hold remains recorded${hold.expiresAt ? ` until ${new Date(hold.expiresAt).toLocaleString('en-GB', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'medium' })} Manila` : ''}. Payment is manual. Reset & Prepare can make a fresh schedule in the same bot while retaining the previous hold and QR tab.`;
@@ -258,17 +285,26 @@ export class Controller {
         this.polling = true;
         try {
             const wasReady = this.state.ready;
-            const [lock, health] = await Promise.all([this.deps.lock(), this.deps.browserHealth ? this.deps.browserHealth() : this.deps.cdp().then(A => ({ A, B: A }))]);
+            const [lock, observedHealth] = await Promise.all([this.deps.lock(), this.deps.browserHealth ? this.deps.browserHealth() : this.deps.cdp().then(A => ({ A, B: A, C: false, D: false }))]);
+            const health = { A: false, B: false, C: false, D: false, E: false, F: false, G: false, H: false, ...observedHealth };
             this.state.lock = lock;
             this.state.browserHealth = health;
-            this.state.cdp = health.A;
+            this.state.cdp = !!health.A;
             this.state.playerStatus = this.players();
             const retained = lock && this.state.operation === 'idle' ? await this.deps.retainedHold?.() : null;
-            this.state.canPrepareOverHold = !!lock && retained?.stage === 'HOLD_VERIFIED' && !!retained.expiresAt;
+            if (retained?.stage === 'HOLD_VERIFIED' && retained.expiresAt && !this.qrRecoveryChecked && !this.state.qrHandoffs?.length) {
+                this.qrRecoveryChecked = true;
+                for (const summary of await this.deps.recentQrHandoffs?.(retained.expiresAt) ?? [])
+                    this.rememberQrHandoff(summary);
+            }
+            this.state.retainedLockStage = retained?.stage ?? null;
+            this.state.canPrepareOverHold = !!lock && (retained?.stage === 'FINAL_ACTION_DISPATCHING' || retained?.stage === 'HOLD_VERIFIED' && !!retained.expiresAt);
             this.state.previousHolds = await this.deps.previousHolds?.() ?? [];
             if (lock && !this.state.handoff && this.state.operation === 'idle' && this.deps.handoff) {
                 this.state.handoff = await this.deps.handoff();
                 if (this.state.handoff) {
+                    const hold = this.state.handoff, last = hold.hours.at(-1);
+                    this.rememberQrHandoff({ courts: [hold.court], date: hold.date, startTime: hold.hours[0], endTime: `${String(Number(last.slice(0, 2)) + 1).padStart(2, '0')}:00`, amount: hold.amount, verifiedAt: hold.verifiedAt });
                     this.state.headline = 'Payment handoff recorded';
                     this.state.detail = 'Automation stopped. Lock retained. Check the last observed hold and complete payment manually in Chrome.';
                 }
@@ -305,8 +341,10 @@ export class Controller {
                 return;
             }
             const context = this.state.preparedContext, required = context?.requiredBrowsers ?? [];
-            const apiStrategy = this.state.workflow === 'test' ? this.apiTestStrategy : this.state.booking?.setup.BOOKING_TYPE;
-            const apiFirstReady = this.state.apiFirstReady && health.A && (apiStrategy !== 'extended' || health.B) && !lock && (this.state.workflow === 'test' ? !!this.apiTestFingerprint : this.state.booking?.setup.BOOKING_METHOD === 'api-first');
+            const apiWorkers = this.state.workflow === 'test' && this.apiTestPreferences
+                ? requiredWorkerIds(this.apiTestPreferences.strategy, this.apiTestPreferences.courtCount)
+                : this.state.booking ? (this.state.booking.setup.SESSION_MODE === SPECIAL_SESSION_MODE ? [...SPECIAL_SESSION_REQUIRED_WORKERS] : requiredWorkerIds(this.state.booking.setup.BOOKING_TYPE, this.state.booking.setup.COURT_COUNT)) : [];
+            const apiFirstReady = this.state.apiFirstReady && apiWorkers.length > 0 && apiWorkers.every(id => health[id]) && !lock && (this.state.workflow === 'test' ? !!this.apiTestFingerprint : this.state.booking?.setup.BOOKING_METHOD === 'api-first');
             this.state.ready = !!apiFirstReady || !!context && context.workflow === this.state.workflow && !lock && (this.state.operation === 'scheduled' || required.every(id => health[id]));
             if (context && this.state.operation === 'idle' && !this.state.ready)
                 this.clearPreparation();
@@ -314,8 +352,8 @@ export class Controller {
                 this.state.headline = 'Preparation needs rechecking';
                 this.state.detail = lock ? errors.AUTOMATION_LOCK_EXISTS : required.some(id => !health[id]) ? 'A required browser disconnected. Press Reset & Prepare again.' : !this.state.clock?.canArmToday ? errors.TODAYS_RELEASE_PASSED : errors.RESET_REQUIRED;
             }
-            if (retained && ['RESET REQUIRED', 'Preparation needs rechecking', 'PAYMENT HOLD ACTIVE', 'API BROWSER READY', 'API READY TO TEST', 'HOLD TIMER ELAPSED'].includes(this.state.headline)) {
-                this.state.headline = retained.remainingSeconds === 0 ? 'HOLD TIMER ELAPSED' : 'PAYMENT HOLD ACTIVE';
+            if (retained && ['RESET REQUIRED', 'Preparation needs rechecking', 'PAYMENT HOLD ACTIVE', 'UNRESOLVED CHECKOUT LOCK', 'API BROWSER READY', 'API READY TO TEST', 'HOLD TIMER ELAPSED'].includes(this.state.headline)) {
+                this.state.headline = retained.stage === 'FINAL_ACTION_DISPATCHING' ? 'UNRESOLVED CHECKOUT LOCK' : retained.remainingSeconds === 0 ? 'HOLD TIMER ELAPSED' : 'PAYMENT HOLD ACTIVE';
                 this.state.detail = this.holdDetail(retained);
             }
             this.publish();
@@ -328,30 +366,43 @@ export class Controller {
         if (event.type === 'apiStage') {
             if (event.price !== undefined)
                 this.state.observedPrice = event.price;
+            if (event.assumedPrice !== undefined)
+                this.state.assumedPrice = event.assumedPrice;
             if (event.stage === 'RUN_STARTED')
                 this.apiReadyWorkers.clear();
             if (event.stage === 'BROWSER_READY' && this.state.operation !== 'prepare' && event.workerId) {
                 this.apiReadyWorkers.add(event.workerId);
-                const strategy = this.state.workflow === 'test' ? this.apiTestStrategy : this.state.booking?.setup.BOOKING_TYPE;
-                if (this.apiReadyWorkers.has('A') && (strategy !== 'extended' || this.apiReadyWorkers.has('B')))
+                const required = this.state.workflow === 'test' && this.apiTestPreferences
+                    ? requiredWorkerIds(this.apiTestPreferences.strategy, this.apiTestPreferences.courtCount)
+                    : this.state.booking ? (this.state.booking.setup.SESSION_MODE === SPECIAL_SESSION_MODE ? [...SPECIAL_SESSION_REQUIRED_WORKERS] : requiredWorkerIds(this.state.booking.setup.BOOKING_TYPE, this.state.booking.setup.COURT_COUNT)) : [];
+                if (required.length && required.every(worker => this.apiReadyWorkers.has(worker)))
                     this.markBrowserReady(event.at);
             }
             this.state.apiStage = event;
-            const labels = { RUN_STARTED: 'API run started', EXPIRED_HOLD_REUSABLE: 'Expired verified hold released for a new test', PREPARING_BROWSER: 'Preparing isolated Chrome', BROWSER_READY: 'API browser ready',
-                WAITING_FOR_RELEASE: 'Waiting for release', RELEASE_TRIGGERED: 'Release reached', FETCHING_AVAILABILITY: 'Fetching live API availability',
+            const labels = { RUN_STARTED: 'API run started', EXPIRED_HOLD_REUSABLE: 'Expired verified hold released for a new test', FINISHED_ATTEMPT_REUSABLE: 'Finished attempt archived for a new test', PREPARING_BROWSER: 'Preparing isolated Chrome', BROWSER_READY: 'API browser ready',
+                WAITING_FOR_RELEASE: 'Waiting for release', SECURITY_PREWARM_STARTED: 'Preparing checkout security before release', SECURITY_PREWARM_READY: 'Checkout security ready for release', RELEASE_TRIGGERED: 'Release reached', FETCHING_AVAILABILITY: 'Fetching live API availability',
+                SPECIAL_AVAILABILITY_WATCHING: 'Watching early backend availability', SPECIAL_UPDATE_NOTIFICATION_OBSERVED: 'Onda update notification observed', SPECIAL_VERSION_CHANGE_OBSERVED: 'Onda version change observed', SPECIAL_EARLY_AVAILABILITY_READY: 'Early backend schedule confirmed', SPECIAL_RELEASE_AVAILABILITY_READY: 'Release schedule confirmed', SPECIAL_SAFE_RETRY_WAITING: 'Waiting to safely retry at 8:00 AM',
                 CANDIDATE_READY: 'API candidate ready', DRY_RUN_COMPLETE: 'API dry run complete', FRESH_VERIFICATION_AND_PROOFS: 'Fresh verification and slot proofs',
                 PENDING_HOLD: 'Pending reservation captured', OFFICIAL_QRPH_HANDOFF: 'Official QRPH checkout open', FAILED: 'API run needs attention' };
             labels.HUMAN_VERIFICATION_REQUIRED = 'Human verification required in Chrome';
             labels.HUMAN_VERIFICATION_COMPLETE = 'Human verification complete';
             this.state.headline = labels[event.stage] ?? event.stage.replaceAll('_', ' ');
             const worker = event.workerId ? `Checkout ${event.workerId} · ` : '';
+            const target = event.date && event.court && event.startTime && event.durationHours ? `Court${event.courtB ? 's' : ''} ${event.court}${event.courtB ? ` + ${event.courtB}` : ''} · ${event.date} · ${event.startTime}–${String(Number(event.startTime.slice(0, 2)) + event.durationHours).padStart(2, '0')}:00 · ` : '';
             this.state.detail = event.stage === 'RUN_STARTED' ? `Timing log: .local/api-booking/run-progress/${event.runId}.ndjson` :
                 event.stage === 'CANDIDATE_READY' ? `Court${event.courtB ? 's' : ''} ${event.court}${event.courtB ? ` + ${event.courtB}` : ''} · ${event.date} · ${event.startTime} · ${event.durationHours} hour(s) · PHP ${event.price}` :
-                    event.stage === 'PENDING_HOLD' || event.stage === 'OFFICIAL_QRPH_HANDOFF' ? `${worker}Booking ${event.bookingNo} · ID ${event.bookingId} · Hold until ${event.holdExpiresAt} · PHP ${event.price}. Payment is manual.` :
-                        event.stage === 'HUMAN_VERIFICATION_REQUIRED' ? `Use the Chrome window titled THIRSTY BOT ${event.workerId ?? 'A'} - VERIFY HERE. This API run is waiting for you to finish the Cloudflare check.` :
-                            event.stage === 'FAILED' ? event.code ?? 'API_FIRST_RUN_FAILED' : `Progress recorded`;
+                    event.stage === 'PENDING_HOLD' || event.stage === 'OFFICIAL_QRPH_HANDOFF' ? `${worker}${target}Booking ${event.bookingNo} · ID ${event.bookingId} · Hold until ${event.holdExpiresAt} · PHP ${event.price}. Payment is manual.` :
+                        event.stage === 'SPECIAL_UPDATE_NOTIFICATION_OBSERVED' || event.stage === 'SPECIAL_VERSION_CHANGE_OBSERVED' ? 'The early-release signal was detected. Exact backend availability is now being checked at burst frequency; no checkout is sent until every required slot is confirmed available.' :
+                            event.stage === 'SECURITY_PREWARM_STARTED' || event.stage === 'SECURITY_PREWARM_READY' ? 'The verified browser remains ready. Waiting for the exact release time.' :
+                                event.stage === 'HUMAN_VERIFICATION_REQUIRED' ? `Use the Chrome window titled THIRSTY BOT ${event.workerId ?? 'A'} - VERIFY HERE. This API run is waiting for you to finish the Cloudflare check.` :
+                                    event.stage === 'FAILED' ? event.code ?? 'API_FIRST_RUN_FAILED' : `Progress recorded`;
             const timing = `${event.elapsedMs} ms total · +${event.sincePreviousMs ?? 0} ms since prior stage`;
             this.state.detail += ` · ${timing}`;
+            if (['PENDING_HOLD', 'OFFICIAL_QRPH_HANDOFF'].includes(event.stage) && event.date && event.court && event.startTime && event.durationHours && event.price !== undefined) {
+                this.rememberQrHandoff({ checkout: event.workerId, status: event.stage === 'OFFICIAL_QRPH_HANDOFF' ? 'qr-ready' : 'hold-created', courts: [event.court, ...(event.courtB ? [event.courtB] : [])], date: event.date, startTime: event.startTime,
+                    endTime: `${String(Number(event.startTime.slice(0, 2)) + event.durationHours).padStart(2, '0')}:00`, amount: event.price, verifiedAt: event.at ?? new Date().toISOString(),
+                    ...(event.holdExpiresAt ? { holdExpiresAt: event.holdExpiresAt } : {}), ...(event.bookingId ? { bookingId: event.bookingId } : {}), ...(event.bookingNo ? { bookingNo: event.bookingNo } : {}) });
+            }
             this.log(`${labels[event.stage] ?? event.stage.replaceAll('_', ' ')} · ${this.state.detail}`, event.stage === 'FAILED', event.at);
             this.publish();
             return;
@@ -418,9 +469,12 @@ export class Controller {
         }
         if (event.type === 'handoff') {
             this.state.handoff = event;
+            const last = event.hours.at(-1);
+            const summary = { status: 'qr-ready', courts: [event.court], date: event.date, startTime: event.hours[0], endTime: `${String(Number(last.slice(0, 2)) + 1).padStart(2, '0')}:00`, amount: event.amount, verifiedAt: event.verifiedAt };
+            this.rememberQrHandoff(summary);
             this.state.headline = 'PAYMENT HOLD ACTIVE';
             this.state.detail = 'FULL BOOKING COMPLETE TO PAYMENT HANDOFF. AUTOMATION STOPPED. Complete payment manually in Chrome. AUTOMATION LOCK RETAINED.';
-            this.log('Payment handoff verified. Payment remains manual.');
+            this.log(`Payment handoff verified · Court ${event.court} · ${event.date} · ${summary.startTime}–${summary.endTime} · PHP ${event.amount}. Payment remains manual.`);
         }
         if (event.type === 'inspection') {
             this.state.inspection = event;
@@ -608,6 +662,8 @@ export class Controller {
         this.pendingPreparation = undefined;
         try {
             const input = PreparationSchema.parse(value);
+            this.state.qrHandoffs = [];
+            this.state.handoff = null;
             if (this.state.operation !== 'idle') {
                 const active = this.active;
                 if (!active)
@@ -640,14 +696,8 @@ export class Controller {
             await this.operation('prepare', async (gen) => {
                 let release;
                 if (input.workflow === 'test' && input.method === 'api-first') {
-                    if (input.request.strategy === 'standard' && input.request.courtCount !== 1 ||
-                        input.request.strategy === 'extended' && ![1, 2].includes(input.request.courtCount))
-                        throw Error('API_FIRST_COURT_COUNT_UNSUPPORTED');
-                    const players = this.players();
-                    if (!players.primary)
-                        throw Error('PLAYER_INFO_MISSING');
-                    if (input.request.strategy === 'extended' && !players.extended)
-                        throw Error('EXTENDED_PLAYER_INFO_MISSING');
+                    const players = this.requirePlayers(input.request.strategy, input.request.courtCount);
+                    this.state.playerStatus = players;
                     await this.reconcileLockForApiPrepare(gen, input);
                     const fingerprint = expectedPreparationFingerprint(input);
                     this.state.workflow = 'test';
@@ -662,7 +712,8 @@ export class Controller {
                     this.state.apiFirstReady = true;
                     this.state.ready = true;
                     this.state.headline = 'API READY TO TEST';
-                    this.state.detail = `${input.request.strategy === 'extended' ? 'Both dedicated API browsers are' : 'The dedicated API browser is'} open and remain${input.request.strategy === 'extended' ? '' : 's'} visible. Authorize Terms, then Run Test to QR.`;
+                    const count = requiredWorkerIds(input.request.strategy, input.request.courtCount).length;
+                    this.state.detail = `${count} dedicated API browser${count === 1 ? ' is' : 's are'} open and remain${count === 1 ? 's' : ''} visible. Authorize Terms, then Run Test to QR.`;
                     return;
                 }
                 if (input.workflow === 'release') {
@@ -677,11 +728,7 @@ export class Controller {
                         throw Error('BOOKING_PLAN_CHANGED');
                     this.state.booking = release;
                     if (release.setup.BOOKING_METHOD === 'api-first') {
-                        if (release.setup.BOOKING_TYPE === 'standard' && release.setup.COURT_COUNT !== 1 ||
-                            release.setup.BOOKING_TYPE === 'extended' && ![1, 2].includes(release.setup.COURT_COUNT))
-                            throw Error('API_FIRST_COURT_COUNT_UNSUPPORTED');
-                        if (release.setup.BOOKING_TYPE === 'extended' && !release.extendedPlayerConfigured)
-                            throw Error('EXTENDED_PLAYER_INFO_MISSING');
+                        this.state.playerStatus = this.requirePlayers(release.setup.BOOKING_TYPE, release.setup.COURT_COUNT, release.setup.SESSION_MODE === SPECIAL_SESSION_MODE);
                         await this.reconcileLockForApiPrepare(gen, input);
                         this.state.workflow = 'release';
                         this.state.headline = 'PREPARING API BROWSER';
@@ -690,17 +737,15 @@ export class Controller {
                         this.state.apiFirstReady = true;
                         this.state.ready = true;
                         this.state.headline = 'API BROWSER READY';
-                        this.state.detail = `${release.setup.BOOKING_TYPE === 'extended' ? 'Both API browsers are' : 'The API browser is'} ready. Authorize Terms, then arm the next release.`;
+                        const count = release.setup.SESSION_MODE === SPECIAL_SESSION_MODE ? SPECIAL_SESSION_REQUIRED_WORKERS.length : requiredWorkerIds(release.setup.BOOKING_TYPE, release.setup.COURT_COUNT).length;
+                        this.state.detail = `${count} API browser${count === 1 ? ' is' : 's are'} ready. Authorize Terms, then arm the next release.`;
                         return;
                     }
                 }
                 const strategy = input.workflow === 'test' ? input.request.strategy : release.setup.BOOKING_TYPE;
-                const players = this.players();
+                const courtCount = input.workflow === 'test' ? input.request.courtCount : release.setup.COURT_COUNT;
+                const players = this.requirePlayers(strategy, courtCount);
                 this.state.playerStatus = players;
-                if (!players.primary)
-                    throw Error('PLAYER_INFO_MISSING');
-                if (strategy === 'extended' && !players.extended)
-                    throw Error('EXTENDED_PLAYER_INFO_MISSING');
                 const fingerprint = expectedPreparationFingerprint(input, release?.fingerprint);
                 this.pendingPreparation = { input, fingerprint, release, players };
                 this.state.workflow = input.workflow;
@@ -716,14 +761,14 @@ export class Controller {
                 const result = this.preparationResult;
                 if (!result || result.fingerprint !== fingerprint || result.workflow !== input.workflow || result.strategy !== strategy)
                     throw Error('PREPARATION_RESULT_MISMATCH');
-                const health = await this.health(), required = strategy === 'extended' ? ['A', 'B'] : ['A'];
+                const health = await this.health(), required = requiredWorkerIds(strategy, courtCount);
                 if (required.some(id => !health[id]))
                     throw Error('RESET_REQUIRED');
                 this.state.preparedContext = makePreparedContext(input, result, players, release);
                 this.state.ready = true;
                 this.state.preparedAt = Date.parse(this.state.preparedContext.preparedAt);
                 this.state.headline = input.workflow === 'release' ? 'READY TO ARM' : 'READY TO TEST';
-                this.state.detail = input.workflow === 'release' ? `${strategy === 'extended' ? 'Extended' : 'Standard'} · ${this.state.preparedContext.courtCount} court(s)\nBrowsers: ${required.length} ready\nPlayers: ${strategy === 'extended' ? 2 : 1} configured\nSelected slots: 0\nPayment holds: none\nAuthorize Terms, then Arm Next Release.` : `${strategy === 'extended' ? 'Extended' : 'Standard'} · ${this.state.preparedContext.courtCount} court(s)\nDate: ${this.state.preparedContext.date}\nBrowsers: ${required.length} ready\nPlayers: ${strategy === 'extended' ? 2 : 1} configured\nCurrent booking solution: available\nSelected slots: 0\nPayment holds: none\nAuthorize Terms, then Run Test to QR.`;
+                this.state.detail = input.workflow === 'release' ? `${strategy === 'extended' ? 'Extended' : 'Standard'} · ${this.state.preparedContext.courtCount} court(s)\nBrowsers: ${required.length} ready\nPlayers: ${required.length} configured\nSelected slots: 0\nPayment holds: none\nAuthorize Terms, then Arm Next Release.` : `${strategy === 'extended' ? 'Extended' : 'Standard'} · ${this.state.preparedContext.courtCount} court(s)\nDate: ${this.state.preparedContext.date}\nBrowsers: ${required.length} ready\nPlayers: ${required.length} configured\nCurrent booking solution: available\nSelected slots: 0\nPayment holds: none\nAuthorize Terms, then Run Test to QR.`;
             });
         }
         catch (error) {
@@ -743,11 +788,7 @@ export class Controller {
         const input = TestBookingSchema.parse(value), authorized = this.state.termsAuthorized;
         this.state.termsAuthorized = false;
         return this.operation('fullPractice', async (gen) => {
-            const players = this.players();
-            if (!players.primary)
-                throw Error('PLAYER_INFO_MISSING');
-            if (input.request.strategy === 'extended' && !players.extended)
-                throw Error('EXTENDED_PLAYER_INFO_MISSING');
+            this.requirePlayers(input.request.strategy, input.request.courtCount);
             const preparation = { workflow: 'test', method: input.method, request: input.request, maximum: input.maximum };
             if (input.method === 'api-first') {
                 const fingerprint = expectedPreparationFingerprint(preparation);
@@ -894,10 +935,7 @@ export class Controller {
             throw Error('TERMS_AUTHORIZATION_REQUIRED');
         await this.noLock();
         const plan = this.deps.booking(), clock = this.deps.clock();
-        if (plan.setup.BOOKING_TYPE === 'standard' && plan.setup.COURT_COUNT !== 1 ||
-            plan.setup.BOOKING_TYPE === 'extended' && ![1, 2].includes(plan.setup.COURT_COUNT) ||
-            !plan.playerConfigured || plan.setup.BOOKING_TYPE === 'extended' && !plan.extendedPlayerConfigured)
-            throw Error('API_FIRST_COURT_COUNT_UNSUPPORTED');
+        this.requirePlayers(plan.setup.BOOKING_TYPE, plan.setup.COURT_COUNT);
         if (clock.releaseMs <= Date.now())
             throw Error('RELEASE_MISSED');
         const confirmed = await this.deps.confirm('full', plan);
@@ -1096,6 +1134,7 @@ export class Controller {
             await this.deps.clearLock(review.fingerprint, () => !!this.active || gen !== this.generation);
             this.state.lockReview = null;
             this.state.handoff = null;
+            this.state.qrHandoffs = [];
             this.state.selection = null;
             this.state.headline = 'Verified stale lock cleared';
             this.state.detail = 'Prepare again before booking.';
@@ -1115,6 +1154,7 @@ export class Controller {
             this.state.cdp = await this.deps.cdp();
             this.state.lockReview = null;
             this.state.handoff = null;
+            this.state.qrHandoffs = [];
             this.state.selection = null;
             this.state.inspection = null;
             this.state.ready = false;
@@ -1145,6 +1185,7 @@ export class Controller {
             this.markBrowserReady();
             this.state.operation = 'fullPractice';
             this.state.handoff = null;
+            this.state.qrHandoffs = [];
             this.state.selection = null;
             this.state.inspection = null;
             this.state.headline = 'Full Flow Practice running';

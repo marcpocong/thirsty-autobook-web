@@ -28,7 +28,7 @@ async function renderer(extra:Record<string,unknown>={}){
     resetPrepare:async()=>{},armFullBooking:async()=>{},reviewLock:async()=>{},saveBooking:async()=>{}};},state);
   const source=(await readFile('src/booking-setup.ts','utf8'))+'\n'+(await readFile('ui/renderer/app.ts','utf8')).replace(/^import .*booking-setup\.js';\r?\n/m,'');
   await page.addScriptTag({type:'module',content:stripTypeScriptTypes(source)});
-  await page.waitForFunction(()=>document.getElementById('headline')?.textContent==='Fixture status');
+  await page.waitForFunction(expected=>document.getElementById('headline')?.textContent===expected,state.headline);
   return page;
 }
 
@@ -129,10 +129,73 @@ it('offers Prepare New Run for a verified hold without dismissing the lock',asyn
   await page.close();
 });
 
+it('offers Reset & Prepare for an unresolved final action instead of the non-recovering Review Hold action',async()=>{
+  const page=await renderer({lock:true,canPrepareOverHold:true,retainedLockStage:'FINAL_ACTION_DISPATCHING',headline:'UNRESOLVED CHECKOUT LOCK'});
+  await page.evaluate(()=>{const w=window as any;w.thirsty.resetPrepare=async(value:unknown)=>{w.fixturePreparation=value;};});
+  await page.locator('[data-view="tests"]').click();
+  expect(await page.locator('#test-main-action').innerText()).toBe('Reset & Prepare');
+  expect(await page.locator('#test-main-action-hint').innerText()).toContain('clears the retained safety lock only after clean-state verification');
+  await page.locator('#test-main-action').click();
+  await page.waitForFunction(()=>!!(window as any).fixturePreparation);
+  expect(await page.evaluate(()=>(window as any).fixturePreparation.workflow)).toBe('test');
+  await page.close();
+});
+
 it('has no price ceiling control and shows the observed amount',async()=>{
   const page=await renderer();
   expect(await page.locator('#maximum,#full-maximum,#dual-maximum').count()).toBe(0);
   await page.evaluate(()=>{const w=window as any;w.fixtureState.selection={court:7,date:'2026-09-24',hours:['10:00','11:00'],amount:1800};w.fixturePublish(w.fixtureState);});
   expect(await page.locator('#selection-result').innerText()).toContain('₱1,800');
+  await page.close();
+});
+
+it('opens each previous run to its timing facts and detailed activity timeline',async()=>{
+  const page=await renderer({runHistory:[{runId:'00000000-0000-4000-8000-000000000001',label:'API LIVE-NOW',startedAt:'2026-09-22T00:00:00.000Z',readyAt:'2026-09-22T00:00:01.000Z',endedAt:'2026-09-22T00:00:03.500Z',outcome:'complete',totalElapsedMs:3500,readyElapsedMs:2500,activities:[{at:'2026-09-22T00:00:02.000Z',text:'Official QRPH checkout open · Court 7 · 2026-09-24 · 10:00–12:00',level:'info',elapsedMs:2000,deltaMs:1000}]}]});
+  await page.locator('[data-view="runs"]').click();
+  const run=page.locator('.run-history-item');
+  const toggle=run.locator('.run-history-toggle'),modal=page.locator('#run-detail-modal');
+  expect(await modal.isVisible()).toBe(false);
+  await toggle.click();
+  expect(await modal.isVisible()).toBe(true);
+  expect(await modal.innerText()).toContain('00000000-0000-4000-8000-000000000001');
+  expect(await modal.innerText()).toContain('Official QRPH checkout open · Court 7 · 2026-09-24 · 10:00–12:00');
+  expect(await modal.innerText()).toContain('2.500 seconds · browser ready to finish');
+  await page.evaluate(()=>{const w=window as any;w.fixturePublish(w.fixtureState);});
+  expect(await modal.isVisible()).toBe(true);
+  await page.locator('#run-detail-close').click();
+  expect(await modal.isVisible()).toBe(false);
+  await toggle.click();
+  await mkdir('.local',{recursive:true});await page.screenshot({path:'.local/ui-run-details.png'});
+  await page.close();
+});
+
+it('shows verified QR handoffs with the corresponding players in release and test status',async()=>{
+  const qrHandoffs=[
+    {checkout:'A',courts:[7,6],date:'2026-09-24',startTime:'10:00',endTime:'12:00',amount:2400,verifiedAt:'2026-09-22T00:00:03.000Z',holdExpiresAt:'2026-09-22T00:10:03.000Z'},
+    {checkout:'B',courts:[5,4],date:'2026-09-24',startTime:'10:00',endTime:'12:00',amount:2400,verifiedAt:'2026-09-22T00:00:04.000Z'}
+  ];
+  const playerStatus={primary:true,extended:true,third:false,fourth:false,
+    primaryDetails:{fullName:'Primary Fixture',email:'primary@example.invalid',phone:'09123456789'},
+    extendedDetails:{fullName:'Second Fixture',email:'second@example.invalid',phone:'09987654321'}};
+  const page=await renderer({headline:'Official QRPH checkout open',detail:'Automation stopped at the QR page.',qrHandoffs,playerStatus});
+  const release=await page.locator('#qr-summary-release').innerText();
+  expect(release).toContain('All QR pages reached · 2 checkouts');
+  expect(release).toContain('Browser A · Primary Fixture');
+  expect(release).toContain('primary@example.invalid');
+  expect(release).toContain('Courts 7 + 6');
+  expect(release).toContain('Date: Thursday, September 24 (2026-09-24)');
+  expect(release).toContain('Time: 10:00–12:00');
+  expect(release).toContain('Slots: 10:00–11:00 · 11:00–12:00');
+  expect(release).toContain('Browser B · Second Fixture');
+  expect(release).toContain('Courts 5 + 4');
+  expect(release).toContain('Confirm every court and time slot below');
+  expect(release).toContain('A hold is not final booking confirmation');
+  expect(release).not.toContain('09123456789');
+  await page.locator('[data-view="tests"]').click();
+  await page.evaluate(()=>{const w=window as any;w.fixtureState.workflow='test';w.fixturePublish(w.fixtureState);});
+  expect(await page.locator('#qr-summary-test').innerText()).toContain('Browser B · Second Fixture');
+  expect(await page.locator('#test-headline').innerText()).toBe('CONFIRM BOOKING DETAILS BEFORE PAYING');
+  expect(await page.locator('#test-detail').innerText()).toContain('Check the player, courts, date, every hourly slot, amount, and booking reference');
+  await mkdir('.local',{recursive:true});await page.screenshot({path:'.local/ui-qr-status.png'});
   await page.close();
 });

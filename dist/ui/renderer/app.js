@@ -2,6 +2,7 @@ import { bookingSetupProblem, reconcileFallbackTimes } from '../../src/booking-s
 const byId = (id) => document.getElementById(id);
 let latest;
 let renderedLogs = '';
+let selectedRunId;
 let timingReadyKey = '';
 let timingReadyStartedMono = 0;
 let timingReadyInitialMs = 0;
@@ -10,6 +11,32 @@ let courtOrder = [7, 6, 5, 4, 3, 2, 1], fallbackTimes = [];
 const input = (id) => byId(id);
 let workflow = 'release';
 let currentView = 'release';
+function runDetail(run) {
+    const detail = document.createElement('div');
+    detail.className = 'run-detail';
+    const facts = document.createElement('dl');
+    facts.className = 'run-detail-facts';
+    const fact = (name, value) => { const item = document.createElement('div'), dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = name; dd.textContent = value; item.append(dt, dd); return item; };
+    facts.append(fact('Run ID', run.runId), fact('Started', `${new Date(run.startedAt).toLocaleString('en-GB', { timeZone: 'Asia/Manila' })} Manila`), fact('Browser ready', run.readyAt ? `${new Date(run.readyAt).toLocaleString('en-GB', { timeZone: 'Asia/Manila' })} Manila` : 'Not recorded'), fact('Finished', `${new Date(run.endedAt).toLocaleString('en-GB', { timeZone: 'Asia/Manila' })} Manila`), fact('Measured time', `${((run.readyElapsedMs ?? 0) / 1000).toFixed(3)} seconds · browser ready to finish`), fact('Whole process', `${(run.totalElapsedMs / 1000).toFixed(3)} seconds · includes startup/preparation`), fact('Outcome', run.outcome.toUpperCase()));
+    const timeline = document.createElement('div');
+    timeline.className = 'run-detail-events';
+    if (run.activities?.length)
+        timeline.replaceChildren(...run.activities.map(activity => { const event = document.createElement('div'); event.className = `run-detail-event ${activity.level}`; const time = document.createElement('time'); time.textContent = new Date(activity.at).toLocaleTimeString('en-GB', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3 }); const message = document.createElement('span'); message.textContent = activity.text; const timing = document.createElement('span'); timing.className = 'run-detail-event-timing'; timing.textContent = activity.elapsedMs === undefined ? '' : `${(activity.elapsedMs / 1000).toFixed(3)}s total · ${((activity.deltaMs ?? 0) / 1000).toFixed(3)}s step`; event.append(time, message, timing); return event; }));
+    else
+        timeline.append(Object.assign(document.createElement('p'), { className: 'empty', textContent: 'No detailed activity was recorded for this older run.' }));
+    detail.append(facts, Object.assign(document.createElement('h3'), { textContent: 'Activity timeline' }), timeline);
+    return detail;
+}
+function showRunDetail(run) {
+    selectedRunId = run.runId;
+    byId('run-detail-title').textContent = run.label.replaceAll('·', ' / ').toUpperCase();
+    byId('run-detail-content').replaceChildren(runDetail(run));
+    byId('run-detail-modal').hidden = false;
+    byId('run-detail-close').focus();
+}
+function closeRunDetail() { selectedRunId = undefined; byId('run-detail-modal').hidden = true; byId('run-detail-content').replaceChildren(); }
+const requiredWorkers = (strategy, count) => ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].slice(0, (strategy === 'extended' ? 2 : 1) * Math.ceil(count / 2));
+const workerLabel = (worker) => worker === 'A' ? 'Primary player' : `Player ${'ABCDEFGH'.indexOf(worker) + 1}`;
 let testDraft, releaseDraft, testDirty = false, releaseDirty = false;
 let releaseAdjustment;
 byId('simple-status').append(byId('readiness'));
@@ -48,7 +75,7 @@ function showView(view) {
         workflow = nextWorkflow;
         if (workflow === 'test' && latest?.booking) {
             const s = latest.booking.setup;
-            applyDraft({ method: s.BOOKING_METHOD, strategy: s.BOOKING_TYPE, date: testDraft?.date ?? input('test-date').value, courtCount: s.COURT_COUNT, start: s.START_TIME, duration: s.DURATION_HOURS, attempts: s.MAX_SELECTION_ATTEMPTS, courtOrder: [...s.PREFERRED_COURTS], fallbackTimes: [...s.FALLBACK_TIMES], exactA: '', exactB: '' });
+            applyDraft({ sessionMode: s.SESSION_MODE ?? 'normal', method: s.BOOKING_METHOD, strategy: s.BOOKING_TYPE, date: testDraft?.date ?? input('test-date').value, courtCount: s.COURT_COUNT, start: s.START_TIME, duration: s.DURATION_HOURS, attempts: s.MAX_SELECTION_ATTEMPTS, courtOrder: [...s.PREFERRED_COURTS], fallbackTimes: [...s.FALLBACK_TIMES], exactA: '', exactB: '' });
             testDirty = false;
         }
         if (workflow === 'release' && releaseDraft)
@@ -81,8 +108,8 @@ for (const id of ['dual-court-a', 'dual-court-b'])
     byId(id).replaceChildren(...Array.from({ length: 7 }, (_, i) => new Option(`Court ${i + 1}`, String(i + 1))));
 input('dual-court-a').value = '7';
 input('dual-court-b').value = '6';
-function formDraft() { return { method: input('booking-method').value, strategy: input('booking-type').value, date: input('test-date').value, courtCount: Number(input('court-count').value), start: input('start-time').value, duration: Number(input('duration').value), attempts: Number(input('attempts').value), courtOrder: [...courtOrder], fallbackTimes: [...fallbackTimes], exactA: input('exact-a').value, exactB: input('exact-b').value }; }
-function applyDraft(d) { input('booking-method').value = d.method; input('booking-type').value = d.strategy; input('test-date').value = d.date; input('court-count').value = String(d.courtCount); input('start-time').value = d.start; input('duration').value = String(d.duration); input('attempts').value = String(d.attempts); courtOrder = [...d.courtOrder]; fallbackTimes = [...d.fallbackTimes]; input('exact-a').value = d.exactA; input('exact-b').value = d.exactB; editors(); }
+function formDraft() { return { sessionMode: input('session-mode').value, method: input('booking-method').value, strategy: input('booking-type').value, date: input('test-date').value, courtCount: Number(input('court-count').value), start: input('start-time').value, duration: Number(input('duration').value), attempts: Number(input('attempts').value), courtOrder: [...courtOrder], fallbackTimes: [...fallbackTimes], exactA: input('exact-a').value, exactB: input('exact-b').value }; }
+function applyDraft(d) { input('session-mode').value = d.sessionMode; input('booking-method').value = d.method; input('booking-type').value = d.strategy; input('test-date').value = d.date; input('court-count').value = String(d.courtCount); input('start-time').value = d.start; input('duration').value = String(d.duration); input('attempts').value = String(d.attempts); courtOrder = [...d.courtOrder]; fallbackTimes = [...d.fallbackTimes]; input('exact-a').value = d.exactA; input('exact-b').value = d.exactB; editors(); syncSpecialSessionControls(); }
 function storeDraft() { const d = formDraft(); if (workflow === 'test')
     testDraft = d;
 else
@@ -142,14 +169,89 @@ function editors() {
 editors();
 testDraft = formDraft();
 const dateLabel = (date) => new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' }).format(new Date(`${date}T12:00:00Z`));
+function hourlySlots(start, end) { const first = Number(start.slice(0, 2)), last = Number(end.slice(0, 2)); return Array.from({ length: Math.max(0, last - first) }, (_, i) => `${String(first + i).padStart(2, '0')}:00–${String(first + i + 1).padStart(2, '0')}:00`); }
+function renderQrSummary(state) {
+    const handoffs = state.qrHandoffs ?? [];
+    const qrReady = handoffs.filter(hold => (hold.status ?? 'qr-ready') === 'qr-ready').length;
+    const details = state.playerStatus;
+    const players = { A: details?.primaryDetails, B: details?.extendedDetails, C: details?.thirdDetails, D: details?.fourthDetails, E: details?.fifthDetails, F: details?.sixthDetails, G: details?.seventhDetails, H: details?.eighthDetails };
+    for (const id of ['qr-summary-release', 'qr-summary-test']) {
+        const container = byId(id);
+        container.hidden = !handoffs.length;
+        if (!handoffs.length) {
+            container.replaceChildren();
+            continue;
+        }
+        const title = document.createElement('strong');
+        title.className = 'qr-summary-title';
+        title.textContent = qrReady === handoffs.length ? `All QR pages reached · ${qrReady} checkout${qrReady === 1 ? '' : 's'}` : `Live checkout status · ${qrReady} of ${handoffs.length} QR page${handoffs.length === 1 ? '' : 's'} ready`;
+        const note = document.createElement('p');
+        note.className = 'small';
+        note.textContent = 'Confirm every court and time slot below against the visible Onda QR pages before scanning or paying. A hold is not final booking confirmation.';
+        const list = document.createElement('div');
+        list.className = 'qr-summary-list';
+        for (const hold of handoffs) {
+            const card = document.createElement('div');
+            card.className = 'qr-summary-item';
+            const worker = hold.checkout, player = worker ? players[worker] : undefined;
+            const heading = document.createElement('strong');
+            heading.textContent = worker ? `Browser ${worker} · ${player?.fullName || `Player ${worker}`}` : 'QR checkout';
+            const phase = document.createElement('div');
+            phase.className = `qr-summary-phase ${(hold.status ?? 'qr-ready') === 'qr-ready' ? 'ready' : 'pending'}`;
+            phase.textContent = (hold.status ?? 'qr-ready') === 'qr-ready' ? 'QR READY · VERIFY DETAILS BEFORE PAYING' : 'PAYMENT HOLD ACTIVE · OPENING QR PAGE';
+            const identity = document.createElement('div');
+            identity.className = 'qr-summary-email';
+            identity.textContent = player?.email || 'Player email unavailable';
+            const booking = document.createElement('div');
+            booking.className = 'qr-summary-booking';
+            booking.textContent = `Court${hold.courts.length === 1 ? '' : 's'} ${hold.courts.join(' + ')}\nDate: ${dateLabel(hold.date)} (${hold.date})\nTime: ${hold.startTime}–${hold.endTime}\nSlots: ${hourlySlots(hold.startTime, hold.endTime).join(' · ')}`;
+            const amount = document.createElement('div');
+            amount.className = 'qr-summary-amount';
+            amount.textContent = `Amount: ₱${hold.amount.toLocaleString()} · ${hold.holdExpiresAt && Date.parse(hold.holdExpiresAt) <= Date.now() ? 'Recorded hold timer elapsed; check Chrome' : 'Payment pending'}`;
+            card.append(heading, phase, identity, booking, amount);
+            if (hold.bookingNo) {
+                const reference = document.createElement('div');
+                reference.className = 'small';
+                reference.textContent = `Booking reference: ${hold.bookingNo}`;
+                card.append(reference);
+            }
+            if (hold.holdExpiresAt && Number.isFinite(Date.parse(hold.holdExpiresAt))) {
+                const expiry = document.createElement('div');
+                expiry.className = 'small';
+                expiry.textContent = `Recorded hold expiry: ${new Date(hold.holdExpiresAt).toLocaleString('en-GB', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })} Manila`;
+                card.append(expiry);
+            }
+            list.append(card);
+        }
+        container.replaceChildren(title, note, list);
+    }
+}
+function syncSpecialSessionControls() {
+    const special = input('session-mode').value === 'special-friday';
+    byId('special-session-note').hidden = !special;
+    if (special && workflow === 'release') {
+        input('booking-method').value = 'api-first';
+        input('booking-type').value = 'extended';
+        input('court-count').value = '4';
+        input('start-time').value = '17:00';
+        input('duration').value = '5';
+        fallbackTimes = [];
+        courtOrder = [6, 7, 1, 2, 3, 4, 5];
+        editors();
+    }
+    for (const id of ['booking-method', 'booking-type', 'court-count', 'start-time', 'duration', 'attempts', 'fallback-time', 'add-fallback'])
+        input(id).disabled = special;
+    document.querySelector('.editors').classList.toggle('session-locked', special);
+}
 function status(id, text, tone) { const el = byId(id); el.textContent = text; el.dataset.tone = tone; }
 function render(state) {
     latest = state;
+    renderQrSummary(state);
     byId('headline').textContent = state.headline;
     byId('detail').textContent = state.detail;
     const armed = !!state.scheduledRelease;
     const busy = state.operation !== 'idle' && state.operation !== 'scheduled';
-    const playerStatus = state.playerStatus ?? { primary: !!state.booking?.playerConfigured, extended: !!state.booking?.extendedPlayerConfigured };
+    const playerStatus = state.playerStatus ?? { primary: !!state.booking?.playerConfigured, extended: !!state.booking?.extendedPlayerConfigured, third: !!state.booking?.thirdPlayerConfigured, fourth: !!state.booking?.fourthPlayerConfigured, fifth: !!state.booking?.fifthPlayerConfigured, sixth: !!state.booking?.sixthPlayerConfigured, seventh: !!state.booking?.seventhPlayerConfigured, eighth: !!state.booking?.eighthPlayerConfigured };
     const dual = state.booking?.setup.BOOKING_TYPE === 'standard' && state.booking.setup.COURT_COUNT === 2;
     // Keep the dual practice entry point visible in the safe single-court
     // default; actions stay disabled until count 2 is explicitly saved.
@@ -185,7 +287,8 @@ function render(state) {
     for (const id of ['practice-fields', 'full-practice-fields'])
         byId(id).disabled = busy;
     byId('lock-card').hidden = !state.lock;
-    byId('lock-note').textContent = state.canPrepareOverHold ? 'The previous payment hold remains recorded. Reset & Prepare can open a fresh schedule for another run in this bot. Payment stays manual.' : 'Booking actions are blocked. You can still edit and save your next booking plan locally.';
+    const unresolvedCheckout = state.retainedLockStage === 'FINAL_ACTION_DISPATCHING';
+    byId('lock-note').textContent = unresolvedCheckout ? 'The previous checkout ended with a retained safety lock. Reset & Prepare will inspect every required browser and recover only when they are conclusively clean.' : state.canPrepareOverHold ? 'The previous payment hold remains recorded. Reset & Prepare can open a fresh schedule for another run in this bot. Payment stays manual.' : 'Booking actions are blocked. You can still edit and save your next booking plan locally.';
     byId('review-lock').disabled = busy;
     byId('clear-lock').hidden = !state.lockReview?.canClear;
     byId('clear-lock').disabled = busy;
@@ -213,7 +316,7 @@ function render(state) {
     if (b) {
         if (!releaseDirty && loadedPlan !== b.fingerprint) {
             loadedPlan = b.fingerprint;
-            releaseDraft = { method: b.setup.BOOKING_METHOD ?? 'browser', strategy: b.setup.BOOKING_TYPE ?? 'standard', date: testDraft?.date ?? input('test-date').value, courtCount: b.setup.COURT_COUNT, start: b.setup.START_TIME, duration: b.setup.DURATION_HOURS, attempts: b.setup.MAX_SELECTION_ATTEMPTS, courtOrder: [...b.setup.PREFERRED_COURTS], fallbackTimes: [...b.setup.FALLBACK_TIMES], exactA: '', exactB: '' };
+            releaseDraft = { sessionMode: b.setup.SESSION_MODE ?? 'normal', method: b.setup.BOOKING_METHOD ?? 'browser', strategy: b.setup.BOOKING_TYPE ?? 'standard', date: testDraft?.date ?? input('test-date').value, courtCount: b.setup.COURT_COUNT, start: b.setup.START_TIME, duration: b.setup.DURATION_HOURS, attempts: b.setup.MAX_SELECTION_ATTEMPTS, courtOrder: [...b.setup.PREFERRED_COURTS], fallbackTimes: [...b.setup.FALLBACK_TIMES], exactA: '', exactB: '' };
             if (b.fallbackReconciliation.removed.length) {
                 releaseAdjustment = b.fallbackReconciliation;
                 releaseDirty = true;
@@ -299,6 +402,12 @@ function render(state) {
             const row = document.createElement('div');
             row.className = 'run-history-item';
             row.dataset.outcome = run.outcome;
+            const summary = document.createElement('button');
+            summary.type = 'button';
+            summary.className = 'run-history-toggle';
+            summary.setAttribute('aria-haspopup', 'dialog');
+            const summaryGrid = document.createElement('span');
+            summaryGrid.className = 'run-summary-grid';
             const label = document.createElement('strong');
             label.textContent = run.label.replaceAll('·', ' / ').toUpperCase();
             const duration = document.createElement('span');
@@ -307,9 +416,22 @@ function render(state) {
             const meta = document.createElement('span');
             meta.className = 'run-meta';
             meta.textContent = `${new Date(run.startedAt).toLocaleString('en-GB', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'medium' })} Manila · ${run.outcome.toUpperCase()} · browser-ready → finish · preparation excluded`;
-            row.append(label, duration, meta);
+            const disclosure = document.createElement('span');
+            disclosure.className = 'run-disclosure';
+            disclosure.textContent = 'View details';
+            summaryGrid.append(label, duration, meta, disclosure);
+            summary.append(summaryGrid);
+            summary.onclick = () => showRunDetail(run);
+            row.append(summary);
             return row;
         }));
+    if (selectedRunId) {
+        const selected = completed.find(run => run.runId === selectedRunId);
+        if (selected)
+            showRunDetail(selected);
+        else
+            closeRunDetail();
+    }
     const previousHolds = state.previousHolds ?? [];
     byId('previous-holds').hidden = !previousHolds.length;
     byId('previous-holds-list').replaceChildren(...previousHolds.map(hold => {
@@ -326,8 +448,9 @@ function render(state) {
     byId('prepare').firstChild.textContent = 'RESET & PREPARE ';
     const apiFirst = input('booking-method').value === 'api-first';
     byId('test-booking').textContent = apiFirst ? 'RUN API TEST TO QR' : 'RUN TEST TO QR';
-    byId('api-dry-controls').hidden = !apiFirst || workflow !== 'test';
-    byId('test-availability').hidden = !apiFirst;
+    const specialDraft = input('session-mode').value === 'special-friday';
+    byId('api-dry-controls').hidden = !apiFirst || workflow !== 'test' || specialDraft;
+    byId('test-availability').hidden = !apiFirst || specialDraft;
     byId('api-preview').disabled = busy || state.lock || !state.apiFirstReady;
     const draftProblem = workflow === 'release' ? bookingSetupProblem(currentSetup()) : undefined;
     byId('configuration-status').hidden = workflow !== 'release';
@@ -369,19 +492,24 @@ function render(state) {
         byId('handoff-result').textContent = state.bookingResult.description + '\n' + state.bookingResult.outcomes.map((v, i) => `Checkout ${i + 1}: ${v}`).join('\n');
     }
     const duration = Number(input('duration').value), start = Number(input('start-time').value.slice(0, 2)), strategy = input('booking-type').value;
-    byId('booking-preview').textContent = `${workflow === 'release' ? 'Target: ' + (state.booking?.targetDate ?? 'Not configured') + '\n' : ''}${strategy.toUpperCase()} | ${input('court-count').value} court(s) | ${input('start-time').value}-${String(start + duration).padStart(2, '0')}:00\nFallback starts: ${fallbackTimes.map(friendly).join(', ') || 'None'}\n${strategy === 'extended' ? '2 browsers | 2 checkouts | 2 payment holds\nPreferred split: ' + (duration === 4 ? '3 + 1; alternatives 2 + 2, 1 + 3' : duration === 5 ? '3 + 2; alternative 2 + 3' : '3 + 3') + '\nSame courts prioritized across checkouts.' : '1 browser | 1 checkout | 1 payment hold'}\nNo price ceiling | Payment manual`;
+    const specialSession = input('session-mode').value === 'special-friday';
     const count = Number(input('court-count').value), releaseText = state.clock ? new Date(state.clock.releaseMs).toLocaleString('en-US', { timeZone: state.clock.timezone, month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Calculating';
     const method = input('booking-method').value === 'browser' ? 'NORMAL BROWSER' : input('booking-method').value === 'hybrid' ? 'HYBRID AVAILABILITY' : 'API-FIRST';
-    byId('booking-preview').textContent = `${workflow === 'release' ? `RELEASE PLAN\nRelease: ${releaseText}\nTarget: ${state.clock ? dateLabel(state.clock.targetDate) : 'Not configured'}\n` : ''}${method}\n${strategy.toUpperCase()} | ${count} COURT${count === 1 ? '' : 'S'}\n${friendly(input('start-time').value)} -> ${endFriendly(input('start-time').value, duration)} | ${duration} hours\nFallback starts: ${fallbackTimes.map(friendly).join(' -> ') || 'None'}\nCourt priority: ${courtOrder.join(' -> ')}\n${strategy === 'extended' ? `Extended split: ${duration === 4 ? '3h + 1h (alternatives 2h + 2h, 1h + 3h)' : duration === 5 ? '3h + 2h (alternative 2h + 3h)' : '3h + 3h'}\n2 browsers | 2 checkouts | Same courts prioritized | Players: Primary + Extended` : 'Browser: A | 1 checkout | Player: Primary'}\nNo price ceiling\nAttempts: ${input('attempts').value} | Payment: MANUAL${input('booking-method').value === 'api-first' ? '\nAPI first: current availability check available; live runs once at the armed release.' : ''}`;
+    const workers = specialSession ? ['A', 'B', 'C', 'D', 'E', 'F'] : requiredWorkers(strategy, count), checkoutCount = workers.length;
+    byId('booking-preview').textContent = specialSession
+        ? `SPECIAL FRIDAY SESSION\nRelease: ${releaseText}\nTarget: ${state.clock ? dateLabel(state.clock.targetDate) : 'Not configured'}\nProof-based: Court 6 · 5:00–10:00 PM (A/B) and Court 7 · 7:00–11:00 PM (C/D).\nDirect proofless: E/F target a third court, first Court 5 then 4/3/2/1, from 5:00–10:00 PM at 8:00 AM.\nDirect lane has priority over normal fallbacks. It may create an EXTRA temporary hold.\nIf Friday price remains hidden, direct lane assumes ₱700 per hour · UNVERIFIED.\n6 browsers · up to 6 checkouts. Proofless acceptance at release is UNPROVEN.\nUnknown outcomes never retry. Payment: MANUAL`
+        : `${workflow === 'release' ? `RELEASE PLAN\nRelease: ${releaseText}\nTarget: ${state.clock ? dateLabel(state.clock.targetDate) : 'Not configured'}\n` : ''}${method}\n${strategy.toUpperCase()} | ${count} COURT${count === 1 ? '' : 'S'}\n${friendly(input('start-time').value)} -> ${endFriendly(input('start-time').value, duration)} | ${duration} hours\nFallback starts: ${fallbackTimes.map(friendly).join(' -> ') || 'None'}\nCourt priority: ${courtOrder.join(' -> ')}\n${strategy === 'extended' ? `Extended split: ${duration === 4 ? '3h + 1h (alternatives 2h + 2h, 1h + 3h)' : duration === 5 ? '3h + 2h (alternative 2h + 3h)' : '3h + 3h'}\n` : ''}${workers.length} browser${workers.length === 1 ? '' : 's'} | ${checkoutCount} checkout${checkoutCount === 1 ? '' : 's'} | Players: ${workers.join(' + ')}\nNo price ceiling\nAttempts: ${input('attempts').value} | Payment: MANUAL${input('booking-method').value === 'api-first' ? '\nAPI first: current availability check available; live runs once at the armed release.' : ''}`;
     if (duration > 6) {
-        byId('booking-preview').textContent = 'Extended two-browser booking currently supports up to 6 consecutive hours.';
+        byId('booking-preview').textContent = 'Extended booking supports up to 6 consecutive hours.';
         input('test-booking').disabled = true;
         input('arm').disabled = true;
     }
-    const playersReady = playerStatus.primary && (strategy !== 'extended' || playerStatus.extended);
-    byId('player-status').textContent = `Primary player: ${playerStatus.primary ? 'Configured' : 'Missing'}${strategy === 'extended' ? ' | Extended player: ' + (playerStatus.extended ? 'Configured' : 'Missing') : ''}`;
+    const runWorkers = specialSession ? ['A', 'B', 'C', 'D', 'E', 'F'] : requiredWorkers(strategy, count), playerReadyByWorker = { A: playerStatus.primary, B: playerStatus.extended, C: playerStatus.third, D: playerStatus.fourth, E: playerStatus.fifth, F: playerStatus.sixth, G: playerStatus.seventh, H: playerStatus.eighth };
+    const playersReady = runWorkers.every(worker => playerReadyByWorker[worker]);
+    byId('player-status').textContent = runWorkers.map(worker => `${workerLabel(worker)}: ${playerReadyByWorker[worker] ? 'Configured' : 'Missing'}`).join(' | ');
     const profile = (label, p) => { const card = document.createElement('div'); const heading = document.createElement('strong'); heading.textContent = label; card.append(heading, document.createElement('br'), document.createTextNode(p ? `${p.fullName}\n${p.phone}\n${p.email}` : 'Missing or invalid configuration')); card.style.whiteSpace = 'pre-line'; return card; };
-    byId('player-details').replaceChildren(profile('Primary player · Checkout A', playerStatus.primaryDetails), profile('Extended player · Checkout B', playerStatus.extendedDetails));
+    const profiles = { A: playerStatus.primaryDetails, B: playerStatus.extendedDetails, C: playerStatus.thirdDetails, D: playerStatus.fourthDetails, E: playerStatus.fifthDetails, F: playerStatus.sixthDetails, G: playerStatus.seventhDetails, H: playerStatus.eighthDetails };
+    byId('player-details').replaceChildren(...runWorkers.map(worker => profile(`${workerLabel(worker)} · Checkout ${worker}`, profiles[worker])));
     input('test-booking').disabled ||= !playersReady;
     input('arm').disabled ||= !playersReady;
     const releaseMode = workflow === 'release';
@@ -396,52 +524,63 @@ function render(state) {
     }
     const apiPrepared = !!state.apiFirstReady && !!state.ready && !!state.booking && state.booking.setup.BOOKING_METHOD === 'api-first' && !state.lock;
     const prepared = apiPrepared || !!state.preparedContext && state.preparedContext.workflow === 'release' && state.preparedContext.configFingerprint === state.booking?.fingerprint;
-    const required = strategy === 'extended' ? ['A', 'B'] : ['A'];
+    const required = specialSession ? ['A', 'B', 'C', 'D', 'E', 'F'] : requiredWorkers(strategy, count);
     const verificationGates = apiFirst
         ? [['Onda venue verified', apiPrepared], ['Availability checked at release', state.apiStage?.stage === 'CANDIDATE_READY' || !!state.observedPrice]]
         : [['Onda verified', prepared], ['All Courts verified', prepared], ['Selected slots: 0', prepared], ['Payment holds: none', prepared && !state.lock]];
-    const gates = [['Configuration valid', !draftProblem], ['Next release calculated', !!state.clock], ['Booking target calculated', !!state.clock?.targetDate], ['Primary player configured', playerStatus.primary], ...(strategy === 'extended' ? [['Extended player configured', playerStatus.extended]] : []), ...required.map(id => [`Browser ${id} prepared`, apiFirst ? apiPrepared && !!state.browserHealth?.[id] : prepared && !!state.preparedContext?.browsers.some(b => b.id === id)]), ...verificationGates, ['Automation lock clear', !state.lock], ['Prepared fingerprint matches', prepared], ['Terms authorized for this run', state.termsAuthorized || armed], ['Armed for next release', armed || state.apiStage?.stage === 'WAITING_FOR_RELEASE']];
+    const gates = [['Configuration valid', !draftProblem], ['Next release calculated', !!state.clock], ['Booking target calculated', !!state.clock?.targetDate], ...required.map(id => [`${workerLabel(id)} configured`, !!playerReadyByWorker[id]]), ...required.map(id => [`Browser ${id} prepared`, apiFirst ? apiPrepared && !!state.browserHealth?.[id] : prepared && !!state.preparedContext?.browsers.some(b => b.id === id)]), ...verificationGates, ['Automation lock clear', !state.lock], ['Prepared fingerprint matches', prepared], ['Terms authorized for this run', state.termsAuthorized || armed], ['Armed for next release', armed || state.apiStage?.stage === 'WAITING_FOR_RELEASE']];
     const readiness = byId('release-readiness');
     readiness.replaceChildren(...gates.map(([label, ok]) => { const e = document.createElement('div'); e.className = `gate ${ok ? 'good' : 'warn'}`; e.textContent = `${ok ? 'OK' : '--'} ${label}`; return e; }));
     readiness.className = 'gate-list';
     byId('release-readiness-card').dataset.state = armed ? 'armed' : prepared ? 'prepared' : 'draft';
     byId('sleep-warning').hidden = !armed;
     byId('sleep-warning').textContent = `Sleep protection: ${state.sleepProtection ? 'ACTIVE' : 'NOT AVAILABLE'} | Keep the PC powered on. Do not hibernate or close the laptop lid if Windows sleeps on lid close.`;
-    byId('saved-plan-summary').textContent = state.booking ? `${state.booking.setup.BOOKING_METHOD.toUpperCase()} · ${state.booking.setup.BOOKING_TYPE.toUpperCase()} · ${state.booking.setup.COURT_COUNT} court${state.booking.setup.COURT_COUNT === 1 ? '' : 's'}\n${friendly(state.booking.setup.START_TIME)}–${endFriendly(state.booking.setup.START_TIME, state.booking.setup.DURATION_HOURS)} · ${state.booking.setup.DURATION_HOURS} hours\nCourt priority: ${state.booking.setup.PREFERRED_COURTS.join(' → ')}\nFallback starts: ${state.booking.setup.FALLBACK_TIMES.map(friendly).join(', ') || 'None'}\nTarget: ${dateLabel(state.booking.targetDate)}` : 'No saved plan available.';
+    byId('saved-plan-summary').textContent = state.booking ? (state.booking.setup.SESSION_MODE === 'special-friday' ? `SPECIAL FRIDAY SESSION\nPreferred Court 6 · 5:00–10:00 PM\nPreferred Court 7 · 7:00–11:00 PM\nDirect extra court · 5:00–10:00 PM (proofless, unverified rate if hidden)\nPlayers/Browsers A–F · up to six holds\nTarget: ${dateLabel(state.booking.targetDate)}` : `${state.booking.setup.BOOKING_METHOD.toUpperCase()} · ${state.booking.setup.BOOKING_TYPE.toUpperCase()} · ${state.booking.setup.COURT_COUNT} court${state.booking.setup.COURT_COUNT === 1 ? '' : 's'}\n${friendly(state.booking.setup.START_TIME)}–${endFriendly(state.booking.setup.START_TIME, state.booking.setup.DURATION_HOURS)} · ${state.booking.setup.DURATION_HOURS} hours\nCourt priority: ${state.booking.setup.PREFERRED_COURTS.join(' → ')}\nFallback starts: ${state.booking.setup.FALLBACK_TIMES.map(friendly).join(', ') || 'None'}\nTarget: ${dateLabel(state.booking.targetDate)}`) : 'No saved plan available.';
     const actualAmount = state.handoff?.amount ?? state.observedPrice ?? state.selection?.amount;
-    byId('observed-price').hidden = actualAmount === undefined || actualAmount === null;
-    if (actualAmount !== undefined && actualAmount !== null)
-        byId('observed-price').textContent = `Observed booking price: ₱${actualAmount.toLocaleString()} · Review the amount in Onda before final booking authorization. Payment stays manual.`;
+    byId('observed-price').hidden = (actualAmount === undefined || actualAmount === null) && (state.assumedPrice === undefined || state.assumedPrice === null);
+    byId('observed-price').textContent = [actualAmount !== undefined && actualAmount !== null ? `Observed booking price: ₱${actualAmount.toLocaleString()} · Review the amount in Onda before final booking authorization.` : '',
+        state.assumedPrice !== undefined && state.assumedPrice !== null ? `Direct-lane estimated total: ₱${state.assumedPrice.toLocaleString()} · UNVERIFIED prior-rate assumption; Friday's actual price may differ.` : '',
+        'Payment stays manual.'].filter(Boolean).join('\n');
     const action = input('main-action'), hold = !!state.handoff || !!state.lock, blockedHold = hold && !state.canPrepareOverHold;
     const apiWaiting = state.operation === 'full' && state.apiStage?.stage === 'WAITING_FOR_RELEASE';
     const actionState = apiWaiting ? 'armed' : busy ? 'running' : blockedHold ? 'hold' : armed ? 'armed' : state.ready && !dirty ? 'review' : 'prepare';
-    action.textContent = actionState === 'prepare' && state.canPrepareOverHold ? 'Prepare New Run' : { hold: 'Review Hold', running: 'Running', armed: 'Armed', review: 'Review & Arm', prepare: 'Prepare' }[actionState];
+    action.textContent = actionState === 'prepare' && unresolvedCheckout ? 'Reset & Prepare' : actionState === 'prepare' && state.canPrepareOverHold ? 'Prepare New Run' : { hold: 'Review Hold', running: 'Running', armed: 'Armed', review: 'Review & Arm', prepare: 'Prepare' }[actionState];
     action.disabled = actionState === 'running' || actionState === 'armed' || actionState === 'prepare' && !!input('prepare').disabled;
-    byId('main-action-hint').textContent = state.canPrepareOverHold ? 'The verified hold stays recorded. Prepare a fresh schedule in the same bot before another run.' : blockedHold ? 'Review the retained lock before any new action.' : actionState === 'review' ? 'Review Terms and authorize this exact run before arming.' : actionState === 'armed' ? 'Release is scheduled. Use Emergency Stop to cancel.' : actionState === 'running' ? 'Current booking operation is in progress.' : 'Check the plan, then prepare the required browser or browsers.';
+    byId('main-action-hint').textContent = unresolvedCheckout ? 'Inspects every required browser; it will not clear the lock unless the old worker is dead and all Onda state is clean.' : state.canPrepareOverHold ? 'The verified hold stays recorded. Prepare a fresh schedule in the same bot before another run.' : blockedHold ? 'Review the retained lock before any new action.' : actionState === 'review' ? 'Review Terms and authorize this exact run before arming.' : actionState === 'armed' ? 'Release is scheduled. Use Emergency Stop to cancel.' : actionState === 'running' ? 'Current booking operation is in progress.' : 'Check the plan, then prepare the required browser or browsers.';
     byId('primary-actions').hidden = currentView !== 'tests' && !state.selection && !state.handoff && !state.bookingResult && !armed;
     const testDate = input('test-date').value;
     input('test-date').disabled = busy;
     const testPrepared = !!state.ready && !testDirty && state.workflow === 'test' && !!b && (b.setup.BOOKING_METHOD === 'api-first' && !!state.apiFirstReady ||
         !!state.preparedContext && state.preparedContext.workflow === 'test' && state.preparedContext.date === testDate);
-    const testBrowsers = b?.setup.BOOKING_TYPE === 'extended' ? ['A', 'B'] : ['A'];
+    const testBrowsers = b ? requiredWorkers(b.setup.BOOKING_TYPE, b.setup.COURT_COUNT) : ['A'];
     const testGates = [
-        ['Test date selected', !!testDate], ['Saved booking plan', !!b], ['Primary player configured', playerStatus.primary],
-        ...(b?.setup.BOOKING_TYPE === 'extended' ? [['Extended player configured', playerStatus.extended]] : []),
+        ['Test date selected', !!testDate], ['Saved booking plan', !!b], ...testBrowsers.map(id => [`${workerLabel(id)} configured`, !!playerReadyByWorker[id]]),
         ...testBrowsers.map(id => [`Browser ${id} prepared`, testPrepared && !!state.browserHealth?.[id]]),
         ['Automation lock clear', !state.lock], ['Preparation matches this date and plan', testPrepared],
         ['Terms authorized for this test', !!state.termsAuthorized]
     ];
     byId('test-readiness').replaceChildren(...testGates.map(([label, ok]) => { const row = document.createElement('div'); row.className = `gate ${ok ? 'good' : 'warn'}`; row.textContent = `${ok ? 'OK' : '--'} ${label}`; return row; }));
-    byId('test-plan-summary').textContent = b ? `${b.setup.BOOKING_METHOD.toUpperCase()} · ${b.setup.BOOKING_TYPE.toUpperCase()} · ${b.setup.COURT_COUNT} court${b.setup.COURT_COUNT === 1 ? '' : 's'}\n${friendly(b.setup.START_TIME)}–${endFriendly(b.setup.START_TIME, b.setup.DURATION_HOURS)} · ${b.setup.DURATION_HOURS} hours\nCourt priority: ${b.setup.PREFERRED_COURTS.join(' → ')}\nFallback starts: ${b.setup.FALLBACK_TIMES.map(friendly).join(', ') || 'None'}\nTest date: ${testDate ? dateLabel(testDate) : 'Choose a date'}${input('exact-a').value.trim() || input('exact-b').value.trim() ? `\nAdvanced exact court override: ${[input('exact-a').value, input('exact-b').value].filter(Boolean).join(' / ')}` : ''}` : 'No saved booking plan available.';
-    byId('test-headline').textContent = workflow === 'test' && state.workflow === 'test' ? state.headline : state.lock ? 'Review retained hold' : testPrepared ? 'Ready to test' : 'Prepare to test';
-    byId('test-detail').textContent = workflow === 'test' && state.workflow === 'test' ? state.detail : state.lock ? 'Review the existing browser and payment hold before testing again.' : testPrepared ? 'Review Terms, then run the saved plan.' : 'Choose a date, then prepare the saved booking plan.';
+    const specialSaved = b?.setup.SESSION_MODE === 'special-friday';
+    byId('test-plan-summary').textContent = specialSaved ? 'SPECIAL FRIDAY SESSION is release-only. Use Next Release to prepare and arm it.' : b ? `${b.setup.BOOKING_METHOD.toUpperCase()} · ${b.setup.BOOKING_TYPE.toUpperCase()} · ${b.setup.COURT_COUNT} court${b.setup.COURT_COUNT === 1 ? '' : 's'}\n${friendly(b.setup.START_TIME)}–${endFriendly(b.setup.START_TIME, b.setup.DURATION_HOURS)} · ${b.setup.DURATION_HOURS} hours\nCourt priority: ${b.setup.PREFERRED_COURTS.join(' → ')}\nFallback starts: ${b.setup.FALLBACK_TIMES.map(friendly).join(', ') || 'None'}\nTest date: ${testDate ? dateLabel(testDate) : 'Choose a date'}${input('exact-a').value.trim() || input('exact-b').value.trim() ? `\nAdvanced exact court override: ${[input('exact-a').value, input('exact-b').value].filter(Boolean).join(' / ')}` : ''}` : 'No saved booking plan available.';
+    const liveTestHandoffs = workflow === 'test' && state.workflow === 'test' ? state.qrHandoffs ?? [] : [];
+    const readyTestHandoffs = liveTestHandoffs.filter(hold => (hold.status ?? 'qr-ready') === 'qr-ready').length;
+    const expectedTestHandoffs = Math.max(testBrowsers.length, liveTestHandoffs.length);
+    byId('test-headline').textContent = liveTestHandoffs.length
+        ? readyTestHandoffs === expectedTestHandoffs ? 'CONFIRM BOOKING DETAILS BEFORE PAYING' : `CHECKOUTS REACHING QR · ${readyTestHandoffs}/${expectedTestHandoffs}`
+        : workflow === 'test' && state.workflow === 'test' ? state.headline : state.lock ? 'Review retained hold' : testPrepared ? 'Ready to test' : 'Prepare to test';
+    const baseTestDetail = liveTestHandoffs.length
+        ? `${readyTestHandoffs} of ${expectedTestHandoffs} required QR page${expectedTestHandoffs === 1 ? ' is' : 's are'} verified. Check the player, courts, date, every hourly slot, amount, and booking reference below before scanning any QR code.`
+        : specialSaved ? 'This special session can only run through Next Release.' : workflow === 'test' && state.workflow === 'test' ? state.detail : state.lock ? 'Review the existing browser and payment hold before testing again.' : testPrepared ? 'Review Terms, then run the saved plan.' : 'Choose a date, then prepare the saved booking plan.';
+    byId('test-detail').textContent = baseTestDetail;
     const testState = busy ? 'running' : blockedHold ? 'hold' : testPrepared ? 'review' : 'prepare';
     const testButton = input('test-main-action');
-    testButton.textContent = testState === 'prepare' && state.canPrepareOverHold ? 'Prepare New Run' : { running: 'Running', hold: 'Review Hold', review: 'Review & Test', prepare: 'Prepare' }[testState];
-    testButton.disabled = testState === 'running' || testState === 'prepare' && (!b || !testDate || blockedHold);
-    byId('test-main-action-hint').textContent = state.canPrepareOverHold ? 'The verified hold stays recorded. Preparing opens a fresh schedule in the same bot.' : blockedHold ? 'Review the retained lock before another test.' : testState === 'review' ? 'This test can create real temporary payment holds. Review Terms and confirm the test before continuing.' : testState === 'running' ? 'The current test is in progress.' : 'Prepare the required browser or browsers for the selected date.';
+    testButton.textContent = testState === 'prepare' && unresolvedCheckout ? 'Reset & Prepare' : testState === 'prepare' && state.canPrepareOverHold ? 'Prepare New Run' : { running: 'Running', hold: 'Review Hold', review: 'Review & Test', prepare: 'Prepare' }[testState];
+    testButton.disabled = !!specialSaved || testState === 'running' || testState === 'prepare' && (!b || !testDate || blockedHold);
+    input('test-booking').disabled ||= !!specialSaved;
+    byId('test-main-action-hint').textContent = specialSaved ? 'Release-only safety mode: prepare and arm this session from Next Release.' : unresolvedCheckout ? 'Inspects both API browsers and clears the retained safety lock only after clean-state verification.' : state.canPrepareOverHold ? 'The verified hold stays recorded. Preparing opens a fresh schedule in the same bot.' : blockedHold ? 'Review the retained lock before another test.' : testState === 'review' ? 'This test can create real temporary payment holds. Review Terms and confirm the test before continuing.' : testState === 'running' ? 'The current test is in progress.' : 'Prepare the required browser or browsers for the selected date.';
     testResults.hidden = !!byId('observed-price').hidden && !!byId('selection-result').hidden && !!byId('handoff-result').hidden;
     syncViableControls();
+    syncSpecialSessionControls();
     tick();
 }
 byId('main-action').onclick = () => { if (!latest)
@@ -537,6 +676,7 @@ byId('mode-selection').addEventListener('change', () => { void window.thirsty.se
 byId('terms').addEventListener('change', () => { void window.thirsty.authorizeTerms(input('terms').checked).catch(() => { input('terms').checked = false; }); });
 for (const id of ['booking-method', 'test-date', 'court-count', 'start-time', 'duration', 'attempts', 'exact-a', 'exact-b'])
     byId(id).addEventListener('change', changed);
+byId('session-mode').addEventListener('change', () => { syncSpecialSessionControls(); syncViableControls(); syncSpecialSessionControls(); changed(); });
 byId('booking-type').addEventListener('change', () => { const extended = input('booking-type').value === 'extended', d = Number(input('duration').value); if (extended && d < 4)
     input('duration').value = '4'; if (!extended && d > 3)
     input('duration').value = '3'; syncViableControls(); changed(); });
@@ -555,7 +695,7 @@ byId('add-fallback').onclick = () => { const h = input('fallback-time').value; i
 } fallbackTimes.push(h); editors(); changed(); };
 byId('save-booking').onclick = () => {
     void (async () => {
-        const setup = { BOOKING_METHOD: input('booking-method').value, BOOKING_TYPE: input('booking-type').value, COURT_COUNT: Number(input('court-count').value), START_TIME: input('start-time').value, DURATION_HOURS: Number(input('duration').value), PREFERRED_COURTS: courtOrder, FALLBACK_COURTS: [], FALLBACK_TIMES: fallbackTimes, MAX_SELECTION_ATTEMPTS: Number(input('attempts').value) };
+        const setup = { SESSION_MODE: input('session-mode').value, BOOKING_METHOD: input('booking-method').value, BOOKING_TYPE: input('booking-type').value, COURT_COUNT: Number(input('court-count').value), START_TIME: input('start-time').value, DURATION_HOURS: Number(input('duration').value), PREFERRED_COURTS: courtOrder, FALLBACK_COURTS: [], FALLBACK_TIMES: fallbackTimes, MAX_SELECTION_ATTEMPTS: Number(input('attempts').value) };
         await window.thirsty.saveBooking(setup);
         const state = await window.thirsty.getStatus();
         if (state.headline === 'Booking plan saved') {
@@ -595,7 +735,7 @@ function testRequest() {
     const exact = exactA || exactB ? { exact: (setup.BOOKING_TYPE === 'extended' ? [exactA, exactB] : [exactA]).map(value => value.split(',').map(court => Number(court.trim()))) } : {};
     return { method: setup.BOOKING_METHOD, request: { strategy: setup.BOOKING_TYPE, date: input('test-date').value, start: setup.START_TIME, duration: setup.DURATION_HOURS, courtCount: setup.COURT_COUNT, priority: [...setup.PREFERRED_COURTS], fallbackStarts: [...setup.FALLBACK_TIMES], ...exact } };
 }
-function currentSetup() { return { BOOKING_METHOD: input('booking-method').value, BOOKING_TYPE: input('booking-type').value, COURT_COUNT: Number(input('court-count').value), START_TIME: input('start-time').value, DURATION_HOURS: Number(input('duration').value), PREFERRED_COURTS: courtOrder, FALLBACK_COURTS: [], FALLBACK_TIMES: fallbackTimes, MAX_SELECTION_ATTEMPTS: Number(input('attempts').value) }; }
+function currentSetup() { return { SESSION_MODE: input('session-mode').value, BOOKING_METHOD: input('booking-method').value, BOOKING_TYPE: input('booking-type').value, COURT_COUNT: Number(input('court-count').value), START_TIME: input('start-time').value, DURATION_HOURS: Number(input('duration').value), PREFERRED_COURTS: courtOrder, FALLBACK_COURTS: [], FALLBACK_TIMES: fallbackTimes, MAX_SELECTION_ATTEMPTS: Number(input('attempts').value) }; }
 byId('test-booking').onclick = () => { const authorized = input('terms').checked; input('terms').checked = false; void window.thirsty.testBooking({ ...testRequest(), authorizeTerms: authorized }).catch(() => { byId('detail').textContent = 'Check booking fields and Terms authorization.'; }); };
 window.thirsty.onStatus(render);
 void window.thirsty.getStatus().then(render);
@@ -604,6 +744,12 @@ const activity = document.querySelector('.activity');
 const expand = byId('activity-expand');
 function setActivityExpanded(value) { activity.classList.toggle('expanded', value); expand.setAttribute('aria-expanded', String(value)); expand.textContent = value ? 'Restore' : 'Maximize'; }
 expand.addEventListener('click', () => setActivityExpanded(!activity.classList.contains('expanded')));
-document.addEventListener('keydown', event => { if (event.key === 'Escape' && activity.classList.contains('expanded'))
+byId('run-detail-close').addEventListener('click', closeRunDetail);
+byId('run-detail-modal').addEventListener('click', event => { if (event.target === byId('run-detail-modal'))
+    closeRunDetail(); });
+document.addEventListener('keydown', event => { if (event.key !== 'Escape')
+    return; if (!byId('run-detail-modal').hidden)
+    closeRunDetail();
+else if (activity.classList.contains('expanded'))
     setActivityExpanded(false); });
 //# sourceMappingURL=app.js.map

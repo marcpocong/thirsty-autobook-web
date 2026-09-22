@@ -13,6 +13,7 @@ import { snapshot, validateSnapshot, navigateDate } from './grid.js';
 import { securityReason } from './safety.js';
 import { assertDiagnosticSchedule } from './diagnostic-schedule.js';
 import { pidAlive } from '../ui/locks.js';
+import { WORKER_IDS } from './workers.js';
 export class PreparationBlockedError extends Error {
     browserId;
     review;
@@ -65,7 +66,7 @@ catch (e) {
         return undefined;
     throw e;
 } }
-export async function resetAndPrepare(strategy, safety, deps = {}, date) {
+export async function resetAndPrepare(strategy, safety, deps = {}, date, requestedWorkers = []) {
     const root = deps.root ?? '.', alive = deps.alive ?? pidAlive;
     deps.progress?.('starting');
     const path = resolve(root, '.local/automation.lock'), raw = await maybeRead(path);
@@ -73,17 +74,20 @@ export async function resetAndPrepare(strategy, safety, deps = {}, date) {
     const record = raw ? JSON.parse(raw) : undefined;
     if (record && (!Number.isSafeInteger(record.pid) || record.pid <= 0 || alive(record.pid) !== false))
         throw Error('LOCK_PID_RUNNING');
-    const legacy = record?.mode === 'dual', two = legacy || record?.mode === 'extended' || strategy === 'extended';
+    const legacy = record?.mode === 'dual';
+    const recordedWorkers = Array.isArray(record?.workers) && record.workers.every((id) => WORKER_IDS.includes(id)) ? record.workers : [];
+    const previousWorkers = recordedWorkers.length ? recordedWorkers : legacy || record?.mode === 'extended' ? ['A', 'B'] : [];
+    const requiredWorkers = [...new Set([...previousWorkers, ...(requestedWorkers.length ? requestedWorkers : strategy === 'extended' ? ['A', 'B'] : ['A'])])];
     const workerPaths = ['.local/dual/worker-a.lock', '.local/dual/worker-b.lock'].map(p => resolve(root, p));
     const guardPath = resolve(root, '.local/preparation.lock');
     const subordinate = await Promise.all(workerPaths.map(maybeRead));
-    const sharedExtended = record?.mode === 'extended' && Array.isArray(record.workers) && record.workers.length === 2 && record.workers[0] === 'A' && record.workers[1] === 'B' && subordinate.every(value => value === undefined);
+    const sharedRecord = !!record && recordedWorkers.length > 0 && subordinate.every(value => value === undefined);
     if (!record && subordinate.some(Boolean))
         throw Error('ORPHAN_WORKER_STATE');
     if (record && !legacy && record.mode !== 'extended' && subordinate.some(Boolean))
         throw Error('ORPHAN_WORKER_STATE');
     const records = subordinate.map(r => r ? JSON.parse(r) : undefined);
-    if (legacy || record?.mode === 'extended' && !sharedExtended)
+    if (legacy || record?.mode === 'extended' && !sharedRecord)
         for (const r of records)
             if (!r || r.pid !== record.pid || r.runID !== record.runID || alive(r.pid) !== false)
                 throw Error('WORKER_STATE_UNKNOWN');
@@ -126,7 +130,7 @@ export async function resetAndPrepare(strategy, safety, deps = {}, date) {
             await f.sync();
             await f.close();
         }
-        let identities = two ? [browserIdentity('A'), browserIdentity('B')] : [browserIdentity('A')];
+        let identities = requiredWorkers.map(browserIdentity);
         // Start/reuse every required browser before inspecting any Onda state. The
         // built-in starter may move a worker to its recorded fallback endpoint when
         // another application owns the preferred port; it never closes that owner.
@@ -139,7 +143,7 @@ export async function resetAndPrepare(strategy, safety, deps = {}, date) {
         const browsers = [];
         deps.progress?.('onda');
         for (const [i, b] of identities.entries()) {
-            const workerRecord = sharedExtended ? record : legacy || record?.mode === 'extended' ? records[i] : i === 0 ? record : undefined;
+            const workerRecord = sharedRecord ? record : legacy || record?.mode === 'extended' ? records[i] : i === 0 ? record : undefined;
             const preserveHold = workerRecord?.stage === 'HOLD_VERIFIED' && Number.isFinite(Date.parse(workerRecord.holdExpiresAt ?? ''));
             const prepared = await (deps.inspect ?? ((identity, guard) => inspectForPreparation(identity, guard, preserveHold)))(b, safety);
             browsers.push(prepared);
@@ -149,12 +153,12 @@ export async function resetAndPrepare(strategy, safety, deps = {}, date) {
         // not prevent inspection of B's independent Onda checkout.
         deps.progress?.('holds');
         for (const [i, browser] of browsers.entries()) {
-            const workerRecord = sharedExtended ? record : legacy || record?.mode === 'extended' ? records[i] : i === 0 ? record : undefined;
+            const workerRecord = sharedRecord ? record : legacy || record?.mode === 'extended' ? records[i] : i === 0 ? record : undefined;
             try {
                 assertResetSafe(workerRecord, browser.observed);
             }
             catch (error) {
-                throw new PreparationBlockedError(error instanceof Error ? error.message : 'PAYMENT_HOLD_MAY_BE_ACTIVE', i === 0 ? 'A' : 'B', browser.observed);
+                throw new PreparationBlockedError(error instanceof Error ? error.message : 'PAYMENT_HOLD_MAY_BE_ACTIVE', requiredWorkers[i], browser.observed);
             }
         }
         // Only normalize after all browser state and durable records are safe.
@@ -164,7 +168,7 @@ export async function resetAndPrepare(strategy, safety, deps = {}, date) {
             await same();
             safety.check();
             const prepared = await browser.normalize(date);
-            normalized.push({ id: i === 0 ? 'A' : 'B', ...(prepared ? { snapshot: prepared } : {}) });
+            normalized.push({ id: requiredWorkers[i], ...(prepared ? { snapshot: prepared } : {}) });
         }
         deps.progress?.('grids');
         if (raw) {
@@ -266,9 +270,9 @@ export async function startForPreparation(initial, deps = {}) {
         if (!cdpCodes.includes(code))
             throw error;
     }
-    const other = browserIdentity(initial.workerId === 'A' ? 'B' : 'A').port, base = initial.workerId === 'A' ? 19222 : 19223;
+    const occupied = new Set(WORKER_IDS.filter(id => id !== initial.workerId).map(id => browserIdentity(id).port)), base = 19222 + WORKER_IDS.indexOf(initial.workerId);
     for (let port = base; port <= base + 38; port += 2) {
-        if (port === other || !await portAvailable(port))
+        if (occupied.has(port) || !await portAvailable(port))
             continue;
         const candidate = candidateBrowserIdentity(initial.workerId, port);
         try {

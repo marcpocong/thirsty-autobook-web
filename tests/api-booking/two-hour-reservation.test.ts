@@ -7,6 +7,7 @@ import { parseAvailability } from '../../src/api-booking/availability-parser.js'
 import { planBooking } from '../../src/api-booking/booking-planner.js';
 import { DurableSubmissionJournal } from '../../src/api-booking/durable-submission-journal.js';
 import { selectedStandardHours, selectedTwoHours, standardPlanJournalKeys, TwoHourReservationAdapter, type SlotCheckRequest } from '../../src/api-booking/two-hour-reservation.js';
+import { SubmissionDispatchError } from '../../src/api-booking/submission-errors.js';
 
 const date = '2026-09-18';
 const now = new Date('2026-09-18T00:00:00.000Z');
@@ -179,6 +180,17 @@ describe('offline two-hour adapter', () => {
       preferredStartTimes: ['08:00'], fallbackStartTimes: [], courtPriority: [3], fallbackCourts: [], courtCount: 1,
       maximumTotalPrice: 1_800, currency: 'PHP' });
     expect(() => selectedTwoHours(three)).toThrow('TWO_HOUR_PLAN_REQUIRED');
+  });
+
+  it('records a confirmed application conflict as rejected rather than unknown', async () => {
+    const { adapter, publicCheckout, path } = await setup();
+    publicCheckout.mockRejectedValue(new SubmissionDispatchError('ONDA_HTTP_STATUS_INVALID', true,
+      { status: 409, category: 'http-rejection', contentKind: 'json', responseSource: 'application', errorHint: 'other' }, true));
+    process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT = 'SUPERVISED_ONE_SHOT';
+    await expect(adapter.submit(plan, customer, { supervisedOneShot: true })).rejects.toThrow('ONDA_HTTP_STATUS_INVALID');
+    const key = DurableSubmissionJournal.key('5f8786bd-dc61-4509-b893-74cda8f783f7',
+      hours[0].spaceId, date, hours[0].startTime, hours[1].endTime);
+    expect(await new DurableSubmissionJournal(path).read(key)).toMatchObject({ state: 'rejected', failureCode: 'ONDA_HTTP_STATUS_INVALID' });
   });
 
   it('rejects reused proofs and never sends checkout', async () => {

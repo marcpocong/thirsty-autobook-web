@@ -24,11 +24,13 @@ export class OndaLiveAvailabilityProvider {
     clock;
     timeoutMs;
     maximumAgeMs;
+    allowIncompleteRange;
     constructor(options = {}) {
         this.fetcher = options.fetcher ?? fetch;
         this.clock = options.clock ?? (() => new Date());
         this.timeoutMs = options.timeoutMs ?? 10_000;
         this.maximumAgeMs = options.maximumAgeMs ?? 15_000;
+        this.allowIncompleteRange = options.allowIncompleteRange ?? false;
         if (!Number.isFinite(this.timeoutMs) || this.timeoutMs <= 0 || !Number.isFinite(this.maximumAgeMs) || this.maximumAgeMs < 0)
             throw new LiveAvailabilityError('AVAILABILITY_OPTIONS_INVALID');
     }
@@ -72,7 +74,7 @@ export class OndaLiveAvailabilityProvider {
         const envelope = { raw, capturedAt, fixtureKind: 'live', label: 'ONDA LIVE READ-ONLY AVAILABILITY' };
         // Validate before handing data to the coordinator. The coordinator rechecks freshness.
         parseAvailability(raw, { ...query, capturedAt, fixtureKind: 'live', label: envelope.label,
-            now: this.clock(), maximumAgeMs: this.maximumAgeMs });
+            now: this.clock(), maximumAgeMs: this.maximumAgeMs, requireCompleteRange: !this.allowIncompleteRange });
         return envelope;
     }
 }

@@ -6,6 +6,7 @@ import { planBooking } from '../../src/api-booking/booking-planner.js';
 import { submitCalendarFreeTwoHourCheckout } from '../../src/api-booking/calendar-free-checkout.js';
 import { THIRSTY_PICKLE_CLIENT_ID } from '../../src/api-booking/local-customer.js';
 import { DurableSubmissionJournal } from '../../src/api-booking/durable-submission-journal.js';
+import {OndaBrowserSessionTransport} from '../../src/api-booking/browser-session-transport.js';
 
 const date = '2026-09-18';
 const at = new Date('2026-09-18T00:00:00Z');
@@ -45,6 +46,24 @@ describe('calendar-free checkout approval boundary', () => {
       else process.env.ONDA_CALENDAR_FREE_CHECKOUT = prior;
       if (priorSubmit === undefined) delete process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT;
       else process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT = priorSubmit;
+    }
+  });
+  it('does not use a prewarmed security context from another browser page',async()=>{
+    const prior=process.env.ONDA_CALENDAR_FREE_CHECKOUT,priorSubmit=process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT;
+    process.env.ONDA_CALENDAR_FREE_CHECKOUT='APPROVED_ONE_SHOT';
+    process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT='SUPERVISED_ONE_SHOT';
+    try{
+      const page={evaluate:vi.fn()} as unknown as Page;
+      const other={evaluate:vi.fn()} as unknown as Page;
+      const transport=new OndaBrowserSessionTransport(other,async()=>({turnstileToken:'synthetic',publicFingerprint:'synthetic'}));
+      await expect(submitCalendarFreeTwoHourCheckout({page,plan,
+        availability:{...availability,fixtureKind:'live',capturedAt:new Date().toISOString()},customer,approval,
+        journal:{} as DurableSubmissionJournal,transport})).rejects.toThrow('CALENDAR_FREE_TRANSPORT_PAGE_MISMATCH');
+      expect(page.evaluate).not.toHaveBeenCalled();
+      expect(other.evaluate).not.toHaveBeenCalled();
+    }finally{
+      if(prior===undefined)delete process.env.ONDA_CALENDAR_FREE_CHECKOUT;else process.env.ONDA_CALENDAR_FREE_CHECKOUT=prior;
+      if(priorSubmit===undefined)delete process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT;else process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT=priorSubmit;
     }
   });
 });

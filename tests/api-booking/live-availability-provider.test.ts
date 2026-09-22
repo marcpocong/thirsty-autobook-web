@@ -33,4 +33,11 @@ describe('live read-only availability provider', () => {
     const invalid = new OndaLiveAvailabilityProvider({ fetcher: (async () => response({ success: true, data: { dates: {}, slotsBySpace: {} } })) as typeof fetch, clock: () => now });
     await expect(invalid.getAvailability({ startDate: date, endDate: date })).rejects.toThrow('AVAILABILITY_DATE_RANGE_INCOMPLETE');
   });
+
+  it('permits an incomplete target date only for the pre-release watcher', async () => {
+    const incomplete = { success: true, data: { dates: {}, slotsBySpace: {} } };
+    const provider = new OndaLiveAvailabilityProvider({ allowIncompleteRange: true,
+      fetcher: (async () => response(incomplete)) as typeof fetch, clock: () => now });
+    await expect(provider.getAvailability({ startDate: date, endDate: date })).resolves.toMatchObject({ raw: incomplete });
+  });
 });

@@ -6,7 +6,7 @@ import {Controller} from '../ui/controller.js';
 import {bookingView,defaultSetup} from '../ui/booking.js';
 import {ConfigSchema,ObservationSchema} from '../src/config.js';
 import {clockStatus} from '../ui/status.js';
-import {readRetainedHold,readPreviousHolds} from '../ui/status.js';
+import {readRetainedHold,readPreviousHolds,readLatestQrHandoffs} from '../ui/status.js';
 import {DateTime} from 'luxon';
 import {FullPracticeSchema} from '../src/full-practice.js';
 import {commandSpec} from '../ui/processes.js';
@@ -67,6 +67,18 @@ it('reads verified holds from both extended workers and archived records',async(
   await writeFile(resolve(root,'.local/retained-holds/00000000-0000-4000-8000-000000000000.json'),JSON.stringify({archivedAt:new Date().toISOString(),lock:{runID:'previous',stage:'HOLD_VERIFIED',holdExpiresAt:expiry},workers:[]}));
   expect(await readRetainedHold(root)).toMatchObject({stage:'HOLD_VERIFIED',expiresAt:expiry});
   expect(await readPreviousHolds(root)).toMatchObject([{runID:'previous',expiresAt:expiry}]);
+ }finally{if(!root.startsWith(resolve('.local')+sep))throw Error('UNSAFE_TEST_PATH');await rm(root,{recursive:true,force:true});}
+});
+it('restores only official QR stages from the latest API run matching the retained hold',async()=>{
+ await mkdir('.local',{recursive:true});const root=await mkdtemp(resolve('.local/qr-recovery-'));
+ try{
+  const dir=resolve(root,'.local/api-booking/run-progress');await mkdir(dir,{recursive:true});
+  const expiry='2026-09-22T04:21:24.000+08:00';
+  const path=resolve(dir,'00000000-0000-4000-8000-000000000001.ndjson');
+  const base={at:'2026-09-21T20:11:24.000Z',date:'2026-09-23',startTime:'08:00',durationHours:3,price:3600,holdExpiresAt:expiry};
+  await writeFile(path,[{stage:'PENDING_HOLD',workerId:'C',court:5,...base},{stage:'OFFICIAL_QRPH_HANDOFF',workerId:'A',court:7,courtB:6,...base},{stage:'OFFICIAL_QRPH_HANDOFF',workerId:'B',court:3,courtB:2,...base}].map(value=>JSON.stringify(value)).join('\n'));
+  expect(await readLatestQrHandoffs(root,expiry)).toMatchObject([{checkout:'A',courts:[7,6],amount:3600},{checkout:'B',courts:[3,2],amount:3600}]);
+  expect(await readLatestQrHandoffs(root,'2026-09-22T05:00:00.000+08:00')).toEqual([]);
  }finally{if(!root.startsWith(resolve('.local')+sep))throw Error('UNSAFE_TEST_PATH');await rm(root,{recursive:true,force:true});}
 });
 function harness(locked=true,confirmed=true){

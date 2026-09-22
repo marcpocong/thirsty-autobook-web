@@ -22,6 +22,19 @@ const record = (state: SubmissionRecord['state'], expiries: string[]): Submissio
 });
 
 describe('expired API hold reuse', () => {
+  it('archives a confirmed rejected attempt but keeps an uncertain attempt blocked', async () => {
+    const root=await mkdtemp(join(tmpdir(),'thirsty-rejected-journal-'));
+    try {
+      const directory=join(root,key),journal=new DurableSubmissionJournal(directory);
+      await mkdir(directory);
+      await writeFile(join(directory,`${key}.json`),JSON.stringify({...record('rejected',[]),observedResponse:undefined,failureCode:'ONDA_HTTP_STATUS_INVALID'}));
+      expect(await journal.recycleReusable(key,now)).toBe('reused');
+      expect((await readdir(join(root,'rejected-attempts')))).toHaveLength(1);
+      await mkdir(directory);
+      await writeFile(join(directory,`${key}.json`),JSON.stringify({...record('unknown',[]),observedResponse:undefined}));
+      expect(await journal.recycleReusable(key,now)).toBe('blocked');
+    }finally{await cleanup(root);}
+  });
   it('archives a verified expired hold and permits a fresh journal for the same block', async () => {
     const root = await mkdtemp(join(tmpdir(), 'thirsty-expired-journal-'));
     try {

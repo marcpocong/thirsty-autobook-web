@@ -1,4 +1,4 @@
-import { access, readFile, readdir } from 'node:fs/promises';
+import { access, readFile, readdir, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { DateTime } from 'luxon';
 import { loadObservationConfig, releaseCalendar, releaseCalendarOn } from '../src/config.js';
@@ -60,6 +60,33 @@ export async function readHandoff(root) {
         return null;
     }
 }
+/** Restore only QR pages verified in the latest API run that matches the retained hold. */
+export async function readLatestQrHandoffs(root, expiresAt) {
+    const directory = resolve(root, '.local/api-booking/run-progress');
+    const files = await readdir(directory).catch(() => []);
+    const dated = await Promise.all(files.filter(name => /^[a-f0-9-]{36}\.ndjson$/.test(name)).map(async (name) => ({ name, modified: (await stat(resolve(directory, name)).catch(() => null))?.mtimeMs ?? 0 })));
+    const latest = dated.sort((a, b) => b.modified - a.modified)[0];
+    if (!latest)
+        return [];
+    try {
+        const entries = (await readFile(resolve(directory, latest.name), 'utf8')).split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line));
+        const qr = entries.filter(entry => entry.stage === 'OFFICIAL_QRPH_HANDOFF');
+        if (!qr.some(entry => entry.holdExpiresAt === expiresAt))
+            return [];
+        const results = new Map();
+        for (const entry of qr) {
+            const worker = entry.workerId;
+            if (!['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].includes(String(worker)) || typeof entry.date !== 'string' || typeof entry.startTime !== 'string' || typeof entry.court !== 'number' || typeof entry.durationHours !== 'number' || typeof entry.price !== 'number' || typeof entry.at !== 'string')
+                continue;
+            const courts = [entry.court, ...(typeof entry.courtB === 'number' ? [entry.courtB] : [])];
+            results.set(String(worker), { checkout: worker, courts, date: entry.date, startTime: entry.startTime, endTime: `${String(Number(entry.startTime.slice(0, 2)) + entry.durationHours).padStart(2, '0')}:00`, amount: entry.price, verifiedAt: entry.at, ...(typeof entry.holdExpiresAt === 'string' ? { holdExpiresAt: entry.holdExpiresAt } : {}) });
+        }
+        return [...results.values()].sort((a, b) => a.checkout.localeCompare(b.checkout));
+    }
+    catch {
+        return [];
+    }
+}
 export async function probeCdp() {
     return (await probeBrowserHealth()).A;
 }
@@ -73,7 +100,7 @@ async function probePort(port) {
         return false;
     }
 }
-export async function probeBrowserHealth() { const [A, B] = await Promise.all([probePort(browserIdentity('A').port), probePort(browserIdentity('B').port)]); return { A, B }; }
+export async function probeBrowserHealth() { const ids = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']; const values = await Promise.all(ids.map(id => probePort(browserIdentity(id).port))); return Object.fromEntries(ids.map((id, index) => [id, !!values[index]])); }
 export function clockStatus(config, now = DateTime.now()) {
     const local = now.setZone(config.TIMEZONE), today = releaseCalendarOn(config, local.toISODate());
     const next = releaseCalendar(config, now);
