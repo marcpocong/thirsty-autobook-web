@@ -42,6 +42,7 @@ export class OndaBrowserSessionTransport {
     contextHooks;
     preparedHeaders;
     preparedAt;
+    preparation;
     constructor(page, currentCheckoutHeaders, captureCheckoutResponse, contextHooks = {}) {
         this.page = page;
         this.currentCheckoutHeaders = currentCheckoutHeaders;
@@ -83,20 +84,35 @@ export class OndaBrowserSessionTransport {
         if (this.preparedHeaders && this.preparedAt !== undefined && Date.now() - this.preparedAt >= 0 &&
             Date.now() - this.preparedAt <= 20_000)
             return;
-        this.preparedHeaders = undefined;
-        this.preparedAt = undefined;
-        let current;
+        // The adaptive proof and proofless paths can ask the same E/F transport to
+        // prewarm at nearly the same instant. Share one acquisition so concurrent
+        // callers cannot overwrite each other's genuine page-bound token.
+        if (this.preparation)
+            return this.preparation;
+        const preparation = (async () => {
+            this.preparedHeaders = undefined;
+            this.preparedAt = undefined;
+            let current;
+            try {
+                current = await this.acquireCheckoutHeaders();
+            }
+            catch (error) {
+                throw securityContextError(error);
+            }
+            if (!usable(current?.turnstileToken) || !usable(current?.publicFingerprint))
+                throw new BrowserSessionTransportError('CURRENT_CHECKOUT_HEADERS_INVALID');
+            this.assertPage();
+            this.preparedHeaders = current;
+            this.preparedAt = Date.now();
+        })();
+        this.preparation = preparation;
         try {
-            current = await this.acquireCheckoutHeaders();
+            await preparation;
         }
-        catch (error) {
-            throw securityContextError(error);
+        finally {
+            if (this.preparation === preparation)
+                this.preparation = undefined;
         }
-        if (!usable(current?.turnstileToken) || !usable(current?.publicFingerprint))
-            throw new BrowserSessionTransportError('CURRENT_CHECKOUT_HEADERS_INVALID');
-        this.assertPage();
-        this.preparedHeaders = current;
-        this.preparedAt = Date.now();
     }
     assertPage() {
         if (this.page.isClosed() || this.page.url() !== ONDA_URL)

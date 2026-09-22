@@ -20,11 +20,25 @@ function runDetail(run:RunHistoryEntry){
   const detail=document.createElement('div');detail.className='run-detail';
   const facts=document.createElement('dl');facts.className='run-detail-facts';
   const fact=(name:string,value:string)=>{const item=document.createElement('div'),dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=name;dd.textContent=value;item.append(dt,dd);return item;};
+  const players=playersByWorker(latest?.playerStatus);
   facts.append(fact('Run ID',run.runId),fact('Started',`${new Date(run.startedAt).toLocaleString('en-GB',{timeZone:'Asia/Manila'})} Manila`),fact('Browser ready',run.readyAt?`${new Date(run.readyAt).toLocaleString('en-GB',{timeZone:'Asia/Manila'})} Manila`:'Not recorded'),fact('Finished',`${new Date(run.endedAt).toLocaleString('en-GB',{timeZone:'Asia/Manila'})} Manila`),fact('Measured time',`${((run.readyElapsedMs??0)/1000).toFixed(3)} seconds · browser ready to finish`),fact('Whole process',`${(run.totalElapsedMs/1000).toFixed(3)} seconds · includes startup/preparation`),fact('Outcome',run.outcome.toUpperCase()));
+  for(const hold of run.qrHandoffs??[]){
+    const player=hold.checkout?players[hold.checkout]:undefined;
+    const who=hold.checkout?`${player?.fullName||`Browser ${hold.checkout}`}`:'Player';
+    facts.append(fact(`Booking${hold.checkout?` (Browser ${hold.checkout})`:''}`,
+      `${who} · Court${hold.courts.length===1?'':'s'} ${hold.courts.join(' + ')} · ${hold.date} · ${hold.startTime}–${hold.endTime} · ₱${hold.amount.toLocaleString()}`));
+  }
   const timeline=document.createElement('div');timeline.className='run-detail-events';
   if(run.activities?.length)timeline.replaceChildren(...run.activities.map(activity=>{const event=document.createElement('div');event.className=`run-detail-event ${activity.level}`;const time=document.createElement('time');time.textContent=new Date(activity.at).toLocaleTimeString('en-GB',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit',second:'2-digit',fractionalSecondDigits:3});const message=document.createElement('span');message.textContent=activity.text;const timing=document.createElement('span');timing.className='run-detail-event-timing';timing.textContent=activity.elapsedMs===undefined?'':`${(activity.elapsedMs/1000).toFixed(3)}s total · ${((activity.deltaMs??0)/1000).toFixed(3)}s step`;event.append(time,message,timing);return event;}));
   else timeline.append(Object.assign(document.createElement('p'),{className:'empty',textContent:'No detailed activity was recorded for this older run.'}));
-  detail.append(facts,Object.assign(document.createElement('h3'),{textContent:'Activity timeline'}),timeline);
+  detail.append(facts);
+  if(run.qrHandoffs?.length){
+    const booking=document.createElement('div');booking.className='qr-summary-list';
+    const note=document.createElement('p');note.className='small';note.textContent='Full booking detail cards, expanded from the summary above. Player name/email reflect the currently saved profile.';
+    for(const hold of run.qrHandoffs)booking.append(buildHandoffCard(hold,players));
+    detail.append(Object.assign(document.createElement('h3'),{textContent:'Booking details'}),note,booking);
+  }
+  detail.append(Object.assign(document.createElement('h3'),{textContent:'Activity timeline'}),timeline);
   return detail;
 }
 function showRunDetail(run:RunHistoryEntry){
@@ -35,6 +49,7 @@ function closeRunDetail(){selectedRunId=undefined;byId('run-detail-modal').hidde
 type CourtCount=1|2|3|4|5|6|7;type WorkerId='A'|'B'|'C'|'D'|'E'|'F'|'G'|'H';
 const requiredWorkers=(strategy:string,count:number):WorkerId[]=>['A','B','C','D','E','F','G','H'].slice(0,(strategy==='extended'?2:1)*Math.ceil(count/2)) as WorkerId[];
 const workerLabel=(worker:WorkerId)=>worker==='A'?'Primary player':`Player ${'ABCDEFGH'.indexOf(worker)+1}`;
+const SPECIAL_SESSION_WORKERS_UI:WorkerId[]=['A','B','C','D','E','F','G','H'];
 interface FormDraft {sessionMode:'normal'|'special-friday';method:'browser'|'hybrid'|'api-first';strategy:'standard'|'extended';date:string;courtCount:CourtCount;start:string;duration:number;attempts:number;courtOrder:number[];fallbackTimes:string[];exactA:string;exactB:string}
 let testDraft:FormDraft|undefined,releaseDraft:FormDraft|undefined,testDirty=false,releaseDirty=false;
 let releaseAdjustment:FallbackReconciliation|undefined;
@@ -115,11 +130,27 @@ editors();
 testDraft=formDraft();
 const dateLabel = (date: string) => new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' }).format(new Date(`${date}T12:00:00Z`));
 function hourlySlots(start:string,end:string){const first=Number(start.slice(0,2)),last=Number(end.slice(0,2));return Array.from({length:Math.max(0,last-first)},(_,i)=>`${String(first+i).padStart(2,'0')}:00–${String(first+i+1).padStart(2,'0')}:00`);}
+const holdExpired=(hold:{holdExpiresAt?:string})=>!!hold.holdExpiresAt&&Date.parse(hold.holdExpiresAt)<=Date.now();
+function activeHandoffs(state:Dashboard){return (state.qrHandoffs??[]).filter(hold=>!holdExpired(hold));}
+type PlayerDetails={fullName:string;phone:string;email:string}|undefined;
+function playersByWorker(details:Dashboard['playerStatus']):Record<WorkerId,PlayerDetails>{return {A:details?.primaryDetails,B:details?.extendedDetails,C:details?.thirdDetails,D:details?.fourthDetails,E:details?.fifthDetails,F:details?.sixthDetails,G:details?.seventhDetails,H:details?.eighthDetails};}
+function buildHandoffCard(hold:import('../types.js').QrHandoffSummary,players:Record<WorkerId,PlayerDetails>){
+  const card=document.createElement('div');card.className='qr-summary-item';
+  const worker=hold.checkout,player=worker?players[worker]:undefined;
+  const heading=document.createElement('strong');heading.textContent=worker?`Browser ${worker} · ${player?.fullName||`Player ${worker}`}`:'QR checkout';
+  const phase=document.createElement('div');phase.className=`qr-summary-phase ${(hold.status??'qr-ready')==='qr-ready'?'ready':'pending'}`;phase.textContent=(hold.status??'qr-ready')==='qr-ready'?'QR READY · VERIFY DETAILS BEFORE PAYING':'PAYMENT HOLD ACTIVE · OPENING QR PAGE';
+  const identity=document.createElement('div');identity.className='qr-summary-email';identity.textContent=player?.email||'Player email unavailable';
+  const booking=document.createElement('div');booking.className='qr-summary-booking';booking.textContent=`Court${hold.courts.length===1?'':'s'} ${hold.courts.join(' + ')}\nDate: ${dateLabel(hold.date)} (${hold.date})\nTime: ${hold.startTime}–${hold.endTime}\nSlots: ${hourlySlots(hold.startTime,hold.endTime).join(' · ')}`;
+  const amount=document.createElement('div');amount.className='qr-summary-amount';amount.textContent=`Amount: ₱${hold.amount.toLocaleString()} · ${holdExpired(hold)?'Recorded hold timer elapsed; check Chrome':'Payment pending'}`;
+  card.append(heading,phase,identity,booking,amount);
+  if(hold.bookingNo){const reference=document.createElement('div');reference.className='small';reference.textContent=`Booking reference: ${hold.bookingNo}`;card.append(reference);}
+  if(hold.holdExpiresAt&&Number.isFinite(Date.parse(hold.holdExpiresAt))){const expiry=document.createElement('div');expiry.className='small';expiry.textContent=`Recorded hold expiry: ${new Date(hold.holdExpiresAt).toLocaleString('en-GB',{timeZone:'Asia/Manila',dateStyle:'medium',timeStyle:'short'})} Manila`;card.append(expiry);}
+  return card;
+}
 function renderQrSummary(state:Dashboard){
-  const handoffs=state.qrHandoffs??[];
+  const handoffs=activeHandoffs(state);
   const qrReady=handoffs.filter(hold=>(hold.status??'qr-ready')==='qr-ready').length;
-  const details=state.playerStatus;
-   const players={A:details?.primaryDetails,B:details?.extendedDetails,C:details?.thirdDetails,D:details?.fourthDetails,E:details?.fifthDetails,F:details?.sixthDetails,G:details?.seventhDetails,H:details?.eighthDetails};
+  const players=playersByWorker(state.playerStatus);
   for(const id of ['qr-summary-release','qr-summary-test']){
     const container=byId(id);container.hidden=!handoffs.length;
     if(!handoffs.length){container.replaceChildren();continue;}
@@ -127,19 +158,7 @@ function renderQrSummary(state:Dashboard){
     title.textContent=qrReady===handoffs.length?`All QR pages reached · ${qrReady} checkout${qrReady===1?'':'s'}`:`Live checkout status · ${qrReady} of ${handoffs.length} QR page${handoffs.length===1?'':'s'} ready`;
     const note=document.createElement('p');note.className='small';note.textContent='Confirm every court and time slot below against the visible Onda QR pages before scanning or paying. A hold is not final booking confirmation.';
     const list=document.createElement('div');list.className='qr-summary-list';
-    for(const hold of handoffs){
-      const card=document.createElement('div');card.className='qr-summary-item';
-      const worker=hold.checkout,player=worker?players[worker]:undefined;
-      const heading=document.createElement('strong');heading.textContent=worker?`Browser ${worker} · ${player?.fullName||`Player ${worker}`}`:'QR checkout';
-      const phase=document.createElement('div');phase.className=`qr-summary-phase ${(hold.status??'qr-ready')==='qr-ready'?'ready':'pending'}`;phase.textContent=(hold.status??'qr-ready')==='qr-ready'?'QR READY · VERIFY DETAILS BEFORE PAYING':'PAYMENT HOLD ACTIVE · OPENING QR PAGE';
-      const identity=document.createElement('div');identity.className='qr-summary-email';identity.textContent=player?.email||'Player email unavailable';
-      const booking=document.createElement('div');booking.className='qr-summary-booking';booking.textContent=`Court${hold.courts.length===1?'':'s'} ${hold.courts.join(' + ')}\nDate: ${dateLabel(hold.date)} (${hold.date})\nTime: ${hold.startTime}–${hold.endTime}\nSlots: ${hourlySlots(hold.startTime,hold.endTime).join(' · ')}`;
-      const amount=document.createElement('div');amount.className='qr-summary-amount';amount.textContent=`Amount: ₱${hold.amount.toLocaleString()} · ${hold.holdExpiresAt&&Date.parse(hold.holdExpiresAt)<=Date.now()?'Recorded hold timer elapsed; check Chrome':'Payment pending'}`;
-      card.append(heading,phase,identity,booking,amount);
-      if(hold.bookingNo){const reference=document.createElement('div');reference.className='small';reference.textContent=`Booking reference: ${hold.bookingNo}`;card.append(reference);}
-      if(hold.holdExpiresAt&&Number.isFinite(Date.parse(hold.holdExpiresAt))){const expiry=document.createElement('div');expiry.className='small';expiry.textContent=`Recorded hold expiry: ${new Date(hold.holdExpiresAt).toLocaleString('en-GB',{timeZone:'Asia/Manila',dateStyle:'medium',timeStyle:'short'})} Manila`;card.append(expiry);}
-      list.append(card);
-    }
+    for(const hold of handoffs)list.append(buildHandoffCard(hold,players));
     container.replaceChildren(title,note,list);
   }
 }
@@ -321,12 +340,12 @@ function render(state: Dashboard) {
    const specialSession=input('session-mode').value==='special-friday';
   const count=Number(input('court-count').value),releaseText=state.clock?new Date(state.clock.releaseMs).toLocaleString('en-US',{timeZone:state.clock.timezone,month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'Calculating';
    const method=input('booking-method').value==='browser'?'NORMAL BROWSER':input('booking-method').value==='hybrid'?'HYBRID AVAILABILITY':'API-FIRST';
-   const workers=specialSession?(['A','B','C','D','E','F'] as WorkerId[]):requiredWorkers(strategy,count),checkoutCount=workers.length;
+   const workers=specialSession?SPECIAL_SESSION_WORKERS_UI:requiredWorkers(strategy,count),checkoutCount=workers.length;
     byId('booking-preview').textContent=specialSession
-       ? `SPECIAL FRIDAY SESSION\nRelease: ${releaseText}\nTarget: ${state.clock?dateLabel(state.clock.targetDate):'Not configured'}\nProof-based: Court 6 · 5:00–10:00 PM (A/B) and Court 7 · 7:00–11:00 PM (C/D).\nDirect proofless: E/F target a third court, first Court 5 then 4/3/2/1, from 5:00–10:00 PM at 8:00 AM.\nDirect lane has priority over normal fallbacks. It may create an EXTRA temporary hold.\nIf Friday price remains hidden, direct lane assumes ₱700 per hour · UNVERIFIED.\n6 browsers · up to 6 checkouts. Proofless acceptance at release is UNPROVEN.\nUnknown outcomes never retry. Payment: MANUAL`
+       ? `SPECIAL FRIDAY SESSION\nRelease: ${releaseText}\nTarget: ${state.clock?dateLabel(state.clock.targetDate):'Not configured'}\n8 browsers/players A-H · up to 8 independent temporary QR holds · 4 distinct intended courts.\nA/B proof-based: Court 6 · 5:00–10:00 PM (A 5-8 PM + B 8-10 PM).\nC/D proof-based: Court 7 · 7:00–11:00 PM (C 7-9 PM + D 9-11 PM).\nE/F ADAPTIVE: Court 5 · 5:00–10:00 PM (E 5-8 PM + F 8-10 PM) — proof-based if fresh availability appears before 8:00 AM, otherwise the existing proofless direct attempt exactly at 8:00 AM. Never both.\nG/H proof-based bonus: Court 4 · 5:00–10:00 PM (G 5-8 PM + H 8-10 PM) — skipped entirely when no fourth distinct court has complete availability. Never proofless.\nCourt priority when a preferred court is unavailable follows a fallback search; all four assigned courts are always distinct.\nE/F's proofless-fallback hidden price assumes ₱700/hour and is UNVERIFIED.\nA hold is not a completed booking. Unknown outcomes are never retried. Payment: MANUAL`
       : `${workflow==='release'?`RELEASE PLAN\nRelease: ${releaseText}\nTarget: ${state.clock?dateLabel(state.clock.targetDate):'Not configured'}\n`:''}${method}\n${strategy.toUpperCase()} | ${count} COURT${count===1?'':'S'}\n${friendly(input('start-time').value)} -> ${endFriendly(input('start-time').value,duration)} | ${duration} hours\nFallback starts: ${fallbackTimes.map(friendly).join(' -> ')||'None'}\nCourt priority: ${courtOrder.join(' -> ')}\n${strategy==='extended'?`Extended split: ${duration===4?'3h + 1h (alternatives 2h + 2h, 1h + 3h)':duration===5?'3h + 2h (alternative 2h + 3h)':'3h + 3h'}\n`:''}${workers.length} browser${workers.length===1?'':'s'} | ${checkoutCount} checkout${checkoutCount===1?'':'s'} | Players: ${workers.join(' + ')}\nNo price ceiling\nAttempts: ${input('attempts').value} | Payment: MANUAL${input('booking-method').value==='api-first'?'\nAPI first: current availability check available; live runs once at the armed release.':''}`;
   if(duration>6){byId('booking-preview').textContent='Extended booking supports up to 6 consecutive hours.';input('test-booking').disabled=true;input('arm').disabled=true;}
-   const runWorkers=specialSession?(['A','B','C','D','E','F'] as WorkerId[]):requiredWorkers(strategy,count),playerReadyByWorker={A:playerStatus.primary,B:playerStatus.extended,C:playerStatus.third,D:playerStatus.fourth,E:playerStatus.fifth,F:playerStatus.sixth,G:playerStatus.seventh,H:playerStatus.eighth};
+   const runWorkers=specialSession?SPECIAL_SESSION_WORKERS_UI:requiredWorkers(strategy,count),playerReadyByWorker={A:playerStatus.primary,B:playerStatus.extended,C:playerStatus.third,D:playerStatus.fourth,E:playerStatus.fifth,F:playerStatus.sixth,G:playerStatus.seventh,H:playerStatus.eighth};
   const playersReady=runWorkers.every(worker=>playerReadyByWorker[worker]);
    byId('player-status').textContent=runWorkers.map(worker=>`${workerLabel(worker)}: ${playerReadyByWorker[worker]?'Configured':'Missing'}`).join(' | ');
   const profile=(label:string,p?:{fullName:string;phone:string;email:string})=>{const card=document.createElement('div');const heading=document.createElement('strong');heading.textContent=label;card.append(heading,document.createElement('br'),document.createTextNode(p?`${p.fullName}\n${p.phone}\n${p.email}`:'Missing or invalid configuration'));card.style.whiteSpace='pre-line';return card;};
@@ -343,14 +362,14 @@ function render(state: Dashboard) {
   }
   const apiPrepared=!!state.apiFirstReady&&!!state.ready&&!!state.booking&&state.booking.setup.BOOKING_METHOD==='api-first'&&!state.lock;
   const prepared=apiPrepared||!!state.preparedContext&&state.preparedContext.workflow==='release'&&state.preparedContext.configFingerprint===state.booking?.fingerprint;
-   const required=specialSession?(['A','B','C','D','E','F'] as WorkerId[]):requiredWorkers(strategy,count);
+   const required=specialSession?SPECIAL_SESSION_WORKERS_UI:requiredWorkers(strategy,count);
   const verificationGates:[string,boolean][]=apiFirst
     ? [['Onda venue verified',apiPrepared],['Availability checked at release',state.apiStage?.stage==='CANDIDATE_READY'||!!state.observedPrice]]
     : [['Onda verified',prepared],['All Courts verified',prepared],['Selected slots: 0',prepared],['Payment holds: none',prepared&&!state.lock]];
   const gates:[string,boolean][]=[['Configuration valid',!draftProblem],['Next release calculated',!!state.clock],['Booking target calculated',!!state.clock?.targetDate],...required.map(id=>[`${workerLabel(id)} configured`,!!playerReadyByWorker[id]] as [string,boolean]),...required.map(id=>[`Browser ${id} prepared`,apiFirst?apiPrepared&&!!state.browserHealth?.[id]:prepared&&!!state.preparedContext?.browsers.some(b=>b.id===id)] as [string,boolean]),...verificationGates,['Automation lock clear',!state.lock],['Prepared fingerprint matches',prepared],['Terms authorized for this run',state.termsAuthorized||armed],['Armed for next release',armed||state.apiStage?.stage==='WAITING_FOR_RELEASE']];
   const readiness=byId('release-readiness');readiness.replaceChildren(...gates.map(([label,ok])=>{const e=document.createElement('div');e.className=`gate ${ok?'good':'warn'}`;e.textContent=`${ok?'OK':'--'} ${label}`;return e;}));readiness.className='gate-list';
   byId('release-readiness-card').dataset.state=armed?'armed':prepared?'prepared':'draft';byId('sleep-warning').hidden=!armed;byId('sleep-warning').textContent=`Sleep protection: ${state.sleepProtection?'ACTIVE':'NOT AVAILABLE'} | Keep the PC powered on. Do not hibernate or close the laptop lid if Windows sleeps on lid close.`;
-   byId('saved-plan-summary').textContent=state.booking?(state.booking.setup.SESSION_MODE==='special-friday'?`SPECIAL FRIDAY SESSION\nPreferred Court 6 · 5:00–10:00 PM\nPreferred Court 7 · 7:00–11:00 PM\nDirect extra court · 5:00–10:00 PM (proofless, unverified rate if hidden)\nPlayers/Browsers A–F · up to six holds\nTarget: ${dateLabel(state.booking.targetDate)}`:`${state.booking.setup.BOOKING_METHOD.toUpperCase()} · ${state.booking.setup.BOOKING_TYPE.toUpperCase()} · ${state.booking.setup.COURT_COUNT} court${state.booking.setup.COURT_COUNT===1?'':'s'}\n${friendly(state.booking.setup.START_TIME)}–${endFriendly(state.booking.setup.START_TIME,state.booking.setup.DURATION_HOURS)} · ${state.booking.setup.DURATION_HOURS} hours\nCourt priority: ${state.booking.setup.PREFERRED_COURTS.join(' → ')}\nFallback starts: ${state.booking.setup.FALLBACK_TIMES.map(friendly).join(', ')||'None'}\nTarget: ${dateLabel(state.booking.targetDate)}`):'No saved plan available.';
+   byId('saved-plan-summary').textContent=state.booking?(state.booking.setup.SESSION_MODE==='special-friday'?`SPECIAL FRIDAY SESSION\nA/B proof-based · preferred Court 6 · 5:00–10:00 PM\nC/D proof-based · preferred Court 7 · 7:00–11:00 PM\nE/F adaptive · preferred Court 5 · 5:00–10:00 PM (proof-based on early availability, else proofless exactly at 8:00 AM)\nG/H proof-based bonus · preferred Court 4 · 5:00–10:00 PM (skipped if no fourth distinct court)\nPlayers/Browsers A–H · up to 8 independent QR holds across 4 distinct courts\nTarget: ${dateLabel(state.booking.targetDate)}`:`${state.booking.setup.BOOKING_METHOD.toUpperCase()} · ${state.booking.setup.BOOKING_TYPE.toUpperCase()} · ${state.booking.setup.COURT_COUNT} court${state.booking.setup.COURT_COUNT===1?'':'s'}\n${friendly(state.booking.setup.START_TIME)}–${endFriendly(state.booking.setup.START_TIME,state.booking.setup.DURATION_HOURS)} · ${state.booking.setup.DURATION_HOURS} hours\nCourt priority: ${state.booking.setup.PREFERRED_COURTS.join(' → ')}\nFallback starts: ${state.booking.setup.FALLBACK_TIMES.map(friendly).join(', ')||'None'}\nTarget: ${dateLabel(state.booking.targetDate)}`):'No saved plan available.';
   const actualAmount=state.handoff?.amount??state.observedPrice??state.selection?.amount;
    byId('observed-price').hidden=(actualAmount===undefined||actualAmount===null)&&(state.assumedPrice===undefined||state.assumedPrice===null);
    byId('observed-price').textContent=[actualAmount!==undefined&&actualAmount!==null?`Observed booking price: ₱${actualAmount.toLocaleString()} · Review the amount in Onda before final booking authorization.`:'',
@@ -378,7 +397,7 @@ function render(state: Dashboard) {
   byId('test-readiness').replaceChildren(...testGates.map(([label,ok])=>{const row=document.createElement('div');row.className=`gate ${ok?'good':'warn'}`;row.textContent=`${ok?'OK':'--'} ${label}`;return row;}));
    const specialSaved=b?.setup.SESSION_MODE==='special-friday';
    byId('test-plan-summary').textContent=specialSaved?'SPECIAL FRIDAY SESSION is release-only. Use Next Release to prepare and arm it.':b?`${b.setup.BOOKING_METHOD.toUpperCase()} · ${b.setup.BOOKING_TYPE.toUpperCase()} · ${b.setup.COURT_COUNT} court${b.setup.COURT_COUNT===1?'':'s'}\n${friendly(b.setup.START_TIME)}–${endFriendly(b.setup.START_TIME,b.setup.DURATION_HOURS)} · ${b.setup.DURATION_HOURS} hours\nCourt priority: ${b.setup.PREFERRED_COURTS.join(' → ')}\nFallback starts: ${b.setup.FALLBACK_TIMES.map(friendly).join(', ')||'None'}\nTest date: ${testDate?dateLabel(testDate):'Choose a date'}${input('exact-a').value.trim()||input('exact-b').value.trim()?`\nAdvanced exact court override: ${[input('exact-a').value,input('exact-b').value].filter(Boolean).join(' / ')}`:''}`:'No saved booking plan available.';
-  const liveTestHandoffs=workflow==='test'&&state.workflow==='test'?state.qrHandoffs??[]:[];
+  const liveTestHandoffs=workflow==='test'&&state.workflow==='test'?activeHandoffs(state):[];
   const readyTestHandoffs=liveTestHandoffs.filter(hold=>(hold.status??'qr-ready')==='qr-ready').length;
   const expectedTestHandoffs=Math.max(testBrowsers.length,liveTestHandoffs.length);
   byId('test-headline').textContent=liveTestHandoffs.length
@@ -405,6 +424,7 @@ function tick() {
   byId('clock').textContent = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Manila', hourCycle: 'h23' }).format(now);
   byId('clock-date').textContent = new Intl.DateTimeFormat('en-US', { weekday:'long',month:'long',day:'numeric',year:'numeric',timeZone:'Asia/Manila' }).format(now);
   if (!latest) return;
+  renderQrSummary(latest);
   if(latest.clock){const remaining=Math.max(0,Math.ceil(((latest.scheduledRelease?.releaseMs??latest.clock.releaseMs)-Date.now())/1000));byId('next-release-countdown').textContent=[Math.floor(remaining/3600),Math.floor(remaining/60)%60,remaining%60].map(v=>String(v).padStart(2,'0')).join(':');}
   byId('run-timing').textContent=latest.runTiming?.readyAt?`${((latest.runTiming.endedAt?latest.runTiming.readyElapsedMs??0:Math.max(0,Date.now()-Date.parse(latest.runTiming.readyAt)))/1000).toFixed(3)} seconds · ${latest.runTiming.endedAt?'finished':'running'}`:latest.runTiming?'Waiting for browser ready':'No browser-ready run active';
   if(latest.runTiming&&(!latest.runTiming.endedAt||latest.runTiming.readyAt)){

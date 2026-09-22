@@ -17,6 +17,16 @@ it('exclusively records API dispatch and retains a verified hold expiry',async()
 });
 
 it('removes only its own pre-hold lock when a run ends safely',async()=>{
- const lock=await ApiAutomationLock.acquire('extended',['A','B']);await lock.release();
+  const lock=await ApiAutomationLock.acquire('extended',['A','B']);await lock.release();
+  await expect(readFile('.local/automation.lock','utf8')).rejects.toMatchObject({code:'ENOENT'});
+});
+
+it('serializes concurrent lane updates and concurrent release calls',async()=>{
+ const lock=await ApiAutomationLock.acquire('extended',['A','B','C','D','E','F','G','H']);
+ const firstExpiry=new Date(Date.now()+60000).toISOString();
+ const latestExpiry=new Date(Date.now()+120000).toISOString();
+ await Promise.all([lock.dispatching(),lock.held(firstExpiry),lock.dispatching(),lock.held(latestExpiry)]);
+ expect(JSON.parse(await readFile('.local/automation.lock','utf8'))).toMatchObject({stage:'HOLD_VERIFIED',holdExpiresAt:latestExpiry});
+ await Promise.all([lock.release(),lock.release()]);
  await expect(readFile('.local/automation.lock','utf8')).rejects.toMatchObject({code:'ENOENT'});
 });

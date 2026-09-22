@@ -56,6 +56,7 @@ function confirmedApplicationConflict(result: CheckoutHttpResponse): boolean {
 export class OndaBrowserSessionTransport implements TwoHourTransport {
   private preparedHeaders?: CurrentCheckoutHeaders;
   private preparedAt?: number;
+  private preparation?: Promise<void>;
   constructor(private readonly page: Page, private readonly currentCheckoutHeaders: CurrentCheckoutHeadersProvider,
     private readonly captureCheckoutResponse?: CheckoutResponseCapture, private readonly contextHooks: CheckoutContextHooks = {}) {
     page.on?.('framenavigated',frame=>{
@@ -94,16 +95,24 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
     // Keep it only briefly and consume it once at checkout.
     if (this.preparedHeaders && this.preparedAt !== undefined && Date.now() - this.preparedAt >= 0 &&
       Date.now() - this.preparedAt <= 20_000) return;
-    this.preparedHeaders = undefined;
-    this.preparedAt = undefined;
-    let current: CurrentCheckoutHeaders;
-    try { current = await this.acquireCheckoutHeaders(); }
-    catch (error) { throw securityContextError(error); }
-    if (!usable(current?.turnstileToken) || !usable(current?.publicFingerprint))
-      throw new BrowserSessionTransportError('CURRENT_CHECKOUT_HEADERS_INVALID');
-    this.assertPage();
-    this.preparedHeaders = current;
-    this.preparedAt = Date.now();
+    // The adaptive proof and proofless paths can ask the same E/F transport to
+    // prewarm at nearly the same instant. Share one acquisition so concurrent
+    // callers cannot overwrite each other's genuine page-bound token.
+    if(this.preparation)return this.preparation;
+    const preparation=(async()=>{
+      this.preparedHeaders = undefined;
+      this.preparedAt = undefined;
+      let current: CurrentCheckoutHeaders;
+      try { current = await this.acquireCheckoutHeaders(); }
+      catch (error) { throw securityContextError(error); }
+      if (!usable(current?.turnstileToken) || !usable(current?.publicFingerprint))
+        throw new BrowserSessionTransportError('CURRENT_CHECKOUT_HEADERS_INVALID');
+      this.assertPage();
+      this.preparedHeaders = current;
+      this.preparedAt = Date.now();
+    })();
+    this.preparation=preparation;
+    try{await preparation;}finally{if(this.preparation===preparation)this.preparation=undefined;}
   }
 
   private assertPage(): void {

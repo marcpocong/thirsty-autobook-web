@@ -171,7 +171,7 @@ it('opens each previous run to its timing facts and detailed activity timeline',
 
 it('shows verified QR handoffs with the corresponding players in release and test status',async()=>{
   const qrHandoffs=[
-    {checkout:'A',courts:[7,6],date:'2026-09-24',startTime:'10:00',endTime:'12:00',amount:2400,verifiedAt:'2026-09-22T00:00:03.000Z',holdExpiresAt:'2026-09-22T00:10:03.000Z'},
+    {checkout:'A',courts:[7,6],date:'2026-09-24',startTime:'10:00',endTime:'12:00',amount:2400,verifiedAt:'2026-09-22T00:00:03.000Z',holdExpiresAt:new Date(Date.now()+600000).toISOString()},
     {checkout:'B',courts:[5,4],date:'2026-09-24',startTime:'10:00',endTime:'12:00',amount:2400,verifiedAt:'2026-09-22T00:00:04.000Z'}
   ];
   const playerStatus={primary:true,extended:true,third:false,fourth:false,
@@ -197,5 +197,19 @@ it('shows verified QR handoffs with the corresponding players in release and tes
   expect(await page.locator('#test-headline').innerText()).toBe('CONFIRM BOOKING DETAILS BEFORE PAYING');
   expect(await page.locator('#test-detail').innerText()).toContain('Check the player, courts, date, every hourly slot, amount, and booking reference');
   await mkdir('.local',{recursive:true});await page.screenshot({path:'.local/ui-qr-status.png'});
+  await page.close();
+});
+
+it('hides an expired payment hold from the QR summary instead of showing it as active',async()=>{
+  const qrHandoffs=[
+    {checkout:'A',status:'qr-ready',courts:[7],date:'2026-09-24',startTime:'10:00',endTime:'11:00',amount:1200,verifiedAt:'2026-09-22T00:00:03.000Z',holdExpiresAt:new Date(Date.now()-1000).toISOString()}
+  ];
+  const playerStatus={primary:true,extended:false,third:false,fourth:false,
+    primaryDetails:{fullName:'Primary Fixture',email:'primary@example.invalid',phone:'09123456789'}};
+  const page=await renderer({headline:'PAYMENT HOLD ACTIVE',detail:'A previous payment hold is recorded.',qrHandoffs,playerStatus,workflow:'test'});
+  await page.locator('[data-view="tests"]').click();
+  await page.evaluate(()=>{const w=window as any;w.fixturePublish(w.fixtureState);});
+  expect(await page.locator('#qr-summary-test').isVisible()).toBe(false);
+  expect(await page.locator('#test-headline').innerText()).not.toBe('CONFIRM BOOKING DETAILS BEFORE PAYING');
   await page.close();
 });

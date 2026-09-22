@@ -197,6 +197,20 @@ describe('browser session transport, offline', () => {
     }finally{vi.useRealTimers();}
   });
 
+  it('deduplicates concurrent security prewarms for the same browser transport',async()=>{
+    const {page}=fakePage({success:true});
+    let resolveHeaders!: (value:{turnstileToken:string;publicFingerprint:string})=>void;
+    const current=vi.fn(()=>new Promise<{turnstileToken:string;publicFingerprint:string}>(resolve=>{resolveHeaders=resolve;}));
+    const transport=new OndaBrowserSessionTransport(page,current);
+    process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT='SUPERVISED_ONE_SHOT';
+    const first=transport.prepareCheckoutContext();
+    const second=transport.prepareCheckoutContext();
+    expect(current).toHaveBeenCalledOnce();
+    resolveHeaders({turnstileToken:'synthetic-current-token',publicFingerprint:'synthetic-current-fingerprint'});
+    await Promise.all([first,second]);
+    expect(current).toHaveBeenCalledOnce();
+  });
+
   it('discards prewarmed security context if the booking page navigates',async()=>{
     process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT='SUPERVISED_ONE_SHOT';
     const frame={},handlers=new Map<string,(value:unknown)=>void>();

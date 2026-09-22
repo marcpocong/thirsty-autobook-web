@@ -87,7 +87,7 @@ const errors: Record<string, string> = {
   API_NO_UNUSED_CANDIDATE:'Available courts still have active or unresolved submission records. Expired verified holds and confirmed rejected attempts are archived for reuse; uncertain outcomes remain blocked.',
 };
 export interface Dependencies {
-  activityJournal?:Pick<ActivityJournal,'begin'|'record'|'ready'|'end'|'history'>;
+  activityJournal?:Pick<ActivityJournal,'begin'|'record'|'ready'|'handoff'|'end'|'history'>;
   confirmStopPrepare?:()=>Promise<boolean>;
   confirmBooking?:(plan:BookingPlan,maximum?:number)=>Promise<boolean>;
   confirmApiTest?:(input:{strategy:'standard'|'extended';date:string;start:string;duration:number;courtCount:CourtCount;maximum?:number;priority:number[]})=>Promise<boolean>;
@@ -170,6 +170,8 @@ export class Controller {
     const merged=previous?{...previous,...summary,status:previous.status==='qr-ready'?'qr-ready':summary.status}:summary;
     const next=[...existing.filter(value=>!same(value)),merged];
     this.state.qrHandoffs=next.sort((a,b)=>(a.checkout??'A').localeCompare(b.checkout??'A'));
+    const run=this.state.runTiming;
+    if(run&&!run.endedAt)try{this.deps.activityJournal?.handoff(run.runId,merged);}catch{/* best-effort run history enrichment */}
   }
   private holdDetail(hold:RetainedHoldStatus){
     if(hold.stage==='HOLD_VERIFIED')return `A verified payment hold remains recorded${hold.expiresAt?` until ${new Date(hold.expiresAt).toLocaleString('en-GB',{timeZone:'Asia/Manila',dateStyle:'medium',timeStyle:'medium'})} Manila`:''}. Payment is manual. Reset & Prepare can make a fresh schedule in the same bot while retaining the previous hold and QR tab.`;

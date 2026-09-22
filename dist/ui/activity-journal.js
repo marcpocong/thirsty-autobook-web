@@ -30,6 +30,12 @@ export class ActivityJournal {
             return;
         writeSync(handle, `${JSON.stringify({ type: 'browser-ready', runId, at, elapsedMs })}\n`);
     }
+    handoff(runId, summary) {
+        const handle = this.handles.get(runId);
+        if (handle === undefined)
+            return;
+        writeSync(handle, `${JSON.stringify({ type: 'handoff', runId, summary })}\n`);
+    }
     end(runId, at, elapsedMs, outcome, readyElapsedMs, label) {
         const handle = this.handles.get(runId);
         if (handle === undefined)
@@ -61,7 +67,18 @@ export class ActivityJournal {
                 const activities = rows.flatMap(row => row.type === 'activity' && typeof row.at === 'string' && typeof row.text === 'string' && (row.level === 'info' || row.level === 'error')
                     ? [{ at: row.at, text: row.text, level: row.level, ...(typeof row.elapsedMs === 'number' ? { elapsedMs: row.elapsedMs } : {}), ...(typeof row.deltaMs === 'number' ? { deltaMs: row.deltaMs } : {}) }]
                     : []);
-                return [{ runId: start.runId, label: typeof end.label === 'string' ? end.label : typeof start.label === 'string' ? start.label : 'run', startedAt: start.at, endedAt: end.at, outcome: end.outcome, totalElapsedMs: end.elapsedMs, ...(readyAt ? { readyAt } : {}), ...(readyElapsedMs === undefined ? {} : { readyElapsedMs }), activities }];
+                const qrHandoffs = rows.reduce((list, row) => {
+                    if (row.type !== 'handoff' || typeof row.summary !== 'object' || !row.summary)
+                        return list;
+                    const summary = row.summary;
+                    const same = (value) => value.checkout && summary.checkout
+                        ? value.checkout === summary.checkout
+                        : value.date === summary.date && value.startTime === summary.startTime && value.endTime === summary.endTime && value.courts.join(',') === summary.courts.join(',');
+                    const previous = list.find(same);
+                    const merged = previous ? { ...previous, ...summary, status: previous.status === 'qr-ready' ? 'qr-ready' : summary.status } : summary;
+                    return [...list.filter(value => !same(value)), merged];
+                }, []).sort((a, b) => (a.checkout ?? 'A').localeCompare(b.checkout ?? 'A'));
+                return [{ runId: start.runId, label: typeof end.label === 'string' ? end.label : typeof start.label === 'string' ? start.label : 'run', startedAt: start.at, endedAt: end.at, outcome: end.outcome, totalElapsedMs: end.elapsedMs, ...(readyAt ? { readyAt } : {}), ...(readyElapsedMs === undefined ? {} : { readyElapsedMs }), activities, ...(qrHandoffs.length ? { qrHandoffs } : {}) }];
             }
             catch {
                 return [];

@@ -16,3 +16,15 @@ export function canReleaseApiLockAfterParallelFailure(
     errors.every(error=>error instanceof SubmissionDispatchError&&!error.dispatched);
   return everyWorkerProvenUnsent||states.length>0&&states.every(state=>state==='rejected');
 }
+
+/**
+ * A single attempt's safe-retry eligibility: true only when every durable
+ * journal for its hourly boundaries is conclusively 'rejected', or (when no
+ * journal record exists yet) the error itself proves the request was never
+ * sent. An 'unknown' or 'verified' journal, or a possibly-dispatched error,
+ * is never safe to retry.
+ */
+export function conclusiveNoHoldFromStates(states:(SubmissionState|undefined)[],error:unknown):boolean {
+  if(states.some(Boolean))return states.length>0&&states.every(state=>state==='rejected');
+  return error instanceof SubmissionDispatchError&&!error.dispatched;
+}

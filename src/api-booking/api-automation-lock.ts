@@ -10,8 +10,19 @@ export class ApiAutomationLock {
   private readonly identity={pid:process.pid,runID:randomUUID()};
   private readonly write=lifecycleWriter(this.path,this.identity);
   private released=false;
+  // Independent lanes (A-D, E/F, G/H) may call dispatching()/held()/release()
+  // at nearly the same time. The underlying atomic write reuses one per-process
+  // temp file path, so concurrent writers must never overlap; serialize every
+  // mutation through this queue instead.
+  private queue:Promise<void>=Promise.resolve();
 
   private constructor() {}
+
+  private enqueue(task:()=>Promise<void>):Promise<void>{
+    const run=this.queue.then(task,task);
+    this.queue=run.catch(()=>undefined);
+    return run;
+  }
 
   static async acquire(mode:'standard'|'extended',workers:readonly WorkerId[]) {
     const lock=new ApiAutomationLock();
@@ -25,10 +36,15 @@ export class ApiAutomationLock {
     return lock;
   }
 
-  async dispatching(){await this.write('FINAL_ACTION_DISPATCHING');}
+  async dispatching(){await this.enqueue(()=>this.write('FINAL_ACTION_DISPATCHING'));}
   async held(holdExpiresAt:string){
     if(!Number.isFinite(Date.parse(holdExpiresAt))||Date.parse(holdExpiresAt)<=Date.now())throw Error('HOLD_EXPIRY_INVALID');
-    await this.write('HOLD_VERIFIED',{holdVerifiedAt:new Date().toISOString(),holdExpiresAt});
+    await this.enqueue(()=>this.write('HOLD_VERIFIED',{holdVerifiedAt:new Date().toISOString(),holdExpiresAt}));
   }
-  async release(){if(this.released)return;await removeOwnedRecord(this.path,this.identity.pid,this.identity.runID);this.released=true;}
+  async release(){
+    await this.enqueue(async()=>{
+      if(this.released)return;
+      await removeOwnedRecord(this.path,this.identity.pid,this.identity.runID);this.released=true;
+    });
+  }
 }

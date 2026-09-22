@@ -30,6 +30,25 @@ Preparation emits sanitized per-browser evidence and the controller accepts it o
 
 **Validation boundary:** Onda has been live-verified for at most two courts and three consecutive hours per checkout. Higher court counts are split across independent checkouts and have offline test coverage, but the complete multi-browser combinations are not all live-validated. The adapter requires independently verifiable booking identities and amounts and stops on unsupported markup or uncertain submission outcomes. See [REVIEW_GUIDE.md](REVIEW_GUIDE.md) for the current risk map and [PHASE7_BOOKING_REPORT.md](PHASE7_BOOKING_REPORT.md) for the older Phase 7 evidence.
 
+## Special Friday session (A-H)
+
+`SESSION_MODE=special-friday` is a release-only, fixed-envelope mode requiring Browsers/Players A through H — up to eight independent temporary QR holds across four distinct courts and nineteen court-hours. Every checkout keeps its own player/customer/browser identity; payment stays entirely manual, and a hold is never a completed booking.
+
+| Lane | Workers | Preferred court | Blocks | Method |
+|---|---|---|---|---|
+| Core early | A/B | 6 | 17:00-20:00 (3h) + 20:00-22:00 (2h) | Proof-based |
+| Core late | C/D | 7 | 19:00-21:00 (2h) + 21:00-23:00 (2h) | Proof-based |
+| Adaptive | E/F | 5 | 17:00-20:00 (3h) + 20:00-22:00 (2h) | Proof-based on early availability; otherwise the existing proofless direct attempt exactly at release. Never both. |
+| Bonus | G/H | 4 | 17:00-20:00 (3h) + 20:00-22:00 (2h) | Proof-based only; skipped when no fourth distinct court has complete availability. Never proofless. |
+
+Court selection reserves the E/F candidate first (priority 5, 4, 3, 2, 1), then assigns A/B (priority 6, 7, 5, 4, 3, 2, 1) and C/D (priority 7, 6, 5, 4, 3, 2, 1) excluding that court, then searches for a fourth distinct G/H court (priority 4, 3, 2, 1, 5, 6, 7) excluding all three. A/B and C/D are the core session; G/H is an additional lane and never blocks an otherwise-valid A-D plan — when no fourth court exists it is skipped with a sanitized outcome. Once a lane has an assigned court and any checkout may have been dispatched, that court is never silently changed.
+
+The pre-08:00 watcher polls availability roughly every 5 seconds (bursting to 500ms, then 2s, after an update signal) and the Onda version roughly every second, stopping new pre-release availability GETs about 11 seconds before 08:00. As soon as genuinely released availability appears before 08:00, A-D dispatch immediately — never delayed waiting on G/H or E/F. G/H and E/F are each fully independent lanes that watch and dispatch on their own: G/H starts polling for its fourth distinct court the instant A-D's court is known and dispatches whenever it finds one, whether that is before, at, or (via a short post-release burst) shortly after A-D's own dispatch; E/F upgrades to its own proof-based path immediately once its reserved court shows all five hours with fresh proofs.
+
+E/F is implemented as a single fail-closed state machine (`src/api-booking/adaptive-direct-lane.ts`) so its proof-based and proofless attempts can never both dispatch: the first attempt to commit (proof or proofless) wins; a conclusive pre-dispatch proof failure (security/proof acquisition, before any network dispatch) reopens the proofless fallback, while any possibly-dispatched, unknown, or verified proof-based outcome permanently disables it. G/H never falls back to the proofless path; an early conclusive rejection may allow one release-boundary retry under the same safe-retry rules as A-D, and an unknown G/H result is never retried.
+
+Every lane owns only its own browser security preparation: an E/F or G/H preparation failure cannot prevent A-D from dispatching. Every relevant checkout is observed with `Promise.allSettled`; one worker's failure never hides another's possible hold. Lock lifecycle writes are serialized across the concurrent lanes, and after all lanes settle the newest verified hold expiry is persisted. A possibly-dispatched or unknown outcome retains the automation lock; it is released automatically only when every relevant branch conclusively proves no request was dispatched or was definitively rejected. This mode should not be treated as production-proven merely because offline tests pass — see [REVIEW_GUIDE.md](REVIEW_GUIDE.md#special-friday-session-boundary).
+
 ## Setup
 
 Install Node.js 24 LTS, Google Chrome, Git and optionally GitHub CLI. From this folder:
@@ -73,7 +92,7 @@ npm test
 npm run ui:build
 ```
 
-The checked-in offline suite currently contains 65 files and 773 tests. It must stay network-isolated: it uses fixtures and test-owned Chromium, never a live booking. `npm run exe:build` is a Windows packaging/deployment command; it refreshes the parent installation as well as the launcher and should be run only when that local installation update is intended.
+The checked-in offline suite currently contains 67 files and 798 tests. It must stay network-isolated: it uses fixtures and test-owned Chromium, never a live booking. `npm run exe:build` is a Windows packaging/deployment command; it refreshes the parent installation as well as the launcher and should be run only when that local installation update is intended.
 
 Practice requires all four explicit target arguments. If either requested slot is unavailable, it stops; it never silently picks another target. On an uncertain selection, failure or abort, inspect and clear selection manually. Only rerun practice for an appropriate noncompetitive target.
 

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, statSync, writeSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import type { Activity, RunHistoryEntry } from './types.js';
+import type { Activity, QrHandoffSummary, RunHistoryEntry } from './types.js';
 
 /** Private, append-only UI timeline shared by every booking method and test run. */
 export class ActivityJournal {
@@ -31,6 +31,12 @@ export class ActivityJournal {
     writeSync(handle,`${JSON.stringify({type:'browser-ready',runId,at,elapsedMs})}\n`);
   }
 
+  handoff(runId:string,summary:QrHandoffSummary) {
+    const handle=this.handles.get(runId);
+    if(handle===undefined)return;
+    writeSync(handle,`${JSON.stringify({type:'handoff',runId,summary})}\n`);
+  }
+
   end(runId: string, at: string, elapsedMs: number, outcome: string, readyElapsedMs?:number, label?:string) {
     const handle = this.handles.get(runId);
     if (handle === undefined) return;
@@ -55,7 +61,17 @@ export class ActivityJournal {
           const activities=rows.flatMap(row=>row.type==='activity'&&typeof row.at==='string'&&typeof row.text==='string'&&(row.level==='info'||row.level==='error')
             ? [{at:row.at,text:row.text,level:row.level,...(typeof row.elapsedMs==='number'?{elapsedMs:row.elapsedMs}:{}),...(typeof row.deltaMs==='number'?{deltaMs:row.deltaMs}:{})} satisfies Activity]
             : []);
-          return [{runId:start.runId,label:typeof end.label==='string'?end.label:typeof start.label==='string'?start.label:'run',startedAt:start.at,endedAt:end.at,outcome:end.outcome,totalElapsedMs:end.elapsedMs,...(readyAt?{readyAt}:{}),...(readyElapsedMs===undefined?{}:{readyElapsedMs}),activities} satisfies RunHistoryEntry];
+          const qrHandoffs=rows.reduce<QrHandoffSummary[]>((list,row)=>{
+            if(row.type!=='handoff'||typeof row.summary!=='object'||!row.summary)return list;
+            const summary=row.summary as QrHandoffSummary;
+            const same=(value:QrHandoffSummary)=>value.checkout&&summary.checkout
+              ? value.checkout===summary.checkout
+              : value.date===summary.date&&value.startTime===summary.startTime&&value.endTime===summary.endTime&&value.courts.join(',')===summary.courts.join(',');
+            const previous=list.find(same);
+            const merged=previous?{...previous,...summary,status:previous.status==='qr-ready'?'qr-ready':summary.status}:summary;
+            return [...list.filter(value=>!same(value)),merged];
+          },[]).sort((a,b)=>(a.checkout??'A').localeCompare(b.checkout??'A'));
+          return [{runId:start.runId,label:typeof end.label==='string'?end.label:typeof start.label==='string'?start.label:'run',startedAt:start.at,endedAt:end.at,outcome:end.outcome,totalElapsedMs:end.elapsedMs,...(readyAt?{readyAt}:{}),...(readyElapsedMs===undefined?{}:{readyElapsedMs}),activities,...(qrHandoffs.length?{qrHandoffs}:{})} satisfies RunHistoryEntry];
         }catch{return [];}
       }).slice(0,limit);
   }

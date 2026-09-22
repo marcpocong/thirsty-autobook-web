@@ -173,6 +173,12 @@ export class Controller {
         const merged = previous ? { ...previous, ...summary, status: previous.status === 'qr-ready' ? 'qr-ready' : summary.status } : summary;
         const next = [...existing.filter(value => !same(value)), merged];
         this.state.qrHandoffs = next.sort((a, b) => (a.checkout ?? 'A').localeCompare(b.checkout ?? 'A'));
+        const run = this.state.runTiming;
+        if (run && !run.endedAt)
+            try {
+                this.deps.activityJournal?.handoff(run.runId, merged);
+            }
+            catch { /* best-effort run history enrichment */ }
     }
     holdDetail(hold) {
         if (hold.stage === 'HOLD_VERIFIED')
