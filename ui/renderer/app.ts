@@ -6,6 +6,7 @@ declare global { interface Window { thirsty: Bridge } }
 const byId = (id: string) => document.getElementById(id)!;
 let latest: Dashboard | undefined;
 let renderedLogs = '';
+let renderedPreviousHolds = '';
 let selectedRunId:string|undefined;
 let timingReadyKey='';
 let timingReadyStartedMono=0;
@@ -17,6 +18,20 @@ let workflow:'test'|'release'='release';
 type View = 'release'|'plan'|'tests'|'runs';
 let currentView:View='release';
 const browserFocusMessages:Partial<Record<WorkerId,string>>={};
+const browserFocusPending:Partial<Record<WorkerId,boolean>>={};
+// Electron prefixes IPC rejections, so match the known codes anywhere in the message.
+// A wrong reason here sends the operator looking in the wrong place.
+function browserFocusFailure(worker:WorkerId,error:unknown){
+  const text=error instanceof Error?error.message:String(error);
+  const code=['CDP_NOT_LISTENING','CDP_ENDPOINT_UNAVAILABLE','CDP_WRONG_PROFILE','CDP_WRONG_PORT','CDP_PROCESS_NOT_CHROME',
+    'CDP_PROFILE_MISSING','CDP_UNSAFE_BIND','CDP_AMBIGUOUS_LISTENER','CDP_IDENTITY_MISMATCH','CDP_PROCESS_METADATA_UNAVAILABLE',
+    'ONDA_TAB_AMBIGUOUS_OR_MISSING','ONDA_TAB_MISSING'].find(known=>text.includes(known));
+  if(code==='CDP_NOT_LISTENING'||code==='CDP_ENDPOINT_UNAVAILABLE')return `Browser ${worker} is not running. Its Chrome window was closed.`;
+  if(code==='ONDA_TAB_MISSING')return `Browser ${worker} has no Onda tab open.`;
+  if(code==='ONDA_TAB_AMBIGUOUS_OR_MISSING')return `Browser ${worker} has more than one Onda tab; open the right one in Chrome.`;
+  if(code)return `Browser ${worker} could not be verified (${code.replaceAll('_',' ').toLowerCase()}).`;
+  return `Browser ${worker} could not be brought to the front. ${text.replace(/^Error invoking remote method '[^']*':\s*/,'').slice(0,140)}`;
+}
 function runDetail(run:RunHistoryEntry){
   const detail=document.createElement('div');detail.className='run-detail';
   const facts=document.createElement('dl');facts.className='run-detail-facts';
@@ -47,6 +62,25 @@ function showRunDetail(run:RunHistoryEntry){
   byId('run-detail-content').replaceChildren(runDetail(run));byId('run-detail-modal').hidden=false;(byId('run-detail-close') as HTMLButtonElement).focus();
 }
 function closeRunDetail(){selectedRunId=undefined;byId('run-detail-modal').hidden=true;byId('run-detail-content').replaceChildren();}
+let confirmActiveId:string|undefined;
+function settleConfirm(confirmed:boolean){
+  if(!confirmActiveId)return;
+  const id=confirmActiveId;confirmActiveId=undefined;
+  byId('confirm-modal').hidden=true;
+  void window.thirsty.confirmResponse(id,confirmed);
+}
+window.thirsty.onConfirmRequest(request=>{
+  confirmActiveId=request.id;
+  byId('confirm-dialog').dataset.tone=request.tone;
+  byId('confirm-badge').textContent=request.tone==='warning'?'CAUTION':'CONFIRM';
+  byId('confirm-title').textContent=request.title;
+  byId('confirm-message').textContent=request.message;
+  byId('confirm-detail').textContent=request.detail;
+  (byId('confirm-cancel') as HTMLButtonElement).textContent=request.cancelLabel??'Cancel';
+  (byId('confirm-ok') as HTMLButtonElement).textContent=request.confirmLabel;
+  byId('confirm-modal').hidden=false;
+  (byId('confirm-cancel') as HTMLButtonElement).focus();
+});
 type CourtCount=1|2|3|4|5|6|7;type WorkerId='A'|'B'|'C'|'D'|'E'|'F'|'G'|'H';
 const requiredWorkers=(strategy:string,count:number):WorkerId[]=>['A','B','C','D','E','F','G','H'].slice(0,(strategy==='extended'?2:1)*Math.ceil(count/2)) as WorkerId[];
 const workerLabel=(worker:WorkerId)=>worker==='A'?'Primary player':`Player ${'ABCDEFGH'.indexOf(worker)+1}`;
@@ -149,18 +183,36 @@ function buildHandoffCard(hold:import('../types.js').QrHandoffSummary,players:Re
   if(worker){
     const action=document.createElement('button');action.type='button';action.className='show-browser secondary';action.textContent=`Show Browser ${worker}`;
     const result=document.createElement('span');result.className='show-browser-result';result.setAttribute('role','status');result.textContent=browserFocusMessages[worker]??'';
-    action.onclick=()=>{action.disabled=true;browserFocusMessages[worker]=result.textContent=`Opening Browser ${worker}…`;void window.thirsty.focusBrowser({workerId:worker,...(hold.bookingId?{bookingId:hold.bookingId}:{})}).then(()=>{browserFocusMessages[worker]=result.textContent=`Browser ${worker} is now in front.`;}).catch(()=>{browserFocusMessages[worker]=result.textContent=`Browser ${worker} is unavailable or its Onda tab is ambiguous.`;}).finally(()=>{action.disabled=false;});};
+    action.disabled=!!browserFocusPending[worker];
+    action.onclick=()=>{
+      if(browserFocusPending[worker])return;
+      browserFocusPending[worker]=true;action.disabled=true;browserFocusMessages[worker]=result.textContent=`Opening Browser ${worker}…`;
+      if(latest)render(latest);
+      void window.thirsty.focusBrowser({workerId:worker,...(hold.bookingId?{bookingId:hold.bookingId}:{})})
+        .then(result=>{browserFocusMessages[worker]=result==='focused'
+          ?`Browser ${worker} is now in front, maximized on its screen.`
+          :`Browser ${worker} was restored on its screen, but Windows kept another window in front. Check the taskbar.`;})
+        .catch((error:unknown)=>{browserFocusMessages[worker]=browserFocusFailure(worker,error);})
+        .finally(()=>{browserFocusPending[worker]=false;if(latest)render(latest);});
+    };
     card.append(action,result);
   }
   return card;
 }
+const renderedQrSummary:Record<string,string>={};
 function renderQrSummary(state:Dashboard){
   const handoffs=activeHandoffs(state);
   const qrReady=handoffs.filter(hold=>(hold.status??'qr-ready')==='qr-ready').length;
   const players=playersByWorker(state.playerStatus);
+  // Signature includes hold-expiry and the Show Browser pending/message state so a rebuild
+  // still happens on those transitions, but routine polling with nothing actually changed
+  // must not tear down an in-flight Show Browser button/click.
+  const signature=JSON.stringify({handoffs:handoffs.map(hold=>({...hold,expired:holdExpired(hold)})),players,browserFocusPending,browserFocusMessages});
   for(const id of ['qr-summary-release','qr-summary-test']){
     const container=byId(id);container.hidden=!handoffs.length;
-    if(!handoffs.length){container.replaceChildren();continue;}
+    if(!handoffs.length){container.replaceChildren();renderedQrSummary[id]='';continue;}
+    if(renderedQrSummary[id]===signature)continue;
+    renderedQrSummary[id]=signature;
     const title=document.createElement('strong');title.className='qr-summary-title';
     title.textContent=qrReady===handoffs.length?`All QR pages reached · ${qrReady} checkout${qrReady===1?'':'s'}`:`Live checkout status · ${qrReady} of ${handoffs.length} QR page${handoffs.length===1?'':'s'} ready`;
     const note=document.createElement('p');note.className='small';note.textContent='Confirm every court and time slot below against the visible Onda QR pages before scanning or paying. A hold is not final booking confirmation.';
@@ -219,7 +271,7 @@ function render(state: Dashboard) {
   for(const id of ['practice-fields','full-practice-fields']) (byId(id) as HTMLFieldSetElement).disabled=busy;
   byId('lock-card').hidden=!state.lock;
   const unresolvedCheckout=state.retainedLockStage==='FINAL_ACTION_DISPATCHING';
-  byId('lock-note').textContent=unresolvedCheckout?'The previous checkout ended with a retained safety lock. Reset & Prepare will inspect every required browser and recover only when they are conclusively clean.':state.canPrepareOverHold?'The previous payment hold remains recorded. Reset & Prepare can open a fresh schedule for another run in this bot. Payment stays manual.':'Booking actions are blocked. You can still edit and save your next booking plan locally.';
+  byId('lock-note').textContent=unresolvedCheckout?'The previous checkout ended with a retained safety lock. Reset & Prepare will inspect every required browser and recover only when they are conclusively clean.':state.canPrepareOverHold?'The previous payment hold remains recorded. Prepare New Run opens a fresh schedule for another run in this bot. Payment stays manual.':'Booking actions are blocked. You can still edit and save your next booking plan locally.';
   (byId('review-lock') as HTMLButtonElement).disabled=busy;
   byId('clear-lock').hidden=!state.lockReview?.canClear;
   (byId('clear-lock') as HTMLButtonElement).disabled=busy;
@@ -307,12 +359,18 @@ function render(state: Dashboard) {
   if(selectedRunId){const selected=completed.find(run=>run.runId===selectedRunId);if(selected)showRunDetail(selected);else closeRunDetail();}
   const previousHolds=state.previousHolds??[];
   byId('previous-holds').hidden=!previousHolds.length;
-  byId('previous-holds-list').replaceChildren(...previousHolds.map(hold=>{
-    const row=document.createElement('div');row.className='previous-hold-item';
-    const label=document.createElement('strong');label.textContent=`Run ${hold.runID}`;
-    const detail=document.createElement('span');detail.textContent=`Recorded expiry: ${hold.expiresAt?new Date(hold.expiresAt).toLocaleString('en-GB',{timeZone:'Asia/Manila'}):'Unknown'} Manila · Retained ${new Date(hold.archivedAt).toLocaleString('en-GB',{timeZone:'Asia/Manila'})}`;
-    row.append(label,detail);return row;
-  }));
+  // Every log line republishes the state. Rebuilding this list each time reset its scroll
+  // position, so an operator could not read older holds while a run was writing output.
+  const previousHoldsSignature=JSON.stringify(previousHolds);
+  if(previousHoldsSignature!==renderedPreviousHolds){
+    renderedPreviousHolds=previousHoldsSignature;
+    byId('previous-holds-list').replaceChildren(...previousHolds.map(hold=>{
+      const row=document.createElement('div');row.className='previous-hold-item';
+      const label=document.createElement('strong');label.textContent=`Run ${hold.runID}`;
+      const detail=document.createElement('span');detail.textContent=`Recorded expiry: ${hold.expiresAt?new Date(hold.expiresAt).toLocaleString('en-GB',{timeZone:'Asia/Manila'}):'Unknown'} Manila · Retained ${new Date(hold.archivedAt).toLocaleString('en-GB',{timeZone:'Asia/Manila'})}`;
+      row.append(label,detail);return row;
+    }));
+  }
   byId('mode-label').textContent=workflow==='test'?'TEST NOW':'RELEASE BOOKING';
    byId('prepare').firstChild!.textContent='RESET & PREPARE ';
    const apiFirst=input('booking-method').value==='api-first';
@@ -503,4 +561,6 @@ function setActivityExpanded(value:boolean){activity.classList.toggle('expanded'
 expand.addEventListener('click',()=>setActivityExpanded(!activity.classList.contains('expanded')));
 byId('run-detail-close').addEventListener('click',closeRunDetail);
 byId('run-detail-modal').addEventListener('click',event=>{if(event.target===byId('run-detail-modal'))closeRunDetail();});
-document.addEventListener('keydown',event=>{if(event.key!=='Escape')return;if(!byId('run-detail-modal').hidden)closeRunDetail();else if(activity.classList.contains('expanded'))setActivityExpanded(false);});
+byId('confirm-cancel').addEventListener('click',()=>settleConfirm(false));
+byId('confirm-ok').addEventListener('click',()=>settleConfirm(true));
+document.addEventListener('keydown',event=>{if(event.key!=='Escape')return;if(!byId('confirm-modal').hidden)settleConfirm(false);else if(!byId('run-detail-modal').hidden)closeRunDetail();else if(activity.classList.contains('expanded'))setActivityExpanded(false);});

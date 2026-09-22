@@ -35,6 +35,26 @@ describe('API-first UI boundary', () => {
     await controller.testBooking({method:'api-first',request,authorizeTerms:true});
     expect(readyAfterA).toBeUndefined();expect(readyAfterB).toBeDefined();
   });
+  it('describes an elapsed verified hold as spent instead of recorded until a past time',async()=>{
+    const view=bookingView(ConfigSchema.parse({...defaultSetup,PLAYER_FULL_NAME:'Fixture Player',PLAYER_PHONE:'09123456789',PLAYER_EMAIL:'fixture@example.invalid'}));
+    const runner:Runner=()=>({pid:1,done:Promise.resolve(0),stop:async()=>undefined});
+    const hold=(remainingSeconds:number)=>new Controller({runner,lock:async()=>true,
+      retainedHold:async()=>({stage:'HOLD_VERIFIED',expiresAt:new Date(Date.now()+remainingSeconds*1000).toISOString(),remainingSeconds}),
+      cdp:async()=>true,browserHealth:async()=>({A:true,B:true}),playerStatus:()=>({primary:true,extended:true}),
+      clock:()=>clockStatus(ObservationSchema.parse({}),DateTime.fromISO('2026-09-21T08:00:00+08:00')),
+      confirm:async()=>true,publish:()=>undefined,booking:()=>view,saveBooking:()=>view});
+
+    const elapsed=hold(0);await elapsed.refresh();
+    expect(elapsed.state.headline).toBe('HOLD TIMER ELAPSED');
+    expect(elapsed.state.detail).toContain('elapsed');
+    // The run is not blocked, so the detail must not read like a live deadline.
+    expect(elapsed.state.detail).not.toContain('remains recorded until');
+    expect(elapsed.state.canPrepareOverHold).toBe(true);
+
+    const active=hold(120);await active.refresh();
+    expect(active.state.headline).toBe('PAYMENT HOLD ACTIVE');
+    expect(active.state.detail).toContain('remains recorded until');
+  });
   it('prepares another API test beside a verified active hold through the normal reset path',async()=>{
     const view=bookingView(ConfigSchema.parse({...defaultSetup,PLAYER_FULL_NAME:'Fixture Player',PLAYER_PHONE:'09123456789',PLAYER_EMAIL:'fixture@example.invalid'}));
     const calls:Command[]=[];let locked=true;

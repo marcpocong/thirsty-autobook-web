@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { Dashboard, Bridge } from './types.js';
+import type { Dashboard, Bridge, ConfirmRequest } from './types.js';
 const bridge: Bridge = {
   focusBrowser:request=>ipcRenderer.invoke('thirsty:focusBrowser',request),
   resetPrepare:strategy=>ipcRenderer.invoke('thirsty:resetPrepare',strategy),
@@ -32,5 +32,11 @@ const bridge: Bridge = {
     ipcRenderer.on('thirsty:status', listener);
     return () => ipcRenderer.removeListener('thirsty:status', listener);
   },
+  onConfirmRequest: callback => {
+    const listener = (_event: Electron.IpcRendererEvent, request: ConfirmRequest) => callback(request);
+    ipcRenderer.on('thirsty:confirmRequest', listener);
+    return () => ipcRenderer.removeListener('thirsty:confirmRequest', listener);
+  },
+  confirmResponse: (id, confirmed) => ipcRenderer.invoke('thirsty:confirmResponse', { id, confirmed }),
 };
 contextBridge.exposeInMainWorld('thirsty', bridge);
