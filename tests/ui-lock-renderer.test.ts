@@ -22,10 +22,11 @@ async function renderer(extra:Record<string,unknown>={}){
     inspection:null,clock:null,plan:null,logs:[],liveRace:true,booking:booking(),termsAuthorized:false,apiFirstReady:false,
     browserHealth:{A:false,B:false},capabilities:{selectionReady:true,checkoutReady:true,paymentBoundaryReady:true},
     selection:null,mode:'full',handoff:null,preparedContext:null,playerStatus:{primary:true,extended:true},...extra};
-  await page.evaluate(value=>{const w=window as any;w.fixtureState=value;w.thirsty={getStatus:async()=>value,onStatus:(callback:any)=>{w.fixturePublish=callback;return ()=>{};},focusBrowser:async(request:unknown)=>{w.fixtureFocusedBrowser=request;},
+  await page.evaluate(value=>{const w=window as any;w.fixtureState=value;w.thirsty={getStatus:async()=>value,onStatus:(callback:any)=>{w.fixturePublish=callback;return ()=>{};},focusBrowser:async(request:unknown)=>{w.fixtureFocusedBrowser=request;return w.fixtureFocusResult??'focused';},
     setWorkflow:async(workflow:string)=>{value.workflow=workflow;value.ready=false;},invalidatePreparation:async()=>{},
     authorizeTerms:async(authorized:boolean)=>{value.termsAuthorized=authorized;w.fixturePublish(value);},
-    resetPrepare:async()=>{},armFullBooking:async()=>{},reviewLock:async()=>{},saveBooking:async()=>{}};},state);
+    resetPrepare:async()=>{},armFullBooking:async()=>{},reviewLock:async()=>{},saveBooking:async()=>{},
+    onConfirmRequest:(callback:any)=>{w.fixtureConfirmRequest=callback;return ()=>{};},confirmResponse:async(id:string,confirmed:boolean)=>{w.fixtureConfirmResponse={id,confirmed};}};},state);
   const source=(await readFile('src/booking-setup.ts','utf8'))+'\n'+(await readFile('ui/renderer/app.ts','utf8')).replace(/^import .*booking-setup\.js';\r?\n/m,'');
   await page.addScriptTag({type:'module',content:stripTypeScriptTypes(source)});
   await page.waitForFunction(expected=>document.getElementById('headline')?.textContent===expected,state.headline);
@@ -166,6 +167,61 @@ it('opens each previous run to its timing facts and detailed activity timeline',
   expect(await modal.isVisible()).toBe(false);
   await toggle.click();
   await mkdir('.local',{recursive:true});await page.screenshot({path:'.local/ui-run-details.png'});
+  await page.close();
+});
+
+it('keeps previous payment holds scrollable while running output republishes the state',async()=>{
+  const hold=(n:number)=>({runID:`0000000${n}-0000-4000-8000-00000000000${n}`,archivedAt:`2026-09-22T0${n}:00:00.000Z`,expiresAt:`2026-09-22T0${n}:10:00.000Z`});
+  const page=await renderer({previousHolds:[1,2,3,4,5,6,7,8].map(hold)});
+  await page.locator('[data-view="runs"]').click();
+  const list=page.locator('#previous-holds-list');
+  expect(await list.locator('.previous-hold-item').count()).toBe(8);
+
+  await page.evaluate(()=>{document.getElementById('previous-holds-list')!.scrollTop=60;});
+  // A log line republishes the whole state; the list must not be rebuilt under the operator.
+  await page.evaluate(()=>{const w=window as any;w.fixtureState.logs=[{at:new Date().toISOString(),text:'running',level:'info'}];w.fixturePublish(w.fixtureState);});
+  expect(await page.evaluate(()=>document.getElementById('previous-holds-list')!.scrollTop)).toBe(60);
+
+  // A genuinely new archived hold still appears without a restart.
+  await page.evaluate(()=>{const w=window as any;
+    w.fixtureState.previousHolds=[{runID:'99999999-0000-4000-8000-000000000099',archivedAt:'2026-09-22T09:00:00.000Z',expiresAt:null},...w.fixtureState.previousHolds];
+    w.fixturePublish(w.fixtureState);});
+  await list.locator('.previous-hold-item').first().filter({hasText:'99999999'}).waitFor();
+  expect(await list.locator('.previous-hold-item').count()).toBe(9);
+  await page.close();
+});
+
+it('never claims a browser is in front when the window did not take the foreground',async()=>{
+  const qrHandoffs=[{checkout:'A',courts:[7],date:'2026-09-24',startTime:'10:00',endTime:'12:00',amount:1200,
+    verifiedAt:'2026-09-22T00:00:03.000Z',holdExpiresAt:new Date(Date.now()+600000).toISOString()}];
+  const page=await renderer({qrHandoffs,playerStatus:{primary:true,extended:true,third:false,fourth:false,
+    primaryDetails:{fullName:'Fixture Player',phone:'09123456789',email:'fixture@example.invalid'}}});
+  await page.evaluate(()=>{(window as any).fixtureFocusResult='unconfirmed';});
+  const result=page.locator('#qr-summary-release .show-browser-result').first();
+
+  await page.locator('#qr-summary-release .show-browser').first().click();
+  await result.filter({hasText:'Windows kept another window in front'}).waitFor();
+
+  expect(await result.innerText()).not.toContain('is now in front');
+  await page.close();
+});
+
+it('keeps every previous run readable and scrollable instead of collapsing the rows',async()=>{
+  const runHistory=Array.from({length:30},(_,i)=>({runId:`00000000-0000-4000-8000-${String(i).padStart(12,'0')}`,label:'API LIVE-NOW',
+    startedAt:'2026-09-22T00:00:00.000Z',readyAt:'2026-09-22T00:00:01.000Z',endedAt:'2026-09-22T00:00:03.500Z',
+    outcome:'complete',totalElapsedMs:3500,readyElapsedMs:2500,activities:[]}));
+  const page=await renderer({runHistory});
+  await page.locator('[data-view="runs"]').click();
+  expect(await page.locator('.run-history-item').count()).toBe(30);
+  // The items clip their contents, so the grid rows must be sized to content;
+  // otherwise every run collapses to its 2px border inside the fixed-height panel.
+  const {itemHeight,scrollHeight,clientHeight}=await page.evaluate(()=>{
+    const list=document.getElementById('run-history-list')!;
+    return {itemHeight:list.querySelector('.run-history-item')!.getBoundingClientRect().height,
+      scrollHeight:list.scrollHeight,clientHeight:list.clientHeight};
+  });
+  expect(itemHeight).toBeGreaterThan(40);
+  expect(scrollHeight).toBeGreaterThan(clientHeight);
   await page.close();
 });
 

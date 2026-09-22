@@ -174,7 +174,15 @@ export class Controller {
     if(run&&!run.endedAt)try{this.deps.activityJournal?.handoff(run.runId,merged);}catch{/* best-effort run history enrichment */}
   }
   private holdDetail(hold:RetainedHoldStatus){
-    if(hold.stage==='HOLD_VERIFIED')return `A verified payment hold remains recorded${hold.expiresAt?` until ${new Date(hold.expiresAt).toLocaleString('en-GB',{timeZone:'Asia/Manila',dateStyle:'medium',timeStyle:'medium'})} Manila`:''}. Payment is manual. Reset & Prepare can make a fresh schedule in the same bot while retaining the previous hold and QR tab.`;
+    if(hold.stage==='HOLD_VERIFIED'){
+      if(!hold.expiresAt)return 'A verified payment hold remains recorded. Payment is manual. Prepare New Run makes a fresh schedule in the same bot while retaining the previous hold and QR tab.';
+      const recorded=new Date(hold.expiresAt).toLocaleString('en-GB',{timeZone:'Asia/Manila',dateStyle:'medium',timeStyle:'medium'});
+      // Once the timer is spent the same "recorded until" wording reads as a future
+      // deadline, which made an elapsed hold look like it was still blocking a run.
+      return hold.remainingSeconds===0
+        ? `The recorded hold timer elapsed at ${recorded} Manila, so nothing is waiting on it. The hold stays on record for your reference. Press Prepare New Run to verify the browsers and open a fresh schedule in the same bot. Payment remains manual.`
+        : `A verified payment hold remains recorded until ${recorded} Manila. Payment is manual. Prepare New Run makes a fresh schedule in the same bot while retaining the previous hold and QR tab.`;
+    }
     if(!hold.expiresAt)return hold.stage==='FINAL_ACTION_DISPATCHING'
       ? 'The previous checkout stopped while its final action was unresolved. Reset & Prepare will inspect every required Onda browser and will recover only after the safety window has passed and all browsers are conclusively clean.'
       : 'A retained payment hold has no verified expiry. Inspect the Onda browser and use Review Lock; no new test can start.';

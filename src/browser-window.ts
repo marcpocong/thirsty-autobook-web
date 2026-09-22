@@ -1,4 +1,7 @@
 import { chromium, type Browser, type Page } from 'playwright';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { resolve } from 'node:path';
 import { ONDA_URL } from './config.js';
 import { browserIdentity, verifyDedicatedChromeAsync } from './browser.js';
 import type { WorkerId } from './workers.js';
@@ -28,16 +31,39 @@ export async function showWorkerPage(page:Page,workerId:WorkerId,options:{maximi
   const session=await page.context().newCDPSession(page);
   try{
     const {windowId,bounds}=await session.send('Browser.getWindowForTarget');
+    // Chrome rejects a direct jump to 'maximized' from a minimized or fullscreen
+    // window; both have to pass through 'normal' first.
+    const restore=bounds.windowState==='minimized'||bounds.windowState==='fullscreen';
+    if(restore)await session.send('Browser.setWindowBounds',{windowId,bounds:{windowState:'normal'}});
     if(options.maximize)await session.send('Browser.setWindowBounds',{windowId,bounds:{windowState:'maximized'}});
-    else if(bounds.windowState==='minimized')await session.send('Browser.setWindowBounds',{windowId,bounds:{windowState:'normal'}});
-  }finally{await session.detach();}
+  }catch{/* Presentation is best-effort; bringToFront still surfaces the tab. */}
+  finally{await session.detach().catch(()=>undefined);}
   await page.bringToFront();
 }
 
 export interface BrowserFocusRequest {workerId:WorkerId;bookingId?:string}
+/** 'focused' is only reported when the window was observed to hold the foreground. */
+export type BrowserFocusResult='focused'|'unconfirmed';
+
+export function focusResultFromCode(code:string):BrowserFocusResult{return code.trim()==='WINDOW_FOCUSED'?'focused':'unconfirmed';}
+
+/**
+ * Raises the worker's own Chrome window to the foreground and maximizes it on whichever
+ * monitor it already occupies. CDP alone cannot do this: Page.bringToFront only selects a
+ * tab inside the window, so the operator was told a hidden window was in front.
+ */
+async function raiseWorkerWindow(port:number,workerId:WorkerId):Promise<BrowserFocusResult>{
+  if(process.platform!=='win32')return 'unconfirmed';
+  try{
+    const {stdout}=await promisify(execFile)('powershell.exe',['-NoProfile','-File',resolve('scripts/focus-onda-window.ps1'),
+      '-Port',String(port),'-TitlePrefix',`THIRSTY BOT ${workerId}`],
+    {encoding:'utf8',windowsHide:true,timeout:20000,maxBuffer:4096});
+    return focusResultFromCode(stdout);
+  }catch{return 'unconfirmed';}
+}
 
 /** Focuses an existing verified worker window. It never starts Chrome or changes the page URL. */
-export async function focusDedicatedBrowser(request:BrowserFocusRequest):Promise<void>{
+export async function focusDedicatedBrowser(request:BrowserFocusRequest):Promise<BrowserFocusResult>{
   const identity=browserIdentity(request.workerId);
   await verifyDedicatedChromeAsync(identity);
   let browser=connections.get(request.workerId);
@@ -52,7 +78,11 @@ export async function focusDedicatedBrowser(request:BrowserFocusRequest):Promise
   }):undefined;
   const marked=await Promise.all(pages.map(async page=>({page,title:await page.title().catch(()=> '')})));
   const markedPages=marked.filter(candidate=>candidate.title.startsWith(`THIRSTY BOT ${request.workerId}`));
-  const page=request.bookingId?exact:markedPages.length===1?markedPages[0]!.page:pages.length===1?pages[0]:undefined;
+  // The booking tab drops its bookingId once Onda releases the hold, so treat the exact
+  // match as a preference: the worker's own marked tab is still the window to show.
+  const page=exact??(markedPages.length===1?markedPages[0]!.page:pages.length===1?pages[0]:undefined);
   if(!page)throw Error(pages.length?'ONDA_TAB_AMBIGUOUS_OR_MISSING':'ONDA_TAB_MISSING');
+  // Select the tab first so the window caption identifies the worker, then raise the window.
   await showWorkerPage(page,request.workerId,{maximize:true});
+  return raiseWorkerWindow(identity.port,request.workerId);
 }

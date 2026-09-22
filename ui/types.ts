@@ -12,7 +12,9 @@ import type {FallbackReconciliation} from '../src/booking-setup.js';
 import type {ScheduledReleaseContext} from '../src/scheduled-release.js';
 import type {PreviousHold} from './status.js';
 import type {CourtCount,WorkerId} from '../src/workers.js';
+import type {BrowserFocusResult} from '../src/browser-window.js';
 export type DualPracticeCommand = { kind:'dualDry'; date:string } | { kind:'dualPractice'|'dualFullPractice'; input:DualPracticeInput };
+export interface ConfirmRequest { id:string; tone:'question'|'warning'; title:string; message:string; detail:string; confirmLabel:string; cancelLabel?:string }
 export interface ApiRunPreferences {strategy:'standard'|'extended';date:string;start:string;duration:number;courtCount:CourtCount;maximum?:number;priority:number[];fallbackStarts:string[];exact?:number[][]}
 export type Command = {kind:'resetPrepare';input:PreparationInput} | {kind:'testBooking';input:TestBookingInput} | {kind:'apiRun';mode:'prepare'|'dry'|'live'|'live-now';date:string;fingerprint:string;releaseMs?:number;preferences?:ApiRunPreferences} | {kind:'apiPreview';date:string} | DualPracticeCommand | 'chromeDual' | 'dualReadiness' | 'dualPrepare' | {kind:'fullPractice';input:FullPracticeInput} | 'chrome' | 'inspect' | 'observe' | { kind:'selection' | 'dry'; planHash:string } | {kind:'full';context:ScheduledReleaseContext;authorizeTerms:true} | { kind:'practice'; input:PracticeInput };
 export type Inspection = Extract<UiEvent, { type: 'inspection' }>;
@@ -56,7 +58,7 @@ export interface Dashboard {
   mode:'selection'|'full'; handoff:Extract<UiEvent,{type:'handoff'}>|null;
 }
 export interface Bridge {
-  focusBrowser(request:{workerId:WorkerId;bookingId?:string}):Promise<void>;
+  focusBrowser(request:{workerId:WorkerId;bookingId?:string}):Promise<BrowserFocusResult>;
   resetPrepare(input:PreparationInput):Promise<void>;
   apiPreview(date:string):Promise<void>;
   testBooking(input:TestBookingInput):Promise<void>;
@@ -70,4 +72,6 @@ export interface Bridge {
   saveBooking(input: BookingSetup): Promise<void>; armSelection(): Promise<void>; dryRace(): Promise<void>; runPractice(input:PracticeInput): Promise<void>;
   setMode(mode:'selection'|'full'):Promise<void>; authorizeTerms(value:boolean):Promise<void>; armFullBooking():Promise<void>; cancelScheduledRelease():Promise<void>;
   onStatus(callback: (status: Dashboard) => void): () => void;
+  onConfirmRequest(callback: (request: ConfirmRequest) => void): () => void;
+  confirmResponse(id: string, confirmed: boolean): Promise<void>;
 }

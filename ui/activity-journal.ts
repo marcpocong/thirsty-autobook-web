@@ -44,7 +44,7 @@ export class ActivityJournal {
     finally { closeSync(handle); this.handles.delete(runId); }
   }
 
-  history(limit=12):RunHistoryEntry[] {
+  history(limit=500):RunHistoryEntry[] {
     const directory=resolve(this.root,'.local/booking-runs');
     if(!existsSync(directory))return [];
     return readdirSync(directory).filter(name=>name.endsWith('.ndjson')).map(name=>({name,mtime:statSync(join(directory,name)).mtimeMs}))
