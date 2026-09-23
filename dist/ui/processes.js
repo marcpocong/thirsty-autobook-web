@@ -85,6 +85,10 @@ export function createRunner(root, node) {
         const env = { ...process.env, THIRSTY_UI_EVENTS: '1', THIRSTY_UI_PARENT_PID: String(process.pid) };
         if ('apiLive' in spec && spec.apiLive)
             env.ONDA_API_FIRST_LIVE = 'ARMED';
+        // Up to seven Precision attempts each fsync a journal and a one-shot permit at the release
+        // instant; the default 4-thread libuv pool would queue attempts 5-7 behind the others.
+        if ('apiLive' in spec && spec.apiLive)
+            env.UV_THREADPOOL_SIZE = '16';
         delete env.ELECTRON_RUN_AS_NODE;
         const child = spawn(spec.executable, spec.args, { cwd: root, env, windowsHide: true, shell: false,
             stdio: spec.automation ? ['ignore', 'pipe', 'pipe', 'ipc'] : ['ignore', 'pipe', 'pipe'] });

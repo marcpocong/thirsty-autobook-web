@@ -123,10 +123,11 @@ input('full-date').value=input('practice-date').value;
 input('dual-date').value=input('practice-date').value;
 for(const id of ['dual-court-a','dual-court-b'])(byId(id) as HTMLSelectElement).replaceChildren(...Array.from({length:7},(_,i)=>new Option(`Court ${i+1}`,String(i+1))));
 input('dual-court-a').value='7';input('dual-court-b').value='6';
-for(let i=0;i<3;i++){
+const PRECISION_WORKERS=['A','B','C','D','E','F','G'] as const;
+for(let i=0;i<PRECISION_WORKERS.length;i++){
   (byId(`precision-court-${i}`) as HTMLSelectElement).replaceChildren(...Array.from({length:7},(_,c)=>new Option(`Court ${c+1}`,String(c+1))));
   (byId(`precision-start-${i}`) as HTMLSelectElement).replaceChildren(...hours.map(h=>new Option(friendly(h),h)));
-  input(`precision-start-${i}`).value='17:00';input(`precision-duration-${i}`).value='3';input(`precision-court-${i}`).value=String([7,5,3][i]);
+  input(`precision-start-${i}`).value='17:00';input(`precision-duration-${i}`).value='3';input(`precision-court-${i}`).value=String([7,5,3,6,4,2,1][i]);
 }
 /** The exact targets the operator configured; nothing is inferred or added. */
 function precisionRows():PrecisionRow[]{
@@ -141,13 +142,13 @@ function syncStrategy(){
   const precision=precisionSelected(),count=Number(input('precision-count').value)||1;
   byId('precision-strategy').parentElement!.hidden=workflow!=='release';
   byId('setup-fields').classList.toggle('precision-mode',precision);byId('precision-setup').hidden=!precision;
-  for(let i=0;i<3;i++)byId(`precision-row-${i}`).hidden=i>=count;
+  for(let i=0;i<PRECISION_WORKERS.length;i++)byId(`precision-row-${i}`).hidden=i>=count;
   if(precision){input('booking-method').value='proofless';input('booking-type').value='standard';if(Number(input('duration').value)>3)input('duration').value='3';}
   (byId('booking-method') as HTMLSelectElement).disabled=precision;(byId('booking-type') as HTMLSelectElement).disabled=precision;
 }
 function formDraft():FormDraft{return {releaseStrategy:input('precision-strategy').value==='precision'?'precision':'general',precisionCount:Number(input('precision-count').value)||1,precisionTargets:precisionRows(),method:input('booking-method').value as 'browser'|'hybrid'|'api-first'|'proofless',strategy:input('booking-type').value as 'standard'|'extended',date:input('test-date').value,courtCount:Number(input('court-count').value) as CourtCount,start:input('start-time').value,duration:Number(input('duration').value),attempts:Number(input('attempts').value),courtOrder:[...courtOrder],fallbackTimes:[...fallbackTimes],exactA:input('exact-a').value,exactB:input('exact-b').value};}
-function applyDraft(d:FormDraft){input('precision-strategy').value=d.releaseStrategy;input('precision-count').value=String(Math.min(3,Math.max(1,d.precisionCount)));
-  d.precisionTargets.slice(0,3).forEach((t,i)=>{input(`precision-court-${i}`).value=String(t.court);input(`precision-start-${i}`).value=t.start;input(`precision-duration-${i}`).value=String(t.durationHours);});
+function applyDraft(d:FormDraft){input('precision-strategy').value=d.releaseStrategy;input('precision-count').value=String(Math.min(PRECISION_WORKERS.length,Math.max(1,d.precisionCount)));
+  d.precisionTargets.slice(0,PRECISION_WORKERS.length).forEach((t,i)=>{input(`precision-court-${i}`).value=String(t.court);input(`precision-start-${i}`).value=t.start;input(`precision-duration-${i}`).value=String(t.durationHours);});
   input('booking-method').value=d.method;input('booking-type').value=d.strategy;input('test-date').value=d.date;input('court-count').value=String(d.courtCount);input('start-time').value=d.start;input('duration').value=String(d.duration);input('attempts').value=String(d.attempts);courtOrder=[...d.courtOrder];fallbackTimes=[...d.fallbackTimes];input('exact-a').value=d.exactA;input('exact-b').value=d.exactB;editors();syncStrategy();}
 function storeDraft(){const d=formDraft();if(workflow==='test')testDraft=d;else releaseDraft=d;}
 function reconcileReleaseDraft(){
@@ -645,7 +646,7 @@ function render(state: Dashboard) {
   byId('release-readiness').replaceChildren(...gateRows(gates));
   byId('release-readiness-card').dataset.state=armed?'armed':prepared?'prepared':'draft';byId('sleep-warning').hidden=!armed;byId('sleep-warning').textContent=`Sleep protection: ${state.sleepProtection?'ACTIVE':'NOT AVAILABLE'} | Keep the PC powered on. Do not hibernate or close the laptop lid if Windows sleeps on lid close.`;
    const savedSetup=state.booking?.setup;
-   if(savedSetup?.RELEASE_STRATEGY==='precision')byId('saved-plan-summary').textContent=`PRECISION RELEASE · GOAL: 1 COURT · PROOFLESS DIRECT\n${savedSetup.PRECISION_TARGETS.map((t,i)=>`Worker ${'ABC'[i]} · Court ${t.court} · ${friendly(t.start)}–${endFriendly(t.start,t.durationHours)} · ${t.durationHours} h`).join('\n')}\nIndependent attempts: more than one temporary QR hold may be created. Payment remains manual.\nTarget: ${dateLabel(state.booking!.targetDate)}`;
+   if(savedSetup?.RELEASE_STRATEGY==='precision')byId('saved-plan-summary').textContent=`PRECISION RELEASE · GOAL: 1 COURT · PROOFLESS DIRECT\n${savedSetup.PRECISION_TARGETS.map((t,i)=>`Worker ${PRECISION_WORKERS[i]} · Court ${t.court} · ${friendly(t.start)}–${endFriendly(t.start,t.durationHours)} · ${t.durationHours} h`).join('\n')}\nIndependent attempts: more than one temporary QR hold may be created. Payment remains manual.\nTarget: ${dateLabel(state.booking!.targetDate)}`;
    else byId('saved-plan-summary').textContent=state.booking?(`${state.booking.setup.BOOKING_METHOD.toUpperCase()} · ${state.booking.setup.BOOKING_TYPE.toUpperCase()} · ${state.booking.setup.COURT_COUNT} court${state.booking.setup.COURT_COUNT===1?'':'s'}\n${friendly(state.booking.setup.START_TIME)}–${endFriendly(state.booking.setup.START_TIME,state.booking.setup.DURATION_HOURS)} · ${state.booking.setup.DURATION_HOURS} hours\nCourt priority: ${state.booking.setup.PREFERRED_COURTS.join(' → ')}\nFallback starts: ${state.booking.setup.FALLBACK_TIMES.map(friendly).join(', ')||'None'}\nTarget: ${dateLabel(state.booking.targetDate)}`):'No saved plan available.';
   const actualAmount=state.handoff?.amount??state.observedPrice??state.selection?.amount;
    byId('observed-price').hidden=(actualAmount===undefined||actualAmount===null)&&(state.assumedPrice===undefined||state.assumedPrice===null);
@@ -741,7 +742,7 @@ byId('mode-full').addEventListener('change',()=>{void window.thirsty.setMode('fu
 byId('mode-selection').addEventListener('change',()=>{void window.thirsty.setMode('selection').catch(()=>{});});
 byId('terms').addEventListener('change',()=>{void window.thirsty.authorizeTerms(input('terms').checked).catch(()=>{input('terms').checked=false;});});
  for(const id of ['booking-method','test-date','court-count','start-time','duration','attempts','exact-a','exact-b'])byId(id).addEventListener('change',changed);
-for(const id of ['precision-strategy','precision-count',...[0,1,2].flatMap(i=>[`precision-court-${i}`,`precision-start-${i}`,`precision-duration-${i}`])])
+for(const id of ['precision-strategy','precision-count',...PRECISION_WORKERS.map((_,i)=>i).flatMap(i=>[`precision-court-${i}`,`precision-start-${i}`,`precision-duration-${i}`])])
   byId(id).addEventListener('change',()=>{syncStrategy();changed();});
 byId('booking-type').addEventListener('change',()=>{const extended=input('booking-type').value==='extended',d=Number(input('duration').value);if(extended&&d<4)input('duration').value='4';if(!extended&&d>3)input('duration').value='3';syncViableControls();changed();});
 byId('add-fallback').onclick=()=>{const h=input('fallback-time').value;if(h===input('start-time').value||fallbackTimes.includes(h)){byId('edit-status').textContent='Choose a different fallback start.';return;}if(workflow==='release'){const reconciliation=reconcileFallbackTimes(input('start-time').value,Number(input('duration').value),[...fallbackTimes,h]);if(reconciliation.removed.length){releaseAdjustment=reconciliation;byId('edit-status').textContent=bookingSetupProblem({...currentSetup(),FALLBACK_TIMES:[...fallbackTimes,h]})??'That fallback does not fit the current booking.';if(latest)render(latest);return;}}fallbackTimes.push(h);editors();changed();};
@@ -793,7 +794,7 @@ const PRECISION_STATE_TEXT:Record<string,[string,'ok'|'warn'|'bad'|'']>={EXCLUDE
 function renderPrecision(state:Dashboard){
   const setup=state.booking?.setup,live=state.precision;
   const configured=setup?.RELEASE_STRATEGY==='precision'?setup.PRECISION_TARGETS:[];
-  const rows=live?.targets.length?live.targets:configured.map((t,i)=>({workerId:(['A','B','C'] as const)[i]!,court:t.court,startTime:t.start,
+  const rows=live?.targets.length?live.targets:configured.map((t,i)=>({workerId:PRECISION_WORKERS[i]!,court:t.court,startTime:t.start,
     endTime:`${String(Number(t.start.slice(0,2))+t.durationHours).padStart(2,'0')}:00`,durationHours:t.durationHours}));
   const panel=byId('precision-panel');panel.hidden=!rows.length;
   if(!rows.length)return;
@@ -812,6 +813,6 @@ function renderPrecision(state:Dashboard){
     if(tone)status.dataset.tone=tone;
     line.append(target,evidence,status);return line;
   }));
-  for(let i=0;i<3;i++){const row=live?.targets.find(t=>t.workerId===['A','B','C'][i]);
+  for(let i=0;i<PRECISION_WORKERS.length;i++){const row=live?.targets.find(t=>t.workerId===PRECISION_WORKERS[i]);
     byId(`precision-evidence-${i}`).textContent=row?.evidence?`Latest (${row.checkpoint??''}): ${PRECISION_EVIDENCE_TEXT[row.evidence]??row.evidence}`:'';}
 }

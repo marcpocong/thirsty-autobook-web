@@ -4,23 +4,23 @@ import { parse as parseEnv } from 'dotenv';
 import { existsSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { reconcileBookingSetupFallbacks, reconcileFallbackTimes, type FallbackReconciliation } from './booking-setup.js';
-import { WORKER_IDS, type CourtCount, type WorkerId } from './workers.js';
+import { PRECISION_MAX_ATTEMPTS, WORKER_IDS, type CourtCount, type WorkerId } from './workers.js';
 import {networkNowMs} from './network-clock.js';
 
 export const ONDA_URL = 'https://app.onda.fit/book/thirsty-pickle';
 export const VENUE = 'Thirsty Pickle | SM Seaside';
 const hour = z.string().regex(/^(0[89]|1[0-9]|2[0-3]):00$/);
 const courts = z.array(z.number().int().min(1).max(7));
-/** One exact Precision target: one court, one start, 1-3 hours. Workers A, B, C follow row order. */
+/** One exact Precision target: one court, one start, 1-3 hours. Workers A-G follow row order. */
 export const PrecisionTargetSchema = z.object({ court: z.number().int().min(1).max(7), start: hour, durationHours: z.number().int().min(1).max(3) }).strict();
 const releaseStrategy = z.enum(['general','precision']).default('general');
-const precisionTargets = z.array(PrecisionTargetSchema).max(3).default([]);
+const precisionTargets = z.array(PrecisionTargetSchema).max(PRECISION_MAX_ATTEMPTS).default([]);
 function checkPrecision(c:{RELEASE_STRATEGY:'general'|'precision';BOOKING_METHOD:string;BOOKING_TYPE:string;PRECISION_TARGETS:{court:number;start:string;durationHours:number}[]},ctx:z.RefinementCtx){
   if(c.RELEASE_STRATEGY!=='precision')return;
   if(c.BOOKING_METHOD!=='proofless')ctx.addIssue({code:'custom',message:'Precision Release uses Proofless Direct only.',path:['BOOKING_METHOD']});
   if(c.BOOKING_TYPE!=='standard')ctx.addIssue({code:'custom',message:'Precision Release supports Standard 1-3 hour targets only.',path:['BOOKING_TYPE']});
   const t=c.PRECISION_TARGETS;
-  if(t.length<1||t.length>3)ctx.addIssue({code:'custom',message:'Configure 1 to 3 Precision attempts.',path:['PRECISION_TARGETS']});
+  if(t.length<1||t.length>PRECISION_MAX_ATTEMPTS)ctx.addIssue({code:'custom',message:`Configure 1 to ${PRECISION_MAX_ATTEMPTS} Precision attempts.`,path:['PRECISION_TARGETS']});
   const end=(x:{start:string;durationHours:number})=>Number(x.start.slice(0,2))+x.durationHours;
   if(t.some(x=>end(x)>24))ctx.addIssue({code:'custom',message:'A Precision attempt would end after midnight.',path:['PRECISION_TARGETS']});
   for(const [i,a] of t.entries())for(const b of t.slice(i+1))if(a.court===b.court&&Number(a.start.slice(0,2))<end(b)&&Number(b.start.slice(0,2))<end(a))

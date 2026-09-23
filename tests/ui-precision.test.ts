@@ -86,3 +86,42 @@ describe('Precision Release UI boundary', () => {
     } finally { if (previous === undefined) delete process.env.THIRSTY_API_INSTALLATION; else process.env.THIRSTY_API_INSTALLATION = previous; }
   });
 });
+
+describe('Precision Release with seven attempts (A-G)', () => {
+  const seven = [1, 2, 3, 4, 5, 6, 7].map(court => ({ court, start: '17:00', durationHours: 3 }));
+  it('prepares and arms exactly workers A-G (never H) and lists all seven targets', async () => {
+    const previous = process.env.THIRSTY_API_INSTALLATION; process.env.THIRSTY_API_INSTALLATION = '1';
+    try {
+      const view = bookingView(ConfigSchema.parse({ ...defaultSetup, BOOKING_METHOD: 'proofless', DURATION_HOURS: 3, RELEASE_STRATEGY: 'precision', PRECISION_TARGETS: seven, ...players }));
+      expect(describePlan(view)).toContain('Worker G | Court 7 | 17:00–20:00');
+      expect(describePlan(view)).toContain('7 independent checkout attempts are authorized');
+      const calls: Command[] = [], releaseMs = Date.now() + 3_600_000;
+      const runner: Runner = command => { calls.push(command); return { pid: 1, done: Promise.resolve(0), stop: async () => undefined }; };
+      const controller = new Controller({ runner, lock: async () => false, cdp: async () => true,
+        browserHealth: async () => ({ A: true, B: true, C: true, D: true, E: true, F: true, G: true, H: false }),
+        playerStatus: () => ({ primary: true, extended: true, third: true, fourth: true, fifth: true, sixth: true, seventh: true, eighth: false }),
+        clock: () => ({ ...clockStatus(ObservationSchema.parse({}), DateTime.fromISO('2026-09-24T06:00:00+08:00')), releaseMs, targetDate: view.targetDate }),
+        confirm: async () => true, publish: () => undefined, booking: () => view, saveBooking: () => view });
+      await controller.resetPrepare({ workflow: 'release', strategy: 'standard', setup: view.setup });
+      expect(controller.state.detail).toContain('7 API browsers are ready');
+      await controller.authorizeTerms(true); await controller.armFullBooking();
+      expect(calls.map(command => typeof command === 'object' && command.kind === 'apiRun' ? command.mode : 'other')).toEqual(['prepare', 'dry', 'live']);
+    } finally { if (previous === undefined) delete process.env.THIRSTY_API_INSTALLATION; else process.env.THIRSTY_API_INSTALLATION = previous; }
+  });
+  it('refuses preparation when a configured Precision worker has no player (no fallback identity)', async () => {
+    const previous = process.env.THIRSTY_API_INSTALLATION; process.env.THIRSTY_API_INSTALLATION = '1';
+    try {
+      const view = bookingView(ConfigSchema.parse({ ...defaultSetup, BOOKING_METHOD: 'proofless', DURATION_HOURS: 3, RELEASE_STRATEGY: 'precision', PRECISION_TARGETS: seven, ...players }));
+      const calls: Command[] = [];
+      const runner: Runner = command => { calls.push(command); return { pid: 1, done: Promise.resolve(0), stop: async () => undefined }; };
+      const controller = new Controller({ runner, lock: async () => false, cdp: async () => true,
+        browserHealth: async () => ({ A: true, B: true, C: true, D: true, E: true, F: true, G: true }),
+        playerStatus: () => ({ primary: true, extended: true, third: true, fourth: true, fifth: true, sixth: false, seventh: true }),
+        clock: () => ({ ...clockStatus(ObservationSchema.parse({}), DateTime.fromISO('2026-09-24T06:00:00+08:00')), releaseMs: Date.now() + 3_600_000, targetDate: view.targetDate }),
+        confirm: async () => true, publish: () => undefined, booking: () => view, saveBooking: () => view });
+      await controller.resetPrepare({ workflow: 'release', strategy: 'standard', setup: view.setup });
+      expect(calls).toHaveLength(0);
+      expect(controller.state.apiFirstReady).toBe(false);
+    } finally { if (previous === undefined) delete process.env.THIRSTY_API_INSTALLATION; else process.env.THIRSTY_API_INSTALLATION = previous; }
+  });
+});
