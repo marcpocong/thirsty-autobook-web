@@ -4,6 +4,7 @@ import { DateTime } from 'luxon';
 import { loadObservationConfig, releaseCalendar, releaseCalendarOn } from '../src/config.js';
 import { UiEventSchema } from '../src/ui-events.js';
 import { browserIdentity } from '../src/browser.js';
+import { networkClockFresh, networkNowMs, readNetworkClock } from '../src/network-clock.js';
 export async function readLock(root) {
     try {
         await access(resolve(root, '.local/automation.lock'));
@@ -101,13 +102,15 @@ async function probePort(port) {
     }
 }
 export async function probeBrowserHealth() { const ids = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']; const values = await Promise.all(ids.map(id => probePort(browserIdentity(id).port))); return Object.fromEntries(ids.map((id, index) => [id, !!values[index]])); }
-export function clockStatus(config, now = DateTime.now()) {
-    const local = now.setZone(config.TIMEZONE), today = releaseCalendarOn(config, local.toISODate());
-    const next = releaseCalendar(config, now);
-    return { manilaTime: now.setZone('Asia/Manila').toFormat('HH:mm:ss'), manilaDate: now.setZone('Asia/Manila').toFormat('ccc, LLL d, yyyy'),
+export function clockStatus(config, now) {
+    const injected = now !== undefined, network = readNetworkClock(), effective = now ?? DateTime.fromMillis(networkNowMs());
+    const local = effective.setZone(config.TIMEZONE), today = releaseCalendarOn(config, local.toISODate());
+    const next = releaseCalendar(config, effective);
+    return { manilaTime: effective.setZone('Asia/Manila').toFormat('HH:mm:ss'), manilaDate: effective.setZone('Asia/Manila').toFormat('ccc, LLL d, yyyy'),
         releaseMs: next.releaseMs, targetDate: next.targetDate, releaseTime: config.RELEASE_TIME, timezone: config.TIMEZONE,
-        canArmToday: next.releaseMs > now.toMillis(), canArmNext: true, todayReleasePassed: now.toMillis() >= today.releaseMs,
-        remainingMs: Math.max(0, next.releaseMs - now.toMillis()), horizon: config.BOOKING_HORIZON_DAYS, maxReloads: config.MAX_RELEASE_RELOADS, leadMs: config.RELEASE_LEAD_MS, preopenCalendar: config.RELEASE_PREOPEN_CALENDAR,
+        canArmToday: next.releaseMs > effective.toMillis(), canArmNext: true, todayReleasePassed: effective.toMillis() >= today.releaseMs,
+        remainingMs: Math.max(0, next.releaseMs - effective.toMillis()), horizon: config.BOOKING_HORIZON_DAYS, maxReloads: config.MAX_RELEASE_RELOADS, leadMs: config.RELEASE_LEAD_MS, preopenCalendar: config.RELEASE_PREOPEN_CALENDAR,
+        networkSynced: injected || networkClockFresh(network, effective.toMillis()), clockSource: injected ? 'injected-test-clock' : network?.source ?? null, clockOffsetMs: network?.offsetMs ?? 0, clockRoundTripMs: injected ? 0 : network?.roundTripMs ?? null, clockSynchronizedAt: injected ? effective.toISO() : network?.synchronizedAt ?? null,
         preflightSecondsBefore: config.PREFLIGHT_SECONDS_BEFORE, wakeSecondsBefore: config.SCHEDULE_WAKE_SECONDS_BEFORE };
 }
 export function readClock() { return clockStatus(loadObservationConfig()); }

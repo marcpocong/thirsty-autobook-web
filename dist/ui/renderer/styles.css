@@ -104,7 +104,10 @@ dd::before { content: ""; display: inline-block; width: 5px; height: 5px; border
 .run-history { margin-top:16px; }
 .run-history .section-title { align-items:flex-start; }
 .run-history h2 { margin-bottom:4px; }
-#run-history-list { display:grid; gap:7px; margin-top:10px; }
+/* Rows must be max-content: the items clip with overflow:hidden, which zeroes their
+   automatic minimum size, so auto tracks collapse to their borders inside the
+   fixed-height scroll panel instead of overflowing it. */
+#run-history-list { display:grid; gap:7px; margin-top:10px; grid-auto-rows:max-content; }
 .run-history-item { border:1px solid #294b38; border-radius:7px; background:#0b1d13; overflow:hidden; }
 .run-history-toggle { display:block; width:100%; padding:10px 12px; border:0; border-radius:0; background:transparent; color:inherit; font:inherit; text-align:left; cursor:pointer; }
 .run-history-toggle:hover,.run-history-toggle:focus-visible { background:#10271a; }
@@ -130,6 +133,22 @@ dd::before { content: ""; display: inline-block; width: 5px; height: 5px; border
 .run-detail-event.error { border-left-color:var(--danger); background:#241416; }
 .run-detail-event time,.run-detail-event-timing { color:#7f9c87; font:9px Consolas,monospace; white-space:nowrap; }
 .run-detail-event-timing { text-align:right; }
+.confirm-modal { position:fixed; inset:0; z-index:60; display:grid; place-items:center; padding:24px; background:rgba(1,10,6,.86); backdrop-filter:blur(3px); animation:confirm-fade .12s ease-out; }
+.confirm-modal[hidden] { display:none; }
+@keyframes confirm-fade { from{opacity:0;} to{opacity:1;} }
+@keyframes confirm-rise { from{opacity:0; transform:translateY(6px) scale(.98);} to{opacity:1; transform:none;} }
+.confirm-dialog { position:relative; width:min(460px,100%); max-height:calc(100dvh - 48px); overflow:auto; padding:24px; border:1px solid #3f7654; border-radius:14px; background:linear-gradient(165deg,#0f261a,#07170f); box-shadow:0 24px 80px #000d, inset 0 1px 0 rgba(255,255,255,.03); animation:confirm-rise .16s ease-out; }
+.confirm-badge { display:inline-block; padding:3px 9px; border-radius:999px; background:#16321f; border:1px solid #3f7654; color:#9ad6a4; font-size:9px; font-weight:750; letter-spacing:.09em; }
+.confirm-dialog[data-tone="warning"] .confirm-badge { background:#33260f; border-color:#9a7a2f; color:#f0ce91; }
+.confirm-dialog h2 { margin:12px 0 8px; font-size:17px; line-height:1.35; color:#f4fff6; }
+.confirm-message { margin:0 0 12px; font-size:13px; line-height:1.55; color:#cfe6d5; }
+.confirm-detail { display:block; white-space:pre-wrap; overflow-wrap:anywhere; font:11px/1.65 Consolas,monospace; color:#aec9b4; background:#07130d; border:1px solid #223d2d; border-radius:9px; padding:12px 14px; max-height:38vh; overflow:auto; scrollbar-width:thin; }
+.confirm-detail:empty { display:none; }
+.confirm-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:20px; }
+.confirm-actions button { padding:11px 20px; border-radius:9px; font-size:13px; font-weight:650; }
+.confirm-actions #confirm-ok { background:linear-gradient(100deg,#81d936,#b0ef55); color:#102312; border-color:#b9f475; font-weight:750; }
+.confirm-actions #confirm-ok:hover { filter:brightness(1.06); }
+.confirm-dialog[data-tone="warning"] #confirm-ok { background:linear-gradient(100deg,#e8b74a,#f0ce91); border-color:#f0ce91; }
 footer { position: fixed; bottom: 0; left: 0; right: 0; z-index: 10; display: flex; justify-content: space-between; align-items: center; gap: 14px; margin: 0; padding: 13px 28px; background: rgba(7, 20, 15, .98); border-top: 1px solid var(--line); }
 footer > div { display: flex; gap: 8px; align-items: center; color: #8da395; font-size: 10px; }
 .stop { border: 1px solid #b84f50; background: #54282d; color: #ffd7d3; padding: 13px 23px; border-radius: 8px; font-size: 12px; font-weight: 700; }
@@ -229,6 +248,7 @@ main { max-width:1280px; margin:auto; padding:16px 24px 88px; }
 #view-release .release-action { grid-column:2; grid-row:2; }
 #view-release .saved-plan { grid-column:1; }
 #view-release #release-readiness-card { grid-column:2; }
+#view-release #block-audit-card { grid-column:1 / -1; }
 #view-release #primary-actions { grid-column:2; }
 #view-release #lock-card { grid-column:1 / -1; }
 #view-release #primary-actions > #prepare, #view-release #primary-actions > #arm { display:none; }
@@ -271,7 +291,7 @@ main { max-width:1280px; margin:auto; padding:16px 24px 88px; }
 .previous-hold-item span { color:#a8c4ad; }
 #view-runs #advanced { grid-column:1 / -1; }
 #view-runs .hero { display:none; }
-#view-runs #log, #view-runs #run-history-list { flex:1; min-height:0; max-height:none; overflow:auto; }
+#view-runs #log, #view-runs #run-history-list { flex:1; min-height:0; max-height:none; overflow:auto; scrollbar-width:thin; }
 #view-runs #run-history-list { align-content:start; }
 #view-runs .activity.expanded { height:auto; }
 #view-runs #advanced .content { margin-top:12px; }
@@ -280,6 +300,45 @@ main { max-width:1280px; margin:auto; padding:16px 24px 88px; }
 .release-schedule .countdown { font-size:36px; }
 .plan-card { font-size:12px; line-height:1.55; }
 .observed-price { padding:12px; margin:10px 0; border:1px solid #6fbe59; border-radius:8px; color:#e6ffcf; background:#1d3922; font-size:12px; line-height:1.5; }
+.audit-safe-badge { padding:4px 8px; border:1px solid #397252; border-radius:999px; color:#a9d8b3; background:#10291a; font-size:9px; font-weight:750; letter-spacing:.06em; white-space:nowrap; }
+.audit-intro { max-width:760px; margin:8px 0 12px; }
+.audit-controls { display:flex; align-items:flex-end; gap:10px; padding:11px; border:1px solid #28533a; border-radius:9px; background:#0a1b12; }
+.audit-controls label { display:flex; flex-direction:column; gap:6px; min-width:190px; color:#a8c0ae; font-size:10px; font-weight:650; }
+.audit-controls input { min-height:38px; font-size:13px; }
+.audit-controls button { flex:0 0 auto; min-height:38px; padding:8px 18px; color:#102312; background:linear-gradient(100deg,#81d936,#b0ef55); border-color:#b9f475; font-weight:750; }
+.block-audit-result { margin-top:12px; }
+.audit-empty { display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:110px; gap:6px; border:1px dashed #315942; border-radius:9px; background:#091910; color:#8da697; text-align:center; }
+.audit-empty strong { color:#dcece0; font-size:13px; }
+.audit-overview { display:flex; justify-content:space-between; align-items:flex-end; gap:14px; padding:2px 1px 9px; }
+.audit-overview > div { display:flex; flex-direction:column; gap:3px; }
+.audit-overview strong { color:#f2fff4; font-size:17px; }
+.audit-target-label { color:#88a493; font-size:9px; font-weight:750; letter-spacing:.1em; }
+.audit-source { color:#89a391; font-size:10px; }
+.audit-counts { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; }
+.audit-count { display:flex; align-items:baseline; gap:8px; padding:10px 12px; border:1px solid #294b38; border-radius:8px; background:#0a1b12; }
+.audit-count strong { font:700 20px/1 Consolas,monospace; }
+.audit-count span { color:#a8bcad; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
+.audit-guidance { margin:9px 0 0; padding:9px 11px; border-left:3px solid var(--warning); border-radius:0 7px 7px 0; color:#e8d19f; background:#2a2417; font-size:10.5px; line-height:1.5; }
+.audit-confirmed,.audit-matrix-section { margin-top:12px; padding:11px; border:1px solid #294b38; border-radius:9px; background:#081810; }
+.audit-subtitle { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:9px; }
+.audit-subtitle strong { color:#e7f4e9; font-size:12px; }
+.audit-subtitle span { color:#7f9b88; font-size:9px; }
+.audit-block-chips { display:flex; flex-wrap:wrap; gap:6px; }
+.audit-block-chips > span:not(.audit-no-blocks) { padding:5px 8px; border:1px solid #874c4c; border-radius:999px; color:#ffc0ba; background:#2d1718; font-size:9px; }
+.audit-no-blocks { color:#a9dcaf; font-size:10px; }
+.audit-legend { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px 12px; margin:10px 1px 0; }
+.audit-legend > span { display:flex; align-items:center; gap:7px; color:#9fb4a5; font-size:9px; }
+.audit-legend i { display:grid; place-items:center; width:20px; height:20px; flex:0 0 auto; border:1px solid currentColor; border-radius:5px; font-style:normal; font-weight:800; }
+.audit-matrix-scroll { overflow-x:auto; padding-bottom:5px; scrollbar-width:thin; outline:none; }
+.audit-matrix-scroll:focus-visible { outline:2px solid var(--brand-bright); outline-offset:2px; }
+.audit-matrix { width:100%; min-width:810px; border-collapse:separate; border-spacing:4px; table-layout:fixed; }
+.audit-matrix th { height:24px; color:#87a18f; font:700 8px/1 Consolas,monospace; text-align:center; }
+.audit-matrix th:first-child { width:46px; text-align:left; color:#d5e8d9; }
+.audit-cell { height:29px; border:1px solid; border-radius:5px; font:800 12px/1 Consolas,monospace; text-align:center; cursor:help; }
+.audit-count.audit-open,.audit-cell.audit-open,.audit-legend .audit-open i { color:#baff75; border-color:#4f8b43; background:#17351b; }
+.audit-count.audit-blocked,.audit-cell.audit-blocked,.audit-legend .audit-blocked i { color:#ffaaa4; border-color:#824346; background:#301719; }
+.audit-count.audit-unreleased,.audit-cell.audit-unreleased,.audit-legend .audit-unreleased i { color:#a5b7aa; border-color:#44594b; background:#18231c; }
+.audit-count.audit-unknown,.audit-cell.audit-unknown,.audit-legend .audit-unknown i { color:#efc66d; border-color:#756035; background:#2b2517; }
 .gate-list { font-size:11px; }
 pre { max-height:250px; overflow:auto; }
 @media(max-width:760px) {
@@ -288,7 +347,11 @@ pre { max-height:250px; overflow:auto; }
   .view-nav { padding:5px 10px 0; overflow-x:auto; }
   .view-nav button { padding:10px; white-space:nowrap; font-size:12px; }
   .view-grid { grid-template-columns:minmax(0,1fr); gap:10px; }
-  #view-release #release-schedule,#view-release #simple-status,#view-release .release-action,#view-release .saved-plan,#view-release #release-readiness-card,#view-release #primary-actions,#view-release #lock-card,#view-plan .setup,#view-tests .test-date-card,#view-tests .test-status,#view-tests .test-action,#view-tests .test-plan,#view-tests .test-readiness-card,#view-tests .test-results,#view-tests #test-availability,#view-tests #lock-card,#view-runs .run-history,#view-runs .activity,#view-runs .previous-holds,#view-runs #advanced { grid-column:1; grid-row:auto; }
+  #view-release #release-schedule,#view-release #simple-status,#view-release .release-action,#view-release .saved-plan,#view-release #release-readiness-card,#view-release #block-audit-card,#view-release #primary-actions,#view-release #lock-card,#view-plan .setup,#view-tests .test-date-card,#view-tests .test-status,#view-tests .test-action,#view-tests .test-plan,#view-tests .test-readiness-card,#view-tests .test-results,#view-tests #test-availability,#view-tests #lock-card,#view-runs .run-history,#view-runs .activity,#view-runs .previous-holds,#view-runs #advanced { grid-column:1; grid-row:auto; }
+  .audit-controls { align-items:stretch; flex-direction:column; }
+  .audit-controls label,.audit-controls button { width:100%; }
+  .audit-counts { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .audit-overview { align-items:flex-start; flex-direction:column; gap:5px; }
   #view-tests .test-date-card { align-items:stretch; flex-direction:column; gap:12px; }
   #view-tests #test-date-label { width:100%; }
   #view-runs .run-history, #view-runs .activity { height:clamp(340px, calc(100dvh - 380px), 520px); }
@@ -297,6 +360,10 @@ pre { max-height:250px; overflow:auto; }
   .run-detail-event-timing { grid-column:2; text-align:left; }
   .run-detail-modal { padding:10px; }
   .run-detail-dialog { max-height:calc(100dvh - 20px); padding:14px; }
+  .confirm-modal { padding:10px; }
+  .confirm-dialog { max-height:calc(100dvh - 20px); padding:16px; }
+  .confirm-actions { flex-direction:column-reverse; }
+  .confirm-actions button { width:100%; }
   #view-plan .setup-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
   #view-plan .editors { grid-template-columns:1fr; }
   .release-schedule .section-title { align-items:flex-start; }

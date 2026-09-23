@@ -71,6 +71,10 @@ describe('desktop orchestration', () => {
   });
   it('maps selection with arming and exact hash; rejects command payload injection',()=>{
     const spec=commandSpec({kind:'selection',planHash:'a'.repeat(64)},process.cwd(),process.execPath);expect(spec.args.slice(-4)).toEqual(['selection:armed','--armed','--plan-hash','a'.repeat(64)]);
+    const audit=commandSpec({kind:'blockAudit',date:'2026-09-26'},process.cwd(),process.execPath);
+    expect(audit.args.some(value=>value.replaceAll('\\','/').endsWith('/src/api-booking/block-audit-runner.ts'))).toBe(true);
+    expect(JSON.parse(audit.args.at(-1)!)).toEqual({date:'2026-09-26'});
+    expect(()=>commandSpec({kind:'blockAudit',date:'not-a-date'} as Command,process.cwd(),process.execPath)).toThrow();
     expect(()=>commandSpec({kind:'selection',planHash:';anything'} as Command,process.cwd(),process.execPath)).toThrow();
     expect(()=>commandSpec({kind:'practice',input:{date:'2026-09-11',court:7,start:'10:00',duration:2,command:'anything'}} as Command,process.cwd(),process.execPath)).toThrow();
   });

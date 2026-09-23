@@ -1,10 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { Dashboard, Bridge, ConfirmRequest } from './types.js';
 const bridge: Bridge = {
+  syncClock:()=>ipcRenderer.invoke('thirsty:syncClock'),
   focusBrowser:request=>ipcRenderer.invoke('thirsty:focusBrowser',request),
   resetPrepare:strategy=>ipcRenderer.invoke('thirsty:resetPrepare',strategy),
   testBooking:input=>ipcRenderer.invoke('thirsty:testBooking',input),
   apiPreview:date=>ipcRenderer.invoke('thirsty:apiPreview',date),
+  checkReleaseBlocks:date=>ipcRenderer.invoke('thirsty:checkReleaseBlocks',date),
   setWorkflow:workflow=>ipcRenderer.invoke('thirsty:setWorkflow',workflow),
   invalidatePreparation:()=>ipcRenderer.invoke('thirsty:invalidatePreparation'),
   prepareDual:()=>ipcRenderer.invoke('thirsty:prepareDual'),

@@ -85,7 +85,7 @@ type CourtCount=1|2|3|4|5|6|7;type WorkerId='A'|'B'|'C'|'D'|'E'|'F'|'G'|'H';
 const requiredWorkers=(strategy:string,count:number):WorkerId[]=>['A','B','C','D','E','F','G','H'].slice(0,(strategy==='extended'?2:1)*Math.ceil(count/2)) as WorkerId[];
 const workerLabel=(worker:WorkerId)=>worker==='A'?'Primary player':`Player ${'ABCDEFGH'.indexOf(worker)+1}`;
 const SPECIAL_SESSION_WORKERS_UI:WorkerId[]=['A','B','C','D','E','F','G','H'];
-interface FormDraft {sessionMode:'normal'|'special-friday';method:'browser'|'hybrid'|'api-first';strategy:'standard'|'extended';date:string;courtCount:CourtCount;start:string;duration:number;attempts:number;courtOrder:number[];fallbackTimes:string[];exactA:string;exactB:string}
+interface FormDraft {sessionMode:'normal'|'special-friday';method:'browser'|'hybrid'|'api-first'|'proofless';strategy:'standard'|'extended';date:string;courtCount:CourtCount;start:string;duration:number;attempts:number;courtOrder:number[];fallbackTimes:string[];exactA:string;exactB:string}
 let testDraft:FormDraft|undefined,releaseDraft:FormDraft|undefined,testDirty=false,releaseDirty=false;
 let releaseAdjustment:FallbackReconciliation|undefined;
 byId('simple-status').append(byId('readiness'));
@@ -96,8 +96,8 @@ const advanced=byId('advanced-extra');
 advanced.append(document.querySelector('.mode-options')!);
 byId('setup-fields').append(document.querySelector('.editors')!,byId('attempts').parentElement!,byId('save-booking'),byId('edit-status'));
 const releaseView=byId('view-release'),planView=byId('view-plan'),testsView=byId('view-tests'),runsView=byId('view-runs');
-releaseView.prepend(byId('release-schedule'),byId('simple-status'));
-releaseView.append(byId('release-readiness-card'),primary);
+releaseView.prepend(byId('release-schedule'),document.querySelector('.hero')!,byId('simple-status'));
+releaseView.append(byId('release-readiness-card'),byId('block-audit-card'),primary);
 releaseView.querySelector('.release-action')!.after(byId('lock-card'));
 planView.append(document.querySelector('.setup')!);
 const testAction=testsView.querySelector('.test-action')!,testResults=byId('test-results');
@@ -107,7 +107,6 @@ testsView.querySelector('.test-date-card')!.append(byId('test-date-label'));
 testAction.append(byId('test-booking'));
 byId('test-availability').append(byId('api-dry-controls'));
 runsView.append(document.querySelector('.run-history')!,document.querySelector('.activity')!,byId('previous-holds'),byId('advanced'));
-runsView.append(document.querySelector('.hero')!);
 const legacyControls=document.querySelector('.controls')!;
 runsView.querySelector('#advanced-extra')!.append(legacyControls.parentElement!,...document.querySelectorAll('main > .practice'),byId('performance-card'));
 function showView(view:View){
@@ -136,7 +135,7 @@ input('full-date').value=input('practice-date').value;
 input('dual-date').value=input('practice-date').value;
 for(const id of ['dual-court-a','dual-court-b'])(byId(id) as HTMLSelectElement).replaceChildren(...Array.from({length:7},(_,i)=>new Option(`Court ${i+1}`,String(i+1))));
 input('dual-court-a').value='7';input('dual-court-b').value='6';
-function formDraft():FormDraft{return {sessionMode:input('session-mode').value as 'normal'|'special-friday',method:input('booking-method').value as 'browser'|'hybrid'|'api-first',strategy:input('booking-type').value as 'standard'|'extended',date:input('test-date').value,courtCount:Number(input('court-count').value) as CourtCount,start:input('start-time').value,duration:Number(input('duration').value),attempts:Number(input('attempts').value),courtOrder:[...courtOrder],fallbackTimes:[...fallbackTimes],exactA:input('exact-a').value,exactB:input('exact-b').value};}
+function formDraft():FormDraft{return {sessionMode:input('session-mode').value as 'normal'|'special-friday',method:input('booking-method').value as 'browser'|'hybrid'|'api-first'|'proofless',strategy:input('booking-type').value as 'standard'|'extended',date:input('test-date').value,courtCount:Number(input('court-count').value) as CourtCount,start:input('start-time').value,duration:Number(input('duration').value),attempts:Number(input('attempts').value),courtOrder:[...courtOrder],fallbackTimes:[...fallbackTimes],exactA:input('exact-a').value,exactB:input('exact-b').value};}
 function applyDraft(d:FormDraft){input('session-mode').value=d.sessionMode;input('booking-method').value=d.method;input('booking-type').value=d.strategy;input('test-date').value=d.date;input('court-count').value=String(d.courtCount);input('start-time').value=d.start;input('duration').value=String(d.duration);input('attempts').value=String(d.attempts);courtOrder=[...d.courtOrder];fallbackTimes=[...d.fallbackTimes];input('exact-a').value=d.exactA;input('exact-b').value=d.exactB;editors();syncSpecialSessionControls();}
 function storeDraft(){const d=formDraft();if(workflow==='test')testDraft=d;else releaseDraft=d;}
 function reconcileReleaseDraft(){
@@ -164,6 +163,57 @@ function editors(){
 editors();
 testDraft=formDraft();
 const dateLabel = (date: string) => new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' }).format(new Date(`${date}T12:00:00Z`));
+function renderBlockAudit(target:HTMLElement,audit:Dashboard['blockAudit']|null,date:string){
+  target.replaceChildren();
+  if(!audit){
+    const empty=document.createElement('div');empty.className='audit-empty';
+    const title=document.createElement('strong');title.textContent='No audit for this date';
+    const note=document.createElement('span');note.textContent=date?`Check ${dateLabel(date)} to see confirmed blocks and schedule coverage.`:'Choose a date, then check all courts.';
+    empty.append(title,note);target.append(empty);return;
+  }
+  const statusInfo={
+    OPEN:{label:'Open',symbol:'✓',detail:'Published by Onda as available'},
+    BLOCKED:{label:'Blocked',symbol:'×',detail:'Confirmed booking record or published unavailable cell'},
+    UNRELEASED:{label:'Unreleased',symbol:'—',detail:'Schedule is not published and no public booking record exists'},
+    UNKNOWN:{label:'Unknown',symbol:'?',detail:'No authoritative state; never treated as open'},
+  } as const;
+  const top=document.createElement('div');top.className='audit-overview';
+  const heading=document.createElement('div'),eyebrow=document.createElement('span'),title=document.createElement('strong');
+  eyebrow.className='audit-target-label';eyebrow.textContent='AUDIT TARGET';title.textContent=dateLabel(audit.date);heading.append(eyebrow,title);
+  const source=document.createElement('span');source.className='audit-source';source.textContent='112 hourly cells · Courts 1–7 · 8 AM–12 MN';top.append(heading,source);
+  const counts=document.createElement('div');counts.className='audit-counts';
+  for(const status of ['BLOCKED','OPEN','UNRELEASED','UNKNOWN'] as const){
+    const count=audit.cells.filter(cell=>cell.status===status).length,card=document.createElement('div');card.className=`audit-count audit-${status.toLowerCase()}`;
+    const value=document.createElement('strong'),label=document.createElement('span');value.textContent=String(count);label.textContent=statusInfo[status].label;card.append(value,label);counts.append(card);
+  }
+  const warning=document.createElement('p');warning.className='audit-guidance';warning.textContent='UNKNOWN and UNRELEASED are not proof that a court is open. Only green OPEN cells are confirmed available; red BLOCKED cells must be avoided.';
+  const publicBlocks=audit.cells.filter(cell=>cell.status==='BLOCKED'&&cell.source==='PUBLIC_BOOKING');
+  const confirmed=document.createElement('section');confirmed.className='audit-confirmed';
+  const confirmedTitle=document.createElement('div');confirmedTitle.className='audit-subtitle';
+  const confirmedHeading=document.createElement('strong');confirmedHeading.textContent='Confirmed public-record blocks';
+  const confirmedCount=document.createElement('span');confirmedCount.textContent=`${publicBlocks.length} cell${publicBlocks.length===1?'':'s'}`;confirmedTitle.append(confirmedHeading,confirmedCount);confirmed.append(confirmedTitle);
+  const chips=document.createElement('div');chips.className='audit-block-chips';
+  if(publicBlocks.length)for(const court of Array.from({length:7},(_,index)=>index+1)){
+    const cells=publicBlocks.filter(cell=>cell.court===court);if(!cells.length)continue;
+    const chip=document.createElement('span');chip.textContent=`Court ${court} · ${cells.map(cell=>friendly(cell.hour)).join(', ')}`;chips.append(chip);
+  }else{const clear=document.createElement('span');clear.className='audit-no-blocks';clear.textContent='No confirmed public booking records were returned for this date.';chips.append(clear);}
+  confirmed.append(chips);
+  const legend=document.createElement('div');legend.className='audit-legend';
+  for(const status of ['OPEN','BLOCKED','UNRELEASED','UNKNOWN'] as const){const item=document.createElement('span'),mark=document.createElement('i');item.className=`audit-${status.toLowerCase()}`;mark.textContent=statusInfo[status].symbol;item.append(mark,document.createTextNode(`${statusInfo[status].label} · ${statusInfo[status].detail}`));legend.append(item);}
+  const matrixSection=document.createElement('section');matrixSection.className='audit-matrix-section';
+  const matrixTitle=document.createElement('div');matrixTitle.className='audit-subtitle';matrixTitle.append(Object.assign(document.createElement('strong'),{textContent:'Court-by-hour matrix'}),Object.assign(document.createElement('span'),{textContent:'Scroll horizontally to inspect every hour'}));
+  const scroll=document.createElement('div');scroll.className='audit-matrix-scroll';scroll.tabIndex=0;
+  const table=document.createElement('table');table.className='audit-matrix';
+  const thead=document.createElement('thead'),header=document.createElement('tr');header.append(Object.assign(document.createElement('th'),{textContent:'Court'}));
+  for(const hour of hours){const th=document.createElement('th');th.textContent=friendly(hour).replace(':00 ','');th.title=friendly(hour);header.append(th);}thead.append(header);table.append(thead);
+  const tbody=document.createElement('tbody');
+  for(const court of Array.from({length:7},(_,index)=>index+1)){
+    const row=document.createElement('tr'),courtHeading=document.createElement('th');courtHeading.scope='row';courtHeading.textContent=`C${court}`;courtHeading.title=`Court ${court}`;row.append(courtHeading);
+    for(const hour of hours){const cell=audit.cells.find(value=>value.court===court&&value.hour===hour)!,td=document.createElement('td');td.className=`audit-cell audit-${cell.status.toLowerCase()}`;td.textContent=statusInfo[cell.status].symbol;td.title=`Court ${court} · ${friendly(hour)} · ${statusInfo[cell.status].label} · ${cell.source.replaceAll('_',' ').toLowerCase()}`;td.setAttribute('aria-label',td.title);row.append(td);}tbody.append(row);
+  }
+  table.append(tbody);scroll.append(table);matrixSection.append(matrixTitle,scroll);
+  target.append(top,counts,warning,confirmed,legend,matrixSection);
+}
 function hourlySlots(start:string,end:string){const first=Number(start.slice(0,2)),last=Number(end.slice(0,2));return Array.from({length:Math.max(0,last-first)},(_,i)=>`${String(first+i).padStart(2,'0')}:00–${String(first+i+1).padStart(2,'0')}:00`);}
 const holdExpired=(hold:{holdExpiresAt?:string})=>!!hold.holdExpiresAt&&Date.parse(hold.holdExpiresAt)<=Date.now();
 function activeHandoffs(state:Dashboard){return (state.qrHandoffs??[]).filter(hold=>!holdExpired(hold));}
@@ -323,6 +373,7 @@ function render(state: Dashboard) {
   byId('checked-at').textContent = i ? `Checked ${new Date(i.verifiedAt).toLocaleTimeString('en-GB', { timeZone: 'Asia/Manila' })}` : 'Not inspected';
   if (state.clock) {
     byId('clock').textContent = state.clock.manilaTime; byId('clock-date').textContent = state.clock.manilaDate;
+    byId('clock-source').textContent=state.clock.networkSynced?`${state.clock.clockSource} · offset ${state.clock.clockOffsetMs.toFixed(1)} ms · RTT ${state.clock.clockRoundTripMs?.toFixed(1)??'?'} ms`:'NETWORK CLOCK REQUIRED BEFORE RELEASE';
     byId('release-time').textContent = state.clock.releaseTime; byId('release-zone').textContent = state.clock.timezone;
     const activePlan = state.operation === 'observe' ? state.plan : null;
     byId('target-date').textContent = dateLabel(['observe','dry','selection','full'].includes(state.operation) && state.plan ? state.plan.targetDate : state.clock.targetDate);
@@ -373,8 +424,8 @@ function render(state: Dashboard) {
   }
   byId('mode-label').textContent=workflow==='test'?'TEST NOW':'RELEASE BOOKING';
    byId('prepare').firstChild!.textContent='RESET & PREPARE ';
-   const apiFirst=input('booking-method').value==='api-first';
-   byId('test-booking').textContent=apiFirst?'RUN API TEST TO QR':'RUN TEST TO QR';
+   const methodValue=input('booking-method').value,apiFirst=['api-first','proofless'].includes(methodValue),proofless=methodValue==='proofless';
+   byId('test-booking').textContent=proofless?'RUN PROOFLESS TEST TO QR':apiFirst?'RUN API TEST TO QR':'RUN TEST TO QR';
    const specialDraft=input('session-mode').value==='special-friday';
    byId('api-dry-controls').hidden=!apiFirst||workflow!=='test'||specialDraft;
    byId('test-availability').hidden=!apiFirst||specialDraft;
@@ -397,18 +448,18 @@ function render(state: Dashboard) {
   byId('workflow-test').setAttribute('aria-pressed',String(workflow==='test'));byId('workflow-release').setAttribute('aria-pressed',String(workflow==='release'));
   input('workflow-test').disabled=busy;input('workflow-release').disabled=busy;
   input('save-booking').disabled=busy||workflow==='test';
-   if(workflow==='release'){input('arm').disabled ||= dirty||!state.ready||!input('terms').checked||(!apiFirst&&!fullReady);byId('blocked-reason').textContent=state.lock?'RESET REQUIRED':dirty?'SETTINGS CHANGED · Press Reset & Prepare.':!state.ready?'Reset & Prepare before arming.':!input('terms').checked?'Authorize Terms, then Arm Next Release.':'';}
+   if(workflow==='release'){input('arm').disabled ||= dirty||!state.ready||!input('terms').checked||!state.clock?.networkSynced||(!apiFirst&&!fullReady);byId('blocked-reason').textContent=state.lock?'RESET REQUIRED':dirty?'SETTINGS CHANGED · Press Reset & Prepare.':!state.clock?.networkSynced?'Sync with Google Time before arming.':!state.ready?'Reset & Prepare before arming.':!input('terms').checked?'Authorize Terms, then Arm Next Release.':'';}
   if(workflow==='test')byId('blocked-reason').textContent=state.lock?'RESET REQUIRED':dirty?'SETTINGS CHANGED · Press Reset & Prepare.':!state.ready?'Reset & Prepare before running a test.':!input('terms').checked?'Authorize Terms, then run your test.':'';
   if(workflow==='release'&&armed){input('arm').disabled=false;byId('blocked-reason').textContent='';}
   if(state.bookingResult){byId('handoff-result').hidden=false;byId('handoff-result').textContent=state.bookingResult.description+'\n'+state.bookingResult.outcomes.map((v,i)=>`Checkout ${i+1}: ${v}`).join('\n');}
    const duration=Number(input('duration').value),start=Number(input('start-time').value.slice(0,2)),strategy=input('booking-type').value;
    const specialSession=input('session-mode').value==='special-friday';
   const count=Number(input('court-count').value),releaseText=state.clock?new Date(state.clock.releaseMs).toLocaleString('en-US',{timeZone:state.clock.timezone,month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'Calculating';
-   const method=input('booking-method').value==='browser'?'NORMAL BROWSER':input('booking-method').value==='hybrid'?'HYBRID AVAILABILITY':'API-FIRST';
+   const method=input('booking-method').value==='browser'?'NORMAL BROWSER':input('booking-method').value==='hybrid'?'HYBRID AVAILABILITY':proofless?'PROOFLESS DIRECT':'API-FIRST · WITH PROOFS';
    const workers=specialSession?SPECIAL_SESSION_WORKERS_UI:requiredWorkers(strategy,count),checkoutCount=workers.length;
     byId('booking-preview').textContent=specialSession
        ? `SPECIAL FRIDAY SESSION\nRelease: ${releaseText}\nTarget: ${state.clock?dateLabel(state.clock.targetDate):'Not configured'}\n8 browsers/players A-H · up to 8 independent temporary QR holds · 4 distinct intended courts.\nA/B proof-based: Court 6 · 5:00–10:00 PM (A 5-8 PM + B 8-10 PM).\nC/D proof-based: Court 7 · 7:00–11:00 PM (C 7-9 PM + D 9-11 PM).\nE/F ADAPTIVE: Court 5 · 5:00–10:00 PM (E 5-8 PM + F 8-10 PM) — proof-based if fresh availability appears before 8:00 AM, otherwise the existing proofless direct attempt exactly at 8:00 AM. Never both.\nG/H proof-based bonus: Court 4 · 5:00–10:00 PM (G 5-8 PM + H 8-10 PM) — skipped entirely when no fourth distinct court has complete availability. Never proofless.\nCourt priority when a preferred court is unavailable follows a fallback search; all four assigned courts are always distinct.\nE/F's proofless-fallback hidden price assumes ₱700/hour and is UNVERIFIED.\nA hold is not a completed booking. Unknown outcomes are never retried. Payment: MANUAL`
-      : `${workflow==='release'?`RELEASE PLAN\nRelease: ${releaseText}\nTarget: ${state.clock?dateLabel(state.clock.targetDate):'Not configured'}\n`:''}${method}\n${strategy.toUpperCase()} | ${count} COURT${count===1?'':'S'}\n${friendly(input('start-time').value)} -> ${endFriendly(input('start-time').value,duration)} | ${duration} hours\nFallback starts: ${fallbackTimes.map(friendly).join(' -> ')||'None'}\nCourt priority: ${courtOrder.join(' -> ')}\n${strategy==='extended'?`Extended split: ${duration===4?'3h + 1h (alternatives 2h + 2h, 1h + 3h)':duration===5?'3h + 2h (alternative 2h + 3h)':'3h + 3h'}\n`:''}${workers.length} browser${workers.length===1?'':'s'} | ${checkoutCount} checkout${checkoutCount===1?'':'s'} | Players: ${workers.join(' + ')}\nNo price ceiling\nAttempts: ${input('attempts').value} | Payment: MANUAL${input('booking-method').value==='api-first'?'\nAPI first: current availability check available; live runs once at the armed release.':''}`;
+      : `${workflow==='release'?`RELEASE PLAN\nRelease: ${releaseText}\nTarget: ${state.clock?dateLabel(state.clock.targetDate):'Not configured'}\n`:''}${method}\n${strategy.toUpperCase()} | ${count} COURT${count===1?'':'S'}\n${friendly(input('start-time').value)} -> ${endFriendly(input('start-time').value,duration)} | ${duration} hours\nFallback starts: ${fallbackTimes.map(friendly).join(' -> ')||'None'}\nCourt priority: ${courtOrder.join(' -> ')}\n${strategy==='extended'?`Extended split: ${duration===4?'3h + 1h (alternatives 2h + 2h, 1h + 3h)':duration===5?'3h + 2h (alternative 2h + 3h)':'3h + 3h'}\n`:''}${workers.length} browser${workers.length===1?'':'s'} | ${checkoutCount} checkout${checkoutCount===1?'':'s'} | Players: ${workers.join(' + ')}\nNo price ceiling\nAttempts: ${input('attempts').value} | Payment: MANUAL${proofless?'\nProofless Direct: Reset & Prepare audits all court/hour blocks; the armed run refreshes them at 7:30, selects the first unblocked saved fallback, and submits without availability proofs. Proofless tests require your manual confirmation that the exact cells are open.':input('booking-method').value==='api-first'?'\nAPI first: availability and fresh per-hour proofs are acquired before checkout.':''}`;
   if(duration>6){byId('booking-preview').textContent='Extended booking supports up to 6 consecutive hours.';input('test-booking').disabled=true;input('arm').disabled=true;}
    const runWorkers=specialSession?SPECIAL_SESSION_WORKERS_UI:requiredWorkers(strategy,count),playerReadyByWorker={A:playerStatus.primary,B:playerStatus.extended,C:playerStatus.third,D:playerStatus.fourth,E:playerStatus.fifth,F:playerStatus.sixth,G:playerStatus.seventh,H:playerStatus.eighth};
   const playersReady=runWorkers.every(worker=>playerReadyByWorker[worker]);
@@ -418,6 +469,12 @@ function render(state: Dashboard) {
    byId('player-details').replaceChildren(...runWorkers.map(worker=>profile(`${workerLabel(worker)} · Checkout ${worker}`,profiles[worker])));
   input('test-booking').disabled ||= !playersReady;input('arm').disabled ||= !playersReady;
   const releaseMode=workflow==='release';byId('release-schedule').hidden=!releaseMode;byId('release-readiness-card').hidden=!releaseMode;
+  byId('block-audit-card').hidden=!releaseMode;
+  if(!input('block-audit-date').value&&state.clock?.targetDate)input('block-audit-date').value=state.clock.targetDate;
+  const blockAuditDate=input('block-audit-date').value;
+  (byId('check-release-blocks') as HTMLButtonElement).disabled=busy||!blockAuditDate;
+  const audit=state.blockAudit?.date===blockAuditDate?state.blockAudit:null;
+  renderBlockAudit(byId('block-audit-result'),audit,blockAuditDate);
   if(releaseMode&&state.clock){
     byId('release-passed').textContent=state.clock.todayReleasePassed?`TODAY'S ${friendly(state.clock.releaseTime.slice(0,5))} RELEASE HAS PASSED`:'';
     byId('next-release').textContent=new Date(armed?state.scheduledRelease!.releaseMs:state.clock.releaseMs).toLocaleString('en-US',{timeZone:state.clock.timezone,month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
@@ -425,13 +482,13 @@ function render(state: Dashboard) {
     const finalAt=(armed?state.scheduledRelease!.releaseMs:state.clock.releaseMs)-state.clock.preflightSecondsBefore*1000;
     byId('schedule-meta').textContent=`Final preflight: ${new Date(finalAt).toLocaleTimeString('en-US',{timeZone:state.clock.timezone,hour:'numeric',minute:'2-digit',second:'2-digit'})} | System: ${state.scheduleStatus??(armed?'WAITING':'NOT ARMED')}`;
   }
-  const apiPrepared=!!state.apiFirstReady&&!!state.ready&&!!state.booking&&state.booking.setup.BOOKING_METHOD==='api-first'&&!state.lock;
+  const apiPrepared=!!state.apiFirstReady&&!!state.ready&&!!state.booking&&['api-first','proofless'].includes(state.booking.setup.BOOKING_METHOD)&&!state.lock;
   const prepared=apiPrepared||!!state.preparedContext&&state.preparedContext.workflow==='release'&&state.preparedContext.configFingerprint===state.booking?.fingerprint;
    const required=specialSession?SPECIAL_SESSION_WORKERS_UI:requiredWorkers(strategy,count);
   const verificationGates:[string,boolean][]=apiFirst
-    ? [['Onda venue verified',apiPrepared],['Availability checked at release',state.apiStage?.stage==='CANDIDATE_READY'||!!state.observedPrice]]
+    ? [['Onda venue verified',apiPrepared],[proofless?'Court/hour block audit complete':'Availability checked',proofless?state.assumedPrice!==undefined&&state.assumedPrice!==null:state.apiStage?.stage==='CANDIDATE_READY'||!!state.observedPrice]]
     : [['Onda verified',prepared],['All Courts verified',prepared],['Selected slots: 0',prepared],['Payment holds: none',prepared&&!state.lock]];
-  const gates:[string,boolean][]=[['Configuration valid',!draftProblem],['Next release calculated',!!state.clock],['Booking target calculated',!!state.clock?.targetDate],...required.map(id=>[`${workerLabel(id)} configured`,!!playerReadyByWorker[id]] as [string,boolean]),...required.map(id=>[`Browser ${id} prepared`,apiFirst?apiPrepared&&!!state.browserHealth?.[id]:prepared&&!!state.preparedContext?.browsers.some(b=>b.id===id)] as [string,boolean]),...verificationGates,['Automation lock clear',!state.lock],['Prepared fingerprint matches',prepared],['Terms authorized for this run',state.termsAuthorized||armed],['Armed for next release',armed||state.apiStage?.stage==='WAITING_FOR_RELEASE']];
+  const gates:[string,boolean][]=[['Configuration valid',!draftProblem],['Google network clock synchronized',!!state.clock?.networkSynced],['Next release calculated',!!state.clock],['Booking target calculated',!!state.clock?.targetDate],...required.map(id=>[`${workerLabel(id)} configured`,!!playerReadyByWorker[id]] as [string,boolean]),...required.map(id=>[`Browser ${id} prepared`,apiFirst?apiPrepared&&!!state.browserHealth?.[id]:prepared&&!!state.preparedContext?.browsers.some(b=>b.id===id)] as [string,boolean]),...verificationGates,['Automation lock clear',!state.lock],['Prepared fingerprint matches',prepared],['Terms authorized for this run',state.termsAuthorized||armed],['Armed for next release',armed||state.apiStage?.stage==='WAITING_FOR_RELEASE']];
   const readiness=byId('release-readiness');readiness.replaceChildren(...gates.map(([label,ok])=>{const e=document.createElement('div');e.className=`gate ${ok?'good':'warn'}`;e.textContent=`${ok?'OK':'--'} ${label}`;return e;}));readiness.className='gate-list';
   byId('release-readiness-card').dataset.state=armed?'armed':prepared?'prepared':'draft';byId('sleep-warning').hidden=!armed;byId('sleep-warning').textContent=`Sleep protection: ${state.sleepProtection?'ACTIVE':'NOT AVAILABLE'} | Keep the PC powered on. Do not hibernate or close the laptop lid if Windows sleeps on lid close.`;
    byId('saved-plan-summary').textContent=state.booking?(state.booking.setup.SESSION_MODE==='special-friday'?`SPECIAL FRIDAY SESSION\nA/B proof-based · preferred Court 6 · 5:00–10:00 PM\nC/D proof-based · preferred Court 7 · 7:00–11:00 PM\nE/F adaptive · preferred Court 5 · 5:00–10:00 PM (proof-based on early availability, else proofless exactly at 8:00 AM)\nG/H proof-based bonus · preferred Court 4 · 5:00–10:00 PM (skipped if no fourth distinct court)\nPlayers/Browsers A–H · up to 8 independent QR holds across 4 distinct courts\nTarget: ${dateLabel(state.booking.targetDate)}`:`${state.booking.setup.BOOKING_METHOD.toUpperCase()} · ${state.booking.setup.BOOKING_TYPE.toUpperCase()} · ${state.booking.setup.COURT_COUNT} court${state.booking.setup.COURT_COUNT===1?'':'s'}\n${friendly(state.booking.setup.START_TIME)}–${endFriendly(state.booking.setup.START_TIME,state.booking.setup.DURATION_HOURS)} · ${state.booking.setup.DURATION_HOURS} hours\nCourt priority: ${state.booking.setup.PREFERRED_COURTS.join(' → ')}\nFallback starts: ${state.booking.setup.FALLBACK_TIMES.map(friendly).join(', ')||'None'}\nTarget: ${dateLabel(state.booking.targetDate)}`):'No saved plan available.';
@@ -450,7 +507,7 @@ function render(state: Dashboard) {
   const testDate=input('test-date').value;
   input('test-date').disabled=busy;
   const testPrepared=!!state.ready&&!testDirty&&state.workflow==='test'&&!!b&&(
-    b.setup.BOOKING_METHOD==='api-first'&&!!state.apiFirstReady ||
+    ['api-first','proofless'].includes(b.setup.BOOKING_METHOD)&&!!state.apiFirstReady ||
     !!state.preparedContext&&state.preparedContext.workflow==='test'&&state.preparedContext.date===testDate);
   const testBrowsers=b?requiredWorkers(b.setup.BOOKING_TYPE,b.setup.COURT_COUNT):['A'] as WorkerId[];
   const testGates:[string,boolean][]=[
@@ -485,12 +542,12 @@ byId('main-action').onclick=()=>{if(!latest)return;if((latest.lock||latest.hando
 byId('test-main-action').onclick=()=>{if(!latest)return;if((latest.lock||latest.handoff)&&!latest.canPrepareOverHold){void window.thirsty.reviewLock().catch(()=>{});return;}if(input('test-main-action').textContent==='Review & Test'){if(input('terms').checked)input('test-booking').click();else byId('terms').focus();}else input('prepare').click();};
 function tick() {
   // Display only; never launches a command. Authoritative release plan comes from main/CLI.
-  const now=new Date();
+  const effectiveNow=Date.now()+(latest?.clock?.clockOffsetMs??0),now=new Date(effectiveNow);
   byId('clock').textContent = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Manila', hourCycle: 'h23' }).format(now);
   byId('clock-date').textContent = new Intl.DateTimeFormat('en-US', { weekday:'long',month:'long',day:'numeric',year:'numeric',timeZone:'Asia/Manila' }).format(now);
   if (!latest) return;
   renderQrSummary(latest);
-  if(latest.clock){const remaining=Math.max(0,Math.ceil(((latest.scheduledRelease?.releaseMs??latest.clock.releaseMs)-Date.now())/1000));byId('next-release-countdown').textContent=[Math.floor(remaining/3600),Math.floor(remaining/60)%60,remaining%60].map(v=>String(v).padStart(2,'0')).join(':');}
+  if(latest.clock){const remaining=Math.max(0,Math.ceil(((latest.scheduledRelease?.releaseMs??latest.clock.releaseMs)-effectiveNow)/1000));byId('next-release-countdown').textContent=[Math.floor(remaining/3600),Math.floor(remaining/60)%60,remaining%60].map(v=>String(v).padStart(2,'0')).join(':');}
   byId('run-timing').textContent=latest.runTiming?.readyAt?`${((latest.runTiming.endedAt?latest.runTiming.readyElapsedMs??0:Math.max(0,Date.now()-Date.parse(latest.runTiming.readyAt)))/1000).toFixed(3)} seconds · ${latest.runTiming.endedAt?'finished':'running'}`:latest.runTiming?'Waiting for browser ready':'No browser-ready run active';
   if(latest.runTiming&&(!latest.runTiming.endedAt||latest.runTiming.readyAt)){
     const run=latest.runTiming;
@@ -507,7 +564,7 @@ function tick() {
   }
   if (!latest.clock) return;
   const release = latest.scheduledRelease?.releaseMs??(latest.plan && ['observe','dry','selection','full'].includes(latest.operation) ? latest.plan.releaseMs : latest.clock.releaseMs);
-  const seconds = Math.max(0, Math.ceil((release - Date.now()) / 1000));
+  const seconds = Math.max(0, Math.ceil((release - effectiveNow) / 1000));
   byId('countdown').textContent = [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60].map(v => String(v).padStart(2, '0')).join(':');
   byId('next-release-countdown').textContent=byId('countdown').textContent;
   byId('countdown-label').textContent = latest.operation === 'observe' ? 'SCHEDULED RELEASE IN' : 'NEXT RELEASE IN';
@@ -517,9 +574,11 @@ function tick() {
     byId('handoff-result').textContent=`${active?'PAYMENT HOLD ACTIVE — VERIFIED AT HANDOFF':'HOLD NEEDS MANUAL REVIEW'}\nVenue: Thirsty Pickle | SM Seaside\nCourt ${hold.court} · ${hold.date}\nTime: ${hold.hours[0]}–${String(Number(hold.hours.at(-1)!.slice(0,2))+1).padStart(2,'0')}:00\nAmount: ₱${hold.amount.toLocaleString()}\nLast observed status: Pending\nHold countdown at verification: ${hold.countdown}\nVerified: ${new Date(hold.verifiedAt).toLocaleString('en-GB',{timeZone:'Asia/Manila'})}\n${active?'Complete payment manually in Chrome.':'The observed countdown has elapsed. Check Chrome manually.'}\nAUTOMATION STOPPED · AUTOMATION LOCK RETAINED`;
   }
 }
- for (const [id, action] of Object.entries({ 'review-lock':()=>window.thirsty.reviewLock(),'clear-lock':()=>window.thirsty.clearLock(),'reset-practice':()=>window.thirsty.resetPractice(),'dual-prepare':()=>window.thirsty.prepareDual(),'api-preview':()=>window.thirsty.apiPreview(input('test-date').value),'full-practice':async()=>{const authorized=input('full-terms').checked;input('full-terms').checked=false;await window.thirsty.runFullPractice({target:{date:input('full-date').value,court:Number(input('full-court').value),start:input('full-start').value,duration:Number(input('full-duration').value)},authorizeTerms:authorized as true});}, chrome: () => window.thirsty.startChrome(), inspect: () => window.thirsty.inspectOnda(), prepare: async () => {input('terms').checked=false;storeDraft();await window.thirsty.resetPrepare(workflow==='test'?{workflow:'test',...testRequest()}:{workflow:'release',strategy:input('booking-type').value as 'standard'|'extended',setup:currentSetup()});const state=await window.thirsty.getStatus();if(state.ready){if(workflow==='test')testDirty=false;else releaseDirty=false;dirty=false;}render(state);}, arm: () => window.thirsty.armFullBooking(), dry:()=>window.thirsty.dryRace(), observe:()=>window.thirsty.armObservation(), stop: () => window.thirsty.abortAutomation(), practice:()=>window.thirsty.runPractice({date:input('practice-date').value,court:Number(input('practice-court').value),start:input('practice-start').value,duration:Number(input('practice-duration').value)}) })) {
+ for (const [id, action] of Object.entries({ 'sync-clock':()=>window.thirsty.syncClock(),'review-lock':()=>window.thirsty.reviewLock(),'clear-lock':()=>window.thirsty.clearLock(),'reset-practice':()=>window.thirsty.resetPractice(),'dual-prepare':()=>window.thirsty.prepareDual(),'api-preview':()=>window.thirsty.apiPreview(input('test-date').value),'full-practice':async()=>{const authorized=input('full-terms').checked;input('full-terms').checked=false;await window.thirsty.runFullPractice({target:{date:input('full-date').value,court:Number(input('full-court').value),start:input('full-start').value,duration:Number(input('full-duration').value)},authorizeTerms:authorized as true});}, chrome: () => window.thirsty.startChrome(), inspect: () => window.thirsty.inspectOnda(), prepare: async () => {input('terms').checked=false;storeDraft();await window.thirsty.resetPrepare(workflow==='test'?{workflow:'test',...testRequest()}:{workflow:'release',strategy:input('booking-type').value as 'standard'|'extended',setup:currentSetup()});const state=await window.thirsty.getStatus();if(state.ready){if(workflow==='test')testDirty=false;else releaseDirty=false;dirty=false;}render(state);}, arm: () => window.thirsty.armFullBooking(), dry:()=>window.thirsty.dryRace(), observe:()=>window.thirsty.armObservation(), stop: () => window.thirsty.abortAutomation(), practice:()=>window.thirsty.runPractice({date:input('practice-date').value,court:Number(input('practice-court').value),start:input('practice-start').value,duration:Number(input('practice-duration').value)}) })) {
   byId(id).addEventListener('click', () => { void action().catch(async() => { render(await window.thirsty.getStatus()); }); });
-}
+ }
+byId('check-release-blocks').addEventListener('click',()=>{void window.thirsty.checkReleaseBlocks(input('block-audit-date').value).catch(async()=>{render(await window.thirsty.getStatus());});});
+byId('block-audit-date').addEventListener('change',()=>{if(latest)render(latest);});
 byId('full-terms').addEventListener('change',()=>{if(latest)render(latest);});
 for(const id of ['full-date','full-court','full-start','full-duration'])byId(id).addEventListener('change',()=>{input('full-terms').checked=false;if(latest)render(latest);});
 byId('mode-full').addEventListener('change',()=>{void window.thirsty.setMode('full').catch(()=>{});});
@@ -530,7 +589,7 @@ byId('session-mode').addEventListener('change',()=>{syncSpecialSessionControls()
 byId('booking-type').addEventListener('change',()=>{const extended=input('booking-type').value==='extended',d=Number(input('duration').value);if(extended&&d<4)input('duration').value='4';if(!extended&&d>3)input('duration').value='3';syncViableControls();changed();});
 byId('add-fallback').onclick=()=>{const h=input('fallback-time').value;if(h===input('start-time').value||fallbackTimes.includes(h)){byId('edit-status').textContent='Choose a different fallback start.';return;}if(workflow==='release'){const reconciliation=reconcileFallbackTimes(input('start-time').value,Number(input('duration').value),[...fallbackTimes,h]);if(reconciliation.removed.length){releaseAdjustment=reconciliation;byId('edit-status').textContent=bookingSetupProblem({...currentSetup(),FALLBACK_TIMES:[...fallbackTimes,h]})??'That fallback does not fit the current booking.';if(latest)render(latest);return;}}fallbackTimes.push(h);editors();changed();};
 byId('save-booking').onclick=()=>{void(async()=>{
-   const setup:BookingSetup={SESSION_MODE:input('session-mode').value as 'normal'|'special-friday',BOOKING_METHOD:input('booking-method').value as 'browser'|'hybrid'|'api-first',BOOKING_TYPE:input('booking-type').value as 'standard'|'extended',COURT_COUNT:Number(input('court-count').value) as CourtCount,START_TIME:input('start-time').value,DURATION_HOURS:Number(input('duration').value),PREFERRED_COURTS:courtOrder,FALLBACK_COURTS:[],FALLBACK_TIMES:fallbackTimes,MAX_SELECTION_ATTEMPTS:Number(input('attempts').value)};
+   const setup:BookingSetup={SESSION_MODE:input('session-mode').value as 'normal'|'special-friday',BOOKING_METHOD:input('booking-method').value as 'browser'|'hybrid'|'api-first'|'proofless',BOOKING_TYPE:input('booking-type').value as 'standard'|'extended',COURT_COUNT:Number(input('court-count').value) as CourtCount,START_TIME:input('start-time').value,DURATION_HOURS:Number(input('duration').value),PREFERRED_COURTS:courtOrder,FALLBACK_COURTS:[],FALLBACK_TIMES:fallbackTimes,MAX_SELECTION_ATTEMPTS:Number(input('attempts').value)};
   await window.thirsty.saveBooking(setup);const state=await window.thirsty.getStatus();
   if(state.headline==='Booking plan saved'){releaseDirty=false;if(workflow==='release')dirty=false;loadedPlan='';byId('edit-status').textContent='BOOKING PLAN SAVED';render(state);}else byId('edit-status').textContent='Plan rejected. Check duration and unique times.';
 })().catch(()=>{byId('edit-status').textContent='Could not save booking setup.';});};
@@ -550,7 +609,7 @@ function testRequest(){
   const exact=exactA||exactB?{exact:(setup.BOOKING_TYPE==='extended'?[exactA,exactB]:[exactA]).map(value=>value.split(',').map(court=>Number(court.trim())))}:{};
   return {method:setup.BOOKING_METHOD,request:{strategy:setup.BOOKING_TYPE,date:input('test-date').value,start:setup.START_TIME,duration:setup.DURATION_HOURS,courtCount:setup.COURT_COUNT,priority:[...setup.PREFERRED_COURTS],fallbackStarts:[...setup.FALLBACK_TIMES],...exact}};
 }
- function currentSetup():BookingSetup{return {SESSION_MODE:input('session-mode').value as 'normal'|'special-friday',BOOKING_METHOD:input('booking-method').value as 'browser'|'hybrid'|'api-first',BOOKING_TYPE:input('booking-type').value as 'standard'|'extended',COURT_COUNT:Number(input('court-count').value) as CourtCount,START_TIME:input('start-time').value,DURATION_HOURS:Number(input('duration').value),PREFERRED_COURTS:courtOrder,FALLBACK_COURTS:[],FALLBACK_TIMES:fallbackTimes,MAX_SELECTION_ATTEMPTS:Number(input('attempts').value)};}
+ function currentSetup():BookingSetup{return {SESSION_MODE:input('session-mode').value as 'normal'|'special-friday',BOOKING_METHOD:input('booking-method').value as 'browser'|'hybrid'|'api-first'|'proofless',BOOKING_TYPE:input('booking-type').value as 'standard'|'extended',COURT_COUNT:Number(input('court-count').value) as CourtCount,START_TIME:input('start-time').value,DURATION_HOURS:Number(input('duration').value),PREFERRED_COURTS:courtOrder,FALLBACK_COURTS:[],FALLBACK_TIMES:fallbackTimes,MAX_SELECTION_ATTEMPTS:Number(input('attempts').value)};}
 byId('test-booking').onclick=()=>{const authorized=input('terms').checked;input('terms').checked=false;void window.thirsty.testBooking({...testRequest(),authorizeTerms:authorized as true}).catch(()=>{byId('detail').textContent='Check booking fields and Terms authorization.';});};
 window.thirsty.onStatus(render);
 void window.thirsty.getStatus().then(render);

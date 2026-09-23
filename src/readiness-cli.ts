@@ -15,12 +15,14 @@ try {
   const config = loadObservationConfig(), next = clockStatus(config);
   Object.assign(result, { preopen: config.RELEASE_PREOPEN_CALENDAR ? 'ON' : 'OFF',
     availabilityMode: config.AVAILABILITY_DISCOVERY_MODE.toUpperCase(), releaseLeadMs: config.RELEASE_LEAD_MS,
-    targetDate: next.targetDate, releaseTime: `${config.RELEASE_TIME} ${config.TIMEZONE}` });
+    targetDate: next.targetDate, releaseTime: `${config.RELEASE_TIME} ${config.TIMEZONE}`,
+    networkClock:next.networkSynced?'SYNCHRONIZED':'NOT SYNCHRONIZED',clockSource:next.clockSource,clockOffsetMs:next.clockOffsetMs });
+  if(!next.networkSynced)throw Error('NETWORK_CLOCK_SYNC_REQUIRED');
   try { booking=loadConfig(); result.bookingMethod=booking.BOOKING_METHOD.toUpperCase();result.courtCount=booking.COURT_COUNT; result.playerConfiguration = playerReadiness(booking).primary?'CONFIGURED':'MISSING'; result.extendedPlayerConfiguration=playerReadiness(booking).extended?'CONFIGURED':'MISSING'; result.bookingPlan = 'VALID';
     const workers:WorkerId[]=booking.SESSION_MODE===SPECIAL_SESSION_MODE
       ?[...SPECIAL_SESSION_REQUIRED_WORKERS]:requiredWorkerIds(booking.BOOKING_TYPE,booking.COURT_COUNT);
     result.requiredWorkers=workers.join(',');
-    if(booking.BOOKING_METHOD==='api-first'){
+    if(['api-first','proofless'].includes(booking.BOOKING_METHOD)){
       try{for(const worker of workers)loadLocalCheckoutCustomer(worker);result.apiCustomerBindings='VERIFIED';}
       catch(error){result.apiCustomerBindings='MISSING';const code=(error as Error).message;
         result.customerBindingBlocker=/^[A-Z][A-Z0-9_]{0,79}$/.test(code)?code:'CUSTOMER_BINDING_UNVERIFIED';}

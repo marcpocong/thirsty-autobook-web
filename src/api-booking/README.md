@@ -83,13 +83,19 @@ and a valid Cloudflare ray ID. It never stores response text or verification
 values. These diagnostics apply only to future responses; the old 403 body
 cannot be recovered from the journal.
 
-The desktop booking setup now exposes three explicit methods: `browser` (the
+The desktop booking setup exposes four explicit methods: `browser` (the
 existing normal flow), `hybrid` (same-browser API discovery intersected with the
-UI flow), and `api-first` (read-only API discovery and planning). The API-first
-method never implies that a reservation or payment is enabled; the UI labels the
-missing current security-context and official-checkout integration explicitly.
+UI flow), `api-first` (fresh availability and per-hour proofs), and `proofless`
+(direct checkout with null proofs). Proofless Reset & Prepare audits the full
+court/hour matrix, and an armed run refreshes it 30 minutes before release,
+chooses the first saved configuration without an explicit block, and dispatches
+at the network-clock release boundary. Both API paths stop at verified QR
+handoff; payment remains manual.
 
-This directory is isolated from the production Chrome coordinator. Onda's owner has authorized use of publicly available APIs for this project. A read-only live availability provider is available. Real reservation creation is disabled by default; payment automation and live checkout transfer are absent. A synthetic checkout handoff runs in tests and the demo.
+This directory retains disabled-by-default submission gates, durable one-shot
+journals, strict response verification, and fail-closed unknown-outcome handling.
+The normal API-first release runner can create temporary holds only after the
+operator arms the Release workflow. It never automates payment.
 
 ## Experimental two-hour reservation boundary
 
@@ -99,7 +105,7 @@ The subsequently confirmed normal-site workflow checks each selected 60-minute h
 
 The observed endpoints are `POST https://app.onda.fit/api/public/is-slot-available` and `POST https://app.onda.fit/api/bookings/public-checkout`, both with JSON bodies. Normal Chrome DevTools showed cookies on both. Checkout showed `X-Turnstile-Token` and `X-Onda-Public-Fingerprint`; neither custom header was visible on slot checks, and Authorization was not visible on either request. Header presence alone does **not** establish which fields the server requires.
 
-`browser-session-transport.ts` now wires these two requests through an existing page at the configured Onda URL. It never launches Chrome or Playwright. Browser fetch uses same-origin credentials and no cache, so it uses the page's current cookies without copying or storing them. Checkout requires a caller-provided `CurrentCheckoutHeadersProvider` to supply current Turnstile and fingerprint values immediately before dispatch. The transport neither generates nor retrieves those values, and it will not submit without them and a durable one-shot permit. No live CLI is provided; real submission remains disabled by default.
+`browser-session-transport.ts` now wires these two requests through an existing page at the configured Onda URL. It never launches Chrome or Playwright. Browser fetch uses same-origin credentials and no cache, so it uses the page's current cookies without copying or storing them. Checkout requires a caller-provided `CurrentCheckoutHeadersProvider` to supply current Turnstile and fingerprint values immediately before dispatch. The transport neither generates nor retrieves those values, and it will not submit without them and a durable one-shot permit. Submission remains disabled unless the desktop runner is explicitly armed; the normal scheduled API-first Release is the supported live entrypoint.
 
 Public source trace (September 17): `445pzov5_5spg.js` module `709892` contains Onda's interactive Turnstile helper with booking action `public_booking_checkout`. `1y9e760opu2ka.js` module `139691` defines `getPublicFingerprintId`: it lazy-loads module `482561`, calls FingerprintJS `load({ monitoring: false }).get()`, validates `visitorId`, and caches that promise in the page module. The loaded `0z8ms2a5pmnd4.js` bundle identifies FingerprintJS 5.2.0. `1vw2uo7rgshl5.js` is the actual court checkout call site: it awaits `getPublicBookingTurnstileToken()` and `getPublicFingerprintId()` together, then passes both to `publicTransactionsService.createBookingTransaction`. That service is module `139289` in `1y9e760opu2ka.js` and posts to `/api/bookings/public-checkout`, conditionally adding the two headers. The distinct `publicBookingService.createBooking` in `35vw98cw658m8.js` posts to `public/bookings` and is **not** substituted for this checkout.
 

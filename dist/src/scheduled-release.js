@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { networkNowMs } from './network-clock.js';
 import { z } from 'zod';
 import { requiredWorkerIds } from './workers.js';
 export const ScheduledReleaseContextSchema = z.object({
@@ -12,7 +13,7 @@ export const ScheduledReleaseContextSchema = z.object({
     if (c.configFingerprint !== c.preparedFingerprint)
         ctx.addIssue({ code: 'custom', message: 'Prepared fingerprint mismatch' });
 });
-export function scheduledReleaseContext(prepared, booking, clock, now = Date.now()) {
+export function scheduledReleaseContext(prepared, booking, clock, now = networkNowMs()) {
     if (prepared.workflow !== 'release' || prepared.releaseMs !== clock.releaseMs || prepared.releaseTargetDate !== clock.targetDate || prepared.configFingerprint !== booking.fingerprint)
         throw Error('PREPARED_FINGERPRINT_MISMATCH');
     if (now >= clock.releaseMs)

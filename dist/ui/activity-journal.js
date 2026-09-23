@@ -48,7 +48,7 @@ export class ActivityJournal {
             this.handles.delete(runId);
         }
     }
-    history(limit = 12) {
+    history(limit = 500) {
         const directory = resolve(this.root, '.local/booking-runs');
         if (!existsSync(directory))
             return [];

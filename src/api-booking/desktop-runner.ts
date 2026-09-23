@@ -16,7 +16,7 @@ import { loadLocalCheckoutCustomer } from './local-customer.js';
 import { submitCalendarFreeTwoHourCheckout } from './calendar-free-checkout.js';
 import { officialCheckoutUrl } from './checkout-restoration.js';
 import type { AvailabilitySnapshot, BookingPlan, BookingPreferences } from './types.js';
-import { OndaBrowserSessionTransport, type CheckoutHttpResponse } from './browser-session-transport.js';
+import { OndaBrowserSessionTransport, type BrowserTransportObservation, type CheckoutHttpResponse } from './browser-session-transport.js';
 import { calendarFreeSecurityContext } from './calendar-free-security-context.js';
 import { firstUnjournaledAvailableCandidate } from './candidate-journal.js';
 import { standardCheckoutChunks } from './extended-checkout.js';
@@ -31,21 +31,24 @@ import { showWorkerPage } from '../browser-window.js';
 import { SPECIAL_SESSION_MODE, SPECIAL_SESSION_WORKERS, SPECIAL_SESSION_REQUIRED_WORKERS, SPECIAL_ADAPTIVE_WORKERS,
   SPECIAL_BONUS_WORKERS, specialSessionCourtAssignment, specialSessionPlans, specialAdaptivePlans,
   specialBonusLanePlans, specialBonusPlansForCourt } from './special-session.js';
-import { assertDirectDispatchWindow, chooseDirectCourt, DIRECT_COURT_PRIORITY, directPlan, submitDirectCheckout } from './special-direct-checkout.js';
+import { assertDirectDispatchWindow, chooseDirectCourt, DIRECT_COURT_PRIORITY, directPlan, prooflessCourtHourStatuses, prooflessReleasePlan, resolveProoflessReleasePlan, submitDirectCheckout, type PublicBookingBlock } from './special-direct-checkout.js';
 import { AdaptiveDirectLaneGate } from './adaptive-direct-lane.js';
 import {API_DIRECT_SECURITY_PREWARM_LEAD_MS,API_SECURITY_PREWARM_LEAD_MS,safeApiFailureCode} from './run-observability.js';
+import { diagnosticLaneForWorker, RunDiagnostics, safeDiagnosticCode, specialAvailabilityObservation,
+  type AvailabilityPlanContext, type DiagnosticAttemptType, type DiagnosticCorrelation, type DiagnosticOperation } from './run-diagnostics.js';
 
 const preferencesSchema = z.object({ strategy: z.enum(['standard', 'extended']), date: z.iso.date(), start: z.string().regex(/^(0[89]|1\d|2[0-3]):00$/),
   duration: z.number().int().min(1).max(6), courtCount: z.union([z.literal(1),z.literal(2),z.literal(3),z.literal(4),z.literal(5),z.literal(6),z.literal(7)]), maximum: z.number().optional(),
   priority: z.array(z.number().int().min(1).max(7)).min(1),
   fallbackStarts: z.array(z.string().regex(/^(0[89]|1\d|2[0-3]):00$/)),
   exact: z.array(z.array(z.number().int().min(1).max(7))).optional() }).strict();
-const command = z.object({ mode: z.enum(['prepare', 'dry', 'live', 'live-now']), date: z.iso.date(),
-  releaseMs: z.number().int().positive().optional(), fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+const command = z.object({ mode: z.enum(['prepare', 'dry', 'audit', 'live', 'live-now']), date: z.iso.date(),
+  checkoutMethod:z.enum(['proof-based','proofless']).optional(),clockOffsetMs:z.number().finite().optional(),releaseMs: z.number().int().positive().optional(), fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
   preferences: preferencesSchema.optional() }).strict().parse(JSON.parse(process.argv[2] ?? '{}'));
 const abort = new AbortController();
 process.on('message', message => { if ((message as { type?: string })?.type === 'abort') abort.abort(); });
 const started = performance.now();
+const nowMs=()=>Date.now()+(command.clockOffsetMs??0);
 const SPECIAL_RELEASE_GUARD_MS=11_000;
 const SPECIAL_VERSION_POLL_MS=1_000;
 const SPECIAL_AVAILABILITY_POLL_MS=5_000;
@@ -54,15 +57,16 @@ const SPECIAL_SIGNAL_BURST_MS=15_000;
 const SPECIAL_SIGNAL_BURST_POLL_MS=500;
 const stamp = () => Math.round(performance.now() - started);
 const progressLog = new ApiRunProgressLog(command.mode, command.date);
+const diagnostics = new RunDiagnostics(progressLog, started);
 const stage = (name: string, extra: Record<string, string | number | boolean> = {}) => {
-  const entry = progressLog.record(name, new Date().toISOString(), stamp(), extra);
+  const entry = progressLog.record(name, new Date(nowMs()).toISOString(), stamp(), extra);
   emitUiEvent({ type: 'apiStage', stage: name, at: entry.at, elapsedMs: entry.elapsedMs,
     sincePreviousMs: entry.sincePreviousMs, ...(name === 'RUN_STARTED' ? { runId: progressLog.runId } : {}), ...extra });
 };
 // High-frequency forensic evidence stays in the append-only local trace and
 // does not flood the operator UI or Previous Runs activity list.
 const trace = (name: string, extra: Record<string, string | number | boolean> = {}) =>
-  progressLog.record(name, new Date().toISOString(), stamp(), extra);
+  progressLog.recordDiagnostic(name, new Date(nowMs()).toISOString(), stamp(), extra);
 stage('RUN_STARTED');
 const ensureActive = () => { if (abort.signal.aborted) throw Error('USER_ABORT'); };
 // Windows' default timer resolution (~15.6ms) makes setTimeout overshoot short
@@ -96,7 +100,7 @@ const saveOnce = async (directory: string, filename: string, content: unknown) =
 const sanitizedCheckoutCapture=(response:CheckoutHttpResponse)=>{
   let parsed:unknown;
   try{parsed=JSON.parse(response.body);}catch{}
-  return {capturedAt:new Date().toISOString(),status:response.status,contentType:response.contentType,
+  return {capturedAt:new Date(nowMs()).toISOString(),status:response.status,contentType:response.contentType,
     diagnostic:checkoutDiagnostic(response),observed:observedResponse(parsed,'RESPONSE_CAPTURED')};
 };
 const connectedBrowsers: Browser[] = [];
@@ -106,6 +110,12 @@ let persistedVerifiedHoldExpiry:string|undefined;
 let directTask:Promise<void>|undefined;
 let efProofTask:Promise<void>|undefined;
 let bonusDispatchTask:Promise<void>|undefined;
+let finalDiagnosticCode='COMPLETED';
+let availabilityPlanContext:AvailabilityPlanContext={};
+const recordAvailabilityPlanEvaluation=(snapshot:AvailabilitySnapshot)=>{
+  try{diagnostics.observe('AVAILABILITY_PLAN_EVALUATED',{},specialAvailabilityObservation(snapshot,command.date,availabilityPlanContext));}
+  catch{/* Diagnostic plan evaluation must not affect release decisions. */}
+};
 const efGate=new AdaptiveDirectLaneGate();
 const settleSpecialSideTasks=async()=>{
   const tasks=[efProofTask,directTask,bonusDispatchTask].filter((task):task is Promise<void>=>task!==undefined);
@@ -147,11 +157,16 @@ async function prepareWorker(workerId:WorkerId): Promise<WorkerSession> {
 async function readSpecialSnapshot(date:string):Promise<AvailabilitySnapshot|undefined>{
   ensureActive();
   const requestedAt=performance.now();
+  const finish=diagnostics.begin('availability','AVAILABILITY_REQUEST_STARTED',{},{});
   try{
     const provider=new OndaLiveAvailabilityProvider({allowIncompleteRange:true});
     const envelope=await provider.getAvailability({startDate:date,endDate:date});
     const snapshot=parseAvailability(envelope.raw,{startDate:date,endDate:date,capturedAt:envelope.capturedAt,
       fixtureKind:envelope.fixtureKind,label:envelope.label,now:new Date(),maximumAgeMs:15_000,requireCompleteRange:false});
+    try{finish('AVAILABILITY_REQUEST_COMPLETED',{...specialAvailabilityObservation(snapshot,date,availabilityPlanContext),status:'SUCCESS'});}
+    catch{finish('AVAILABILITY_REQUEST_COMPLETED',{status:'SUCCESS',failureCategory:'DIAGNOSTIC_EVALUATION_FAILED',
+      targetDatePresent:snapshot.returnedDates[date]===true,responseComplete:!snapshot.incompleteDates.includes(date),
+      slotCount:snapshot.slots.length,availableCount:snapshot.slots.filter(slot=>slot.date===date&&slot.isAvailable).length});}
     trace('SPECIAL_AVAILABILITY_SAMPLE',{durationMs:Math.round(performance.now()-requestedAt),
       dateReturned:snapshot.returnedDates[date]===true,slotCount:snapshot.slots.length,
       availableCount:snapshot.slots.filter(slot=>slot.date===date&&slot.isAvailable).length});
@@ -161,6 +176,8 @@ async function readSpecialSnapshot(date:string):Promise<AvailabilitySnapshot|und
       ?error.message:'SPECIAL_AVAILABILITY_READ_FAILED';
     trace('SPECIAL_AVAILABILITY_SAMPLE',{durationMs:Math.round(performance.now()-requestedAt),
       dateReturned:false,slotCount:0,availableCount:0,code});
+    finish('AVAILABILITY_REQUEST_COMPLETED',{status:'FAILED',failureCategory:code,targetDatePresent:false,
+      responseComplete:false,slotCount:0,availableCount:0});
     return;
   }
 }
@@ -181,21 +198,35 @@ async function readOndaVersion():Promise<string|undefined>{
   }catch{trace('SPECIAL_VERSION_SAMPLE',{durationMs:Math.round(performance.now()-requestedAt),ok:false,status:0});return;}
 }
 
-async function readKnownDirectCourtBlocks(date:string):Promise<number[]>{
-  const results=await Promise.all(DIRECT_COURT_PRIORITY.map(async court=>{
-    const spaceId=COURT_TO_SPACE_ID[court];
+async function readKnownCourtHourBlocks(date:string):Promise<{blocks:PublicBookingBlock[];failedCourts:number[]}>{
+  const courts=Array.from({length:7},(_,index)=>index+1);
+  const results=await Promise.all(courts.map(async court=>{
+    const spaceId=COURT_TO_SPACE_ID[court as keyof typeof COURT_TO_SPACE_ID];
     try{
       const url=new URL('/api/public/spaces/bookings','https://app.onda.fit');
       url.searchParams.set('spaceIds',spaceId);url.searchParams.set('date',date);
-      const response=await fetch(url,{headers:{Accept:'application/json'},cache:'no-store',signal:AbortSignal.timeout(2500)});
-      if(!response.ok)return false;
-      const value=await response.json() as {data?:Record<string,Array<{date?:string;startTime?:string;endTime?:string}>>};
-      return (value.data?.[spaceId]??[]).some(booking=>booking.date===date&&
-        typeof booking.startTime==='string'&&typeof booking.endTime==='string'&&
-        booking.startTime.slice(0,5)<'22:00'&&booking.endTime.slice(0,5)>'17:00');
-    }catch{trace('DIRECT_BLOCK_READ_FAILED',{court});return false;}
+      const response=await fetch(url,{headers:{Accept:'application/json'},cache:'no-store',signal:AbortSignal.timeout(5000)});
+      if(!response.ok)throw Error(`HTTP_${response.status}`);
+      const value=await response.json() as {data?:unknown};
+      const raw=value.data&&typeof value.data==='object'&&!Array.isArray(value.data)
+        ?(value.data as Record<string,unknown>)[spaceId]:value.data;
+      const records=Array.isArray(raw)?raw:[];
+      const blocks=records.flatMap(record=>{
+        if(!record||typeof record!=='object')return [];
+        const item=record as {date?:unknown;startTime?:unknown;endTime?:unknown};
+        const start=typeof item.startTime==='string'?item.startTime.slice(0,5):'',end=typeof item.endTime==='string'?item.endTime.slice(0,5):'';
+        return item.date===date&&/^([01]\d|2[0-3]):[0-5]\d$/.test(start)&&/^([01]\d|2[0-3]):[0-5]\d$/.test(end)&&start<end
+          ?[{court,startTime:start,endTime:end} satisfies PublicBookingBlock]:[];
+      });
+      trace('PUBLIC_BOOKING_BLOCK_SAMPLE',{court,status:'SUCCESS',recordCount:blocks.length});
+      return {court,blocks,failed:false};
+    }catch{trace('PUBLIC_BOOKING_BLOCK_SAMPLE',{court,status:'FAILED',recordCount:0});return {court,blocks:[] as PublicBookingBlock[],failed:true};}
   }));
-  return DIRECT_COURT_PRIORITY.filter((_,index)=>results[index]);
+  return {blocks:results.flatMap(result=>result.blocks),failedCourts:results.filter(result=>result.failed).map(result=>result.court)};
+}
+async function readKnownDirectCourtBlocks(date:string):Promise<number[]>{
+  const result=await readKnownCourtHourBlocks(date);
+  return DIRECT_COURT_PRIORITY.filter(court=>result.blocks.some(block=>block.court===court&&block.startTime<'22:00'&&block.endTime>'17:00'));
 }
 
 async function updateNotificationVisible(sessions:readonly WorkerSession[]):Promise<boolean>{
@@ -226,12 +257,19 @@ try {
     workerCount:specialSession?SPECIAL_SESSION_REQUIRED_WORKERS.length:requiredWorkerIds(config.BOOKING_TYPE,config.COURT_COUNT).length,
     prewarmLeadMs:API_SECURITY_PREWARM_LEAD_MS,directPrewarmLeadMs:API_DIRECT_SECURITY_PREWARM_LEAD_MS,
     ...(command.releaseMs?{releaseMs:command.releaseMs}:{})});
-  if(specialSession&&!['prepare','live'].includes(command.mode))throw Error('SPECIAL_SESSION_RELEASE_ONLY');
+  if(specialSession&&!['prepare','audit','live'].includes(command.mode))throw Error('SPECIAL_SESSION_RELEASE_ONLY');
   if(specialSession&&new Date(`${command.date}T12:00:00Z`).getUTCDay()!==5)throw Error('SPECIAL_SESSION_TARGET_NOT_FRIDAY');
   const strategy = requested?.strategy ?? config.BOOKING_TYPE;
   const duration = requested?.duration ?? config.DURATION_HOURS;
   const courtCount = requested?.courtCount ?? config.COURT_COUNT;
-  if (!command.preferences && config.BOOKING_METHOD !== 'api-first') throw Error('API_FIRST_METHOD_REQUIRED');
+  if(command.mode==='audit'){
+    const [snapshot,publicRecords]=await Promise.all([readSpecialSnapshot(command.date),readKnownCourtHourBlocks(command.date)]);
+    const cells=prooflessCourtHourStatuses(snapshot,command.date,publicRecords.blocks,publicRecords.failedCourts);
+    for(const value of cells)trace('COURT_HOUR_STATUS',{court:value.court,hour:value.hour,status:value.status,source:value.source,...(value.price!==undefined?{price:value.price}:{})});
+    emitUiEvent({type:'blockAudit',date:command.date,cells});stage('BLOCK_AUDIT_COMPLETE');
+    throw Error('BLOCK_AUDIT_COMPLETE');
+  }
+  if (!command.preferences && !['api-first','proofless'].includes(config.BOOKING_METHOD)) throw Error('API_FIRST_METHOD_REQUIRED');
   if (strategy === 'standard' && (duration < 1 || duration > 3) ||
     strategy === 'extended' && (duration < 4 || duration > 6) || ![1,2,3,4,5,6,7].includes(courtCount))
     throw Error('API_FIRST_COURT_COUNT_UNSUPPORTED');
@@ -259,7 +297,42 @@ try {
     }
     const responseCaptures=new Map<WorkerId,(response:CheckoutHttpResponse)=>Promise<void>>();
     const releaseTransports=new Map<WorkerId,OndaBrowserSessionTransport>();
-    if(command.mode==='live')for(const session of sessions){
+    const activeAttemptContexts=new Map<WorkerId,DiagnosticCorrelation>();
+    const activeTransportOperations=new Map<string,Array<(stage:string,extra?:Record<string,unknown>)=>void>>();
+    const transportContext=(workerId:WorkerId):DiagnosticCorrelation=>activeAttemptContexts.get(workerId)??
+      {workerId,lane:diagnosticLaneForWorker(workerId)};
+    const beginTransport=(key:string,operation:DiagnosticOperation,stage:string,context:DiagnosticCorrelation,extra:Record<string,unknown>)=>{
+      const end=diagnostics.begin(operation,stage,context,extra),queue=activeTransportOperations.get(key)??[];
+      queue.push(end);activeTransportOperations.set(key,queue);
+    };
+    const endTransport=(key:string,stage:string,context:DiagnosticCorrelation,extra:Record<string,unknown>)=>{
+      const queue=activeTransportOperations.get(key),end=queue?.shift();
+      if(queue&&!queue.length)activeTransportOperations.delete(key);
+      if(end)end(stage,extra);else diagnostics.observe(stage,context,extra);
+    };
+    const observeTransport=(workerId:WorkerId,observation:BrowserTransportObservation)=>{
+      const context=transportContext(workerId);
+      if(observation.event==='SECURITY_PREPARATION_STARTED'){
+        beginTransport(`${workerId}:security:${observation.securitySource}`,'security',observation.event,context,observation);return;
+      }
+      if(observation.event==='SECURITY_PREPARATION_COMPLETED'){
+        endTransport(`${workerId}:security:${observation.securitySource}`,observation.event,context,observation);return;
+      }
+      if(observation.event==='SLOT_CHECK_STARTED'){
+        beginTransport(`${workerId}:slot`,'slotCheck',observation.event,context,observation);return;
+      }
+      if(observation.event==='SLOT_CHECK_COMPLETED'){
+        endTransport(`${workerId}:slot`,observation.event,context,observation);return;
+      }
+      if(observation.event==='CHECKOUT_HTTP_POST_INITIATED'){
+        beginTransport(`${workerId}:checkout`,'checkout',observation.event,context,observation);return;
+      }
+      if(observation.event==='CHECKOUT_RESPONSE_COMPLETED'){
+        endTransport(`${workerId}:checkout`,observation.event,context,observation);return;
+      }
+      diagnostics.observe(observation.event,context,observation);
+    };
+    if(command.mode==='live'||command.mode==='live-now'&&command.checkoutMethod==='proofless')for(const session of sessions){
       const workerId=session.workerId;
       releaseTransports.set(workerId,new OndaBrowserSessionTransport(session.page,
         ()=>calendarFreeSecurityContext(session.page)(),
@@ -267,22 +340,27 @@ try {
         {onHumanVerificationRequired:async()=>{
           await session.page.evaluate(id=>{document.title=`THIRSTY BOT ${id} - VERIFY HERE`;},workerId);
           await showWorkerPage(session.page,workerId);stage('HUMAN_VERIFICATION_REQUIRED',{workerId});
-        },onHumanVerificationCompleted:async()=>{stage('HUMAN_VERIFICATION_COMPLETE',{workerId});}}));
+        },onHumanVerificationCompleted:async()=>{stage('HUMAN_VERIFICATION_COMPLETE',{workerId});}},
+        observation=>observeTransport(workerId,observation)));
     }
     // Hoisted so the E/F adaptive lane can dispatch a proof-based attempt as
     // soon as its court is ready, through the exact same verified path as the
     // main A-D/G-H batch dispatched later.
-    const makeAttempts=(plans:BookingPlan[],ids:readonly WorkerId[],availability:AvailabilitySnapshot)=>plans.map((chunkPlan,index)=>{
+    const makeAttempts=(plans:BookingPlan[],ids:readonly WorkerId[],availability:AvailabilitySnapshot,
+      requestedAttemptType?:DiagnosticAttemptType)=>plans.map((chunkPlan,index)=>{
       const workerId=ids[index];if(!workerId)throw Error('API_CHECKOUT_WORKER_MISSING');
       const session=sessions.find(value=>value.workerId===workerId),customer=customers?.[workerId];
       if(!session||!customer)throw Error('API_CHECKOUT_WORKER_MISSING');
       const keys=standardPlanJournalKeys(chunkPlan,THIRSTY_PICKLE_FACILITY_ID);
       const directories=keys.map(key=>resolve('.local/api-booking/api-first-journals',key));
-      return {chunkPlan,workerId,session,customer,keys,directories,availability,
+      const lane=diagnosticLaneForWorker(workerId);
+      const attemptType=requestedAttemptType??(specialSession&&command.releaseMs&&nowMs()<command.releaseMs?'early':'official');
+      return {chunkPlan,workerId,session,customer,keys,directories,availability,lane,attemptType,
+        attemptId:diagnostics.nextAttemptId(lane,workerId,attemptType),
         journals:directories.map(directory=>new DurableSubmissionJournal(directory))};
     });
     type Attempt=ReturnType<typeof makeAttempts>[number];
-    const executeAttempt=async(attempt:Attempt)=>{
+    const executeAttemptInner=async(attempt:Attempt)=>{
       const {chunkPlan,workerId,session,customer,keys,directories,journals,availability}=attempt;
       ensureActive();
       const workerStarted=performance.now();
@@ -328,6 +406,7 @@ try {
         startTime:chunkPlan.startTime,durationHours:chunkPlan.durationHours};
       stage('PENDING_HOLD', { ...workerTiming(), ...bookingTarget, bookingId: hold.bookingIds[0]!, bookingNo: bookingNo ?? '',
         holdExpiresAt: hold.holdExpiresAt, price: chunkPlan.totalPrice });
+      diagnostics.observe('DIAGNOSTIC_VERIFIED_HOLD',attempt,{...bookingTarget,price:chunkPlan.totalPrice});
       if (!token || !bookingNo) throw Error('OFFICIAL_CHECKOUT_TOKEN_MISSING');
       const grant = await session.page.evaluate(async ({ bookingNo, token }) => {
         const url = new URL(`/api/public/bookings/booking-no/${encodeURIComponent(bookingNo)}`, location.origin);
@@ -343,7 +422,76 @@ try {
       await showWorkerPage(session.page,workerId);
       stage('OFFICIAL_QRPH_HANDOFF', { ...workerTiming(), ...bookingTarget, bookingId: hold.bookingIds[0]!, bookingNo,
         holdExpiresAt: hold.holdExpiresAt, price: chunkPlan.totalPrice });
+      diagnostics.observe('DIAGNOSTIC_QR_HANDOFF',attempt,{...bookingTarget,price:chunkPlan.totalPrice});
       return hold;
+    };
+    const executeAttempt=async(attempt:Attempt)=>{
+      activeAttemptContexts.set(attempt.workerId,attempt);
+      diagnostics.observe('DIAGNOSTIC_ATTEMPT_STARTED',attempt,{court:attempt.chunkPlan.courts[0]!.court,
+        startTime:attempt.chunkPlan.startTime,durationHours:attempt.chunkPlan.durationHours});
+      try{
+        const value=await executeAttemptInner(attempt);
+        diagnostics.observe('DIAGNOSTIC_ATTEMPT_COMPLETED',attempt,{workerOutcome:'VERIFIED_HOLD'});
+        return value;
+      }catch(error){
+        diagnostics.observe('DIAGNOSTIC_ATTEMPT_COMPLETED',attempt,{workerOutcome:'FAILED',
+          failureCategory:safeDiagnosticCode(error,'CHECKOUT_ATTEMPT_FAILED')});
+        throw error;
+      }finally{if(activeAttemptContexts.get(attempt.workerId)?.attemptId===attempt.attemptId)activeAttemptContexts.delete(attempt.workerId);}
+    };
+    const makeProoflessAttempts=(plans:BookingPlan[],ids:readonly WorkerId[])=>plans.map((plan,index)=>{
+      const workerId=ids[index];if(!workerId)throw Error('API_CHECKOUT_WORKER_MISSING');
+      const session=sessions.find(value=>value.workerId===workerId),customer=customers?.[workerId],transport=releaseTransports.get(workerId);
+      if(!session||!customer||!transport)throw Error('API_CHECKOUT_WORKER_MISSING');
+      const keys=standardPlanJournalKeys(plan,THIRSTY_PICKLE_FACILITY_ID);
+      const directories=keys.map(key=>resolve('.local/api-booking/api-first-journals',key));
+      const lane=diagnosticLaneForWorker(workerId),attemptType='official' as const;
+      return {plan,workerId,session,customer,transport,keys,directories,lane,attemptType,
+        attemptId:diagnostics.nextAttemptId(lane,workerId,attemptType),
+        journals:directories.map(directory=>new DurableSubmissionJournal(directory))};
+    });
+    type ProoflessAttempt=ReturnType<typeof makeProoflessAttempts>[number];
+    const executeProoflessAttempt=async(attempt:ProoflessAttempt,releaseMs?:number)=>{
+      const {plan,workerId,session,customer,transport,keys,directories,journals,lane,attemptType,attemptId}=attempt;
+      const correlation={workerId,lane,attemptType,attemptId};
+      activeAttemptContexts.set(workerId,correlation);
+      diagnostics.observe('DIAGNOSTIC_ATTEMPT_STARTED',correlation,{court:plan.courts[0]!.court,startTime:plan.startTime,durationHours:plan.durationHours});
+      const workerStarted=performance.now(),workerTiming=()=>({workerId,workerElapsedMs:Math.round(performance.now()-workerStarted)});
+      let token:string|undefined,bookingNo:string|undefined;
+      responseCaptures.set(workerId,async response=>{
+        await saveOnce(directories[0]!,'checkout-response-private.json',sanitizedCheckoutCapture(response));
+        try{const value=JSON.parse(response.body) as {bookings?:Array<{booking_no?:string;checkoutToken?:string}>};
+          bookingNo=value.bookings?.[0]?.booking_no;token=value.bookings?.[0]?.checkoutToken;}catch{}
+      });
+      try{
+        const hold=await submitDirectCheckout(plan,customer,transport,journals[0]!,releaseMs,journals.slice(1),nowMs);
+        verifiedHold=true;retainLiveLock=true;
+        if(!latestVerifiedHoldExpiry||Date.parse(hold.holdExpiresAt)>Date.parse(latestVerifiedHoldExpiry))latestVerifiedHoldExpiry=hold.holdExpiresAt;
+        const bookingTarget={date:command.date,court:plan.courts[0]!.court,...(plan.courts[1]?{courtB:plan.courts[1].court}:{}),
+          startTime:plan.startTime,durationHours:plan.durationHours};
+        stage('PENDING_HOLD',{...workerTiming(),...bookingTarget,bookingId:hold.bookingIds[0]!,bookingNo:bookingNo??'',
+          holdExpiresAt:hold.holdExpiresAt,price:plan.totalPrice});
+        diagnostics.observe('DIAGNOSTIC_VERIFIED_HOLD',correlation,{...bookingTarget,price:plan.totalPrice});
+        if(!token||!bookingNo)throw Error('OFFICIAL_CHECKOUT_TOKEN_MISSING');
+        const grant=await session.page.evaluate(async({bookingNo,token})=>{const url=new URL(`/api/public/bookings/booking-no/${encodeURIComponent(bookingNo)}`,location.origin);
+          url.searchParams.set('checkoutToken',token);url.searchParams.set('grantCheckoutAccess','1');
+          return (await fetch(url,{credentials:'include',cache:'no-store'})).status;},{bookingNo,token});
+        if(grant!==200)throw Error('OFFICIAL_CHECKOUT_ACCESS_FAILED');
+        await session.page.goto(officialCheckoutUrl(hold.bookingIds[0]!),{waitUntil:'domcontentloaded',timeout:45_000});
+        await session.page.getByText('QRPH',{exact:true}).first().waitFor({state:'visible',timeout:20_000});
+        const body=await session.page.locator('body').innerText();
+        if(!body.includes('Pending')||!body.replaceAll(',','').includes(plan.totalPrice.toFixed(2)))throw Error('OFFICIAL_CHECKOUT_STATE_MISMATCH');
+        await showWorkerPage(session.page,workerId);
+        stage('OFFICIAL_QRPH_HANDOFF',{...workerTiming(),...bookingTarget,bookingId:hold.bookingIds[0]!,bookingNo,
+          holdExpiresAt:hold.holdExpiresAt,price:plan.totalPrice});
+        diagnostics.observe('DIAGNOSTIC_QR_HANDOFF',correlation,{...bookingTarget,price:plan.totalPrice});
+        diagnostics.observe('DIAGNOSTIC_ATTEMPT_COMPLETED',correlation,{workerOutcome:'VERIFIED_HOLD'});
+        return hold;
+      }catch(error){
+        diagnostics.observe('DIAGNOSTIC_ATTEMPT_COMPLETED',correlation,{workerOutcome:'FAILED',
+          failureCategory:safeDiagnosticCode(error,'CHECKOUT_ATTEMPT_FAILED')});
+        throw error;
+      }finally{if(activeAttemptContexts.get(workerId)?.attemptId===attemptId)activeAttemptContexts.delete(workerId);}
     };
     const conclusiveNoHold=async(attempt:Attempt,error:unknown)=>{
       const states=await Promise.all(attempt.journals.map((journal,index)=>
@@ -478,15 +626,55 @@ try {
       }
       if(failure)throw Error(safeApiFailureCode(failure.reason,'SECURITY_PREWARM_FAILED'));
     };
+    const preferences:BookingPreferences={mode:strategy,targetDate:command.date,durationHours:duration,
+      preferredStartTimes:[requested?.start??config.START_TIME],fallbackStartTimes:requested?.fallbackStarts??config.FALLBACK_TIMES,
+      courtPriority:requested?.priority??config.PREFERRED_COURTS,fallbackCourts:requested?[]:config.FALLBACK_COURTS,
+      courtCount,exactCourts:requested?.exact,maximumTotalPrice:requested?.maximum??config.MAX_PRICE,currency:'PHP'};
+    let primaryProoflessPlans:BookingPlan[]|undefined;
+    let primaryProoflessAttempts:ProoflessAttempt[]|undefined;
+    if(command.checkoutMethod==='proofless'&&!specialSession){
+      // A scheduled release starts this same warmup shortly before 08:00. An
+      // immediate Proofless Test has no waiting window, so overlap genuine,
+      // page-bound security acquisition with the read-only block audit and
+      // journal checks instead of paying for it after dispatch is announced.
+      if(command.mode==='live-now')startWarmup(workerIds);
+      let snapshot:AvailabilitySnapshot|undefined;
+      if(command.mode==='live'){
+        const auditAt=command.releaseMs!-30*60_000;
+        stage('WAITING_FOR_BLOCK_AUDIT',{releaseMs:command.releaseMs!});
+        while(nowMs()<auditAt){ensureActive();await pause(Math.min(30_000,auditAt-nowMs()));}
+        snapshot=await readSpecialSnapshot(command.date);
+      }else if(command.mode==='dry')snapshot=await readSpecialSnapshot(command.date);
+      const publicRecords=await readKnownCourtHourBlocks(command.date);
+      const blockAudit=prooflessCourtHourStatuses(snapshot,command.date,publicRecords.blocks,publicRecords.failedCourts);
+      for(const value of blockAudit)trace('COURT_HOUR_STATUS',{court:value.court,hour:value.hour,status:value.status,source:value.source,...(value.price!==undefined?{price:value.price}:{})});
+      emitUiEvent({type:'blockAudit',date:command.date,cells:blockAudit});
+      const releasePlan=command.mode==='live-now'?prooflessReleasePlan(preferences):resolveProoflessReleasePlan(preferences,snapshot,publicRecords.blocks,publicRecords.failedCourts);
+      primaryProoflessPlans=standardCheckoutChunks(releasePlan);
+      if(primaryProoflessPlans.length!==workerIds.length)throw Error('DIRECT_WORKER_PLAN_MISMATCH');
+      if(command.mode!=='dry'){
+        primaryProoflessAttempts=makeProoflessAttempts(primaryProoflessPlans,workerIds);
+        for(const attempt of primaryProoflessAttempts)for(const [index,journal] of attempt.journals.entries()){
+          const disposition=await journal.recycleReusable(attempt.keys[index]!);
+          if(disposition==='blocked')throw Error('DUPLICATE_LOGICAL_BOOKING_BLOCKED');
+          if(disposition==='reused')stage('FINISHED_ATTEMPT_REUSABLE',{workerId:attempt.workerId});
+        }
+      }
+      stage('PRIMARY_PROOFLESS_PLAN_READY',{court:releasePlan.courts[0]!.court,
+        ...(releasePlan.courts[1]?{courtB:releasePlan.courts[1].court}:{}),date:command.date,startTime:releasePlan.startTime,
+        durationHours:releasePlan.durationHours,assumedPrice:releasePlan.totalPrice});
+    }
     if (command.mode === 'live'&&specialSession) {
       const releaseMs = command.releaseMs!;
-      if (releaseMs <= Date.now()) throw Error('RELEASE_MISSED');
+      if (releaseMs <= nowMs()) throw Error('RELEASE_MISSED');
       stage('WAITING_FOR_RELEASE', { releaseMs });
       const watchAt=releaseMs-10*60_000;
-      while(Date.now()<watchAt){ensureActive();await pause(Math.min(30_000,watchAt-Date.now()));}
+      while(nowMs()<watchAt){ensureActive();await pause(Math.min(30_000,watchAt-nowMs()));}
       stage('SPECIAL_AVAILABILITY_WATCHING');
       const [initialDirectSnapshot,knownBlocked]=await Promise.all([readSpecialSnapshot(command.date),readKnownDirectCourtBlocks(command.date)]);
       const directCourt=chooseDirectCourt(initialDirectSnapshot,knownBlocked);
+      availabilityPlanContext={...availabilityPlanContext,directCourt};
+      if(initialDirectSnapshot)recordAvailabilityPlanEvaluation(initialDirectSnapshot);
       if(directCourt){
         // A reserved E/F court exists, so some outcome is now expected for
         // telemetry; stay pessimistic ('failed') until either path actually
@@ -495,7 +683,9 @@ try {
         // efProoflessMayHaveDispatched, set only once a dispatch is proven or
         // cannot be ruled out.
         efLane.outcome='failed';
-        const directPlans=(['E','F'] as const).map(workerId=>({workerId,...directPlan(command.date,directCourt,workerId,initialDirectSnapshot)}));
+        const directPlans=(['E','F'] as const).map(workerId=>{const lane=diagnosticLaneForWorker(workerId),attemptType='official' as const;
+          return {workerId,lane,attemptType,attemptId:diagnostics.nextAttemptId(lane,workerId,attemptType),
+            ...directPlan(command.date,directCourt,workerId,initialDirectSnapshot)};});
         const directTotal=directPlans.reduce((sum,item)=>sum+item.plan.totalPrice,0);
         stage('DIRECT_LANE_PREPARED',{court:directCourt,rateSource:directPlans[0]!.rateSource,
           ...(directPlans[0]!.rateSource==='UNVERIFIED_PRIOR_RATE'?{assumedPrice:directTotal}:{price:directTotal})});
@@ -505,15 +695,15 @@ try {
             const transport=releaseTransports.get(worker);if(!transport)throw Error('DIRECT_WORKER_MISSING');
             await transport.prepareCheckoutContext();stage('DIRECT_SECURITY_READY',{workerId:worker});
           }));
-          while(Date.now()<releaseMs){ensureActive();const remaining=releaseMs-Date.now();
+          while(nowMs()<releaseMs){ensureActive();const remaining=releaseMs-nowMs();
             if(remaining<=API_SECURITY_PREWARM_LEAD_MS)startWarmup(SPECIAL_SESSION_WORKERS);
             if(remaining<=API_DIRECT_SECURITY_PREWARM_LEAD_MS)warmDirect();
             await pause(Math.min(250,Math.max(1,remaining),warmup?250:Math.max(1,remaining-API_SECURITY_PREWARM_LEAD_MS)));}
-          assertApiReleaseFresh(releaseMs);
+          assertApiReleaseFresh(releaseMs,nowMs());
           const directWarmResults=await warmDirect();
           recordWarmFailures('DIRECT_SECURITY_FAILED',SPECIAL_ADAPTIVE_WORKERS,directWarmResults,'DIRECT_SECURITY_PREWARM_FAILED');
           if(directWarmResults.some(result=>result.status==='rejected'))throw Error('DIRECT_SECURITY_PREWARM_FAILED');
-          ensureActive();assertDirectDispatchWindow(releaseMs);
+          ensureActive();assertDirectDispatchWindow(releaseMs,nowMs());
           // Fail-closed hand-off: if the E/F proof-based lane already committed
           // (dispatched or in flight), never also send the proofless request.
           if(!efGate.tryCommit('proofless')){
@@ -523,7 +713,11 @@ try {
           await liveLock?.dispatching();retainLiveLock=true;
           stage('DIRECT_LANE_DISPATCHING',{court:directCourt,rateSource:directPlans[0]!.rateSource});
           efProoflessMayHaveDispatched=true;
-          const results=await Promise.allSettled(directPlans.map(async({workerId,plan})=>{
+          const results=await Promise.allSettled(directPlans.map(async({workerId,plan,lane,attemptType,attemptId})=>{
+            const correlation={workerId,lane,attemptType,attemptId};
+            activeAttemptContexts.set(workerId,correlation);
+            diagnostics.observe('DIAGNOSTIC_ATTEMPT_STARTED',correlation,{court:directCourt,startTime:plan.startTime,durationHours:plan.durationHours});
+            try{
             const session=sessions.find(value=>value.workerId===workerId),customer=customers?.[workerId],transport=releaseTransports.get(workerId);
             if(!session||!customer||!transport)throw Error('DIRECT_WORKER_MISSING');
             const key=DurableSubmissionJournal.key(THIRSTY_PICKLE_FACILITY_ID,plan.courts[0]!.spaceId,command.date,plan.startTime,plan.endTime);
@@ -535,12 +729,14 @@ try {
                 bookingNo=value.bookings?.[0]?.booking_no;token=value.bookings?.[0]?.checkoutToken;}catch{}
             });
             const startedAt=performance.now();
-            const hold=await submitDirectCheckout(plan,customer,transport,new DurableSubmissionJournal(directory),releaseMs);
+            const hold=await submitDirectCheckout(plan,customer,transport,new DurableSubmissionJournal(directory),releaseMs,[],nowMs);
             verifiedHold=true;retainLiveLock=true;
             if(!latestVerifiedHoldExpiry||Date.parse(hold.holdExpiresAt)>Date.parse(latestVerifiedHoldExpiry))latestVerifiedHoldExpiry=hold.holdExpiresAt;
             stage('PENDING_HOLD',{workerId,court:directCourt,date:command.date,startTime:plan.startTime,durationHours:plan.durationHours,
               bookingId:hold.bookingIds[0]!,bookingNo:bookingNo??'',holdExpiresAt:hold.holdExpiresAt,price:plan.totalPrice,
               workerElapsedMs:Math.round(performance.now()-startedAt)});
+            diagnostics.observe('DIAGNOSTIC_VERIFIED_HOLD',correlation,{court:directCourt,startTime:plan.startTime,
+              durationHours:plan.durationHours,price:plan.totalPrice});
             if(!token||!bookingNo)throw Error('OFFICIAL_CHECKOUT_TOKEN_MISSING');
             const grant=await session.page.evaluate(async({bookingNo,token})=>{const url=new URL(`/api/public/bookings/booking-no/${encodeURIComponent(bookingNo)}`,location.origin);
               url.searchParams.set('checkoutToken',token);url.searchParams.set('grantCheckoutAccess','1');
@@ -554,7 +750,15 @@ try {
             stage('OFFICIAL_QRPH_HANDOFF',{workerId,court:directCourt,date:command.date,startTime:plan.startTime,
               durationHours:plan.durationHours,bookingId:hold.bookingIds[0]!,bookingNo,holdExpiresAt:hold.holdExpiresAt,
               price:plan.totalPrice,workerElapsedMs:Math.round(performance.now()-startedAt)});
+            diagnostics.observe('DIAGNOSTIC_QR_HANDOFF',correlation,{court:directCourt,startTime:plan.startTime,
+              durationHours:plan.durationHours,price:plan.totalPrice});
+            diagnostics.observe('DIAGNOSTIC_ATTEMPT_COMPLETED',correlation,{workerOutcome:'VERIFIED_HOLD'});
             return hold;
+            }catch(error){
+              diagnostics.observe('DIAGNOSTIC_ATTEMPT_COMPLETED',correlation,{workerOutcome:'FAILED',
+                failureCategory:safeDiagnosticCode(error,'CHECKOUT_ATTEMPT_FAILED')});
+              throw error;
+            }finally{if(activeAttemptContexts.get(workerId)?.attemptId===attemptId)activeAttemptContexts.delete(workerId);}
           }));
           const successful=results.filter((result):result is PromiseFulfilledResult<import('./public-checkout.js').VerifiedPublicCheckout>=>result.status==='fulfilled');
           if(successful.length){const newest=successful.map(result=>result.value.holdExpiresAt).sort((a,b)=>Date.parse(b)-Date.parse(a))[0]!;
@@ -604,13 +808,14 @@ try {
           pendingSnapshot=undefined;
           if(!snapshot)return;
           const bonus=specialBonusLanePlans(snapshot,excluded);
-          if(bonus){found=bonus;usedSnapshot=snapshot;}
+          if(bonus){found=bonus;usedSnapshot=snapshot;availabilityPlanContext={...availabilityPlanContext,bonusCourt:bonus.court};
+            recordAvailabilityPlanEvaluation(snapshot);}
         };
-        while(!found&&Date.now()<releaseMs){
+        while(!found&&nowMs()<releaseMs){
           ensureActive();
           await tryOnce();
           if(found)break;
-          await pause(Math.min(SPECIAL_SIGNAL_AVAILABILITY_POLL_MS,Math.max(1,releaseMs-Date.now())));
+          await pause(Math.min(SPECIAL_SIGNAL_AVAILABILITY_POLL_MS,Math.max(1,releaseMs-nowMs())));
         }
         const foundEarly=!!found;
         if(!found)for(const delay of [0,250,500,1000,2000]){
@@ -641,17 +846,17 @@ try {
             court:attempt.chunkPlan.courts[0]!.court,startTime:attempt.chunkPlan.startTime,durationHours:attempt.chunkPlan.durationHours});});
         const finalByWorker=new Map<WorkerId,PromiseSettledResult<Awaited<ReturnType<typeof executeAttempt>>>>(
           attempts.map((attempt,index)=>[attempt.workerId,outcomes[index]!]));
-        if(foundEarly&&Date.now()<releaseMs){
+        if(foundEarly&&nowMs()<releaseMs){
           const retryWorkers:WorkerId[]=[];
           for(const [index,outcome] of outcomes.entries())if(outcome.status==='rejected'&&
             await conclusiveNoHold(attempts[index]!,outcome.reason))retryWorkers.push(attempts[index]!.workerId);
           if(retryWorkers.length){
             stage('SPECIAL_SAFE_RETRY_WAITING',{releaseMs});
             let retryWarmup:Promise<PromiseSettledResult<void>[]>|undefined;
-            while(Date.now()<releaseMs){ensureActive();const remaining=releaseMs-Date.now();
+            while(nowMs()<releaseMs){ensureActive();const remaining=releaseMs-nowMs();
               if(remaining<=API_SECURITY_PREWARM_LEAD_MS)retryWarmup??=warmWorkers(retryWorkers,'BONUS_RETRY_SECURITY_READY');
               await pause(Math.min(500,Math.max(1,remaining)));}
-            assertApiReleaseFresh(releaseMs);
+            assertApiReleaseFresh(releaseMs,nowMs());
             retryWarmup??=warmWorkers(retryWorkers,'BONUS_RETRY_SECURITY_READY');
             const retryWarmResults=await retryWarmup;
             recordWarmFailures('BONUS_RETRY_SECURITY_FAILED',retryWorkers,retryWarmResults,'BONUS_SECURITY_PREWARM_FAILED');
@@ -676,7 +881,7 @@ try {
                   if(disposition==='blocked')throw Error('SPECIAL_SESSION_RETRY_BLOCKED');
                 }
               }
-              const retryAttempts=makeAttempts(plansInWorkerOrder(retryPlans,retryIds),retryIds,retrySnapshot);
+              const retryAttempts=makeAttempts(plansInWorkerOrder(retryPlans,retryIds),retryIds,retrySnapshot,'retry');
               attempts=[...attempts,...retryAttempts];
               const retried=await Promise.allSettled(retryAttempts.map(executeAttempt));
               retryAttempts.forEach((attempt,index)=>{const outcome=retried[index]!;
@@ -712,6 +917,8 @@ try {
         if(!core)return undefined;
         if(!coreAssignment){
           coreAssignment=specialSessionCourtAssignment(core);
+          availabilityPlanContext={...availabilityPlanContext,coreAssignment};
+          recordAvailabilityPlanEvaluation(snapshot);
           stage('SPECIAL_PROOF_LANE_READY',{court:coreAssignment.earlyCourt,courtB:coreAssignment.lateCourt,
             price:[...core.values()].reduce((sum,plan)=>sum+plan.totalPrice,0)});
           // Start watching for a fourth distinct court right away; this never
@@ -732,11 +939,11 @@ try {
             price:[...core.values()].reduce((sum,plan)=>sum+plan.totalPrice,0)});
       };
       let observedVersion=await readOndaVersion();
-      let nextVersionAt=Date.now(),nextAvailabilityAt=Date.now();
+      let nextVersionAt=nowMs(),nextAvailabilityAt=nowMs();
       let releaseSignalSeen=false,signalBurstUntil=0;
-      while (Date.now() < releaseMs) {
+      while (nowMs() < releaseMs) {
         ensureActive();
-        const remaining=releaseMs-Date.now();
+        const remaining=releaseMs-nowMs();
         if(remaining<=API_SECURITY_PREWARM_LEAD_MS)startWarmup(SPECIAL_SESSION_WORKERS);
         // Do not let a final pre-release GET overlap and delay the official
         // release fetch. The live provider has a ten-second timeout.
@@ -744,9 +951,9 @@ try {
           if(warmup&&warmupStartedAt!==undefined&&Date.now()-warmupStartedAt>90_000){
             await finishWarmup(true);warmup=undefined;warmupStartedAt=undefined;
           }
-          startWarmup(SPECIAL_SESSION_WORKERS);await pause(Math.max(1,releaseMs-Date.now()));break;
+          startWarmup(SPECIAL_SESSION_WORKERS);await pause(Math.max(1,releaseMs-nowMs()));break;
         }
-        const loopStarted=Date.now();
+        const loopStarted=nowMs();
         const checkVersion=loopStarted>=nextVersionAt,checkAvailability=loopStarted>=nextAvailabilityAt;
         const [version,notification,snapshot]=await Promise.all([
           checkVersion?readOndaVersion():Promise.resolve(undefined),
@@ -755,7 +962,7 @@ try {
         ]);
         const versionChanged=!!version&&!!observedVersion&&version!==observedVersion;
         if((versionChanged||notification)&&!releaseSignalSeen){
-          releaseSignalSeen=true;signalBurstUntil=Date.now()+SPECIAL_SIGNAL_BURST_MS;
+          releaseSignalSeen=true;signalBurstUntil=nowMs()+SPECIAL_SIGNAL_BURST_MS;
           stage(notification?'SPECIAL_UPDATE_NOTIFICATION_OBSERVED':'SPECIAL_VERSION_CHANGE_OBSERVED');
           startWarmup(SPECIAL_SESSION_WORKERS);
           if(!checkAvailability)nextAvailabilityAt=0;
@@ -764,7 +971,7 @@ try {
         if(checkVersion)nextVersionAt=loopStarted+SPECIAL_VERSION_POLL_MS;
         if(checkAvailability){
           const interval=!releaseSignalSeen?SPECIAL_AVAILABILITY_POLL_MS:
-            Date.now()<signalBurstUntil?SPECIAL_SIGNAL_BURST_POLL_MS:SPECIAL_SIGNAL_AVAILABILITY_POLL_MS;
+            nowMs()<signalBurstUntil?SPECIAL_SIGNAL_BURST_POLL_MS:SPECIAL_SIGNAL_AVAILABILITY_POLL_MS;
           nextAvailabilityAt=loopStarted+interval;
         }
         // E/F is independent of A-D readiness: dispatch its proof-based
@@ -773,13 +980,13 @@ try {
         maybeStartEfProofLane(snapshot,directCourt);
         if(snapshot){
           const core=checkCore(snapshot);
-          if(core){commitCore(snapshot,core,Date.now()<releaseMs);break;}
+          if(core){commitCore(snapshot,core,nowMs()<releaseMs);break;}
         }
         const nextCheck=Math.min(nextVersionAt,nextAvailabilityAt,releaseMs-SPECIAL_RELEASE_GUARD_MS);
-        await pause(Math.min(250,Math.max(1,nextCheck-Date.now())));
+        await pause(Math.min(250,Math.max(1,nextCheck-nowMs())));
       }
       if(!specialPlansAtTrigger){
-        assertApiReleaseFresh(releaseMs);stage('RELEASE_TRIGGERED');await finishWarmup(true);
+        assertApiReleaseFresh(releaseMs,nowMs());stage('RELEASE_TRIGGERED');await finishWarmup(true);
         for(const delay of [0,250,500,1000,2000]){
           if(delay)await pause(delay);
           const snapshot=await readSpecialSnapshot(command.date);
@@ -798,24 +1005,20 @@ try {
       startWarmup(SPECIAL_SESSION_WORKERS);await finishWarmup(true);
     } else if (command.mode === 'live') {
       const releaseMs = command.releaseMs!;
-      if (releaseMs <= Date.now()) throw Error('RELEASE_MISSED');
+      if (releaseMs <= nowMs()) throw Error('RELEASE_MISSED');
       stage('WAITING_FOR_RELEASE', { releaseMs });
-      while (Date.now() < releaseMs) {
-        ensureActive();const remaining=releaseMs-Date.now();if(remaining<=API_SECURITY_PREWARM_LEAD_MS)startWarmup();
+      while (nowMs() < releaseMs) {
+        ensureActive();const remaining=releaseMs-nowMs();if(remaining<=API_SECURITY_PREWARM_LEAD_MS)startWarmup();
         await pause(Math.min(500,Math.max(1,remaining),warmup?500:Math.max(1,remaining-API_SECURITY_PREWARM_LEAD_MS)));
       }
-      assertApiReleaseFresh(releaseMs);stage('RELEASE_TRIGGERED');await finishWarmup();
+      assertApiReleaseFresh(releaseMs,nowMs());stage('RELEASE_TRIGGERED');await finishWarmup();
     }
     ensureActive();
-    const preferences: BookingPreferences = { mode: strategy, targetDate: command.date,
-      durationHours: duration, preferredStartTimes: [requested?.start ?? config.START_TIME],
-      fallbackStartTimes: requested?.fallbackStarts ?? config.FALLBACK_TIMES,
-      courtPriority: requested?.priority ?? config.PREFERRED_COURTS,
-      fallbackCourts: requested ? [] : config.FALLBACK_COURTS, courtCount, exactCourts: requested?.exact,
-      maximumTotalPrice: requested?.maximum ?? config.MAX_PRICE, currency: 'PHP' };
     let discovery:Awaited<ReturnType<typeof discoverApiAvailability>>|undefined;
     let checkoutPlans:BookingPlan[];
-    if(specialSession){
+    if(primaryProoflessPlans){
+      checkoutPlans=primaryProoflessPlans;
+    }else if(specialSession){
       if(!specialPlansAtTrigger)throw Error('SPECIAL_SESSION_NOT_AVAILABLE');
       checkoutPlans=plansInWorkerOrder(specialPlansAtTrigger,specialDispatchOrder);
       const assigned=specialSessionCourtAssignment(specialPlansAtTrigger);
@@ -825,6 +1028,8 @@ try {
       stage('FETCHING_AVAILABILITY');
       discovery = await discoverApiAvailability(new OndaLiveAvailabilityProvider(), preferences);
       ensureActive();
+      if(command.mode==='live')for(const value of prooflessCourtHourStatuses(discovery.snapshot,command.date))
+        trace('COURT_HOUR_STATUS',{court:value.court,hour:value.hour,status:value.status,...(value.price!==undefined?{price:value.price}:{})});
       if (!discovery.candidates.length) throw Error('API_NO_AVAILABLE_CANDIDATE');
       const selected = command.mode === 'dry' ? { plan: discovery.candidates[0]! } :
         await firstUnjournaledAvailableCandidate(discovery.snapshot, preferences, THIRSTY_PICKLE_FACILITY_ID, async key => {
@@ -843,6 +1048,34 @@ try {
     if (command.mode === 'dry') {
       // The dry path has no customer lookup, checkout security context, or submission permit.
       stage('DRY_RUN_COMPLETE');
+    } else if(primaryProoflessPlans){
+      ensureActive();
+      const attempts=primaryProoflessAttempts!;
+      // This does not submit anything. It only makes the already-started
+      // security preparation a prerequisite for entering the dispatch state.
+      // Failure therefore remains conclusively pre-dispatch and releases the
+      // automation lock through the normal finally path.
+      if(command.mode==='live-now')await finishWarmup();
+      await liveLock?.dispatching();retainLiveLock=true;
+      stage('PRIMARY_PROOFLESS_DISPATCHING',{workerCount:attempts.length});
+      const outcomes=await Promise.allSettled(attempts.map(attempt=>executeProoflessAttempt(attempt,command.releaseMs)));
+      attempts.forEach((attempt,index)=>{const outcome=outcomes[index]!;
+        const code=outcome.status==='rejected'&&outcome.reason instanceof Error&&/^[A-Z][A-Z0-9_]{0,79}$/.test(outcome.reason.message)
+          ?outcome.reason.message:outcome.status==='rejected'?'DIRECT_WORKER_FAILED':'COMPLETED';
+        stage('PRIMARY_PROOFLESS_OUTCOME',{workerId:attempt.workerId,status:outcome.status,code,
+          court:attempt.plan.courts[0]!.court,startTime:attempt.plan.startTime,durationHours:attempt.plan.durationHours});});
+      await persistLatestVerifiedHold();
+      const failures=outcomes.filter((outcome):outcome is PromiseRejectedResult=>outcome.status==='rejected');
+      if(failures.length){
+        if(!verifiedHold){
+          const states=await Promise.all(attempts.flatMap(attempt=>attempt.journals.map((journal,index)=>
+            journal.read(attempt.keys[index]!).then(record=>record.state).catch(()=> 'unknown' as const))));
+          if(canReleaseApiLockAfterParallelFailure(false,failures.map(failure=>failure.reason),states,attempts.length)){
+            retainLiveLock=false;await liveLock?.release();liveLock=undefined;
+          }
+        }
+        throw failures[0]!.reason;
+      }
     } else {
       ensureActive();
       const dispatchIds=specialSession?specialDispatchOrder:workerIds;
@@ -864,10 +1097,10 @@ try {
         if(retryWorkers.length){
           stage('SPECIAL_SAFE_RETRY_WAITING',{releaseMs:command.releaseMs!});
           warmup=undefined;warmupStartedAt=undefined;
-          while(Date.now()<command.releaseMs!){ensureActive();const remaining=command.releaseMs!-Date.now();
+          while(nowMs()<command.releaseMs!){ensureActive();const remaining=command.releaseMs!-nowMs();
             if(remaining<=API_SECURITY_PREWARM_LEAD_MS)startWarmup(retryWorkers);
             await pause(Math.min(500,Math.max(1,remaining),warmup?500:Math.max(1,remaining-API_SECURITY_PREWARM_LEAD_MS)));}
-          assertApiReleaseFresh(command.releaseMs!);stage('RELEASE_TRIGGERED');await finishWarmup(true);
+          assertApiReleaseFresh(command.releaseMs!,nowMs());stage('RELEASE_TRIGGERED');await finishWarmup(true);
           let retryPlans=new Map<WorkerId,BookingPlan>();let retrySnapshot:AvailabilitySnapshot|undefined;
           for(const delay of [0,250,500,1000,2000]){
             if(delay)await pause(delay);const snapshot=await readSpecialSnapshot(command.date);if(!snapshot)continue;
@@ -887,7 +1120,7 @@ try {
                 if(disposition==='blocked')throw Error('SPECIAL_SESSION_RETRY_BLOCKED');
               }
             }
-            const retryAttempts=makeAttempts(plansInWorkerOrder(retryPlans,retryIds),retryIds,retrySnapshot);
+            const retryAttempts=makeAttempts(plansInWorkerOrder(retryPlans,retryIds),retryIds,retrySnapshot,'retry');
             attempts=[...attempts,...retryAttempts];
             const retried=await Promise.allSettled(retryAttempts.map(executeAttempt));
             retryAttempts.forEach((attempt,index)=>{const outcome=retried[index]!;
@@ -950,9 +1183,14 @@ try {
     }
   }
 } catch (error) {
+  if(error instanceof Error&&error.message==='BLOCK_AUDIT_COMPLETE'){
+    finalDiagnosticCode='BLOCK_AUDIT_COMPLETE';
+  }else{
   const code = safeApiFailureCode(error,'API_FIRST_RUN_FAILED');
+  finalDiagnosticCode=code;
   stage('FAILED', { code });
   process.exitCode = 1;
+  }
  } finally {
    await settleSpecialSideTasks();
    // This is also required on exceptional exits that bypass the normal summary
@@ -963,7 +1201,8 @@ try {
   // Closing a CDP attachment closes its transport; the independently launched Chrome windows stay open.
   await Promise.allSettled(connectedBrowsers.map(browser => browser.close()));
   if(liveLock&&!retainLiveLock)await liveLock.release().catch(()=>undefined);
-  progressLog.record('PROCESS_EXIT', new Date().toISOString(), stamp(), { exitCode: process.exitCode ?? 0 });
-  progressLog.close();
+  diagnostics.finish(finalDiagnosticCode,finalDiagnosticCode==='USER_ABORT');
+  progressLog.record('PROCESS_EXIT', new Date(nowMs()).toISOString(), stamp(), { exitCode: process.exitCode ?? 0 });
+  await progressLog.close();
   if (process.connected) process.disconnect();
 }

@@ -51,11 +51,11 @@ export function resolveBookingPlan(input:PlanRequest,grids:Snapshot[],excluded=n
 export function describeBookingPlan(p:BookingPlan,_maximum?:number){return `${p.strategy.toUpperCase()} BOOKING\n${p.date} · ${p.courtCount} court(s) · ${p.requestedDuration} hours\n`+p.chunks.map(c=>`Checkout ${c.browser}: ${c.browser==='A'?'Primary player':'Extended player'} | ${c.start}–${String(Number(c.start.slice(0,2))+c.duration).padStart(2,'0')}:00 · ${c.courts?.map(n=>`Court ${n}`).join(' + ')??'Court priority'}`).join('\n')+`\n${p.chunks.length} checkout(s), ${p.chunks.length} temporary payment hold(s). Payment is manual. No price ceiling.`;}
 
 export const BookingPlanSchema=z.object({strategy:z.enum(['standard','extended']),date:z.iso.date(),requestedStart:z.string(),requestedDuration:z.number().int().min(1).max(6),courtCount:CourtCountSchema,chunks:z.array(z.object({browser:z.enum(['A','B']),start:z.string(),duration:z.number().int().min(1).max(3),hours:z.array(z.string()).min(1).max(3),requiredCourtCount:CourtCountSchema,courts:z.array(z.number().int().min(1).max(7)).min(1).max(4)}).strict()).min(1).max(2)}).strict();
-export const TestBookingSchema=z.object({method:z.enum(['browser','hybrid','api-first']).default('browser'),request:PlanRequestSchema,maximum:z.number().optional(),authorizeTerms:z.literal(true)}).strict().superRefine((value,ctx)=>{if(value.request.courtCount>2&&value.method!=='api-first')ctx.addIssue({code:'custom',message:'Three or four courts require API-FIRST.'});});
+export const TestBookingSchema=z.object({method:z.enum(['browser','hybrid','api-first','proofless']).default('browser'),request:PlanRequestSchema,maximum:z.number().optional(),authorizeTerms:z.literal(true)}).strict().superRefine((value,ctx)=>{if(value.request.courtCount>2&&!['api-first','proofless'].includes(value.method))ctx.addIssue({code:'custom',message:'Three to seven courts require API-FIRST or PROOFLESS DIRECT.'});});
 export type TestBookingInput=z.input<typeof TestBookingSchema>;
 
 export const PreparationSchema=z.discriminatedUnion('workflow',[
-  z.object({workflow:z.literal('test'),method:z.enum(['browser','hybrid','api-first']).default('browser'),request:PlanRequestSchema,maximum:z.number().optional()}).strict(),
+  z.object({workflow:z.literal('test'),method:z.enum(['browser','hybrid','api-first','proofless']).default('browser'),request:PlanRequestSchema,maximum:z.number().optional()}).strict(),
   z.object({workflow:z.literal('release'),strategy:z.enum(['standard','extended']),setup:z.unknown().optional()}).strict(),
 ]);
 export type PreparationInput=z.input<typeof PreparationSchema>;
