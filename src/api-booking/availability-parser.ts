@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { AvailabilitySlot, AvailabilitySnapshot, ParseAvailabilityOptions } from './types.js';
+import { isOndaUnreleasedEmptyResponse } from '../onda-unreleased.js';
 
 export const COURT_TO_SPACE_ID = Object.freeze({
   1: 'c8c8fb0a-518e-4838-b006-8f200e477788',
@@ -138,5 +139,6 @@ export function parseAvailability(raw: unknown, options: ParseAvailabilityOption
     }
   }
   // Missing slots are unavailable; the captured response does not establish a completeness contract.
-  return { capturedAt: options.capturedAt, fixtureKind: options.fixtureKind, label: options.label, requestedDates, returnedDates, incompleteDates, slots };
+  return { capturedAt: options.capturedAt, fixtureKind: options.fixtureKind, label: options.label, requestedDates, returnedDates, incompleteDates, slots,
+    emptyUnreleasedResponse: isOndaUnreleasedEmptyResponse(raw) };
 }

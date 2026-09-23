@@ -6,16 +6,9 @@ import type { Telemetry } from './telemetry.js';
 import { classifyRateLimit } from './rate-limit.js';
 import { availabilityPath, parseAvailability, apiCandidates, hybridPreferences, compareAvailability, type AvailabilitySnapshot } from './onda-availability.js';
 
+import { isOndaUnreleasedEmptyResponse as unreleasedEmptyResponse } from './onda-unreleased.js';
+
 export type AvailabilityFetch = () => Promise<AvailabilitySnapshot | undefined>;
-function unreleasedEmptyResponse(raw: unknown): boolean {
-  if (!raw || typeof raw !== 'object') return false;
-  const body = raw as { success?: unknown; data?: unknown };
-  if (body.success !== true || !body.data || typeof body.data !== 'object') return false;
-  const data = body.data as { dates?: unknown; slotsBySpace?: unknown };
-  return !!data.dates && typeof data.dates === 'object' && !Array.isArray(data.dates) &&
-    !!data.slotsBySpace && typeof data.slotsBySpace === 'object' && !Array.isArray(data.slotsBySpace) &&
-    Object.keys(data.dates).length === 0 && Object.keys(data.slotsBySpace).length === 0;
-}
 // Release discovery must survive a same-tab reload. BrowserContext.request shares
 // the context cookie jar but is not tied to the page's JavaScript execution context.
 export function releaseAvailabilityRequest(page: Page, targetDate: string, safety: Safety, t: Telemetry, timeout = 2500,

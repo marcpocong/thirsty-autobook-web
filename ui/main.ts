@@ -14,7 +14,7 @@ import { resetPracticeSession } from './practice-reset.js';
 import {requiredWorkerIds,WORKER_IDS} from '../src/workers.js';
 import {focusDedicatedBrowser} from '../src/browser-window.js';
 import type {ConfirmRequest} from './types.js';
-import {synchronizeNetworkClock} from '../src/network-clock.js';
+import {networkNowMs,synchronizeNetworkClock} from '../src/network-clock.js';
 import {closeBotBrowsers,countBotBrowsers} from './browser-cleanup.js';
 import {SlotWatch,readSlotWatchHistory} from '../src/slot-watch.js';
 
@@ -60,7 +60,7 @@ const controller = new Controller({
     message:`Close ${open} Chrome browser${open===1?'':'s'} started by the bot?`,
     detail:`Only Chrome windows using the bot's own profiles are closed. Your normal Chrome is not touched.${qrPages?`\n\n${qrPages} QR payment page${qrPages===1?' is':'s are'} still open. Closing does NOT cancel ${qrPages===1?'that hold':'those holds'} on Onda, but you would lose the open QR page${qrPages===1?'':'s'}. Pay first if you want ${qrPages===1?'it':'them'}.`:''}${lock?'\n\nA retained automation lock stays recorded; Reset & Prepare will inspect it before the next run.':''}\n\nThe browsers reopen with Reset & Prepare.`,
     confirmLabel:`Close ${open} browser${open===1?'':'s'}`}),
-  startSlotWatch:(input,onUpdate)=>{const watch=new SlotWatch({...input,directory:resolve(root,'.local/slot-watch'),now:()=>Date.now()+input.clockOffsetMs,onUpdate});
+  startSlotWatch:(input,onUpdate)=>{const watch=new SlotWatch({...input,directory:resolve(root,'.local/slot-watch'),now:()=>networkNowMs(resolve(root,'.local/network-clock.json')),onUpdate});
     return {id:watch.id,done:watch.done,stop:reason=>watch.stop(reason)};},
   slotWatchHistory:()=>readSlotWatchHistory(resolve(root,'.local/slot-watch')),
   confirm: async (kind='observe',plan) => confirmModal({tone:'question', title: kind==='full'?'Arm Full Booking to QR?':kind==='selection'?'Arm booking selection?':kind==='dry'?'Arm Dry Race?':'Arm release observation?',

@@ -250,12 +250,16 @@ export class OndaBrowserSessionTransport {
     async publicCheckout(request, permit) {
         return this.submitCheckout(request, permit);
     }
-    async publicCheckoutProofless(request, permit) {
+    async publicCheckoutProofless(request, permit, options = {}) {
         if (request.items.some(item => item.availabilityProof !== null))
             throw new BrowserSessionTransportError('DIRECT_PROOFLESS_SHAPE_INVALID');
-        return this.submitCheckout(request, permit);
+        return this.submitCheckout(request, permit, options);
     }
-    async submitCheckout(request, permit) {
+    /** Age of the prewarmed context, or undefined when none is held (never acquired, consumed, or cleared by navigation). */
+    preparedContextAgeMs(now = Date.now()) {
+        return this.preparedHeaders && this.preparedAt !== undefined ? now - this.preparedAt : undefined;
+    }
+    async submitCheckout(request, permit, options = {}) {
         this.assertPage();
         if (process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT !== 'SUPERVISED_ONE_SHOT')
             throw new BrowserSessionTransportError('LIVE_SUBMISSION_DISABLED');
@@ -266,6 +270,10 @@ export class OndaBrowserSessionTransport {
             securitySource: current ? 'PREPARED_CONTEXT' : 'CHECKOUT_ACQUISITION' });
         this.preparedHeaders = undefined;
         this.preparedAt = undefined;
+        const securitySource = current ? 'PREPARED_CONTEXT' : 'CHECKOUT_ACQUISITION';
+        // Provably unsent: a release dispatch never acquires security after its window check.
+        if (!current && options.requirePreparedContext)
+            throw new BrowserSessionTransportError('PREPARED_SECURITY_CONTEXT_REQUIRED');
         if (!current) {
             try {
                 current = await this.acquireCheckoutHeaders();
@@ -288,6 +296,9 @@ export class OndaBrowserSessionTransport {
             throw new BrowserSessionTransportError('CHECKOUT_ITEMS_INVALID');
         const expectedKey = DurableSubmissionJournal.key(request.facilityId, first.spaceId, first.date, first.startTime, last.endTime);
         consumeSubmissionPermit(permit, expectedKey);
+        // Last gate before the network: a late dispatch stops here, still provably unsent.
+        options.beforePost?.();
+        this.observe({ event: 'CHECKOUT_PRE_POST', preparedContextAgeMs: Math.max(0, Date.now() - preparedAt), securitySource });
         // The header values are ephemeral and never logged or stored by this adapter.
         return this.post(CHECKOUT_PATH, request, {
             'X-Turnstile-Token': current.turnstileToken,

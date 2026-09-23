@@ -4,6 +4,7 @@ import { THIRSTY_PICKLE_FACILITY_ID } from './live-availability-provider.js';
 import { observedResponse, standardPlanJournalKeys } from './two-hour-reservation.js';
 import { validatePublicCheckoutResponse } from './public-checkout.js';
 import { SubmissionDispatchError } from './submission-errors.js';
+import { targetDateState } from './court-hour-matrix.js';
 export const DIRECT_ASSUMED_DAY_RATE = 600;
 export const DIRECT_ASSUMED_EVENING_RATE = 700;
 export const DIRECT_MAX_DISPATCH_LATENESS_MS = 1_000;
@@ -56,9 +57,12 @@ export function prooflessReleasePlan(preferences) {
     return { mode, targetDate, startTime, endTime: chunks.at(-1).endTime, durationHours, courts: allCourts, chunks, totalPrice, currency };
 }
 /** A complete, explicit status matrix for release diagnostics. Missing cells on
- * an unreleased date are UNRELEASED, never silently reported as open. */
-export function prooflessCourtHourStatuses(snapshot, date, publicBlocks = [], failedPublicCourts = []) {
-    const dateFlag = snapshot?.returnedDates[date];
+ * an unreleased date are UNRELEASED ("no known booking, date not yet published"),
+ * never silently reported as open. Whether the date is unreleased comes from
+ * targetDateState, which needs the release instant and response time; without
+ * them, or after release, a missing date stays UNKNOWN. */
+export function prooflessCourtHourStatuses(snapshot, date, publicBlocks = [], failedPublicCourts = [], context = {}) {
+    const dateState = targetDateState(snapshot, date, context);
     return Array.from({ length: 7 }, (_, index) => index + 1).flatMap(court => Array.from({ length: 16 }, (_, index) => {
         const hour = `${String(index + 8).padStart(2, '0')}:00`;
         const hourEnd = `${String(index + 9).padStart(2, '0')}:00`;
@@ -69,16 +73,18 @@ export function prooflessCourtHourStatuses(snapshot, date, publicBlocks = [], fa
             return { court, hour, status: slot.isAvailable ? 'OPEN' : 'BLOCKED', source: 'AVAILABILITY', price: slot.price };
         if (failedPublicCourts.includes(court))
             return { court, hour, status: 'UNKNOWN', source: 'PUBLIC_BOOKING_QUERY_FAILED' };
-        return { court, hour, status: dateFlag === false ? 'UNRELEASED' : 'UNKNOWN', source: dateFlag === false ? 'DATE_UNRELEASED' : 'NO_AUTHORITATIVE_RECORD' };
+        if (!snapshot)
+            return { court, hour, status: 'UNKNOWN', source: 'AVAILABILITY_READ_FAILED' };
+        return { court, hour, status: dateState === 'UNRELEASED' ? 'UNRELEASED' : 'UNKNOWN', source: dateState === 'UNRELEASED' ? 'DATE_UNRELEASED' : 'NO_AUTHORITATIVE_RECORD' };
     }));
 }
 /** Chooses the first saved start/court combination with no confirmed block.
  * OPEN cells and UNRELEASED cells with a successful public-record lookup may be
  * used. UNKNOWN fails closed. Exact test overrides are never changed. */
-export function resolveProoflessReleasePlan(preferences, snapshot, publicBlocks = [], failedPublicCourts = []) {
+export function resolveProoflessReleasePlan(preferences, snapshot, publicBlocks = [], failedPublicCourts = [], context = {}) {
     const starts = unique([...preferences.preferredStartTimes, ...preferences.fallbackStartTimes]);
     const priority = unique([...preferences.courtPriority, ...preferences.fallbackCourts]);
-    const statuses = prooflessCourtHourStatuses(snapshot, preferences.targetDate, publicBlocks, failedPublicCourts);
+    const statuses = prooflessCourtHourStatuses(snapshot, preferences.targetDate, publicBlocks, failedPublicCourts, context);
     const blocked = (court, start, duration) => Array.from({ length: duration }, (_, index) => `${String(Number(start.slice(0, 2)) + index).padStart(2, '0')}:00`).some(hour => statuses.some(value => value.court === court && value.hour === hour && ['BLOCKED', 'UNKNOWN'].includes(value.status)));
     for (const start of starts) {
         const exact = preferences.exactCourts;
@@ -124,7 +130,7 @@ export function prooflessRequest(plan, customer) {
             spaceId: slot.spaceId, date: slot.date, startTime: slot.startTime, endTime: slot.endTime, duration: 60,
             rate: slot.price, chargedAmount: slot.price, guestCount: 1, activityKey: null, activityLabel: null, promotionId: null, availabilityProof: null }))) };
 }
-export async function submitDirectCheckout(plan, customer, transport, journal, releaseMs, additionalJournals = [], now = Date.now) {
+export async function submitDirectCheckout(plan, customer, transport, journal, releaseMs, additionalJournals = [], now = Date.now, dispatch = {}) {
     const request = prooflessRequest(plan, customer), keys = standardPlanJournalKeys(plan, THIRSTY_PICKLE_FACILITY_ID);
     const journals = [journal, ...additionalJournals];
     if (journals.length !== keys.length)
@@ -156,15 +162,20 @@ export async function submitDirectCheckout(plan, customer, transport, journal, r
         throw error;
     }
     try {
-        if (releaseMs !== undefined) {
+        const windowCheck = () => { if (releaseMs !== undefined) {
             try {
                 assertDirectDispatchWindow(releaseMs, now());
             }
             catch {
                 throw new SubmissionDispatchError('DIRECT_RELEASE_WINDOW_MISSED', false);
             }
-        }
-        const raw = await transport.publicCheckoutProofless(request, permit);
+        } };
+        windowCheck();
+        // The window is checked again as the transport's final step, so a request can
+        // never pass here and then leave seconds later after security work.
+        const raw = await transport.publicCheckoutProofless(request, permit, {
+            requirePreparedContext: dispatch.requirePreparedContext === true, ...(releaseMs !== undefined ? { beforePost: windowCheck } : {})
+        });
         // Response validation compares booking identities, amounts, dates and sessions; it does not inspect proof strings.
         let verified;
         try {

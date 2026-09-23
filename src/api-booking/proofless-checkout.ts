@@ -8,6 +8,7 @@ import { validatePublicCheckoutResponse } from './public-checkout.js';
 import type { OndaBrowserSessionTransport } from './browser-session-transport.js';
 import { DurableSubmissionJournal } from './durable-submission-journal.js';
 import { SubmissionDispatchError } from './submission-errors.js';
+import { targetDateState, type ReleaseObservationContext } from './court-hour-matrix.js';
 
 export const DIRECT_ASSUMED_DAY_RATE=600;
 export const DIRECT_ASSUMED_EVENING_RATE=700;
@@ -16,7 +17,7 @@ export type ProoflessCheckoutRequest=Omit<TwoHourCheckoutRequest,'items'>&{
   items:Array<Omit<TwoHourCheckoutRequest['items'][number],'availabilityProof'>&{availabilityProof:null}>;
 };
 export type CourtHourStatus='OPEN'|'BLOCKED'|'UNRELEASED'|'UNKNOWN';
-export type CourtHourStatusSource='AVAILABILITY'|'PUBLIC_BOOKING'|'DATE_UNRELEASED'|'NO_AUTHORITATIVE_RECORD'|'PUBLIC_BOOKING_QUERY_FAILED';
+export type CourtHourStatusSource='AVAILABILITY'|'PUBLIC_BOOKING'|'DATE_UNRELEASED'|'NO_AUTHORITATIVE_RECORD'|'PUBLIC_BOOKING_QUERY_FAILED'|'AVAILABILITY_READ_FAILED';
 export interface PublicBookingBlock {court:number;startTime:string;endTime:string}
 export interface CourtHourObservation {court:number;hour:string;status:CourtHourStatus;source:CourtHourStatusSource;price?:number}
 
@@ -67,9 +68,13 @@ export function prooflessReleasePlan(preferences:BookingPreferences):BookingPlan
 }
 
 /** A complete, explicit status matrix for release diagnostics. Missing cells on
- * an unreleased date are UNRELEASED, never silently reported as open. */
-export function prooflessCourtHourStatuses(snapshot:AvailabilitySnapshot|undefined,date:string,publicBlocks:readonly PublicBookingBlock[]=[],failedPublicCourts:readonly number[]=[]):CourtHourObservation[]{
-  const dateFlag=snapshot?.returnedDates[date];
+ * an unreleased date are UNRELEASED ("no known booking, date not yet published"),
+ * never silently reported as open. Whether the date is unreleased comes from
+ * targetDateState, which needs the release instant and response time; without
+ * them, or after release, a missing date stays UNKNOWN. */
+export function prooflessCourtHourStatuses(snapshot:AvailabilitySnapshot|undefined,date:string,publicBlocks:readonly PublicBookingBlock[]=[],failedPublicCourts:readonly number[]=[],
+  context:ReleaseObservationContext={}):CourtHourObservation[]{
+  const dateState=targetDateState(snapshot,date,context);
   return Array.from({length:7},(_,index)=>index+1).flatMap(court=>Array.from({length:16},(_,index)=>{
     const hour=`${String(index+8).padStart(2,'0')}:00`;
     const hourEnd=`${String(index+9).padStart(2,'0')}:00`;
@@ -78,17 +83,19 @@ export function prooflessCourtHourStatuses(snapshot:AvailabilitySnapshot|undefin
     const slot=snapshot?.slots.find(value=>value.date===date&&value.court===court&&value.startTime===hour);
     if(slot)return {court,hour,status:slot.isAvailable?'OPEN':'BLOCKED',source:'AVAILABILITY',price:slot.price} as CourtHourObservation;
     if(failedPublicCourts.includes(court))return {court,hour,status:'UNKNOWN',source:'PUBLIC_BOOKING_QUERY_FAILED'} as CourtHourObservation;
-    return {court,hour,status:dateFlag===false?'UNRELEASED':'UNKNOWN',source:dateFlag===false?'DATE_UNRELEASED':'NO_AUTHORITATIVE_RECORD'} as CourtHourObservation;
+    if(!snapshot)return {court,hour,status:'UNKNOWN',source:'AVAILABILITY_READ_FAILED'} as CourtHourObservation;
+    return {court,hour,status:dateState==='UNRELEASED'?'UNRELEASED':'UNKNOWN',source:dateState==='UNRELEASED'?'DATE_UNRELEASED':'NO_AUTHORITATIVE_RECORD'} as CourtHourObservation;
   }));
 }
 
 /** Chooses the first saved start/court combination with no confirmed block.
  * OPEN cells and UNRELEASED cells with a successful public-record lookup may be
  * used. UNKNOWN fails closed. Exact test overrides are never changed. */
-export function resolveProoflessReleasePlan(preferences:BookingPreferences,snapshot?:AvailabilitySnapshot,publicBlocks:readonly PublicBookingBlock[]=[],failedPublicCourts:readonly number[]=[]):BookingPlan{
+export function resolveProoflessReleasePlan(preferences:BookingPreferences,snapshot?:AvailabilitySnapshot,publicBlocks:readonly PublicBookingBlock[]=[],failedPublicCourts:readonly number[]=[],
+  context:ReleaseObservationContext={}):BookingPlan{
   const starts=unique([...preferences.preferredStartTimes,...preferences.fallbackStartTimes]);
   const priority=unique([...preferences.courtPriority,...preferences.fallbackCourts]);
-  const statuses=prooflessCourtHourStatuses(snapshot,preferences.targetDate,publicBlocks,failedPublicCourts);
+  const statuses=prooflessCourtHourStatuses(snapshot,preferences.targetDate,publicBlocks,failedPublicCourts,context);
   const blocked=(court:number,start:string,duration:number)=>Array.from({length:duration},(_,index)=>
     `${String(Number(start.slice(0,2))+index).padStart(2,'0')}:00`).some(hour=>
       statuses.some(value=>value.court===court&&value.hour===hour&&['BLOCKED','UNKNOWN'].includes(value.status)));
@@ -132,8 +139,14 @@ export function prooflessRequest(plan:BookingPlan,customer:CheckoutCustomer):Pro
       rate:slot.price,chargedAmount:slot.price,guestCount:1,activityKey:null,activityLabel:null,promotionId:null,availabilityProof:null})))};
 }
 
-export async function submitDirectCheckout(plan:BookingPlan,customer:CheckoutCustomer,transport:OndaBrowserSessionTransport,
-  journal:DurableSubmissionJournal,releaseMs?:number,additionalJournals:DurableSubmissionJournal[]=[],now:()=>number=Date.now):Promise<VerifiedPublicCheckout>{
+export interface DirectDispatchOptions {
+  /** Scheduled release: never acquire security inline after the window check. */
+  requirePreparedContext?:boolean;
+}
+type DirectTransport=Pick<OndaBrowserSessionTransport,'publicCheckoutProofless'>;
+export async function submitDirectCheckout(plan:BookingPlan,customer:CheckoutCustomer,transport:DirectTransport,
+  journal:DurableSubmissionJournal,releaseMs?:number,additionalJournals:DurableSubmissionJournal[]=[],now:()=>number=Date.now,
+  dispatch:DirectDispatchOptions={}):Promise<VerifiedPublicCheckout>{
   const request=prooflessRequest(plan,customer),keys=standardPlanJournalKeys(plan,THIRSTY_PICKLE_FACILITY_ID);
   const journals=[journal,...additionalJournals];
   if(journals.length!==keys.length)throw Error('SUBMISSION_JOURNAL_COUNT_INVALID');
@@ -159,8 +172,12 @@ export async function submitDirectCheckout(plan:BookingPlan,customer:CheckoutCus
   let permit;
   try{permit=await journal.claimSupervisedOneShot(key);}catch(error){await markAll('rejected');throw error;}
   try{
-    if(releaseMs!==undefined){try{assertDirectDispatchWindow(releaseMs,now());}catch{throw new SubmissionDispatchError('DIRECT_RELEASE_WINDOW_MISSED',false);}}
-    const raw=await transport.publicCheckoutProofless(request,permit);
+    const windowCheck=()=>{if(releaseMs!==undefined){try{assertDirectDispatchWindow(releaseMs,now());}catch{throw new SubmissionDispatchError('DIRECT_RELEASE_WINDOW_MISSED',false);}}};
+    windowCheck();
+    // The window is checked again as the transport's final step, so a request can
+    // never pass here and then leave seconds later after security work.
+    const raw=await transport.publicCheckoutProofless(request,permit,{
+      requirePreparedContext:dispatch.requirePreparedContext===true,...(releaseMs!==undefined?{beforePost:windowCheck}:{})});
     // Response validation compares booking identities, amounts, dates and sessions; it does not inspect proof strings.
     let verified:VerifiedPublicCheckout;
     try{verified=validatePublicCheckoutResponse(raw,request as unknown as PublicCheckoutRequest,plan,new Date(now()),plan.totalPrice);}

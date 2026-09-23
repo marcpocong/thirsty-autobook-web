@@ -437,3 +437,16 @@ footer > div { display: flex; align-items: center; gap: 8px; font-size: 11px; co
   footer { padding: 10px 14px; }
 }
 @media (max-width: 460px) { .setup-grid { grid-template-columns: 1fr; } .brand p { display: none; } }
+
+/* Precision Release (minimal; reuses existing tokens) */
+#setup-fields.precision-mode .general-only { display: none; }
+.precision-setup { margin-top: 10px; }
+.precision-rows { display: grid; gap: 8px; margin: 8px 0; }
+.precision-row { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; }
+.precision-row strong { min-width: 72px; }
+.precision-row[hidden] { display: none; }
+.precision-evidence { flex-basis: 100%; }
+.precision-warning { color: var(--warning); background: var(--warning-bg); padding: 8px 10px; border-radius: 8px; }
+.precision-table { display: grid; gap: 6px; }
+.precision-table .precision-line { display: flex; flex-wrap: wrap; gap: 6px 12px; padding: 6px 8px; border-radius: 8px; background: rgba(127,127,127,.08); }
+.precision-table .precision-line [data-tone] { font-weight: 600; }

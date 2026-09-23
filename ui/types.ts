@@ -23,7 +23,12 @@ export interface Activity { at: string; text: string; level: 'info' | 'error'; e
 export interface RunTiming { runId:string; label:string; startedAt:string; elapsedMs:number; endedAt?:string; logPath?:string; readyAt?:string; readyElapsedMs?:number }
 export interface RunHistoryEntry { runId:string; label:string; startedAt:string; endedAt:string; outcome:string; totalElapsedMs:number; readyAt?:string; readyElapsedMs?:number; activities:Activity[]; qrHandoffs?:QrHandoffSummary[] }
 export interface QrHandoffSummary { checkout?:WorkerId; status?:'hold-created'|'qr-ready'; courts:number[]; date:string; startTime:string; endTime:string; amount:number; verifiedAt:string; holdExpiresAt?:string; bookingId?:string; bookingNo?:string }
+export interface PrecisionTargetView { workerId:WorkerId; court:number; startTime:string; endTime:string; durationHours:number; assumedPrice?:number;
+  evidence?:string; eligible?:boolean; checkpoint?:string; state?:string; code?:string; security?:'ready'|'failed'; bookingNo?:string; holdExpiresAt?:string }
+/** Live Precision race view built from runner stage events; purely informational. */
+export interface PrecisionView { targets:PrecisionTargetView[]; frozen:boolean; frozenCount?:number; frozenAt?:string; checkpoint?:string; checkpointAt?:string; outcome?:string }
 export interface Dashboard {
+  precision?:PrecisionView|null;
   bookingResult?:Extract<UiEvent,{type:'bookingResult'}>;
   workflow?:'test'|'release';
   preparedAt?:number;
