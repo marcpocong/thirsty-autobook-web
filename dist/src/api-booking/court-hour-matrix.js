@@ -1,0 +1,33 @@
+export const MATRIX_COURTS = [1, 2, 3, 4, 5, 6, 7];
+export const MATRIX_HOURS = Array.from({ length: 16 }, (_, index) => `${String(index + 8).padStart(2, '0')}:00`);
+export const SLOT_STATE_CODE = { OPEN: 'O', TAKEN: 'X', UNRELEASED: 'U', UNKNOWN: '?' };
+/**
+ * Classifies all 112 cells from one availability snapshot. A published slot is
+ * OPEN or TAKEN; a missing slot on a date Onda has not released yet is
+ * UNRELEASED; anything else (failed read, missing slot on a released date) is
+ * UNKNOWN and never treated as open.
+ */
+export function courtHourStates(snapshot, date) {
+    const released = snapshot?.returnedDates[date];
+    const states = {};
+    for (const court of MATRIX_COURTS) {
+        states[court] = {};
+        for (const hour of MATRIX_HOURS) {
+            const slot = snapshot?.slots.find(value => value.date === date && value.court === court && value.startTime === hour);
+            states[court][hour] = slot ? (slot.isAvailable ? 'OPEN' : 'TAKEN') : released === false ? 'UNRELEASED' : 'UNKNOWN';
+        }
+    }
+    return states;
+}
+/** Compact exact matrix, one row per court: `1:OOXX…` in 08:00→23:00 order. */
+export function encodeCourtHourStates(states) {
+    return MATRIX_COURTS.map(court => `${court}:${MATRIX_HOURS.map(hour => SLOT_STATE_CODE[states[court]?.[hour] ?? 'UNKNOWN']).join('')}`).join(',');
+}
+export function countCourtHourStates(states) {
+    const counts = { OPEN: 0, TAKEN: 0, UNRELEASED: 0, UNKNOWN: 0 };
+    for (const court of MATRIX_COURTS)
+        for (const hour of MATRIX_HOURS)
+            counts[states[court]?.[hour] ?? 'UNKNOWN']++;
+    return counts;
+}
+//# sourceMappingURL=court-hour-matrix.js.map

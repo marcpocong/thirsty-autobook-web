@@ -10,7 +10,7 @@ import { browserIdentity, verifyDedicatedChromeAsync } from '../browser.js';
 import { emitUiEvent } from '../ui-events.js';
 import { discoverApiAvailability } from './availability-engine.js';
 import { OndaLiveAvailabilityProvider, THIRSTY_PICKLE_FACILITY_ID } from './live-availability-provider.js';
-import { parseAvailability, COURT_TO_SPACE_ID } from './availability-parser.js';
+import { parseAvailability } from './availability-parser.js';
 import { DurableSubmissionJournal } from './durable-submission-journal.js';
 import { loadLocalCheckoutCustomer } from './local-customer.js';
 import { submitCalendarFreeTwoHourCheckout } from './calendar-free-checkout.js';
@@ -24,14 +24,13 @@ import { checkoutDiagnostic } from './checkout-diagnostics.js';
 import { ApiRunProgressLog } from './run-progress-log.js';
 import { ApiAutomationLock } from './api-automation-lock.js';
 import { assertApiReleaseFresh } from './api-release.js';
-import { canReleaseApiLockAfterParallelFailure, conclusiveNoHoldFromStates } from './api-lock-outcome.js';
+import { canReleaseApiLockAfterParallelFailure } from './api-lock-outcome.js';
 import { requiredWorkerIds } from '../workers.js';
 import { showWorkerPage } from '../browser-window.js';
-import { SPECIAL_SESSION_MODE, SPECIAL_SESSION_WORKERS, SPECIAL_SESSION_REQUIRED_WORKERS, SPECIAL_ADAPTIVE_WORKERS, SPECIAL_BONUS_WORKERS, specialSessionCourtAssignment, specialSessionPlans, specialAdaptivePlans, specialBonusLanePlans, specialBonusPlansForCourt } from './special-session.js';
-import { assertDirectDispatchWindow, chooseDirectCourt, DIRECT_COURT_PRIORITY, directPlan, prooflessCourtHourStatuses, prooflessReleasePlan, resolveProoflessReleasePlan, submitDirectCheckout } from './special-direct-checkout.js';
-import { AdaptiveDirectLaneGate } from './adaptive-direct-lane.js';
-import { API_DIRECT_SECURITY_PREWARM_LEAD_MS, API_SECURITY_PREWARM_LEAD_MS, safeApiFailureCode } from './run-observability.js';
-import { diagnosticLaneForWorker, RunDiagnostics, safeDiagnosticCode, specialAvailabilityObservation } from './run-diagnostics.js';
+import { prooflessCourtHourStatuses, prooflessReleasePlan, resolveProoflessReleasePlan, submitDirectCheckout } from './proofless-checkout.js';
+import { readPublicBookingRecords } from './public-bookings.js';
+import { API_SECURITY_PREWARM_LEAD_MS, safeApiFailureCode } from './run-observability.js';
+import { availabilityObservation, diagnosticLaneForWorker, RunDiagnostics, safeDiagnosticCode } from './run-diagnostics.js';
 const preferencesSchema = z.object({ strategy: z.enum(['standard', 'extended']), date: z.iso.date(), start: z.string().regex(/^(0[89]|1\d|2[0-3]):00$/),
     duration: z.number().int().min(1).max(6), courtCount: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7)]), maximum: z.number().optional(),
     priority: z.array(z.number().int().min(1).max(7)).min(1),
@@ -45,12 +44,6 @@ process.on('message', message => { if (message?.type === 'abort')
     abort.abort(); });
 const started = performance.now();
 const nowMs = () => Date.now() + (command.clockOffsetMs ?? 0);
-const SPECIAL_RELEASE_GUARD_MS = 11_000;
-const SPECIAL_VERSION_POLL_MS = 1_000;
-const SPECIAL_AVAILABILITY_POLL_MS = 5_000;
-const SPECIAL_SIGNAL_AVAILABILITY_POLL_MS = 2_000;
-const SPECIAL_SIGNAL_BURST_MS = 15_000;
-const SPECIAL_SIGNAL_BURST_POLL_MS = 500;
 const stamp = () => Math.round(performance.now() - started);
 const progressLog = new ApiRunProgressLog(command.mode, command.date);
 const diagnostics = new RunDiagnostics(progressLog, started);
@@ -119,23 +112,7 @@ const connectedBrowsers = [];
 let liveLock, retainLiveLock = false, verifiedHold = false;
 let latestVerifiedHoldExpiry;
 let persistedVerifiedHoldExpiry;
-let directTask;
-let efProofTask;
-let bonusDispatchTask;
 let finalDiagnosticCode = 'COMPLETED';
-let availabilityPlanContext = {};
-const recordAvailabilityPlanEvaluation = (snapshot) => {
-    try {
-        diagnostics.observe('AVAILABILITY_PLAN_EVALUATED', {}, specialAvailabilityObservation(snapshot, command.date, availabilityPlanContext));
-    }
-    catch { /* Diagnostic plan evaluation must not affect release decisions. */ }
-};
-const efGate = new AdaptiveDirectLaneGate();
-const settleSpecialSideTasks = async () => {
-    const tasks = [efProofTask, directTask, bonusDispatchTask].filter((task) => task !== undefined);
-    if (tasks.length)
-        await Promise.allSettled(tasks);
-};
 const persistLatestVerifiedHold = async () => {
     if (!liveLock || !latestVerifiedHoldExpiry || latestVerifiedHoldExpiry === persistedVerifiedHoldExpiry)
         return;
@@ -173,7 +150,8 @@ async function prepareWorker(workerId) {
     stage('BROWSER_READY', { workerId, port: identity.port });
     return { workerId, browser, page, port: identity.port };
 }
-async function readSpecialSnapshot(date) {
+/** One read-only availability GET; every read lands in the trace with its exact 112-cell matrix. */
+async function readAvailabilitySnapshot(date) {
     ensureActive();
     const requestedAt = performance.now();
     const finish = diagnostics.begin('availability', 'AVAILABILITY_REQUEST_STARTED', {}, {});
@@ -182,122 +160,33 @@ async function readSpecialSnapshot(date) {
         const envelope = await provider.getAvailability({ startDate: date, endDate: date });
         const snapshot = parseAvailability(envelope.raw, { startDate: date, endDate: date, capturedAt: envelope.capturedAt,
             fixtureKind: envelope.fixtureKind, label: envelope.label, now: new Date(), maximumAgeMs: 15_000, requireCompleteRange: false });
-        try {
-            finish('AVAILABILITY_REQUEST_COMPLETED', { ...specialAvailabilityObservation(snapshot, date, availabilityPlanContext), status: 'SUCCESS' });
-        }
-        catch {
-            finish('AVAILABILITY_REQUEST_COMPLETED', { status: 'SUCCESS', failureCategory: 'DIAGNOSTIC_EVALUATION_FAILED',
-                targetDatePresent: snapshot.returnedDates[date] === true, responseComplete: !snapshot.incompleteDates.includes(date),
-                slotCount: snapshot.slots.length, availableCount: snapshot.slots.filter(slot => slot.date === date && slot.isAvailable).length });
-        }
-        trace('SPECIAL_AVAILABILITY_SAMPLE', { durationMs: Math.round(performance.now() - requestedAt),
-            dateReturned: snapshot.returnedDates[date] === true, slotCount: snapshot.slots.length,
-            availableCount: snapshot.slots.filter(slot => slot.date === date && slot.isAvailable).length });
+        finish('AVAILABILITY_REQUEST_COMPLETED', { ...availabilityObservation(snapshot, date), status: 'SUCCESS' });
         return snapshot;
     }
     catch (error) {
         const code = error instanceof Error && /^[A-Z][A-Z0-9_]{0,79}$/.test(error.message)
-            ? error.message : 'SPECIAL_AVAILABILITY_READ_FAILED';
-        trace('SPECIAL_AVAILABILITY_SAMPLE', { durationMs: Math.round(performance.now() - requestedAt),
-            dateReturned: false, slotCount: 0, availableCount: 0, code });
+            ? error.message : 'AVAILABILITY_READ_FAILED';
+        trace('AVAILABILITY_SAMPLE_FAILED', { durationMs: Math.round(performance.now() - requestedAt), code });
         finish('AVAILABILITY_REQUEST_COMPLETED', { status: 'FAILED', failureCategory: code, targetDatePresent: false,
             responseComplete: false, slotCount: 0, availableCount: 0 });
         return;
     }
 }
-async function readOndaVersion() {
-    const requestedAt = performance.now();
-    try {
-        const response = await fetch('https://app.onda.fit/version.json', { headers: { Accept: 'application/json' },
-            redirect: 'error', signal: AbortSignal.timeout(2500), cache: 'no-store' });
-        if (!response.ok || !response.headers.get('content-type')?.toLowerCase().includes('application/json')) {
-            trace('SPECIAL_VERSION_SAMPLE', { durationMs: Math.round(performance.now() - requestedAt), ok: false, status: response.status });
-            return;
-        }
-        const value = await response.json();
-        const version = typeof value.version === 'string' && value.version.length <= 160 ? value.version : undefined;
-        trace('SPECIAL_VERSION_SAMPLE', { durationMs: Math.round(performance.now() - requestedAt), ok: !!version,
-            status: response.status, ...(version ? { version } : {}) });
-        return version;
-    }
-    catch {
-        trace('SPECIAL_VERSION_SAMPLE', { durationMs: Math.round(performance.now() - requestedAt), ok: false, status: 0 });
-        return;
-    }
-}
-async function readKnownCourtHourBlocks(date) {
-    const courts = Array.from({ length: 7 }, (_, index) => index + 1);
-    const results = await Promise.all(courts.map(async (court) => {
-        const spaceId = COURT_TO_SPACE_ID[court];
-        try {
-            const url = new URL('/api/public/spaces/bookings', 'https://app.onda.fit');
-            url.searchParams.set('spaceIds', spaceId);
-            url.searchParams.set('date', date);
-            const response = await fetch(url, { headers: { Accept: 'application/json' }, cache: 'no-store', signal: AbortSignal.timeout(5000) });
-            if (!response.ok)
-                throw Error(`HTTP_${response.status}`);
-            const value = await response.json();
-            const raw = value.data && typeof value.data === 'object' && !Array.isArray(value.data)
-                ? value.data[spaceId] : value.data;
-            const records = Array.isArray(raw) ? raw : [];
-            const blocks = records.flatMap(record => {
-                if (!record || typeof record !== 'object')
-                    return [];
-                const item = record;
-                const start = typeof item.startTime === 'string' ? item.startTime.slice(0, 5) : '', end = typeof item.endTime === 'string' ? item.endTime.slice(0, 5) : '';
-                return item.date === date && /^([01]\d|2[0-3]):[0-5]\d$/.test(start) && /^([01]\d|2[0-3]):[0-5]\d$/.test(end) && start < end
-                    ? [{ court, startTime: start, endTime: end }] : [];
-            });
-            trace('PUBLIC_BOOKING_BLOCK_SAMPLE', { court, status: 'SUCCESS', recordCount: blocks.length });
-            return { court, blocks, failed: false };
-        }
-        catch {
-            trace('PUBLIC_BOOKING_BLOCK_SAMPLE', { court, status: 'FAILED', recordCount: 0 });
-            return { court, blocks: [], failed: true };
-        }
-    }));
-    return { blocks: results.flatMap(result => result.blocks), failedCourts: results.filter(result => result.failed).map(result => result.court) };
-}
-async function readKnownDirectCourtBlocks(date) {
-    const result = await readKnownCourtHourBlocks(date);
-    return DIRECT_COURT_PRIORITY.filter(court => result.blocks.some(block => block.court === court && block.startTime < '22:00' && block.endTime > '17:00'));
-}
-async function updateNotificationVisible(sessions) {
-    const observations = await Promise.allSettled(sessions.map(async ({ page }) => await page.getByText('Update available', { exact: true }).first().isVisible().catch(() => false)));
-    return observations.some(result => result.status === 'fulfilled' && result.value);
-}
-function plansInWorkerOrder(plans, workers) {
-    return workers.map(worker => { const plan = plans.get(worker); if (!plan)
-        throw Error('SPECIAL_SESSION_PLAN_MISSING'); return plan; });
-}
-// Safe A-D/G-H release-boundary retry: routes each worker to its own lane's
-// exact-court plan builder using the court(s) already assigned at the early trigger.
-function planForRetryWorker(snapshot, workerId, assignedCourts) {
-    if (SPECIAL_SESSION_WORKERS.includes(workerId))
-        return specialSessionPlans(snapshot, [workerId], { earlyCourt: assignedCourts.earlyCourt, lateCourt: assignedCourts.lateCourt })?.get(workerId);
-    if (SPECIAL_BONUS_WORKERS.includes(workerId) && assignedCourts.bonusCourt !== undefined)
-        return specialBonusPlansForCourt(snapshot, assignedCourts.bonusCourt, [workerId])?.get(workerId);
-    return undefined;
-}
+const readKnownCourtHourBlocks = (date) => readPublicBookingRecords(date, { onCourt: (court, outcome) => trace('PUBLIC_BOOKING_BLOCK_SAMPLE', { court, ...outcome }) });
 try {
     if (process.env.THIRSTY_API_INSTALLATION !== '1' && process.env.THIRSTY_API_TEST_INSTALLATION !== '1')
         throw Error('API_INSTALLATION_REQUIRED');
     const config = loadConfig();
     const requested = command.preferences;
-    const specialSession = !requested && config.SESSION_MODE === SPECIAL_SESSION_MODE;
-    stage('RUN_CONFIGURATION', { sessionMode: config.SESSION_MODE, bookingMethod: config.BOOKING_METHOD,
-        workerCount: specialSession ? SPECIAL_SESSION_REQUIRED_WORKERS.length : requiredWorkerIds(config.BOOKING_TYPE, config.COURT_COUNT).length,
-        prewarmLeadMs: API_SECURITY_PREWARM_LEAD_MS, directPrewarmLeadMs: API_DIRECT_SECURITY_PREWARM_LEAD_MS,
+    stage('RUN_CONFIGURATION', { bookingMethod: config.BOOKING_METHOD,
+        workerCount: requiredWorkerIds(config.BOOKING_TYPE, config.COURT_COUNT).length,
+        prewarmLeadMs: API_SECURITY_PREWARM_LEAD_MS,
         ...(command.releaseMs ? { releaseMs: command.releaseMs } : {}) });
-    if (specialSession && !['prepare', 'audit', 'live'].includes(command.mode))
-        throw Error('SPECIAL_SESSION_RELEASE_ONLY');
-    if (specialSession && new Date(`${command.date}T12:00:00Z`).getUTCDay() !== 5)
-        throw Error('SPECIAL_SESSION_TARGET_NOT_FRIDAY');
     const strategy = requested?.strategy ?? config.BOOKING_TYPE;
     const duration = requested?.duration ?? config.DURATION_HOURS;
     const courtCount = requested?.courtCount ?? config.COURT_COUNT;
     if (command.mode === 'audit') {
-        const [snapshot, publicRecords] = await Promise.all([readSpecialSnapshot(command.date), readKnownCourtHourBlocks(command.date)]);
+        const [snapshot, publicRecords] = await Promise.all([readAvailabilitySnapshot(command.date), readKnownCourtHourBlocks(command.date)]);
         const cells = prooflessCourtHourStatuses(snapshot, command.date, publicRecords.blocks, publicRecords.failedCourts);
         for (const value of cells)
             trace('COURT_HOUR_STATUS', { court: value.court, hour: value.hour, status: value.status, source: value.source, ...(value.price !== undefined ? { price: value.price } : {}) });
@@ -316,7 +205,7 @@ try {
         throw Error('API_LIVE_NOT_ARMED');
     if (command.mode === 'live' && !command.releaseMs)
         throw Error('API_RELEASE_TIME_REQUIRED');
-    const workerIds = specialSession ? [...SPECIAL_SESSION_REQUIRED_WORKERS] : requiredWorkerIds(strategy, courtCount);
+    const workerIds = requiredWorkerIds(strategy, courtCount);
     if (command.mode === 'live' || command.mode === 'live-now')
         liveLock = await ApiAutomationLock.acquire(strategy, workerIds);
     const customers = command.mode === 'dry' ? undefined :
@@ -409,7 +298,7 @@ try {
             const keys = standardPlanJournalKeys(chunkPlan, THIRSTY_PICKLE_FACILITY_ID);
             const directories = keys.map(key => resolve('.local/api-booking/api-first-journals', key));
             const lane = diagnosticLaneForWorker(workerId);
-            const attemptType = requestedAttemptType ?? (specialSession && command.releaseMs && nowMs() < command.releaseMs ? 'early' : 'official');
+            const attemptType = requestedAttemptType ?? 'official';
             return { chunkPlan, workerId, session, customer, keys, directories, availability, lane, attemptType,
                 attemptId: diagnostics.nextAttemptId(lane, workerId, attemptType),
                 journals: directories.map(directory => new DurableSubmissionJournal(directory)) };
@@ -584,128 +473,11 @@ try {
                     activeAttemptContexts.delete(workerId);
             }
         };
-        const conclusiveNoHold = async (attempt, error) => {
-            const states = await Promise.all(attempt.journals.map((journal, index) => journal.read(attempt.keys[index]).then(record => record.state).catch(() => undefined)));
-            return conclusiveNoHoldFromStates(states, error);
-        };
-        const warmWorkers = (workers, readyStage) => Promise.allSettled(workers.map(async (workerId) => {
-            const transport = releaseTransports.get(workerId);
-            if (!transport)
-                throw Error('API_CHECKOUT_WORKER_MISSING');
-            await transport.prepareCheckoutContext();
-            if (readyStage)
-                stage(readyStage, { workerId });
-        }));
         const recordWarmFailures = (name, workers, results, fallback) => results.forEach((result, index) => {
             if (result.status === 'rejected')
                 stage(name, { workerId: workers[index], status: 'rejected',
                     code: safeApiFailureCode(result.reason, fallback) });
         });
-        let specialDispatchOrder = [];
-        let efProofAttempted = false;
-        // outcome is for telemetry/summary purposes only: 'skipped' until a court
-        // is even found, then pessimistically 'failed' until one of the two E/F
-        // paths actually settles a real result. Never read before both
-        // efProofTask and directTask have been awaited.
-        // (An object property, not a bare let, so mutations inside the async
-        // proof/proofless closures below are not over-narrowed by the compiler.)
-        const efLane = { outcome: 'skipped' };
-        // Optimistic (false = conclusively never dispatched) until a specific
-        // mechanism proves or cannot rule out a dispatch. Tracked separately per
-        // mechanism — rather than one pessimistic flag flipped to true the moment
-        // a court is found — so a proven pre-dispatch failure on one mechanism
-        // (e.g. DIRECT_SECURITY_PREWARM_FAILED, which happens strictly before any
-        // commitment or network call) does not have to poison the other's safety
-        // just because a court exists. Read only after both tasks are awaited.
-        let efProofMayHaveDispatched = false;
-        let efProoflessMayHaveDispatched = false;
-        // Same shape, for the fully independent G/H bonus lane (see runBonusLane,
-        // defined below once directCourt/releaseMs are known). bonusDispatchTask
-        // itself is declared at true top-level scope (with directTask/efProofTask)
-        // so the outer finally can await it on every exit path, not just the
-        // normal-completion path.
-        const bonusLane = { outcome: 'skipped' };
-        let bonusMayHaveDispatched = false;
-        /**
-         * The instant the E/F reserved court shows complete 17:00-22:00 availability
-         * with a fresh snapshot, dispatch E/F through the normal proof-based path
-         * (fresh proofs, same as A-D/G-H) instead of waiting for release. Fail-closed:
-         * commits the adaptive gate synchronously before any await, so the existing
-         * proofless release-time fallback can never also dispatch for this block.
-         */
-        const maybeStartEfProofLane = (snapshot, directCourt) => {
-            if (efProofTask || efProofAttempted || !snapshot || !directCourt)
-                return;
-            const efPlans = specialAdaptivePlans(snapshot, directCourt);
-            if (!efPlans)
-                return;
-            if (!efGate.tryCommit('proof'))
-                return;
-            efProofAttempted = true;
-            const price = [...efPlans.values()].reduce((sum, plan) => sum + plan.totalPrice, 0);
-            stage('ADAPTIVE_DIRECT_PROOF_AVAILABLE', { court: directCourt, price });
-            efProofTask = (async () => {
-                try {
-                    const warmed = await warmWorkers(SPECIAL_ADAPTIVE_WORKERS, 'ADAPTIVE_SECURITY_READY');
-                    recordWarmFailures('ADAPTIVE_SECURITY_FAILED', SPECIAL_ADAPTIVE_WORKERS, warmed, 'ADAPTIVE_PROOF_SECURITY_FAILED');
-                    if (warmed.some(result => result.status === 'rejected')) {
-                        efGate.releaseProofCommitment();
-                        stage('ADAPTIVE_DIRECT_FALLBACK_ELIGIBLE', { code: 'ADAPTIVE_PROOF_SECURITY_FAILED' });
-                        return;
-                    }
-                    ensureActive();
-                    await liveLock?.dispatching();
-                    retainLiveLock = true;
-                    stage('ADAPTIVE_DIRECT_PROOF_DISPATCHING', { court: directCourt });
-                    const efAttempts = makeAttempts(plansInWorkerOrder(efPlans, SPECIAL_ADAPTIVE_WORKERS), SPECIAL_ADAPTIVE_WORKERS, snapshot);
-                    // From this point an unexpected error must be treated as possibly
-                    // dispatched until every durable journal proves otherwise.
-                    efProofMayHaveDispatched = true;
-                    const results = await Promise.allSettled(efAttempts.map(executeAttempt));
-                    efAttempts.forEach((attempt, index) => {
-                        const outcome = results[index];
-                        const code = outcome.status === 'rejected' && outcome.reason instanceof Error && /^[A-Z][A-Z0-9_]{0,79}$/.test(outcome.reason.message)
-                            ? outcome.reason.message : outcome.status === 'rejected' ? 'SPECIAL_WORKER_FAILED' : 'COMPLETED';
-                        stage('SPECIAL_WORKER_OUTCOME', { workerId: attempt.workerId, attempt: 'initial', status: outcome.status, code,
-                            court: attempt.chunkPlan.courts[0].court, startTime: attempt.chunkPlan.startTime, durationHours: attempt.chunkPlan.durationHours });
-                    });
-                    // A fulfilled attempt (which records the verified expiry well before
-                    // QR restoration) is an unambiguous dispatch. For a rejected attempt, the
-                    // exception type alone is unsafe once a hold may already exist (QR
-                    // restoration errors are ordinary Errors thrown AFTER the hold is
-                    // verified) — the durable journal is the only trustworthy signal.
-                    const dispatchChecks = await Promise.all(efAttempts.map(async (attempt, index) => {
-                        const result = results[index];
-                        if (result.status === 'fulfilled')
-                            return true;
-                        return !(await conclusiveNoHold(attempt, result.reason));
-                    }));
-                    const anyMayHaveDispatched = dispatchChecks.some(Boolean);
-                    if (!anyMayHaveDispatched) {
-                        efGate.releaseProofCommitment();
-                        stage('ADAPTIVE_DIRECT_FALLBACK_ELIGIBLE', {});
-                        // Proofless remains eligible and will determine the final E/F outcome.
-                    }
-                    else {
-                        stage('ADAPTIVE_DIRECT_FALLBACK_DISABLED', { court: directCourt });
-                        const succeeded = results.filter(result => result.status === 'fulfilled').length;
-                        efLane.outcome = succeeded === results.length ? 'success' : succeeded > 0 ? 'partial' : 'failed';
-                    }
-                    efProofMayHaveDispatched = anyMayHaveDispatched;
-                }
-                catch (error) {
-                    // Fail closed: an unexpected/unclassified error here must never
-                    // silently reopen the proofless fallback while a proof-based
-                    // dispatch may be outstanding.
-                    retainLiveLock = true;
-                    efLane.outcome = 'failed';
-                    stage('FAILED', { code: error instanceof Error && /^[A-Z][A-Z0-9_]{0,79}$/.test(error.message) ? error.message : 'ADAPTIVE_DIRECT_PROOF_LANE_FAILED' });
-                }
-            })();
-        };
-        let specialPlansAtTrigger;
-        let specialSnapshotAtTrigger;
-        let specialTriggeredEarly = false;
         let warmup;
         let warmupStartedAt;
         let warmupWorkers = workerIds;
@@ -747,7 +519,7 @@ try {
             courtCount, exactCourts: requested?.exact, maximumTotalPrice: requested?.maximum ?? config.MAX_PRICE, currency: 'PHP' };
         let primaryProoflessPlans;
         let primaryProoflessAttempts;
-        if (command.checkoutMethod === 'proofless' && !specialSession) {
+        if (command.checkoutMethod === 'proofless') {
             // A scheduled release starts this same warmup shortly before 08:00. An
             // immediate Proofless Test has no waiting window, so overlap genuine,
             // page-bound security acquisition with the read-only block audit and
@@ -762,10 +534,10 @@ try {
                     ensureActive();
                     await pause(Math.min(30_000, auditAt - nowMs()));
                 }
-                snapshot = await readSpecialSnapshot(command.date);
+                snapshot = await readAvailabilitySnapshot(command.date);
             }
             else if (command.mode === 'dry')
-                snapshot = await readSpecialSnapshot(command.date);
+                snapshot = await readAvailabilitySnapshot(command.date);
             const publicRecords = await readKnownCourtHourBlocks(command.date);
             const blockAudit = prooflessCourtHourStatuses(snapshot, command.date, publicRecords.blocks, publicRecords.failedCourts);
             for (const value of blockAudit)
@@ -790,454 +562,7 @@ try {
                 ...(releasePlan.courts[1] ? { courtB: releasePlan.courts[1].court } : {}), date: command.date, startTime: releasePlan.startTime,
                 durationHours: releasePlan.durationHours, assumedPrice: releasePlan.totalPrice });
         }
-        if (command.mode === 'live' && specialSession) {
-            const releaseMs = command.releaseMs;
-            if (releaseMs <= nowMs())
-                throw Error('RELEASE_MISSED');
-            stage('WAITING_FOR_RELEASE', { releaseMs });
-            const watchAt = releaseMs - 10 * 60_000;
-            while (nowMs() < watchAt) {
-                ensureActive();
-                await pause(Math.min(30_000, watchAt - nowMs()));
-            }
-            stage('SPECIAL_AVAILABILITY_WATCHING');
-            const [initialDirectSnapshot, knownBlocked] = await Promise.all([readSpecialSnapshot(command.date), readKnownDirectCourtBlocks(command.date)]);
-            const directCourt = chooseDirectCourt(initialDirectSnapshot, knownBlocked);
-            availabilityPlanContext = { ...availabilityPlanContext, directCourt };
-            if (initialDirectSnapshot)
-                recordAvailabilityPlanEvaluation(initialDirectSnapshot);
-            if (directCourt) {
-                // A reserved E/F court exists, so some outcome is now expected for
-                // telemetry; stay pessimistic ('failed') until either path actually
-                // settles a result. This alone does not mark either mechanism as
-                // having possibly dispatched — see efProofMayHaveDispatched /
-                // efProoflessMayHaveDispatched, set only once a dispatch is proven or
-                // cannot be ruled out.
-                efLane.outcome = 'failed';
-                const directPlans = ['E', 'F'].map(workerId => {
-                    const lane = diagnosticLaneForWorker(workerId), attemptType = 'official';
-                    return { workerId, lane, attemptType, attemptId: diagnostics.nextAttemptId(lane, workerId, attemptType),
-                        ...directPlan(command.date, directCourt, workerId, initialDirectSnapshot) };
-                });
-                const directTotal = directPlans.reduce((sum, item) => sum + item.plan.totalPrice, 0);
-                stage('DIRECT_LANE_PREPARED', { court: directCourt, rateSource: directPlans[0].rateSource,
-                    ...(directPlans[0].rateSource === 'UNVERIFIED_PRIOR_RATE' ? { assumedPrice: directTotal } : { price: directTotal }) });
-                directTask = (async () => {
-                    let directWarmup;
-                    const warmDirect = () => directWarmup ??= Promise.allSettled(['E', 'F'].map(async (worker) => {
-                        const transport = releaseTransports.get(worker);
-                        if (!transport)
-                            throw Error('DIRECT_WORKER_MISSING');
-                        await transport.prepareCheckoutContext();
-                        stage('DIRECT_SECURITY_READY', { workerId: worker });
-                    }));
-                    while (nowMs() < releaseMs) {
-                        ensureActive();
-                        const remaining = releaseMs - nowMs();
-                        if (remaining <= API_SECURITY_PREWARM_LEAD_MS)
-                            startWarmup(SPECIAL_SESSION_WORKERS);
-                        if (remaining <= API_DIRECT_SECURITY_PREWARM_LEAD_MS)
-                            warmDirect();
-                        await pause(Math.min(250, Math.max(1, remaining), warmup ? 250 : Math.max(1, remaining - API_SECURITY_PREWARM_LEAD_MS)));
-                    }
-                    assertApiReleaseFresh(releaseMs, nowMs());
-                    const directWarmResults = await warmDirect();
-                    recordWarmFailures('DIRECT_SECURITY_FAILED', SPECIAL_ADAPTIVE_WORKERS, directWarmResults, 'DIRECT_SECURITY_PREWARM_FAILED');
-                    if (directWarmResults.some(result => result.status === 'rejected'))
-                        throw Error('DIRECT_SECURITY_PREWARM_FAILED');
-                    ensureActive();
-                    assertDirectDispatchWindow(releaseMs, nowMs());
-                    // Fail-closed hand-off: if the E/F proof-based lane already committed
-                    // (dispatched or in flight), never also send the proofless request.
-                    if (!efGate.tryCommit('proofless')) {
-                        stage('ADAPTIVE_DIRECT_FALLBACK_DISABLED', { court: directCourt });
-                        return;
-                    }
-                    await liveLock?.dispatching();
-                    retainLiveLock = true;
-                    stage('DIRECT_LANE_DISPATCHING', { court: directCourt, rateSource: directPlans[0].rateSource });
-                    efProoflessMayHaveDispatched = true;
-                    const results = await Promise.allSettled(directPlans.map(async ({ workerId, plan, lane, attemptType, attemptId }) => {
-                        const correlation = { workerId, lane, attemptType, attemptId };
-                        activeAttemptContexts.set(workerId, correlation);
-                        diagnostics.observe('DIAGNOSTIC_ATTEMPT_STARTED', correlation, { court: directCourt, startTime: plan.startTime, durationHours: plan.durationHours });
-                        try {
-                            const session = sessions.find(value => value.workerId === workerId), customer = customers?.[workerId], transport = releaseTransports.get(workerId);
-                            if (!session || !customer || !transport)
-                                throw Error('DIRECT_WORKER_MISSING');
-                            const key = DurableSubmissionJournal.key(THIRSTY_PICKLE_FACILITY_ID, plan.courts[0].spaceId, command.date, plan.startTime, plan.endTime);
-                            const directory = resolve('.local/api-booking/api-first-journals', key);
-                            let token, bookingNo;
-                            responseCaptures.set(workerId, async (response) => {
-                                await saveOnce(directory, 'checkout-response-private.json', sanitizedCheckoutCapture(response));
-                                try {
-                                    const value = JSON.parse(response.body);
-                                    bookingNo = value.bookings?.[0]?.booking_no;
-                                    token = value.bookings?.[0]?.checkoutToken;
-                                }
-                                catch { }
-                            });
-                            const startedAt = performance.now();
-                            const hold = await submitDirectCheckout(plan, customer, transport, new DurableSubmissionJournal(directory), releaseMs, [], nowMs);
-                            verifiedHold = true;
-                            retainLiveLock = true;
-                            if (!latestVerifiedHoldExpiry || Date.parse(hold.holdExpiresAt) > Date.parse(latestVerifiedHoldExpiry))
-                                latestVerifiedHoldExpiry = hold.holdExpiresAt;
-                            stage('PENDING_HOLD', { workerId, court: directCourt, date: command.date, startTime: plan.startTime, durationHours: plan.durationHours,
-                                bookingId: hold.bookingIds[0], bookingNo: bookingNo ?? '', holdExpiresAt: hold.holdExpiresAt, price: plan.totalPrice,
-                                workerElapsedMs: Math.round(performance.now() - startedAt) });
-                            diagnostics.observe('DIAGNOSTIC_VERIFIED_HOLD', correlation, { court: directCourt, startTime: plan.startTime,
-                                durationHours: plan.durationHours, price: plan.totalPrice });
-                            if (!token || !bookingNo)
-                                throw Error('OFFICIAL_CHECKOUT_TOKEN_MISSING');
-                            const grant = await session.page.evaluate(async ({ bookingNo, token }) => {
-                                const url = new URL(`/api/public/bookings/booking-no/${encodeURIComponent(bookingNo)}`, location.origin);
-                                url.searchParams.set('checkoutToken', token);
-                                url.searchParams.set('grantCheckoutAccess', '1');
-                                return (await fetch(url, { credentials: 'include', cache: 'no-store' })).status;
-                            }, { bookingNo, token });
-                            if (grant !== 200)
-                                throw Error('OFFICIAL_CHECKOUT_ACCESS_FAILED');
-                            await session.page.goto(officialCheckoutUrl(hold.bookingIds[0]), { waitUntil: 'domcontentloaded', timeout: 45_000 });
-                            await session.page.getByText('QRPH', { exact: true }).first().waitFor({ state: 'visible', timeout: 20_000 });
-                            const body = await session.page.locator('body').innerText();
-                            if (!body.includes('Pending') || !body.replaceAll(',', '').includes(plan.totalPrice.toFixed(2)))
-                                throw Error('OFFICIAL_CHECKOUT_STATE_MISMATCH');
-                            await showWorkerPage(session.page, workerId);
-                            stage('OFFICIAL_QRPH_HANDOFF', { workerId, court: directCourt, date: command.date, startTime: plan.startTime,
-                                durationHours: plan.durationHours, bookingId: hold.bookingIds[0], bookingNo, holdExpiresAt: hold.holdExpiresAt,
-                                price: plan.totalPrice, workerElapsedMs: Math.round(performance.now() - startedAt) });
-                            diagnostics.observe('DIAGNOSTIC_QR_HANDOFF', correlation, { court: directCourt, startTime: plan.startTime,
-                                durationHours: plan.durationHours, price: plan.totalPrice });
-                            diagnostics.observe('DIAGNOSTIC_ATTEMPT_COMPLETED', correlation, { workerOutcome: 'VERIFIED_HOLD' });
-                            return hold;
-                        }
-                        catch (error) {
-                            diagnostics.observe('DIAGNOSTIC_ATTEMPT_COMPLETED', correlation, { workerOutcome: 'FAILED',
-                                failureCategory: safeDiagnosticCode(error, 'CHECKOUT_ATTEMPT_FAILED') });
-                            throw error;
-                        }
-                        finally {
-                            if (activeAttemptContexts.get(workerId)?.attemptId === attemptId)
-                                activeAttemptContexts.delete(workerId);
-                        }
-                    }));
-                    const successful = results.filter((result) => result.status === 'fulfilled');
-                    if (successful.length) {
-                        const newest = successful.map(result => result.value.holdExpiresAt).sort((a, b) => Date.parse(b) - Date.parse(a))[0];
-                        if (!latestVerifiedHoldExpiry || Date.parse(newest) > Date.parse(latestVerifiedHoldExpiry))
-                            latestVerifiedHoldExpiry = newest;
-                    }
-                    results.forEach((result, index) => stage('DIRECT_WORKER_OUTCOME', { workerId: directPlans[index].workerId, status: result.status,
-                        code: result.status === 'fulfilled' ? 'COMPLETED' : result.reason instanceof Error && /^[A-Z][A-Z0-9_]{0,79}$/.test(result.reason.message) ? result.reason.message : 'DIRECT_WORKER_FAILED' }));
-                    efLane.outcome = successful.length === results.length ? 'success' : successful.length > 0 ? 'partial' : 'failed';
-                    if (successful.length === 0) {
-                        // Every attempt rejected: prove via the durable journal (not the
-                        // exception type) that neither request may have actually dispatched.
-                        const dispatchChecks = await Promise.all(results.map(async (result, index) => {
-                            if (result.status === 'fulfilled')
-                                return false;
-                            const plan = directPlans[index].plan;
-                            const key = DurableSubmissionJournal.key(THIRSTY_PICKLE_FACILITY_ID, plan.courts[0].spaceId, command.date, plan.startTime, plan.endTime);
-                            const state = await new DurableSubmissionJournal(resolve('.local/api-booking/api-first-journals', key))
-                                .read(key).then(record => record.state).catch(() => undefined);
-                            return !conclusiveNoHoldFromStates([state], result.reason);
-                        }));
-                        efProoflessMayHaveDispatched = dispatchChecks.some(Boolean);
-                    }
-                    else
-                        efProoflessMayHaveDispatched = true;
-                })().catch(error => {
-                    retainLiveLock = true;
-                    // Only claim this outcome if the proofless path actually owned the
-                    // commitment; otherwise leave it to whichever path did (or to the
-                    // pessimistic default if neither ever committed). commitment!=='proofless'
-                    // here proves this specific error happened strictly before any
-                    // proofless dispatch attempt (tryCommit is the only place commitment
-                    // becomes 'proofless', called synchronously right before dispatch),
-                    // so efProoflessMayHaveDispatched correctly stays false in that case.
-                    if (efGate.commitment === 'proofless')
-                        efLane.outcome = 'failed';
-                    stage('DIRECT_LANE_FAILED', { code: error instanceof Error && /^[A-Z][A-Z0-9_]{0,79}$/.test(error.message) ? error.message : 'DIRECT_LANE_FAILED' });
-                });
-            }
-            else
-                stage('DIRECT_LANE_SKIPPED', { code: 'NO_THIRD_COURT_AVAILABLE' });
-            // G/H bonus lane: fully independent of A-D, started the instant A-D's
-            // court assignment is known (see checkCore below). Polls on its own
-            // cadence up to release, then a short post-release burst matching the
-            // pattern used elsewhere, and dispatches G/H the moment a fourth
-            // distinct court is complete — never delaying, and never delayed by,
-            // A-D. Proof-based only; never falls back to the proofless transport.
-            const runBonusLane = async (assigned, initialSnapshot) => {
-                const excluded = [...(directCourt ? [directCourt] : []), assigned.earlyCourt, assigned.lateCourt];
-                let found;
-                let usedSnapshot;
-                let pendingSnapshot = initialSnapshot;
-                const tryOnce = async () => {
-                    const snapshot = pendingSnapshot ?? await readSpecialSnapshot(command.date);
-                    pendingSnapshot = undefined;
-                    if (!snapshot)
-                        return;
-                    const bonus = specialBonusLanePlans(snapshot, excluded);
-                    if (bonus) {
-                        found = bonus;
-                        usedSnapshot = snapshot;
-                        availabilityPlanContext = { ...availabilityPlanContext, bonusCourt: bonus.court };
-                        recordAvailabilityPlanEvaluation(snapshot);
-                    }
-                };
-                while (!found && nowMs() < releaseMs) {
-                    ensureActive();
-                    await tryOnce();
-                    if (found)
-                        break;
-                    await pause(Math.min(SPECIAL_SIGNAL_AVAILABILITY_POLL_MS, Math.max(1, releaseMs - nowMs())));
-                }
-                const foundEarly = !!found;
-                if (!found)
-                    for (const delay of [0, 250, 500, 1000, 2000]) {
-                        ensureActive();
-                        if (delay)
-                            await pause(delay);
-                        await tryOnce();
-                        if (found)
-                            break;
-                    }
-                if (!found) {
-                    stage('SPECIAL_BONUS_LANE_SKIPPED', { code: 'NO_FOURTH_COURT_AVAILABLE' });
-                    return;
-                }
-                bonusLane.outcome = 'failed';
-                stage('SPECIAL_BONUS_LANE_READY', { court: found.court, price: [...found.plans.values()].reduce((sum, plan) => sum + plan.totalPrice, 0) });
-                const warmed = await warmWorkers(SPECIAL_BONUS_WORKERS, 'BONUS_SECURITY_READY');
-                recordWarmFailures('BONUS_SECURITY_FAILED', SPECIAL_BONUS_WORKERS, warmed, 'BONUS_SECURITY_PREWARM_FAILED');
-                const warmFailure = warmed.find((result) => result.status === 'rejected');
-                if (warmFailure)
-                    throw warmFailure.reason;
-                ensureActive();
-                await liveLock?.dispatching();
-                retainLiveLock = true;
-                let attempts = makeAttempts(plansInWorkerOrder(found.plans, SPECIAL_BONUS_WORKERS), SPECIAL_BONUS_WORKERS, usedSnapshot);
-                bonusMayHaveDispatched = true;
-                const outcomes = await Promise.allSettled(attempts.map(executeAttempt));
-                attempts.forEach((attempt, index) => {
-                    const outcome = outcomes[index];
-                    const code = outcome.status === 'rejected' && outcome.reason instanceof Error && /^[A-Z][A-Z0-9_]{0,79}$/.test(outcome.reason.message)
-                        ? outcome.reason.message : outcome.status === 'rejected' ? 'SPECIAL_WORKER_FAILED' : 'COMPLETED';
-                    stage('SPECIAL_WORKER_OUTCOME', { workerId: attempt.workerId, attempt: 'initial', status: outcome.status, code,
-                        court: attempt.chunkPlan.courts[0].court, startTime: attempt.chunkPlan.startTime, durationHours: attempt.chunkPlan.durationHours });
-                });
-                const finalByWorker = new Map(attempts.map((attempt, index) => [attempt.workerId, outcomes[index]]));
-                if (foundEarly && nowMs() < releaseMs) {
-                    const retryWorkers = [];
-                    for (const [index, outcome] of outcomes.entries())
-                        if (outcome.status === 'rejected' &&
-                            await conclusiveNoHold(attempts[index], outcome.reason))
-                            retryWorkers.push(attempts[index].workerId);
-                    if (retryWorkers.length) {
-                        stage('SPECIAL_SAFE_RETRY_WAITING', { releaseMs });
-                        let retryWarmup;
-                        while (nowMs() < releaseMs) {
-                            ensureActive();
-                            const remaining = releaseMs - nowMs();
-                            if (remaining <= API_SECURITY_PREWARM_LEAD_MS)
-                                retryWarmup ??= warmWorkers(retryWorkers, 'BONUS_RETRY_SECURITY_READY');
-                            await pause(Math.min(500, Math.max(1, remaining)));
-                        }
-                        assertApiReleaseFresh(releaseMs, nowMs());
-                        retryWarmup ??= warmWorkers(retryWorkers, 'BONUS_RETRY_SECURITY_READY');
-                        const retryWarmResults = await retryWarmup;
-                        recordWarmFailures('BONUS_RETRY_SECURITY_FAILED', retryWorkers, retryWarmResults, 'BONUS_SECURITY_PREWARM_FAILED');
-                        const retryWarmFailure = retryWarmResults.find((result) => result.status === 'rejected');
-                        if (retryWarmFailure)
-                            throw retryWarmFailure.reason;
-                        let retryPlans = new Map();
-                        let retrySnapshot;
-                        for (const delay of [0, 250, 500, 1000, 2000]) {
-                            if (delay)
-                                await pause(delay);
-                            const snapshot = await readSpecialSnapshot(command.date);
-                            if (!snapshot)
-                                continue;
-                            const plansForSnapshot = new Map();
-                            for (const workerId of retryWorkers) {
-                                const plan = specialBonusPlansForCourt(snapshot, found.court, [workerId])?.get(workerId);
-                                if (plan)
-                                    plansForSnapshot.set(workerId, plan);
-                            }
-                            if (plansForSnapshot.size > retryPlans.size) {
-                                retrySnapshot = snapshot;
-                                retryPlans = plansForSnapshot;
-                            }
-                            if (retryPlans.size === retryWorkers.length)
-                                break;
-                        }
-                        if (retrySnapshot && retryPlans.size) {
-                            const retryIds = retryWorkers.filter(worker => retryPlans.has(worker));
-                            for (const workerId of retryIds) {
-                                const prior = attempts.find(attempt => attempt.workerId === workerId);
-                                for (const [index, journal] of prior.journals.entries()) {
-                                    const disposition = await journal.recycleReusable(prior.keys[index]);
-                                    if (disposition === 'blocked')
-                                        throw Error('SPECIAL_SESSION_RETRY_BLOCKED');
-                                }
-                            }
-                            const retryAttempts = makeAttempts(plansInWorkerOrder(retryPlans, retryIds), retryIds, retrySnapshot, 'retry');
-                            attempts = [...attempts, ...retryAttempts];
-                            const retried = await Promise.allSettled(retryAttempts.map(executeAttempt));
-                            retryAttempts.forEach((attempt, index) => {
-                                const outcome = retried[index];
-                                const code = outcome.status === 'rejected' && outcome.reason instanceof Error && /^[A-Z][A-Z0-9_]{0,79}$/.test(outcome.reason.message)
-                                    ? outcome.reason.message : outcome.status === 'rejected' ? 'SPECIAL_WORKER_FAILED' : 'COMPLETED';
-                                stage('SPECIAL_WORKER_OUTCOME', { workerId: attempt.workerId, attempt: 'retry', status: outcome.status, code,
-                                    court: attempt.chunkPlan.courts[0].court, startTime: attempt.chunkPlan.startTime, durationHours: attempt.chunkPlan.durationHours });
-                            });
-                            retryAttempts.forEach((attempt, index) => finalByWorker.set(attempt.workerId, retried[index]));
-                        }
-                    }
-                }
-                const finalOutcomes = [...finalByWorker.values()];
-                const succeeded = finalOutcomes.filter(outcome => outcome.status === 'fulfilled').length;
-                bonusLane.outcome = succeeded === finalOutcomes.length ? 'success' : succeeded > 0 ? 'partial' : 'failed';
-                if (succeeded === 0) {
-                    const dispatchChecks = await Promise.all(attempts.map(async (attempt) => {
-                        const outcome = finalByWorker.get(attempt.workerId);
-                        if (outcome.status === 'fulfilled')
-                            return false;
-                        return !(await conclusiveNoHold(attempt, outcome.reason));
-                    }));
-                    bonusMayHaveDispatched = dispatchChecks.some(Boolean);
-                }
-                else
-                    bonusMayHaveDispatched = true;
-            };
-            // Core A-D proof-based plans. Once found, A-D commits and dispatches
-            // immediately — it is never delayed waiting for G/H (see runBonusLane
-            // below, a fully independent lane started the instant A-D's court
-            // assignment is known).
-            let coreAssignment;
-            const checkCore = (snapshot) => {
-                const core = coreAssignment
-                    ? specialSessionPlans(snapshot, SPECIAL_SESSION_WORKERS, coreAssignment)
-                    : specialSessionPlans(snapshot, SPECIAL_SESSION_WORKERS, undefined, directCourt ? [directCourt] : []);
-                if (!core)
-                    return undefined;
-                if (!coreAssignment) {
-                    coreAssignment = specialSessionCourtAssignment(core);
-                    availabilityPlanContext = { ...availabilityPlanContext, coreAssignment };
-                    recordAvailabilityPlanEvaluation(snapshot);
-                    stage('SPECIAL_PROOF_LANE_READY', { court: coreAssignment.earlyCourt, courtB: coreAssignment.lateCourt,
-                        price: [...core.values()].reduce((sum, plan) => sum + plan.totalPrice, 0) });
-                    // Start watching for a fourth distinct court right away; this never
-                    // gates or delays A-D's own commit below.
-                    bonusDispatchTask = runBonusLane(coreAssignment, snapshot).catch(error => {
-                        retainLiveLock = true;
-                        bonusLane.outcome = 'failed';
-                        stage('FAILED', { code: error instanceof Error && /^[A-Z][A-Z0-9_]{0,79}$/.test(error.message) ? error.message : 'SPECIAL_BONUS_LANE_FAILED' });
-                    });
-                }
-                return core;
-            };
-            const commitCore = (snapshot, core, early) => {
-                specialPlansAtTrigger = core;
-                specialSnapshotAtTrigger = snapshot;
-                specialTriggeredEarly = early;
-                specialDispatchOrder = ['A', 'B', 'C', 'D'].filter(worker => core.has(worker));
-                const assigned = coreAssignment;
-                stage(early ? 'SPECIAL_EARLY_AVAILABILITY_READY' : 'SPECIAL_RELEASE_AVAILABILITY_READY', { date: command.date, court: assigned.earlyCourt, courtB: assigned.lateCourt,
-                    price: [...core.values()].reduce((sum, plan) => sum + plan.totalPrice, 0) });
-            };
-            let observedVersion = await readOndaVersion();
-            let nextVersionAt = nowMs(), nextAvailabilityAt = nowMs();
-            let releaseSignalSeen = false, signalBurstUntil = 0;
-            while (nowMs() < releaseMs) {
-                ensureActive();
-                const remaining = releaseMs - nowMs();
-                if (remaining <= API_SECURITY_PREWARM_LEAD_MS)
-                    startWarmup(SPECIAL_SESSION_WORKERS);
-                // Do not let a final pre-release GET overlap and delay the official
-                // release fetch. The live provider has a ten-second timeout.
-                if (remaining <= SPECIAL_RELEASE_GUARD_MS) {
-                    if (warmup && warmupStartedAt !== undefined && Date.now() - warmupStartedAt > 90_000) {
-                        await finishWarmup(true);
-                        warmup = undefined;
-                        warmupStartedAt = undefined;
-                    }
-                    startWarmup(SPECIAL_SESSION_WORKERS);
-                    await pause(Math.max(1, releaseMs - nowMs()));
-                    break;
-                }
-                const loopStarted = nowMs();
-                const checkVersion = loopStarted >= nextVersionAt, checkAvailability = loopStarted >= nextAvailabilityAt;
-                const [version, notification, snapshot] = await Promise.all([
-                    checkVersion ? readOndaVersion() : Promise.resolve(undefined),
-                    updateNotificationVisible(sessions),
-                    checkAvailability ? readSpecialSnapshot(command.date) : Promise.resolve(undefined),
-                ]);
-                const versionChanged = !!version && !!observedVersion && version !== observedVersion;
-                if ((versionChanged || notification) && !releaseSignalSeen) {
-                    releaseSignalSeen = true;
-                    signalBurstUntil = nowMs() + SPECIAL_SIGNAL_BURST_MS;
-                    stage(notification ? 'SPECIAL_UPDATE_NOTIFICATION_OBSERVED' : 'SPECIAL_VERSION_CHANGE_OBSERVED');
-                    startWarmup(SPECIAL_SESSION_WORKERS);
-                    if (!checkAvailability)
-                        nextAvailabilityAt = 0;
-                }
-                if (version)
-                    observedVersion = version;
-                if (checkVersion)
-                    nextVersionAt = loopStarted + SPECIAL_VERSION_POLL_MS;
-                if (checkAvailability) {
-                    const interval = !releaseSignalSeen ? SPECIAL_AVAILABILITY_POLL_MS :
-                        nowMs() < signalBurstUntil ? SPECIAL_SIGNAL_BURST_POLL_MS : SPECIAL_SIGNAL_AVAILABILITY_POLL_MS;
-                    nextAvailabilityAt = loopStarted + interval;
-                }
-                // E/F is independent of A-D readiness: dispatch its proof-based
-                // upgrade the instant its own reserved court is complete, whether or
-                // not the core lane has resolved yet.
-                maybeStartEfProofLane(snapshot, directCourt);
-                if (snapshot) {
-                    const core = checkCore(snapshot);
-                    if (core) {
-                        commitCore(snapshot, core, nowMs() < releaseMs);
-                        break;
-                    }
-                }
-                const nextCheck = Math.min(nextVersionAt, nextAvailabilityAt, releaseMs - SPECIAL_RELEASE_GUARD_MS);
-                await pause(Math.min(250, Math.max(1, nextCheck - nowMs())));
-            }
-            if (!specialPlansAtTrigger) {
-                assertApiReleaseFresh(releaseMs, nowMs());
-                stage('RELEASE_TRIGGERED');
-                await finishWarmup(true);
-                for (const delay of [0, 250, 500, 1000, 2000]) {
-                    if (delay)
-                        await pause(delay);
-                    const snapshot = await readSpecialSnapshot(command.date);
-                    maybeStartEfProofLane(snapshot, directCourt);
-                    if (!snapshot)
-                        continue;
-                    const core = checkCore(snapshot);
-                    if (core) {
-                        commitCore(snapshot, core, false);
-                        break;
-                    }
-                }
-                if (!specialPlansAtTrigger)
-                    throw Error('SPECIAL_SESSION_NOT_AVAILABLE');
-            }
-            // Availability can arrive before the ordinary eight-second prewarm
-            // window. Finish all four security contexts before any branch dispatches.
-            if (warmup && warmupStartedAt !== undefined && Date.now() - warmupStartedAt > 90_000) {
-                await finishWarmup(true);
-                warmup = undefined;
-                warmupStartedAt = undefined;
-            }
-            startWarmup(SPECIAL_SESSION_WORKERS);
-            await finishWarmup(true);
-        }
-        else if (command.mode === 'live') {
+        if (command.mode === 'live') {
             const releaseMs = command.releaseMs;
             if (releaseMs <= nowMs())
                 throw Error('RELEASE_MISSED');
@@ -1259,18 +584,12 @@ try {
         if (primaryProoflessPlans) {
             checkoutPlans = primaryProoflessPlans;
         }
-        else if (specialSession) {
-            if (!specialPlansAtTrigger)
-                throw Error('SPECIAL_SESSION_NOT_AVAILABLE');
-            checkoutPlans = plansInWorkerOrder(specialPlansAtTrigger, specialDispatchOrder);
-            const assigned = specialSessionCourtAssignment(specialPlansAtTrigger);
-            stage('CANDIDATE_READY', { date: command.date, court: assigned.earlyCourt, courtB: assigned.lateCourt, startTime: '17:00', durationHours: 5,
-                price: checkoutPlans.reduce((sum, plan) => sum + plan.totalPrice, 0) });
-        }
         else {
             stage('FETCHING_AVAILABILITY');
             discovery = await discoverApiAvailability(new OndaLiveAvailabilityProvider(), preferences);
             ensureActive();
+            diagnostics.observe('RELEASE_AVAILABILITY_MATRIX', {}, { ...availabilityObservation(discovery.snapshot, command.date),
+                durationMs: Math.round(discovery.timing.totalMs ?? 0) });
             if (command.mode === 'live')
                 for (const value of prooflessCourtHourStatuses(discovery.snapshot, command.date))
                     trace('COURT_HOUR_STATUS', { court: value.court, hour: value.hour, status: value.status, ...(value.price !== undefined ? { price: value.price } : {}) });
@@ -1332,140 +651,31 @@ try {
         }
         else {
             ensureActive();
-            const dispatchIds = specialSession ? specialDispatchOrder : workerIds;
-            let attempts = makeAttempts(checkoutPlans, dispatchIds, specialSnapshotAtTrigger ?? discovery.snapshot);
+            const attempts = makeAttempts(checkoutPlans, workerIds, discovery.snapshot);
             await liveLock?.dispatching();
             retainLiveLock = true;
-            let outcomes = await Promise.allSettled(attempts.map(executeAttempt));
+            const outcomes = await Promise.allSettled(attempts.map(executeAttempt));
             attempts.forEach((attempt, index) => {
                 const outcome = outcomes[index];
                 const code = outcome.status === 'rejected' && outcome.reason instanceof Error && /^[A-Z][A-Z0-9_]{0,79}$/.test(outcome.reason.message)
-                    ? outcome.reason.message : outcome.status === 'rejected' ? 'SPECIAL_WORKER_FAILED' : 'COMPLETED';
-                stage('SPECIAL_WORKER_OUTCOME', { workerId: attempt.workerId, attempt: 'initial', status: outcome.status, code,
+                    ? outcome.reason.message : outcome.status === 'rejected' ? 'CHECKOUT_WORKER_FAILED' : 'COMPLETED';
+                stage('WORKER_OUTCOME', { workerId: attempt.workerId, status: outcome.status, code,
                     court: attempt.chunkPlan.courts[0].court, startTime: attempt.chunkPlan.startTime, durationHours: attempt.chunkPlan.durationHours });
             });
-            const finalByWorker = new Map(attempts.map((attempt, index) => [attempt.workerId, outcomes[index]]));
-            if (specialSession && specialTriggeredEarly) {
-                const assignedCourts = specialSessionCourtAssignment(specialPlansAtTrigger);
-                const retryWorkers = [];
-                for (const [index, outcome] of outcomes.entries())
-                    if (outcome?.status === 'rejected' &&
-                        await conclusiveNoHold(attempts[index], outcome.reason))
-                        retryWorkers.push(attempts[index].workerId);
-                if (retryWorkers.length) {
-                    stage('SPECIAL_SAFE_RETRY_WAITING', { releaseMs: command.releaseMs });
-                    warmup = undefined;
-                    warmupStartedAt = undefined;
-                    while (nowMs() < command.releaseMs) {
-                        ensureActive();
-                        const remaining = command.releaseMs - nowMs();
-                        if (remaining <= API_SECURITY_PREWARM_LEAD_MS)
-                            startWarmup(retryWorkers);
-                        await pause(Math.min(500, Math.max(1, remaining), warmup ? 500 : Math.max(1, remaining - API_SECURITY_PREWARM_LEAD_MS)));
-                    }
-                    assertApiReleaseFresh(command.releaseMs, nowMs());
-                    stage('RELEASE_TRIGGERED');
-                    await finishWarmup(true);
-                    let retryPlans = new Map();
-                    let retrySnapshot;
-                    for (const delay of [0, 250, 500, 1000, 2000]) {
-                        if (delay)
-                            await pause(delay);
-                        const snapshot = await readSpecialSnapshot(command.date);
-                        if (!snapshot)
-                            continue;
-                        const plansForSnapshot = new Map();
-                        for (const workerId of retryWorkers) {
-                            const plan = planForRetryWorker(snapshot, workerId, assignedCourts);
-                            if (plan)
-                                plansForSnapshot.set(workerId, plan);
-                        }
-                        if (plansForSnapshot.size > retryPlans.size) {
-                            retrySnapshot = snapshot;
-                            retryPlans = plansForSnapshot;
-                        }
-                        if (retryPlans.size === retryWorkers.length)
-                            break;
-                    }
-                    if (retrySnapshot && retryPlans.size) {
-                        const retryIds = retryWorkers.filter(worker => retryPlans.has(worker));
-                        for (const workerId of retryIds) {
-                            const prior = attempts.find(attempt => attempt.workerId === workerId);
-                            for (const [index, journal] of prior.journals.entries()) {
-                                const disposition = await journal.recycleReusable(prior.keys[index]);
-                                if (disposition === 'blocked')
-                                    throw Error('SPECIAL_SESSION_RETRY_BLOCKED');
-                            }
-                        }
-                        const retryAttempts = makeAttempts(plansInWorkerOrder(retryPlans, retryIds), retryIds, retrySnapshot, 'retry');
-                        attempts = [...attempts, ...retryAttempts];
-                        const retried = await Promise.allSettled(retryAttempts.map(executeAttempt));
-                        retryAttempts.forEach((attempt, index) => {
-                            const outcome = retried[index];
-                            const code = outcome.status === 'rejected' && outcome.reason instanceof Error && /^[A-Z][A-Z0-9_]{0,79}$/.test(outcome.reason.message)
-                                ? outcome.reason.message : outcome.status === 'rejected' ? 'SPECIAL_WORKER_FAILED' : 'COMPLETED';
-                            stage('SPECIAL_WORKER_OUTCOME', { workerId: attempt.workerId, attempt: 'retry', status: outcome.status, code,
-                                court: attempt.chunkPlan.courts[0].court, startTime: attempt.chunkPlan.startTime, durationHours: attempt.chunkPlan.durationHours });
-                        });
-                        retryAttempts.forEach((attempt, index) => finalByWorker.set(attempt.workerId, retried[index]));
-                    }
-                }
-            }
-            // Fold in E/F's and G/H's final outcomes before deciding this run's
-            // overall result: all three side-lane tasks catch their own errors
-            // internally and never reject, but their success/failure must still be
-            // reflected in the summary and exit code, not silently swallowed while
-            // the A-D batch alone succeeds.
-            if (specialSession) {
-                await settleSpecialSideTasks();
-            }
-            // Side lanes can finish after A-D. Persist exactly the newest verified
-            // expiry only after every lane has settled, so the durable lock can never
-            // expire earlier than an active E/F or G/H hold.
+            // Persist the newest verified expiry only after every worker has settled,
+            // so the durable lock can never expire earlier than an active hold.
             await persistLatestVerifiedHold();
-            outcomes = [...finalByWorker.values()];
             const failures = outcomes.filter((outcome) => outcome.status === 'rejected');
-            const efFailed = specialSession && (efLane.outcome === 'failed' || efLane.outcome === 'partial');
-            const bonusFailed = specialSession && (bonusLane.outcome === 'failed' || bonusLane.outcome === 'partial');
-            const laneWorkerCounts = (lane) => {
-                if (lane.outcome === 'skipped')
-                    return { workers: 0, completed: 0 };
-                return { workers: 2, completed: lane.outcome === 'success' ? 2 : lane.outcome === 'partial' ? 1 : 0 };
-            };
-            const efCounts = specialSession ? laneWorkerCounts(efLane) : { workers: 0, completed: 0 };
-            const bonusCounts = specialSession ? laneWorkerCounts(bonusLane) : { workers: 0, completed: 0 };
-            if (specialSession)
-                stage('SPECIAL_RUN_SUMMARY', {
-                    workerCount: outcomes.length + efCounts.workers + bonusCounts.workers,
-                    completedWorkers: (outcomes.length - failures.length) + efCounts.completed + bonusCounts.completed,
-                    failedWorkers: (failures.length + (efCounts.workers - efCounts.completed) + (bonusCounts.workers - bonusCounts.completed)),
-                    verifiedHold
-                });
-            if (failures.length || efFailed || bonusFailed) {
+            if (failures.length) {
                 if (!verifiedHold) {
-                    const finalAttempts = (specialSession ? specialDispatchOrder : workerIds).map(worker => [...attempts].reverse().find(attempt => attempt.workerId === worker)).filter(Boolean);
-                    const safe = specialSession
-                        ? (await Promise.all(finalAttempts.map(attempt => {
-                            const outcome = finalByWorker.get(attempt.workerId);
-                            return outcome?.status === 'rejected' && conclusiveNoHold(attempt, outcome.reason);
-                        }))).every(Boolean)
-                        : await (async () => {
-                            const states = (await Promise.all(attempts.flatMap(attempt => attempt.journals.map((journal, index) => journal.read(attempt.keys[index]).then(record => record.state).catch(() => 'unknown')))));
-                            return canReleaseApiLockAfterParallelFailure(false, failures.map(failure => failure.reason), states, attempts.length);
-                        })();
-                    // Both side lanes have already been awaited above, so their journal-
-                    // proven conclusive safety here is final, not a race with an
-                    // in-flight task. A 'success'/'partial' outcome always implies
-                    // verifiedHold, which already short-circuits this whole block.
-                    const sideLanesSafe = !specialSession ||
-                        (!efProofMayHaveDispatched && !efProoflessMayHaveDispatched && !bonusMayHaveDispatched);
-                    if (safe && sideLanesSafe) {
+                    const states = await Promise.all(attempts.flatMap(attempt => attempt.journals.map((journal, index) => journal.read(attempt.keys[index]).then(record => record.state).catch(() => 'unknown'))));
+                    if (canReleaseApiLockAfterParallelFailure(false, failures.map(failure => failure.reason), states, attempts.length)) {
                         retainLiveLock = false;
                         await liveLock?.release();
                         liveLock = undefined;
                     }
                 }
-                throw failures[0]?.reason ?? Error(efFailed ? 'ADAPTIVE_DIRECT_LANE_FAILED' : 'SPECIAL_BONUS_LANE_FAILED');
+                throw failures[0].reason;
             }
         }
     }
@@ -1482,9 +692,8 @@ catch (error) {
     }
 }
 finally {
-    await settleSpecialSideTasks();
     // This is also required on exceptional exits that bypass the normal summary
-    // path: a side lane may have created a verified hold before another lane
+    // path: one worker may have created a verified hold before another worker
     // failed. Keep that latest expiry durable before closing browser transports.
     await persistLatestVerifiedHold().catch(() => { retainLiveLock = true; });
     // This process attaches to a browser owned by the desktop installation.

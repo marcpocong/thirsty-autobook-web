@@ -14,6 +14,8 @@ import { resetPracticeSession } from './practice-reset.js';
 import { requiredWorkerIds, WORKER_IDS } from '../src/workers.js';
 import { focusDedicatedBrowser } from '../src/browser-window.js';
 import { synchronizeNetworkClock } from '../src/network-clock.js';
+import { closeBotBrowsers, countBotBrowsers } from './browser-cleanup.js';
+import { SlotWatch, readSlotWatchHistory } from '../src/slot-watch.js';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 process.chdir(root);
 app.setName('Thirsty Pickle Bot');
@@ -53,6 +55,16 @@ const controller = new Controller({
     booking: readBooking, saveBooking, handoff: () => readHandoff(root), browserHealth: async () => { const h = await probeBrowserHealth(); return { A: !!h.A, B: !!h.B, C: !!h.C, D: !!h.D, E: !!h.E, F: !!h.F, G: !!h.G, H: !!h.H }; }, playerStatus: loadPlayerProfiles,
     startSleepProtection: () => powerSaveBlocker.start('prevent-app-suspension'), stopSleepProtection: id => { if (powerSaveBlocker.isStarted(id))
         powerSaveBlocker.stop(id); },
+    countBotBrowsers: () => countBotBrowsers(root), closeBotBrowsers: () => closeBotBrowsers(root),
+    confirmCloseBrowsers: async ({ open, qrPages, lock }) => confirmModal({ tone: qrPages || lock ? 'warning' : 'question', title: 'Close all bot browsers?',
+        message: `Close ${open} Chrome browser${open === 1 ? '' : 's'} started by the bot?`,
+        detail: `Only Chrome windows using the bot's own profiles are closed. Your normal Chrome is not touched.${qrPages ? `\n\n${qrPages} QR payment page${qrPages === 1 ? ' is' : 's are'} still open. Closing does NOT cancel ${qrPages === 1 ? 'that hold' : 'those holds'} on Onda, but you would lose the open QR page${qrPages === 1 ? '' : 's'}. Pay first if you want ${qrPages === 1 ? 'it' : 'them'}.` : ''}${lock ? '\n\nA retained automation lock stays recorded; Reset & Prepare will inspect it before the next run.' : ''}\n\nThe browsers reopen with Reset & Prepare.`,
+        confirmLabel: `Close ${open} browser${open === 1 ? '' : 's'}` }),
+    startSlotWatch: (input, onUpdate) => {
+        const watch = new SlotWatch({ ...input, directory: resolve(root, '.local/slot-watch'), now: () => Date.now() + input.clockOffsetMs, onUpdate });
+        return { id: watch.id, done: watch.done, stop: reason => watch.stop(reason) };
+    },
+    slotWatchHistory: () => readSlotWatchHistory(resolve(root, '.local/slot-watch')),
     confirm: async (kind = 'observe', plan) => confirmModal({ tone: 'question', title: kind === 'full' ? 'Arm Full Booking to QR?' : kind === 'selection' ? 'Arm booking selection?' : kind === 'dry' ? 'Arm Dry Race?' : 'Arm release observation?',
         message: kind === 'full' ? 'ARM FULL BOOKING?' : kind === 'selection' ? 'ARM BOOKING SELECTION?' : kind === 'dry' ? 'ARM DRY RACE?' : 'Arm release observation?',
         detail: (plan ? describePlan(plan) + '\n\n' : '') + (kind === 'full' ? 'Terms authorization: YES, for this booking only.\nFinal automation boundary: QR Checkout.\nThe bot will continue through Onda until the QR payment page is reached, then stop. Payment itself remains manual.' : kind === 'selection' ? 'At release this automation MAY SELECT available court slots.\nSelection Only stops before Proceed. Selection is not a reservation.' : 'This waits for release and performs read-only refresh/date navigation. No court slots will be selected.'),
@@ -85,6 +97,7 @@ else {
             armObservation: () => controller.armObservation(), abortAutomation: () => controller.abortAutomation(), getStatus: () => structuredClone(controller.state),
             armSelection: () => controller.armSelection(), dryRace: () => controller.dryRace(),
             armFullBooking: () => controller.armFullBooking(), cancelScheduledRelease: () => controller.cancelScheduledRelease(), invalidatePreparation: () => controller.invalidatePreparation(), syncClock: () => controller.syncClock(),
+            closeBotBrowsers: () => controller.closeBotBrowsers(), watchNextRelease: () => controller.watchNextRelease(), stopSlotWatch: () => controller.stopSlotWatch(),
         };
         for (const [name, action] of Object.entries(actions))
             ipcMain.handle(`thirsty:${name}`, (event, ...args) => {
@@ -124,9 +137,11 @@ else {
             if (exiting)
                 return;
             event.preventDefault();
-            void controller.abortAutomation().then(() => {
+            void controller.abortAutomation().then(async () => {
                 if (controller.state.operation === 'stopping')
                     return;
+                // Writes the slot watch summary and report before the process ends.
+                await controller.stopSlotWatch('app closed');
                 exiting = true;
                 clearInterval(poll);
                 app.quit();

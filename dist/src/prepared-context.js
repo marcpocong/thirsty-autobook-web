@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { PreparationSchema, PreparedBrowserSchema } from './booking-plan.js';
 import { requiredWorkerIds } from './workers.js';
-import { SPECIAL_SESSION_MODE, SPECIAL_SESSION_REQUIRED_WORKERS } from './api-booking/special-session.js';
 const digest = (value) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export function testPreparationFingerprint(input) {
     return digest(PreparationSchema.parse(input));
@@ -26,6 +25,6 @@ export function makePreparedContext(input, result, players, release) {
     if (!release)
         throw Error('BOOKING_PLAN_CHANGED');
     const s = release.setup;
-    return PreparedContextSchema.parse({ workflow: 'release', strategy: s.BOOKING_TYPE, courtCount: s.COURT_COUNT, start: s.START_TIME, duration: s.DURATION_HOURS, courtPriority: s.PREFERRED_COURTS, fallbackStarts: s.FALLBACK_TIMES, requiredBrowsers: s.SESSION_MODE === SPECIAL_SESSION_MODE ? [...SPECIAL_SESSION_REQUIRED_WORKERS] : requiredWorkerIds(s.BOOKING_TYPE, s.COURT_COUNT), releaseTargetDate: result.releaseTargetDate, releaseMs: result.releaseMs, primaryPlayerConfigured: players.primary, extendedPlayerConfigured: players.extended, configFingerprint: result.fingerprint, preparedAt: new Date().toISOString(), browsers: result.browsers, solutionAvailable: result.solutionAvailable });
+    return PreparedContextSchema.parse({ workflow: 'release', strategy: s.BOOKING_TYPE, courtCount: s.COURT_COUNT, start: s.START_TIME, duration: s.DURATION_HOURS, courtPriority: s.PREFERRED_COURTS, fallbackStarts: s.FALLBACK_TIMES, requiredBrowsers: requiredWorkerIds(s.BOOKING_TYPE, s.COURT_COUNT), releaseTargetDate: result.releaseTargetDate, releaseMs: result.releaseMs, primaryPlayerConfigured: players.primary, extendedPlayerConfigured: players.extended, configFingerprint: result.fingerprint, preparedAt: new Date().toISOString(), browsers: result.browsers, solutionAvailable: result.solutionAvailable });
 }
 //# sourceMappingURL=prepared-context.js.map

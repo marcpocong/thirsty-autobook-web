@@ -95,45 +95,32 @@ window.thirsty.onConfirmRequest(request => {
 });
 const requiredWorkers = (strategy, count) => ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].slice(0, (strategy === 'extended' ? 2 : 1) * Math.ceil(count / 2));
 const workerLabel = (worker) => worker === 'A' ? 'Primary player' : `Player ${'ABCDEFGH'.indexOf(worker) + 1}`;
-const SPECIAL_SESSION_WORKERS_UI = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+const ALL_WORKERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 let testDraft, releaseDraft, testDirty = false, releaseDirty = false;
 let releaseAdjustment;
-byId('simple-status').append(byId('readiness'));
+// The layout is static in index.html; only these few controls move with the active view.
 const primary = byId('primary-actions');
-primary.prepend(byId('prepare'), byId('terms').parentElement);
-primary.append(byId('api-dry-controls'), byId('arm'), byId('blocked-reason'), byId('selection-result'), byId('handoff-result'));
-const advanced = byId('advanced-extra');
-advanced.append(document.querySelector('.mode-options'));
-byId('setup-fields').append(document.querySelector('.editors'), byId('attempts').parentElement, byId('save-booking'), byId('edit-status'));
-const releaseView = byId('view-release'), planView = byId('view-plan'), testsView = byId('view-tests'), runsView = byId('view-runs');
-releaseView.prepend(byId('release-schedule'), document.querySelector('.hero'), byId('simple-status'));
-releaseView.append(byId('release-readiness-card'), byId('block-audit-card'), primary);
-releaseView.querySelector('.release-action').after(byId('lock-card'));
-planView.append(document.querySelector('.setup'));
+const releaseView = byId('view-release'), testsView = byId('view-tests');
 const testAction = testsView.querySelector('.test-action'), testResults = byId('test-results');
 const releaseAction = releaseView.querySelector('.release-action');
-releaseAction.append(byId('terms').parentElement);
-testsView.querySelector('.test-date-card').append(byId('test-date-label'));
-testAction.append(byId('test-booking'));
-byId('test-availability').append(byId('api-dry-controls'));
-runsView.append(document.querySelector('.run-history'), document.querySelector('.activity'), byId('previous-holds'), byId('advanced'));
-const legacyControls = document.querySelector('.controls');
-runsView.querySelector('#advanced-extra').append(legacyControls.parentElement, ...document.querySelectorAll('main > .practice'), byId('performance-card'));
+const VIEWS = ['release', 'plan', 'tests', 'slots', 'runs', 'tools'];
+// These views only observe; they stay reachable while a run is in progress.
+const OBSERVER_VIEWS = ['slots', 'runs', 'tools'];
 function showView(view) {
-    if (latest && latest.operation !== 'idle' && latest.operation !== 'scheduled' && view !== 'runs' && !(view === 'tests' && workflow === 'test'))
+    if (latest && latest.operation !== 'idle' && latest.operation !== 'scheduled' && !OBSERVER_VIEWS.includes(view) && !(view === 'tests' && workflow === 'test'))
         return;
     currentView = view;
-    for (const id of ['release', 'plan', 'tests', 'runs']) {
+    for (const id of VIEWS) {
         byId(`view-${id}`).hidden = id !== view;
         document.querySelector(`[data-view="${id}"]`).setAttribute('aria-current', id === view ? 'page' : 'false');
     }
-    const nextWorkflow = view === 'tests' ? 'test' : view === 'runs' ? workflow : 'release';
+    const nextWorkflow = view === 'tests' ? 'test' : OBSERVER_VIEWS.includes(view) ? workflow : 'release';
     if (nextWorkflow !== workflow) {
         storeDraft();
         workflow = nextWorkflow;
         if (workflow === 'test' && latest?.booking) {
             const s = latest.booking.setup;
-            applyDraft({ sessionMode: s.SESSION_MODE ?? 'normal', method: s.BOOKING_METHOD, strategy: s.BOOKING_TYPE, date: testDraft?.date ?? input('test-date').value, courtCount: s.COURT_COUNT, start: s.START_TIME, duration: s.DURATION_HOURS, attempts: s.MAX_SELECTION_ATTEMPTS, courtOrder: [...s.PREFERRED_COURTS], fallbackTimes: [...s.FALLBACK_TIMES], exactA: '', exactB: '' });
+            applyDraft({ method: s.BOOKING_METHOD, strategy: s.BOOKING_TYPE, date: testDraft?.date ?? input('test-date').value, courtCount: s.COURT_COUNT, start: s.START_TIME, duration: s.DURATION_HOURS, attempts: s.MAX_SELECTION_ATTEMPTS, courtOrder: [...s.PREFERRED_COURTS], fallbackTimes: [...s.FALLBACK_TIMES], exactA: '', exactB: '' });
             testDirty = false;
         }
         if (workflow === 'release' && releaseDraft)
@@ -166,8 +153,8 @@ for (const id of ['dual-court-a', 'dual-court-b'])
     byId(id).replaceChildren(...Array.from({ length: 7 }, (_, i) => new Option(`Court ${i + 1}`, String(i + 1))));
 input('dual-court-a').value = '7';
 input('dual-court-b').value = '6';
-function formDraft() { return { sessionMode: input('session-mode').value, method: input('booking-method').value, strategy: input('booking-type').value, date: input('test-date').value, courtCount: Number(input('court-count').value), start: input('start-time').value, duration: Number(input('duration').value), attempts: Number(input('attempts').value), courtOrder: [...courtOrder], fallbackTimes: [...fallbackTimes], exactA: input('exact-a').value, exactB: input('exact-b').value }; }
-function applyDraft(d) { input('session-mode').value = d.sessionMode; input('booking-method').value = d.method; input('booking-type').value = d.strategy; input('test-date').value = d.date; input('court-count').value = String(d.courtCount); input('start-time').value = d.start; input('duration').value = String(d.duration); input('attempts').value = String(d.attempts); courtOrder = [...d.courtOrder]; fallbackTimes = [...d.fallbackTimes]; input('exact-a').value = d.exactA; input('exact-b').value = d.exactB; editors(); syncSpecialSessionControls(); }
+function formDraft() { return { method: input('booking-method').value, strategy: input('booking-type').value, date: input('test-date').value, courtCount: Number(input('court-count').value), start: input('start-time').value, duration: Number(input('duration').value), attempts: Number(input('attempts').value), courtOrder: [...courtOrder], fallbackTimes: [...fallbackTimes], exactA: input('exact-a').value, exactB: input('exact-b').value }; }
+function applyDraft(d) { input('booking-method').value = d.method; input('booking-type').value = d.strategy; input('test-date').value = d.date; input('court-count').value = String(d.courtCount); input('start-time').value = d.start; input('duration').value = String(d.duration); input('attempts').value = String(d.attempts); courtOrder = [...d.courtOrder]; fallbackTimes = [...d.fallbackTimes]; input('exact-a').value = d.exactA; input('exact-b').value = d.exactB; editors(); }
 function storeDraft() { const d = formDraft(); if (workflow === 'test')
     testDraft = d;
 else
@@ -396,24 +383,7 @@ function buildHandoffCard(hold, players) {
         result.setAttribute('role', 'status');
         result.textContent = browserFocusMessages[worker] ?? '';
         action.disabled = !!browserFocusPending[worker];
-        action.onclick = () => {
-            if (browserFocusPending[worker])
-                return;
-            browserFocusPending[worker] = true;
-            action.disabled = true;
-            browserFocusMessages[worker] = result.textContent = `Opening Browser ${worker}…`;
-            if (latest)
-                render(latest);
-            void window.thirsty.focusBrowser({ workerId: worker, ...(hold.bookingId ? { bookingId: hold.bookingId } : {}) })
-                .then(result => {
-                browserFocusMessages[worker] = result === 'focused'
-                    ? `Browser ${worker} is now in front, maximized on its screen.`
-                    : `Browser ${worker} was restored on its screen, but Windows kept another window in front. Check the taskbar.`;
-            })
-                .catch((error) => { browserFocusMessages[worker] = browserFocusFailure(worker, error); })
-                .finally(() => { browserFocusPending[worker] = false; if (latest)
-                render(latest); });
-        };
+        action.onclick = () => showBrowser(worker, hold.bookingId);
         card.append(action, result);
     }
     return card;
@@ -451,27 +421,274 @@ function renderQrSummary(state) {
         container.replaceChildren(title, note, list);
     }
 }
-function syncSpecialSessionControls() {
-    const special = input('session-mode').value === 'special-friday';
-    byId('special-session-note').hidden = !special;
-    if (special && workflow === 'release') {
-        input('booking-method').value = 'api-first';
-        input('booking-type').value = 'extended';
-        input('court-count').value = '4';
-        input('start-time').value = '17:00';
-        input('duration').value = '5';
-        fallbackTimes = [];
-        courtOrder = [6, 7, 1, 2, 3, 4, 5];
-        editors();
+/** Browsers the current plan needs, so the strip can flag a needed browser that is closed. */
+function neededWorkers() {
+    const strategy = input('booking-type').value, count = Number(input('court-count').value);
+    return requiredWorkers(strategy, count);
+}
+function showBrowser(worker, bookingId) {
+    if (browserFocusPending[worker])
+        return;
+    browserFocusPending[worker] = true;
+    browserFocusMessages[worker] = `Opening Browser ${worker}…`;
+    if (latest)
+        render(latest);
+    void window.thirsty.focusBrowser({ workerId: worker, ...(bookingId ? { bookingId } : {}) })
+        .then(result => {
+        browserFocusMessages[worker] = result === 'focused'
+            ? `Browser ${worker} is now in front, maximized on its screen.`
+            : `Browser ${worker} was restored on its screen, but Windows kept another window in front. Check the taskbar.`;
+    })
+        .catch((error) => { browserFocusMessages[worker] = browserFocusFailure(worker, error); })
+        .finally(() => { browserFocusPending[worker] = false; if (latest)
+        render(latest); });
+}
+let renderedBrowsers = '';
+function renderBrowsers(state, busy) {
+    const health = state.browserHealth ?? {}, needed = neededWorkers();
+    const open = ALL_WORKERS.filter(worker => health[worker]).length;
+    const closeBlocked = busy || !!state.scheduledRelease;
+    for (const id of ['close-browsers', 'close-browsers-tools']) {
+        const button = input(id);
+        button.disabled = closeBlocked;
+        button.title = closeBlocked ? 'Blocked while a run is active or a release is armed.' : 'Close every Chrome window the bot opened. Your own Chrome is not touched.';
     }
-    for (const id of ['booking-method', 'booking-type', 'court-count', 'start-time', 'duration', 'attempts', 'fallback-time', 'add-fallback'])
-        input(id).disabled = special;
-    document.querySelector('.editors').classList.toggle('session-locked', special);
+    const signature = JSON.stringify({ health, needed, browserFocusPending, browserFocusMessages, players: state.playerStatus });
+    if (signature === renderedBrowsers)
+        return;
+    renderedBrowsers = signature;
+    const players = playersByWorker(state.playerStatus);
+    byId('browser-strip').replaceChildren(...ALL_WORKERS.map(worker => {
+        const dot = document.createElement('button');
+        dot.type = 'button';
+        dot.className = `browser-dot${health[worker] ? ' open' : ''}${needed.includes(worker) ? ' needed' : ''}`;
+        dot.textContent = worker;
+        dot.disabled = !health[worker];
+        dot.title = `Browser ${worker} · ${health[worker] ? 'open — click to bring it to the front' : needed.includes(worker) ? 'closed · needed by the saved plan' : 'closed'}`;
+        dot.setAttribute('aria-label', dot.title);
+        dot.onclick = () => showBrowser(worker);
+        return dot;
+    }));
+    byId('browser-list').replaceChildren(...ALL_WORKERS.map(worker => {
+        const row = document.createElement('div');
+        row.className = `browser-row${health[worker] ? ' open' : ''}`;
+        const dot = document.createElement('span');
+        dot.className = `browser-dot${health[worker] ? ' open' : ''}${needed.includes(worker) ? ' needed' : ''}`;
+        dot.textContent = worker;
+        const text = document.createElement('div'), name = document.createElement('strong'), detail = document.createElement('span');
+        name.textContent = `Browser ${worker} · ${players[worker]?.fullName ?? workerLabel(worker)}`;
+        detail.textContent = browserFocusMessages[worker] ?? (health[worker] ? 'Open' : needed.includes(worker) ? 'Closed · needed by the saved plan' : 'Closed');
+        text.append(name, detail);
+        const show = document.createElement('button');
+        show.type = 'button';
+        show.className = 'secondary';
+        show.textContent = 'Show';
+        show.disabled = !health[worker] || !!browserFocusPending[worker];
+        show.onclick = () => showBrowser(worker);
+        row.append(dot, text, show);
+        return row;
+    }));
+    byId('browser-list').setAttribute('aria-label', `${open} of 8 bot browsers open`);
+}
+function renderStatusBar(state) {
+    const clock = state.clock;
+    const sync = byId('status-clock-sync');
+    sync.textContent = clock?.networkSynced ? 'Synced' : 'Not synced';
+    sync.dataset.tone = clock?.networkSynced ? 'good' : 'warn';
+    const lock = byId('status-lock');
+    lock.textContent = state.lock ? 'Active' : 'Clear';
+    lock.dataset.tone = state.lock ? 'warn' : 'good';
+    const watch = state.slotWatch, watchText = byId('status-watch-text');
+    const label = !watch ? 'Idle' : watch.status === 'waiting' ? `Waiting · ${dateLabel(watch.date).split(',')[0]}` : watch.status === 'watching' ? `Watching · ${watch.polls} reads` : watch.status === 'finished' ? 'Finished' : 'Stopped';
+    watchText.textContent = label;
+    watchText.dataset.tone = !watch ? 'muted' : watch.status === 'watching' ? 'good' : watch.status === 'waiting' ? 'warn' : 'muted';
+}
+const slotStateInfo = { OPEN: { label: 'Open', symbol: '✓', css: 'slot-open' }, TAKEN: { label: 'Taken / unavailable', symbol: '×', css: 'slot-taken' }, UNRELEASED: { label: 'Not released yet', symbol: '—', css: 'slot-unreleased' }, UNKNOWN: { label: 'Unknown', symbol: '?', css: 'slot-unknown' } };
+const relative = (ms) => `${ms < 0 ? '−' : '+'}${(Math.abs(ms) / 1000).toFixed(3)} s`;
+const manilaMs = (iso) => new Date(iso).toLocaleTimeString('en-GB', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3 });
+let selectedWatchId, renderedSlotWatch = '';
+function slotFact(label, value, extra = '') { const fact = document.createElement('div'); fact.className = `slot-fact ${extra}`; const name = document.createElement('span'), text = document.createElement('strong'); name.textContent = label; text.textContent = value; fact.append(name, text); return fact; }
+function slotMatrix(cells, ours, recentSince) {
+    const scroll = document.createElement('div');
+    scroll.className = 'audit-matrix-scroll';
+    scroll.tabIndex = 0;
+    const table = document.createElement('table');
+    table.className = 'audit-matrix';
+    const head = document.createElement('tr');
+    head.append(Object.assign(document.createElement('th'), { textContent: 'Court' }));
+    for (const hour of hours) {
+        const th = document.createElement('th');
+        th.textContent = friendly(hour).replace(':00 ', '');
+        th.title = friendly(hour);
+        head.append(th);
+    }
+    const thead = document.createElement('thead');
+    thead.append(head);
+    const tbody = document.createElement('tbody');
+    for (const court of [1, 2, 3, 4, 5, 6, 7]) {
+        const row = document.createElement('tr'), label = document.createElement('th');
+        label.scope = 'row';
+        label.textContent = `C${court}`;
+        label.title = `Court ${court}`;
+        row.append(label);
+        for (const hour of hours) {
+            const cell = cells.find(value => value.court === court && value.hour === hour), info = slotStateInfo[cell?.state ?? 'UNKNOWN'], td = document.createElement('td');
+            const mine = ours.has(`${court}/${hour}`);
+            td.className = `slot-cell ${info.css}${cell?.record ? ' slot-record' : ''}${mine ? ' slot-ours' : ''}${recentSince !== undefined && cell?.changedSinceReleaseMs !== undefined && cell.changedSinceReleaseMs >= recentSince ? ' slot-recent' : ''}`;
+            td.textContent = info.symbol;
+            if (cell?.changedSinceReleaseMs !== undefined) {
+                const when = document.createElement('small');
+                when.textContent = `${cell.changedSinceReleaseMs < 0 ? '−' : '+'}${Math.abs(cell.changedSinceReleaseMs / 1000).toFixed(1)}s`;
+                td.append(when);
+            }
+            td.title = `Court ${court} · ${friendly(hour)} · ${info.label}${cell?.record ? ' · public booking record' : ''}${mine ? ' · held by this bot' : ''}${cell?.changedSinceReleaseMs !== undefined ? ` · last change ${relative(cell.changedSinceReleaseMs)} after release` : ''}`;
+            td.setAttribute('aria-label', td.title);
+            row.append(td);
+        }
+        tbody.append(row);
+    }
+    table.append(thead, tbody);
+    scroll.append(table);
+    const legend = document.createElement('div');
+    legend.className = 'slot-legend';
+    for (const state of ['OPEN', 'TAKEN', 'UNRELEASED', 'UNKNOWN']) {
+        const item = document.createElement('span'), mark = document.createElement('i');
+        mark.className = `slot-cell ${slotStateInfo[state].css}`;
+        item.append(mark, document.createTextNode(slotStateInfo[state].label));
+        legend.append(item);
+    }
+    const record = document.createElement('span'), recordMark = document.createElement('i');
+    recordMark.className = 'slot-cell slot-unknown slot-record';
+    record.append(recordMark, document.createTextNode('Public booking record'));
+    const mine = document.createElement('span'), mineMark = document.createElement('i');
+    mineMark.className = 'slot-cell slot-taken slot-ours';
+    mine.append(mineMark, document.createTextNode('Held by this bot'));
+    legend.append(record, mine);
+    const wrap = document.createElement('div');
+    wrap.append(scroll, legend);
+    return wrap;
+}
+function slotTimeline(entries) {
+    if (!entries.length)
+        return [Object.assign(document.createElement('p'), { className: 'empty', textContent: 'No slot changes recorded yet.' })];
+    return entries.map(entry => {
+        const row = document.createElement('div');
+        const kind = entry.kind === 'published' ? 'published' : entry.kind === 'record' ? 'record' : entry.to === 'TAKEN' ? 'taken' : entry.to === 'OPEN' ? 'opened' : 'other';
+        row.className = `slot-event ${kind}`;
+        const time = document.createElement('time');
+        time.textContent = relative(entry.sinceReleaseMs);
+        const where = document.createElement('strong');
+        where.textContent = entry.kind === 'published' ? 'Schedule published' : `Court ${entry.court} · ${friendly(entry.hour)}`;
+        const what = document.createElement('span');
+        what.textContent = entry.kind === 'published' ? `${entry.openCount ?? 0} open · ${entry.takenCount ?? 0} already unavailable at first read`
+            : entry.kind === 'record' ? (entry.appeared ? 'Public booking record appeared' : 'Public booking record removed') : `${slotStateInfo[entry.from ?? 'UNKNOWN'].label} → ${slotStateInfo[entry.to ?? 'UNKNOWN'].label}`;
+        const gap = document.createElement('span');
+        gap.className = 'window';
+        gap.textContent = `${entry.windowMs === null ? 'first read' : `±${(entry.windowMs / 1000).toFixed(3)} s`} · ${manilaMs(entry.observedAt)}`;
+        row.append(time, where, what, gap);
+        return row;
+    });
+}
+function oursFor(state, date) {
+    const ours = new Set();
+    for (const hold of state.qrHandoffs ?? [])
+        if (hold.date === date)
+            for (const court of hold.courts)
+                for (const slot of hourlySlots(hold.startTime, hold.endTime))
+                    ours.add(`${court}/${slot.slice(0, 5)}`);
+    return ours;
+}
+function renderSlotWatch(state) {
+    const live = state.slotWatch ?? null, history = state.slotWatchHistory ?? [];
+    const selected = selectedWatchId ? history.find(entry => entry.id === selectedWatchId) : undefined;
+    const signature = JSON.stringify({ live, selected: selected?.id, history: history.map(entry => entry.id), ours: state.qrHandoffs });
+    const active = !!live && (live.status === 'waiting' || live.status === 'watching');
+    input('watch-next-release').hidden = active;
+    input('stop-slot-watch').hidden = !active;
+    if (signature === renderedSlotWatch)
+        return;
+    renderedSlotWatch = signature;
+    const summary = selected ?? live?.summary;
+    const date = selected?.date ?? live?.date, releaseMs = selected?.releaseMs ?? live?.releaseMs;
+    const meta = byId('slot-watch-meta');
+    meta.replaceChildren();
+    if (!date || releaseMs === undefined) {
+        const empty = document.createElement('div');
+        empty.className = 'audit-empty';
+        empty.append(Object.assign(document.createElement('strong'), { textContent: 'No release watched yet' }), Object.assign(document.createElement('span'), { textContent: 'Arm a release, or press Watch next release to observe one without booking.' }));
+        byId('slot-watch-matrix').replaceChildren(empty);
+        byId('slot-watch-summary').replaceChildren();
+        byId('slot-watch-timeline').replaceChildren(...slotTimeline([]));
+    }
+    else {
+        const status = selected ? selected.status : live.status;
+        const badge = document.createElement('span');
+        badge.className = `slot-status-badge ${status}`;
+        badge.textContent = selected ? `SAVED · ${status.toUpperCase()}` : status.toUpperCase();
+        const statusFact = slotFact('Status', '');
+        statusFact.querySelector('strong').replaceChildren(badge);
+        meta.append(statusFact, slotFact('Target date', dateLabel(date)), slotFact('Release', `${manilaMs(new Date(releaseMs).toISOString())} Manila`), slotFact('Reads', selected ? `${selected.polls} (${selected.failedPolls} failed)` : `${live.polls} (${live.failedPolls} failed)`), ...(!selected && live?.lastLatencyMs !== undefined ? [slotFact('Last read', `${live.lastLatencyMs} ms${live.lastError ? ` · ${live.lastError}` : ''}`)] : []), (() => { const path = selected?.reportPath ?? summary?.reportPath ?? live.logPath, fact = slotFact(summary ? 'Report' : 'Log file', path.split(/[\\/]/).at(-1) ?? path, 'path'); fact.title = path; return fact; })());
+        const cells = selected ? (selected.finalMatrix.split(',').filter(Boolean).flatMap(row => {
+            const [court, codes] = row.split(':');
+            return [...(codes ?? '')].map((code, index) => ({ court: Number(court), hour: hours[index],
+                state: (code === 'O' ? 'OPEN' : code === 'X' ? 'TAKEN' : code === 'U' ? 'UNRELEASED' : 'UNKNOWN'), record: false }));
+        })) : live.cells;
+        const recent = !selected && live?.lastPollAt ? Date.parse(live.lastPollAt) - releaseMs - 1500 : undefined;
+        byId('slot-watch-matrix').replaceChildren(slotMatrix(cells, oursFor(state, date), recent));
+        const facts = byId('slot-watch-summary');
+        facts.replaceChildren();
+        if (summary) {
+            const box = document.createElement('div');
+            box.className = 'slot-summary';
+            box.append(slotFact('Date visible after release', summary.releaseVisibleSinceReleaseMs === null ? 'Not observed' : relative(summary.releaseVisibleSinceReleaseMs)), slotFact('Fastest take', summary.fastestTakeMs === null ? 'None observed' : relative(summary.fastestTakeMs)), slotFact('Taken after opening', String(summary.taken.length)), slotFact('Never open at release', `${summary.neverOpen.length} (${summary.neverOpen.filter(cell => !cell.record).length} without booking record)`), slotFact('Reopened later', String(summary.reopened.length)), slotFact('Median read time', summary.medianLatencyMs === null ? '—' : `${summary.medianLatencyMs} ms`));
+            facts.append(box);
+        }
+        const timeline = byId('slot-watch-timeline'), atBottom = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 20;
+        timeline.replaceChildren(...slotTimeline(selected ? selected.timeline : live.timeline));
+        if (atBottom)
+            timeline.scrollTop = timeline.scrollHeight;
+    }
+    const list = byId('slot-watch-history');
+    if (!history.length)
+        list.replaceChildren(Object.assign(document.createElement('p'), { className: 'empty', textContent: 'No finished watches yet.' }));
+    else
+        list.replaceChildren(...history.map(entry => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'slot-history-item';
+            button.setAttribute('aria-pressed', String(entry.id === selectedWatchId));
+            const title = document.createElement('strong');
+            title.textContent = `${dateLabel(entry.date)} · release ${new Date(entry.releaseMs).toLocaleString('en-GB', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })}`;
+            const fast = document.createElement('span');
+            fast.className = 'fast';
+            fast.textContent = entry.fastestTakeMs === null ? 'no takes' : `fastest ${relative(entry.fastestTakeMs)}`;
+            const meta = document.createElement('span');
+            meta.className = 'meta';
+            meta.textContent = `${entry.taken.length} taken after opening · ${entry.neverOpen.length} never open · ${entry.polls} reads · ${entry.status}${entry.id === selectedWatchId ? ' · showing' : ''}`;
+            button.append(title, fast, meta);
+            button.onclick = () => { selectedWatchId = selectedWatchId === entry.id ? undefined : entry.id; if (latest)
+                render(latest); };
+            return button;
+        }));
 }
 function status(id, text, tone) { const el = byId(id); el.textContent = text; el.dataset.tone = tone; }
+function gateRows(gates) {
+    return gates.map(([label, ok]) => {
+        const row = document.createElement('div');
+        row.className = `gate ${ok ? 'good' : 'warn'}`;
+        const mark = document.createElement('span');
+        mark.className = 'gate-mark';
+        mark.textContent = ok ? '✓' : '–';
+        mark.setAttribute('aria-label', ok ? 'Done' : 'Pending');
+        row.append(mark, document.createTextNode(label));
+        return row;
+    });
+}
 function render(state) {
     latest = state;
     renderQrSummary(state);
+    renderStatusBar(state);
+    renderSlotWatch(state);
     byId('headline').textContent = state.headline;
     byId('detail').textContent = state.detail;
     const armed = !!state.scheduledRelease;
@@ -541,7 +758,7 @@ function render(state) {
     if (b) {
         if (!releaseDirty && loadedPlan !== b.fingerprint) {
             loadedPlan = b.fingerprint;
-            releaseDraft = { sessionMode: b.setup.SESSION_MODE ?? 'normal', method: b.setup.BOOKING_METHOD ?? 'browser', strategy: b.setup.BOOKING_TYPE ?? 'standard', date: testDraft?.date ?? input('test-date').value, courtCount: b.setup.COURT_COUNT, start: b.setup.START_TIME, duration: b.setup.DURATION_HOURS, attempts: b.setup.MAX_SELECTION_ATTEMPTS, courtOrder: [...b.setup.PREFERRED_COURTS], fallbackTimes: [...b.setup.FALLBACK_TIMES], exactA: '', exactB: '' };
+            releaseDraft = { method: b.setup.BOOKING_METHOD ?? 'browser', strategy: b.setup.BOOKING_TYPE ?? 'standard', date: testDraft?.date ?? input('test-date').value, courtCount: b.setup.COURT_COUNT, start: b.setup.START_TIME, duration: b.setup.DURATION_HOURS, attempts: b.setup.MAX_SELECTION_ATTEMPTS, courtOrder: [...b.setup.PREFERRED_COURTS], fallbackTimes: [...b.setup.FALLBACK_TIMES], exactA: '', exactB: '' };
             if (b.fallbackReconciliation.removed.length) {
                 releaseAdjustment = b.fallbackReconciliation;
                 releaseDirty = true;
@@ -680,9 +897,8 @@ function render(state) {
     byId('prepare').firstChild.textContent = 'RESET & PREPARE ';
     const methodValue = input('booking-method').value, apiFirst = ['api-first', 'proofless'].includes(methodValue), proofless = methodValue === 'proofless';
     byId('test-booking').textContent = proofless ? 'RUN PROOFLESS TEST TO QR' : apiFirst ? 'RUN API TEST TO QR' : 'RUN TEST TO QR';
-    const specialDraft = input('session-mode').value === 'special-friday';
-    byId('api-dry-controls').hidden = !apiFirst || workflow !== 'test' || specialDraft;
-    byId('test-availability').hidden = !apiFirst || specialDraft;
+    byId('api-dry-controls').hidden = !apiFirst || workflow !== 'test';
+    byId('test-availability').hidden = !apiFirst;
     byId('api-preview').disabled = busy || state.lock || !state.apiFirstReady;
     const draftProblem = workflow === 'release' ? bookingSetupProblem(currentSetup()) : undefined;
     byId('configuration-status').hidden = workflow !== 'release';
@@ -724,19 +940,16 @@ function render(state) {
         byId('handoff-result').textContent = state.bookingResult.description + '\n' + state.bookingResult.outcomes.map((v, i) => `Checkout ${i + 1}: ${v}`).join('\n');
     }
     const duration = Number(input('duration').value), start = Number(input('start-time').value.slice(0, 2)), strategy = input('booking-type').value;
-    const specialSession = input('session-mode').value === 'special-friday';
     const count = Number(input('court-count').value), releaseText = state.clock ? new Date(state.clock.releaseMs).toLocaleString('en-US', { timeZone: state.clock.timezone, month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Calculating';
     const method = input('booking-method').value === 'browser' ? 'NORMAL BROWSER' : input('booking-method').value === 'hybrid' ? 'HYBRID AVAILABILITY' : proofless ? 'PROOFLESS DIRECT' : 'API-FIRST · WITH PROOFS';
-    const workers = specialSession ? SPECIAL_SESSION_WORKERS_UI : requiredWorkers(strategy, count), checkoutCount = workers.length;
-    byId('booking-preview').textContent = specialSession
-        ? `SPECIAL FRIDAY SESSION\nRelease: ${releaseText}\nTarget: ${state.clock ? dateLabel(state.clock.targetDate) : 'Not configured'}\n8 browsers/players A-H · up to 8 independent temporary QR holds · 4 distinct intended courts.\nA/B proof-based: Court 6 · 5:00–10:00 PM (A 5-8 PM + B 8-10 PM).\nC/D proof-based: Court 7 · 7:00–11:00 PM (C 7-9 PM + D 9-11 PM).\nE/F ADAPTIVE: Court 5 · 5:00–10:00 PM (E 5-8 PM + F 8-10 PM) — proof-based if fresh availability appears before 8:00 AM, otherwise the existing proofless direct attempt exactly at 8:00 AM. Never both.\nG/H proof-based bonus: Court 4 · 5:00–10:00 PM (G 5-8 PM + H 8-10 PM) — skipped entirely when no fourth distinct court has complete availability. Never proofless.\nCourt priority when a preferred court is unavailable follows a fallback search; all four assigned courts are always distinct.\nE/F's proofless-fallback hidden price assumes ₱700/hour and is UNVERIFIED.\nA hold is not a completed booking. Unknown outcomes are never retried. Payment: MANUAL`
-        : `${workflow === 'release' ? `RELEASE PLAN\nRelease: ${releaseText}\nTarget: ${state.clock ? dateLabel(state.clock.targetDate) : 'Not configured'}\n` : ''}${method}\n${strategy.toUpperCase()} | ${count} COURT${count === 1 ? '' : 'S'}\n${friendly(input('start-time').value)} -> ${endFriendly(input('start-time').value, duration)} | ${duration} hours\nFallback starts: ${fallbackTimes.map(friendly).join(' -> ') || 'None'}\nCourt priority: ${courtOrder.join(' -> ')}\n${strategy === 'extended' ? `Extended split: ${duration === 4 ? '3h + 1h (alternatives 2h + 2h, 1h + 3h)' : duration === 5 ? '3h + 2h (alternative 2h + 3h)' : '3h + 3h'}\n` : ''}${workers.length} browser${workers.length === 1 ? '' : 's'} | ${checkoutCount} checkout${checkoutCount === 1 ? '' : 's'} | Players: ${workers.join(' + ')}\nNo price ceiling\nAttempts: ${input('attempts').value} | Payment: MANUAL${proofless ? '\nProofless Direct: Reset & Prepare audits all court/hour blocks; the armed run refreshes them at 7:30, selects the first unblocked saved fallback, and submits without availability proofs. Proofless tests require your manual confirmation that the exact cells are open.' : input('booking-method').value === 'api-first' ? '\nAPI first: availability and fresh per-hour proofs are acquired before checkout.' : ''}`;
+    const workers = requiredWorkers(strategy, count), checkoutCount = workers.length;
+    byId('booking-preview').textContent = `${workflow === 'release' ? `RELEASE PLAN\nRelease: ${releaseText}\nTarget: ${state.clock ? dateLabel(state.clock.targetDate) : 'Not configured'}\n` : ''}${method}\n${strategy.toUpperCase()} | ${count} COURT${count === 1 ? '' : 'S'}\n${friendly(input('start-time').value)} -> ${endFriendly(input('start-time').value, duration)} | ${duration} hours\nFallback starts: ${fallbackTimes.map(friendly).join(' -> ') || 'None'}\nCourt priority: ${courtOrder.join(' -> ')}\n${strategy === 'extended' ? `Extended split: ${duration === 4 ? '3h + 1h (alternatives 2h + 2h, 1h + 3h)' : duration === 5 ? '3h + 2h (alternative 2h + 3h)' : '3h + 3h'}\n` : ''}${workers.length} browser${workers.length === 1 ? '' : 's'} | ${checkoutCount} checkout${checkoutCount === 1 ? '' : 's'} | Players: ${workers.join(' + ')}\nNo price ceiling\nAttempts: ${input('attempts').value} | Payment: MANUAL${proofless ? '\nProofless Direct: Reset & Prepare audits all court/hour blocks; the armed run refreshes them at 7:30, selects the first unblocked saved fallback, and submits without availability proofs. Proofless tests require your manual confirmation that the exact cells are open.' : input('booking-method').value === 'api-first' ? '\nAPI first: availability and fresh per-hour proofs are acquired before checkout.' : ''}`;
     if (duration > 6) {
         byId('booking-preview').textContent = 'Extended booking supports up to 6 consecutive hours.';
         input('test-booking').disabled = true;
         input('arm').disabled = true;
     }
-    const runWorkers = specialSession ? SPECIAL_SESSION_WORKERS_UI : requiredWorkers(strategy, count), playerReadyByWorker = { A: playerStatus.primary, B: playerStatus.extended, C: playerStatus.third, D: playerStatus.fourth, E: playerStatus.fifth, F: playerStatus.sixth, G: playerStatus.seventh, H: playerStatus.eighth };
+    const runWorkers = requiredWorkers(strategy, count), playerReadyByWorker = { A: playerStatus.primary, B: playerStatus.extended, C: playerStatus.third, D: playerStatus.fourth, E: playerStatus.fifth, F: playerStatus.sixth, G: playerStatus.seventh, H: playerStatus.eighth };
     const playersReady = runWorkers.every(worker => playerReadyByWorker[worker]);
     byId('player-status').textContent = runWorkers.map(worker => `${workerLabel(worker)}: ${playerReadyByWorker[worker] ? 'Configured' : 'Missing'}`).join(' | ');
     const profile = (label, p) => { const card = document.createElement('div'); const heading = document.createElement('strong'); heading.textContent = label; card.append(heading, document.createElement('br'), document.createTextNode(p ? `${p.fullName}\n${p.phone}\n${p.email}` : 'Missing or invalid configuration')); card.style.whiteSpace = 'pre-line'; return card; };
@@ -747,7 +960,7 @@ function render(state) {
     const releaseMode = workflow === 'release';
     byId('release-schedule').hidden = !releaseMode;
     byId('release-readiness-card').hidden = !releaseMode;
-    byId('block-audit-card').hidden = !releaseMode;
+    renderBrowsers(state, busy);
     if (!input('block-audit-date').value && state.clock?.targetDate)
         input('block-audit-date').value = state.clock.targetDate;
     const blockAuditDate = input('block-audit-date').value;
@@ -763,22 +976,20 @@ function render(state) {
     }
     const apiPrepared = !!state.apiFirstReady && !!state.ready && !!state.booking && ['api-first', 'proofless'].includes(state.booking.setup.BOOKING_METHOD) && !state.lock;
     const prepared = apiPrepared || !!state.preparedContext && state.preparedContext.workflow === 'release' && state.preparedContext.configFingerprint === state.booking?.fingerprint;
-    const required = specialSession ? SPECIAL_SESSION_WORKERS_UI : requiredWorkers(strategy, count);
+    const required = requiredWorkers(strategy, count);
     const verificationGates = apiFirst
         ? [['Onda venue verified', apiPrepared], [proofless ? 'Court/hour block audit complete' : 'Availability checked', proofless ? state.assumedPrice !== undefined && state.assumedPrice !== null : state.apiStage?.stage === 'CANDIDATE_READY' || !!state.observedPrice]]
         : [['Onda verified', prepared], ['All Courts verified', prepared], ['Selected slots: 0', prepared], ['Payment holds: none', prepared && !state.lock]];
     const gates = [['Configuration valid', !draftProblem], ['Google network clock synchronized', !!state.clock?.networkSynced], ['Next release calculated', !!state.clock], ['Booking target calculated', !!state.clock?.targetDate], ...required.map(id => [`${workerLabel(id)} configured`, !!playerReadyByWorker[id]]), ...required.map(id => [`Browser ${id} prepared`, apiFirst ? apiPrepared && !!state.browserHealth?.[id] : prepared && !!state.preparedContext?.browsers.some(b => b.id === id)]), ...verificationGates, ['Automation lock clear', !state.lock], ['Prepared fingerprint matches', prepared], ['Terms authorized for this run', state.termsAuthorized || armed], ['Armed for next release', armed || state.apiStage?.stage === 'WAITING_FOR_RELEASE']];
-    const readiness = byId('release-readiness');
-    readiness.replaceChildren(...gates.map(([label, ok]) => { const e = document.createElement('div'); e.className = `gate ${ok ? 'good' : 'warn'}`; e.textContent = `${ok ? 'OK' : '--'} ${label}`; return e; }));
-    readiness.className = 'gate-list';
+    byId('release-readiness').replaceChildren(...gateRows(gates));
     byId('release-readiness-card').dataset.state = armed ? 'armed' : prepared ? 'prepared' : 'draft';
     byId('sleep-warning').hidden = !armed;
     byId('sleep-warning').textContent = `Sleep protection: ${state.sleepProtection ? 'ACTIVE' : 'NOT AVAILABLE'} | Keep the PC powered on. Do not hibernate or close the laptop lid if Windows sleeps on lid close.`;
-    byId('saved-plan-summary').textContent = state.booking ? (state.booking.setup.SESSION_MODE === 'special-friday' ? `SPECIAL FRIDAY SESSION\nA/B proof-based · preferred Court 6 · 5:00–10:00 PM\nC/D proof-based · preferred Court 7 · 7:00–11:00 PM\nE/F adaptive · preferred Court 5 · 5:00–10:00 PM (proof-based on early availability, else proofless exactly at 8:00 AM)\nG/H proof-based bonus · preferred Court 4 · 5:00–10:00 PM (skipped if no fourth distinct court)\nPlayers/Browsers A–H · up to 8 independent QR holds across 4 distinct courts\nTarget: ${dateLabel(state.booking.targetDate)}` : `${state.booking.setup.BOOKING_METHOD.toUpperCase()} · ${state.booking.setup.BOOKING_TYPE.toUpperCase()} · ${state.booking.setup.COURT_COUNT} court${state.booking.setup.COURT_COUNT === 1 ? '' : 's'}\n${friendly(state.booking.setup.START_TIME)}–${endFriendly(state.booking.setup.START_TIME, state.booking.setup.DURATION_HOURS)} · ${state.booking.setup.DURATION_HOURS} hours\nCourt priority: ${state.booking.setup.PREFERRED_COURTS.join(' → ')}\nFallback starts: ${state.booking.setup.FALLBACK_TIMES.map(friendly).join(', ') || 'None'}\nTarget: ${dateLabel(state.booking.targetDate)}`) : 'No saved plan available.';
+    byId('saved-plan-summary').textContent = state.booking ? (`${state.booking.setup.BOOKING_METHOD.toUpperCase()} · ${state.booking.setup.BOOKING_TYPE.toUpperCase()} · ${state.booking.setup.COURT_COUNT} court${state.booking.setup.COURT_COUNT === 1 ? '' : 's'}\n${friendly(state.booking.setup.START_TIME)}–${endFriendly(state.booking.setup.START_TIME, state.booking.setup.DURATION_HOURS)} · ${state.booking.setup.DURATION_HOURS} hours\nCourt priority: ${state.booking.setup.PREFERRED_COURTS.join(' → ')}\nFallback starts: ${state.booking.setup.FALLBACK_TIMES.map(friendly).join(', ') || 'None'}\nTarget: ${dateLabel(state.booking.targetDate)}`) : 'No saved plan available.';
     const actualAmount = state.handoff?.amount ?? state.observedPrice ?? state.selection?.amount;
     byId('observed-price').hidden = (actualAmount === undefined || actualAmount === null) && (state.assumedPrice === undefined || state.assumedPrice === null);
     byId('observed-price').textContent = [actualAmount !== undefined && actualAmount !== null ? `Observed booking price: ₱${actualAmount.toLocaleString()} · Review the amount in Onda before final booking authorization.` : '',
-        state.assumedPrice !== undefined && state.assumedPrice !== null ? `Direct-lane estimated total: ₱${state.assumedPrice.toLocaleString()} · UNVERIFIED prior-rate assumption; Friday's actual price may differ.` : '',
+        state.assumedPrice !== undefined && state.assumedPrice !== null ? `Proofless estimated total: ₱${state.assumedPrice.toLocaleString()} · UNVERIFIED prior-rate assumption; the actual price may differ.` : '',
         'Payment stays manual.'].filter(Boolean).join('\n');
     const action = input('main-action'), hold = !!state.handoff || !!state.lock, blockedHold = hold && !state.canPrepareOverHold;
     const apiWaiting = state.operation === 'full' && state.apiStage?.stage === 'WAITING_FOR_RELEASE';
@@ -798,9 +1009,8 @@ function render(state) {
         ['Automation lock clear', !state.lock], ['Preparation matches this date and plan', testPrepared],
         ['Terms authorized for this test', !!state.termsAuthorized]
     ];
-    byId('test-readiness').replaceChildren(...testGates.map(([label, ok]) => { const row = document.createElement('div'); row.className = `gate ${ok ? 'good' : 'warn'}`; row.textContent = `${ok ? 'OK' : '--'} ${label}`; return row; }));
-    const specialSaved = b?.setup.SESSION_MODE === 'special-friday';
-    byId('test-plan-summary').textContent = specialSaved ? 'SPECIAL FRIDAY SESSION is release-only. Use Next Release to prepare and arm it.' : b ? `${b.setup.BOOKING_METHOD.toUpperCase()} · ${b.setup.BOOKING_TYPE.toUpperCase()} · ${b.setup.COURT_COUNT} court${b.setup.COURT_COUNT === 1 ? '' : 's'}\n${friendly(b.setup.START_TIME)}–${endFriendly(b.setup.START_TIME, b.setup.DURATION_HOURS)} · ${b.setup.DURATION_HOURS} hours\nCourt priority: ${b.setup.PREFERRED_COURTS.join(' → ')}\nFallback starts: ${b.setup.FALLBACK_TIMES.map(friendly).join(', ') || 'None'}\nTest date: ${testDate ? dateLabel(testDate) : 'Choose a date'}${input('exact-a').value.trim() || input('exact-b').value.trim() ? `\nAdvanced exact court override: ${[input('exact-a').value, input('exact-b').value].filter(Boolean).join(' / ')}` : ''}` : 'No saved booking plan available.';
+    byId('test-readiness').replaceChildren(...gateRows(testGates));
+    byId('test-plan-summary').textContent = b ? `${b.setup.BOOKING_METHOD.toUpperCase()} · ${b.setup.BOOKING_TYPE.toUpperCase()} · ${b.setup.COURT_COUNT} court${b.setup.COURT_COUNT === 1 ? '' : 's'}\n${friendly(b.setup.START_TIME)}–${endFriendly(b.setup.START_TIME, b.setup.DURATION_HOURS)} · ${b.setup.DURATION_HOURS} hours\nCourt priority: ${b.setup.PREFERRED_COURTS.join(' → ')}\nFallback starts: ${b.setup.FALLBACK_TIMES.map(friendly).join(', ') || 'None'}\nTest date: ${testDate ? dateLabel(testDate) : 'Choose a date'}${input('exact-a').value.trim() || input('exact-b').value.trim() ? `\nAdvanced exact court override: ${[input('exact-a').value, input('exact-b').value].filter(Boolean).join(' / ')}` : ''}` : 'No saved booking plan available.';
     const liveTestHandoffs = workflow === 'test' && state.workflow === 'test' ? activeHandoffs(state) : [];
     const readyTestHandoffs = liveTestHandoffs.filter(hold => (hold.status ?? 'qr-ready') === 'qr-ready').length;
     const expectedTestHandoffs = Math.max(testBrowsers.length, liveTestHandoffs.length);
@@ -809,17 +1019,15 @@ function render(state) {
         : workflow === 'test' && state.workflow === 'test' ? state.headline : state.lock ? 'Review retained hold' : testPrepared ? 'Ready to test' : 'Prepare to test';
     const baseTestDetail = liveTestHandoffs.length
         ? `${readyTestHandoffs} of ${expectedTestHandoffs} required QR page${expectedTestHandoffs === 1 ? ' is' : 's are'} verified. Check the player, courts, date, every hourly slot, amount, and booking reference below before scanning any QR code.`
-        : specialSaved ? 'This special session can only run through Next Release.' : workflow === 'test' && state.workflow === 'test' ? state.detail : state.lock ? 'Review the existing browser and payment hold before testing again.' : testPrepared ? 'Review Terms, then run the saved plan.' : 'Choose a date, then prepare the saved booking plan.';
+        : workflow === 'test' && state.workflow === 'test' ? state.detail : state.lock ? 'Review the existing browser and payment hold before testing again.' : testPrepared ? 'Review Terms, then run the saved plan.' : 'Choose a date, then prepare the saved booking plan.';
     byId('test-detail').textContent = baseTestDetail;
     const testState = busy ? 'running' : blockedHold ? 'hold' : testPrepared ? 'review' : 'prepare';
     const testButton = input('test-main-action');
     testButton.textContent = testState === 'prepare' && unresolvedCheckout ? 'Reset & Prepare' : testState === 'prepare' && state.canPrepareOverHold ? 'Prepare New Run' : { running: 'Running', hold: 'Review Hold', review: 'Review & Test', prepare: 'Prepare' }[testState];
-    testButton.disabled = !!specialSaved || testState === 'running' || testState === 'prepare' && (!b || !testDate || blockedHold);
-    input('test-booking').disabled ||= !!specialSaved;
-    byId('test-main-action-hint').textContent = specialSaved ? 'Release-only safety mode: prepare and arm this session from Next Release.' : unresolvedCheckout ? 'Inspects both API browsers and clears the retained safety lock only after clean-state verification.' : state.canPrepareOverHold ? 'The verified hold stays recorded. Preparing opens a fresh schedule in the same bot.' : blockedHold ? 'Review the retained lock before another test.' : testState === 'review' ? 'This test can create real temporary payment holds. Review Terms and confirm the test before continuing.' : testState === 'running' ? 'The current test is in progress.' : 'Prepare the required browser or browsers for the selected date.';
+    testButton.disabled = testState === 'running' || testState === 'prepare' && (!b || !testDate || blockedHold);
+    byId('test-main-action-hint').textContent = unresolvedCheckout ? 'Inspects both API browsers and clears the retained safety lock only after clean-state verification.' : state.canPrepareOverHold ? 'The verified hold stays recorded. Preparing opens a fresh schedule in the same bot.' : blockedHold ? 'Review the retained lock before another test.' : testState === 'review' ? 'This test can create real temporary payment holds. Review Terms and confirm the test before continuing.' : testState === 'running' ? 'The current test is in progress.' : 'Prepare the required browser or browsers for the selected date.';
     testResults.hidden = !!byId('observed-price').hidden && !!byId('selection-result').hidden && !!byId('handoff-result').hidden;
     syncViableControls();
-    syncSpecialSessionControls();
     tick();
 }
 byId('main-action').onclick = () => { if (!latest)
@@ -851,13 +1059,10 @@ function tick() {
     const effectiveNow = Date.now() + (latest?.clock?.clockOffsetMs ?? 0), now = new Date(effectiveNow);
     byId('clock').textContent = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Manila', hourCycle: 'h23' }).format(now);
     byId('clock-date').textContent = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'Asia/Manila' }).format(now);
+    byId('status-clock').textContent = byId('clock').textContent;
     if (!latest)
         return;
     renderQrSummary(latest);
-    if (latest.clock) {
-        const remaining = Math.max(0, Math.ceil(((latest.scheduledRelease?.releaseMs ?? latest.clock.releaseMs) - effectiveNow) / 1000));
-        byId('next-release-countdown').textContent = [Math.floor(remaining / 3600), Math.floor(remaining / 60) % 60, remaining % 60].map(v => String(v).padStart(2, '0')).join(':');
-    }
     byId('run-timing').textContent = latest.runTiming?.readyAt ? `${((latest.runTiming.endedAt ? latest.runTiming.readyElapsedMs ?? 0 : Math.max(0, Date.now() - Date.parse(latest.runTiming.readyAt))) / 1000).toFixed(3)} seconds · ${latest.runTiming.endedAt ? 'finished' : 'running'}` : latest.runTiming ? 'Waiting for browser ready' : 'No browser-ready run active';
     if (latest.runTiming && (!latest.runTiming.endedAt || latest.runTiming.readyAt)) {
         const run = latest.runTiming;
@@ -887,7 +1092,6 @@ function tick() {
     const release = latest.scheduledRelease?.releaseMs ?? (latest.plan && ['observe', 'dry', 'selection', 'full'].includes(latest.operation) ? latest.plan.releaseMs : latest.clock.releaseMs);
     const seconds = Math.max(0, Math.ceil((release - effectiveNow) / 1000));
     byId('countdown').textContent = [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60].map(v => String(v).padStart(2, '0')).join(':');
-    byId('next-release-countdown').textContent = byId('countdown').textContent;
     byId('countdown-label').textContent = latest.operation === 'observe' ? 'SCHEDULED RELEASE IN' : 'NEXT RELEASE IN';
     const hold = latest.bookingResult ? null : latest.handoff;
     if (hold) {
@@ -907,6 +1111,11 @@ for (const [id, action] of Object.entries({ 'sync-clock': () => window.thirsty.s
     byId(id).addEventListener('click', () => { void action().catch(async () => { render(await window.thirsty.getStatus()); }); });
 }
 byId('check-release-blocks').addEventListener('click', () => { void window.thirsty.checkReleaseBlocks(input('block-audit-date').value).catch(async () => { render(await window.thirsty.getStatus()); }); });
+for (const id of ['close-browsers', 'close-browsers-tools'])
+    byId(id).addEventListener('click', () => { void window.thirsty.closeBotBrowsers().catch(async () => { render(await window.thirsty.getStatus()); }); });
+byId('watch-next-release').addEventListener('click', () => { selectedWatchId = undefined; void window.thirsty.watchNextRelease().catch(async () => { render(await window.thirsty.getStatus()); }); });
+byId('stop-slot-watch').addEventListener('click', () => { void window.thirsty.stopSlotWatch().catch(async () => { render(await window.thirsty.getStatus()); }); });
+byId('status-watch').addEventListener('click', () => { selectedWatchId = undefined; showView('slots'); });
 byId('block-audit-date').addEventListener('change', () => { if (latest)
     render(latest); });
 byId('full-terms').addEventListener('change', () => { if (latest)
@@ -919,7 +1128,6 @@ byId('mode-selection').addEventListener('change', () => { void window.thirsty.se
 byId('terms').addEventListener('change', () => { void window.thirsty.authorizeTerms(input('terms').checked).catch(() => { input('terms').checked = false; }); });
 for (const id of ['booking-method', 'test-date', 'court-count', 'start-time', 'duration', 'attempts', 'exact-a', 'exact-b'])
     byId(id).addEventListener('change', changed);
-byId('session-mode').addEventListener('change', () => { syncSpecialSessionControls(); syncViableControls(); syncSpecialSessionControls(); changed(); });
 byId('booking-type').addEventListener('change', () => { const extended = input('booking-type').value === 'extended', d = Number(input('duration').value); if (extended && d < 4)
     input('duration').value = '4'; if (!extended && d > 3)
     input('duration').value = '3'; syncViableControls(); changed(); });
@@ -938,7 +1146,7 @@ byId('add-fallback').onclick = () => { const h = input('fallback-time').value; i
 } fallbackTimes.push(h); editors(); changed(); };
 byId('save-booking').onclick = () => {
     void (async () => {
-        const setup = { SESSION_MODE: input('session-mode').value, BOOKING_METHOD: input('booking-method').value, BOOKING_TYPE: input('booking-type').value, COURT_COUNT: Number(input('court-count').value), START_TIME: input('start-time').value, DURATION_HOURS: Number(input('duration').value), PREFERRED_COURTS: courtOrder, FALLBACK_COURTS: [], FALLBACK_TIMES: fallbackTimes, MAX_SELECTION_ATTEMPTS: Number(input('attempts').value) };
+        const setup = { BOOKING_METHOD: input('booking-method').value, BOOKING_TYPE: input('booking-type').value, COURT_COUNT: Number(input('court-count').value), START_TIME: input('start-time').value, DURATION_HOURS: Number(input('duration').value), PREFERRED_COURTS: courtOrder, FALLBACK_COURTS: [], FALLBACK_TIMES: fallbackTimes, MAX_SELECTION_ATTEMPTS: Number(input('attempts').value) };
         await window.thirsty.saveBooking(setup);
         const state = await window.thirsty.getStatus();
         if (state.headline === 'Booking plan saved') {
@@ -978,7 +1186,7 @@ function testRequest() {
     const exact = exactA || exactB ? { exact: (setup.BOOKING_TYPE === 'extended' ? [exactA, exactB] : [exactA]).map(value => value.split(',').map(court => Number(court.trim()))) } : {};
     return { method: setup.BOOKING_METHOD, request: { strategy: setup.BOOKING_TYPE, date: input('test-date').value, start: setup.START_TIME, duration: setup.DURATION_HOURS, courtCount: setup.COURT_COUNT, priority: [...setup.PREFERRED_COURTS], fallbackStarts: [...setup.FALLBACK_TIMES], ...exact } };
 }
-function currentSetup() { return { SESSION_MODE: input('session-mode').value, BOOKING_METHOD: input('booking-method').value, BOOKING_TYPE: input('booking-type').value, COURT_COUNT: Number(input('court-count').value), START_TIME: input('start-time').value, DURATION_HOURS: Number(input('duration').value), PREFERRED_COURTS: courtOrder, FALLBACK_COURTS: [], FALLBACK_TIMES: fallbackTimes, MAX_SELECTION_ATTEMPTS: Number(input('attempts').value) }; }
+function currentSetup() { return { BOOKING_METHOD: input('booking-method').value, BOOKING_TYPE: input('booking-type').value, COURT_COUNT: Number(input('court-count').value), START_TIME: input('start-time').value, DURATION_HOURS: Number(input('duration').value), PREFERRED_COURTS: courtOrder, FALLBACK_COURTS: [], FALLBACK_TIMES: fallbackTimes, MAX_SELECTION_ATTEMPTS: Number(input('attempts').value) }; }
 byId('test-booking').onclick = () => { const authorized = input('terms').checked; input('terms').checked = false; void window.thirsty.testBooking({ ...testRequest(), authorizeTerms: authorized }).catch(() => { byId('detail').textContent = 'Check booking fields and Terms authorization.'; }); };
 window.thirsty.onStatus(render);
 void window.thirsty.getStatus().then(render);

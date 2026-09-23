@@ -3,7 +3,6 @@ import {z} from 'zod';
 import {PreparationSchema,PreparedBrowserSchema,type PreparationInput,type PreparationResult} from './booking-plan.js';
 import type {BookingView} from '../ui/booking.js';
 import {requiredWorkerIds} from './workers.js';
-import {SPECIAL_SESSION_MODE,SPECIAL_SESSION_REQUIRED_WORKERS} from './api-booking/special-session.js';
 
 const digest=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export function testPreparationFingerprint(input:Extract<PreparationInput,{workflow:'test'}>){
@@ -26,5 +25,5 @@ export function makePreparedContext(input:PreparationInput,result:PreparationRes
   if(input.workflow==='test')return PreparedContextSchema.parse({workflow:'test',strategy:input.request.strategy,courtCount:input.request.courtCount,date:input.request.date,start:input.request.start,duration:input.request.duration,courtPriority:input.request.priority,fallbackStarts:input.request.fallbackStarts,exactCourts:input.request.exact,requiredBrowsers:requiredWorkerIds(input.request.strategy,input.request.courtCount),primaryPlayerConfigured:players.primary,extendedPlayerConfigured:players.extended,configFingerprint:result.fingerprint,preparedAt:new Date().toISOString(),browsers:result.browsers,solutionAvailable:result.solutionAvailable});
   if(!release)throw Error('BOOKING_PLAN_CHANGED');
   const s=release.setup;
-  return PreparedContextSchema.parse({workflow:'release',strategy:s.BOOKING_TYPE,courtCount:s.COURT_COUNT,start:s.START_TIME,duration:s.DURATION_HOURS,courtPriority:s.PREFERRED_COURTS,fallbackStarts:s.FALLBACK_TIMES,requiredBrowsers:s.SESSION_MODE===SPECIAL_SESSION_MODE?[...SPECIAL_SESSION_REQUIRED_WORKERS]:requiredWorkerIds(s.BOOKING_TYPE,s.COURT_COUNT),releaseTargetDate:result.releaseTargetDate,releaseMs:result.releaseMs,primaryPlayerConfigured:players.primary,extendedPlayerConfigured:players.extended,configFingerprint:result.fingerprint,preparedAt:new Date().toISOString(),browsers:result.browsers,solutionAvailable:result.solutionAvailable});
+  return PreparedContextSchema.parse({workflow:'release',strategy:s.BOOKING_TYPE,courtCount:s.COURT_COUNT,start:s.START_TIME,duration:s.DURATION_HOURS,courtPriority:s.PREFERRED_COURTS,fallbackStarts:s.FALLBACK_TIMES,requiredBrowsers:requiredWorkerIds(s.BOOKING_TYPE,s.COURT_COUNT),releaseTargetDate:result.releaseTargetDate,releaseMs:result.releaseMs,primaryPlayerConfigured:players.primary,extendedPlayerConfigured:players.extended,configFingerprint:result.fingerprint,preparedAt:new Date().toISOString(),browsers:result.browsers,solutionAvailable:result.solutionAvailable});
 }

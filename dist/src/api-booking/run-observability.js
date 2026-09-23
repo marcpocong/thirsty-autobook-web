@@ -1,5 +1,4 @@
 export const API_SECURITY_PREWARM_LEAD_MS = 15_000;
-export const API_DIRECT_SECURITY_PREWARM_LEAD_MS = 15_000;
 const safeCode = /^[A-Z][A-Z0-9_]{0,79}$/;
 /** Preserve useful failure categories without writing exception text, URLs, or tokens. */
 export function safeApiFailureCode(error, fallback) {

@@ -8,7 +8,6 @@ import { Safety } from './safety.js';
 import { Telemetry, sanitizedOperationFailureCode } from './telemetry.js';
 import { emitUiEvent } from './ui-events.js';
 import {requiredWorkerIds} from './workers.js';
-import {SPECIAL_SESSION_MODE,SPECIAL_SESSION_REQUIRED_WORKERS} from './api-booking/special-session.js';
 
 const safety=new Safety(),t=new Telemetry();
 const stop=()=>{safety.stop('USER_ABORT');process.exit(130);};
@@ -36,7 +35,7 @@ try{
     const target=input.workflow==='release'?releaseCalendar(config):undefined;
     if(target&&Date.now()>=target.releaseMs-config.PREFLIGHT_SECONDS_BEFORE*1000)throw Error('TODAYS_RELEASE_PASSED');
     const courtCount=input.workflow==='test'?input.request.courtCount:config.COURT_COUNT;
-    const workers=input.workflow==='release'&&config.SESSION_MODE===SPECIAL_SESSION_MODE?SPECIAL_SESSION_REQUIRED_WORKERS:requiredWorkerIds(strategy,courtCount);
+    const workers=requiredWorkerIds(strategy,courtCount);
     const prepared=await resetAndPrepare(strategy,safety,{progress:step=>emitUiEvent({type:'preparationProgress',step})},input.workflow==='test'?input.request.date:undefined,workers);
     emitUiEvent({type:'preparationProgress',step:'availability'});
     const snapshots=prepared.browsers.map(b=>b.snapshot);

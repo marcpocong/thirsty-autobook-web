@@ -1,11 +1,10 @@
 import { performance } from 'node:perf_hooks';
 import type { WorkerId } from '../workers.js';
 import type { AvailabilitySnapshot } from './types.js';
-import { specialAdaptivePlans, specialBonusLanePlans, specialBonusPlansForCourt,
-  specialSessionPlans, type SpecialSessionCourtAssignment } from './special-session.js';
+import { countCourtHourStates, courtHourStates, encodeCourtHourStates } from './court-hour-matrix.js';
 import type { ApiRunProgressLog } from './run-progress-log.js';
 
-export type DiagnosticLane = 'core' | 'adaptive' | 'bonus';
+export type DiagnosticLane = 'core';
 export type DiagnosticAttemptType = 'early' | 'official' | 'retry';
 export type DiagnosticOperation = 'availability' | 'security' | 'slotCheck' | 'checkout';
 export interface DiagnosticCorrelation {
@@ -21,16 +20,14 @@ const safeCode = /^[A-Z][A-Z0-9_]{0,79}$/;
 const allowedFields = new Set([
   'workerId','lane','attemptId','attemptType','operation','timingKind','eventAt','durationMs','networkDurationMs',
   'status','statusCode','failureCategory','dispatchState','initiationEvidence','resultCategory','success','isAvailable',
-  'targetDatePresent','responseComplete','slotCount','availableCount','courtHourSummary','coreFeasible','corePlanExact',
-  'adaptiveFeasible','adaptivePlanExact','bonusFeasible','bonusPlanExact','securitySource','preparedContextAgeMs',
+  'targetDatePresent','responseComplete','slotCount','availableCount','takenCount','unreleasedCount','unknownCount',
+  'courtHourSummary','securitySource','preparedContextAgeMs',
   'challengeState','activeAvailability','activeSecurity','activeSlotChecks','activeCheckouts','droppedCount','retryCount',
-  'verifiedHoldCount','qrHandoffCount','partialHolds','coreElapsedMs','adaptiveElapsedMs','bonusElapsedMs','slowestStages',
+  'verifiedHoldCount','qrHandoffCount','partialHolds','coreElapsedMs','slowestStages',
   'absentEvidence','finalCode','aborted','workerOutcome','court','startTime','durationHours','price','responseObserved',
 ]);
 
-export function diagnosticLaneForWorker(workerId: WorkerId): DiagnosticLane {
-  if (workerId === 'E' || workerId === 'F') return 'adaptive';
-  if (workerId === 'G' || workerId === 'H') return 'bonus';
+export function diagnosticLaneForWorker(_workerId: WorkerId): DiagnosticLane {
   return 'core';
 }
 
@@ -50,37 +47,16 @@ export function sanitizeDiagnosticExtra(extra: Record<string, unknown>): Diagnos
   return safe;
 }
 
-export interface AvailabilityPlanContext {
-  directCourt?: number;
-  coreAssignment?: SpecialSessionCourtAssignment;
-  bonusCourt?: number;
-}
-
-export function specialAvailabilityObservation(snapshot: AvailabilitySnapshot, targetDate: string,
-  context: AvailabilityPlanContext = {}): DiagnosticExtra {
+/**
+ * Exact court-by-hour state of one availability read, for the run trace.
+ * `courtHourSummary` is `court:08→23 codes` with O open, X taken, U unreleased, ? unknown.
+ */
+export function availabilityObservation(snapshot: AvailabilitySnapshot, targetDate: string): DiagnosticExtra {
   const targetDatePresent = snapshot.returnedDates[targetDate] === true;
-  const responseComplete = targetDatePresent && !snapshot.incompleteDates.includes(targetDate);
-  const hours = ['17:00','18:00','19:00','20:00','21:00','22:00'];
-  const courtHourSummary = Array.from({ length: 7 }, (_, offset) => {
-    const court = offset + 1;
-    const mask = hours.map(hour => {
-      const slot = snapshot.slots.find(value => value.date === targetDate && value.court === court && value.startTime === hour);
-      return slot ? (slot.isAvailable ? '1' : '0') : '-';
-    }).join('');
-    return `${court}:${mask}`;
-  }).join(',');
-  const core = context.coreAssignment
-    ? specialSessionPlans(snapshot, undefined, context.coreAssignment)
-    : specialSessionPlans(snapshot, undefined, undefined, context.directCourt ? [context.directCourt] : []);
-  const adaptive = context.directCourt === undefined ? undefined : specialAdaptivePlans(snapshot, context.directCourt);
-  const bonus = context.bonusCourt !== undefined ? specialBonusPlansForCourt(snapshot, context.bonusCourt)
-    : context.coreAssignment ? specialBonusLanePlans(snapshot,
-      [context.coreAssignment.earlyCourt, context.coreAssignment.lateCourt, ...(context.directCourt ? [context.directCourt] : [])])?.plans : undefined;
-  return { targetDatePresent, responseComplete, slotCount: snapshot.slots.length,
-    availableCount: snapshot.slots.filter(slot => slot.date === targetDate && slot.isAvailable).length,
-    courtHourSummary, coreFeasible: !!core, corePlanExact: context.coreAssignment !== undefined,
-    adaptiveFeasible: !!adaptive, adaptivePlanExact: context.directCourt !== undefined,
-    bonusFeasible: !!bonus, bonusPlanExact: context.bonusCourt !== undefined };
+  const states = courtHourStates(snapshot, targetDate), counts = countCourtHourStates(states);
+  return { targetDatePresent, responseComplete: targetDatePresent && !snapshot.incompleteDates.includes(targetDate),
+    slotCount: snapshot.slots.length, availableCount: counts.OPEN, takenCount: counts.TAKEN,
+    unreleasedCount: counts.UNRELEASED, unknownCount: counts.UNKNOWN, courtHourSummary: encodeCourtHourStates(states) };
 }
 
 interface StoredObservation { stage: string; elapsedMs: number; extra: DiagnosticExtra }
@@ -151,7 +127,7 @@ export class RunDiagnostics {
     this.observe('RUN_DIAGNOSTIC_SUMMARY', {}, { finalCode, aborted,
       retryCount: attempts.filter(value => value.extra.attemptType === 'retry').length,
       verifiedHoldCount: holds, qrHandoffCount: qr, partialHolds: holds > 0 && qr < holds,
-      coreElapsedMs: laneElapsed('core'), adaptiveElapsedMs: laneElapsed('adaptive'), bonusElapsedMs: laneElapsed('bonus'),
+      coreElapsedMs: laneElapsed('core'),
       slowestStages: durations.map(value => `${value.stage}:${value.duration}`).join(','),
       absentEvidence: absent.length ? absent.join(',') : 'NONE' });
   }

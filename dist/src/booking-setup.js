@@ -34,18 +34,14 @@ export function reconcileBookingSetupFallbacks(input) {
     if (!times.every((time) => typeof time === 'string'))
         return { setup: input, reconciliation: { valid: [], removed: [] } };
     const reconciliation = reconcileFallbackTimes(setup.START_TIME, setup.DURATION_HOURS, times);
-    const { MAX_PRICE: _legacyPriceLimit, ...withoutPriceLimit } = setup;
-    return { setup: { ...withoutPriceLimit, FALLBACK_TIMES: reconciliation.valid }, reconciliation };
+    // MAX_PRICE and the archived Special Friday SESSION_MODE are retired keys that older saved plans still carry.
+    const { MAX_PRICE: _legacyPriceLimit, SESSION_MODE: _archivedSessionMode, ...current } = setup;
+    return { setup: { ...current, FALLBACK_TIMES: reconciliation.valid }, reconciliation };
 }
 export function bookingSetupProblem(input) {
     if (!input || typeof input !== 'object' || Array.isArray(input))
         return 'The booking settings could not be read.';
     const setup = input;
-    if (setup.SESSION_MODE !== undefined && setup.SESSION_MODE !== 'normal' && setup.SESSION_MODE !== 'special-friday')
-        return 'Choose a valid session type.';
-    if (setup.SESSION_MODE === 'special-friday' && (setup.BOOKING_METHOD !== 'api-first' || setup.BOOKING_TYPE !== 'extended' || setup.COURT_COUNT !== 4 ||
-        setup.START_TIME !== '17:00' || setup.DURATION_HOURS !== 5 || setup.FALLBACK_TIMES?.length))
-        return 'Special Friday session settings must remain fixed.';
     if (!['browser', 'hybrid', 'api-first', 'proofless'].includes(String(setup.BOOKING_METHOD)))
         return 'Choose a valid booking method.';
     if (setup.BOOKING_TYPE !== 'standard' && setup.BOOKING_TYPE !== 'extended')

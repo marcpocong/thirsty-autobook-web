@@ -2,12 +2,12 @@
 
 Windows 11 / Node 24 / TypeScript / Playwright / dedicated Chrome. All files live directly in this project root.
 
-The existing single-court booking flow has live evidence, including the [September 12 production run](RELEASE_RUN_REPORT_2026-09-12.md). Automation stops at the verified QR payment hold; payment remains manual. The current tree adds API-first booking, up to seven courts, per-checkout worker isolation, richer run/QR history, and an explicitly experimental Friday-session mode. Start with [REVIEW_GUIDE.md](REVIEW_GUIDE.md) when reviewing the current implementation; the phase reports below are historical checkpoints.
+The existing single-court booking flow has live evidence, including the [September 12 production run](RELEASE_RUN_REPORT_2026-09-12.md). Automation stops at the verified QR payment hold; payment remains manual. The current tree adds API-first booking, up to seven courts, per-checkout worker isolation, richer run/QR history, a read-only release slot watch that timestamps every court/hour around each release, and a one-click close for all bot browsers. The one-off Special Friday session experiment is archived under [archive/special-friday](archive/special-friday/README.md). Start with [REVIEW_GUIDE.md](REVIEW_GUIDE.md) when reviewing the current implementation; the phase reports below are historical checkpoints.
 
 
 ## Current booking model
 
-The normal workflow is **configure → Reset & Prepare → authorize Terms → Run Test to QR / Arm Next Release**. Choose **Test Now** for an exact date without waiting for release, or **Release Booking** for the scheduled run. Engineering tools remain under the collapsed **Advanced / Diagnostics** section.
+The normal workflow is **configure → Reset & Prepare → authorize Terms → Run Test to QR / Arm Next Release**. Choose **Test Now** for an exact date without waiting for release, or **Release Booking** for the scheduled run. Legacy browser-mode engineering tools live in the **Tools** view.
 
 | Booking type | Duration | Courts | Browsers | Checkouts / QR holds |
 |---|---|---|---|---|
@@ -34,24 +34,25 @@ Preparation emits sanitized per-browser evidence and the controller accepts it o
 
 **Validation boundary:** Onda has been live-verified for at most two courts and three consecutive hours per checkout. Higher court counts are split across independent checkouts and have offline test coverage, but the complete multi-browser combinations are not all live-validated. The adapter requires independently verifiable booking identities and amounts and stops on unsupported markup or uncertain submission outcomes. See [REVIEW_GUIDE.md](REVIEW_GUIDE.md) for the current risk map and [PHASE7_BOOKING_REPORT.md](PHASE7_BOOKING_REPORT.md) for the older Phase 7 evidence.
 
-## Special Friday session (A-H)
+## Release slot watch
 
-`SESSION_MODE=special-friday` is a release-only, fixed-envelope mode requiring Browsers/Players A through H — up to eight independent temporary QR holds across four distinct courts and nineteen court-hours. Every checkout keeps its own player/customer/browser identity; payment stays entirely manual, and a hold is never a completed booking.
+Every armed release (API-first, Proofless Direct, or browser mode) automatically starts a **read-only slot watch** in the desktop app. **Watch next release** in the **Slots** view starts one without booking anything. It reads Onda's public availability for all 112 court/hours of the target date from 60 seconds before release until 15 minutes after: every 10 s before release, every 0.5 s for the first 10 s after, every 1 s to one minute, every 5 s to five minutes, then every 30 s. Onda's public booking records are read at −60 s, +2 s, +10 s, +30 s, +1, +2, +5, +10 and +15 minutes to tell real bookings apart from venue blocks. It never touches a browser, lock, hold, or checkout, and it runs in the app process, so it keeps observing after the booking run itself has finished or failed.
 
-| Lane | Workers | Preferred court | Blocks | Method |
-|---|---|---|---|---|
-| Core early | A/B | 6 | 17:00-20:00 (3h) + 20:00-22:00 (2h) | Proof-based |
-| Core late | C/D | 7 | 19:00-21:00 (2h) + 21:00-23:00 (2h) | Proof-based |
-| Adaptive | E/F | 5 | 17:00-20:00 (3h) + 20:00-22:00 (2h) | Proof-based on early availability; otherwise the existing proofless direct attempt exactly at release. Never both. |
-| Bonus | G/H | 4 | 17:00-20:00 (3h) + 20:00-22:00 (2h) | Proof-based only; skipped when no fourth distinct court has complete availability. Never proofless. |
+Every timestamp uses the Google-synchronized network clock. Each read records its request and response times, latency, time since release, and the exact 112-cell matrix (`O` open, `X` taken/unavailable, `U` not yet released, `?` unknown). Each cell change records when it was first seen and the window since the previous read, which bounds when it actually happened. Files are written under `.local/slot-watch/`:
 
-Court selection reserves the E/F candidate first (priority 5, 4, 3, 2, 1), then assigns A/B (priority 6, 7, 5, 4, 3, 2, 1) and C/D (priority 7, 6, 5, 4, 3, 2, 1) excluding that court, then searches for a fourth distinct G/H court (priority 4, 3, 2, 1, 5, 6, 7) excluding all three. A/B and C/D are the core session; G/H is an additional lane and never blocks an otherwise-valid A-D plan — when no fourth court exists it is skipped with a sanitized outcome. Once a lane has an assigned court and any checkout may have been dispatched, that court is never silently changed.
+- `<date>_<id>.ndjson` — every read and every per-cell transition.
+- `<date>_<id>.txt` — a plain-text report: when the date became visible, each slot taken after opening (fastest first), slots already unavailable at the first read (with or without a booking record, i.e. likely venue block), slots that reopened (for example unpaid holds expiring), and the final matrix.
+- `<date>_<id>.summary.json` — the summary shown under **Previous release watches**.
 
-The pre-08:00 watcher polls availability roughly every 5 seconds (bursting to 500ms, then 2s, after an update signal) and the Onda version roughly every second, stopping new pre-release availability GETs about 11 seconds before 08:00. As soon as genuinely released availability appears before 08:00, A-D dispatch immediately — never delayed waiting on G/H or E/F. G/H and E/F are each fully independent lanes that watch and dispatch on their own: G/H starts polling for its fourth distinct court the instant A-D's court is known and dispatches whenever it finds one, whether that is before, at, or (via a short post-release burst) shortly after A-D's own dispatch; E/F upgrades to its own proof-based path immediately once its reserved court shows all five hours with fresh proofs.
+The Slots view shows the live matrix with the time of each cell's last change, cells held by this bot outlined, and a change timeline. Emergency Stop or cancelling an armed release before it happens also cancels that release's watch; an operator-started watch runs until its window ends or **Stop watching**. Closing the app stops the watch and writes its report. The booking runner's own availability reads also log the same matrix format (`AVAILABILITY_REQUEST_COMPLETED` / `RELEASE_AVAILABILITY_MATRIX`) in `.local/api-booking/run-progress/`.
 
-E/F is implemented as a single fail-closed state machine (`src/api-booking/adaptive-direct-lane.ts`) so its proof-based and proofless attempts can never both dispatch: the first attempt to commit (proof or proofless) wins; a conclusive pre-dispatch proof failure (security/proof acquisition, before any network dispatch) reopens the proofless fallback, while any possibly-dispatched, unknown, or verified proof-based outcome permanently disables it. G/H never falls back to the proofless path; an early conclusive rejection may allow one release-boundary retry under the same safe-retry rules as A-D, and an unknown G/H result is never retried.
+## Closing the bot browsers
 
-Every lane owns only its own browser security preparation: an E/F or G/H preparation failure cannot prevent A-D from dispatching. Every relevant checkout is observed with `Promise.allSettled`; one worker's failure never hides another's possible hold. Lock lifecycle writes are serialized across the concurrent lanes, and after all lanes settle the newest verified hold expiry is persisted. A possibly-dispatched or unknown outcome retains the automation lock; it is released automatically only when every relevant branch conclusively proves no request was dispatched or was definitively rejected. This mode should not be treated as production-proven merely because offline tests pass — see [REVIEW_GUIDE.md](REVIEW_GUIDE.md#special-friday-session-boundary).
+**Close all** in the header (also **Close all bot browsers** in **Tools**) closes every Chrome window the bot started and nothing else. A bot browser is a Chrome browser process whose `--user-data-dir` lives in this installation's `.local` folder (the A–H profiles, the practice profile, and investigation profiles). Your normal Chrome profile is never matched. It asks for confirmation first and warns when QR payment pages are still open: closing does not cancel those holds on Onda, but the QR page is lost. It is blocked while a run is active or a release is armed. Windows are closed gracefully first and force-closed only if they do not respond. **Reset & Prepare** reopens the browsers a run needs. The header shows browsers A–H; click an open one to bring it to the front.
+
+## Special Friday session (archived)
+
+The release-only A–H Special Friday session was a one-off experiment for the 2026-09-25 release and has been retired from the app, the saved-plan schema and the booking runner. Older saved plans that still contain `SESSION_MODE` load as normal plans. Its reports, the standalone modules, and their tests are preserved in [archive/special-friday](archive/special-friday/README.md), which also explains how to find the last fully integrated version in Git.
 
 ## Setup
 
@@ -159,11 +160,11 @@ npm run ui
 
 The Electron desktop window uses the existing CLI engine. The first launch may download the Electron runtime; subsequent launches build the small TypeScript UI and open it directly. No installer or additional terminal is needed.
 
-1. Use the four top-level views: **Next Release**, **Edit Plan**, **Tests**, and **Runs**. Choose the session type, booking method, booking type, court count, start and duration in Edit Plan. For Test Now choose an explicit date.
+1. Use the six top-level views: **Next Release**, **Edit Plan**, **Tests**, **Slots** (release slot watch and block audit), **Runs**, and **Tools** (bot browsers and legacy diagnostics). The header always shows the network clock, bot browsers A–H with **Close all**, the automation lock, and the slot watch. Choose the booking method, booking type, court count, start and duration in Edit Plan. For Test Now choose an explicit date.
 2. Press **Reset & Prepare**. Test Now verifies the exact requested calendar date and a clean grid in every required browser without selecting reservation slots. Release settings are saved before preparation; Test Now fields remain independent. If a UI-owned run is active, confirm stopping it first. Retained hold and uncertain final-action protections still apply.
 3. Authorize Terms for this run, then press **Run Test to QR** or **Arm Next Release**. Review the native confirmation. The test resolves actual chunk courts before confirmation; release confirms priorities, fallback starts and valid splits.
 4. Keep every required dedicated Chrome window visible. Successful automation stops at one QR hold per checkout; the count is derived from booking type and court count. Payment remains manual.
-5. **Emergency Stop** stops only the UI-owned command and retains uncertain state. It never cancels holds or closes Chrome.
+5. **Emergency Stop** stops only the UI-owned command and retains uncertain state. It never cancels holds or closes Chrome; use **Close all** for that.
 
 **Dry Race** uses the same release/grid/preference path without selecting. **Observe Release** preserves the original read-only observer. **Run Safe Practice** accepts an explicit date/court/start/duration and reuses the existing select→verify→deselect→verify engine, never Proceed. Each command has the same process ownership and stop controls. Full Booking is now available because all three capability gates have recorded evidence. Select **FULL BOOKING — STOP AT QR PAYMENT**, Prepare, check the terms authorization, then **Arm Full Booking**. Its native confirmation includes the exact plan, terms YES and QR Checkout boundary. Practice and Selection Only retain their distinct stopping points.
 
@@ -171,7 +172,7 @@ The normal Release view always calculates the next future release in the configu
 
 Arming freezes the exact release timestamp, exact target date and effective configuration fingerprint, and enables Electron sleep protection. Before release the app performs its wake/reconnect phase and a fresh final preflight. It never executes late. If an already-armed timestamp is missed or the run is cancelled, that frozen run is not silently rolled to a later release; Terms and preparation are cleared and the operator must Reset & Prepare and explicitly re-arm. Relevant setting changes likewise cancel an armed run and clear Terms/preparation. This missed-armed-run rule is distinct from the normal next-future-release calculation above. Local configuration is re-read before confirmation/launch, and a worker rejects a changed plan hash. External changes cannot modify a running worker's already-loaded configuration.
 
-The activity log streams opt-in validated `THIRSTY_EVENT` messages and sanitized child output. Periodic checks only read local CDP reachability and lock existence; they do not poll Onda. No player fields or environment editor are exposed. A reachable CDP endpoint alone does not prove the correct profile; explicit Inspect/Prepare uses the existing profile/tab validation.
+The activity log streams opt-in validated `THIRSTY_EVENT` messages and sanitized child output. Periodic checks only read local CDP reachability and lock existence; outside a release slot watch they do not poll Onda. No player fields or environment editor are exposed. A reachable CDP endpoint alone does not prove the correct profile; explicit Inspect/Prepare uses the existing profile/tab validation.
 
 Locks are deliberately retained after an aborted or failed command. The old **Reset Practice Session** diagnostic remains conservative: it refuses a recorded QR/payment hold, selected slots, or an active worker, closes and reopens only the project Chrome profile, and clears local practice page state. Use the normal **Reset & Prepare** action for current booking locks. A development abort test does not authorize silently clearing another run’s lock.
 

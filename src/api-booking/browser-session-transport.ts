@@ -2,7 +2,7 @@ import type { Page } from 'playwright';
 import { ONDA_URL } from '../config.js';
 import { consumeSubmissionPermit, DurableSubmissionJournal, type SubmissionPermit } from './durable-submission-journal.js';
 import type { SlotCheckRequest, TwoHourCheckoutRequest, TwoHourTransport } from './two-hour-reservation.js';
-import type { ProoflessCheckoutRequest } from './special-direct-checkout.js';
+import type { ProoflessCheckoutRequest } from './proofless-checkout.js';
 import { SubmissionDispatchError } from './submission-errors.js';
 import { checkoutDiagnostic } from './checkout-diagnostics.js';
 import { CalendarFreeSecurityError } from './calendar-free-security-context.js';

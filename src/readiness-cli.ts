@@ -5,7 +5,6 @@ import { readScheduleReadiness } from './readiness.js';
 import { clockStatus, readLock } from '../ui/status.js';
 import { loadLocalCheckoutCustomer } from './api-booking/local-customer.js';
 import { requiredWorkerIds, type WorkerId } from './workers.js';
-import { SPECIAL_SESSION_MODE, SPECIAL_SESSION_REQUIRED_WORKERS } from './api-booking/special-session.js';
 
 const result: Record<string, unknown> = { cdp: 'BLOCKED', dedicatedProfile: 'NOT VERIFIED', exactTab: 'NOT VERIFIED',
   venue: 'NOT VERIFIED', schedule: 'NOT CLEAN', allCourts: 'NO', selectedSlots: 'UNKNOWN', paymentHold: 'UNKNOWN',
@@ -19,8 +18,7 @@ try {
     networkClock:next.networkSynced?'SYNCHRONIZED':'NOT SYNCHRONIZED',clockSource:next.clockSource,clockOffsetMs:next.clockOffsetMs });
   if(!next.networkSynced)throw Error('NETWORK_CLOCK_SYNC_REQUIRED');
   try { booking=loadConfig(); result.bookingMethod=booking.BOOKING_METHOD.toUpperCase();result.courtCount=booking.COURT_COUNT; result.playerConfiguration = playerReadiness(booking).primary?'CONFIGURED':'MISSING'; result.extendedPlayerConfiguration=playerReadiness(booking).extended?'CONFIGURED':'MISSING'; result.bookingPlan = 'VALID';
-    const workers:WorkerId[]=booking.SESSION_MODE===SPECIAL_SESSION_MODE
-      ?[...SPECIAL_SESSION_REQUIRED_WORKERS]:requiredWorkerIds(booking.BOOKING_TYPE,booking.COURT_COUNT);
+    const workers:WorkerId[]=requiredWorkerIds(booking.BOOKING_TYPE,booking.COURT_COUNT);
     result.requiredWorkers=workers.join(',');
     if(['api-first','proofless'].includes(booking.BOOKING_METHOD)){
       try{for(const worker of workers)loadLocalCheckoutCustomer(worker);result.apiCustomerBindings='VERIFIED';}
@@ -28,8 +26,7 @@ try {
         result.customerBindingBlocker=/^[A-Z][A-Z0-9_]{0,79}$/.test(code)?code:'CUSTOMER_BINDING_UNVERIFIED';}
     }
   } catch {result.bookingPlan='INVALID';}
-  const workers:WorkerId[]=booking?.SESSION_MODE===SPECIAL_SESSION_MODE
-    ?[...SPECIAL_SESSION_REQUIRED_WORKERS]:booking?requiredWorkerIds(booking.BOOKING_TYPE,booking.COURT_COUNT):['A'];
+  const workers:WorkerId[]=booking?requiredWorkerIds(booking.BOOKING_TYPE,booking.COURT_COUNT):['A'];
   for(const [index,worker] of workers.entries()){
     const identity=browserIdentity(worker);verifyDedicatedChrome(identity);
     const {page}=await attach(new Safety(),undefined,identity);
