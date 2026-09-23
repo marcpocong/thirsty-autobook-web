@@ -27,6 +27,7 @@ export type BrowserTransportObservation =
   | { event: 'SLOT_CHECK_STARTED' }
   | { event: 'SLOT_CHECK_COMPLETED'; durationMs: number; resultCategory: string; success: boolean; isAvailable?: boolean; failureCategory?: string }
   | { event: 'CHECKOUT_FUNCTION_ENTERED'; preparedContextAgeMs: number; securitySource: 'PREPARED_CONTEXT' | 'CHECKOUT_ACQUISITION' }
+  | { event: 'CHECKOUT_PRE_POST'; preparedContextAgeMs: number; securitySource: 'PREPARED_CONTEXT' | 'CHECKOUT_ACQUISITION' }
   | { event: 'CHECKOUT_HTTP_POST_INITIATED'; initiationEvidence: 'PLAYWRIGHT_REQUEST_EVENT' }
   | { event: 'CHECKOUT_RESPONSE_COMPLETED'; networkDurationMs: number; statusCode?: number; dispatchState: 'RESPONSE_CAPTURED' | 'UNKNOWN'; failureCategory?: string };
 export type BrowserTransportObserver = (observation: BrowserTransportObservation) => void;
@@ -36,6 +37,14 @@ export type CurrentCheckoutHeadersProvider = () => Promise<CurrentCheckoutHeader
 export interface CheckoutHttpResponse { status: number; contentType: string; server: string;
   cloudflareRay: string; cfMitigated: string; body: string }
 export type CheckoutResponseCapture = (response: CheckoutHttpResponse) => Promise<void>;
+/** Release-dispatch guards. A scheduled release must not spend seconds acquiring
+ * security after its window check, so it can require the prewarmed context and
+ * re-check the window as the very last step before the POST. */
+export interface CheckoutDispatchOptions {
+  requirePreparedContext?: boolean;
+  /** Throws (for example SubmissionDispatchError with dispatched=false) to stop before the POST. */
+  beforePost?: () => void;
+}
 
 export class BrowserSessionTransportError extends SubmissionDispatchError {
   constructor(code: string, dispatched = false, diagnostic?: SubmissionDispatchError['diagnostic'], confirmedRejected = false) {
@@ -239,12 +248,18 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
     return this.submitCheckout(request,permit);
   }
 
-  async publicCheckoutProofless(request: ProoflessCheckoutRequest, permit: SubmissionPermit): Promise<unknown> {
+  async publicCheckoutProofless(request: ProoflessCheckoutRequest, permit: SubmissionPermit, options: CheckoutDispatchOptions = {}): Promise<unknown> {
     if(request.items.some(item=>item.availabilityProof!==null))throw new BrowserSessionTransportError('DIRECT_PROOFLESS_SHAPE_INVALID');
-    return this.submitCheckout(request,permit);
+    return this.submitCheckout(request,permit,options);
   }
 
-  private async submitCheckout(request: TwoHourCheckoutRequest | ProoflessCheckoutRequest, permit: SubmissionPermit): Promise<unknown> {
+  /** Age of the prewarmed context, or undefined when none is held (never acquired, consumed, or cleared by navigation). */
+  preparedContextAgeMs(now = Date.now()): number | undefined {
+    return this.preparedHeaders && this.preparedAt !== undefined ? now - this.preparedAt : undefined;
+  }
+
+  private async submitCheckout(request: TwoHourCheckoutRequest | ProoflessCheckoutRequest, permit: SubmissionPermit,
+    options: CheckoutDispatchOptions = {}): Promise<unknown> {
     this.assertPage();
     if (process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT !== 'SUPERVISED_ONE_SHOT')
       throw new BrowserSessionTransportError('LIVE_SUBMISSION_DISABLED');
@@ -255,6 +270,9 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
       securitySource: current ? 'PREPARED_CONTEXT' : 'CHECKOUT_ACQUISITION' });
     this.preparedHeaders = undefined;
     this.preparedAt = undefined;
+    const securitySource = current ? 'PREPARED_CONTEXT' as const : 'CHECKOUT_ACQUISITION' as const;
+    // Provably unsent: a release dispatch never acquires security after its window check.
+    if (!current && options.requirePreparedContext) throw new BrowserSessionTransportError('PREPARED_SECURITY_CONTEXT_REQUIRED');
     if (!current) {
       try { current = await this.acquireCheckoutHeaders(); }
       catch (error) { throw securityContextError(error); }
@@ -272,6 +290,9 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
     if (!first || !last || request.items.length > 6) throw new BrowserSessionTransportError('CHECKOUT_ITEMS_INVALID');
     const expectedKey = DurableSubmissionJournal.key(request.facilityId, first.spaceId, first.date, first.startTime, last.endTime);
     consumeSubmissionPermit(permit, expectedKey);
+    // Last gate before the network: a late dispatch stops here, still provably unsent.
+    options.beforePost?.();
+    this.observe({ event: 'CHECKOUT_PRE_POST', preparedContextAgeMs: Math.max(0, Date.now() - preparedAt), securitySource });
     // The header values are ephemeral and never logged or stored by this adapter.
     return this.post(CHECKOUT_PATH, request, {
       'X-Turnstile-Token': current.turnstileToken,

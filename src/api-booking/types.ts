@@ -37,6 +37,8 @@ export interface AvailabilitySnapshot {
   returnedDates: Record<string, boolean>;
   incompleteDates: string[];
   slots: AvailabilitySlot[];
+  /** True only for Onda's exact empty not-yet-published response (see onda-unreleased.ts). */
+  emptyUnreleasedResponse?: boolean;
 }
 
 export interface ParseAvailabilityOptions extends AvailabilityQuery {

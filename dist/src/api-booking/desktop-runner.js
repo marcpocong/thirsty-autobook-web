@@ -5,7 +5,10 @@ import { mkdir, open } from 'node:fs/promises';
 import { performance } from 'node:perf_hooks';
 import { chromium } from 'playwright';
 import { z } from 'zod';
-import { ONDA_URL, VENUE, loadConfig, planFingerprint } from '../config.js';
+import { ONDA_URL, VENUE, loadConfig, planFingerprint, releaseMsForTargetDate } from '../config.js';
+import { NETWORK_CLOCK_MAX_AGE_MS, readNetworkClock, synchronizeNetworkClock } from '../network-clock.js';
+import { classifyTargetEvidence, readPreReleaseEvidence } from './pre-release-evidence.js';
+import { classifyPrecisionDispatchError, dispatchPrecisionRace, freezePrecisionRace, precisionTargetPlan, reducePrecisionOutcome, validatePrecisionTargets, VerifiedHoldQrError } from './precision-race.js';
 import { browserIdentity, verifyDedicatedChromeAsync } from '../browser.js';
 import { emitUiEvent } from '../ui-events.js';
 import { discoverApiAvailability } from './availability-engine.js';
@@ -43,7 +46,11 @@ const abort = new AbortController();
 process.on('message', message => { if (message?.type === 'abort')
     abort.abort(); });
 const started = performance.now();
-const nowMs = () => Date.now() + (command.clockOffsetMs ?? 0);
+// The Google offset captured at arming is refreshed before release (T-10 min);
+// every scheduling decision reads the latest value through nowMs().
+let clockOffsetMs = command.clockOffsetMs ?? 0;
+let lastClockSyncAtMs = (() => { const state = readNetworkClock(); return state ? Date.parse(state.synchronizedAt) : undefined; })();
+const nowMs = () => Date.now() + clockOffsetMs;
 const stamp = () => Math.round(performance.now() - started);
 const progressLog = new ApiRunProgressLog(command.mode, command.date);
 const diagnostics = new RunDiagnostics(progressLog, started);
@@ -173,21 +180,68 @@ async function readAvailabilitySnapshot(date) {
     }
 }
 const readKnownCourtHourBlocks = (date) => readPublicBookingRecords(date, { onCourt: (court, outcome) => trace('PUBLIC_BOOKING_BLOCK_SAMPLE', { court, ...outcome }) });
+/** One pre-release evidence checkpoint with bounded retries; failures stay failures. */
+const readEvidence = (date, releaseMs, checkpoint, retry = true) => readPreReleaseEvidence({ date, releaseMs,
+    readAvailability: () => readAvailabilitySnapshot(date), readBookings: () => readKnownCourtHourBlocks(date), now: nowMs, sleep: pause,
+    ...(retry ? {} : { retryDelaysMs: [] }),
+    onRead: read => stage('PRE_RELEASE_AUDIT_READ', { checkpoint, readSource: read.source, attemptNo: read.attempt, ok: read.ok,
+        ...(read.failedCourts?.length ? { failedCourts: read.failedCourts.join(',') } : {}) }) });
+const sleepUntil = async (at) => { while (nowMs() < at) {
+    ensureActive();
+    await pause(Math.min(30_000, Math.max(1, at - nowMs())));
+} };
+async function refreshNetworkClock(checkpoint) {
+    try {
+        const state = await synchronizeNetworkClock(), previous = clockOffsetMs;
+        clockOffsetMs = state.offsetMs;
+        lastClockSyncAtMs = Date.parse(state.synchronizedAt);
+        stage('NETWORK_CLOCK_REFRESHED', { checkpoint, offsetMs: Math.round(state.offsetMs), roundTripMs: Math.round(state.roundTripMs),
+            deltaMs: Math.round(state.offsetMs - previous) });
+        return true;
+    }
+    catch (error) {
+        stage('NETWORK_CLOCK_REFRESH_FAILED', { checkpoint, code: safeApiFailureCode(error, 'NETWORK_CLOCK_SYNC_FAILED') });
+        return false;
+    }
+}
+/** Scheduled dispatch needs a Google sync no older than the arming threshold. */
+function assertClockFresh() {
+    if (command.clockOffsetMs === undefined)
+        return;
+    if (lastClockSyncAtMs === undefined || !Number.isFinite(lastClockSyncAtMs) || nowMs() - lastClockSyncAtMs > NETWORK_CLOCK_MAX_AGE_MS)
+        throw Error('NETWORK_CLOCK_STALE');
+}
+/** Resync at T-10 min (retry at T-5 min), never inside the final minutes before dispatch. */
+async function refreshClockBeforeRelease(releaseMs) {
+    if (nowMs() < releaseMs - 3 * 60_000) {
+        await sleepUntil(releaseMs - 10 * 60_000);
+        if (!await refreshNetworkClock('T-10M') && nowMs() < releaseMs - 5 * 60_000) {
+            await sleepUntil(releaseMs - 5 * 60_000);
+            await refreshNetworkClock('T-5M');
+        }
+    }
+    assertClockFresh();
+}
 try {
     if (process.env.THIRSTY_API_INSTALLATION !== '1' && process.env.THIRSTY_API_TEST_INSTALLATION !== '1')
         throw Error('API_INSTALLATION_REQUIRED');
     const config = loadConfig();
     const requested = command.preferences;
+    // Precision Release: the saved plan authorizes 1-3 exact, independent one-court targets (never COURT_COUNT).
+    const precisionTargets = !requested && config.RELEASE_STRATEGY === 'precision' && command.mode !== 'audit'
+        ? validatePrecisionTargets(config.PRECISION_TARGETS, command.date) : undefined;
+    if (precisionTargets && (config.BOOKING_METHOD !== 'proofless' || command.checkoutMethod !== 'proofless' || config.BOOKING_TYPE !== 'standard'))
+        throw Error('PRECISION_REQUIRES_PROOFLESS_STANDARD');
     stage('RUN_CONFIGURATION', { bookingMethod: config.BOOKING_METHOD,
-        workerCount: requiredWorkerIds(config.BOOKING_TYPE, config.COURT_COUNT).length,
+        workerCount: precisionTargets?.length ?? requiredWorkerIds(config.BOOKING_TYPE, config.COURT_COUNT).length,
         prewarmLeadMs: API_SECURITY_PREWARM_LEAD_MS,
         ...(command.releaseMs ? { releaseMs: command.releaseMs } : {}) });
     const strategy = requested?.strategy ?? config.BOOKING_TYPE;
     const duration = requested?.duration ?? config.DURATION_HOURS;
     const courtCount = requested?.courtCount ?? config.COURT_COUNT;
     if (command.mode === 'audit') {
-        const [snapshot, publicRecords] = await Promise.all([readAvailabilitySnapshot(command.date), readKnownCourtHourBlocks(command.date)]);
-        const cells = prooflessCourtHourStatuses(snapshot, command.date, publicRecords.blocks, publicRecords.failedCourts);
+        const [read, publicRecords] = await Promise.all([readAvailabilitySnapshot(command.date).then(snapshot => ({ snapshot, observedAtMs: nowMs() })), readKnownCourtHourBlocks(command.date)]);
+        const cells = prooflessCourtHourStatuses(read.snapshot, command.date, publicRecords.blocks, publicRecords.failedCourts, { releaseMs: command.releaseMs ?? releaseMsForTargetDate(config, command.date), observedAtMs: read.observedAtMs });
         for (const value of cells)
             trace('COURT_HOUR_STATUS', { court: value.court, hour: value.hour, status: value.status, source: value.source, ...(value.price !== undefined ? { price: value.price } : {}) });
         emitUiEvent({ type: 'blockAudit', date: command.date, cells });
@@ -205,21 +259,41 @@ try {
         throw Error('API_LIVE_NOT_ARMED');
     if (command.mode === 'live' && !command.releaseMs)
         throw Error('API_RELEASE_TIME_REQUIRED');
-    const workerIds = requiredWorkerIds(strategy, courtCount);
+    const workerIds = precisionTargets ? precisionTargets.map(target => target.workerId) : requiredWorkerIds(strategy, courtCount);
+    // An armed Precision race tolerates one worker's browser or identity failure: that
+    // attempt is recorded as not dispatched and the others stay eligible. Preparation
+    // and the dry audit still require every configured worker, while the operator is present.
+    const precisionLive = !!precisionTargets && command.mode === 'live';
+    const unavailableWorkers = new Map();
     if (command.mode === 'live' || command.mode === 'live-now')
         liveLock = await ApiAutomationLock.acquire(strategy, workerIds);
     const customers = command.mode === 'dry' ? undefined :
-        Object.fromEntries(workerIds.map(worker => [worker, loadLocalCheckoutCustomer(worker)]));
+        Object.fromEntries(workerIds.flatMap(worker => {
+            if (!precisionLive)
+                return [[worker, loadLocalCheckoutCustomer(worker)]];
+            try {
+                return [[worker, loadLocalCheckoutCustomer(worker)]];
+            }
+            catch (error) {
+                unavailableWorkers.set(worker, { state: 'IDENTITY_FAILED', code: safeApiFailureCode(error, 'CUSTOMER_BINDING_MISSING') });
+                return [];
+            }
+        }));
     // The dedicated profiles are independent. Wait for both checks to settle so
     // a failure in one browser cannot leave an unobserved preparation running.
     const prepared = await Promise.allSettled(workerIds.map(prepareWorker));
     prepared.forEach((result, index) => stage('BROWSER_PREPARATION_OUTCOME', { workerId: workerIds[index], status: result.status,
         code: result.status === 'fulfilled' ? 'COMPLETED' : safeApiFailureCode(result.reason, 'API_BROWSER_PREPARATION_FAILED') }));
     const failure = prepared.find((result) => result.status === 'rejected');
-    if (failure)
+    if (failure && !precisionLive)
         throw Error(safeApiFailureCode(failure.reason, 'API_BROWSER_PREPARATION_FAILED'));
-    const sessions = prepared.map(result => { if (result.status !== 'fulfilled')
-        throw Error('API_BROWSER_PREPARATION_FAILED'); return result.value; });
+    prepared.forEach((result, index) => {
+        if (result.status === 'rejected' && !unavailableWorkers.has(workerIds[index]))
+            unavailableWorkers.set(workerIds[index], { state: 'BROWSER_FAILED', code: safeApiFailureCode(result.reason, 'API_BROWSER_PREPARATION_FAILED') });
+    });
+    const sessions = prepared.flatMap(result => result.status === 'fulfilled' ? [result.value] : []);
+    if (!sessions.length)
+        throw Error('API_BROWSER_PREPARATION_FAILED');
     if (command.mode === 'prepare') {
         process.exitCode = 0;
     }
@@ -248,8 +322,11 @@ try {
             else
                 diagnostics.observe(stage, context, extra);
         };
-        const observeTransport = (workerId, observation) => {
+        const observeTransport = (workerId, raw) => {
             const context = transportContext(workerId);
+            // Release lateness on the final pre-POST gate and on the observed POST (network-corrected clock).
+            const observation = (raw.event === 'CHECKOUT_PRE_POST' || raw.event === 'CHECKOUT_HTTP_POST_INITIATED') && command.releaseMs
+                ? { ...raw, releaseLatenessMs: nowMs() - command.releaseMs } : raw;
             if (observation.event === 'SECURITY_PREPARATION_STARTED') {
                 beginTransport(`${workerId}:security:${observation.securitySource}`, 'security', observation.event, context, observation);
                 return;
@@ -414,7 +491,7 @@ try {
                 attemptId: diagnostics.nextAttemptId(lane, workerId, attemptType),
                 journals: directories.map(directory => new DurableSubmissionJournal(directory)) };
         });
-        const executeProoflessAttempt = async (attempt, releaseMs) => {
+        const executeProoflessAttempt = async (attempt, releaseMs, dispatch = {}) => {
             const { plan, workerId, session, customer, transport, keys, directories, journals, lane, attemptType, attemptId } = attempt;
             const correlation = { workerId, lane, attemptType, attemptId };
             activeAttemptContexts.set(workerId, correlation);
@@ -431,7 +508,7 @@ try {
                 catch { }
             });
             try {
-                const hold = await submitDirectCheckout(plan, customer, transport, journals[0], releaseMs, journals.slice(1), nowMs);
+                const hold = await submitDirectCheckout(plan, customer, transport, journals[0], releaseMs, journals.slice(1), nowMs, dispatch);
                 verifiedHold = true;
                 retainLiveLock = true;
                 if (!latestVerifiedHoldExpiry || Date.parse(hold.holdExpiresAt) > Date.parse(latestVerifiedHoldExpiry))
@@ -441,25 +518,35 @@ try {
                 stage('PENDING_HOLD', { ...workerTiming(), ...bookingTarget, bookingId: hold.bookingIds[0], bookingNo: bookingNo ?? '',
                     holdExpiresAt: hold.holdExpiresAt, price: plan.totalPrice });
                 diagnostics.observe('DIAGNOSTIC_VERIFIED_HOLD', correlation, { ...bookingTarget, price: plan.totalPrice });
-                if (!token || !bookingNo)
-                    throw Error('OFFICIAL_CHECKOUT_TOKEN_MISSING');
-                const grant = await session.page.evaluate(async ({ bookingNo, token }) => {
-                    const url = new URL(`/api/public/bookings/booking-no/${encodeURIComponent(bookingNo)}`, location.origin);
-                    url.searchParams.set('checkoutToken', token);
-                    url.searchParams.set('grantCheckoutAccess', '1');
-                    return (await fetch(url, { credentials: 'include', cache: 'no-store' })).status;
-                }, { bookingNo, token });
-                if (grant !== 200)
-                    throw Error('OFFICIAL_CHECKOUT_ACCESS_FAILED');
-                await session.page.goto(officialCheckoutUrl(hold.bookingIds[0]), { waitUntil: 'domcontentloaded', timeout: 45_000 });
-                await session.page.getByText('QRPH', { exact: true }).first().waitFor({ state: 'visible', timeout: 20_000 });
-                const body = await session.page.locator('body').innerText();
-                if (!body.includes('Pending') || !body.replaceAll(',', '').includes(plan.totalPrice.toFixed(2)))
-                    throw Error('OFFICIAL_CHECKOUT_STATE_MISMATCH');
-                await showWorkerPage(session.page, workerId);
-                stage('OFFICIAL_QRPH_HANDOFF', { ...workerTiming(), ...bookingTarget, bookingId: hold.bookingIds[0], bookingNo,
-                    holdExpiresAt: hold.holdExpiresAt, price: plan.totalPrice });
-                diagnostics.observe('DIAGNOSTIC_QR_HANDOFF', correlation, { ...bookingTarget, price: plan.totalPrice });
+                // From here the booking is real and validated; a QR page failure must never read as "no hold".
+                try {
+                    if (!token || !bookingNo)
+                        throw Error('OFFICIAL_CHECKOUT_TOKEN_MISSING');
+                    const grant = await session.page.evaluate(async ({ bookingNo, token }) => {
+                        const url = new URL(`/api/public/bookings/booking-no/${encodeURIComponent(bookingNo)}`, location.origin);
+                        url.searchParams.set('checkoutToken', token);
+                        url.searchParams.set('grantCheckoutAccess', '1');
+                        return (await fetch(url, { credentials: 'include', cache: 'no-store' })).status;
+                    }, { bookingNo, token });
+                    if (grant !== 200)
+                        throw Error('OFFICIAL_CHECKOUT_ACCESS_FAILED');
+                    await session.page.goto(officialCheckoutUrl(hold.bookingIds[0]), { waitUntil: 'domcontentloaded', timeout: 45_000 });
+                    await session.page.getByText('QRPH', { exact: true }).first().waitFor({ state: 'visible', timeout: 20_000 });
+                    const body = await session.page.locator('body').innerText();
+                    if (!body.includes('Pending') || !body.replaceAll(',', '').includes(plan.totalPrice.toFixed(2)))
+                        throw Error('OFFICIAL_CHECKOUT_STATE_MISMATCH');
+                    await showWorkerPage(session.page, workerId);
+                    stage('OFFICIAL_QRPH_HANDOFF', { ...workerTiming(), ...bookingTarget, bookingId: hold.bookingIds[0], bookingNo,
+                        holdExpiresAt: hold.holdExpiresAt, price: plan.totalPrice });
+                    diagnostics.observe('DIAGNOSTIC_QR_HANDOFF', correlation, { ...bookingTarget, price: plan.totalPrice });
+                }
+                catch (error) {
+                    const code = safeApiFailureCode(error, 'OFFICIAL_QR_HANDOFF_FAILED');
+                    stage('QR_HANDOFF_NEEDS_ATTENTION', { ...workerTiming(), ...bookingTarget, code, bookingId: hold.bookingIds[0], bookingNo: bookingNo ?? '',
+                        holdExpiresAt: hold.holdExpiresAt, price: plan.totalPrice });
+                    await showWorkerPage(session.page, workerId).catch(() => undefined);
+                    throw new VerifiedHoldQrError(code, { bookingId: hold.bookingIds[0], ...(bookingNo ? { bookingNo } : {}), holdExpiresAt: hold.holdExpiresAt, amount: plan.totalPrice });
+                }
                 diagnostics.observe('DIAGNOSTIC_ATTEMPT_COMPLETED', correlation, { workerOutcome: 'VERIFIED_HOLD' });
                 return hold;
             }
@@ -513,169 +600,340 @@ try {
             if (failure)
                 throw Error(safeApiFailureCode(failure.reason, 'SECURITY_PREWARM_FAILED'));
         };
-        const preferences = { mode: strategy, targetDate: command.date, durationHours: duration,
-            preferredStartTimes: [requested?.start ?? config.START_TIME], fallbackStartTimes: requested?.fallbackStarts ?? config.FALLBACK_TIMES,
-            courtPriority: requested?.priority ?? config.PREFERRED_COURTS, fallbackCourts: requested ? [] : config.FALLBACK_COURTS,
-            courtCount, exactCourts: requested?.exact, maximumTotalPrice: requested?.maximum ?? config.MAX_PRICE, currency: 'PHP' };
-        let primaryProoflessPlans;
-        let primaryProoflessAttempts;
-        if (command.checkoutMethod === 'proofless') {
-            // A scheduled release starts this same warmup shortly before 08:00. An
-            // immediate Proofless Test has no waiting window, so overlap genuine,
-            // page-bound security acquisition with the read-only block audit and
-            // journal checks instead of paying for it after dispatch is announced.
-            if (command.mode === 'live-now')
-                startWarmup(workerIds);
-            let snapshot;
+        /** Precision Release v1: sparse evidence checkpoints, a T-2 min freeze, then per-attempt independent dispatch. */
+        const runPrecision = async (targets) => {
+            const date = command.date, releaseMs = command.releaseMs ?? releaseMsForTargetDate(config, date);
+            const states = new Map(), codes = new Map();
+            const setState = (target, state, code) => {
+                states.set(target.workerId, state);
+                if (code)
+                    codes.set(target.workerId, code);
+                stage('PRECISION_ATTEMPT_STATE', { workerId: target.workerId, court: target.court, startTime: target.start, endTime: target.end,
+                    durationHours: target.durationHours, attemptState: state, ...(code ? { code } : {}) });
+            };
+            stage('PRECISION_RACE_CONFIGURED', { date, targetCount: targets.length, releaseMs });
+            for (const target of targets)
+                stage('PRECISION_TARGET', { workerId: target.workerId, court: target.court, startTime: target.start,
+                    endTime: target.end, durationHours: target.durationHours, assumedPrice: target.assumedAmount });
+            for (const target of targets) {
+                const unavailable = unavailableWorkers.get(target.workerId);
+                if (unavailable)
+                    setState(target, unavailable.state, unavailable.code);
+                else if (command.mode === 'live' && !releaseTransports.get(target.workerId))
+                    setState(target, 'BROWSER_FAILED', 'API_CHECKOUT_WORKER_MISSING');
+            }
+            const eligible = new Map();
+            const checkpoint = async (label) => {
+                const evidence = await readEvidence(date, releaseMs, label);
+                stage('PRECISION_EVIDENCE_READ', { checkpoint: label, availabilityState: evidence.snapshot ? evidence.dateState : 'READ_FAILED',
+                    ok: !!evidence.snapshot && !evidence.failedCourts.length, ...(evidence.failedCourts.length ? { failedCourts: evidence.failedCourts.join(',') } : {}) });
+                for (const target of targets) {
+                    const result = classifyTargetEvidence(target, evidence, date);
+                    eligible.set(target.workerId, result.eligible);
+                    stage('PRECISION_TARGET_EVIDENCE', { checkpoint: label, workerId: target.workerId, court: target.court, startTime: target.start,
+                        endTime: target.end, evidence: result.evidence, eligible: result.eligible });
+                }
+            };
+            const journalFor = (target) => new DurableSubmissionJournal(resolve('.local/api-booking/api-first-journals', target.targetKey));
+            const checkJournals = async () => {
+                for (const target of targets) {
+                    if (states.has(target.workerId))
+                        continue;
+                    const disposition = await journalFor(target).recycleReusable(target.targetKey).catch(() => 'blocked');
+                    if (disposition === 'blocked')
+                        setState(target, 'JOURNAL_BLOCKED', 'DUPLICATE_LOGICAL_BOOKING_BLOCKED');
+                    else if (disposition === 'reused')
+                        stage('FINISHED_ATTEMPT_REUSABLE', { workerId: target.workerId });
+                }
+            };
+            if (command.mode === 'dry') {
+                await checkpoint('PREPARE');
+                const usable = targets.filter(target => !states.has(target.workerId) && eligible.get(target.workerId));
+                stage('PRECISION_DRY_COMPLETE', { targetCount: targets.length, frozenCount: usable.length });
+                if (!usable.length)
+                    throw Error('PRECISION_NO_ELIGIBLE_TARGET');
+                return;
+            }
+            if (command.mode !== 'live')
+                throw Error('PRECISION_RELEASE_ONLY');
+            if (nowMs() > releaseMs - 20_000)
+                throw Error('PRECISION_TOO_LATE_TO_FREEZE');
+            await checkJournals();
+            // Sparse, rate-respectful evidence; checkpoints already in the past are skipped.
+            for (const [minutes, label] of [[60, 'T-60M'], [30, 'T-30M'], [10, 'T-10M']]) {
+                const at = releaseMs - minutes * 60_000;
+                if (nowMs() > at + 60_000)
+                    continue;
+                await sleepUntil(at);
+                await checkpoint(label);
+            }
+            await refreshClockBeforeRelease(releaseMs);
+            await sleepUntil(releaseMs - 2 * 60_000);
+            if (nowMs() > releaseMs - 20_000)
+                throw Error('PRECISION_TOO_LATE_TO_FREEZE');
+            await checkpoint('FREEZE');
+            assertClockFresh();
+            await checkJournals();
+            const frozen = [];
+            for (const target of targets) {
+                if (states.has(target.workerId))
+                    continue;
+                if (!eligible.get(target.workerId)) {
+                    setState(target, 'EXCLUDED_BEFORE_FREEZE', 'TARGET_EVIDENCE_NOT_ELIGIBLE');
+                    continue;
+                }
+                frozen.push({ target, plan: precisionTargetPlan(target, date) });
+            }
+            const race = freezePrecisionRace(date, releaseMs, frozen);
+            await saveOnce(resolve('.local/api-booking/precision-races'), `${progressLog.runId}-freeze.json`, { frozenAt: new Date(nowMs()).toISOString(),
+                date, releaseMs, freezeHash: race.fingerprint, attempts: race.attempts.map(({ target }) => ({ workerId: target.workerId, court: target.court,
+                    start: target.start, end: target.end, targetKey: target.targetKey })),
+                notDispatched: [...states].map(([workerId, state]) => ({ workerId, state, code: codes.get(workerId) ?? null })) });
+            stage('PRECISION_FROZEN', { targetCount: targets.length, frozenCount: race.attempts.length });
+            if (race.attempts.length) {
+                const prooflessAttempts = new Map(race.attempts.map(attempt => [attempt.target.workerId, makeProoflessAttempts([attempt.plan], [attempt.target.workerId])[0]]));
+                let dispatching;
+                // The lock enters FINAL_ACTION_DISPATCHING once, before the first journal is begun.
+                const enterDispatch = () => dispatching ??= (async () => {
+                    await liveLock?.dispatching();
+                    retainLiveLock = true;
+                    stage('PRECISION_DISPATCHING', { frozenCount: race.attempts.length });
+                })();
+                const results = await dispatchPrecisionRace(race, { now: nowMs, prewarmLeadMs: API_SECURITY_PREWARM_LEAD_MS,
+                    waitUntil: async (at) => { while (nowMs() < at) {
+                        ensureActive();
+                        await pause(Math.min(500, Math.max(1, at - nowMs())));
+                    } },
+                    prewarm: async (attempt) => {
+                        const transport = releaseTransports.get(attempt.target.workerId);
+                        if (!transport)
+                            throw Error('API_CHECKOUT_WORKER_MISSING');
+                        stage('SECURITY_PREWARM_STARTED', { workerId: attempt.target.workerId });
+                        await transport.prepareCheckoutContext();
+                    },
+                    dispatch: async (attempt) => {
+                        await enterDispatch();
+                        try {
+                            await executeProoflessAttempt(prooflessAttempts.get(attempt.target.workerId), releaseMs, { requirePreparedContext: true });
+                            return { state: 'QR_READY' };
+                        }
+                        catch (error) {
+                            return classifyPrecisionDispatchError(error, async () => {
+                                try {
+                                    return (await journalFor(attempt.target).read(attempt.target.targetKey)).state;
+                                }
+                                catch (readError) {
+                                    if (readError.code === 'ENOENT')
+                                        return undefined;
+                                    throw readError;
+                                }
+                            });
+                        }
+                    },
+                    onEvent: event => {
+                        if (event.kind === 'prewarm-ready')
+                            stage('SECURITY_PREWARM_READY', { workerId: event.workerId });
+                        else if (event.kind === 'prewarm-failed')
+                            stage('SECURITY_PREWARM_FAILED', { workerId: event.workerId, code: event.code ?? 'SECURITY_PREWARM_FAILED' });
+                        else if (event.kind === 'prewarm-retry')
+                            stage('SECURITY_PREWARM_RETRY', { workerId: event.workerId });
+                    } });
+                for (const result of results)
+                    setState(result.attempt.target, result.state, result.code);
+            }
+            await persistLatestVerifiedHold();
+            const summary = reducePrecisionOutcome(targets.map(target => states.get(target.workerId) ?? 'NOT_DISPATCHED'));
+            stage('PRECISION_OUTCOME', { outcome: summary.outcome, verifiedCount: summary.verifiedCount, unknownCount: summary.unknownCount,
+                rejectedCount: summary.rejectedCount, unsentCount: summary.unsentCount, qrAttention: summary.qrAttention });
+            // Release the lock only when nothing can have been held; otherwise keep it for review.
+            if (summary.lockReleasable) {
+                retainLiveLock = false;
+                await liveLock?.release();
+                liveLock = undefined;
+            }
+            else
+                retainLiveLock = true;
+            if (!summary.achieved)
+                throw Error(summary.outcome);
+        };
+        if (precisionTargets)
+            await runPrecision(precisionTargets);
+        else {
+            const preferences = { mode: strategy, targetDate: command.date, durationHours: duration,
+                preferredStartTimes: [requested?.start ?? config.START_TIME], fallbackStartTimes: requested?.fallbackStarts ?? config.FALLBACK_TIMES,
+                courtPriority: requested?.priority ?? config.PREFERRED_COURTS, fallbackCourts: requested ? [] : config.FALLBACK_COURTS,
+                courtCount, exactCourts: requested?.exact, maximumTotalPrice: requested?.maximum ?? config.MAX_PRICE, currency: 'PHP' };
+            let primaryProoflessPlans;
+            let primaryProoflessAttempts;
+            if (command.checkoutMethod === 'proofless') {
+                // A scheduled release starts this same warmup shortly before 08:00. An
+                // immediate Proofless Test has no waiting window, so overlap genuine,
+                // page-bound security acquisition with the read-only block audit and
+                // journal checks instead of paying for it after dispatch is announced.
+                if (command.mode === 'live-now')
+                    startWarmup(workerIds);
+                const auditReleaseMs = command.releaseMs ?? releaseMsForTargetDate(config, command.date);
+                if (command.mode === 'live') {
+                    stage('WAITING_FOR_BLOCK_AUDIT', { releaseMs: command.releaseMs });
+                    await sleepUntil(command.releaseMs - 30 * 60_000);
+                }
+                // The immediate Test path sends the operator-confirmed cells, so it reads once for display only.
+                const evidence = await readEvidence(command.date, auditReleaseMs, command.mode === 'live' ? 'T-30M' : command.mode === 'dry' ? 'PREPARE' : 'TEST', command.mode !== 'live-now');
+                const blockAudit = prooflessCourtHourStatuses(evidence.snapshot, command.date, evidence.blocks, evidence.failedCourts, { releaseMs: auditReleaseMs, ...(evidence.observedAtMs !== undefined ? { observedAtMs: evidence.observedAtMs } : {}) });
+                for (const value of blockAudit)
+                    trace('COURT_HOUR_STATUS', { court: value.court, hour: value.hour, status: value.status, source: value.source, ...(value.price !== undefined ? { price: value.price } : {}) });
+                emitUiEvent({ type: 'blockAudit', date: command.date, cells: blockAudit });
+                stage('PRE_RELEASE_AUDIT_RESULT', { availabilityState: evidence.snapshot ? evidence.dateState : 'READ_FAILED', ok: !!evidence.snapshot && !evidence.failedCourts.length,
+                    ...(evidence.failedCourts.length ? { failedCourts: evidence.failedCourts.join(',') } : {}) });
+                if (command.mode !== 'live-now') {
+                    // Say why, instead of the generic "no unblocked configuration".
+                    if (!evidence.snapshot)
+                        throw Error('DIRECT_AVAILABILITY_READ_FAILED');
+                    if (evidence.dateState === 'UNKNOWN')
+                        throw Error('DIRECT_TARGET_DATE_STATE_UNKNOWN');
+                }
+                const releasePlan = command.mode === 'live-now' ? prooflessReleasePlan(preferences) : resolveProoflessReleasePlan(preferences, evidence.snapshot, evidence.blocks, evidence.failedCourts, { releaseMs: auditReleaseMs, ...(evidence.observedAtMs !== undefined ? { observedAtMs: evidence.observedAtMs } : {}) });
+                for (const court of releasePlan.courts) {
+                    const target = classifyTargetEvidence({ court: court.court, start: releasePlan.startTime, durationHours: releasePlan.durationHours }, evidence, command.date);
+                    stage('PROOFLESS_TARGET_EVIDENCE', { court: court.court, startTime: releasePlan.startTime, durationHours: releasePlan.durationHours,
+                        evidence: target.evidence, eligible: target.eligible });
+                }
+                primaryProoflessPlans = standardCheckoutChunks(releasePlan);
+                if (primaryProoflessPlans.length !== workerIds.length)
+                    throw Error('DIRECT_WORKER_PLAN_MISMATCH');
+                if (command.mode !== 'dry') {
+                    primaryProoflessAttempts = makeProoflessAttempts(primaryProoflessPlans, workerIds);
+                    for (const attempt of primaryProoflessAttempts)
+                        for (const [index, journal] of attempt.journals.entries()) {
+                            const disposition = await journal.recycleReusable(attempt.keys[index]);
+                            if (disposition === 'blocked')
+                                throw Error('DUPLICATE_LOGICAL_BOOKING_BLOCKED');
+                            if (disposition === 'reused')
+                                stage('FINISHED_ATTEMPT_REUSABLE', { workerId: attempt.workerId });
+                        }
+                }
+                stage('PRIMARY_PROOFLESS_PLAN_READY', { court: releasePlan.courts[0].court,
+                    ...(releasePlan.courts[1] ? { courtB: releasePlan.courts[1].court } : {}), date: command.date, startTime: releasePlan.startTime,
+                    durationHours: releasePlan.durationHours, assumedPrice: releasePlan.totalPrice });
+            }
             if (command.mode === 'live') {
-                const auditAt = command.releaseMs - 30 * 60_000;
-                stage('WAITING_FOR_BLOCK_AUDIT', { releaseMs: command.releaseMs });
-                while (nowMs() < auditAt) {
+                const releaseMs = command.releaseMs;
+                if (releaseMs <= nowMs())
+                    throw Error('RELEASE_MISSED');
+                await refreshClockBeforeRelease(releaseMs);
+                if (releaseMs <= nowMs())
+                    throw Error('RELEASE_MISSED');
+                stage('WAITING_FOR_RELEASE', { releaseMs });
+                while (nowMs() < releaseMs) {
                     ensureActive();
-                    await pause(Math.min(30_000, auditAt - nowMs()));
+                    const remaining = releaseMs - nowMs();
+                    if (remaining <= API_SECURITY_PREWARM_LEAD_MS)
+                        startWarmup();
+                    await pause(Math.min(500, Math.max(1, remaining), warmup ? 500 : Math.max(1, remaining - API_SECURITY_PREWARM_LEAD_MS)));
                 }
-                snapshot = await readAvailabilitySnapshot(command.date);
-            }
-            else if (command.mode === 'dry')
-                snapshot = await readAvailabilitySnapshot(command.date);
-            const publicRecords = await readKnownCourtHourBlocks(command.date);
-            const blockAudit = prooflessCourtHourStatuses(snapshot, command.date, publicRecords.blocks, publicRecords.failedCourts);
-            for (const value of blockAudit)
-                trace('COURT_HOUR_STATUS', { court: value.court, hour: value.hour, status: value.status, source: value.source, ...(value.price !== undefined ? { price: value.price } : {}) });
-            emitUiEvent({ type: 'blockAudit', date: command.date, cells: blockAudit });
-            const releasePlan = command.mode === 'live-now' ? prooflessReleasePlan(preferences) : resolveProoflessReleasePlan(preferences, snapshot, publicRecords.blocks, publicRecords.failedCourts);
-            primaryProoflessPlans = standardCheckoutChunks(releasePlan);
-            if (primaryProoflessPlans.length !== workerIds.length)
-                throw Error('DIRECT_WORKER_PLAN_MISMATCH');
-            if (command.mode !== 'dry') {
-                primaryProoflessAttempts = makeProoflessAttempts(primaryProoflessPlans, workerIds);
-                for (const attempt of primaryProoflessAttempts)
-                    for (const [index, journal] of attempt.journals.entries()) {
-                        const disposition = await journal.recycleReusable(attempt.keys[index]);
-                        if (disposition === 'blocked')
-                            throw Error('DUPLICATE_LOGICAL_BOOKING_BLOCKED');
-                        if (disposition === 'reused')
-                            stage('FINISHED_ATTEMPT_REUSABLE', { workerId: attempt.workerId });
-                    }
-            }
-            stage('PRIMARY_PROOFLESS_PLAN_READY', { court: releasePlan.courts[0].court,
-                ...(releasePlan.courts[1] ? { courtB: releasePlan.courts[1].court } : {}), date: command.date, startTime: releasePlan.startTime,
-                durationHours: releasePlan.durationHours, assumedPrice: releasePlan.totalPrice });
-        }
-        if (command.mode === 'live') {
-            const releaseMs = command.releaseMs;
-            if (releaseMs <= nowMs())
-                throw Error('RELEASE_MISSED');
-            stage('WAITING_FOR_RELEASE', { releaseMs });
-            while (nowMs() < releaseMs) {
-                ensureActive();
-                const remaining = releaseMs - nowMs();
-                if (remaining <= API_SECURITY_PREWARM_LEAD_MS)
-                    startWarmup();
-                await pause(Math.min(500, Math.max(1, remaining), warmup ? 500 : Math.max(1, remaining - API_SECURITY_PREWARM_LEAD_MS)));
-            }
-            assertApiReleaseFresh(releaseMs, nowMs());
-            stage('RELEASE_TRIGGERED');
-            await finishWarmup();
-        }
-        ensureActive();
-        let discovery;
-        let checkoutPlans;
-        if (primaryProoflessPlans) {
-            checkoutPlans = primaryProoflessPlans;
-        }
-        else {
-            stage('FETCHING_AVAILABILITY');
-            discovery = await discoverApiAvailability(new OndaLiveAvailabilityProvider(), preferences);
-            ensureActive();
-            diagnostics.observe('RELEASE_AVAILABILITY_MATRIX', {}, { ...availabilityObservation(discovery.snapshot, command.date),
-                durationMs: Math.round(discovery.timing.totalMs ?? 0) });
-            if (command.mode === 'live')
-                for (const value of prooflessCourtHourStatuses(discovery.snapshot, command.date))
-                    trace('COURT_HOUR_STATUS', { court: value.court, hour: value.hour, status: value.status, ...(value.price !== undefined ? { price: value.price } : {}) });
-            if (!discovery.candidates.length)
-                throw Error('API_NO_AVAILABLE_CANDIDATE');
-            const selected = command.mode === 'dry' ? { plan: discovery.candidates[0] } :
-                await firstUnjournaledAvailableCandidate(discovery.snapshot, preferences, THIRSTY_PICKLE_FACILITY_ID, async (key) => {
-                    const directory = resolve('.local/api-booking/api-first-journals', key);
-                    const disposition = await new DurableSubmissionJournal(directory).recycleReusable(key);
-                    if (disposition === 'reused')
-                        stage('FINISHED_ATTEMPT_REUSABLE');
-                    return disposition === 'blocked';
-                });
-            if (!selected)
-                throw Error('API_NO_UNUSED_CANDIDATE');
-            const plan = selected.plan;
-            stage('CANDIDATE_READY', { date: command.date, court: plan.courts[0].court,
-                ...(plan.courts[1] ? { courtB: plan.courts[1].court } : {}), startTime: plan.startTime,
-                durationHours: duration, price: plan.totalPrice, availabilityMs: Math.round(discovery.timing.totalMs ?? 0) });
-            checkoutPlans = standardCheckoutChunks(plan);
-        }
-        if (command.mode === 'dry') {
-            // The dry path has no customer lookup, checkout security context, or submission permit.
-            stage('DRY_RUN_COMPLETE');
-        }
-        else if (primaryProoflessPlans) {
-            ensureActive();
-            const attempts = primaryProoflessAttempts;
-            // This does not submit anything. It only makes the already-started
-            // security preparation a prerequisite for entering the dispatch state.
-            // Failure therefore remains conclusively pre-dispatch and releases the
-            // automation lock through the normal finally path.
-            if (command.mode === 'live-now')
+                assertApiReleaseFresh(releaseMs, nowMs());
+                stage('RELEASE_TRIGGERED');
                 await finishWarmup();
-            await liveLock?.dispatching();
-            retainLiveLock = true;
-            stage('PRIMARY_PROOFLESS_DISPATCHING', { workerCount: attempts.length });
-            const outcomes = await Promise.allSettled(attempts.map(attempt => executeProoflessAttempt(attempt, command.releaseMs)));
-            attempts.forEach((attempt, index) => {
-                const outcome = outcomes[index];
-                const code = outcome.status === 'rejected' && outcome.reason instanceof Error && /^[A-Z][A-Z0-9_]{0,79}$/.test(outcome.reason.message)
-                    ? outcome.reason.message : outcome.status === 'rejected' ? 'DIRECT_WORKER_FAILED' : 'COMPLETED';
-                stage('PRIMARY_PROOFLESS_OUTCOME', { workerId: attempt.workerId, status: outcome.status, code,
-                    court: attempt.plan.courts[0].court, startTime: attempt.plan.startTime, durationHours: attempt.plan.durationHours });
-            });
-            await persistLatestVerifiedHold();
-            const failures = outcomes.filter((outcome) => outcome.status === 'rejected');
-            if (failures.length) {
-                if (!verifiedHold) {
-                    const states = await Promise.all(attempts.flatMap(attempt => attempt.journals.map((journal, index) => journal.read(attempt.keys[index]).then(record => record.state).catch(() => 'unknown'))));
-                    if (canReleaseApiLockAfterParallelFailure(false, failures.map(failure => failure.reason), states, attempts.length)) {
-                        retainLiveLock = false;
-                        await liveLock?.release();
-                        liveLock = undefined;
-                    }
-                }
-                throw failures[0].reason;
             }
-        }
-        else {
             ensureActive();
-            const attempts = makeAttempts(checkoutPlans, workerIds, discovery.snapshot);
-            await liveLock?.dispatching();
-            retainLiveLock = true;
-            const outcomes = await Promise.allSettled(attempts.map(executeAttempt));
-            attempts.forEach((attempt, index) => {
-                const outcome = outcomes[index];
-                const code = outcome.status === 'rejected' && outcome.reason instanceof Error && /^[A-Z][A-Z0-9_]{0,79}$/.test(outcome.reason.message)
-                    ? outcome.reason.message : outcome.status === 'rejected' ? 'CHECKOUT_WORKER_FAILED' : 'COMPLETED';
-                stage('WORKER_OUTCOME', { workerId: attempt.workerId, status: outcome.status, code,
-                    court: attempt.chunkPlan.courts[0].court, startTime: attempt.chunkPlan.startTime, durationHours: attempt.chunkPlan.durationHours });
-            });
-            // Persist the newest verified expiry only after every worker has settled,
-            // so the durable lock can never expire earlier than an active hold.
-            await persistLatestVerifiedHold();
-            const failures = outcomes.filter((outcome) => outcome.status === 'rejected');
-            if (failures.length) {
-                if (!verifiedHold) {
-                    const states = await Promise.all(attempts.flatMap(attempt => attempt.journals.map((journal, index) => journal.read(attempt.keys[index]).then(record => record.state).catch(() => 'unknown'))));
-                    if (canReleaseApiLockAfterParallelFailure(false, failures.map(failure => failure.reason), states, attempts.length)) {
-                        retainLiveLock = false;
-                        await liveLock?.release();
-                        liveLock = undefined;
+            let discovery;
+            let checkoutPlans;
+            if (primaryProoflessPlans) {
+                checkoutPlans = primaryProoflessPlans;
+            }
+            else {
+                stage('FETCHING_AVAILABILITY');
+                discovery = await discoverApiAvailability(new OndaLiveAvailabilityProvider(), preferences);
+                ensureActive();
+                diagnostics.observe('RELEASE_AVAILABILITY_MATRIX', {}, { ...availabilityObservation(discovery.snapshot, command.date),
+                    durationMs: Math.round(discovery.timing.totalMs ?? 0) });
+                if (command.mode === 'live')
+                    for (const value of prooflessCourtHourStatuses(discovery.snapshot, command.date))
+                        trace('COURT_HOUR_STATUS', { court: value.court, hour: value.hour, status: value.status, ...(value.price !== undefined ? { price: value.price } : {}) });
+                if (!discovery.candidates.length)
+                    throw Error('API_NO_AVAILABLE_CANDIDATE');
+                const selected = command.mode === 'dry' ? { plan: discovery.candidates[0] } :
+                    await firstUnjournaledAvailableCandidate(discovery.snapshot, preferences, THIRSTY_PICKLE_FACILITY_ID, async (key) => {
+                        const directory = resolve('.local/api-booking/api-first-journals', key);
+                        const disposition = await new DurableSubmissionJournal(directory).recycleReusable(key);
+                        if (disposition === 'reused')
+                            stage('FINISHED_ATTEMPT_REUSABLE');
+                        return disposition === 'blocked';
+                    });
+                if (!selected)
+                    throw Error('API_NO_UNUSED_CANDIDATE');
+                const plan = selected.plan;
+                stage('CANDIDATE_READY', { date: command.date, court: plan.courts[0].court,
+                    ...(plan.courts[1] ? { courtB: plan.courts[1].court } : {}), startTime: plan.startTime,
+                    durationHours: duration, price: plan.totalPrice, availabilityMs: Math.round(discovery.timing.totalMs ?? 0) });
+                checkoutPlans = standardCheckoutChunks(plan);
+            }
+            if (command.mode === 'dry') {
+                // The dry path has no customer lookup, checkout security context, or submission permit.
+                stage('DRY_RUN_COMPLETE');
+            }
+            else if (primaryProoflessPlans) {
+                ensureActive();
+                const attempts = primaryProoflessAttempts;
+                // This does not submit anything. It only makes the already-started
+                // security preparation a prerequisite for entering the dispatch state.
+                // Failure therefore remains conclusively pre-dispatch and releases the
+                // automation lock through the normal finally path.
+                if (command.mode === 'live-now')
+                    await finishWarmup();
+                await liveLock?.dispatching();
+                retainLiveLock = true;
+                stage('PRIMARY_PROOFLESS_DISPATCHING', { workerCount: attempts.length });
+                const outcomes = await Promise.allSettled(attempts.map(attempt => executeProoflessAttempt(attempt, command.releaseMs, { requirePreparedContext: command.mode === 'live' })));
+                attempts.forEach((attempt, index) => {
+                    const outcome = outcomes[index];
+                    const code = outcome.status === 'rejected' && outcome.reason instanceof Error && /^[A-Z][A-Z0-9_]{0,79}$/.test(outcome.reason.message)
+                        ? outcome.reason.message : outcome.status === 'rejected' ? 'DIRECT_WORKER_FAILED' : 'COMPLETED';
+                    stage('PRIMARY_PROOFLESS_OUTCOME', { workerId: attempt.workerId, status: outcome.status, code,
+                        court: attempt.plan.courts[0].court, startTime: attempt.plan.startTime, durationHours: attempt.plan.durationHours });
+                });
+                await persistLatestVerifiedHold();
+                const failures = outcomes.filter((outcome) => outcome.status === 'rejected');
+                if (failures.length) {
+                    if (!verifiedHold) {
+                        const states = await Promise.all(attempts.flatMap(attempt => attempt.journals.map((journal, index) => journal.read(attempt.keys[index]).then(record => record.state).catch(() => 'unknown'))));
+                        if (canReleaseApiLockAfterParallelFailure(false, failures.map(failure => failure.reason), states, attempts.length)) {
+                            retainLiveLock = false;
+                            await liveLock?.release();
+                            liveLock = undefined;
+                        }
                     }
+                    throw failures[0].reason;
                 }
-                throw failures[0].reason;
+            }
+            else {
+                ensureActive();
+                const attempts = makeAttempts(checkoutPlans, workerIds, discovery.snapshot);
+                await liveLock?.dispatching();
+                retainLiveLock = true;
+                const outcomes = await Promise.allSettled(attempts.map(executeAttempt));
+                attempts.forEach((attempt, index) => {
+                    const outcome = outcomes[index];
+                    const code = outcome.status === 'rejected' && outcome.reason instanceof Error && /^[A-Z][A-Z0-9_]{0,79}$/.test(outcome.reason.message)
+                        ? outcome.reason.message : outcome.status === 'rejected' ? 'CHECKOUT_WORKER_FAILED' : 'COMPLETED';
+                    stage('WORKER_OUTCOME', { workerId: attempt.workerId, status: outcome.status, code,
+                        court: attempt.chunkPlan.courts[0].court, startTime: attempt.chunkPlan.startTime, durationHours: attempt.chunkPlan.durationHours });
+                });
+                // Persist the newest verified expiry only after every worker has settled,
+                // so the durable lock can never expire earlier than an active hold.
+                await persistLatestVerifiedHold();
+                const failures = outcomes.filter((outcome) => outcome.status === 'rejected');
+                if (failures.length) {
+                    if (!verifiedHold) {
+                        const states = await Promise.all(attempts.flatMap(attempt => attempt.journals.map((journal, index) => journal.read(attempt.keys[index]).then(record => record.state).catch(() => 'unknown'))));
+                        if (canReleaseApiLockAfterParallelFailure(false, failures.map(failure => failure.reason), states, attempts.length)) {
+                            retainLiveLock = false;
+                            await liveLock?.release();
+                            liveLock = undefined;
+                        }
+                    }
+                    throw failures[0].reason;
+                }
             }
         }
     }

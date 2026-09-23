@@ -318,3 +318,29 @@ it('hides an expired payment hold from the QR summary instead of showing it as a
   expect(await page.locator('#test-headline').innerText()).not.toBe('CONFIRM BOOKING DETAILS BEFORE PAYING');
   await page.close();
 });
+
+it('shows Precision targets, the independent-attempt warning and per-target race status',async()=>{
+  const precisionBooking=bookingView(ConfigSchema.parse({...defaultSetup,BOOKING_METHOD:'proofless',DURATION_HOURS:3,RELEASE_STRATEGY:'precision',
+    PRECISION_TARGETS:[{court:7,start:'17:00',durationHours:3},{court:5,start:'17:00',durationHours:3}],
+    PLAYER_FULL_NAME:'Fixture Player',PLAYER_PHONE:'09123456789',PLAYER_EMAIL:'fixture@example.invalid'}));
+  const page=await renderer({booking:precisionBooking,precision:{frozen:true,frozenCount:2,outcome:'OBJECTIVE_ACHIEVED',targets:[
+    {workerId:'A',court:7,startTime:'17:00',endTime:'20:00',durationHours:3,evidence:'NO_PUBLIC_BOOKING_DATE_UNRELEASED',eligible:true,state:'QR_READY',bookingNo:'BK-1'},
+    {workerId:'B',court:5,startTime:'17:00',endTime:'20:00',durationHours:3,evidence:'NO_PUBLIC_BOOKING_DATE_UNRELEASED',eligible:true,state:'PREWARM_FAILED'}]}});
+  expect(await page.locator('#precision-panel').isVisible()).toBe(true);
+  const table=await page.locator('#precision-table').innerText();
+  expect(table).toContain('Worker A · Court 7 · 17:00–20:00');
+  expect(table).toContain('No known booking · target date not yet published');
+  expect(table).toContain('HOLD VERIFIED · QR READY');
+  expect(table).toContain('NOT DISPATCHED — PREWARM FAILED');
+  expect(await page.locator('#saved-plan-summary').innerText()).toContain('PRECISION RELEASE');
+  await page.locator('[data-view="plan"]').click();
+  expect(await page.locator('#precision-strategy').inputValue()).toBe('precision');
+  expect(await page.locator('#precision-setup').isVisible()).toBe(true);
+  expect(await page.locator('#precision-row-1').isVisible()).toBe(true);
+  expect(await page.locator('#precision-row-2').isVisible()).toBe(false);
+  expect(await page.locator('#precision-court-1').inputValue()).toBe('5');
+  expect(await page.locator('#court-order').isVisible()).toBe(false);
+  expect(await page.locator('#booking-method').isDisabled()).toBe(true);
+  expect(await page.locator('.precision-warning').innerText()).toBe('These are independent checkout attempts. More than one temporary QR hold may be created. Payment remains manual.');
+  await page.close();
+});

@@ -34,7 +34,9 @@ await copyFile(join(root, 'src/api-booking/calendar-free-security-context-browse
   join(output, 'dist/src/api-booking/calendar-free-security-context-browser.js'));
 const savedSetup = JSON.parse(await readFile(resolve(updating?output:root, 'config.local.json'), 'utf8'));
 const {MAX_PRICE: _legacyPriceLimit, ...savedSetupWithoutPriceLimit}=savedSetup;
-await writeFile(join(output, 'config.local.json'), JSON.stringify({ ...savedSetupWithoutPriceLimit, BOOKING_METHOD: 'api-first' }, null, 2) + '\n');
+// Keep the operator's saved method (Proofless or API-first); only an unsupported/missing method falls back to API-first.
+const savedMethod=['api-first','proofless'].includes(savedSetup.BOOKING_METHOD)?savedSetup.BOOKING_METHOD:'api-first';
+await writeFile(join(output, 'config.local.json'), JSON.stringify({ ...savedSetupWithoutPriceLimit, BOOKING_METHOD: savedMethod }, null, 2) + '\n');
 if(!existsSync(join(output,'.local/runtime/node.exe')))await copyFile(process.execPath, join(output, '.local/runtime/node.exe'));
 const windows = process.env.SystemRoot;
 if (!windows) throw Error('WINDOWS_SYSTEM_ROOT_MISSING');
@@ -48,8 +50,11 @@ execFileSync(compiler, ['/nologo', '/target:winexe', '/optimize+', `/win32icon:$
   '/reference:System.Windows.Forms.dll', `/out:${join(output, 'Thirsty Pickle Bot.exe')}`,
   resolve(root, 'scripts/ThirstyPickleBotLauncher.cs')], { cwd: root, stdio: 'inherit', windowsHide: true });
 const appHash=await hash(join(output,'Thirsty Pickle Bot.exe'));
+let sourceRevision='unknown';
+try{const head=execFileSync('git',['rev-parse','--short','HEAD'],{cwd:root,encoding:'utf8'}).trim();
+  const dirty=execFileSync('git',['status','--porcelain'],{cwd:root,encoding:'utf8'}).trim()?' + uncommitted changes':'';sourceRevision=`${head}${dirty}`;}catch{}
 await writeFile(join(output, 'BUILD-INFO.txt'),
-  `Thirsty Pickle Bot self-contained installation\nBuilt: ${new Date().toISOString()}\nLauncher SHA256: ${appHash}\n`+
+  `Thirsty Pickle Bot self-contained installation\nBuilt: ${new Date().toISOString()}\nSource: ${sourceRevision}\nLauncher SHA256: ${appHash}\n`+
   'API-first is the primary booking method. Payment remains manual. This folder includes its own Node and Electron runtime and requires installed Chrome.\n');
 await mkdir(join(output, '.local/private'), { recursive: true });
 if(!existsSync(join(output,'.local/private/.env.example')))await copyFile(join(root, '.env.example'), join(output, '.local/private/.env.example'));

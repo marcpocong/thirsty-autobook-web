@@ -9,6 +9,7 @@ const allowedFields = new Set([
     'challengeState', 'activeAvailability', 'activeSecurity', 'activeSlotChecks', 'activeCheckouts', 'droppedCount', 'retryCount',
     'verifiedHoldCount', 'qrHandoffCount', 'partialHolds', 'coreElapsedMs', 'slowestStages',
     'absentEvidence', 'finalCode', 'aborted', 'workerOutcome', 'court', 'startTime', 'durationHours', 'price', 'responseObserved',
+    'releaseLatenessMs', 'checkpoint',
 ]);
 export function diagnosticLaneForWorker(_workerId) {
     return 'core';
@@ -34,9 +35,9 @@ export function sanitizeDiagnosticExtra(extra) {
  * Exact court-by-hour state of one availability read, for the run trace.
  * `courtHourSummary` is `court:08→23 codes` with O open, X taken, U unreleased, ? unknown.
  */
-export function availabilityObservation(snapshot, targetDate) {
+export function availabilityObservation(snapshot, targetDate, context) {
     const targetDatePresent = snapshot.returnedDates[targetDate] === true;
-    const states = courtHourStates(snapshot, targetDate), counts = countCourtHourStates(states);
+    const states = courtHourStates(snapshot, targetDate, context), counts = countCourtHourStates(states);
     return { targetDatePresent, responseComplete: targetDatePresent && !snapshot.incompleteDates.includes(targetDate),
         slotCount: snapshot.slots.length, availableCount: counts.OPEN, takenCount: counts.TAKEN,
         unreleasedCount: counts.UNRELEASED, unknownCount: counts.UNKNOWN, courtHourSummary: encodeCourtHourStates(states) };

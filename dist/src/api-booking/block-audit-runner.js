@@ -4,6 +4,8 @@ import { OndaLiveAvailabilityProvider } from './live-availability-provider.js';
 import { parseAvailability } from './availability-parser.js';
 import { prooflessCourtHourStatuses } from './proofless-checkout.js';
 import { readPublicBookingRecords } from './public-bookings.js';
+import { loadObservationConfig, releaseMsForTargetDate } from '../config.js';
+import { networkNowMs } from '../network-clock.js';
 const input = z.object({ date: z.iso.date() }).strict().parse(JSON.parse(process.argv[2] ?? '{}'));
 async function readAvailability(date) {
     try {
@@ -18,8 +20,12 @@ async function readAvailability(date) {
     }
 }
 async function main() {
-    const [snapshot, publicRecords] = await Promise.all([readAvailability(input.date), readPublicBookingRecords(input.date)]);
-    const cells = prooflessCourtHourStatuses(snapshot, input.date, publicRecords.blocks, publicRecords.failedCourts);
+    // A missing date is "not yet published" only for Onda's empty response observed before its release instant.
+    const releaseMs = releaseMsForTargetDate(loadObservationConfig(), input.date);
+    const [read, publicRecords] = await Promise.all([
+        readAvailability(input.date).then(snapshot => ({ snapshot, observedAtMs: networkNowMs() })), readPublicBookingRecords(input.date)
+    ]);
+    const cells = prooflessCourtHourStatuses(read.snapshot, input.date, publicRecords.blocks, publicRecords.failedCourts, { releaseMs, observedAtMs: read.observedAtMs });
     emitUiEvent({ type: 'blockAudit', date: input.date, cells });
 }
 main().catch(error => {

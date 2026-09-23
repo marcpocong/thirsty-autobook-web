@@ -1,17 +1,7 @@
 import { ONDA_URL } from './config.js';
 import { classifyRateLimit } from './rate-limit.js';
 import { availabilityPath, parseAvailability, apiCandidates, hybridPreferences, compareAvailability } from './onda-availability.js';
-function unreleasedEmptyResponse(raw) {
-    if (!raw || typeof raw !== 'object')
-        return false;
-    const body = raw;
-    if (body.success !== true || !body.data || typeof body.data !== 'object')
-        return false;
-    const data = body.data;
-    return !!data.dates && typeof data.dates === 'object' && !Array.isArray(data.dates) &&
-        !!data.slotsBySpace && typeof data.slotsBySpace === 'object' && !Array.isArray(data.slotsBySpace) &&
-        Object.keys(data.dates).length === 0 && Object.keys(data.slotsBySpace).length === 0;
-}
+import { isOndaUnreleasedEmptyResponse as unreleasedEmptyResponse } from './onda-unreleased.js';
 // Release discovery must survive a same-tab reload. BrowserContext.request shares
 // the context cookie jar but is not tied to the page's JavaScript execution context.
 export function releaseAvailabilityRequest(page, targetDate, safety, t, timeout = 2500, notReleasedAttempts = 0) {

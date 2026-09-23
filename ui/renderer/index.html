@@ -48,6 +48,7 @@
       <p id="main-action-hint" class="small"></p>
       <label class="terms-choice"><input id="terms" type="checkbox" disabled> I authorize accepting Onda Terms for this booking</label>
     </section>
+    <section id="precision-panel" class="panel precision-panel" hidden><h2>Precision Release</h2><p id="precision-summary" class="small"></p><div id="precision-table" class="precision-table"></div><p class="small">Goal: 1 successful court. These are independent checkout attempts; more than one temporary QR hold may be created. Payment remains manual.</p></section>
     <section class="panel saved-plan"><h2>Saved booking plan</h2><div id="saved-plan-summary" class="plan-card"></div></section>
     <section id="release-readiness-card" class="panel"><h2>Release readiness</h2><div id="release-readiness" class="gate-list"></div></section>
     <section class="panel lock-card" id="lock-card" hidden><h2>Automation lock active</h2><pre id="lock-review">Browser state: Needs verification. Use Review Lock.</pre><p id="lock-note" class="small">Booking actions are blocked. You can still edit and save your next booking plan locally.</p><div class="button-row"><button id="review-lock" class="secondary" type="button">Review Lock</button><button id="clear-lock" class="secondary" type="button" hidden>Clear Verified Stale Lock</button></div></section>
@@ -68,15 +69,28 @@
       <div class="section-title"><div><p class="eyebrow">Saved plan · used by Next Release and Tests</p><h2>Booking setup</h2></div><span id="player-status" class="small">Player information · Checking</span></div>
       <fieldset id="setup-fields">
         <div class="setup-grid">
+          <label>Release strategy<select id="precision-strategy"><option value="general">GENERAL RELEASE</option><option value="precision">PRECISION RELEASE · 1 court</option></select></label>
           <label>Booking method<select id="booking-method"><option value="proofless">PROOFLESS DIRECT · 8 AM</option><option value="api-first">API-FIRST · WITH PROOFS</option><option value="browser">NORMAL BROWSER</option><option value="hybrid">HYBRID AVAILABILITY</option></select></label>
           <label>Booking type<select id="booking-type"><option value="standard">STANDARD · 1–3 hours</option><option value="extended">EXTENDED · 4–6 hours</option></select></label>
-          <label>Courts to book<select id="court-count"><option value="1">1 Court</option><option value="2">2 Courts</option><option value="3">3 Courts</option><option value="4">4 Courts</option><option value="5">5 Courts</option><option value="6">6 Courts</option><option value="7">7 Courts</option></select></label>
-          <label>Start time<select id="start-time"></select></label>
-          <label>Duration (hours)<input id="duration" type="number" min="1" max="3" value="2"></label>
-          <label>Maximum candidate attempts<input id="attempts" type="number" min="1" max="5" value="3"></label>
+          <label class="general-only">Courts to book<select id="court-count"><option value="1">1 Court</option><option value="2">2 Courts</option><option value="3">3 Courts</option><option value="4">4 Courts</option><option value="5">5 Courts</option><option value="6">6 Courts</option><option value="7">7 Courts</option></select></label>
+          <label class="general-only">Start time<select id="start-time"></select></label>
+          <label class="general-only">Duration (hours)<input id="duration" type="number" min="1" max="3" value="2"></label>
+          <label class="general-only">Maximum candidate attempts<input id="attempts" type="number" min="1" max="5" value="3"></label>
+        </div>
+        <div id="precision-setup" class="editor-block precision-setup" hidden>
+          <h3>Precision Release · goal: 1 successful court</h3>
+          <p class="small">Proofless Direct · Standard 1–3 hours · each attempt is exactly one court, one exact time and one dedicated player/browser. Release only.</p>
+          <label>Independent attempts<select id="precision-count"><option value="1">1 attempt</option><option value="2">2 attempts</option><option value="3">3 attempts</option></select></label>
+          <div class="precision-rows">
+            <div class="precision-row" id="precision-row-0"><strong>Worker A</strong><label>Court<select id="precision-court-0"></select></label><label>Start<select id="precision-start-0"></select></label><label>Duration<select id="precision-duration-0"><option value="1">1 h</option><option value="2">2 h</option><option value="3">3 h</option></select></label><span id="precision-evidence-0" class="small precision-evidence"></span></div>
+            <div class="precision-row" id="precision-row-1"><strong>Worker B</strong><label>Court<select id="precision-court-1"></select></label><label>Start<select id="precision-start-1"></select></label><label>Duration<select id="precision-duration-1"><option value="1">1 h</option><option value="2">2 h</option><option value="3">3 h</option></select></label><span id="precision-evidence-1" class="small precision-evidence"></span></div>
+            <div class="precision-row" id="precision-row-2"><strong>Worker C</strong><label>Court<select id="precision-court-2"></select></label><label>Start<select id="precision-start-2"></select></label><label>Duration<select id="precision-duration-2"><option value="1">1 h</option><option value="2">2 h</option><option value="3">3 h</option></select></label><span id="precision-evidence-2" class="small precision-evidence"></span></div>
+          </div>
+          <p class="precision-warning"><strong>These are independent checkout attempts. More than one temporary QR hold may be created. Payment remains manual.</strong></p>
+          <p class="small">Evidence is read at T−60, T−30, T−10 and T−2 min. The set freezes 2 minutes before release: a target showing a public booking or unknown evidence then is excluded, and no court, time or attempt is ever added or changed. Nothing is cancelled automatically.</p>
         </div>
         <div id="player-details" class="player-details" aria-label="Player details used for booking"></div>
-        <div class="setup-grid editors"><div class="editor-block"><h3>Court priority</h3><ol id="court-order"></ol></div><div class="editor-block"><h3>Fallback starts · in order</h3><div class="button-row"><select id="fallback-time" aria-label="Add fallback start time"></select><button id="add-fallback" class="secondary" type="button">Add</button></div><ol id="fallback-order"></ol><p class="small">Primary time × court order, then each fallback × court order.</p></div></div>
+        <div class="setup-grid editors general-only"><div class="editor-block"><h3>Court priority</h3><ol id="court-order"></ol></div><div class="editor-block"><h3>Fallback starts · in order</h3><div class="button-row"><select id="fallback-time" aria-label="Add fallback start time"></select><button id="add-fallback" class="secondary" type="button">Add</button></div><ol id="fallback-order"></ol><p class="small">Primary time × court order, then each fallback × court order.</p></div></div>
         <div class="setup-actions"><button id="save-booking" class="secondary" type="button">Save booking plan</button><span id="edit-status" class="small"></span></div>
       </fieldset>
       <div id="booking-adjustment" class="readiness" role="status" hidden></div>

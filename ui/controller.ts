@@ -19,11 +19,41 @@ import { capabilities,fullBookingReady } from '../src/capabilities.js';
 import {expectedPreparationFingerprint,makePreparedContext} from '../src/prepared-context.js';
 import type {PreparationInput,PreparationResult} from '../src/booking-plan.js';
 import {scheduledReleaseContext,type ScheduledReleaseContext} from '../src/scheduled-release.js';
-import {requiredWorkerIds,type CourtCount,type WorkerId} from '../src/workers.js';
+import {planWorkerIds,requiredWorkerIds,type CourtCount,type WorkerId} from '../src/workers.js';
 import type {SlotWatchSummary,SlotWatchView} from '../src/slot-watch.js';
+import {TARGET_EVIDENCE_LABEL,type TargetEvidence} from '../src/api-booking/pre-release-evidence.js';
+import type {PrecisionView} from './types.js';
+
+/** Race-group headline: the operator's goal is one court, so any verified hold achieves it. */
+const PRECISION_OUTCOME_HEADLINE:Record<string,string>={
+  OBJECTIVE_ACHIEVED:'OBJECTIVE ACHIEVED · 1 temporary QR hold',
+  OBJECTIVE_ACHIEVED_EXTRA_HOLD:'OBJECTIVE ACHIEVED · EXTRA HOLD — more than one temporary QR hold exists',
+  OBJECTIVE_ACHIEVED_UNRESOLVED_EXTRA_ATTEMPT:'OBJECTIVE ACHIEVED · UNRESOLVED EXTRA ATTEMPT — another attempt may also hold a court',
+  OBJECTIVE_NOT_CONFIRMED_MANUAL_RECONCILIATION:'OBJECTIVE NOT CONFIRMED · MANUAL RECONCILIATION REQUIRED',
+  OBJECTIVE_NOT_ACHIEVED_ALL_REJECTED:'OBJECTIVE NOT ACHIEVED · ALL REJECTED',
+  OBJECTIVE_NOT_ACHIEVED_NOTHING_DISPATCHED:'OBJECTIVE NOT ACHIEVED · NOTHING DISPATCHED',
+};
+const precisionOutcomeHeadline=(code:string|undefined)=>code?PRECISION_OUTCOME_HEADLINE[code]:undefined;
+export const PRECISION_STATE_LABEL:Record<string,string>={
+  EXCLUDED_BEFORE_FREEZE:'NOT DISPATCHED — excluded before freeze',BROWSER_FAILED:'NOT DISPATCHED — browser failed',
+  IDENTITY_FAILED:'NOT DISPATCHED — player/customer binding missing',JOURNAL_BLOCKED:'NOT DISPATCHED — earlier attempt on record',
+  PREWARM_FAILED:'NOT DISPATCHED — PREWARM FAILED',WINDOW_MISSED:'NOT DISPATCHED — window missed',NOT_DISPATCHED:'NOT DISPATCHED',
+  REJECTED:'REJECTED by Onda',UNKNOWN:'UNKNOWN — may have been sent; do not retry',HOLD_VERIFIED:'HOLD VERIFIED',
+  HOLD_VERIFIED_QR_ATTENTION:'HOLD VERIFIED · QR HANDOFF NEEDS ATTENTION',QR_READY:'HOLD VERIFIED · QR READY',
+};
 
 const preparationHeadlines:Record<string,string>={EXTENDED_PLAYER_INFO_MISSING:'EXTENDED PLAYER REQUIRED',PLAYER_INFO_MISSING:'PLAYER CONFIGURATION REQUIRED',TARGET_DATE_UNAVAILABLE:'TARGET NOT AVAILABLE',TARGET_NOT_AVAILABLE:'TARGET NOT AVAILABLE',PAYMENT_HOLD_MAY_BE_ACTIVE:'PAYMENT HOLD ACTIVE',LOCK_PID_RUNNING:'AUTOMATION STILL RUNNING',TODAYS_RELEASE_PASSED:"TODAY'S RELEASE HAS PASSED",CHROME_NOT_INSTALLED:'CHROME NOT INSTALLED',CHROME_START_TIMEOUT:'DEDICATED CHROME DID NOT START',CHROME_START_FAILED:'DEDICATED CHROME DID NOT START',CDP_ENDPOINT_UNAVAILABLE:'DEDICATED CHROME UNAVAILABLE',ONDA_TAB_AMBIGUOUS_OR_MISSING:'ONDA TAB NOT READY',WRONG_VENUE:'WRONG VENUE'};
 const errors: Record<string, string> = {
+  DIRECT_AVAILABILITY_READ_FAILED:'Onda availability could not be read after bounded retries. Nothing was sent; the release stopped safely.',
+  DIRECT_TARGET_DATE_STATE_UNKNOWN:'Onda returned an unexpected availability shape for the target date. Nothing was sent; the release stopped safely.',
+  NETWORK_CLOCK_STALE:'The Google network clock could not be refreshed and the last sync is too old. Nothing was sent.',
+  PRECISION_NO_ELIGIBLE_TARGET:'No Precision target is currently eligible (public booking or unknown evidence on every target). Edit the targets.',
+  PRECISION_TOO_LATE_TO_ARM:'Precision Release must be armed at least 3 minutes before release so the target set can be frozen at T-2 min.',
+  PRECISION_TOO_LATE_TO_FREEZE:'The Precision target set could not be frozen before release. Nothing was sent.',
+  PRECISION_REQUIRES_PROOFLESS_STANDARD:'Precision Release uses Proofless Direct with Standard 1-3 hour targets.',
+  OBJECTIVE_NOT_ACHIEVED_ALL_REJECTED:'Every dispatched Precision attempt was rejected by Onda. No hold was created.',
+  OBJECTIVE_NOT_ACHIEVED_NOTHING_DISPATCHED:'No Precision attempt was dispatched. See each attempt for the reason.',
+  OBJECTIVE_NOT_CONFIRMED_MANUAL_RECONCILIATION:'An attempt may have been sent without a confirmed outcome. DO NOT retry. Check Onda and Chrome manually; the lock is retained.',
   EXTENDED_DURATION_LIMIT:'Extended two-browser booking currently supports up to 6 consecutive hours.',
   PAYMENT_HOLD_MAY_BE_ACTIVE:'A retained payment hold may still be active. Reset & Prepare cannot clear it until its timer has elapsed and the browser is verified clean.',
   TARGET_NOT_AVAILABLE:'TARGET NOT AVAILABLE. No booking was created.',
@@ -189,9 +219,9 @@ export class Controller {
     this.slotWatch=undefined;await watch.stop(reason).catch(()=>undefined);this.publish();
   }
   private players():NonNullable<Dashboard['playerStatus']>{if(this.deps.playerStatus)return {third:false,fourth:false,...this.deps.playerStatus()};try{const b=this.deps.booking();return {primary:b.playerConfigured,extended:b.extendedPlayerConfigured,third:b.thirdPlayerConfigured,fourth:b.fourthPlayerConfigured,fifth:b.fifthPlayerConfigured,sixth:b.sixthPlayerConfigured,seventh:b.seventhPlayerConfigured,eighth:b.eighthPlayerConfigured};}catch{return {primary:false,extended:false,third:false,fourth:false};}}
-  private requirePlayers(strategy:'standard'|'extended',courtCount:CourtCount){
+  private requirePlayers(workers:readonly WorkerId[]){
     const players=this.players(),map={A:players.primary,B:players.extended,C:players.third,D:players.fourth,E:!!players.fifth,F:!!players.sixth,G:!!players.seventh,H:!!players.eighth};
-    const missing=requiredWorkerIds(strategy,courtCount).find(worker=>!map[worker]);
+    const missing=workers.find(worker=>!map[worker]);
     if(missing)throw Error(missing==='A'?'PLAYER_INFO_MISSING':missing==='B'?'EXTENDED_PLAYER_INFO_MISSING':missing==='C'?'THIRD_PLAYER_INFO_MISSING':missing==='D'?'FOURTH_PLAYER_INFO_MISSING':`PLAYER_${missing}_INFO_MISSING`);
     return players;
   }
@@ -220,6 +250,26 @@ export class Controller {
     if(required.some(id=>!h[id])){this.clearPreparation();throw Error('RESET_REQUIRED');}
   }
   private publish() { this.deps.publish(structuredClone(this.state)); }
+  private trackPrecision(event:Extract<UiEvent,{type:'apiStage'}>){
+    if(event.stage==='RUN_STARTED'){this.state.precision=null;return;}
+    const perAttempt=['SECURITY_PREWARM_READY','SECURITY_PREWARM_FAILED','PENDING_HOLD','OFFICIAL_QRPH_HANDOFF','QR_HANDOFF_NEEDS_ATTENTION'];
+    if(!event.stage.startsWith('PRECISION_')&&!(this.state.precision&&perAttempt.includes(event.stage)))return;
+    const view:PrecisionView=this.state.precision?structuredClone(this.state.precision):{targets:[],frozen:false};
+    const entry=()=>{if(!event.workerId)return undefined;let found=view.targets.find(target=>target.workerId===event.workerId);
+      if(!found&&event.court&&event.startTime){found={workerId:event.workerId,court:event.court,startTime:event.startTime,endTime:event.endTime??'',durationHours:event.durationHours??0};view.targets.push(found);}return found;};
+    const target=entry();
+    if(event.stage==='PRECISION_TARGET'&&target){target.endTime=event.endTime??target.endTime;target.durationHours=event.durationHours??target.durationHours;if(event.assumedPrice!==undefined)target.assumedPrice=event.assumedPrice;}
+    if(event.stage==='PRECISION_TARGET_EVIDENCE'&&target){target.evidence=event.evidence;target.eligible=event.eligible;target.checkpoint=event.checkpoint;view.checkpoint=event.checkpoint;view.checkpointAt=event.at;}
+    if(event.stage==='PRECISION_ATTEMPT_STATE'&&target){target.state=event.attemptState;target.code=event.code;}
+    if(event.stage==='SECURITY_PREWARM_READY'&&target)target.security='ready';
+    if(event.stage==='SECURITY_PREWARM_FAILED'&&target)target.security='failed';
+    if(event.stage==='PENDING_HOLD'&&target){target.state=target.state==='QR_READY'?'QR_READY':'HOLD_VERIFIED';target.bookingNo=event.bookingNo;target.holdExpiresAt=event.holdExpiresAt;}
+    if(event.stage==='OFFICIAL_QRPH_HANDOFF'&&target)target.state='QR_READY';
+    if(event.stage==='QR_HANDOFF_NEEDS_ATTENTION'&&target)target.state='HOLD_VERIFIED_QR_ATTENTION';
+    if(event.stage==='PRECISION_FROZEN'){view.frozen=true;view.frozenCount=event.frozenCount;view.frozenAt=event.at;}
+    if(event.stage==='PRECISION_OUTCOME')view.outcome=event.outcome;
+    this.state.precision=view;
+  }
   private clearApiStage() { this.state.apiStage=null;this.state.observedPrice=null;this.state.assumedPrice=null; }
   private rememberQrHandoff(summary:QrHandoffSummary){
     const same=(value:QrHandoffSummary)=>value.checkout&&summary.checkout
@@ -337,7 +387,7 @@ export class Controller {
       const context=this.state.preparedContext,required=context?.requiredBrowsers??[];
       const apiWorkers=this.state.workflow==='test'&&this.apiTestPreferences
         ? requiredWorkerIds(this.apiTestPreferences.strategy,this.apiTestPreferences.courtCount)
-        : this.state.booking?requiredWorkerIds(this.state.booking.setup.BOOKING_TYPE,this.state.booking.setup.COURT_COUNT):[];
+        : this.state.booking?planWorkerIds(this.state.booking.setup):[];
       const apiFirstReady=this.state.apiFirstReady&&apiWorkers.length>0&&apiWorkers.every(id=>health[id])&&!lock&&(
         this.state.workflow==='test'?!!this.apiTestFingerprint:['api-first','proofless'].includes(this.state.booking?.setup.BOOKING_METHOD??''));
       this.state.ready=!!apiFirstReady||!!context&&context.workflow===this.state.workflow&&!lock&&(this.state.operation==='scheduled'||required.every(id=>health[id]));
@@ -368,14 +418,21 @@ export class Controller {
         this.apiReadyWorkers.add(event.workerId);
         const required=this.state.workflow==='test'&&this.apiTestPreferences
           ? requiredWorkerIds(this.apiTestPreferences.strategy,this.apiTestPreferences.courtCount)
-          : this.state.booking?requiredWorkerIds(this.state.booking.setup.BOOKING_TYPE,this.state.booking.setup.COURT_COUNT):[];
+          : this.state.booking?planWorkerIds(this.state.booking.setup):[];
         if(required.length&&required.every(worker=>this.apiReadyWorkers.has(worker)))this.markBrowserReady(event.at);
       }
       this.state.apiStage=event;
+      this.trackPrecision(event);
       const labels:Record<string,string>={RUN_STARTED:'API run started',EXPIRED_HOLD_REUSABLE:'Expired verified hold released for a new test',FINISHED_ATTEMPT_REUSABLE:'Finished attempt archived for a new test',PREPARING_BROWSER:'Preparing isolated Chrome',BROWSER_READY:'API browser ready',
         WAITING_FOR_BLOCK_AUDIT:'Waiting for 7:30 block audit',PRIMARY_PROOFLESS_PLAN_READY:'Proofless court plan resolved',PRIMARY_PROOFLESS_DISPATCHING:'Dispatching proofless checkout',PRIMARY_PROOFLESS_OUTCOME:'Proofless checkout outcome recorded',WAITING_FOR_RELEASE:'Waiting for release',SECURITY_PREWARM_STARTED:'Preparing checkout security before release',SECURITY_PREWARM_READY:'Checkout security ready for release',RELEASE_TRIGGERED:'Release reached',FETCHING_AVAILABILITY:'Fetching live API availability',
         WORKER_OUTCOME:'Checkout outcome recorded',CANDIDATE_READY:'API candidate ready',DRY_RUN_COMPLETE:'API dry run complete',FRESH_VERIFICATION_AND_PROOFS:'Fresh verification and slot proofs',
-        PENDING_HOLD:'Pending reservation captured',OFFICIAL_QRPH_HANDOFF:'Official QRPH checkout open',FAILED:'API run needs attention'};
+        PENDING_HOLD:'Pending reservation captured',OFFICIAL_QRPH_HANDOFF:'Official QRPH checkout open',FAILED:'API run needs attention',
+        PRE_RELEASE_AUDIT_READ:'Pre-release read',PRE_RELEASE_AUDIT_RESULT:'Pre-release audit recorded',PROOFLESS_TARGET_EVIDENCE:'Target evidence recorded',
+        NETWORK_CLOCK_REFRESHED:'Network clock refreshed',NETWORK_CLOCK_REFRESH_FAILED:'Network clock refresh failed',QR_HANDOFF_NEEDS_ATTENTION:'HOLD VERIFIED · QR handoff needs attention',
+        PRECISION_RACE_CONFIGURED:'Precision race configured',PRECISION_TARGET:'Precision target authorized',PRECISION_EVIDENCE_READ:'Precision evidence read',
+        PRECISION_TARGET_EVIDENCE:'Precision target evidence',PRECISION_ATTEMPT_STATE:'Precision attempt updated',PRECISION_DRY_COMPLETE:'Precision targets checked',
+        PRECISION_FROZEN:'Precision targets frozen',PRECISION_DISPATCHING:'Dispatching Precision attempts',SECURITY_PREWARM_FAILED:'Checkout security failed for one worker',
+        SECURITY_PREWARM_RETRY:'Retrying checkout security for one worker',PRECISION_OUTCOME:'Precision race settled'};
       labels.HUMAN_VERIFICATION_REQUIRED='Human verification required in Chrome';
       labels.HUMAN_VERIFICATION_COMPLETE='Human verification complete';
       this.state.headline=labels[event.stage]??event.stage.replaceAll('_',' ');
@@ -387,6 +444,12 @@ export class Controller {
         event.stage==='SECURITY_PREWARM_STARTED'||event.stage==='SECURITY_PREWARM_READY'?'The verified browser remains ready. Waiting for the exact release time.':
         event.stage==='HUMAN_VERIFICATION_REQUIRED'?`Use the Chrome window titled THIRSTY BOT ${event.workerId??'A'} - VERIFY HERE. This API run is waiting for you to finish the Cloudflare check.`:
         event.stage==='FAILED'?event.code??'API_FIRST_RUN_FAILED':`Progress recorded`;
+      const precisionHeadline=precisionOutcomeHeadline(event.stage==='PRECISION_OUTCOME'?event.outcome:event.stage==='FAILED'?event.code:undefined);
+      if(precisionHeadline)this.state.headline=precisionHeadline;
+      if(event.stage==='PRECISION_OUTCOME')this.state.detail=`${event.verifiedCount??0} verified hold(s) · ${event.unknownCount??0} unresolved · ${event.rejectedCount??0} rejected · ${event.unsentCount??0} not dispatched${event.qrAttention?' · a verified hold needs its QR page opened manually':''}. Payment is manual.`;
+      if(['PRECISION_TARGET_EVIDENCE','PROOFLESS_TARGET_EVIDENCE'].includes(event.stage))this.state.detail=`${event.workerId?`Worker ${event.workerId} · `:''}Court ${event.court} · ${event.startTime}${event.endTime?`–${event.endTime}`:''}${event.checkpoint?` · ${event.checkpoint}`:''} · ${TARGET_EVIDENCE_LABEL[event.evidence as TargetEvidence]??event.evidence}${event.eligible===false?' · NOT ELIGIBLE':''}`;
+      if(event.stage==='PRECISION_ATTEMPT_STATE')this.state.detail=`Worker ${event.workerId} · Court ${event.court} · ${event.startTime}–${event.endTime} · ${PRECISION_STATE_LABEL[event.attemptState??'']??event.attemptState}${event.code?` · ${event.code}`:''}`;
+      if(event.stage==='NETWORK_CLOCK_REFRESHED')this.state.detail=`${event.checkpoint} · offset ${event.offsetMs} ms · round trip ${event.roundTripMs} ms · change ${event.deltaMs} ms`;
       const timing=`${event.elapsedMs} ms total · +${event.sincePreviousMs??0} ms since prior stage`;
       this.state.detail+=` · ${timing}`;
       if(['PENDING_HOLD','OFFICIAL_QRPH_HANDOFF'].includes(event.stage)&&event.date&&event.court&&event.startTime&&event.durationHours&&event.price!==undefined){
@@ -551,7 +614,7 @@ export class Controller {
       await this.operation('prepare',async gen=>{
         let release:BookingView|undefined;
         if(input.workflow==='test'&&['api-first','proofless'].includes(input.method)){
-          const players=this.requirePlayers(input.request.strategy,input.request.courtCount);this.state.playerStatus=players;
+          const players=this.requirePlayers(requiredWorkerIds(input.request.strategy,input.request.courtCount));this.state.playerStatus=players;
           await this.reconcileLockForApiPrepare(gen,input);
           const fingerprint=expectedPreparationFingerprint(input);
           this.state.workflow='test';this.state.headline='PREPARING API BROWSER';this.publish();
@@ -572,20 +635,20 @@ export class Controller {
           this.state.bookingAdjustment=removed.length?{valid:release.setup.FALLBACK_TIMES,removed}:null;
            if(release.setup.BOOKING_TYPE!==input.strategy)throw Error('BOOKING_PLAN_CHANGED');this.state.booking=release;
            if(['api-first','proofless'].includes(release.setup.BOOKING_METHOD)){
-              this.state.playerStatus=this.requirePlayers(release.setup.BOOKING_TYPE,release.setup.COURT_COUNT);
+              this.state.playerStatus=this.requirePlayers(planWorkerIds(release.setup));
              await this.reconcileLockForApiPrepare(gen,input);
              this.state.workflow='release';this.state.headline='PREPARING API BROWSER';this.publish();
              await this.run({kind:'apiRun',mode:'prepare',date:release.targetDate,fingerprint:release.fingerprint,checkoutMethod:release.setup.BOOKING_METHOD==='proofless'?'proofless':'proof-based'},gen);
              if(release.setup.BOOKING_METHOD==='proofless')await this.run({kind:'apiRun',mode:'dry',date:release.targetDate,fingerprint:release.fingerprint,checkoutMethod:'proofless'},gen);
              this.state.apiFirstReady=true;this.state.ready=true;this.state.headline='API BROWSER READY';
-              const count=requiredWorkerIds(release.setup.BOOKING_TYPE,release.setup.COURT_COUNT).length;
+              const count=planWorkerIds(release.setup).length;
              this.state.detail=`${count} API browser${count===1?' is':'s are'} ready. Authorize Terms, then arm the next release.`;
              return;
            }
         }
         const strategy=input.workflow==='test'?input.request.strategy:release!.setup.BOOKING_TYPE;
         const courtCount=input.workflow==='test'?input.request.courtCount:release!.setup.COURT_COUNT;
-        const players=this.requirePlayers(strategy,courtCount);this.state.playerStatus=players;
+        const players=this.requirePlayers(requiredWorkerIds(strategy,courtCount));this.state.playerStatus=players;
         const fingerprint=expectedPreparationFingerprint(input,release?.fingerprint);
         this.pendingPreparation={input,fingerprint,release,players};
         this.state.workflow=input.workflow;this.state.inspection=null;this.state.handoff=null;this.state.bookingResult=undefined;
@@ -605,7 +668,7 @@ export class Controller {
     }finally{this.pendingPreparation=undefined;this.resetting=false;}
   }
   testBooking(value:unknown){const input=TestBookingSchema.parse(value),authorized=this.state.termsAuthorized;this.state.termsAuthorized=false;return this.operation('fullPractice',async gen=>{
-    this.requirePlayers(input.request.strategy,input.request.courtCount);
+    this.requirePlayers(requiredWorkerIds(input.request.strategy,input.request.courtCount));
     const preparation={workflow:'test' as const,method:input.method,request:input.request,maximum:input.maximum};
     if(['api-first','proofless'].includes(input.method)){
       const fingerprint=expectedPreparationFingerprint(preparation);
@@ -685,9 +748,13 @@ export class Controller {
     if(this.state.operation!=='idle'||!this.state.apiFirstReady||!this.state.ready)throw Error('RESET_REQUIRED');
     if(!authorized)throw Error('TERMS_AUTHORIZATION_REQUIRED');
     await this.noLock();
-    const plan=this.deps.booking(),clock=this.deps.clock();
-    this.requirePlayers(plan.setup.BOOKING_TYPE,plan.setup.COURT_COUNT);
+    const plan=this.deps.booking();
+    // Arming refreshes the Google offset itself; the runner refreshes it again at T-10 min.
+    try{await this.deps.syncClock?.();}catch{/* judged below by freshness */}
+    const clock=this.deps.clock();
+    this.requirePlayers(planWorkerIds(plan.setup));
     if(!clock.networkSynced)throw Error('NETWORK_CLOCK_SYNC_REQUIRED');
+    if(plan.setup.RELEASE_STRATEGY==='precision'&&clock.releaseMs-(Date.now()+clock.clockOffsetMs)<3*60_000)throw Error('PRECISION_TOO_LATE_TO_ARM');
     if(clock.releaseMs<=Date.now()+clock.clockOffsetMs)throw Error('RELEASE_MISSED');
     const confirmed=await this.deps.confirm('full',plan);if(!confirmed)return;
     if(this.deps.booking().fingerprint!==plan.fingerprint||this.deps.clock().releaseMs!==clock.releaseMs)

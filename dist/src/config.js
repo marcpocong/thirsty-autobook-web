@@ -10,9 +10,33 @@ export const ONDA_URL = 'https://app.onda.fit/book/thirsty-pickle';
 export const VENUE = 'Thirsty Pickle | SM Seaside';
 const hour = z.string().regex(/^(0[89]|1[0-9]|2[0-3]):00$/);
 const courts = z.array(z.number().int().min(1).max(7));
+/** One exact Precision target: one court, one start, 1-3 hours. Workers A, B, C follow row order. */
+export const PrecisionTargetSchema = z.object({ court: z.number().int().min(1).max(7), start: hour, durationHours: z.number().int().min(1).max(3) }).strict();
+const releaseStrategy = z.enum(['general', 'precision']).default('general');
+const precisionTargets = z.array(PrecisionTargetSchema).max(3).default([]);
+function checkPrecision(c, ctx) {
+    if (c.RELEASE_STRATEGY !== 'precision')
+        return;
+    if (c.BOOKING_METHOD !== 'proofless')
+        ctx.addIssue({ code: 'custom', message: 'Precision Release uses Proofless Direct only.', path: ['BOOKING_METHOD'] });
+    if (c.BOOKING_TYPE !== 'standard')
+        ctx.addIssue({ code: 'custom', message: 'Precision Release supports Standard 1-3 hour targets only.', path: ['BOOKING_TYPE'] });
+    const t = c.PRECISION_TARGETS;
+    if (t.length < 1 || t.length > 3)
+        ctx.addIssue({ code: 'custom', message: 'Configure 1 to 3 Precision attempts.', path: ['PRECISION_TARGETS'] });
+    const end = (x) => Number(x.start.slice(0, 2)) + x.durationHours;
+    if (t.some(x => end(x) > 24))
+        ctx.addIssue({ code: 'custom', message: 'A Precision attempt would end after midnight.', path: ['PRECISION_TARGETS'] });
+    for (const [i, a] of t.entries())
+        for (const b of t.slice(i + 1))
+            if (a.court === b.court && Number(a.start.slice(0, 2)) < end(b) && Number(b.start.slice(0, 2)) < end(a))
+                ctx.addIssue({ code: 'custom', message: 'Two Precision attempts overlap on the same court.', path: ['PRECISION_TARGETS'] });
+}
 export const ConfigSchema = z.object({
     BOOKING_METHOD: z.enum(['browser', 'hybrid', 'api-first', 'proofless']).default('browser'),
     BOOKING_TYPE: z.enum(['standard', 'extended']).default('standard'),
+    RELEASE_STRATEGY: releaseStrategy,
+    PRECISION_TARGETS: precisionTargets,
     COURT_COUNT: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7)]).default(1),
     ONDA_URL: z.literal(ONDA_URL).default(ONDA_URL),
     TIMEZONE: z.string().refine(v => IANAZone.isValidZone(v), 'Invalid timezone').default('Asia/Manila'),
@@ -76,6 +100,7 @@ export const ConfigSchema = z.object({
         ctx.addIssue({ code: 'custom', message: 'Duplicate time preference', path: ['FALLBACK_TIMES'] });
     if (times.some(t => Number(t.slice(0, 2)) + c.DURATION_HOURS > 24))
         ctx.addIssue({ code: 'custom', message: 'Booking crosses midnight', path: ['DURATION_HOURS'] });
+    checkPrecision(c, ctx);
 });
 export const ObservationSchema = z.object({
     ONDA_URL: ConfigSchema.shape.ONDA_URL, TIMEZONE: ConfigSchema.shape.TIMEZONE,
@@ -134,6 +159,8 @@ export function loadTestRuntimeConfig(test) { return parseConfig(false, test).co
 export const BookingSetupSchema = z.object({
     BOOKING_METHOD: ConfigSchema.shape.BOOKING_METHOD,
     BOOKING_TYPE: ConfigSchema.shape.BOOKING_TYPE,
+    RELEASE_STRATEGY: releaseStrategy,
+    PRECISION_TARGETS: precisionTargets,
     COURT_COUNT: ConfigSchema.shape.COURT_COUNT,
     START_TIME: hour, DURATION_HOURS: z.number().int().min(1).max(6),
     PREFERRED_COURTS: courts.length(7), FALLBACK_COURTS: z.array(z.never()).default([]),
@@ -148,6 +175,7 @@ export const BookingSetupSchema = z.object({
         ctx.addIssue({ code: 'custom', message: 'Court priority is invalid.', path: ['PREFERRED_COURTS'] });
     if (Number(c.START_TIME.slice(0, 2)) + c.DURATION_HOURS > 24)
         ctx.addIssue({ code: 'custom', message: 'The main booking would end after midnight.', path: ['START_TIME'] });
+    checkPrecision(c, ctx);
     const fallback = reconcileFallbackTimes(c.START_TIME, c.DURATION_HOURS, c.FALLBACK_TIMES).removed[0];
     if (fallback)
         ctx.addIssue({ code: 'custom', message: fallback.reason === 'DUPLICATES_PRIMARY_START' ? 'A fallback duplicates the main start.' : fallback.reason === 'DUPLICATE_FALLBACK' ? 'A fallback start appears more than once.' : fallback.reason === 'CROSSES_MIDNIGHT' ? `Fallback ${fallback.time} is not valid for a ${c.DURATION_HOURS}-hour booking.` : 'A fallback start has an invalid time format.', path: ['FALLBACK_TIMES'] });
@@ -166,7 +194,9 @@ export function calculateTarget(c, now = DateTime.fromMillis(networkNowMs())) {
 export function planFingerprint(c) {
     return createHash('sha256').update(JSON.stringify({
         method: c.BOOKING_METHOD, strategy: c.BOOKING_TYPE, courtCount: c.COURT_COUNT,
-        schedule: ObservationSchema.parse(c), target: calculateTarget(c), attempts: c.MAX_SELECTION_ATTEMPTS
+        schedule: ObservationSchema.parse(c), target: calculateTarget(c), attempts: c.MAX_SELECTION_ATTEMPTS,
+        // Present only for Precision, so a General plan keeps exactly its previous fingerprint.
+        ...(c.RELEASE_STRATEGY === 'precision' ? { releaseStrategy: 'precision', precisionTargets: c.PRECISION_TARGETS } : {})
     })).digest('hex');
 }
 export function releaseCalendar(c, now = DateTime.fromMillis(networkNowMs())) {
@@ -176,6 +206,16 @@ export function releaseCalendar(c, now = DateTime.fromMillis(networkNowMs())) {
     if (!release.isValid)
         throw new Error('INVALID_RELEASE_DATE');
     return { targetDate: release.startOf('day').plus({ days: c.BOOKING_HORIZON_DAYS }).toISODate(), releaseMs: release.toMillis(), releaseISO: release.toISO() };
+}
+/** The release instant that publishes `targetDate` (release day = target − horizon, at RELEASE_TIME). */
+export function releaseMsForTargetDate(c, targetDate) {
+    const target = DateTime.fromISO(targetDate, { zone: c.TIMEZONE });
+    if (!target.isValid || target.toISODate() !== targetDate)
+        throw Error('INVALID_TARGET_DATE');
+    const release = releaseCalendarOn(c, target.minus({ days: c.BOOKING_HORIZON_DAYS }).toISODate());
+    if (release.targetDate !== targetDate)
+        throw Error('INVALID_TARGET_DATE');
+    return release.releaseMs;
 }
 /** Exact calendar release used only when a caller has already chosen the day. */
 export function releaseCalendarOn(c, releaseDate) {
