@@ -16,7 +16,7 @@ import type {BrowserFocusResult} from '../src/browser-window.js';
 export type DualPracticeCommand = { kind:'dualDry'; date:string } | { kind:'dualPractice'|'dualFullPractice'; input:DualPracticeInput };
 export interface ConfirmRequest { id:string; tone:'question'|'warning'; title:string; message:string; detail:string; confirmLabel:string; cancelLabel?:string }
 export interface ApiRunPreferences {strategy:'standard'|'extended';date:string;start:string;duration:number;courtCount:CourtCount;maximum?:number;priority:number[];fallbackStarts:string[];exact?:number[][]}
-export type Command = {kind:'resetPrepare';input:PreparationInput} | {kind:'testBooking';input:TestBookingInput} | {kind:'apiRun';mode:'prepare'|'dry'|'live'|'live-now';date:string;fingerprint:string;releaseMs?:number;preferences?:ApiRunPreferences} | {kind:'apiPreview';date:string} | DualPracticeCommand | 'chromeDual' | 'dualReadiness' | 'dualPrepare' | {kind:'fullPractice';input:FullPracticeInput} | 'chrome' | 'inspect' | 'observe' | { kind:'selection' | 'dry'; planHash:string } | {kind:'full';context:ScheduledReleaseContext;authorizeTerms:true} | { kind:'practice'; input:PracticeInput };
+export type Command = {kind:'resetPrepare';input:PreparationInput} | {kind:'testBooking';input:TestBookingInput} | {kind:'apiRun';mode:'prepare'|'dry'|'audit'|'live'|'live-now';date:string;fingerprint:string;checkoutMethod?:'proof-based'|'proofless';clockOffsetMs?:number;releaseMs?:number;preferences?:ApiRunPreferences} | {kind:'blockAudit';date:string} | {kind:'apiPreview';date:string} | DualPracticeCommand | 'chromeDual' | 'dualReadiness' | 'dualPrepare' | {kind:'fullPractice';input:FullPracticeInput} | 'chrome' | 'inspect' | 'observe' | { kind:'selection' | 'dry'; planHash:string } | {kind:'full';context:ScheduledReleaseContext;authorizeTerms:true} | { kind:'practice'; input:PracticeInput };
 export type Inspection = Extract<UiEvent, { type: 'inspection' }>;
 export interface Activity { at: string; text: string; level: 'info' | 'error'; elapsedMs?:number; deltaMs?:number }
 export interface RunTiming { runId:string; label:string; startedAt:string; elapsedMs:number; endedAt?:string; logPath?:string; readyAt?:string; readyElapsedMs?:number }
@@ -36,7 +36,7 @@ export interface Dashboard {
   dualActive?:boolean;
   releasePerformance?: Extract<UiEvent, { type: 'releasePerformance' }>['summary'] | null;
   lockReview?:LockReview|null;
-  operation: 'idle' | 'scheduled' | 'chrome' | 'inspect' | 'prepare' | 'confirming' | 'observe' | 'selection' | 'full' | 'dry' | 'practice' | 'stopping' | 'saving' | 'reviewing' | 'clearing' | 'resetting' | 'fullPractice' | 'apiPreview';
+  operation: 'idle' | 'scheduled' | 'chrome' | 'inspect' | 'prepare' | 'confirming' | 'observe' | 'selection' | 'full' | 'dry' | 'practice' | 'stopping' | 'saving' | 'reviewing' | 'clearing' | 'resetting' | 'fullPractice' | 'apiPreview' | 'blockAudit';
   headline: string; detail: string; ready: boolean; cdp: boolean; lock: boolean;
   canPrepareOverHold?:boolean;
   retainedLockStage?:'HOLD_VERIFIED'|'FINAL_ACTION_DISPATCHING'|null;
@@ -45,6 +45,7 @@ export interface Dashboard {
   plan: Extract<UiEvent, { type: 'plan' }> | null; logs: Activity[]; liveRace: boolean;
   booking: BookingView | null; termsAuthorized: boolean; apiFirstReady?: boolean;
   apiStage?:Extract<UiEvent,{type:'apiStage'}>|null;
+  blockAudit?:Extract<UiEvent,{type:'blockAudit'}>|null;
   observedPrice?:number|null;
   qrHandoffs?:QrHandoffSummary[];
   runTiming?:RunTiming|null;
@@ -58,9 +59,11 @@ export interface Dashboard {
   mode:'selection'|'full'; handoff:Extract<UiEvent,{type:'handoff'}>|null;
 }
 export interface Bridge {
+  syncClock():Promise<void>;
   focusBrowser(request:{workerId:WorkerId;bookingId?:string}):Promise<BrowserFocusResult>;
   resetPrepare(input:PreparationInput):Promise<void>;
   apiPreview(date:string):Promise<void>;
+  checkReleaseBlocks(date:string):Promise<void>;
   testBooking(input:TestBookingInput):Promise<void>;
   setWorkflow(workflow:'test'|'release'):Promise<void>;
   invalidatePreparation():Promise<void>;

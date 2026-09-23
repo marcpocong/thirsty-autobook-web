@@ -7,6 +7,7 @@ import { ReleaseShellFailure, releaseNavigationTarget, waitForBookingShellForRel
 import { waitUntil } from './safety.js';
 import { emitUiEvent } from './ui-events.js';
 import { AvailabilityDiscovery, releaseAvailabilityRequest } from './availability-discovery.js';
+import { networkNowMs } from './network-clock.js';
 export async function boundedRelease(maximum, retryDelay, signal, attempt) {
     if (!Number.isInteger(maximum) || maximum < 1 || maximum > 2)
         throw new Error('INVALID_RELOAD_LIMIT');
@@ -43,7 +44,7 @@ export async function observeRelease(page, c, safety, t, dry, selecting = false,
         ? new AvailabilityDiscovery(target.targetDate, c.MAX_PRICE, releaseAvailabilityRequest(page, target.targetDate, safety, t), safety, t, preferences) : undefined;
     if (dry && !preferences)
         throw new Error('DRY_CONFIG_REQUIRED');
-    if (Date.now() >= target.releaseMs - c.PREFLIGHT_SECONDS_BEFORE * 1000)
+    if (networkNowMs() >= target.releaseMs - c.PREFLIGHT_SECONDS_BEFORE * 1000)
         throw new Error('TOO_LATE_FOR_PREFLIGHT');
     emitUiEvent({ type: 'plan', targetDate: target.targetDate, releaseMs: target.releaseMs, timezone: c.TIMEZONE });
     page.setDefaultTimeout(c.CRITICAL_STEP_TIMEOUT_MS);
@@ -71,21 +72,21 @@ export async function observeRelease(page, c, safety, t, dry, selecting = false,
     };
     await preflight();
     console.log(JSON.stringify({ mode: selecting ? 'SELECTION ONLY — STOPS BEFORE PROCEED' : dry ? 'DRY RACE — NO SELECTION' : 'RELEASE OBSERVATION — NO BOOKING', venue: VENUE, targetDate: target.targetDate, preferences, maximumPrice: 'MAX_PRICE' in c ? c.MAX_PRICE : undefined, playerInfoLoaded: 'PLAYER_FULL_NAME' in c, localTime: new Date().toString(), manilaTime: DateTime.now().setZone('Asia/Manila').toISO(), release: target.releaseISO, releaseLeadMs: c.RELEASE_LEAD_MS, maxReloads: c.MAX_RELEASE_RELOADS, secondsRemaining: (target.releaseMs - Date.now()) / 1000, abort: 'Q or Ctrl+C' }, null, 2));
-    await waitUntil(target.releaseMs - c.PREFLIGHT_SECONDS_BEFORE * 1000, safety.signal);
+    await waitUntil(target.releaseMs - c.PREFLIGHT_SECONDS_BEFORE * 1000, safety.signal, networkNowMs);
     await preflight();
     if (c.RELEASE_PREOPEN_CALENDAR)
         await preopenReleaseCalendar(page, navigationTarget, safety, t, c.CRITICAL_STEP_TIMEOUT_MS, c.BOOKING_HORIZON_DAYS > 0);
     if (gate)
         await gate.beforeArmed();
-    if (Date.now() >= target.releaseMs)
+    if (networkNowMs() >= target.releaseMs)
         throw new Error('PREFLIGHT_MISSED_RELEASE');
     t.mark('armed');
     t.mark('releaseScheduled', target.releaseMs);
     console.log('ARMED — waiting for release.');
-    await waitUntil(target.releaseMs, safety.signal);
-    if (Date.now() - target.releaseMs > 1000)
+    await waitUntil(target.releaseMs, safety.signal, networkNowMs);
+    if (networkNowMs() - target.releaseMs > 1000)
         throw Error('RELEASE_MISSED');
-    t.mark('releaseTriggerFired', Date.now() - target.releaseMs);
+    t.mark('releaseTriggerFired', networkNowMs() - target.releaseMs);
     if (gate?.onRelease)
         gate.onRelease();
     discovery?.start();

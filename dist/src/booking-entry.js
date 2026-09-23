@@ -51,7 +51,7 @@ try {
         const input = parsed.data;
         const config = input.workflow === 'test' ? loadTestRuntimeConfig({ ...input.request, method: input.method, maximum: input.maximum }) : loadConfig();
         const strategy = input.workflow === 'test' ? input.request.strategy : config.BOOKING_TYPE;
-        if (input.workflow !== 'test' || input.method !== 'api-first')
+        if (input.workflow !== 'test' || !['api-first', 'proofless'].includes(input.method))
             bookingPlayers(config, strategy);
         const target = input.workflow === 'release' ? releaseCalendar(config) : undefined;
         if (target && Date.now() >= target.releaseMs - config.PREFLIGHT_SECONDS_BEFORE * 1000)
@@ -63,7 +63,7 @@ try {
         const snapshots = prepared.browsers.map(b => b.snapshot);
         if (snapshots.some(s => !s))
             throw Error('PREPARATION_RESULT_MISSING');
-        const solution = input.workflow === 'test' ? (input.method === 'api-first' || resolveBookingPlan(input.request, snapshots) !== undefined) : true;
+        const solution = input.workflow === 'test' ? (['api-first', 'proofless'].includes(input.method) || resolveBookingPlan(input.request, snapshots) !== undefined) : true;
         if (!solution)
             throw Error('TARGET_NOT_AVAILABLE');
         const fingerprint = expectedPreparationFingerprint(input, input.workflow === 'release' ? planFingerprint(config) : undefined);

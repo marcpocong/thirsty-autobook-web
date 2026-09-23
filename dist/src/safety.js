@@ -56,16 +56,16 @@ export function requireArmed(mode, armed) {
     if (['race', 'release:observe', 'race:dry', 'selection:armed', 'handoff:test', 'practice:full'].includes(mode) && !armed)
         throw new Error('ARMED_FLAG_REQUIRED');
 }
-export async function waitUntil(epochMs, signal) {
-    const monoTarget = performance.now() + epochMs - Date.now();
+export async function waitUntil(epochMs, signal, now = Date.now) {
+    const monoTarget = performance.now() + epochMs - now();
     while (true) {
         signal.throwIfAborted();
         // A wall-clock jump or resume past an exact schedule must wake the caller
         // immediately so it can fail closed instead of waiting on monotonic time.
-        if (Date.now() >= epochMs)
+        if (now() >= epochMs)
             return;
         const remaining = monoTarget - performance.now();
-        if (remaining <= 0 && Date.now() >= epochMs)
+        if (remaining <= 0 && now() >= epochMs)
             return;
         // Yield even in final precision interval, keeping abort input responsive.
         await delay(Math.max(1, Math.min(1000, remaining > 20 ? remaining - 10 : 1)), undefined, { signal });

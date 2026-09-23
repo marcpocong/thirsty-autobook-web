@@ -1,4 +1,5 @@
 import {randomUUID} from 'node:crypto';
+import {networkNowMs} from './network-clock.js';
 import {z} from 'zod';
 import type {PreparedContext} from './prepared-context.js';
 import type {BookingView} from '../ui/booking.js';
@@ -15,7 +16,7 @@ export const ScheduledReleaseContextSchema=z.object({
 });
 export type ScheduledReleaseContext=z.infer<typeof ScheduledReleaseContextSchema>;
 
-export function scheduledReleaseContext(prepared:PreparedContext,booking:BookingView,clock:{releaseMs:number;targetDate:string;timezone:string;horizon:number},now=Date.now()):ScheduledReleaseContext{
+export function scheduledReleaseContext(prepared:PreparedContext,booking:BookingView,clock:{releaseMs:number;targetDate:string;timezone:string;horizon:number},now=networkNowMs()):ScheduledReleaseContext{
   if(prepared.workflow!=='release'||prepared.releaseMs!==clock.releaseMs||prepared.releaseTargetDate!==clock.targetDate||prepared.configFingerprint!==booking.fingerprint)throw Error('PREPARED_FINGERPRINT_MISMATCH');
   if(now>=clock.releaseMs)throw Error('RELEASE_MISSED');
   const at=new Date(now).toISOString();

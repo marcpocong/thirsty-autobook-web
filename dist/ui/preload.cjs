@@ -2,10 +2,12 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const electron_1 = require("electron");
 const bridge = {
+    syncClock: () => electron_1.ipcRenderer.invoke('thirsty:syncClock'),
     focusBrowser: request => electron_1.ipcRenderer.invoke('thirsty:focusBrowser', request),
     resetPrepare: strategy => electron_1.ipcRenderer.invoke('thirsty:resetPrepare', strategy),
     testBooking: input => electron_1.ipcRenderer.invoke('thirsty:testBooking', input),
     apiPreview: date => electron_1.ipcRenderer.invoke('thirsty:apiPreview', date),
+    checkReleaseBlocks: date => electron_1.ipcRenderer.invoke('thirsty:checkReleaseBlocks', date),
     setWorkflow: workflow => electron_1.ipcRenderer.invoke('thirsty:setWorkflow', workflow),
     invalidatePreparation: () => electron_1.ipcRenderer.invoke('thirsty:invalidatePreparation'),
     prepareDual: () => electron_1.ipcRenderer.invoke('thirsty:prepareDual'),
@@ -33,6 +35,12 @@ const bridge = {
         electron_1.ipcRenderer.on('thirsty:status', listener);
         return () => electron_1.ipcRenderer.removeListener('thirsty:status', listener);
     },
+    onConfirmRequest: callback => {
+        const listener = (_event, request) => callback(request);
+        electron_1.ipcRenderer.on('thirsty:confirmRequest', listener);
+        return () => electron_1.ipcRenderer.removeListener('thirsty:confirmRequest', listener);
+    },
+    confirmResponse: (id, confirmed) => electron_1.ipcRenderer.invoke('thirsty:confirmResponse', { id, confirmed }),
 };
 electron_1.contextBridge.exposeInMainWorld('thirsty', bridge);
 //# sourceMappingURL=preload.cjs.map

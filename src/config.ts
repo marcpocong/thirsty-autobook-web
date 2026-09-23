@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import { reconcileBookingSetupFallbacks, reconcileFallbackTimes, type FallbackReconciliation } from './booking-setup.js';
 import { WORKER_IDS, type CourtCount, type WorkerId } from './workers.js';
 import { SPECIAL_SESSION_MODE, specialSessionFingerprint } from './api-booking/special-session.js';
+import {networkNowMs} from './network-clock.js';
 
 export const ONDA_URL = 'https://app.onda.fit/book/thirsty-pickle';
 export const VENUE = 'Thirsty Pickle | SM Seaside';
@@ -13,7 +14,7 @@ const hour = z.string().regex(/^(0[89]|1[0-9]|2[0-3]):00$/);
 const courts = z.array(z.number().int().min(1).max(7));
 export const ConfigSchema = z.object({
   SESSION_MODE: z.enum(['normal', SPECIAL_SESSION_MODE]).default('normal'),
-  BOOKING_METHOD: z.enum(['browser','hybrid','api-first']).default('browser'),
+  BOOKING_METHOD: z.enum(['browser','hybrid','api-first','proofless']).default('browser'),
   BOOKING_TYPE: z.enum(['standard','extended']).default('standard'),
   COURT_COUNT: z.union([z.literal(1),z.literal(2),z.literal(3),z.literal(4),z.literal(5),z.literal(6),z.literal(7)]).default(1),
   ONDA_URL: z.literal(ONDA_URL).default(ONDA_URL),
@@ -65,7 +66,7 @@ export const ConfigSchema = z.object({
     c.START_TIME!=='17:00'||c.DURATION_HOURS!==5||c.FALLBACK_TIMES.length))
     ctx.addIssue({code:'custom',message:'Special Friday session settings are inconsistent.',path:['SESSION_MODE']});
   if(c.BOOKING_TYPE==='standard'?c.DURATION_HOURS>3:c.DURATION_HOURS<4)ctx.addIssue({code:'custom',message:'Standard supports 1-3h; Extended supports 4-6h',path:['DURATION_HOURS']});
-  if(c.COURT_COUNT>2&&c.BOOKING_METHOD!=='api-first')ctx.addIssue({code:'custom',message:'Three to seven courts require API-FIRST.',path:['COURT_COUNT']});
+  if(c.COURT_COUNT>2&&!['api-first','proofless'].includes(c.BOOKING_METHOD))ctx.addIssue({code:'custom',message:'Three to seven courts require API-FIRST or PROOFLESS DIRECT.',path:['COURT_COUNT']});
   const allCourts = [...c.PREFERRED_COURTS, ...c.FALLBACK_COURTS];
   const times = [c.START_TIME, ...c.FALLBACK_TIMES];
   if (new Set(allCourts).size !== allCourts.length) ctx.addIssue({ code: 'custom', message: 'Duplicate court preference', path: ['PREFERRED_COURTS'] });
@@ -96,7 +97,7 @@ export function loadObservationConfig(): ReleaseSettings {
   if (!parsed.success) throw new Error(`CONFIG_INVALID: ${parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
   return parsed.data;
 }
-type TestRuntimeSetup={method?:'browser'|'hybrid'|'api-first';strategy:'standard'|'extended';courtCount:CourtCount;start:string;duration:number;priority:number[];fallbackStarts:string[];maximum?:number};
+type TestRuntimeSetup={method?:'browser'|'hybrid'|'api-first'|'proofless';strategy:'standard'|'extended';courtCount:CourtCount;start:string;duration:number;priority:number[];fallbackStarts:string[];maximum?:number};
 function parseConfig(includeSaved:boolean,test?:TestRuntimeSetup):{config:Config;fallbackReconciliation:FallbackReconciliation} {
   const env = environment();
   let fallbackReconciliation:FallbackReconciliation={valid:[],removed:[]};
@@ -137,7 +138,7 @@ export const BookingSetupSchema = z.object({
     c.START_TIME!=='17:00'||c.DURATION_HOURS!==5||c.FALLBACK_TIMES.length))
     ctx.addIssue({code:'custom',message:'Special Friday session settings are inconsistent.',path:['SESSION_MODE']});
   if(c.BOOKING_TYPE==='standard'?c.DURATION_HOURS>3:c.DURATION_HOURS<4)ctx.addIssue({code:'custom',message:c.BOOKING_TYPE==='standard'?'Standard bookings must be 1–3 hours.':'Extended bookings must be 4–6 hours.',path:['DURATION_HOURS']});
-  if(c.COURT_COUNT>2&&c.BOOKING_METHOD!=='api-first')ctx.addIssue({code:'custom',message:'Three to seven courts require API-FIRST.',path:['COURT_COUNT']});
+  if(c.COURT_COUNT>2&&!['api-first','proofless'].includes(c.BOOKING_METHOD))ctx.addIssue({code:'custom',message:'Three to seven courts require API-FIRST or PROOFLESS DIRECT.',path:['COURT_COUNT']});
   if (new Set(c.PREFERRED_COURTS).size !== 7) ctx.addIssue({ code: 'custom', message: 'Court priority is invalid.', path:['PREFERRED_COURTS'] });
   if(Number(c.START_TIME.slice(0,2))+c.DURATION_HOURS>24)ctx.addIssue({code:'custom',message:'The main booking would end after midnight.',path:['START_TIME']});
   const fallback=reconcileFallbackTimes(c.START_TIME,c.DURATION_HOURS,c.FALLBACK_TIMES).removed[0];
@@ -152,7 +153,7 @@ export function expandHours(start: string, duration: number): string[] {
 export function compilePreferences(c: Pick<Config, 'START_TIME' | 'DURATION_HOURS' | 'PREFERRED_COURTS' | 'FALLBACK_COURTS' | 'FALLBACK_TIMES'>): Preference[] {
   return [c.START_TIME, ...c.FALLBACK_TIMES].flatMap(t => [...c.PREFERRED_COURTS, ...c.FALLBACK_COURTS].map(court => ({ court, hours: expandHours(t, c.DURATION_HOURS) })));
 }
-export function calculateTarget(c: Pick<Config, 'TIMEZONE' | 'RELEASE_TIME' | 'BOOKING_HORIZON_DAYS' | 'START_TIME' | 'DURATION_HOURS' | 'PREFERRED_COURTS' | 'FALLBACK_COURTS' | 'FALLBACK_TIMES'>, now: DateTime = DateTime.now()) {
+export function calculateTarget(c: Pick<Config, 'TIMEZONE' | 'RELEASE_TIME' | 'BOOKING_HORIZON_DAYS' | 'START_TIME' | 'DURATION_HOURS' | 'PREFERRED_COURTS' | 'FALLBACK_COURTS' | 'FALLBACK_TIMES'>, now: DateTime = DateTime.fromMillis(networkNowMs())) {
   return { ...releaseCalendar(c, now), preferences: compilePreferences(c) };
 }
 export function planFingerprint(c: Config) {
@@ -161,7 +162,7 @@ export function planFingerprint(c: Config) {
     method:c.BOOKING_METHOD, strategy:c.BOOKING_TYPE, courtCount:c.COURT_COUNT,
     schedule: ObservationSchema.parse(c), target: calculateTarget(c), attempts:c.MAX_SELECTION_ATTEMPTS })).digest('hex');
 }
-export function releaseCalendar(c: Pick<Config, 'TIMEZONE' | 'RELEASE_TIME' | 'BOOKING_HORIZON_DAYS'>, now: DateTime = DateTime.now()) {
+export function releaseCalendar(c: Pick<Config, 'TIMEZONE' | 'RELEASE_TIME' | 'BOOKING_HORIZON_DAYS'>, now: DateTime = DateTime.fromMillis(networkNowMs())) {
   const local = now.setZone(c.TIMEZONE);
   const today = DateTime.fromISO(`${local.toISODate()}T${c.RELEASE_TIME}`, { zone: c.TIMEZONE });
   const release = today.toMillis() > now.toMillis() ? today : today.plus({days:1});

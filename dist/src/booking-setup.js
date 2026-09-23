@@ -46,14 +46,14 @@ export function bookingSetupProblem(input) {
     if (setup.SESSION_MODE === 'special-friday' && (setup.BOOKING_METHOD !== 'api-first' || setup.BOOKING_TYPE !== 'extended' || setup.COURT_COUNT !== 4 ||
         setup.START_TIME !== '17:00' || setup.DURATION_HOURS !== 5 || setup.FALLBACK_TIMES?.length))
         return 'Special Friday session settings must remain fixed.';
-    if (setup.BOOKING_METHOD !== 'browser' && setup.BOOKING_METHOD !== 'hybrid' && setup.BOOKING_METHOD !== 'api-first')
+    if (!['browser', 'hybrid', 'api-first', 'proofless'].includes(String(setup.BOOKING_METHOD)))
         return 'Choose a valid booking method.';
     if (setup.BOOKING_TYPE !== 'standard' && setup.BOOKING_TYPE !== 'extended')
         return 'Choose a valid booking type.';
     if (![1, 2, 3, 4, 5, 6, 7].includes(setup.COURT_COUNT))
         return 'Choose between one and seven courts.';
-    if ((setup.COURT_COUNT ?? 0) > 2 && setup.BOOKING_METHOD !== 'api-first')
-        return 'Three to seven courts require API-FIRST.';
+    if ((setup.COURT_COUNT ?? 0) > 2 && !['api-first', 'proofless'].includes(String(setup.BOOKING_METHOD)))
+        return 'Three to seven courts require API-FIRST or PROOFLESS DIRECT.';
     if (typeof setup.START_TIME !== 'string' || !hourPattern.test(setup.START_TIME))
         return 'Choose a valid main start time.';
     if (typeof setup.DURATION_HOURS !== 'number' || !Number.isInteger(setup.DURATION_HOURS) || setup.DURATION_HOURS < 1 || setup.DURATION_HOURS > 6)

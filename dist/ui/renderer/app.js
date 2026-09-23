@@ -2,6 +2,7 @@ import { bookingSetupProblem, reconcileFallbackTimes } from '../../src/booking-s
 const byId = (id) => document.getElementById(id);
 let latest;
 let renderedLogs = '';
+let renderedPreviousHolds = '';
 let selectedRunId;
 let timingReadyKey = '';
 let timingReadyStartedMono = 0;
@@ -12,6 +13,24 @@ const input = (id) => byId(id);
 let workflow = 'release';
 let currentView = 'release';
 const browserFocusMessages = {};
+const browserFocusPending = {};
+// Electron prefixes IPC rejections, so match the known codes anywhere in the message.
+// A wrong reason here sends the operator looking in the wrong place.
+function browserFocusFailure(worker, error) {
+    const text = error instanceof Error ? error.message : String(error);
+    const code = ['CDP_NOT_LISTENING', 'CDP_ENDPOINT_UNAVAILABLE', 'CDP_WRONG_PROFILE', 'CDP_WRONG_PORT', 'CDP_PROCESS_NOT_CHROME',
+        'CDP_PROFILE_MISSING', 'CDP_UNSAFE_BIND', 'CDP_AMBIGUOUS_LISTENER', 'CDP_IDENTITY_MISMATCH', 'CDP_PROCESS_METADATA_UNAVAILABLE',
+        'ONDA_TAB_AMBIGUOUS_OR_MISSING', 'ONDA_TAB_MISSING'].find(known => text.includes(known));
+    if (code === 'CDP_NOT_LISTENING' || code === 'CDP_ENDPOINT_UNAVAILABLE')
+        return `Browser ${worker} is not running. Its Chrome window was closed.`;
+    if (code === 'ONDA_TAB_MISSING')
+        return `Browser ${worker} has no Onda tab open.`;
+    if (code === 'ONDA_TAB_AMBIGUOUS_OR_MISSING')
+        return `Browser ${worker} has more than one Onda tab; open the right one in Chrome.`;
+    if (code)
+        return `Browser ${worker} could not be verified (${code.replaceAll('_', ' ').toLowerCase()}).`;
+    return `Browser ${worker} could not be brought to the front. ${text.replace(/^Error invoking remote method '[^']*':\s*/, '').slice(0, 140)}`;
+}
 function runDetail(run) {
     const detail = document.createElement('div');
     detail.className = 'run-detail';
@@ -53,6 +72,27 @@ function showRunDetail(run) {
     byId('run-detail-close').focus();
 }
 function closeRunDetail() { selectedRunId = undefined; byId('run-detail-modal').hidden = true; byId('run-detail-content').replaceChildren(); }
+let confirmActiveId;
+function settleConfirm(confirmed) {
+    if (!confirmActiveId)
+        return;
+    const id = confirmActiveId;
+    confirmActiveId = undefined;
+    byId('confirm-modal').hidden = true;
+    void window.thirsty.confirmResponse(id, confirmed);
+}
+window.thirsty.onConfirmRequest(request => {
+    confirmActiveId = request.id;
+    byId('confirm-dialog').dataset.tone = request.tone;
+    byId('confirm-badge').textContent = request.tone === 'warning' ? 'CAUTION' : 'CONFIRM';
+    byId('confirm-title').textContent = request.title;
+    byId('confirm-message').textContent = request.message;
+    byId('confirm-detail').textContent = request.detail;
+    byId('confirm-cancel').textContent = request.cancelLabel ?? 'Cancel';
+    byId('confirm-ok').textContent = request.confirmLabel;
+    byId('confirm-modal').hidden = false;
+    byId('confirm-cancel').focus();
+});
 const requiredWorkers = (strategy, count) => ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].slice(0, (strategy === 'extended' ? 2 : 1) * Math.ceil(count / 2));
 const workerLabel = (worker) => worker === 'A' ? 'Primary player' : `Player ${'ABCDEFGH'.indexOf(worker) + 1}`;
 const SPECIAL_SESSION_WORKERS_UI = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
@@ -66,8 +106,8 @@ const advanced = byId('advanced-extra');
 advanced.append(document.querySelector('.mode-options'));
 byId('setup-fields').append(document.querySelector('.editors'), byId('attempts').parentElement, byId('save-booking'), byId('edit-status'));
 const releaseView = byId('view-release'), planView = byId('view-plan'), testsView = byId('view-tests'), runsView = byId('view-runs');
-releaseView.prepend(byId('release-schedule'), byId('simple-status'));
-releaseView.append(byId('release-readiness-card'), primary);
+releaseView.prepend(byId('release-schedule'), document.querySelector('.hero'), byId('simple-status'));
+releaseView.append(byId('release-readiness-card'), byId('block-audit-card'), primary);
 releaseView.querySelector('.release-action').after(byId('lock-card'));
 planView.append(document.querySelector('.setup'));
 const testAction = testsView.querySelector('.test-action'), testResults = byId('test-results');
@@ -77,7 +117,6 @@ testsView.querySelector('.test-date-card').append(byId('test-date-label'));
 testAction.append(byId('test-booking'));
 byId('test-availability').append(byId('api-dry-controls'));
 runsView.append(document.querySelector('.run-history'), document.querySelector('.activity'), byId('previous-holds'), byId('advanced'));
-runsView.append(document.querySelector('.hero'));
 const legacyControls = document.querySelector('.controls');
 runsView.querySelector('#advanced-extra').append(legacyControls.parentElement, ...document.querySelectorAll('main > .practice'), byId('performance-card'));
 function showView(view) {
@@ -188,6 +227,130 @@ function editors() {
 editors();
 testDraft = formDraft();
 const dateLabel = (date) => new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' }).format(new Date(`${date}T12:00:00Z`));
+function renderBlockAudit(target, audit, date) {
+    target.replaceChildren();
+    if (!audit) {
+        const empty = document.createElement('div');
+        empty.className = 'audit-empty';
+        const title = document.createElement('strong');
+        title.textContent = 'No audit for this date';
+        const note = document.createElement('span');
+        note.textContent = date ? `Check ${dateLabel(date)} to see confirmed blocks and schedule coverage.` : 'Choose a date, then check all courts.';
+        empty.append(title, note);
+        target.append(empty);
+        return;
+    }
+    const statusInfo = {
+        OPEN: { label: 'Open', symbol: '✓', detail: 'Published by Onda as available' },
+        BLOCKED: { label: 'Blocked', symbol: '×', detail: 'Confirmed booking record or published unavailable cell' },
+        UNRELEASED: { label: 'Unreleased', symbol: '—', detail: 'Schedule is not published and no public booking record exists' },
+        UNKNOWN: { label: 'Unknown', symbol: '?', detail: 'No authoritative state; never treated as open' },
+    };
+    const top = document.createElement('div');
+    top.className = 'audit-overview';
+    const heading = document.createElement('div'), eyebrow = document.createElement('span'), title = document.createElement('strong');
+    eyebrow.className = 'audit-target-label';
+    eyebrow.textContent = 'AUDIT TARGET';
+    title.textContent = dateLabel(audit.date);
+    heading.append(eyebrow, title);
+    const source = document.createElement('span');
+    source.className = 'audit-source';
+    source.textContent = '112 hourly cells · Courts 1–7 · 8 AM–12 MN';
+    top.append(heading, source);
+    const counts = document.createElement('div');
+    counts.className = 'audit-counts';
+    for (const status of ['BLOCKED', 'OPEN', 'UNRELEASED', 'UNKNOWN']) {
+        const count = audit.cells.filter(cell => cell.status === status).length, card = document.createElement('div');
+        card.className = `audit-count audit-${status.toLowerCase()}`;
+        const value = document.createElement('strong'), label = document.createElement('span');
+        value.textContent = String(count);
+        label.textContent = statusInfo[status].label;
+        card.append(value, label);
+        counts.append(card);
+    }
+    const warning = document.createElement('p');
+    warning.className = 'audit-guidance';
+    warning.textContent = 'UNKNOWN and UNRELEASED are not proof that a court is open. Only green OPEN cells are confirmed available; red BLOCKED cells must be avoided.';
+    const publicBlocks = audit.cells.filter(cell => cell.status === 'BLOCKED' && cell.source === 'PUBLIC_BOOKING');
+    const confirmed = document.createElement('section');
+    confirmed.className = 'audit-confirmed';
+    const confirmedTitle = document.createElement('div');
+    confirmedTitle.className = 'audit-subtitle';
+    const confirmedHeading = document.createElement('strong');
+    confirmedHeading.textContent = 'Confirmed public-record blocks';
+    const confirmedCount = document.createElement('span');
+    confirmedCount.textContent = `${publicBlocks.length} cell${publicBlocks.length === 1 ? '' : 's'}`;
+    confirmedTitle.append(confirmedHeading, confirmedCount);
+    confirmed.append(confirmedTitle);
+    const chips = document.createElement('div');
+    chips.className = 'audit-block-chips';
+    if (publicBlocks.length)
+        for (const court of Array.from({ length: 7 }, (_, index) => index + 1)) {
+            const cells = publicBlocks.filter(cell => cell.court === court);
+            if (!cells.length)
+                continue;
+            const chip = document.createElement('span');
+            chip.textContent = `Court ${court} · ${cells.map(cell => friendly(cell.hour)).join(', ')}`;
+            chips.append(chip);
+        }
+    else {
+        const clear = document.createElement('span');
+        clear.className = 'audit-no-blocks';
+        clear.textContent = 'No confirmed public booking records were returned for this date.';
+        chips.append(clear);
+    }
+    confirmed.append(chips);
+    const legend = document.createElement('div');
+    legend.className = 'audit-legend';
+    for (const status of ['OPEN', 'BLOCKED', 'UNRELEASED', 'UNKNOWN']) {
+        const item = document.createElement('span'), mark = document.createElement('i');
+        item.className = `audit-${status.toLowerCase()}`;
+        mark.textContent = statusInfo[status].symbol;
+        item.append(mark, document.createTextNode(`${statusInfo[status].label} · ${statusInfo[status].detail}`));
+        legend.append(item);
+    }
+    const matrixSection = document.createElement('section');
+    matrixSection.className = 'audit-matrix-section';
+    const matrixTitle = document.createElement('div');
+    matrixTitle.className = 'audit-subtitle';
+    matrixTitle.append(Object.assign(document.createElement('strong'), { textContent: 'Court-by-hour matrix' }), Object.assign(document.createElement('span'), { textContent: 'Scroll horizontally to inspect every hour' }));
+    const scroll = document.createElement('div');
+    scroll.className = 'audit-matrix-scroll';
+    scroll.tabIndex = 0;
+    const table = document.createElement('table');
+    table.className = 'audit-matrix';
+    const thead = document.createElement('thead'), header = document.createElement('tr');
+    header.append(Object.assign(document.createElement('th'), { textContent: 'Court' }));
+    for (const hour of hours) {
+        const th = document.createElement('th');
+        th.textContent = friendly(hour).replace(':00 ', '');
+        th.title = friendly(hour);
+        header.append(th);
+    }
+    thead.append(header);
+    table.append(thead);
+    const tbody = document.createElement('tbody');
+    for (const court of Array.from({ length: 7 }, (_, index) => index + 1)) {
+        const row = document.createElement('tr'), courtHeading = document.createElement('th');
+        courtHeading.scope = 'row';
+        courtHeading.textContent = `C${court}`;
+        courtHeading.title = `Court ${court}`;
+        row.append(courtHeading);
+        for (const hour of hours) {
+            const cell = audit.cells.find(value => value.court === court && value.hour === hour), td = document.createElement('td');
+            td.className = `audit-cell audit-${cell.status.toLowerCase()}`;
+            td.textContent = statusInfo[cell.status].symbol;
+            td.title = `Court ${court} · ${friendly(hour)} · ${statusInfo[cell.status].label} · ${cell.source.replaceAll('_', ' ').toLowerCase()}`;
+            td.setAttribute('aria-label', td.title);
+            row.append(td);
+        }
+        tbody.append(row);
+    }
+    table.append(tbody);
+    scroll.append(table);
+    matrixSection.append(matrixTitle, scroll);
+    target.append(top, counts, warning, confirmed, legend, matrixSection);
+}
 function hourlySlots(start, end) { const first = Number(start.slice(0, 2)), last = Number(end.slice(0, 2)); return Array.from({ length: Math.max(0, last - first) }, (_, i) => `${String(first + i).padStart(2, '0')}:00–${String(first + i + 1).padStart(2, '0')}:00`); }
 const holdExpired = (hold) => !!hold.holdExpiresAt && Date.parse(hold.holdExpiresAt) <= Date.now();
 function activeHandoffs(state) { return (state.qrHandoffs ?? []).filter(hold => !holdExpired(hold)); }
@@ -232,22 +395,49 @@ function buildHandoffCard(hold, players) {
         result.className = 'show-browser-result';
         result.setAttribute('role', 'status');
         result.textContent = browserFocusMessages[worker] ?? '';
-        action.onclick = () => { action.disabled = true; browserFocusMessages[worker] = result.textContent = `Opening Browser ${worker}…`; void window.thirsty.focusBrowser({ workerId: worker, ...(hold.bookingId ? { bookingId: hold.bookingId } : {}) }).then(() => { browserFocusMessages[worker] = result.textContent = `Browser ${worker} is now in front.`; }).catch(() => { browserFocusMessages[worker] = result.textContent = `Browser ${worker} is unavailable or its Onda tab is ambiguous.`; }).finally(() => { action.disabled = false; }); };
+        action.disabled = !!browserFocusPending[worker];
+        action.onclick = () => {
+            if (browserFocusPending[worker])
+                return;
+            browserFocusPending[worker] = true;
+            action.disabled = true;
+            browserFocusMessages[worker] = result.textContent = `Opening Browser ${worker}…`;
+            if (latest)
+                render(latest);
+            void window.thirsty.focusBrowser({ workerId: worker, ...(hold.bookingId ? { bookingId: hold.bookingId } : {}) })
+                .then(result => {
+                browserFocusMessages[worker] = result === 'focused'
+                    ? `Browser ${worker} is now in front, maximized on its screen.`
+                    : `Browser ${worker} was restored on its screen, but Windows kept another window in front. Check the taskbar.`;
+            })
+                .catch((error) => { browserFocusMessages[worker] = browserFocusFailure(worker, error); })
+                .finally(() => { browserFocusPending[worker] = false; if (latest)
+                render(latest); });
+        };
         card.append(action, result);
     }
     return card;
 }
+const renderedQrSummary = {};
 function renderQrSummary(state) {
     const handoffs = activeHandoffs(state);
     const qrReady = handoffs.filter(hold => (hold.status ?? 'qr-ready') === 'qr-ready').length;
     const players = playersByWorker(state.playerStatus);
+    // Signature includes hold-expiry and the Show Browser pending/message state so a rebuild
+    // still happens on those transitions, but routine polling with nothing actually changed
+    // must not tear down an in-flight Show Browser button/click.
+    const signature = JSON.stringify({ handoffs: handoffs.map(hold => ({ ...hold, expired: holdExpired(hold) })), players, browserFocusPending, browserFocusMessages });
     for (const id of ['qr-summary-release', 'qr-summary-test']) {
         const container = byId(id);
         container.hidden = !handoffs.length;
         if (!handoffs.length) {
             container.replaceChildren();
+            renderedQrSummary[id] = '';
             continue;
         }
+        if (renderedQrSummary[id] === signature)
+            continue;
+        renderedQrSummary[id] = signature;
         const title = document.createElement('strong');
         title.className = 'qr-summary-title';
         title.textContent = qrReady === handoffs.length ? `All QR pages reached · ${qrReady} checkout${qrReady === 1 ? '' : 's'}` : `Live checkout status · ${qrReady} of ${handoffs.length} QR page${handoffs.length === 1 ? '' : 's'} ready`;
@@ -323,7 +513,7 @@ function render(state) {
         byId(id).disabled = busy;
     byId('lock-card').hidden = !state.lock;
     const unresolvedCheckout = state.retainedLockStage === 'FINAL_ACTION_DISPATCHING';
-    byId('lock-note').textContent = unresolvedCheckout ? 'The previous checkout ended with a retained safety lock. Reset & Prepare will inspect every required browser and recover only when they are conclusively clean.' : state.canPrepareOverHold ? 'The previous payment hold remains recorded. Reset & Prepare can open a fresh schedule for another run in this bot. Payment stays manual.' : 'Booking actions are blocked. You can still edit and save your next booking plan locally.';
+    byId('lock-note').textContent = unresolvedCheckout ? 'The previous checkout ended with a retained safety lock. Reset & Prepare will inspect every required browser and recover only when they are conclusively clean.' : state.canPrepareOverHold ? 'The previous payment hold remains recorded. Prepare New Run opens a fresh schedule for another run in this bot. Payment stays manual.' : 'Booking actions are blocked. You can still edit and save your next booking plan locally.';
     byId('review-lock').disabled = busy;
     byId('clear-lock').hidden = !state.lockReview?.canClear;
     byId('clear-lock').disabled = busy;
@@ -391,6 +581,7 @@ function render(state) {
     if (state.clock) {
         byId('clock').textContent = state.clock.manilaTime;
         byId('clock-date').textContent = state.clock.manilaDate;
+        byId('clock-source').textContent = state.clock.networkSynced ? `${state.clock.clockSource} · offset ${state.clock.clockOffsetMs.toFixed(1)} ms · RTT ${state.clock.clockRoundTripMs?.toFixed(1) ?? '?'} ms` : 'NETWORK CLOCK REQUIRED BEFORE RELEASE';
         byId('release-time').textContent = state.clock.releaseTime;
         byId('release-zone').textContent = state.clock.timezone;
         const activePlan = state.operation === 'observe' ? state.plan : null;
@@ -469,20 +660,26 @@ function render(state) {
     }
     const previousHolds = state.previousHolds ?? [];
     byId('previous-holds').hidden = !previousHolds.length;
-    byId('previous-holds-list').replaceChildren(...previousHolds.map(hold => {
-        const row = document.createElement('div');
-        row.className = 'previous-hold-item';
-        const label = document.createElement('strong');
-        label.textContent = `Run ${hold.runID}`;
-        const detail = document.createElement('span');
-        detail.textContent = `Recorded expiry: ${hold.expiresAt ? new Date(hold.expiresAt).toLocaleString('en-GB', { timeZone: 'Asia/Manila' }) : 'Unknown'} Manila · Retained ${new Date(hold.archivedAt).toLocaleString('en-GB', { timeZone: 'Asia/Manila' })}`;
-        row.append(label, detail);
-        return row;
-    }));
+    // Every log line republishes the state. Rebuilding this list each time reset its scroll
+    // position, so an operator could not read older holds while a run was writing output.
+    const previousHoldsSignature = JSON.stringify(previousHolds);
+    if (previousHoldsSignature !== renderedPreviousHolds) {
+        renderedPreviousHolds = previousHoldsSignature;
+        byId('previous-holds-list').replaceChildren(...previousHolds.map(hold => {
+            const row = document.createElement('div');
+            row.className = 'previous-hold-item';
+            const label = document.createElement('strong');
+            label.textContent = `Run ${hold.runID}`;
+            const detail = document.createElement('span');
+            detail.textContent = `Recorded expiry: ${hold.expiresAt ? new Date(hold.expiresAt).toLocaleString('en-GB', { timeZone: 'Asia/Manila' }) : 'Unknown'} Manila · Retained ${new Date(hold.archivedAt).toLocaleString('en-GB', { timeZone: 'Asia/Manila' })}`;
+            row.append(label, detail);
+            return row;
+        }));
+    }
     byId('mode-label').textContent = workflow === 'test' ? 'TEST NOW' : 'RELEASE BOOKING';
     byId('prepare').firstChild.textContent = 'RESET & PREPARE ';
-    const apiFirst = input('booking-method').value === 'api-first';
-    byId('test-booking').textContent = apiFirst ? 'RUN API TEST TO QR' : 'RUN TEST TO QR';
+    const methodValue = input('booking-method').value, apiFirst = ['api-first', 'proofless'].includes(methodValue), proofless = methodValue === 'proofless';
+    byId('test-booking').textContent = proofless ? 'RUN PROOFLESS TEST TO QR' : apiFirst ? 'RUN API TEST TO QR' : 'RUN TEST TO QR';
     const specialDraft = input('session-mode').value === 'special-friday';
     byId('api-dry-controls').hidden = !apiFirst || workflow !== 'test' || specialDraft;
     byId('test-availability').hidden = !apiFirst || specialDraft;
@@ -513,8 +710,8 @@ function render(state) {
     input('workflow-release').disabled = busy;
     input('save-booking').disabled = busy || workflow === 'test';
     if (workflow === 'release') {
-        input('arm').disabled ||= dirty || !state.ready || !input('terms').checked || (!apiFirst && !fullReady);
-        byId('blocked-reason').textContent = state.lock ? 'RESET REQUIRED' : dirty ? 'SETTINGS CHANGED · Press Reset & Prepare.' : !state.ready ? 'Reset & Prepare before arming.' : !input('terms').checked ? 'Authorize Terms, then Arm Next Release.' : '';
+        input('arm').disabled ||= dirty || !state.ready || !input('terms').checked || !state.clock?.networkSynced || (!apiFirst && !fullReady);
+        byId('blocked-reason').textContent = state.lock ? 'RESET REQUIRED' : dirty ? 'SETTINGS CHANGED · Press Reset & Prepare.' : !state.clock?.networkSynced ? 'Sync with Google Time before arming.' : !state.ready ? 'Reset & Prepare before arming.' : !input('terms').checked ? 'Authorize Terms, then Arm Next Release.' : '';
     }
     if (workflow === 'test')
         byId('blocked-reason').textContent = state.lock ? 'RESET REQUIRED' : dirty ? 'SETTINGS CHANGED · Press Reset & Prepare.' : !state.ready ? 'Reset & Prepare before running a test.' : !input('terms').checked ? 'Authorize Terms, then run your test.' : '';
@@ -529,11 +726,11 @@ function render(state) {
     const duration = Number(input('duration').value), start = Number(input('start-time').value.slice(0, 2)), strategy = input('booking-type').value;
     const specialSession = input('session-mode').value === 'special-friday';
     const count = Number(input('court-count').value), releaseText = state.clock ? new Date(state.clock.releaseMs).toLocaleString('en-US', { timeZone: state.clock.timezone, month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Calculating';
-    const method = input('booking-method').value === 'browser' ? 'NORMAL BROWSER' : input('booking-method').value === 'hybrid' ? 'HYBRID AVAILABILITY' : 'API-FIRST';
+    const method = input('booking-method').value === 'browser' ? 'NORMAL BROWSER' : input('booking-method').value === 'hybrid' ? 'HYBRID AVAILABILITY' : proofless ? 'PROOFLESS DIRECT' : 'API-FIRST · WITH PROOFS';
     const workers = specialSession ? SPECIAL_SESSION_WORKERS_UI : requiredWorkers(strategy, count), checkoutCount = workers.length;
     byId('booking-preview').textContent = specialSession
         ? `SPECIAL FRIDAY SESSION\nRelease: ${releaseText}\nTarget: ${state.clock ? dateLabel(state.clock.targetDate) : 'Not configured'}\n8 browsers/players A-H · up to 8 independent temporary QR holds · 4 distinct intended courts.\nA/B proof-based: Court 6 · 5:00–10:00 PM (A 5-8 PM + B 8-10 PM).\nC/D proof-based: Court 7 · 7:00–11:00 PM (C 7-9 PM + D 9-11 PM).\nE/F ADAPTIVE: Court 5 · 5:00–10:00 PM (E 5-8 PM + F 8-10 PM) — proof-based if fresh availability appears before 8:00 AM, otherwise the existing proofless direct attempt exactly at 8:00 AM. Never both.\nG/H proof-based bonus: Court 4 · 5:00–10:00 PM (G 5-8 PM + H 8-10 PM) — skipped entirely when no fourth distinct court has complete availability. Never proofless.\nCourt priority when a preferred court is unavailable follows a fallback search; all four assigned courts are always distinct.\nE/F's proofless-fallback hidden price assumes ₱700/hour and is UNVERIFIED.\nA hold is not a completed booking. Unknown outcomes are never retried. Payment: MANUAL`
-        : `${workflow === 'release' ? `RELEASE PLAN\nRelease: ${releaseText}\nTarget: ${state.clock ? dateLabel(state.clock.targetDate) : 'Not configured'}\n` : ''}${method}\n${strategy.toUpperCase()} | ${count} COURT${count === 1 ? '' : 'S'}\n${friendly(input('start-time').value)} -> ${endFriendly(input('start-time').value, duration)} | ${duration} hours\nFallback starts: ${fallbackTimes.map(friendly).join(' -> ') || 'None'}\nCourt priority: ${courtOrder.join(' -> ')}\n${strategy === 'extended' ? `Extended split: ${duration === 4 ? '3h + 1h (alternatives 2h + 2h, 1h + 3h)' : duration === 5 ? '3h + 2h (alternative 2h + 3h)' : '3h + 3h'}\n` : ''}${workers.length} browser${workers.length === 1 ? '' : 's'} | ${checkoutCount} checkout${checkoutCount === 1 ? '' : 's'} | Players: ${workers.join(' + ')}\nNo price ceiling\nAttempts: ${input('attempts').value} | Payment: MANUAL${input('booking-method').value === 'api-first' ? '\nAPI first: current availability check available; live runs once at the armed release.' : ''}`;
+        : `${workflow === 'release' ? `RELEASE PLAN\nRelease: ${releaseText}\nTarget: ${state.clock ? dateLabel(state.clock.targetDate) : 'Not configured'}\n` : ''}${method}\n${strategy.toUpperCase()} | ${count} COURT${count === 1 ? '' : 'S'}\n${friendly(input('start-time').value)} -> ${endFriendly(input('start-time').value, duration)} | ${duration} hours\nFallback starts: ${fallbackTimes.map(friendly).join(' -> ') || 'None'}\nCourt priority: ${courtOrder.join(' -> ')}\n${strategy === 'extended' ? `Extended split: ${duration === 4 ? '3h + 1h (alternatives 2h + 2h, 1h + 3h)' : duration === 5 ? '3h + 2h (alternative 2h + 3h)' : '3h + 3h'}\n` : ''}${workers.length} browser${workers.length === 1 ? '' : 's'} | ${checkoutCount} checkout${checkoutCount === 1 ? '' : 's'} | Players: ${workers.join(' + ')}\nNo price ceiling\nAttempts: ${input('attempts').value} | Payment: MANUAL${proofless ? '\nProofless Direct: Reset & Prepare audits all court/hour blocks; the armed run refreshes them at 7:30, selects the first unblocked saved fallback, and submits without availability proofs. Proofless tests require your manual confirmation that the exact cells are open.' : input('booking-method').value === 'api-first' ? '\nAPI first: availability and fresh per-hour proofs are acquired before checkout.' : ''}`;
     if (duration > 6) {
         byId('booking-preview').textContent = 'Extended booking supports up to 6 consecutive hours.';
         input('test-booking').disabled = true;
@@ -550,6 +747,13 @@ function render(state) {
     const releaseMode = workflow === 'release';
     byId('release-schedule').hidden = !releaseMode;
     byId('release-readiness-card').hidden = !releaseMode;
+    byId('block-audit-card').hidden = !releaseMode;
+    if (!input('block-audit-date').value && state.clock?.targetDate)
+        input('block-audit-date').value = state.clock.targetDate;
+    const blockAuditDate = input('block-audit-date').value;
+    byId('check-release-blocks').disabled = busy || !blockAuditDate;
+    const audit = state.blockAudit?.date === blockAuditDate ? state.blockAudit : null;
+    renderBlockAudit(byId('block-audit-result'), audit, blockAuditDate);
     if (releaseMode && state.clock) {
         byId('release-passed').textContent = state.clock.todayReleasePassed ? `TODAY'S ${friendly(state.clock.releaseTime.slice(0, 5))} RELEASE HAS PASSED` : '';
         byId('next-release').textContent = new Date(armed ? state.scheduledRelease.releaseMs : state.clock.releaseMs).toLocaleString('en-US', { timeZone: state.clock.timezone, month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
@@ -557,13 +761,13 @@ function render(state) {
         const finalAt = (armed ? state.scheduledRelease.releaseMs : state.clock.releaseMs) - state.clock.preflightSecondsBefore * 1000;
         byId('schedule-meta').textContent = `Final preflight: ${new Date(finalAt).toLocaleTimeString('en-US', { timeZone: state.clock.timezone, hour: 'numeric', minute: '2-digit', second: '2-digit' })} | System: ${state.scheduleStatus ?? (armed ? 'WAITING' : 'NOT ARMED')}`;
     }
-    const apiPrepared = !!state.apiFirstReady && !!state.ready && !!state.booking && state.booking.setup.BOOKING_METHOD === 'api-first' && !state.lock;
+    const apiPrepared = !!state.apiFirstReady && !!state.ready && !!state.booking && ['api-first', 'proofless'].includes(state.booking.setup.BOOKING_METHOD) && !state.lock;
     const prepared = apiPrepared || !!state.preparedContext && state.preparedContext.workflow === 'release' && state.preparedContext.configFingerprint === state.booking?.fingerprint;
     const required = specialSession ? SPECIAL_SESSION_WORKERS_UI : requiredWorkers(strategy, count);
     const verificationGates = apiFirst
-        ? [['Onda venue verified', apiPrepared], ['Availability checked at release', state.apiStage?.stage === 'CANDIDATE_READY' || !!state.observedPrice]]
+        ? [['Onda venue verified', apiPrepared], [proofless ? 'Court/hour block audit complete' : 'Availability checked', proofless ? state.assumedPrice !== undefined && state.assumedPrice !== null : state.apiStage?.stage === 'CANDIDATE_READY' || !!state.observedPrice]]
         : [['Onda verified', prepared], ['All Courts verified', prepared], ['Selected slots: 0', prepared], ['Payment holds: none', prepared && !state.lock]];
-    const gates = [['Configuration valid', !draftProblem], ['Next release calculated', !!state.clock], ['Booking target calculated', !!state.clock?.targetDate], ...required.map(id => [`${workerLabel(id)} configured`, !!playerReadyByWorker[id]]), ...required.map(id => [`Browser ${id} prepared`, apiFirst ? apiPrepared && !!state.browserHealth?.[id] : prepared && !!state.preparedContext?.browsers.some(b => b.id === id)]), ...verificationGates, ['Automation lock clear', !state.lock], ['Prepared fingerprint matches', prepared], ['Terms authorized for this run', state.termsAuthorized || armed], ['Armed for next release', armed || state.apiStage?.stage === 'WAITING_FOR_RELEASE']];
+    const gates = [['Configuration valid', !draftProblem], ['Google network clock synchronized', !!state.clock?.networkSynced], ['Next release calculated', !!state.clock], ['Booking target calculated', !!state.clock?.targetDate], ...required.map(id => [`${workerLabel(id)} configured`, !!playerReadyByWorker[id]]), ...required.map(id => [`Browser ${id} prepared`, apiFirst ? apiPrepared && !!state.browserHealth?.[id] : prepared && !!state.preparedContext?.browsers.some(b => b.id === id)]), ...verificationGates, ['Automation lock clear', !state.lock], ['Prepared fingerprint matches', prepared], ['Terms authorized for this run', state.termsAuthorized || armed], ['Armed for next release', armed || state.apiStage?.stage === 'WAITING_FOR_RELEASE']];
     const readiness = byId('release-readiness');
     readiness.replaceChildren(...gates.map(([label, ok]) => { const e = document.createElement('div'); e.className = `gate ${ok ? 'good' : 'warn'}`; e.textContent = `${ok ? 'OK' : '--'} ${label}`; return e; }));
     readiness.className = 'gate-list';
@@ -585,7 +789,7 @@ function render(state) {
     byId('primary-actions').hidden = currentView !== 'tests' && !state.selection && !state.handoff && !state.bookingResult && !armed;
     const testDate = input('test-date').value;
     input('test-date').disabled = busy;
-    const testPrepared = !!state.ready && !testDirty && state.workflow === 'test' && !!b && (b.setup.BOOKING_METHOD === 'api-first' && !!state.apiFirstReady ||
+    const testPrepared = !!state.ready && !testDirty && state.workflow === 'test' && !!b && (['api-first', 'proofless'].includes(b.setup.BOOKING_METHOD) && !!state.apiFirstReady ||
         !!state.preparedContext && state.preparedContext.workflow === 'test' && state.preparedContext.date === testDate);
     const testBrowsers = b ? requiredWorkers(b.setup.BOOKING_TYPE, b.setup.COURT_COUNT) : ['A'];
     const testGates = [
@@ -644,14 +848,14 @@ else
     input('prepare').click(); };
 function tick() {
     // Display only; never launches a command. Authoritative release plan comes from main/CLI.
-    const now = new Date();
+    const effectiveNow = Date.now() + (latest?.clock?.clockOffsetMs ?? 0), now = new Date(effectiveNow);
     byId('clock').textContent = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Manila', hourCycle: 'h23' }).format(now);
     byId('clock-date').textContent = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'Asia/Manila' }).format(now);
     if (!latest)
         return;
     renderQrSummary(latest);
     if (latest.clock) {
-        const remaining = Math.max(0, Math.ceil(((latest.scheduledRelease?.releaseMs ?? latest.clock.releaseMs) - Date.now()) / 1000));
+        const remaining = Math.max(0, Math.ceil(((latest.scheduledRelease?.releaseMs ?? latest.clock.releaseMs) - effectiveNow) / 1000));
         byId('next-release-countdown').textContent = [Math.floor(remaining / 3600), Math.floor(remaining / 60) % 60, remaining % 60].map(v => String(v).padStart(2, '0')).join(':');
     }
     byId('run-timing').textContent = latest.runTiming?.readyAt ? `${((latest.runTiming.endedAt ? latest.runTiming.readyElapsedMs ?? 0 : Math.max(0, Date.now() - Date.parse(latest.runTiming.readyAt))) / 1000).toFixed(3)} seconds · ${latest.runTiming.endedAt ? 'finished' : 'running'}` : latest.runTiming ? 'Waiting for browser ready' : 'No browser-ready run active';
@@ -681,7 +885,7 @@ function tick() {
     if (!latest.clock)
         return;
     const release = latest.scheduledRelease?.releaseMs ?? (latest.plan && ['observe', 'dry', 'selection', 'full'].includes(latest.operation) ? latest.plan.releaseMs : latest.clock.releaseMs);
-    const seconds = Math.max(0, Math.ceil((release - Date.now()) / 1000));
+    const seconds = Math.max(0, Math.ceil((release - effectiveNow) / 1000));
     byId('countdown').textContent = [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60].map(v => String(v).padStart(2, '0')).join(':');
     byId('next-release-countdown').textContent = byId('countdown').textContent;
     byId('countdown-label').textContent = latest.operation === 'observe' ? 'SCHEDULED RELEASE IN' : 'NEXT RELEASE IN';
@@ -693,7 +897,7 @@ function tick() {
         byId('handoff-result').textContent = `${active ? 'PAYMENT HOLD ACTIVE — VERIFIED AT HANDOFF' : 'HOLD NEEDS MANUAL REVIEW'}\nVenue: Thirsty Pickle | SM Seaside\nCourt ${hold.court} · ${hold.date}\nTime: ${hold.hours[0]}–${String(Number(hold.hours.at(-1).slice(0, 2)) + 1).padStart(2, '0')}:00\nAmount: ₱${hold.amount.toLocaleString()}\nLast observed status: Pending\nHold countdown at verification: ${hold.countdown}\nVerified: ${new Date(hold.verifiedAt).toLocaleString('en-GB', { timeZone: 'Asia/Manila' })}\n${active ? 'Complete payment manually in Chrome.' : 'The observed countdown has elapsed. Check Chrome manually.'}\nAUTOMATION STOPPED · AUTOMATION LOCK RETAINED`;
     }
 }
-for (const [id, action] of Object.entries({ 'review-lock': () => window.thirsty.reviewLock(), 'clear-lock': () => window.thirsty.clearLock(), 'reset-practice': () => window.thirsty.resetPractice(), 'dual-prepare': () => window.thirsty.prepareDual(), 'api-preview': () => window.thirsty.apiPreview(input('test-date').value), 'full-practice': async () => { const authorized = input('full-terms').checked; input('full-terms').checked = false; await window.thirsty.runFullPractice({ target: { date: input('full-date').value, court: Number(input('full-court').value), start: input('full-start').value, duration: Number(input('full-duration').value) }, authorizeTerms: authorized }); }, chrome: () => window.thirsty.startChrome(), inspect: () => window.thirsty.inspectOnda(), prepare: async () => { input('terms').checked = false; storeDraft(); await window.thirsty.resetPrepare(workflow === 'test' ? { workflow: 'test', ...testRequest() } : { workflow: 'release', strategy: input('booking-type').value, setup: currentSetup() }); const state = await window.thirsty.getStatus(); if (state.ready) {
+for (const [id, action] of Object.entries({ 'sync-clock': () => window.thirsty.syncClock(), 'review-lock': () => window.thirsty.reviewLock(), 'clear-lock': () => window.thirsty.clearLock(), 'reset-practice': () => window.thirsty.resetPractice(), 'dual-prepare': () => window.thirsty.prepareDual(), 'api-preview': () => window.thirsty.apiPreview(input('test-date').value), 'full-practice': async () => { const authorized = input('full-terms').checked; input('full-terms').checked = false; await window.thirsty.runFullPractice({ target: { date: input('full-date').value, court: Number(input('full-court').value), start: input('full-start').value, duration: Number(input('full-duration').value) }, authorizeTerms: authorized }); }, chrome: () => window.thirsty.startChrome(), inspect: () => window.thirsty.inspectOnda(), prepare: async () => { input('terms').checked = false; storeDraft(); await window.thirsty.resetPrepare(workflow === 'test' ? { workflow: 'test', ...testRequest() } : { workflow: 'release', strategy: input('booking-type').value, setup: currentSetup() }); const state = await window.thirsty.getStatus(); if (state.ready) {
         if (workflow === 'test')
             testDirty = false;
         else
@@ -702,6 +906,9 @@ for (const [id, action] of Object.entries({ 'review-lock': () => window.thirsty.
     } render(state); }, arm: () => window.thirsty.armFullBooking(), dry: () => window.thirsty.dryRace(), observe: () => window.thirsty.armObservation(), stop: () => window.thirsty.abortAutomation(), practice: () => window.thirsty.runPractice({ date: input('practice-date').value, court: Number(input('practice-court').value), start: input('practice-start').value, duration: Number(input('practice-duration').value) }) })) {
     byId(id).addEventListener('click', () => { void action().catch(async () => { render(await window.thirsty.getStatus()); }); });
 }
+byId('check-release-blocks').addEventListener('click', () => { void window.thirsty.checkReleaseBlocks(input('block-audit-date').value).catch(async () => { render(await window.thirsty.getStatus()); }); });
+byId('block-audit-date').addEventListener('change', () => { if (latest)
+    render(latest); });
 byId('full-terms').addEventListener('change', () => { if (latest)
     render(latest); });
 for (const id of ['full-date', 'full-court', 'full-start', 'full-duration'])
@@ -783,8 +990,12 @@ expand.addEventListener('click', () => setActivityExpanded(!activity.classList.c
 byId('run-detail-close').addEventListener('click', closeRunDetail);
 byId('run-detail-modal').addEventListener('click', event => { if (event.target === byId('run-detail-modal'))
     closeRunDetail(); });
+byId('confirm-cancel').addEventListener('click', () => settleConfirm(false));
+byId('confirm-ok').addEventListener('click', () => settleConfirm(true));
 document.addEventListener('keydown', event => { if (event.key !== 'Escape')
-    return; if (!byId('run-detail-modal').hidden)
+    return; if (!byId('confirm-modal').hidden)
+    settleConfirm(false);
+else if (!byId('run-detail-modal').hidden)
     closeRunDetail();
 else if (activity.classList.contains('expanded'))
     setActivityExpanded(false); });

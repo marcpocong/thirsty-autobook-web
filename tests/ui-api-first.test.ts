@@ -130,6 +130,39 @@ describe('API-first UI boundary', () => {
     expect(controller.state.headline).toBe('API AVAILABILITY CHECK COMPLETE');
   });
 
+  it('runs the visible release block audit without creating a checkout command',async()=>{
+    const view=bookingView(ConfigSchema.parse({...defaultSetup,BOOKING_METHOD:'proofless',PLAYER_FULL_NAME:'Fixture Player',PLAYER_PHONE:'09123456789',PLAYER_EMAIL:'fixture@example.invalid'}));
+    const calls:Command[]=[];
+    const cells=Array.from({length:7},(_,courtIndex)=>Array.from({length:16},(_,hourIndex)=>({court:courtIndex+1,hour:`${String(hourIndex+8).padStart(2,'0')}:00`,status:(courtIndex===0&&hourIndex===9?'BLOCKED':'UNRELEASED') as 'BLOCKED'|'UNRELEASED',source:(courtIndex===0&&hourIndex===9?'PUBLIC_BOOKING':'DATE_UNRELEASED') as 'PUBLIC_BOOKING'|'DATE_UNRELEASED'}))).flat();
+    const runner:Runner=(command,event)=>{calls.push(command);if(typeof command==='object'&&command.kind==='blockAudit')event({type:'blockAudit',date:command.date,cells});return {pid:1,done:Promise.resolve(0),stop:async()=>undefined};};
+    const controller=new Controller({runner,lock:async()=>false,cdp:async()=>true,browserHealth:async()=>({A:true,B:false}),playerStatus:()=>({primary:true,extended:false}),
+      clock:()=>({...clockStatus(ObservationSchema.parse({}),DateTime.fromISO('2026-09-21T07:00:00+08:00')),targetDate:view.targetDate}),
+      confirm:async()=>true,publish:()=>undefined,booking:()=>view,saveBooking:()=>view});
+    await controller.resetPrepare({workflow:'release',strategy:'standard',setup:view.setup});
+    const before=calls.length;await controller.checkReleaseBlocks(view.targetDate);
+    expect(calls.slice(before)).toEqual([{kind:'blockAudit',date:view.targetDate}]);
+    expect(controller.state.blockAudit?.cells).toHaveLength(112);
+    expect(controller.state.detail).toContain('Blocked 1');
+    expect(calls.some(command=>typeof command==='object'&&command.kind==='apiRun'&&command.mode==='live-now')).toBe(false);
+  });
+
+  it('checks unreleased blocks by date without preparation or a configured run',async()=>{
+    const view=bookingView(ConfigSchema.parse({...defaultSetup,PLAYER_FULL_NAME:'Fixture Player',PLAYER_PHONE:'09123456789',PLAYER_EMAIL:'fixture@example.invalid'}));
+    const date='2026-09-25',calls:Command[]=[];
+    const cells=Array.from({length:7},(_,courtIndex)=>Array.from({length:16},(_,hourIndex)=>({court:courtIndex+1,
+      hour:`${String(hourIndex+8).padStart(2,'0')}:00`,status:'UNRELEASED' as const,source:'DATE_UNRELEASED' as const}))).flat();
+    const runner:Runner=(command,event)=>{calls.push(command);if(typeof command==='object'&&command.kind==='blockAudit')
+      event({type:'blockAudit',date:command.date,cells});return {pid:1,done:Promise.resolve(0),stop:async()=>undefined};};
+    const controller=new Controller({runner,lock:async()=>true,cdp:async()=>false,browserHealth:async()=>({}),
+      clock:()=>({...clockStatus(ObservationSchema.parse({}),DateTime.fromISO('2026-09-23T07:00:00+08:00')),targetDate:date}),
+      confirm:async()=>true,publish:()=>undefined,booking:()=>view,saveBooking:()=>view});
+    expect(controller.state.booking).toBeNull();
+    await controller.checkReleaseBlocks(date);
+    expect(calls).toEqual([{kind:'blockAudit',date}]);
+    expect(controller.state.blockAudit).toMatchObject({date,cells});
+    expect(controller.state.detail).toContain('Unreleased 112');
+  });
+
   it('uses the same API runner for a saved release plan with only an exact release wait added',async()=>{
     const previous=process.env.THIRSTY_API_INSTALLATION;process.env.THIRSTY_API_INSTALLATION='1';
     try{
@@ -144,8 +177,8 @@ describe('API-first UI boundary', () => {
       const preparedCallCount=calls.length;await controller.apiPreview(view.targetDate);
       expect(calls).toHaveLength(preparedCallCount);expect(controller.state.detail).toBe('RESET REQUIRED. Press Reset & Prepare for these settings.');
       await controller.authorizeTerms(true);await controller.armFullBooking();
-      expect(calls).toEqual([{kind:'apiRun',mode:'prepare',date:view.targetDate,fingerprint:view.fingerprint},
-        {kind:'apiRun',mode:'live',date:view.targetDate,fingerprint:view.fingerprint,releaseMs}]);
+      expect(calls).toEqual([{kind:'apiRun',mode:'prepare',date:view.targetDate,fingerprint:view.fingerprint,checkoutMethod:'proof-based'},
+        {kind:'apiRun',mode:'live',date:view.targetDate,fingerprint:view.fingerprint,checkoutMethod:'proof-based',clockOffsetMs:0,releaseMs}]);
       expect(started).toEqual([77]);expect(stopped).toEqual([77]);expect(controller.state.sleepProtection).toBe(false);
     }finally{if(previous===undefined)delete process.env.THIRSTY_API_INSTALLATION;else process.env.THIRSTY_API_INSTALLATION=previous;}
   });
@@ -169,7 +202,7 @@ describe('API-first UI boundary', () => {
     expect(controller.state).toMatchObject({ workflow: 'test', ready: true, apiFirstReady: true, headline: 'API READY TO TEST' });
     await controller.authorizeTerms(true);
     await controller.testBooking({ method: preparation.method, request: preparation.request, maximum: preparation.maximum, authorizeTerms: true });
-    expect(confirms).toEqual([{ strategy: 'standard', date: '2026-09-20', start: '12:00', duration: 1, courtCount: 1, maximum: 1200, priority: [7, 6, 5, 4, 3, 2, 1] }]);
+    expect(confirms).toEqual([{ method:'api-first', strategy: 'standard', date: '2026-09-20', start: '12:00', duration: 1, courtCount: 1, maximum: 1200, priority: [7, 6, 5, 4, 3, 2, 1] }]);
     expect(calls.at(-1)).toMatchObject({ kind: 'apiRun', mode: 'live-now', date: '2026-09-20', preferences: { start: '12:00', duration: 1 } });
     expect(controller.state.qrHandoffs).toEqual([{checkout:'A',status:'qr-ready',courts:[7],date:'2026-09-20',startTime:'12:00',endTime:'13:00',amount:600,verifiedAt:'2026-09-19T00:00:02.500Z',holdExpiresAt:'2026-09-19T00:10:02.500Z',bookingId:'fixture-booking',bookingNo:'fixture-number'}]);
     expect(controller.state.detail).toContain('Court 7 · 2026-09-20 · 12:00–13:00');

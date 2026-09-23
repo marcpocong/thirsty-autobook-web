@@ -20,6 +20,16 @@ export interface CheckoutContextHooks {
   onHumanVerificationRequired?(): Promise<void>;
   onHumanVerificationCompleted?(): Promise<void>;
 }
+export type BrowserTransportObservation =
+  | { event: 'SECURITY_PREPARATION_STARTED'; securitySource: 'FRESH_ACQUISITION' | 'RECENT_CONTEXT_REUSE' | 'SHARED_ACQUISITION' }
+  | { event: 'SECURITY_PREPARATION_COMPLETED'; securitySource: 'FRESH_ACQUISITION' | 'RECENT_CONTEXT_REUSE' | 'SHARED_ACQUISITION'; durationMs: number; failureCategory?: string }
+  | { event: 'SECURITY_CHALLENGE_OBSERVED' | 'SECURITY_CHALLENGE_COMPLETED' }
+  | { event: 'SLOT_CHECK_STARTED' }
+  | { event: 'SLOT_CHECK_COMPLETED'; durationMs: number; resultCategory: string; success: boolean; isAvailable?: boolean; failureCategory?: string }
+  | { event: 'CHECKOUT_FUNCTION_ENTERED'; preparedContextAgeMs: number; securitySource: 'PREPARED_CONTEXT' | 'CHECKOUT_ACQUISITION' }
+  | { event: 'CHECKOUT_HTTP_POST_INITIATED'; initiationEvidence: 'PLAYWRIGHT_REQUEST_EVENT' }
+  | { event: 'CHECKOUT_RESPONSE_COMPLETED'; networkDurationMs: number; statusCode?: number; dispatchState: 'RESPONSE_CAPTURED' | 'UNKNOWN'; failureCategory?: string };
+export type BrowserTransportObserver = (observation: BrowserTransportObservation) => void;
 
 /** Values must come from the current normal site flow immediately before checkout; this transport cannot create them. */
 export type CurrentCheckoutHeadersProvider = () => Promise<CurrentCheckoutHeaders>;
@@ -58,7 +68,8 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
   private preparedAt?: number;
   private preparation?: Promise<void>;
   constructor(private readonly page: Page, private readonly currentCheckoutHeaders: CurrentCheckoutHeadersProvider,
-    private readonly captureCheckoutResponse?: CheckoutResponseCapture, private readonly contextHooks: CheckoutContextHooks = {}) {
+    private readonly captureCheckoutResponse?: CheckoutResponseCapture, private readonly contextHooks: CheckoutContextHooks = {},
+    private readonly observer?: BrowserTransportObserver) {
     page.on?.('framenavigated',frame=>{
       if(frame===page.mainFrame()){
         this.preparedHeaders=undefined;
@@ -69,22 +80,42 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
 
   isForPage(page:Page):boolean{return this.page===page;}
 
+  private observe(observation: BrowserTransportObservation): void {
+    try { this.observer?.(observation); } catch { /* Observability cannot affect transport behavior. */ }
+  }
+
   private async acquireCheckoutHeaders(): Promise<CurrentCheckoutHeaders> {
+    const started = performance.now();
+    this.observe({ event: 'SECURITY_PREPARATION_STARTED', securitySource: 'FRESH_ACQUISITION' });
     let settled = false, verificationShown = false;
     const acquisition = this.currentCheckoutHeaders().finally(() => { settled = true; });
-    while (!settled) {
-      await Promise.race([acquisition.then(() => undefined, () => undefined),
-        new Promise<void>(resolve => setTimeout(resolve, 200))]);
-      if (settled) break;
-      const challengeVisible = await this.page.locator('iframe[src*="challenges.cloudflare.com"]:visible').count().then(count => count > 0).catch(() => false);
-      if (challengeVisible && !verificationShown) {
-        verificationShown = true;
-        await this.contextHooks.onHumanVerificationRequired?.();
+    try {
+      while (!settled) {
+        await Promise.race([acquisition.then(() => undefined, () => undefined),
+          new Promise<void>(resolve => setTimeout(resolve, 200))]);
+        if (settled) break;
+        const challengeVisible = await this.page.locator('iframe[src*="challenges.cloudflare.com"]:visible').count().then(count => count > 0).catch(() => false);
+        if (challengeVisible && !verificationShown) {
+          verificationShown = true;
+          this.observe({ event: 'SECURITY_CHALLENGE_OBSERVED' });
+          await this.contextHooks.onHumanVerificationRequired?.();
+        }
       }
+      const headers = await acquisition;
+      if (verificationShown) {
+        await this.contextHooks.onHumanVerificationCompleted?.();
+        this.observe({ event: 'SECURITY_CHALLENGE_COMPLETED' });
+      }
+      this.observe({ event: 'SECURITY_PREPARATION_COMPLETED', securitySource: 'FRESH_ACQUISITION',
+        durationMs: Math.max(0, Math.round(performance.now() - started)) });
+      return headers;
+    } catch (error) {
+      this.observe({ event: 'SECURITY_PREPARATION_COMPLETED', securitySource: 'FRESH_ACQUISITION',
+        durationMs: Math.max(0, Math.round(performance.now() - started)),
+        failureCategory: error instanceof CalendarFreeSecurityError && /^[A-Z][A-Z0-9_]{0,63}$/.test(error.code)
+          ? error.code : 'SECURITY_CONTEXT_ACQUISITION_FAILED' });
+      throw error;
     }
-    const headers = await acquisition;
-    if (verificationShown) await this.contextHooks.onHumanVerificationCompleted?.();
-    return headers;
   }
 
   async prepareCheckoutContext(): Promise<void> {
@@ -94,11 +125,27 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
     // An armed run may acquire the genuine page context just before release.
     // Keep it only briefly and consume it once at checkout.
     if (this.preparedHeaders && this.preparedAt !== undefined && Date.now() - this.preparedAt >= 0 &&
-      Date.now() - this.preparedAt <= 20_000) return;
+      Date.now() - this.preparedAt <= 20_000) {
+      this.observe({ event: 'SECURITY_PREPARATION_STARTED', securitySource: 'RECENT_CONTEXT_REUSE' });
+      this.observe({ event: 'SECURITY_PREPARATION_COMPLETED', securitySource: 'RECENT_CONTEXT_REUSE', durationMs: 0 });
+      return;
+    }
     // The adaptive proof and proofless paths can ask the same E/F transport to
     // prewarm at nearly the same instant. Share one acquisition so concurrent
     // callers cannot overwrite each other's genuine page-bound token.
-    if(this.preparation)return this.preparation;
+    if(this.preparation){
+      const started=performance.now();
+      this.observe({ event: 'SECURITY_PREPARATION_STARTED', securitySource: 'SHARED_ACQUISITION' });
+      try { await this.preparation;
+        this.observe({ event: 'SECURITY_PREPARATION_COMPLETED', securitySource: 'SHARED_ACQUISITION',
+          durationMs: Math.max(0,Math.round(performance.now()-started)) });
+      } catch (error) {
+        this.observe({ event: 'SECURITY_PREPARATION_COMPLETED', securitySource: 'SHARED_ACQUISITION',
+          durationMs: Math.max(0,Math.round(performance.now()-started)), failureCategory: 'SECURITY_CONTEXT_ACQUISITION_FAILED' });
+        throw error;
+      }
+      return;
+    }
     const preparation=(async()=>{
       this.preparedHeaders = undefined;
       this.preparedAt = undefined;
@@ -122,6 +169,17 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
   private async post(path: typeof SLOT_PATH | typeof CHECKOUT_PATH, body: unknown,
     extraHeaders?: Record<string, string>): Promise<unknown> {
     this.assertPage();
+    const checkout = path === CHECKOUT_PATH;
+    const networkStarted = performance.now();
+    let requestObserved = false;
+    const requestListener = (request: { method(): string; url(): string }) => {
+      try {
+        if (!checkout || requestObserved || request.method() !== 'POST' || new URL(request.url()).pathname !== CHECKOUT_PATH) return;
+        requestObserved = true;
+        this.observe({ event: 'CHECKOUT_HTTP_POST_INITIATED', initiationEvidence: 'PLAYWRIGHT_REQUEST_EVENT' });
+      } catch { /* A malformed unrelated request is not diagnostic evidence. */ }
+    };
+    if (checkout) this.page.on?.('request', requestListener);
     let result: CheckoutHttpResponse;
     try {
       result = await this.page.evaluate(async ({ url, payload, headers }) => {
@@ -133,7 +191,17 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
           cfMitigated: response.headers.get('cf-mitigated') ?? '',
           body: await response.text() };
       }, { url: `${ORIGIN}${path}`, payload: body, headers: extraHeaders ?? {} });
-    } catch { throw new BrowserSessionTransportError('ONDA_TRANSPORT_FAILED', true); }
+    } catch {
+      if (checkout) this.observe({ event: 'CHECKOUT_RESPONSE_COMPLETED',
+        networkDurationMs: Math.max(0, Math.round(performance.now() - networkStarted)), dispatchState: 'UNKNOWN',
+        failureCategory: 'ONDA_TRANSPORT_FAILED' });
+      throw new BrowserSessionTransportError('ONDA_TRANSPORT_FAILED', true);
+    } finally {
+      if (checkout) this.page.off?.('request', requestListener);
+    }
+    if (checkout) this.observe({ event: 'CHECKOUT_RESPONSE_COMPLETED',
+      networkDurationMs: Math.max(0, Math.round(performance.now() - networkStarted)), statusCode: result.status,
+      dispatchState: 'RESPONSE_CAPTURED', ...(result.status === 200 ? {} : { failureCategory: 'ONDA_HTTP_STATUS_INVALID' }) });
     if (path === CHECKOUT_PATH && this.captureCheckoutResponse) {
       try { await this.captureCheckoutResponse(result); }
       catch { throw new BrowserSessionTransportError('CHECKOUT_RESPONSE_CAPTURE_FAILED', true); }
@@ -151,7 +219,20 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
   async checkSlot(request: SlotCheckRequest): Promise<unknown> {
     this.assertPage();
     // No checkout-only headers are added to this observed request. Browser cookies follow same-origin policy.
-    return this.post(SLOT_PATH, request);
+    const started=performance.now();
+    this.observe({event:'SLOT_CHECK_STARTED'});
+    try {
+      const result=await this.post(SLOT_PATH, request);
+      const record=result!==null&&typeof result==='object'&&!Array.isArray(result)?result as Record<string,unknown>:undefined;
+      this.observe({event:'SLOT_CHECK_COMPLETED',durationMs:Math.max(0,Math.round(performance.now()-started)),
+        resultCategory:record?.success===true?'SUCCESS':'REJECTED',success:record?.success===true,
+        ...(typeof record?.isAvailable==='boolean'?{isAvailable:record.isAvailable}:{})});
+      return result;
+    } catch (error) {
+      this.observe({event:'SLOT_CHECK_COMPLETED',durationMs:Math.max(0,Math.round(performance.now()-started)),
+        resultCategory:'FAILED',success:false,failureCategory:error instanceof BrowserSessionTransportError?error.code:'SLOT_CHECK_FAILED'});
+      throw error;
+    }
   }
 
   async publicCheckout(request: TwoHourCheckoutRequest, permit: SubmissionPermit): Promise<unknown> {
@@ -169,6 +250,9 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
       throw new BrowserSessionTransportError('LIVE_SUBMISSION_DISABLED');
     let current = this.preparedHeaders;
     let preparedAt = this.preparedAt;
+    const preparedContextAgeMs = preparedAt === undefined ? -1 : Date.now() - preparedAt;
+    this.observe({ event: 'CHECKOUT_FUNCTION_ENTERED', preparedContextAgeMs,
+      securitySource: current ? 'PREPARED_CONTEXT' : 'CHECKOUT_ACQUISITION' });
     this.preparedHeaders = undefined;
     this.preparedAt = undefined;
     if (!current) {

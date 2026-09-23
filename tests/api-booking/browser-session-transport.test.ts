@@ -94,6 +94,45 @@ describe('browser session transport, offline', () => {
     expect(evaluate).toHaveBeenCalledOnce();
   });
 
+  it('keeps checkout and one-shot journal behavior unchanged when diagnostic hooks fail', async () => {
+    const handlers = new Set<(request: { method(): string; url(): string }) => void>();
+    const evaluate = vi.fn(async (_fn: unknown, argument: unknown) => {
+      const url = (argument as { url: string }).url;
+      handlers.forEach(handler => handler({ method: () => 'POST', url: () => url }));
+      return { status: 200, contentType: 'application/json', server: '', cloudflareRay: '', cfMitigated: '',
+        body: JSON.stringify({ success: true }) };
+    });
+    const page = { isClosed: () => false, url: () => 'https://app.onda.fit/book/thirsty-pickle', evaluate,
+      on: (event: string, handler: (request: { method(): string; url(): string }) => void) => { if(event==='request')handlers.add(handler); },
+      off: (event: string, handler: (request: { method(): string; url(): string }) => void) => { if(event==='request')handlers.delete(handler); } } as unknown as Page;
+    const observations: string[] = [];
+    const transport = new OndaBrowserSessionTransport(page,
+      async () => ({ turnstileToken: 'synthetic-current-token', publicFingerprint: 'synthetic-current-fingerprint' }),
+      undefined, {}, observation => { observations.push(observation.event); throw Error('diagnostic failure'); });
+    process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT = 'SUPERVISED_ONE_SHOT';
+    const dispatch = await permit();
+    await expect(transport.publicCheckout(checkout, dispatch)).resolves.toEqual({ success: true });
+    expect(observations).toEqual(expect.arrayContaining(['CHECKOUT_FUNCTION_ENTERED', 'SECURITY_PREPARATION_STARTED',
+      'SECURITY_PREPARATION_COMPLETED', 'CHECKOUT_HTTP_POST_INITIATED', 'CHECKOUT_RESPONSE_COMPLETED']));
+    await expect(transport.publicCheckout(checkout, dispatch)).rejects.toThrow('SUBMISSION_PERMIT_INVALID_OR_USED');
+    expect(evaluate).toHaveBeenCalledOnce();
+  });
+
+  it('reports UNKNOWN when checkout evaluation may have dispatched but returned no response', async () => {
+    const observations: unknown[] = [];
+    const page = { isClosed: () => false, url: () => 'https://app.onda.fit/book/thirsty-pickle',
+      evaluate: vi.fn(async () => { throw Error('connection lost'); }) } as unknown as Page;
+    const transport = new OndaBrowserSessionTransport(page,
+      async () => ({ turnstileToken: 'synthetic-current-token', publicFingerprint: 'synthetic-current-fingerprint' }),
+      undefined, {}, observation => observations.push(observation));
+    process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT = 'SUPERVISED_ONE_SHOT';
+    await expect(transport.publicCheckout(checkout, await permit())).rejects.toMatchObject({ dispatched: true });
+    expect(observations).toContainEqual(expect.objectContaining({ event: 'CHECKOUT_FUNCTION_ENTERED' }));
+    expect(observations).toContainEqual(expect.objectContaining({ event: 'CHECKOUT_RESPONSE_COMPLETED',
+      dispatchState: 'UNKNOWN', failureCategory: 'ONDA_TRANSPORT_FAILED' }));
+    expect(observations).not.toContainEqual(expect.objectContaining({ event: 'CHECKOUT_HTTP_POST_INITIATED' }));
+  });
+
   it('captures a checkout response before rejecting an unexpected content type', async () => {
     const captured = vi.fn(async (_response: unknown) => undefined);
     const evaluate = vi.fn(async () => ({ status: 200, contentType: 'text/plain', server: '',

@@ -20,7 +20,11 @@ Each checkout contains at most two courts. Standard uses one time block and grou
 
 Test Now resolves availability before a native confirmation shows the actual courts and chunks. The confirmation permits bounded pre-Proceed replanning within the requested range; exact courts are never substituted. Test settings do not require changing the saved release court count. Reset & Prepare and all relevant edits clear Terms authorization. No historical dual readiness/practice evidence is required for normal Test Now or Release Booking.
 
-Test and Release use independent drafts. Test stays in memory and never writes `config.local.json`; Release Reset & Prepare validates, atomically saves, re-reads, fingerprints, and prepares the current Release fields. Status refreshes cannot replace the active Test draft with saved Release values. Normal Run Test to QR and Arm Next Release always mean the full visible Onda flow to the temporary QR hold boundary, regardless of the historical Advanced mode switch.
+Test and Release use independent drafts. Test stays in memory and never writes `config.local.json`; Release Reset & Prepare validates, atomically saves, re-reads, fingerprints, and prepares the current Release fields. Status refreshes cannot replace the active Test draft with saved Release values. Normal Run Test to QR and Arm Next Release both stop at the official temporary QR hold boundary, regardless of the historical Advanced mode switch.
+
+**Proofless Direct** is now a separate Test/Release method. The standalone read-only block checker accepts any date without a saved plan, players, browser preparation, or Terms authorization. It combines Onda date availability with `/api/public/spaces/bookings` for every court and reports all 112 court/hour states with their source. Proofless preparation uses the same evidence to resolve the first saved court/time configuration that has no confirmed block. A public booking record overrides an unreleased/missing availability cell as `BLOCKED`; `UNKNOWN` means a source failed or supplied no authoritative state and fails closed. An armed 08:00 Release refreshes that dual-source audit at 07:30, prewarms the genuine browser security context, and dispatches the resolved one-shot checkout at the release boundary without slot proofs. Daytime rates are assumed at PHP 600/hour and evening rates at PHP 700/hour; the response must match the exact requested courts, hours, amount, pending state, and hold expiry or the result remains fail-closed. Proofless Test submits the exact configured cells only after the operator manually confirms they are currently open. API-First remains the proof-based method. A confirmed rejection is never retried automatically, and an unknown outcome retains the lock for reconciliation.
+
+Release time is driven by a persisted in-app offset from Google Public NTP (`time.google.com`), not by changing the Windows clock. Use **Sync with Google Time** before arming; stale or missing network synchronization blocks Release arming.
 
 Reset & Prepare checks dedicated identities, dead owner state, current browser state and both old worker records when applicable. It resets proven pre-final state and returns to today's clean schedule. An active hold or uncertain final dispatch stays protected. Verified holds can be recovered after a conclusively inactive/expired state; a countdown elapsed on the dashboard alone is not proof. Unknown markup, missing worker identity, security challenges and wrong venue remain manual-review stops.
 
@@ -92,7 +96,7 @@ npm test
 npm run ui:build
 ```
 
-The checked-in offline suite currently contains 69 files and 805 tests. It must stay network-isolated: it uses fixtures and test-owned Chromium, never a live booking. `npm run exe:build` is a Windows packaging/deployment command; it refreshes the parent installation as well as the launcher and should be run only when that local installation update is intended.
+The checked-in offline suite currently contains 71 files and 825 tests. It must stay network-isolated: it uses fixtures and test-owned Chromium, never a live booking. `npm run exe:build` is a Windows packaging/deployment command; it refreshes the parent installation as well as the launcher and should be run only when that local installation update is intended.
 
 Practice requires all four explicit target arguments. If either requested slot is unavailable, it stops; it never silently picks another target. On an uncertain selection, failure or abort, inspect and clear selection manually. Only rerun practice for an appropriate noncompetitive target.
 
@@ -126,7 +130,7 @@ The evidence-based checkout adapter validates Review, normalizes the local PH mo
 
 ## Pre-release checklist
 
-- [ ] Windows automatic clock synchronization checked; clock not modified by bot.
+- [ ] Google network clock synchronized in the UI; Windows clock is not modified by the bot.
 - [ ] Plugged in; sleep prevented; stable network; no heavy downloads or updates.
 - [ ] Dedicated Chrome visible, correct venue/tab, logged in if necessary.
 - [ ] Today selected, All Courts shown, no selections or checkout in progress.

@@ -23,7 +23,7 @@ export function describePlan(plan) {
         return specialSessionDescription(plan.targetDate) +
             '\nNo fallback courts or times. Each checkout validates its current exact price before dispatch.';
     const plans = candidatePlans({ strategy: s.BOOKING_TYPE, date: plan.targetDate, start: s.START_TIME, duration: s.DURATION_HOURS, courtCount: s.COURT_COUNT, priority: s.PREFERRED_COURTS, fallbackStarts: s.FALLBACK_TIMES });
-    const method = s.BOOKING_METHOD === 'browser' ? 'Normal Browser' : s.BOOKING_METHOD === 'hybrid' ? 'Hybrid Availability' : 'API-First';
+    const method = s.BOOKING_METHOD === 'browser' ? 'Normal Browser' : s.BOOKING_METHOD === 'hybrid' ? 'Hybrid Availability' : s.BOOKING_METHOD === 'proofless' ? 'Proofless Direct' : 'API-First';
     return describeBookingPlan(plans[0], Infinity) + `\nBooking method: ${method}\nCourt priority: ${s.PREFERRED_COURTS.join(' → ')}\nFallback starts move the whole block: ${s.FALLBACK_TIMES.join(', ') || 'None'}\nValid splits: ${plans.filter(p => p.requestedStart === s.START_TIME).map(p => p.chunks.map(c => c.duration).join('+')).join(' → ')}\nSame courts are prioritized across checkouts when available.\nPlayer information: Configured`;
 }
 //# sourceMappingURL=booking.js.map
