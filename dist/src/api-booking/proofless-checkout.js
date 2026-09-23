@@ -4,14 +4,9 @@ import { THIRSTY_PICKLE_FACILITY_ID } from './live-availability-provider.js';
 import { observedResponse, standardPlanJournalKeys } from './two-hour-reservation.js';
 import { validatePublicCheckoutResponse } from './public-checkout.js';
 import { SubmissionDispatchError } from './submission-errors.js';
-export const DIRECT_COURT_PRIORITY = [5, 4, 3, 2, 1];
 export const DIRECT_ASSUMED_DAY_RATE = 600;
 export const DIRECT_ASSUMED_EVENING_RATE = 700;
 export const DIRECT_MAX_DISPATCH_LATENESS_MS = 1_000;
-export const DIRECT_BLOCKS = [
-    { workerId: 'E', startTime: '17:00', endTime: '20:00', durationHours: 3 },
-    { workerId: 'F', startTime: '20:00', endTime: '22:00', durationHours: 2 },
-];
 const unique = (values) => [...new Set(values)];
 /**
  * Builds the deterministic saved-plan candidate used by the primary scheduled
@@ -115,31 +110,6 @@ export function assertDirectDispatchWindow(releaseMs, now = Date.now()) {
         now - releaseMs > DIRECT_MAX_DISPATCH_LATENESS_MS)
         throw Error('DIRECT_RELEASE_WINDOW_MISSED');
 }
-export function chooseDirectCourt(snapshot, blockedCourts = []) {
-    if (!snapshot || snapshot.returnedDates[snapshot.requestedDates[0]] !== true)
-        return DIRECT_COURT_PRIORITY.find(court => !blockedCourts.includes(court));
-    const date = snapshot.requestedDates[0];
-    return DIRECT_COURT_PRIORITY.find(court => !blockedCourts.includes(court) && Array.from({ length: 5 }, (_, index) => `${17 + index}:00`).every(hour => snapshot.slots.some(slot => slot.court === court && slot.date === date && slot.startTime === hour && slot.isAvailable && slot.currency === 'PHP')));
-}
-export function directPlan(date, court, workerId, snapshot) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !DIRECT_COURT_PRIORITY.includes(court))
-        throw Error('DIRECT_TARGET_INVALID');
-    const block = DIRECT_BLOCKS.find(value => value.workerId === workerId);
-    const spaceId = COURT_TO_SPACE_ID[court];
-    const released = snapshot?.returnedDates[date] === true;
-    const slots = Array.from({ length: block.durationHours }, (_, index) => {
-        const startTime = `${Number(block.startTime.slice(0, 2)) + index}:00`, endTime = `${Number(startTime.slice(0, 2)) + 1}:00`;
-        const observed = released ? snapshot.slots.find(slot => slot.court === court && slot.date === date && slot.startTime === startTime && slot.isAvailable && slot.currency === 'PHP') : undefined;
-        if (released && !observed)
-            throw Error('DIRECT_SLOT_NOT_AVAILABLE');
-        return observed ?? { court, spaceId, date, bookingDate: date, startTime, endTime, isAvailable: true, isNightRate: true, isNextDay: false, currency: 'PHP', price: DIRECT_ASSUMED_EVENING_RATE };
-    });
-    const price = slots.reduce((sum, slot) => sum + slot.price, 0);
-    const plannedCourt = { court, spaceId, date, startTime: block.startTime, endTime: block.endTime, durationMinutes: block.durationHours * 60, price, currency: 'PHP', slots };
-    const chunk = { startTime: block.startTime, endTime: block.endTime, durationHours: block.durationHours, courts: [plannedCourt], totalPrice: price };
-    return { plan: { mode: 'standard', targetDate: date, startTime: block.startTime, endTime: block.endTime, durationHours: block.durationHours, courts: [plannedCourt], chunks: [chunk], totalPrice: price, currency: 'PHP' },
-        rateSource: released ? 'FRIDAY_AVAILABILITY' : 'UNVERIFIED_PRIOR_RATE' };
-}
 export function prooflessRequest(plan, customer) {
     if (plan.mode !== 'standard' || plan.chunks.length !== 1 || plan.courts.length < 1 || plan.courts.length > 2 ||
         plan.courts.some(court => court.slots.length !== plan.durationHours))
@@ -218,4 +188,4 @@ export async function submitDirectCheckout(plan, customer, transport, journal, r
         throw error;
     }
 }
-//# sourceMappingURL=special-direct-checkout.js.map
+//# sourceMappingURL=proofless-checkout.js.map

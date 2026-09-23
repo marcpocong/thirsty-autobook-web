@@ -10,7 +10,6 @@ import { capabilities, fullBookingReady } from '../src/capabilities.js';
 import { expectedPreparationFingerprint, makePreparedContext } from '../src/prepared-context.js';
 import { scheduledReleaseContext } from '../src/scheduled-release.js';
 import { requiredWorkerIds } from '../src/workers.js';
-import { SPECIAL_SESSION_MODE, SPECIAL_SESSION_REQUIRED_WORKERS } from '../src/api-booking/special-session.js';
 const preparationHeadlines = { EXTENDED_PLAYER_INFO_MISSING: 'EXTENDED PLAYER REQUIRED', PLAYER_INFO_MISSING: 'PLAYER CONFIGURATION REQUIRED', TARGET_DATE_UNAVAILABLE: 'TARGET NOT AVAILABLE', TARGET_NOT_AVAILABLE: 'TARGET NOT AVAILABLE', PAYMENT_HOLD_MAY_BE_ACTIVE: 'PAYMENT HOLD ACTIVE', LOCK_PID_RUNNING: 'AUTOMATION STILL RUNNING', TODAYS_RELEASE_PASSED: "TODAY'S RELEASE HAS PASSED", CHROME_NOT_INSTALLED: 'CHROME NOT INSTALLED', CHROME_START_TIMEOUT: 'DEDICATED CHROME DID NOT START', CHROME_START_FAILED: 'DEDICATED CHROME DID NOT START', CDP_ENDPOINT_UNAVAILABLE: 'DEDICATED CHROME UNAVAILABLE', ONDA_TAB_AMBIGUOUS_OR_MISSING: 'ONDA TAB NOT READY', WRONG_VENUE: 'WRONG VENUE' };
 const errors = {
     EXTENDED_DURATION_LIMIT: 'Extended two-browser booking currently supports up to 6 consecutive hours.',
@@ -76,6 +75,10 @@ const errors = {
     API_NO_UNUSED_CANDIDATE: 'Available courts still have active or unresolved submission records. Expired verified holds and confirmed rejected attempts are archived for reuse; uncertain outcomes remain blocked.',
     NETWORK_CLOCK_SYNC_REQUIRED: 'Synchronize with Google Public NTP before arming Release.',
     NETWORK_CLOCK_SYNC_FAILED: 'Google Public NTP could not be verified. Release remains unarmed.',
+    CLOSE_BROWSERS_UNAVAILABLE: 'Closing bot browsers is not available in this build.',
+    BOT_BROWSER_CLOSE_FAILED: 'The bot browsers could not be checked or closed. Close the THIRSTY BOT Chrome windows manually.',
+    BOT_BROWSER_CLOSE_TIMEOUT: 'Some bot Chrome windows did not close in time. Close them manually from the taskbar.',
+    SLOT_WATCH_UNAVAILABLE: 'Release slot watch is not available in this build.',
 };
 export class Controller {
     deps;
@@ -97,9 +100,87 @@ export class Controller {
     lastLogMono = 0;
     runReadyMono;
     apiReadyWorkers = new Set();
+    slotWatch;
+    /** The watch shown in the UI; it keeps showing its final state after it ends until another watch replaces it. */
+    displayedSlotWatchId;
     constructor(deps) {
         this.deps = deps;
         this.state.runHistory = this.deps.activityJournal?.history?.() ?? [];
+        this.state.slotWatch = null;
+        this.state.slotWatchHistory = this.readSlotWatchHistory();
+    }
+    readSlotWatchHistory() { try {
+        return this.deps.slotWatchHistory?.() ?? [];
+    }
+    catch {
+        return [];
+    } }
+    /** Starts the read-only court/hour watch for one release; a watch already covering it is kept. */
+    beginSlotWatch(date, releaseMs, reason) {
+        if (!this.deps.startSlotWatch)
+            return false;
+        const current = this.slotWatch;
+        if (current && current.date === date && current.releaseMs === releaseMs) {
+            if (reason === 'release')
+                current.reason = 'release';
+            return true;
+        }
+        if (current) {
+            this.slotWatch = undefined;
+            void current.stop('replaced by a newer watch').catch(() => undefined);
+        }
+        const clock = this.deps.clock();
+        let id;
+        const early = [];
+        const handle = this.deps.startSlotWatch({ date, releaseMs, clockOffsetMs: clock.clockOffsetMs, clockSynced: clock.networkSynced }, view => {
+            if (id === undefined) {
+                early.push(view);
+                return;
+            }
+            if (view.id !== this.displayedSlotWatchId)
+                return;
+            this.state.slotWatch = view;
+            this.publish();
+        });
+        id = handle.id;
+        this.displayedSlotWatchId = id;
+        const watch = { id, reason, date, releaseMs, stop: reason => handle.stop(reason), done: handle.done };
+        this.slotWatch = watch;
+        const first = early.at(-1);
+        if (first)
+            this.state.slotWatch = first;
+        this.log(`Slot watch scheduled for ${date}: every court/hour is read from 60 s before release until 15 min after${reason === 'manual' ? ' (read only, no booking)' : ''}.`);
+        void handle.done.then(summary => {
+            if (this.slotWatch?.id === watch.id)
+                this.slotWatch = undefined;
+            this.state.slotWatchHistory = this.readSlotWatchHistory();
+            this.log(`Slot watch ${summary.status} for ${summary.date}: ${summary.polls} reads, ${summary.taken.length} slot${summary.taken.length === 1 ? '' : 's'} taken after opening${summary.fastestTakeMs === null ? '' : `, fastest ${(summary.fastestTakeMs / 1000).toFixed(3)} s after release`}. Report: ${summary.reportPath}`);
+        }).catch(() => { if (this.slotWatch?.id === watch.id)
+            this.slotWatch = undefined; });
+        return true;
+    }
+    /** A cancelled or aborted release has nothing to observe; an operator-started watch keeps running. */
+    stopReleaseSlotWatchBeforeRelease(reason) {
+        const watch = this.slotWatch;
+        if (watch?.reason === 'release' && Date.now() + (this.deps.clock().clockOffsetMs ?? 0) < watch.releaseMs) {
+            this.slotWatch = undefined;
+            void watch.stop(reason).catch(() => undefined);
+        }
+    }
+    async watchNextRelease() {
+        if (!this.deps.startSlotWatch)
+            throw Error('SLOT_WATCH_UNAVAILABLE');
+        const clock = this.deps.clock();
+        this.beginSlotWatch(clock.targetDate, clock.releaseMs, 'manual');
+        this.publish();
+    }
+    async stopSlotWatch(reason = 'stopped by operator') {
+        const watch = this.slotWatch;
+        if (!watch)
+            return;
+        this.slotWatch = undefined;
+        await watch.stop(reason).catch(() => undefined);
+        this.publish();
     }
     players() { if (this.deps.playerStatus)
         return { third: false, fourth: false, ...this.deps.playerStatus() }; try {
@@ -109,9 +190,9 @@ export class Controller {
     catch {
         return { primary: false, extended: false, third: false, fourth: false };
     } }
-    requirePlayers(strategy, courtCount, special = false) {
+    requirePlayers(strategy, courtCount) {
         const players = this.players(), map = { A: players.primary, B: players.extended, C: players.third, D: players.fourth, E: !!players.fifth, F: !!players.sixth, G: !!players.seventh, H: !!players.eighth };
-        const missing = (special ? SPECIAL_SESSION_REQUIRED_WORKERS : requiredWorkerIds(strategy, courtCount)).find(worker => !map[worker]);
+        const missing = requiredWorkerIds(strategy, courtCount).find(worker => !map[worker]);
         if (missing)
             throw Error(missing === 'A' ? 'PLAYER_INFO_MISSING' : missing === 'B' ? 'EXTENDED_PLAYER_INFO_MISSING' : missing === 'C' ? 'THIRD_PLAYER_INFO_MISSING' : missing === 'D' ? 'FOURTH_PLAYER_INFO_MISSING' : `PLAYER_${missing}_INFO_MISSING`);
         return players;
@@ -137,6 +218,7 @@ export class Controller {
         this.clearScheduled();
         this.state.termsAuthorized = false;
         this.clearPreparation();
+        this.stopReleaseSlotWatchBeforeRelease('release cancelled');
         const active = this.active;
         this.active = undefined;
         if (active)
@@ -360,7 +442,7 @@ export class Controller {
             const context = this.state.preparedContext, required = context?.requiredBrowsers ?? [];
             const apiWorkers = this.state.workflow === 'test' && this.apiTestPreferences
                 ? requiredWorkerIds(this.apiTestPreferences.strategy, this.apiTestPreferences.courtCount)
-                : this.state.booking ? (this.state.booking.setup.SESSION_MODE === SPECIAL_SESSION_MODE ? [...SPECIAL_SESSION_REQUIRED_WORKERS] : requiredWorkerIds(this.state.booking.setup.BOOKING_TYPE, this.state.booking.setup.COURT_COUNT)) : [];
+                : this.state.booking ? requiredWorkerIds(this.state.booking.setup.BOOKING_TYPE, this.state.booking.setup.COURT_COUNT) : [];
             const apiFirstReady = this.state.apiFirstReady && apiWorkers.length > 0 && apiWorkers.every(id => health[id]) && !lock && (this.state.workflow === 'test' ? !!this.apiTestFingerprint : ['api-first', 'proofless'].includes(this.state.booking?.setup.BOOKING_METHOD ?? ''));
             this.state.ready = !!apiFirstReady || !!context && context.workflow === this.state.workflow && !lock && (this.state.operation === 'scheduled' || required.every(id => health[id]));
             if (context && this.state.operation === 'idle' && !this.state.ready)
@@ -412,15 +494,14 @@ export class Controller {
                 this.apiReadyWorkers.add(event.workerId);
                 const required = this.state.workflow === 'test' && this.apiTestPreferences
                     ? requiredWorkerIds(this.apiTestPreferences.strategy, this.apiTestPreferences.courtCount)
-                    : this.state.booking ? (this.state.booking.setup.SESSION_MODE === SPECIAL_SESSION_MODE ? [...SPECIAL_SESSION_REQUIRED_WORKERS] : requiredWorkerIds(this.state.booking.setup.BOOKING_TYPE, this.state.booking.setup.COURT_COUNT)) : [];
+                    : this.state.booking ? requiredWorkerIds(this.state.booking.setup.BOOKING_TYPE, this.state.booking.setup.COURT_COUNT) : [];
                 if (required.length && required.every(worker => this.apiReadyWorkers.has(worker)))
                     this.markBrowserReady(event.at);
             }
             this.state.apiStage = event;
             const labels = { RUN_STARTED: 'API run started', EXPIRED_HOLD_REUSABLE: 'Expired verified hold released for a new test', FINISHED_ATTEMPT_REUSABLE: 'Finished attempt archived for a new test', PREPARING_BROWSER: 'Preparing isolated Chrome', BROWSER_READY: 'API browser ready',
                 WAITING_FOR_BLOCK_AUDIT: 'Waiting for 7:30 block audit', PRIMARY_PROOFLESS_PLAN_READY: 'Proofless court plan resolved', PRIMARY_PROOFLESS_DISPATCHING: 'Dispatching proofless checkout', PRIMARY_PROOFLESS_OUTCOME: 'Proofless checkout outcome recorded', WAITING_FOR_RELEASE: 'Waiting for release', SECURITY_PREWARM_STARTED: 'Preparing checkout security before release', SECURITY_PREWARM_READY: 'Checkout security ready for release', RELEASE_TRIGGERED: 'Release reached', FETCHING_AVAILABILITY: 'Fetching live API availability',
-                SPECIAL_AVAILABILITY_WATCHING: 'Watching early backend availability', SPECIAL_UPDATE_NOTIFICATION_OBSERVED: 'Onda update notification observed', SPECIAL_VERSION_CHANGE_OBSERVED: 'Onda version change observed', SPECIAL_EARLY_AVAILABILITY_READY: 'Early backend schedule confirmed', SPECIAL_RELEASE_AVAILABILITY_READY: 'Release schedule confirmed', SPECIAL_SAFE_RETRY_WAITING: 'Waiting to safely retry at 8:00 AM',
-                CANDIDATE_READY: 'API candidate ready', DRY_RUN_COMPLETE: 'API dry run complete', FRESH_VERIFICATION_AND_PROOFS: 'Fresh verification and slot proofs',
+                WORKER_OUTCOME: 'Checkout outcome recorded', CANDIDATE_READY: 'API candidate ready', DRY_RUN_COMPLETE: 'API dry run complete', FRESH_VERIFICATION_AND_PROOFS: 'Fresh verification and slot proofs',
                 PENDING_HOLD: 'Pending reservation captured', OFFICIAL_QRPH_HANDOFF: 'Official QRPH checkout open', FAILED: 'API run needs attention' };
             labels.HUMAN_VERIFICATION_REQUIRED = 'Human verification required in Chrome';
             labels.HUMAN_VERIFICATION_COMPLETE = 'Human verification complete';
@@ -430,10 +511,9 @@ export class Controller {
             this.state.detail = event.stage === 'RUN_STARTED' ? `Timing log: .local/api-booking/run-progress/${event.runId}.ndjson` :
                 event.stage === 'CANDIDATE_READY' ? `Court${event.courtB ? 's' : ''} ${event.court}${event.courtB ? ` + ${event.courtB}` : ''} · ${event.date} · ${event.startTime} · ${event.durationHours} hour(s) · PHP ${event.price}` :
                     event.stage === 'PENDING_HOLD' || event.stage === 'OFFICIAL_QRPH_HANDOFF' ? `${worker}${target}Booking ${event.bookingNo} · ID ${event.bookingId} · Hold until ${event.holdExpiresAt} · PHP ${event.price}. Payment is manual.` :
-                        event.stage === 'SPECIAL_UPDATE_NOTIFICATION_OBSERVED' || event.stage === 'SPECIAL_VERSION_CHANGE_OBSERVED' ? 'The early-release signal was detected. Exact backend availability is now being checked at burst frequency; no checkout is sent until every required slot is confirmed available.' :
-                            event.stage === 'SECURITY_PREWARM_STARTED' || event.stage === 'SECURITY_PREWARM_READY' ? 'The verified browser remains ready. Waiting for the exact release time.' :
-                                event.stage === 'HUMAN_VERIFICATION_REQUIRED' ? `Use the Chrome window titled THIRSTY BOT ${event.workerId ?? 'A'} - VERIFY HERE. This API run is waiting for you to finish the Cloudflare check.` :
-                                    event.stage === 'FAILED' ? event.code ?? 'API_FIRST_RUN_FAILED' : `Progress recorded`;
+                        event.stage === 'SECURITY_PREWARM_STARTED' || event.stage === 'SECURITY_PREWARM_READY' ? 'The verified browser remains ready. Waiting for the exact release time.' :
+                            event.stage === 'HUMAN_VERIFICATION_REQUIRED' ? `Use the Chrome window titled THIRSTY BOT ${event.workerId ?? 'A'} - VERIFY HERE. This API run is waiting for you to finish the Cloudflare check.` :
+                                event.stage === 'FAILED' ? event.code ?? 'API_FIRST_RUN_FAILED' : `Progress recorded`;
             const timing = `${event.elapsedMs} ms total · +${event.sincePreviousMs ?? 0} ms since prior stage`;
             this.state.detail += ` · ${timing}`;
             if (['PENDING_HOLD', 'OFFICIAL_QRPH_HANDOFF'].includes(event.stage) && event.date && event.court && event.startTime && event.durationHours && event.price !== undefined) {
@@ -793,7 +873,7 @@ export class Controller {
                         throw Error('BOOKING_PLAN_CHANGED');
                     this.state.booking = release;
                     if (['api-first', 'proofless'].includes(release.setup.BOOKING_METHOD)) {
-                        this.state.playerStatus = this.requirePlayers(release.setup.BOOKING_TYPE, release.setup.COURT_COUNT, release.setup.SESSION_MODE === SPECIAL_SESSION_MODE);
+                        this.state.playerStatus = this.requirePlayers(release.setup.BOOKING_TYPE, release.setup.COURT_COUNT);
                         await this.reconcileLockForApiPrepare(gen, input);
                         this.state.workflow = 'release';
                         this.state.headline = 'PREPARING API BROWSER';
@@ -804,7 +884,7 @@ export class Controller {
                         this.state.apiFirstReady = true;
                         this.state.ready = true;
                         this.state.headline = 'API BROWSER READY';
-                        const count = release.setup.SESSION_MODE === SPECIAL_SESSION_MODE ? SPECIAL_SESSION_REQUIRED_WORKERS.length : requiredWorkerIds(release.setup.BOOKING_TYPE, release.setup.COURT_COUNT).length;
+                        const count = requiredWorkerIds(release.setup.BOOKING_TYPE, release.setup.COURT_COUNT).length;
                         this.state.detail = `${count} API browser${count === 1 ? ' is' : 's are'} ready. Authorize Terms, then arm the next release.`;
                         return;
                     }
@@ -1016,6 +1096,7 @@ export class Controller {
             this.sleepBlockerId = this.deps.startSleepProtection();
             this.state.sleepProtection = true;
         }
+        this.beginSlotWatch(plan.targetDate, clock.releaseMs, 'release');
         try {
             await this.operation('full', async (gen) => {
                 const proofless = plan.setup.BOOKING_METHOD === 'proofless';
@@ -1076,6 +1157,7 @@ export class Controller {
         }
         const wakeAt = context.releaseMs - fresh.wakeSecondsBefore * 1000, delay = Math.max(0, wakeAt - (Date.now() + fresh.clockOffsetMs));
         this.scheduledTimer = setTimeout(() => { void this.executeScheduled(context, generation); }, delay);
+        this.beginSlotWatch(context.targetDate, context.releaseMs, 'release');
         this.state.headline = 'ARMED FOR NEXT RELEASE';
         this.state.detail = `Exact release and booking target frozen. The browser reconnect starts ${fresh.wakeSecondsBefore} seconds before release. Keep the PC powered on; do not hibernate or close the lid if Windows sleeps on lid close.`;
         this.publish();
@@ -1234,6 +1316,34 @@ export class Controller {
             this.state.detail = 'Dedicated Chrome was restarted and the local practice lock was cleared. Set the exact target and run Full Flow Practice again.';
         });
     }
+    /**
+     * Closes every Chrome window the bot started (profiles under .local) and never the operator's own Chrome.
+     * Blocked while anything runs or a release is armed, because that would break a booking in progress.
+     */
+    closeBotBrowsers() {
+        return this.operation('closingBrowsers', async (gen) => {
+            if (!this.deps.closeBotBrowsers)
+                throw Error('CLOSE_BROWSERS_UNAVAILABLE');
+            const open = this.deps.countBotBrowsers ? await this.deps.countBotBrowsers() : Object.values(this.state.browserHealth ?? {}).filter(Boolean).length;
+            if (open === 0) {
+                this.state.headline = 'NO BOT BROWSERS OPEN';
+                this.state.detail = 'No Chrome window started by the bot is running. Nothing was closed.';
+                return;
+            }
+            const qrPages = (this.state.qrHandoffs ?? []).filter(hold => !hold.holdExpiresAt || Date.parse(hold.holdExpiresAt) > Date.now()).length;
+            if (!this.deps.confirmCloseBrowsers || !await this.deps.confirmCloseBrowsers({ open, qrPages, lock: this.state.lock }) || gen !== this.generation) {
+                this.state.headline = 'Close browsers cancelled';
+                this.state.detail = 'No browser was closed.';
+                return;
+            }
+            const result = await this.deps.closeBotBrowsers();
+            this.clearPreparation();
+            const plural = result.closed === 1 ? '' : 's';
+            this.log(`Closed ${result.closed} bot Chrome browser${plural}${result.forced ? ` (${result.forced} force-closed after not responding)` : ''}. Your own Chrome windows were not touched.`);
+            this.state.headline = 'BOT BROWSERS CLOSED';
+            this.state.detail = `${result.closed} Chrome browser${plural} started by the bot ${result.closed === 1 ? 'was' : 'were'} closed. Your own Chrome windows were not touched. Press Reset & Prepare to reopen the browsers a run needs.`;
+        });
+    }
     runFullPractice(input) {
         return this.operation('confirming', async (gen) => {
             if (!input || typeof input !== 'object' || !('authorizeTerms' in input) || input.authorizeTerms !== true)
@@ -1319,6 +1429,7 @@ export class Controller {
             this.log('No UI-launched automation is running. External CLI processes are not controlled by this panel.');
             return;
         }
+        this.stopReleaseSlotWatchBeforeRelease('release aborted');
         ++this.generation;
         this.state.ready = false;
         this.state.operation = 'stopping';

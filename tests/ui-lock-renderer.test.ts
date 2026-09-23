@@ -33,9 +33,9 @@ async function renderer(extra:Record<string,unknown>={}){
   return page;
 }
 
-it('shows four focused views with a wide grid and stacked narrow layout',async()=>{
+it('shows six focused views with a wide grid and stacked narrow layout',async()=>{
   const page=await renderer();
-  expect(await page.locator('[data-view]').allTextContents()).toEqual(['Next Release','Edit Plan','Tests','Runs']);
+  expect(await page.locator('[data-view]').allTextContents()).toEqual(['Next Release','Edit Plan','Tests','Slots','Runs','Tools']);
   expect(await page.locator('#release-schedule').isVisible()).toBe(true);
   expect(await page.locator('#booking-method').isVisible()).toBe(false);
   await mkdir('.local',{recursive:true});await page.screenshot({path:'.local/ui-redesign-release.png'});
@@ -97,8 +97,8 @@ it('runs a prepared test through the existing Terms and test booking action',asy
 
 it('shows API-first browser readiness and the state-based release action',async()=>{
   const page=await renderer({booking:booking('api-first','extended'),ready:true,apiFirstReady:true,browserHealth:{A:true,B:true},cdp:true});
-  expect(await page.locator('#release-readiness').innerText()).toContain('OK Browser A prepared');
-  expect(await page.locator('#release-readiness').innerText()).toContain('OK Browser B prepared');
+  expect(await page.locator('#release-readiness .gate.good').filter({hasText:'Browser A prepared'}).count()).toBe(1);
+  expect(await page.locator('#release-readiness .gate.good').filter({hasText:'Browser B prepared'}).count()).toBe(1);
   expect(await page.locator('#release-readiness').innerText()).not.toContain('All Courts verified');
   expect(await page.locator('#main-action').innerText()).toBe('Review & Arm');
   await page.evaluate(()=>{const w=window as any;w.fixtureState.scheduledRelease={releaseMs:Date.now()+60000,targetDate:'2026-09-24'};w.fixtureState.operation='scheduled';w.fixturePublish(w.fixtureState);});
@@ -259,6 +259,49 @@ it('shows verified QR handoffs with the corresponding players in release and tes
   expect(await page.locator('#test-headline').innerText()).toBe('CONFIRM BOOKING DETAILS BEFORE PAYING');
   expect(await page.locator('#test-detail').innerText()).toContain('Check the player, courts, date, every hourly slot, amount, and booking reference');
   await mkdir('.local',{recursive:true});await page.screenshot({path:'.local/ui-qr-status.png'});
+  await page.close();
+});
+
+it('shows every bot browser, brings one forward, and closes them all from the status bar',async()=>{
+  const page=await renderer({browserHealth:{A:true,B:true,C:false,D:false,E:false,F:false,G:false,H:false}});
+  await page.evaluate(()=>{const w=window as any;w.thirsty.closeBotBrowsers=async()=>{w.fixtureClosed=(w.fixtureClosed??0)+1;};});
+  expect(await page.locator('#browser-strip .browser-dot').allTextContents()).toEqual(['A','B','C','D','E','F','G','H']);
+  expect(await page.locator('#browser-strip .browser-dot.open').allTextContents()).toEqual(['A','B']);
+  await page.locator('#browser-strip .browser-dot',{hasText:'B'}).click();
+  await page.waitForFunction(()=>(window as any).fixtureFocusedBrowser?.workerId==='B');
+  await page.locator('#close-browsers').click();
+  await page.waitForFunction(()=>(window as any).fixtureClosed===1);
+  await page.locator('[data-view="tools"]').click();
+  expect(await page.locator('#browser-list .browser-row').count()).toBe(8);
+  expect(await page.locator('#browser-list .browser-row.open').count()).toBe(2);
+  // An armed release cannot lose its browsers.
+  await page.evaluate(()=>{const w=window as any;w.fixtureState.scheduledRelease={releaseMs:Date.now()+60000,targetDate:'2026-09-24'};w.fixtureState.operation='scheduled';w.fixturePublish(w.fixtureState);});
+  expect(await page.locator('#close-browsers').isDisabled()).toBe(true);
+  expect(await page.locator('#close-browsers-tools').isDisabled()).toBe(true);
+  await page.close();
+});
+
+it('shows the live release slot watch with exact change times',async()=>{
+  const hours=Array.from({length:16},(_,i)=>`${String(i+8).padStart(2,'0')}:00`);
+  const releaseMs=Date.parse('2026-09-24T00:00:00.000Z');
+  const cells=[1,2,3,4,5,6,7].flatMap(court=>hours.map(hour=>({court,hour,state:court===7&&hour==='18:00'?'TAKEN':'OPEN',record:court===7&&hour==='18:00',...(court===7&&hour==='18:00'?{changedSinceReleaseMs:790}:{})})));
+  const timeline=[{seq:2,court:0,hour:'',kind:'published',openCount:112,takenCount:0,observedAt:'2026-09-24T00:00:00.290Z',sinceReleaseMs:290,windowMs:null},
+    {seq:3,court:7,hour:'18:00',kind:'state',from:'OPEN',to:'TAKEN',observedAt:'2026-09-24T00:00:00.790Z',sinceReleaseMs:790,windowMs:500}];
+  const page=await renderer({slotWatch:{id:'w1',date:'2026-09-26',releaseMs,status:'watching',startedAt:'2026-09-23T23:59:00.000Z',endsAtMs:releaseMs+900000,polls:3,failedPolls:0,
+    lastPollAt:'2026-09-24T00:00:00.790Z',lastLatencyMs:40,dateReleased:true,cells,timeline,logPath:'C:\\bot\\.local\\slot-watch\\2026-09-26_w1.ndjson'}});
+  expect(await page.locator('#status-watch-text').innerText()).toContain('Watching · 3 reads');
+  await page.locator('#status-watch').click();
+  expect(await page.locator('#view-slots').isVisible()).toBe(true);
+  const taken=page.locator('#slot-watch-matrix td.slot-taken');
+  expect(await taken.count()).toBe(1);
+  expect(await taken.getAttribute('title')).toContain('Court 7 · 6:00 PM · Taken / unavailable · public booking record · last change +0.790 s after release');
+  expect(await page.locator('#slot-watch-matrix td.slot-open small').count()).toBe(0);
+  const rows=await page.locator('#slot-watch-timeline .slot-event').allInnerTexts();
+  expect(rows[0]).toContain('Schedule published');
+  expect(rows[1]).toContain('+0.790 s');
+  expect(rows[1]).toContain('Open → Taken / unavailable');
+  expect(await page.locator('#stop-slot-watch').isVisible()).toBe(true);
+  expect(await page.locator('#watch-next-release').isVisible()).toBe(false);
   await page.close();
 });
 

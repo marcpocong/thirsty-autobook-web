@@ -5,14 +5,12 @@ import { existsSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { reconcileBookingSetupFallbacks, reconcileFallbackTimes } from './booking-setup.js';
 import { WORKER_IDS } from './workers.js';
-import { SPECIAL_SESSION_MODE, specialSessionFingerprint } from './api-booking/special-session.js';
 import { networkNowMs } from './network-clock.js';
 export const ONDA_URL = 'https://app.onda.fit/book/thirsty-pickle';
 export const VENUE = 'Thirsty Pickle | SM Seaside';
 const hour = z.string().regex(/^(0[89]|1[0-9]|2[0-3]):00$/);
 const courts = z.array(z.number().int().min(1).max(7));
 export const ConfigSchema = z.object({
-    SESSION_MODE: z.enum(['normal', SPECIAL_SESSION_MODE]).default('normal'),
     BOOKING_METHOD: z.enum(['browser', 'hybrid', 'api-first', 'proofless']).default('browser'),
     BOOKING_TYPE: z.enum(['standard', 'extended']).default('standard'),
     COURT_COUNT: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7)]).default(1),
@@ -66,9 +64,6 @@ export const ConfigSchema = z.object({
     SCHEDULE_WAKE_SECONDS_BEFORE: z.coerce.number().int().min(30).max(300).default(90),
     CRITICAL_STEP_TIMEOUT_MS: z.coerce.number().int().min(3000).max(60000).default(15000),
 }).superRefine((c, ctx) => {
-    if (c.SESSION_MODE === SPECIAL_SESSION_MODE && (c.BOOKING_METHOD !== 'api-first' || c.BOOKING_TYPE !== 'extended' || c.COURT_COUNT !== 4 ||
-        c.START_TIME !== '17:00' || c.DURATION_HOURS !== 5 || c.FALLBACK_TIMES.length))
-        ctx.addIssue({ code: 'custom', message: 'Special Friday session settings are inconsistent.', path: ['SESSION_MODE'] });
     if (c.BOOKING_TYPE === 'standard' ? c.DURATION_HOURS > 3 : c.DURATION_HOURS < 4)
         ctx.addIssue({ code: 'custom', message: 'Standard supports 1-3h; Extended supports 4-6h', path: ['DURATION_HOURS'] });
     if (c.COURT_COUNT > 2 && !['api-first', 'proofless'].includes(c.BOOKING_METHOD))
@@ -137,7 +132,6 @@ export function loadConfigWithReconciliation() { return parseConfig(true); }
 export function loadTestRuntimeConfig(test) { return parseConfig(false, test).config; }
 // Narrow, PII-free local settings; renderer cannot change URLs, release timing or player data.
 export const BookingSetupSchema = z.object({
-    SESSION_MODE: ConfigSchema.shape.SESSION_MODE,
     BOOKING_METHOD: ConfigSchema.shape.BOOKING_METHOD,
     BOOKING_TYPE: ConfigSchema.shape.BOOKING_TYPE,
     COURT_COUNT: ConfigSchema.shape.COURT_COUNT,
@@ -146,9 +140,6 @@ export const BookingSetupSchema = z.object({
     FALLBACK_TIMES: z.array(hour).max(15),
     MAX_SELECTION_ATTEMPTS: z.number().int().min(1).max(5).default(3),
 }).strict().superRefine((c, ctx) => {
-    if (c.SESSION_MODE === SPECIAL_SESSION_MODE && (c.BOOKING_METHOD !== 'api-first' || c.BOOKING_TYPE !== 'extended' || c.COURT_COUNT !== 4 ||
-        c.START_TIME !== '17:00' || c.DURATION_HOURS !== 5 || c.FALLBACK_TIMES.length))
-        ctx.addIssue({ code: 'custom', message: 'Special Friday session settings are inconsistent.', path: ['SESSION_MODE'] });
     if (c.BOOKING_TYPE === 'standard' ? c.DURATION_HOURS > 3 : c.DURATION_HOURS < 4)
         ctx.addIssue({ code: 'custom', message: c.BOOKING_TYPE === 'standard' ? 'Standard bookings must be 1–3 hours.' : 'Extended bookings must be 4–6 hours.', path: ['DURATION_HOURS'] });
     if (c.COURT_COUNT > 2 && !['api-first', 'proofless'].includes(c.BOOKING_METHOD))
@@ -173,10 +164,10 @@ export function calculateTarget(c, now = DateTime.fromMillis(networkNowMs())) {
     return { ...releaseCalendar(c, now), preferences: compilePreferences(c) };
 }
 export function planFingerprint(c) {
-    return createHash('sha256').update(JSON.stringify({ sessionMode: c.SESSION_MODE,
-        specialSession: c.SESSION_MODE === SPECIAL_SESSION_MODE ? specialSessionFingerprint() : null,
+    return createHash('sha256').update(JSON.stringify({
         method: c.BOOKING_METHOD, strategy: c.BOOKING_TYPE, courtCount: c.COURT_COUNT,
-        schedule: ObservationSchema.parse(c), target: calculateTarget(c), attempts: c.MAX_SELECTION_ATTEMPTS })).digest('hex');
+        schedule: ObservationSchema.parse(c), target: calculateTarget(c), attempts: c.MAX_SELECTION_ATTEMPTS
+    })).digest('hex');
 }
 export function releaseCalendar(c, now = DateTime.fromMillis(networkNowMs())) {
     const local = now.setZone(c.TIMEZONE);

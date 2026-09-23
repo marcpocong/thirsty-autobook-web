@@ -3,6 +3,9 @@ import type { Dashboard, Bridge, ConfirmRequest } from './types.js';
 const bridge: Bridge = {
   syncClock:()=>ipcRenderer.invoke('thirsty:syncClock'),
   focusBrowser:request=>ipcRenderer.invoke('thirsty:focusBrowser',request),
+  closeBotBrowsers:()=>ipcRenderer.invoke('thirsty:closeBotBrowsers'),
+  watchNextRelease:()=>ipcRenderer.invoke('thirsty:watchNextRelease'),
+  stopSlotWatch:()=>ipcRenderer.invoke('thirsty:stopSlotWatch'),
   resetPrepare:strategy=>ipcRenderer.invoke('thirsty:resetPrepare',strategy),
   testBooking:input=>ipcRenderer.invoke('thirsty:testBooking',input),
   apiPreview:date=>ipcRenderer.invoke('thirsty:apiPreview',date),

@@ -13,6 +13,7 @@ import type {ScheduledReleaseContext} from '../src/scheduled-release.js';
 import type {PreviousHold} from './status.js';
 import type {CourtCount,WorkerId} from '../src/workers.js';
 import type {BrowserFocusResult} from '../src/browser-window.js';
+import type {SlotWatchSummary,SlotWatchView} from '../src/slot-watch.js';
 export type DualPracticeCommand = { kind:'dualDry'; date:string } | { kind:'dualPractice'|'dualFullPractice'; input:DualPracticeInput };
 export interface ConfirmRequest { id:string; tone:'question'|'warning'; title:string; message:string; detail:string; confirmLabel:string; cancelLabel?:string }
 export interface ApiRunPreferences {strategy:'standard'|'extended';date:string;start:string;duration:number;courtCount:CourtCount;maximum?:number;priority:number[];fallbackStarts:string[];exact?:number[][]}
@@ -36,7 +37,10 @@ export interface Dashboard {
   dualActive?:boolean;
   releasePerformance?: Extract<UiEvent, { type: 'releasePerformance' }>['summary'] | null;
   lockReview?:LockReview|null;
-  operation: 'idle' | 'scheduled' | 'chrome' | 'inspect' | 'prepare' | 'confirming' | 'observe' | 'selection' | 'full' | 'dry' | 'practice' | 'stopping' | 'saving' | 'reviewing' | 'clearing' | 'resetting' | 'fullPractice' | 'apiPreview' | 'blockAudit';
+  operation: 'idle' | 'scheduled' | 'chrome' | 'inspect' | 'prepare' | 'confirming' | 'observe' | 'selection' | 'full' | 'dry' | 'practice' | 'stopping' | 'saving' | 'reviewing' | 'clearing' | 'resetting' | 'fullPractice' | 'apiPreview' | 'blockAudit' | 'closingBrowsers';
+  /** Live read-only court/hour observation around the next or current release. */
+  slotWatch?:SlotWatchView|null;
+  slotWatchHistory?:SlotWatchSummary[];
   headline: string; detail: string; ready: boolean; cdp: boolean; lock: boolean;
   canPrepareOverHold?:boolean;
   retainedLockStage?:'HOLD_VERIFIED'|'FINAL_ACTION_DISPATCHING'|null;
@@ -61,6 +65,9 @@ export interface Dashboard {
 export interface Bridge {
   syncClock():Promise<void>;
   focusBrowser(request:{workerId:WorkerId;bookingId?:string}):Promise<BrowserFocusResult>;
+  closeBotBrowsers():Promise<void>;
+  watchNextRelease():Promise<void>;
+  stopSlotWatch():Promise<void>;
   resetPrepare(input:PreparationInput):Promise<void>;
   apiPreview(date:string):Promise<void>;
   checkReleaseBlocks(date:string):Promise<void>;

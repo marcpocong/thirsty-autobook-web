@@ -5,8 +5,7 @@ import {join} from 'node:path';
 import {DurableSubmissionJournal} from '../../src/api-booking/durable-submission-journal.js';
 import {SubmissionDispatchError} from '../../src/api-booking/submission-errors.js';
 import type {OndaBrowserSessionTransport} from '../../src/api-booking/browser-session-transport.js';
-import {DIRECT_ASSUMED_DAY_RATE,DIRECT_ASSUMED_EVENING_RATE,DIRECT_MAX_DISPATCH_LATENESS_MS,assertDirectDispatchWindow,chooseDirectCourt,directPlan,prooflessCourtHourStatuses,prooflessReleasePlan,prooflessRequest,resolveProoflessReleasePlan,submitDirectCheckout} from '../../src/api-booking/special-direct-checkout.js';
-import {SPECIAL_SESSION_WORKERS,specialSessionPlans} from '../../src/api-booking/special-session.js';
+import {DIRECT_ASSUMED_DAY_RATE,DIRECT_ASSUMED_EVENING_RATE,DIRECT_MAX_DISPATCH_LATENESS_MS,assertDirectDispatchWindow,prooflessCourtHourStatuses,prooflessReleasePlan,prooflessRequest,resolveProoflessReleasePlan,submitDirectCheckout} from '../../src/api-booking/proofless-checkout.js';
 import {availabilityFixture} from '../availability-fixture.js';
 import {parseAvailability} from '../../src/api-booking/availability-parser.js';
 import {UiEventSchema} from '../../src/ui-events.js';
@@ -15,6 +14,9 @@ const date='2026-09-25';
 const customer={clientId:'client',customerId:'customer',customerEmail:'e@example.invalid',customerPhone:'09123456789',customerFirstName:'Fixture',customerLastName:'Player'};
 const liveSnapshot=()=>parseAvailability(availabilityFixture(date),{startDate:date,endDate:date,
   capturedAt:'2026-09-23T00:00:00.000Z',fixtureKind:'synthetic',label:'direct',now:new Date('2026-09-23T00:00:00.000Z'),maximumAgeMs:1000});
+/** One-court evening proofless plan, e.g. court 5 17:00-20:00. */
+const eveningPlan=(start:string,hours:number)=>prooflessReleasePlan({mode:'standard',targetDate:date,durationHours:hours,
+  preferredStartTimes:[start],fallbackStartTimes:[],courtPriority:[5],fallbackCourts:[],courtCount:1,maximumTotalPrice:Infinity,currency:'PHP'});
 
 describe('Proofless checkout lane',()=>{
   it('permits dispatch only at the release boundary, never early or substantially late',()=>{
@@ -24,18 +26,17 @@ describe('Proofless checkout lane',()=>{
     expect(()=>assertDirectDispatchWindow(release,release+DIRECT_MAX_DISPATCH_LATENESS_MS)).not.toThrow();
     expect(()=>assertDirectDispatchWindow(release,release+DIRECT_MAX_DISPATCH_LATENESS_MS+1)).toThrow('DIRECT_RELEASE_WINDOW_MISSED');
   });
-  it('keeps unverified rate distinct from an observed price in UI telemetry',()=>{
-    const event=UiEventSchema.parse({type:'apiStage',stage:'DIRECT_LANE_PREPARED',elapsedMs:1,
-      court:5,rateSource:'UNVERIFIED_PRIOR_RATE',assumedPrice:3500});
+  it('keeps an assumed proofless total distinct from an observed price in UI telemetry',()=>{
+    const event=UiEventSchema.parse({type:'apiStage',stage:'PRIMARY_PROOFLESS_PLAN_READY',elapsedMs:1,
+      court:5,assumedPrice:3500});
     expect(event).toHaveProperty('assumedPrice',3500);
     expect(event).not.toHaveProperty('price');
   });
-  it('builds the two exact third-court chunks without inventing proofs',()=>{
-    const e=directPlan(date,5,'E'),f=directPlan(date,5,'F');
-    expect([e.plan.startTime,e.plan.endTime,f.plan.startTime,f.plan.endTime]).toEqual(['17:00','20:00','20:00','22:00']);
-    expect([e.plan.totalPrice,f.plan.totalPrice]).toEqual([3*DIRECT_ASSUMED_EVENING_RATE,2*DIRECT_ASSUMED_EVENING_RATE]);
-    expect(e.rateSource).toBe('UNVERIFIED_PRIOR_RATE');
-    expect(prooflessRequest(e.plan,customer).items.map(item=>item.availabilityProof)).toEqual([null,null,null]);
+  it('builds exact evening chunks at the assumed rate without inventing proofs',()=>{
+    const early=eveningPlan('17:00',3),late=eveningPlan('20:00',2);
+    expect([early.startTime,early.endTime,late.startTime,late.endTime]).toEqual(['17:00','20:00','20:00','22:00']);
+    expect([early.totalPrice,late.totalPrice]).toEqual([3*DIRECT_ASSUMED_EVENING_RATE,2*DIRECT_ASSUMED_EVENING_RATE]);
+    expect(prooflessRequest(early,customer).items.map(item=>item.availabilityProof)).toEqual([null,null,null]);
   });
   it('builds a deterministic primary release plan before target availability exists',()=>{
     const plan=prooflessReleasePlan({mode:'extended',targetDate:date,durationHours:5,preferredStartTimes:['15:00'],
@@ -88,23 +89,12 @@ describe('Proofless checkout lane',()=>{
     [{court:7,startTime:'17:00',endTime:'20:00'}]);
     expect(plan.courts.map(court=>court.court)).toEqual([6,5]);
   });
-  it('gives the direct court priority over normal fallback assignment',()=>{
-    const snapshot=liveSnapshot();
-    for(const slot of snapshot.slots)if(slot.court===6||slot.court===7)slot.isAvailable=false;
-    expect(chooseDirectCourt(snapshot)).toBe(5);
-    const normal=specialSessionPlans(snapshot,SPECIAL_SESSION_WORKERS,undefined,[5])!;
-    expect([...normal.values()].map(plan=>plan.courts[0]!.court)).toEqual([4,4,3,3]);
-  });
-  it('uses the next court when the public calendar already shows a block',()=>{
-    expect(chooseDirectCourt(undefined,[5,4])).toBe(3);
-    expect(chooseDirectCourt(undefined,[5,4,3,2,1])).toBeUndefined();
-  });
   it('allows conclusive rejection but retains uncertain submissions without retry',async()=>{
     for(const [error,state] of [[new SubmissionDispatchError('DATE_NOT_AVAILABLE',true,undefined,true),'rejected'],
       [new SubmissionDispatchError('ONDA_TRANSPORT_FAILED',true),'unknown']] as const){
       const root=await mkdtemp(join(tmpdir(),'direct-checkout-test-'));
       try{
-        const plan=directPlan(date,5,'E').plan,journal=new DurableSubmissionJournal(join(root,'journal'));
+        const plan=eveningPlan('17:00',3),journal=new DurableSubmissionJournal(join(root,'journal'));
         const transport={publicCheckoutProofless:async()=>{throw error;}} as unknown as OndaBrowserSessionTransport;
         await expect(submitDirectCheckout(plan,customer,transport,journal)).rejects.toThrow();
         const key=DurableSubmissionJournal.key('5f8786bd-dc61-4509-b893-74cda8f783f7',plan.courts[0]!.spaceId,date,'17:00','20:00');
@@ -117,7 +107,7 @@ describe('Proofless checkout lane',()=>{
     for(const mismatch of [false,true]){
       const root=await mkdtemp(join(tmpdir(),'direct-response-test-'));
       try{
-        const plan=directPlan(date,5,'F').plan,journal=new DurableSubmissionJournal(join(root,'journal'));
+        const plan=eveningPlan('20:00',2),journal=new DurableSubmissionJournal(join(root,'journal'));
         const request=prooflessRequest(plan,customer),ids=request.items.map((_,index)=>`booking-${index}`);
         const response={success:true,bookings:request.items.map((item,index)=>({id:ids[index],booking_no:`number-${index}`,
           customer_id:customer.customerId,space_id:item.spaceId,facility_id:item.facilityId,date:item.date,

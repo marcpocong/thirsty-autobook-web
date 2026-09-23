@@ -1,10 +1,13 @@
 # Current implementation review guide
 
-This document is the entry point for human and AI review of the repository state published on 2026-09-22. `README.md` describes operator use. The other root reports are retained historical checkpoints and should not override current source, tests, or this guide when their limits differ.
+This document is the entry point for human and AI review of the repository state published on 2026-09-23. `README.md` describes operator use. The other root reports are retained historical checkpoints and should not override current source, tests, or this guide when their limits differ.
 
 ## What changed in this snapshot
 
-- The desktop UI is divided into **Next Release**, **Edit Plan**, **Tests**, and **Runs**. Test and release drafts remain independent.
+- The desktop UI is divided into **Next Release**, **Edit Plan**, **Tests**, **Slots**, **Runs**, and **Tools**, with a persistent header for the network clock, bot browsers A–H, the automation lock and the slot watch. The layout is static HTML; `ui/renderer/app.ts` no longer re-parents panels at startup. Test and release drafts remain independent.
+- A read-only **release slot watch** (`src/slot-watch.ts`) runs in the Electron main process for every armed release, or on demand. It reads public availability for all 112 court/hours from T−60 s to T+15 min (0.5 s cadence right after release) plus public booking records at key moments, and writes a read-by-read NDJSON log, a plain-text report and a summary under `.local/slot-watch/`. The runner's own availability reads now log the same whole-day matrix (`court-hour-matrix.ts`).
+- **Close all bot browsers** (`scripts/close-bot-chrome.ps1`, `ui/browser-cleanup.ts`) closes only Chrome browser processes whose `--user-data-dir` is inside the installation's `.local` folder, gracefully first. The controller refuses it while a run is active or a release is armed and asks for confirmation, warning about open QR pages.
+- The one-off **Special Friday** A–H session is archived in `archive/special-friday/` (outside the TypeScript and Vitest scopes). `SESSION_MODE` is gone from the config schemas; a saved plan that still carries it loads as a normal plan. Shared proofless helpers moved from `special-direct-checkout.ts` to `proofless-checkout.ts`, and public booking-record reads are shared in `public-bookings.ts`.
 - Normal plans accept one through seven courts. A checkout carries at most two courts, so workers scale from A through H according to booking type and court count.
 - API-first preparation starts only the workers required by the saved plan. Test Now carries its selected booking method through preparation and execution.
 - Each worker has its own player/customer binding and dedicated Chrome identity. `.env.example` documents A-H variable names; real values stay in ignored `.env.local`.
@@ -12,8 +15,7 @@ This document is the entry point for human and AI review of the repository state
 - Confirmed application rejections can be archived and retried safely; uncertain or possibly dispatched outcomes remain blocked. Parallel outcomes are fully settled before lock disposition is decided.
 - API Standard and Extended plans split more than two courts into independent at-most-two-court checkout chunks while retaining exact observed prices.
 - The UI restores and displays per-checkout QR handoffs, player identity, courts, hourly slots, amount, booking reference and hold expiry. Each QR card can maximize and foreground its exact dedicated browser. Previous runs open into a detailed timeline modal.
-- A release-only `special-friday` mode now spans A-H: four proof-based holds across two core assigned courts (A/B, C/D), a fail-closed E/F adaptive lane that upgrades to proof-based on early availability or otherwise keeps the existing experimental proofless direct request on a third court, and an optional proof-based-only G/H bonus lane on a fourth distinct court that never blocks A-D. The E/F proofless path is intentionally labeled unproven and uses an assumed PHP 700/hour only when Friday pricing is not yet observable.
-- Release traces record sanitized browser-specific preparation and security-prewarm outcomes. Core and E/F security preparation now starts 15 seconds before the boundary; any latency improvement remains projected until a new live trace measures it.
+- Release traces record sanitized browser-specific preparation and security-prewarm outcomes. Security preparation starts 15 seconds before the boundary; any latency improvement remains projected until a new live trace measures it.
 
 ## Worker allocation
 
@@ -34,20 +36,15 @@ The allocation function is `src/workers.ts::requiredWorkerIds`. API checkout chu
 6. A pending response or HTTP success is insufficient by itself. The app requires validated booking identities and restores the official checkout page before reporting QR readiness.
 7. Payment, QR scanning, OTP, PIN and payment-provider interaction remain manual.
 
-The highest-risk current area is `src/api-booking/desktop-runner.ts`, especially special-session early triggering, the E/F adaptive proof/proofless hand-off, the G/H bonus lane's court exclusion, safe retry classification, final per-worker outcome reduction, and lock release. Review it together with `special-session.ts`, `special-direct-checkout.ts`, `adaptive-direct-lane.ts`, `api-lock-outcome.ts`, `durable-submission-journal.ts`, `browser-session-transport.ts`, and their tests.
+The highest-risk current area is `src/api-booking/desktop-runner.ts`, especially safe retry classification, final per-worker outcome reduction, and lock release. Review it together with `proofless-checkout.ts`, `api-lock-outcome.ts`, `durable-submission-journal.ts`, `browser-session-transport.ts`, and their tests.
 
-## Special Friday session boundary
+## Release slot watch boundary
 
-This mode is release-only and requires Browsers/Players A-H: up to eight independent temporary QR holds across four distinct courts and nineteen court-hours. Every checkout keeps its own player/customer/browser identity; payment stays entirely manual.
+`src/slot-watch.ts` is observation only: it uses the same credential-free public GET endpoints as the block audit (`live-availability-provider.ts`, `public-bookings.ts`) and never imports browser, checkout, lock or journal code. It is owned by the controller, not the booking runner, so it cannot delay dispatch and keeps observing after a run ends. Reads are sequential (never overlapping), skip slots already in the past after a slow read or PC sleep, and re-check the network clock after each wait. A failed read is logged and leaves the last known matrix unchanged. The first 60 s before release read at a 10 s cadence to avoid adding load before the boundary. Release publication (unreleased → open/taken for all cells) is logged per cell but summarized as one timeline entry in the UI.
 
-- A/B target one assigned court from 17:00-22:00 in 3-hour and 2-hour **proof-based** checkouts. Preferred court 6, priority 6, 7, 5, 4, 3, 2, 1 (excluding the E/F court).
-- C/D target a different assigned court from 19:00-23:00 in two 2-hour **proof-based** checkouts. Preferred court 7, priority 7, 6, 5, 4, 3, 2, 1 (excluding the E/F court).
-- Court assignment for A-D chooses the first two distinct courts (searched in priority order) that satisfy the complete proof-based blocks. A/B and C/D are the core session; G/H must never block them.
-- **E/F is an adaptive lane** (`src/api-booking/adaptive-direct-lane.ts`): its court is reserved *first*, before A-D/G-H, with priority 5, 4, 3, 2, 1 (`chooseDirectCourt` in `special-direct-checkout.ts`). If that court shows all five hours available before 08:00, E/F upgrades to the normal proof-based path (fresh proofs, same mechanism as A-D/G-H) and dispatches immediately. Otherwise it retains the existing **proofless** direct request exactly at the release boundary. A fail-closed one-way gate (`AdaptiveDirectLaneGate`) guarantees the two paths can never both dispatch for the same block: whichever commits first wins; a conclusive pre-dispatch proof failure (security/proof-acquisition, before any network call) reopens the proofless fallback; any possibly-dispatched, unknown, or verified proof-based outcome disables it permanently. If pricing is hidden before release, the proofless path uses an explicitly surfaced, unverified PHP 700/hour prior-rate assumption.
-- **G/H is a proof-based-only bonus lane, fully independent of A-D** (`runBonusLane` in `desktop-runner.ts`, using `special-session.ts::specialBonusLanePlans`, preferred court 4, priority 4, 3, 2, 1, 5, 6, 7). A-D commits and dispatches the instant its own court is known and is never delayed waiting for G/H; G/H starts watching on its own poll cadence the moment A-D's court assignment is known (so it can correctly exclude it) and continues independently — through a short post-release burst — up to release, dispatching the moment a fourth distinct court is complete, whenever that happens relative to A-D. It requires all five hourly slots actually available and uses actual observed pricing; it never falls back to the proofless transport. When no fourth distinct court exists it is skipped with a sanitized `SPECIAL_BONUS_LANE_SKIPPED` outcome and never blocks A-D. An early conclusive rejection may allow exactly one release-boundary retry under the same safe-retry rules as A-D (fresh complete availability, every prior journal conclusively reusable, no unknown/possibly-dispatched prior request); an unknown G/H result is never retried. G/H's own success/failure is folded into the run's overall summary and exit code, and its durable-journal-proven conclusive safety (not mere task existence) gates automatic lock release alongside A-D's and E/F's.
-- Any uncertain direct or proof-based result (for any lane) remains journaled and locked. No automatic retry follows an uncertain dispatch. A-D, E/F and G/H use lane-scoped security preparation, so a side-lane preparation failure cannot veto the core. `Promise.allSettled` observes every A-H branch so one worker's failure never hides another's possible hold. Lock lifecycle writes are serialized across concurrent lanes; after all lanes settle, the newest verified hold expiry is persisted. The lock is released automatically only when every relevant branch conclusively proves no request was dispatched or was definitively rejected.
+## Bot browser cleanup boundary
 
-This mode should not be treated as production-proven merely because offline tests pass. The E/F proofless fallback in particular remains an unproven, previously-observed-only mechanism; the E/F proof-based upgrade and the G/H bonus lane reuse the same live-verified proof-based checkout path as A-D but have not themselves been live-validated as an eight-worker combination.
+`scripts/close-bot-chrome.ps1` selects only `chrome.exe` browser processes (no `--type=`) whose resolved `--user-data-dir` starts with the installation's `.local\` folder, and kills each process tree with `taskkill /T`, forcing only after a 6 s graceful wait. Only counts cross the process boundary. The controller operation is `closingBrowsers`; it is excluded from run history, blocked by any active or scheduled operation, and clears preparation afterwards because the prepared browsers no longer exist.
 
 ## Verification
 
@@ -61,7 +58,7 @@ npm run ui:build
 git diff --check
 ```
 
-At publication time, typecheck passed and Vitest reported 69 test files and 805 tests passed. These are offline checks and did not arm a run, select a slot, create a hold, or interact with payment.
+At publication time, typecheck passed and Vitest reported 70 test files and 814 tests passed. These are offline checks and did not arm a run, select a slot, create a hold, or interact with payment.
 
 CI is defined in `.github/workflows/ci.yml` and performs dependency installation, Playwright Chromium setup, typecheck and the offline suite on every push and pull request.
 
@@ -84,4 +81,5 @@ The repository contains an older tracked sanitized diagnostics corpus and `diagn
 - `API_CALENDAR_FREE_CHECKOUT_REPORT.md`, `API_CHECKOUT_403_RESOLUTION.md`, `API_TO_BROWSER_HANDOFF_INVESTIGATION.md`, and `API_VERIFICATION_INTEGRATION.md`: checkout/security investigations.
 - `RELEASE_CRITICAL_PATH_TELEMETRY_REPORT.md` and `TELEMETRY_SPEC.md`: event and timing interpretation.
 - `PHASE7_BOOKING_REPORT.md`, `PHASE7_1_REPORT.md`, and `PHASE7_2_REPORT.md`: older Standard/Extended rollout evidence.
-- `NEXT_RELEASE_READINESS.md` and `RELEASE_RUN_REPORT_2026-09-12.md`: dated operational evidence, not a guarantee of current live readiness.
+- `NEXT_RELEASE_READINESS.md`, `RELEASE_RUN_REPORT_2026-09-12.md` and `RELEASE_RUN_REPORT_2026-09-23.md`: dated operational evidence, not a guarantee of current live readiness.
+- `archive/special-friday/`: the retired Special Friday A–H session — its report, standalone modules and tests, kept for reference only.

@@ -60,7 +60,7 @@ export class ActivityJournal {
                 if (!start || !end || typeof start.runId !== 'string' || typeof start.at !== 'string' || typeof end.at !== 'string' || typeof end.elapsedMs !== 'number' || typeof end.outcome !== 'string')
                     return [];
                 const marker = rows.find(row => row.type === 'browser-ready') ?? rows.find(row => row.type === 'activity' && typeof row.text === 'string' && /API browser ready|DUAL READY/.test(row.text));
-                const inferredStart = typeof start.label === 'string' && !['prepare', 'chrome', 'inspect', 'saving', 'reviewing', 'clearing', 'resetting', 'apiPreview'].includes(start.label);
+                const inferredStart = typeof start.label === 'string' && !['prepare', 'chrome', 'inspect', 'saving', 'reviewing', 'clearing', 'resetting', 'apiPreview', 'closingBrowsers'].includes(start.label);
                 const markerElapsed = marker && typeof marker.elapsedMs === 'number' ? marker.elapsedMs : inferredStart ? 0 : undefined;
                 const readyElapsedMs = typeof end.readyElapsedMs === 'number' ? end.readyElapsedMs : markerElapsed === undefined ? undefined : Math.max(0, end.elapsedMs - markerElapsed);
                 const readyAt = marker && typeof marker.at === 'string' ? marker.at : inferredStart ? start.at : undefined;
