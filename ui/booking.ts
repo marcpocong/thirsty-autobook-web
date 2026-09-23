@@ -2,6 +2,7 @@ import { writeFileSync, renameSync } from 'node:fs';
 import { playerReadiness, BookingSetupSchema, loadConfigWithReconciliation, calculateTarget, planFingerprint, type BookingSetup, type Config } from '../src/config.js';
 import type {FallbackReconciliation} from '../src/booking-setup.js';
 import { candidatePlans, describeBookingPlan } from '../src/booking-plan.js';
+import { PRECISION_WORKER_IDS } from '../src/workers.js';
 export const defaultSetup: BookingSetup = { BOOKING_METHOD:'browser', BOOKING_TYPE:'standard', RELEASE_STRATEGY:'general', PRECISION_TARGETS:[], COURT_COUNT:1, START_TIME: '08:00', DURATION_HOURS: 2, PREFERRED_COURTS: [7,6,5,4,3,2,1], FALLBACK_COURTS: [], FALLBACK_TIMES: [], MAX_SELECTION_ATTEMPTS: 3 };
 export function bookingView(c: Config, fallbackReconciliation:FallbackReconciliation={valid:c.FALLBACK_TIMES,removed:[]}) {
   const target = calculateTarget(c);
@@ -31,7 +32,7 @@ export function describePrecisionPlan(plan: BookingView) {
   const targets=plan.setup.PRECISION_TARGETS;
   const end=(start:string,hours:number)=>`${String(Number(start.slice(0,2))+hours).padStart(2,'0')}:00`;
   const price=(start:string,hours:number)=>Array.from({length:hours},(_,i)=>Number(start.slice(0,2))+i>=16?700:600).reduce((a,b)=>a+b,0);
-  const rows=targets.map((t,i)=>`Worker ${'ABC'[i]} | Court ${t.court} | ${t.start}–${end(t.start,t.durationHours)} | ${t.durationHours} h | ~PHP ${price(t.start,t.durationHours)} (assumed rate)`);
+  const rows=targets.map((t,i)=>`Worker ${PRECISION_WORKER_IDS[i]} | Court ${t.court} | ${t.start}–${end(t.start,t.durationHours)} | ${t.durationHours} h | ~PHP ${price(t.start,t.durationHours)} (assumed rate)`);
   return ['PRECISION RELEASE · GOAL: 1 SUCCESSFUL COURT',`Target date: ${plan.targetDate} · Proofless Direct · Standard`,'',...rows,'',
     `${targets.length} independent checkout attempt${targets.length===1?' is':'s are'} authorized: each is one court, one exact time, one player/browser.`,
     'These are independent checkout attempts. More than one temporary QR hold may be created. Payment remains manual.',

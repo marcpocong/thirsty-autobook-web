@@ -9,9 +9,13 @@ export function requiredWorkerIds(strategy:'standard'|'extended',courtCount:Cour
   return WORKER_IDS.slice(0,courtGroups*timeGroups) as WorkerId[];
 }
 
-/** Workers a saved plan needs: one per Precision attempt (A, B, C in row order), otherwise the General allocation. */
+/** Precision v1 uses one worker per exact target, A through G (seven courts). H is never a Precision worker. */
+export const PRECISION_MAX_ATTEMPTS = 7;
+export const PRECISION_WORKER_IDS = WORKER_IDS.slice(0, PRECISION_MAX_ATTEMPTS) as readonly WorkerId[];
+
+/** Workers a saved plan needs: one per Precision attempt (A-G in row order, no grouping), otherwise the General allocation. */
 export function planWorkerIds(setup:{RELEASE_STRATEGY?:'general'|'precision';PRECISION_TARGETS?:readonly unknown[];BOOKING_TYPE:'standard'|'extended';COURT_COUNT:CourtCount}):WorkerId[]{
-  if(setup.RELEASE_STRATEGY==='precision')return WORKER_IDS.slice(0,Math.max(1,Math.min(3,setup.PRECISION_TARGETS?.length??0))) as WorkerId[];
+  if(setup.RELEASE_STRATEGY==='precision')return PRECISION_WORKER_IDS.slice(0,Math.max(1,Math.min(PRECISION_MAX_ATTEMPTS,setup.PRECISION_TARGETS?.length??0)));
   return requiredWorkerIds(setup.BOOKING_TYPE,setup.COURT_COUNT);
 }
 

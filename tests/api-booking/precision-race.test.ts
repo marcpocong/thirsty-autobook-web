@@ -63,7 +63,8 @@ describe('Precision v1 target model', () => {
     expect(() => validatePrecisionTargets([abc[0]!, { court: 7, start: '18:00', durationHours: 3 }], date)).toThrow('PRECISION_TARGET_OVERLAP');
     expect(() => validatePrecisionTargets([abc[0]!, { court: 7, start: '20:00', durationHours: 3 }], date)).not.toThrow();
     expect(() => validatePrecisionTargets([], date)).toThrow('PRECISION_TARGET_COUNT_INVALID');
-    expect(() => validatePrecisionTargets([...abc, { court: 1, start: '08:00', durationHours: 1 }], date)).toThrow('PRECISION_TARGET_COUNT_INVALID');
+    expect(() => validatePrecisionTargets([...abc, { court: 1, start: '08:00', durationHours: 1 }], date)).not.toThrow();
+    expect(() => validatePrecisionTargets(Array.from({ length: 8 }, (_, i) => ({ court: (i % 7) + 1, start: i < 7 ? '17:00' : '08:00', durationHours: 1 })), date)).toThrow('PRECISION_TARGET_COUNT_INVALID');
     expect(() => validatePrecisionTargets([{ court: 8, start: '17:00', durationHours: 3 }], date)).toThrow('PRECISION_TARGET_INVALID');
     expect(() => validatePrecisionTargets([{ court: 7, start: '22:00', durationHours: 3 }], date)).toThrow('PRECISION_TARGET_INVALID');
     expect(() => validatePrecisionTargets([{ court: 7, start: '17:00', durationHours: 4 }], date)).toThrow('PRECISION_TARGET_INVALID');
@@ -225,5 +226,112 @@ describe('Precision freeze and independent dispatch', () => {
     await dispatchPrecisionRace(race(2), h.deps);
     expect(times.filter(([name]) => name.startsWith('prewarm')).every(([, at]) => at === releaseMs - 15_000)).toBe(true);
     expect(times.filter(([name]) => name.startsWith('dispatch')).every(([, at]) => at >= releaseMs)).toBe(true);
+  });
+});
+
+describe('Precision A-G: up to seven independent one-court attempts', () => {
+  const seven = [1, 2, 3, 4, 5, 6, 7].map(court => ({ court, start: '17:00', durationHours: 3 }));
+  const freezeSeven = (inputs = seven) => {
+    const targets = validatePrecisionTargets(inputs, date);
+    return freezePrecisionRace(date, releaseMs, targets.map(target => ({ target, plan: precisionTargetPlan(target, date) })));
+  };
+  const plan = (count: number) => planWorkerIds({ RELEASE_STRATEGY: 'precision', PRECISION_TARGETS: seven.slice(0, count), BOOKING_TYPE: 'standard', COURT_COUNT: 1 });
+
+  it('maps target rows directly to workers: 1->A, 3->A-C, 4->A-D, 7->A-G; never H', () => {
+    expect(plan(1)).toEqual(['A']);
+    expect(plan(3)).toEqual(['A', 'B', 'C']);
+    expect(plan(4)).toEqual(['A', 'B', 'C', 'D']);
+    expect(plan(7)).toEqual(['A', 'B', 'C', 'D', 'E', 'F', 'G']);
+    expect(validatePrecisionTargets(seven, date).map(target => target.workerId)).toEqual(['A', 'B', 'C', 'D', 'E', 'F', 'G']);
+    expect(plan(7)).not.toContain('H');
+  });
+
+  it('rejects an 8th attempt in both the race model and the saved-plan schema', () => {
+    const eight = [...seven, { court: 1, start: '08:00', durationHours: 1 }];
+    expect(() => validatePrecisionTargets(eight, date)).toThrow('PRECISION_TARGET_COUNT_INVALID');
+    const base = { BOOKING_METHOD: 'proofless', BOOKING_TYPE: 'standard', COURT_COUNT: 1, START_TIME: '17:00', DURATION_HOURS: 3,
+      PREFERRED_COURTS: [7, 6, 5, 4, 3, 2, 1], FALLBACK_TIMES: [], RELEASE_STRATEGY: 'precision' };
+    expect(BookingSetupSchema.safeParse({ ...base, PRECISION_TARGETS: seven }).success).toBe(true);
+    expect(BookingSetupSchema.safeParse({ ...base, PRECISION_TARGETS: eight }).success).toBe(false);
+    expect(BookingSetupSchema.safeParse({ ...base, PRECISION_TARGETS: [...seven.slice(0, 6), { court: 1, start: '18:00', durationHours: 2 }] }).success).toBe(false);
+    expect(BookingSetupSchema.safeParse({ ...base, PRECISION_TARGETS: [...seven.slice(0, 6), seven[0]!] }).success).toBe(false);
+  });
+
+  it('seven targets become seven one-court plans and seven one-court requests (no 2-court chunks)', () => {
+    const targets = validatePrecisionTargets(seven, date);
+    const plans = targets.map(target => precisionTargetPlan(target, date));
+    expect(plans).toHaveLength(7);
+    for (const [index, value] of plans.entries()) {
+      expect(value.courts.map(court => court.court)).toEqual([index + 1]);
+      expect(value.chunks).toHaveLength(1);
+      expect(value.chunks[0]!.courts).toHaveLength(1);
+      const request = prooflessRequest(value, customer);
+      expect(new Set(request.items.map(item => item.spaceId)).size).toBe(1);
+      expect(request.items).toHaveLength(3);
+    }
+    expect(new Set(targets.map(target => target.targetKey)).size).toBe(7);
+    // General Release is unchanged: 7 Standard courts still means four grouped checkouts on A-D.
+    expect(requiredWorkerIds('standard', 7)).toEqual(['A', 'B', 'C', 'D']);
+    expect(requiredWorkerIds('extended', 7)).toEqual(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']);
+  });
+
+  it('all seven ready attempts enter dispatch concurrently (seven independent single-target calls)', async () => {
+    const started: string[] = [];
+    let release!: () => void;
+    const allStarted = new Promise<void>(resolve => { release = resolve; });
+    const { deps } = harness({ dispatch: async attempt => {
+      expect(attempt.plan.courts).toHaveLength(1);
+      started.push(attempt.target.workerId);
+      if (started.length === 7) release();
+      await allStarted;
+      return { state: attempt.target.workerId === 'A' ? 'QR_READY' : 'REJECTED' };
+    } });
+    const results = await dispatchPrecisionRace(freezeSeven(), deps);
+    expect(started.sort()).toEqual(['A', 'B', 'C', 'D', 'E', 'F', 'G']);
+    expect(reducePrecisionOutcome(results.map(result => result.state)).outcome).toBe('OBJECTIVE_ACHIEVED');
+  });
+
+  it('one prewarm failure out of seven (C) does not veto the other six', async () => {
+    const dispatched: string[] = [];
+    const { deps } = harness({
+      prewarm: async attempt => { if (attempt.target.workerId === 'C') throw Error('SECURITY_CONTEXT_EMPTY'); },
+      dispatch: async attempt => { dispatched.push(attempt.target.workerId); return { state: 'REJECTED' }; },
+    });
+    const results = await dispatchPrecisionRace(freezeSeven(), deps);
+    expect(dispatched.sort()).toEqual(['A', 'B', 'D', 'E', 'F', 'G']);
+    expect(results.find(result => result.attempt.target.workerId === 'C')).toMatchObject({ state: 'PREWARM_FAILED' });
+  });
+
+  it('D and G identity failures only disable those two attempts; the other five still dispatch', async () => {
+    // The runner records IDENTITY_FAILED before freeze and freezes only the remaining eligible targets.
+    const targets = validatePrecisionTargets(seven, date).filter(target => !['D', 'G'].includes(target.workerId));
+    expect(targets.map(target => target.workerId)).toEqual(['A', 'B', 'C', 'E', 'F']);
+    const frozen = freezePrecisionRace(date, releaseMs, targets.map(target => ({ target, plan: precisionTargetPlan(target, date) })));
+    const dispatched: string[] = [];
+    const { deps } = harness({ dispatch: async attempt => { dispatched.push(attempt.target.workerId); return { state: attempt.target.workerId === 'E' ? 'QR_READY' : 'REJECTED' }; } });
+    const results = await dispatchPrecisionRace(frozen, deps);
+    expect(dispatched.sort()).toEqual(['A', 'B', 'C', 'E', 'F']);
+    const summary = reducePrecisionOutcome([...results.map(result => result.state), 'IDENTITY_FAILED', 'IDENTITY_FAILED']);
+    expect(summary).toMatchObject({ outcome: 'OBJECTIVE_ACHIEVED', verifiedCount: 1, rejectedCount: 4, unsentCount: 2, lockReleasable: false });
+  });
+
+  it('reduces mixed seven-worker results correctly', () => {
+    const reduce = (states: PrecisionAttemptState[]) => reducePrecisionOutcome(states);
+    expect(reduce(['QR_READY', 'REJECTED', 'REJECTED', 'REJECTED', 'REJECTED', 'REJECTED', 'REJECTED']).outcome).toBe('OBJECTIVE_ACHIEVED');
+    expect(reduce(['QR_READY', 'REJECTED', 'REJECTED', 'QR_READY', 'REJECTED', 'REJECTED', 'REJECTED'])).toMatchObject({ outcome: 'OBJECTIVE_ACHIEVED_EXTRA_HOLD', verifiedCount: 2 });
+    expect(reduce(['QR_READY', 'REJECTED', 'REJECTED', 'REJECTED', 'REJECTED', 'UNKNOWN', 'REJECTED'])).toMatchObject({ outcome: 'OBJECTIVE_ACHIEVED_UNRESOLVED_EXTRA_ATTEMPT', lockReleasable: false });
+    expect(reduce(Array(7).fill('REJECTED'))).toMatchObject({ outcome: 'OBJECTIVE_NOT_ACHIEVED_ALL_REJECTED', lockReleasable: true });
+    expect(reduce(['PREWARM_FAILED', 'WINDOW_MISSED', 'BROWSER_FAILED', 'IDENTITY_FAILED', 'JOURNAL_BLOCKED', 'EXCLUDED_BEFORE_FREEZE', 'NOT_DISPATCHED']))
+      .toMatchObject({ outcome: 'OBJECTIVE_NOT_ACHIEVED_NOTHING_DISPATCHED', lockReleasable: true, unsentCount: 7 });
+    expect(reduce(['QR_READY', 'QR_READY', 'HOLD_VERIFIED_QR_ATTENTION', 'QR_READY', 'QR_READY', 'QR_READY', 'QR_READY']))
+      .toMatchObject({ outcome: 'OBJECTIVE_ACHIEVED_EXTRA_HOLD', verifiedCount: 7, qrAttention: true });
+    expect(reduce(['REJECTED', 'UNKNOWN', 'REJECTED', 'REJECTED', 'REJECTED', 'REJECTED', 'REJECTED']).outcome).toBe('OBJECTIVE_NOT_CONFIRMED_MANUAL_RECONCILIATION');
+  });
+
+  it('a seven-attempt frozen set cannot silently mutate', () => {
+    const frozen = freezeSeven();
+    expect(frozen.attempts).toHaveLength(7);
+    expect(() => { (frozen.attempts as PrecisionAttempt[]).push(frozen.attempts[0]!); }).toThrow();
+    expect(() => assertPrecisionFreezeIntact({ ...frozen, attempts: frozen.attempts.slice(0, 6) })).toThrow('PRECISION_FROZEN_SET_CHANGED');
   });
 });

@@ -1,17 +1,17 @@
 import { createHash } from 'node:crypto';
-import { WORKER_IDS } from '../workers.js';
+import { PRECISION_MAX_ATTEMPTS, PRECISION_WORKER_IDS } from '../workers.js';
 import { COURT_TO_SPACE_ID } from './availability-parser.js';
 import { DurableSubmissionJournal } from './durable-submission-journal.js';
 import { SubmissionDispatchError } from './submission-errors.js';
 import { THIRSTY_PICKLE_FACILITY_ID } from './live-availability-provider.js';
 import { DIRECT_ASSUMED_DAY_RATE, DIRECT_ASSUMED_EVENING_RATE, DIRECT_MAX_DISPATCH_LATENESS_MS, prooflessReleasePlan } from './proofless-checkout.js';
 /**
- * Precision Release v1: the operator wants ONE court and authorizes 1-3 exact,
- * independent one-court targets, each sent by its own worker (A, B, C). This is
+ * Precision Release v1: the operator wants ONE court and authorizes 1-7 exact,
+ * independent one-court targets, each sent by its own worker (A-G, in row order). This is
  * deliberately not COURT_COUNT: every target is a separate single-court
  * Proofless checkout and success means at least one verified hold.
  */
-export const PRECISION_MAX_TARGETS = 3;
+export const PRECISION_MAX_TARGETS = PRECISION_MAX_ATTEMPTS;
 export const PRECISION_DESIRED_HOLDS = 1;
 const hourText = (hour) => `${String(hour).padStart(2, '0')}:00`;
 export function precisionTargetEnd(target) {
@@ -29,7 +29,7 @@ export function validatePrecisionTargets(inputs, date) {
             !/^(0[89]|1\d|2[0-3]):00$/.test(input.start) || !Number.isInteger(input.durationHours) ||
             input.durationHours < 1 || input.durationHours > 3 || start + input.durationHours > 24)
             throw Error('PRECISION_TARGET_INVALID');
-        const workerId = WORKER_IDS[index];
+        const workerId = PRECISION_WORKER_IDS[index];
         const end = precisionTargetEnd(input);
         const spaceId = COURT_TO_SPACE_ID[input.court];
         const assumedAmount = Array.from({ length: input.durationHours }, (_, offset) => start + offset >= 16 ? DIRECT_ASSUMED_EVENING_RATE : DIRECT_ASSUMED_DAY_RATE).reduce((sum, value) => sum + value, 0);
