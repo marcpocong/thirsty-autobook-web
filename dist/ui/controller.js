@@ -10,6 +10,7 @@ import { capabilities, fullBookingReady } from '../src/capabilities.js';
 import { expectedPreparationFingerprint, makePreparedContext } from '../src/prepared-context.js';
 import { scheduledReleaseContext } from '../src/scheduled-release.js';
 import { planWorkerIds, requiredWorkerIds } from '../src/workers.js';
+import { PrecisionPhase3Schema, PrecisionTargetSchema } from '../src/config.js';
 import { TARGET_EVIDENCE_LABEL } from '../src/api-booking/pre-release-evidence.js';
 /** Race-group headline: the operator's goal is one court, so any verified hold achieves it. */
 const PRECISION_OUTCOME_HEADLINE = {
@@ -115,6 +116,12 @@ const errors = {
     BOT_BROWSER_CLOSE_TIMEOUT: 'Some bot Chrome windows did not close in time. Close them manually from the taskbar.',
     SLOT_WATCH_UNAVAILABLE: 'Release slot watch is not available in this build.',
 };
+const AdvisorRequestSchema = z.object({ courts: z.array(z.number().int().min(1).max(7)).min(1).max(7), earliestStart: z.string().regex(/^(0[89]|1\d|2[0-3]):00$/),
+    latestStart: z.string().regex(/^(0[89]|1\d|2[0-3]):00$/), durationHours: z.number().int().min(1).max(3), immediate: z.number().int().min(0).max(7), backups: z.number().int().min(0).max(14),
+    exclude: z.array(z.object({ court: z.number().int().min(1).max(7), start: z.string().regex(/^\d{2}:00$/) }).strict()).max(40).default([]),
+    existing: z.array(z.object({ court: z.number().int().min(1).max(7), start: z.string().regex(/^\d{2}:00$/), durationHours: z.number().int().min(1).max(3) }).strict()).max(21).default([]) }).strict();
+const ReplayRequestSchema = z.union([z.object({ source: z.literal('saved') }).strict(), z.object({ source: z.literal('draft'), phase3: PrecisionPhase3Schema }).strict(),
+    z.object({ source: z.literal('draft'), targets: z.array(PrecisionTargetSchema).min(1).max(7) }).strict()]);
 export class Controller {
     deps;
     state = { operation: 'idle', headline: 'RESET REQUIRED', workflow: 'release', detail: 'Configure your booking, then Reset & Prepare.', ready: false,
@@ -148,6 +155,146 @@ export class Controller {
         this.state.slotWatch = null;
         this.state.slotWatchHistory = this.readSlotWatchHistory();
         this.state.releaseForensics = this.readForensicsHistory();
+        this.state.phase4 = { busy: null, message: '', networkReadiness: this.readNetworkHistory()[0] ?? null, networkHistory: this.networkHistorySummary() };
+        this.readIntelligence();
+    }
+    // Phase 4: read-only analysis in this (desktop) process only, never while a release is close or running.
+    readIntelligence() { try {
+        const loaded = this.deps.intelligenceDigest?.();
+        if (loaded) {
+            this.state.intelligence = loaded.digest;
+            this.state.phase4.warmth = loaded.warmth;
+        }
+    }
+    catch { /* derived data only */ } }
+    readNetworkHistory() { try {
+        return this.deps.networkReadinessHistory?.() ?? [];
+    }
+    catch {
+        return [];
+    } }
+    networkHistorySummary() { return this.readNetworkHistory().slice(0, 5).map(value => ({ measuredAt: value.measuredAt, verdict: value.verdict, medianMs: value.medianMs })); }
+    /** Refuses Phase 4 work during a run, an armed/scheduled release, a slot watch, or from 10 minutes before release. */
+    phase4Blocked(options = {}) {
+        if (this.active || this.state.operation !== 'idle')
+            return 'A run or armed release is active. Release tools are paused until it ends.';
+        if (this.slotWatch)
+            return 'A release slot watch is running. Release tools are paused until it ends.';
+        if (options.afterRelease)
+            return null;
+        try {
+            const clock = this.deps.clock(), now = Date.now() + (clock.clockOffsetMs ?? 0);
+            if (now >= clock.releaseMs - 10 * 60_000 && now <= clock.releaseMs + 15 * 60_000)
+                return 'Release tools are paused from 10 minutes before until 15 minutes after the 08:00 release.';
+        }
+        catch { /* no clock: allowed */ }
+        return null;
+    }
+    phase4Message(message, busy = null) { this.state.phase4 = { ...this.state.phase4, busy, message }; this.publish(); }
+    /** After the final post-run report the runner has exited; retry each minute while a run or watch is still active. */
+    postRunRebuild(attempt = 0) {
+        if (!this.deps.rebuildReleaseIntelligence)
+            return;
+        if (this.phase4Blocked({ afterRelease: true })) {
+            if (attempt < 30)
+                setTimeout(() => this.postRunRebuild(attempt + 1), 60_000).unref?.();
+            return;
+        }
+        void this.rebuildIntelligence('after release', true).catch(() => undefined);
+    }
+    async rebuildIntelligence(reason = 'operator', afterRelease = false) {
+        if (!this.deps.rebuildReleaseIntelligence)
+            throw Error('INTELLIGENCE_UNAVAILABLE');
+        const blocked = this.phase4Blocked({ afterRelease });
+        if (blocked) {
+            this.phase4Message(blocked);
+            return;
+        }
+        if (this.state.phase4?.busy)
+            return;
+        this.phase4Message('Rebuilding release intelligence from local raw logs…', 'rebuild');
+        await new Promise(done => setImmediate(done));
+        try {
+            const summary = this.deps.rebuildReleaseIntelligence();
+            this.readIntelligence();
+            this.phase4Message(`Release intelligence rebuilt (${reason}): ${summary.realReleases} real release${summary.realReleases === 1 ? '' : 's'}, ${summary.adequateReleases} well observed, ${summary.synthetic} synthetic kept separate.`);
+        }
+        catch {
+            this.phase4Message('Release intelligence could not be rebuilt. Raw logs are unchanged.');
+        }
+    }
+    async clearIntelligence() {
+        if (!this.deps.clearReleaseIntelligence)
+            throw Error('INTELLIGENCE_UNAVAILABLE');
+        const blocked = this.phase4Blocked();
+        if (blocked) {
+            this.phase4Message(blocked);
+            return;
+        }
+        if (this.deps.confirmClearIntelligence && !await this.deps.confirmClearIntelligence()) {
+            this.phase4Message('Nothing was cleared.');
+            return;
+        }
+        try {
+            const removed = this.deps.clearReleaseIntelligence();
+            this.state.intelligence = null;
+            this.state.phase4.warmth = null;
+            this.phase4Message(`Derived intelligence cleared (${removed} file${removed === 1 ? '' : 's'}). Slot watch logs, journals, run logs, holds and forensics were not touched.`);
+        }
+        catch {
+            this.phase4Message('Derived intelligence could not be cleared.');
+        }
+    }
+    async runNetworkCheck() {
+        if (!this.deps.runNetworkReadiness)
+            throw Error('NETWORK_CHECK_UNAVAILABLE');
+        const blocked = this.phase4Blocked();
+        if (blocked) {
+            this.phase4Message(blocked);
+            return;
+        }
+        if (this.state.phase4?.busy)
+            return;
+        this.phase4Message('Running a bounded read-only network check…', 'network');
+        try {
+            const result = await this.deps.runNetworkReadiness();
+            this.state.phase4 = { ...this.state.phase4, networkReadiness: result, networkHistory: this.networkHistorySummary() };
+            this.phase4Message(`Network check: ${result.verdict.replaceAll('_', ' ')}.`);
+        }
+        catch {
+            this.phase4Message('The network check could not run.');
+        }
+    }
+    async replayPlan(input) {
+        const blocked = this.phase4Blocked();
+        if (blocked)
+            return { blocked, results: [], skipped: [] };
+        if (!this.deps.replayPlan)
+            throw Error('REPLAY_UNAVAILABLE');
+        const request = ReplayRequestSchema.parse(input);
+        let plan;
+        if (request.source === 'saved') {
+            const setup = this.deps.booking().setup;
+            if (setup.RELEASE_STRATEGY !== 'precision')
+                return { blocked: 'The saved plan is not a Precision Release plan.', results: [], skipped: [] };
+            plan = setup.PRECISION_PHASE3 ? setup.PRECISION_PHASE3 : await import('../src/strategy-replay.js').then(module => module.replayPlanFromFixed(setup.PRECISION_TARGETS));
+        }
+        else
+            plan = 'phase3' in request ? request.phase3 : await import('../src/strategy-replay.js').then(module => module.replayPlanFromFixed(request.targets));
+        if (!this.state.intelligence?.generatedAt)
+            await this.rebuildIntelligence('before replay');
+        return { plan: request.source, ...this.deps.replayPlan(plan) };
+    }
+    async adviseFromHistory(input) {
+        const blocked = this.phase4Blocked();
+        if (blocked)
+            return { blocked };
+        if (!this.deps.adviseFromHistory)
+            throw Error('ADVISOR_UNAVAILABLE');
+        const request = AdvisorRequestSchema.parse(input);
+        if (!this.state.intelligence?.generatedAt)
+            await this.rebuildIntelligence('before suggestions');
+        return this.deps.adviseFromHistory({ ...request, targetDate: this.deps.clock().targetDate });
     }
     readSlotWatchHistory() { try {
         return this.deps.slotWatchHistory?.() ?? [];
@@ -175,6 +322,8 @@ export class Controller {
             this.log('Release forensics report could not be written; the raw logs are unchanged.', true);
         }
         this.publish();
+        if (status === 'final')
+            setImmediate(() => this.postRunRebuild());
     }
     /** After a live API run: a final report now, or a preliminary one now and the final one when its slot watch ends. */
     scheduleForensics(runId, date, releaseMs) {

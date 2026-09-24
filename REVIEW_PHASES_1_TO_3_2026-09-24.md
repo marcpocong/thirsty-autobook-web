@@ -2,6 +2,8 @@
 
 This is the entry point for reviewing the local 2026-09-24 implementation. The source and tests are authoritative; the three phase reports are design and verification records. The 2026-09-23 `REVIEW_GUIDE.md` covers the broader desktop app but predates this release architecture.
 
+**Follow-up:** the simplified Smart backups editor and Phase 4 Release Intelligence are described in `RELEASE_INTELLIGENCE_PHASE4.md`.
+
 **Evidence level:** all Phase 1–3 code was checked with offline tests, a local Chrome latency harness, and a rebuilt Windows installation. None of these phases has been validated at a real 08:00 release. The 2026-09-23/24 run reports describe earlier behavior and must not be read as proof of Phase 3 success.
 
 ## Scope and change inventory

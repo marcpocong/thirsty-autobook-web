@@ -18,6 +18,11 @@ import {networkNowMs,readNetworkClock,synchronizeNetworkClock} from '../src/netw
 import {closeBotBrowsers,countBotBrowsers} from './browser-cleanup.js';
 import {SlotWatch,readSlotWatchHistory} from '../src/slot-watch.js';
 import {buildReleaseForensics,forensicInputsFor,forensicsDigest,readReleaseForensicsHistory} from '../src/release-forensics.js';
+import {clearReleaseIntelligence,intelligenceDigest,readReleaseIntelligence,rebuildReleaseIntelligence} from '../src/release-intelligence.js';
+import {adviseFromHistory} from '../src/release-advisor.js';
+import {replayAll} from '../src/strategy-replay.js';
+import {readNetworkReadinessHistory,runNetworkReadiness,saveNetworkReadiness} from '../src/network-readiness.js';
+import {connectionWarmth} from '../src/checkout-path-research.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 process.chdir(root);
@@ -67,6 +72,16 @@ const controller = new Controller({
   slotWatchHistory:()=>readSlotWatchHistory(resolve(root,'.local/slot-watch')),
   buildReleaseForensics:({runId,status})=>{const inputs=forensicInputsFor(root,runId);return inputs?forensicsDigest(buildReleaseForensics({...inputs,status})):undefined;},
   releaseForensicsHistory:()=>readReleaseForensicsHistory(resolve(root,'.local/release-forensics')),
+  // Phase 4: derived, read-only analysis in this process. The release runner never imports these modules.
+  rebuildReleaseIntelligence:()=>rebuildReleaseIntelligence(root),
+  clearReleaseIntelligence:()=>clearReleaseIntelligence(root),
+  intelligenceDigest:()=>{const loaded=readReleaseIntelligence(root);return {digest:intelligenceDigest(loaded),warmth:loaded?connectionWarmth(loaded.records):null};},
+  confirmClearIntelligence:async()=>confirmModal({tone:'question',title:'Clear derived intelligence?',message:'Delete the derived release intelligence files?',
+    detail:'Only .local/release-intelligence is removed. Slot Watch logs, booking journals, locks, run logs, verified hold records, release forensics and browser profiles are not touched. You can rebuild it at any time.',confirmLabel:'Clear derived intelligence'}),
+  runNetworkReadiness:async()=>{const result=await runNetworkReadiness({history:readNetworkReadinessHistory(root)});saveNetworkReadiness(root,result);return result;},
+  networkReadinessHistory:()=>readNetworkReadinessHistory(root),
+  replayPlan:plan=>replayAll(root,plan,readReleaseIntelligence(root)?.records??[]),
+  adviseFromHistory:input=>adviseFromHistory(input,readReleaseIntelligence(root)?.records??[]),
   confirm: async (kind='observe',plan) => confirmModal({tone:'question', title: kind==='full'?'Arm Full Booking to QR?':kind==='selection'?'Arm booking selection?':kind==='dry'?'Arm Dry Race?':'Arm release observation?',
     message: kind==='full'?'ARM FULL BOOKING?':kind==='selection'?'ARM BOOKING SELECTION?':kind==='dry'?'ARM DRY RACE?':'Arm release observation?',
     detail: (plan ? describePlan(plan)+'\n\n' : '') + (kind==='full'?'Terms authorization: YES, for this booking only.\nFinal automation boundary: QR Checkout.\nThe bot will continue through Onda until the QR payment page is reached, then stop. Payment itself remains manual.':kind==='selection'?'At release this automation MAY SELECT available court slots.\nSelection Only stops before Proceed. Selection is not a reservation.':'This waits for release and performs read-only refresh/date navigation. No court slots will be selected.'),
@@ -94,12 +109,13 @@ else {
     armSelection: () => controller.armSelection(), dryRace: () => controller.dryRace(),
     armFullBooking:()=>controller.armFullBooking(),cancelScheduledRelease:()=>controller.cancelScheduledRelease(),invalidatePreparation:()=>controller.invalidatePreparation(),syncClock:()=>controller.syncClock(),
     closeBotBrowsers:()=>controller.closeBotBrowsers(),watchNextRelease:()=>controller.watchNextRelease(),stopSlotWatch:()=>controller.stopSlotWatch(),
+    rebuildIntelligence:()=>controller.rebuildIntelligence(),clearIntelligence:()=>controller.clearIntelligence(),runNetworkCheck:()=>controller.runNetworkCheck(),
   };
   for (const [name, action] of Object.entries(actions)) ipcMain.handle(`thirsty:${name}`, (event, ...args: unknown[]) => {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== indexUrl || args.length) throw new Error('IPC_NOT_ALLOWED');
     return action();
   });
-  for (const [name,action] of Object.entries({checkReleaseBlocks:(input:unknown)=>controller.checkReleaseBlocks(input),apiPreview:(input:unknown)=>controller.apiPreview(input),resetPrepare:(input:unknown)=>controller.resetPrepare(input),testBooking:(input:unknown)=>controller.testBooking(input),setWorkflow:(input:unknown)=>controller.setWorkflow(input),runDualPractice:(input:unknown)=>controller.runDualPractice(input),runFullPractice:(input:unknown)=>controller.runFullPractice(input),saveBooking:(input:unknown)=>controller.saveBooking(input),runPractice:(input:unknown)=>controller.runPractice(input),setMode:(input:unknown)=>controller.setMode(input),authorizeTerms:(input:unknown)=>controller.authorizeTerms(input)})) ipcMain.handle(`thirsty:${name}`,(event,...args:unknown[])=>{
+  for (const [name,action] of Object.entries({checkReleaseBlocks:(input:unknown)=>controller.checkReleaseBlocks(input),apiPreview:(input:unknown)=>controller.apiPreview(input),resetPrepare:(input:unknown)=>controller.resetPrepare(input),testBooking:(input:unknown)=>controller.testBooking(input),setWorkflow:(input:unknown)=>controller.setWorkflow(input),runDualPractice:(input:unknown)=>controller.runDualPractice(input),runFullPractice:(input:unknown)=>controller.runFullPractice(input),saveBooking:(input:unknown)=>controller.saveBooking(input),runPractice:(input:unknown)=>controller.runPractice(input),setMode:(input:unknown)=>controller.setMode(input),authorizeTerms:(input:unknown)=>controller.authorizeTerms(input),replayPlan:(input:unknown)=>controller.replayPlan(input),adviseFromHistory:(input:unknown)=>controller.adviseFromHistory(input)})) ipcMain.handle(`thirsty:${name}`,(event,...args:unknown[])=>{
     if(event.sender!==window.webContents||event.senderFrame!==window.webContents.mainFrame||event.senderFrame.url!==indexUrl||args.length!==1)throw new Error('IPC_NOT_ALLOWED');
     return action(args[0]);
   });

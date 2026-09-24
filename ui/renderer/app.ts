@@ -2,6 +2,8 @@ import type { Bridge, Dashboard, RunHistoryEntry } from '../types.js';
 import type { BookingSetup } from '../../src/config.js';
 import {bookingSetupProblem,reconcileFallbackTimes,type FallbackReconciliation} from '../../src/booking-setup.js';
 import type {ReleasePerformance} from '../../src/release-performance.js';
+import {compileSmartPlan,confirmSmartRates,describeSmartPlan,emptySmartDraft,smartDraftFromPhase3,smartPeso,smartRange,smartSlotText,SMART_MAX_SLOTS,SMART_WORKERS,
+  type SmartDraft,type SmartSlot,type SmartWorker,type SmartPhase3} from '../../src/precision-simple.js';
 declare global { interface Window { thirsty: Bridge } }
 const byId = (id: string) => document.getElementById(id)!;
 let latest: Dashboard | undefined;
@@ -86,11 +88,8 @@ const requiredWorkers=(strategy:string,count:number):WorkerId[]=>['A','B','C','D
 const workerLabel=(worker:WorkerId)=>worker==='A'?'Primary player':`Player ${'ABCDEFGH'.indexOf(worker)+1}`;
 const ALL_WORKERS:WorkerId[]=['A','B','C','D','E','F','G','H'];
 type PrecisionRow={court:number;start:string;durationHours:number};
-type Phase3RowDraft={priority:number;court:number;start:string;durationHours:number;worker:string;wave2:boolean;rescue:boolean;prices:string;
-  source?:string;status?:'OPERATOR_CONFIRMED'|'VENUE_SCHEDULE';date?:string;capturedAt?:string};
-type Phase3Draft={enabled:boolean;rows:Phase3RowDraft[];standby:string[];source:string;status:'OPERATOR_CONFIRMED'|'VENUE_SCHEDULE';date:string;capturedAt:string;
-  wave2Max:number;rescueMax:number;totalMax:number;concurrent:boolean;rescueEnabled:boolean};
-interface FormDraft {releaseStrategy:'general'|'precision';precisionCount:number;precisionTargets:PrecisionRow[];phase3?:Phase3Draft;method:'browser'|'hybrid'|'api-first'|'proofless';strategy:'standard'|'extended';date:string;courtCount:CourtCount;start:string;duration:number;attempts:number;courtOrder:number[];fallbackTimes:string[];exactA:string;exactB:string}
+type PrecisionMode='fixed'|'smart';
+interface FormDraft {releaseStrategy:'general'|'precision';precisionCount:number;precisionTargets:PrecisionRow[];precisionMode?:PrecisionMode;smart?:SmartDraft;method:'browser'|'hybrid'|'api-first'|'proofless';strategy:'standard'|'extended';date:string;courtCount:CourtCount;start:string;duration:number;attempts:number;courtOrder:number[];fallbackTimes:string[];exactA:string;exactB:string}
 let testDraft:FormDraft|undefined,releaseDraft:FormDraft|undefined,testDirty=false,releaseDirty=false;
 let releaseAdjustment:FallbackReconciliation|undefined;
 // The layout is static in index.html; only these few controls move with the active view.
@@ -128,81 +127,172 @@ input('dual-date').value=input('practice-date').value;
 for(const id of ['dual-court-a','dual-court-b'])(byId(id) as HTMLSelectElement).replaceChildren(...Array.from({length:7},(_,i)=>new Option(`Court ${i+1}`,String(i+1))));
 input('dual-court-a').value='7';input('dual-court-b').value='6';
 const PRECISION_WORKERS=['A','B','C','D','E','F','G'] as const;
-const p3DefaultRow=(index:number):Phase3RowDraft=>({priority:index+1,court:[7,5,3,6,4,2,1][index%7]!,start:'17:00',durationHours:3,
-  worker:index===0?'A':'',wave2:false,rescue:false,prices:''});
-function p3Draft():Phase3Draft{
-  const rows=[...byId('p3-rows').children].map((_,i):Phase3RowDraft=>({priority:Number(input(`p3-priority-${i}`).value),court:Number(input(`p3-court-${i}`).value),
-    start:input(`p3-start-${i}`).value,durationHours:Number(input(`p3-duration-${i}`).value),worker:input(`p3-worker-${i}`).value,
-    wave2:input(`p3-wave2-${i}`).checked,rescue:input(`p3-rescue-${i}`).checked,prices:input(`p3-prices-${i}`).value,
-    source:input(`p3-source-${i}`).value,status:(input(`p3-status-${i}`).value||undefined) as Phase3RowDraft['status'],
-    date:input(`p3-date-${i}`).value,capturedAt:input(`p3-captured-${i}`).value}));
-  return {enabled:input('phase3-enabled').checked,rows,standby:PRECISION_WORKERS.filter(worker=>input(`p3-standby-${worker}`).checked),
-    source:input('p3-rate-source').value,status:input('p3-rate-status').value as Phase3Draft['status'],date:input('p3-rate-date').value,
-    capturedAt:input('p3-rate-captured').value,
-    wave2Max:Number(input('p3-wave2-max').value),rescueMax:Number(input('p3-rescue-max').value),totalMax:Number(input('p3-total-max').value),
-    concurrent:input('p3-concurrent').checked,rescueEnabled:input('p3-rescue-enabled').checked};
+// Smart backups editor. The draft lives here; the saved PRECISION_PHASE3 is always compileSmartPlan's output,
+// and "What will happen" is generated from that same compiled object.
+let precisionMode:PrecisionMode='fixed',smartDraft:SmartDraft=emptySmartDraft(),smartRenderKey='',smartRatesOpen=false;
+const cloneSmart=(value:SmartDraft):SmartDraft=>JSON.parse(JSON.stringify(value)) as SmartDraft;
+/** Workers known not ready, by letter only: a player that is not configured, or an identity problem from the latest preparation. */
+function unreadyWorkers():Set<string>{
+  const status=latest?.playerStatus,out=new Set<string>();
+  const configured:Record<SmartWorker,boolean|undefined>={A:status?.primary,B:status?.extended,C:status?.third,D:status?.fourth,E:status?.fifth,F:status?.sixth,G:status?.seventh};
+  for(const worker of SMART_WORKERS)if(configured[worker]===false)out.add(worker);
+  for(const issue of latest?.identityIssues??[]){const match=/^Worker ([A-G]) /.exec(issue);if(match)out.add(match[1]!);}
+  return out;
 }
-function p3RenderRows(rows:Phase3RowDraft[]){
-  const container=byId('p3-rows');container.replaceChildren();
-  rows.forEach((row,i)=>{
-    const line=document.createElement('div');line.className='precision-row';
-    const label=(title:string,element:HTMLElement)=>{const item=document.createElement('label');item.textContent=title;item.append(element);line.append(item);};
-    const select=(id:string,choices:Array<[string,string]>,value:string)=>{const element=document.createElement('select');element.id=id;
-      element.replaceChildren(...choices.map(([text,value])=>new Option(text,value)));element.value=value;return element;};
-    const field=(id:string,value:string,type='text')=>{const element=document.createElement('input');element.id=id;element.type=type;element.value=value;return element;};
-    const check=(id:string,value:boolean)=>{const element=document.createElement('input');element.id=id;element.type='checkbox';element.checked=value;return element;};
-    const title=document.createElement('strong');title.textContent=`Candidate ${i+1}`;line.append(title);
-    label('Priority',field(`p3-priority-${i}`,String(row.priority),'number'));
-    label('Court',select(`p3-court-${i}`,Array.from({length:7},(_,c)=>[`Court ${c+1}`,String(c+1)]),String(row.court)));
-    label('Start',select(`p3-start-${i}`,hours.map(h=>[friendly(h),h]),row.start));
-    label('Hours',select(`p3-duration-${i}`,['1','2','3'].map(value=>[value,value]),String(row.durationHours)));
-    label('Wave 1 worker',select(`p3-worker-${i}`,[['None',''],...PRECISION_WORKERS.map(worker=>[worker,worker] as [string,string])],row.worker));
-    label('Wave 2',check(`p3-wave2-${i}`,row.wave2));label('Rescue',check(`p3-rescue-${i}`,row.rescue));
-    const price=field(`p3-prices-${i}`,row.prices);price.placeholder='Per-hour PHP, e.g. 700,700,700';label('Hourly prices',price);
-    label('Rate source override',field(`p3-source-${i}`,row.source??''));
-    label('Rate status override',select(`p3-status-${i}`,[['Use default',''],['Operator confirmed','OPERATOR_CONFIRMED'],
-      ['Current venue schedule','VENUE_SCHEDULE']],row.status??''));
-    label('Applicable date override',field(`p3-date-${i}`,row.date??'','date'));
-    label('Captured time override (ISO)',field(`p3-captured-${i}`,row.capturedAt??''));
-    line.addEventListener('change',changed);container.append(line);
+const smartContext=()=>({targetDate:latest?.booking?.targetDate??'',unavailable:unreadyWorkers()});
+const smartCompiled=()=>compileSmartPlan(smartDraft,smartContext());
+function smartEdit(mutate:(draft:SmartDraft)=>void){mutate(smartDraft);renderSmart(true);changed();}
+function smartElement<K extends keyof HTMLElementTagNameMap>(tag:K,className:string,text?:string){const element=document.createElement(tag);if(className)element.className=className;if(text!==undefined)element.textContent=text;return element;}
+function smartSelect(id:string,label:string,choices:Array<[string,string]>,value:string,onChange:(value:string)=>void){
+  const wrap=document.createElement('label'),select=document.createElement('select');select.id=id;wrap.append(label,select);
+  select.replaceChildren(...choices.map(([text,option])=>new Option(text,option)));select.value=value;select.addEventListener('change',()=>onChange(select.value));return wrap;
+}
+function smartField(id:string,label:string,value:string,placeholder:string,onChange:(value:string)=>void,type='text'){
+  const wrap=document.createElement('label'),field=document.createElement('input');field.id=id;field.type=type;field.value=value;field.placeholder=placeholder;
+  field.addEventListener('change',()=>onChange(field.value.trim()));wrap.append(label,field);return wrap;
+}
+function smartButton(text:string,label:string,disabled:boolean,onClick:()=>void){
+  const button=smartElement('button','secondary compact',text);button.type='button';button.setAttribute('aria-label',label);button.disabled=disabled;button.onclick=onClick;return button;
+}
+/** A new slot copies the last one onto the next free court, so it is never a duplicate or a same-court overlap. */
+function smartNewSlot():SmartSlot{
+  const all=[...smartDraft.immediate,...smartDraft.backups],last=all.at(-1)??{court:7,start:'19:00',durationHours:3};
+  const busy=(court:number,start:string,duration:number)=>all.some(slot=>slot.court===court&&Number(slot.start.slice(0,2))<Number(start.slice(0,2))+duration&&Number(start.slice(0,2))<Number(slot.start.slice(0,2))+slot.durationHours);
+  for(const start of [last.start,...hours.filter(h=>h!==last.start)])for(let step=1;step<=7;step++){
+    const court=((last.court-1-step+14)%7)+1;
+    if(Number(start.slice(0,2))+last.durationHours<=24&&!busy(court,start,last.durationHours))return {court,start,durationHours:last.durationHours};
+  }
+  return {court:last.court,start:last.start,durationHours:last.durationHours};
+}
+function smartRow(kind:'immediate'|'backups',slot:SmartSlot,index:number,compiled:ReturnType<typeof compileSmartPlan>,unready:Set<string>){
+  const list=smartDraft[kind],li=smartElement('li','smart-row'),noun=kind==='immediate'?'attempt':'backup';
+  const rate=compiled.rates[(kind==='immediate'?0:smartDraft.immediate.length)+index];
+  const set=(patch:Partial<SmartSlot>)=>smartEdit(draft=>{draft[kind][index]={...draft[kind][index]!,...patch};});
+  const fields=smartElement('div','smart-row-fields');
+  fields.append(smartSelect(`smart-${kind}-court-${index}`,'Court',Array.from({length:7},(_,c)=>[`Court ${c+1}`,String(c+1)] as [string,string]),String(slot.court),value=>set({court:Number(value)})),
+    smartSelect(`smart-${kind}-start-${index}`,'Start',hours.map(h=>[friendly(h),h] as [string,string]),slot.start,value=>set({start:value})),
+    smartSelect(`smart-${kind}-duration-${index}`,'Duration',[['1 hour','1'],['2 hours','2'],['3 hours','3']],String(slot.durationHours),value=>set({durationHours:Number(value)})));
+  const facts=smartElement('div','smart-row-facts');
+  if(kind==='immediate'){const worker=compiled.immediateWorkers[index]??null,chip=smartElement('span','smart-worker',worker?`Worker ${worker}`:'No worker free');
+    chip.dataset.tone=!worker||unready.has(worker)?'warn':'good';facts.append(chip);}
+  const price=smartElement('span','smart-rate',rate?.label??'Rate needs review');price.dataset.tone=rate?.needsReview?'warn':'muted';facts.append(price);
+  const move=(step:number)=>smartEdit(draft=>{const items=draft[kind],other=index+step;[items[index],items[other]]=[items[other]!,items[index]!];});
+  const actions=smartElement('div','smart-row-actions');
+  actions.append(smartButton('↑',`Move ${noun} ${index+1} up`,index===0,()=>move(-1)),smartButton('↓',`Move ${noun} ${index+1} down`,index===list.length-1,()=>move(1)),
+    smartButton('Remove',`Remove ${noun} ${index+1}`,false,()=>smartEdit(draft=>{draft[kind].splice(index,1);})));
+  li.append(smartElement('strong','smart-row-title',`${kind==='immediate'?'Attempt':'Backup'} ${index+1}`),fields,facts,actions);
+  const worker=kind==='immediate'?compiled.immediateWorkers[index]:null;
+  if(worker&&unready.has(worker))li.append(smartElement('p','smart-row-warn',`Worker ${worker} is not ready and will not be used.`));
+  return li;
+}
+function smartSummary(compiled:ReturnType<typeof compileSmartPlan>,unready:Set<string>){
+  const host=byId('smart-summary');
+  if(compiled.phase3){
+    const description=describeSmartPlan(compiled.phase3,{unavailable:unready});
+    host.replaceChildren(...description.sections.map(section=>{const block=smartElement('div','smart-summary-section'),list=smartElement('ul','');
+      list.append(...section.lines.map(line=>smartElement('li','',line)));block.append(smartElement('strong','',section.title),list);return block;}),
+      smartElement('p','smart-summary-total',`${description.summary}. Maximum possible sends: ${description.maxSends}.`));
+  } else host.replaceChildren(smartElement('p','small','Resolve the items below to see exactly what will happen.'));
+  byId('smart-problems').replaceChildren(...compiled.problems.map(text=>{const item=smartElement('li','',text);item.dataset.tone='bad';return item;}),
+    ...compiled.warnings.map(text=>{const item=smartElement('li','',text);item.dataset.tone='warn';return item;}));
+}
+function smartAdvanced(compiled:ReturnType<typeof compileSmartPlan>){
+  const body=byId('smart-advanced-body'),group=(title:string)=>{const block=smartElement('fieldset','smart-adv-group');block.append(smartElement('legend','',title));return block;};
+  const workers=group('Worker for each immediate attempt');
+  smartDraft.immediate.forEach((slot,index)=>workers.append(smartSelect(`smart-adv-worker-${index}`,`Attempt ${index+1} · ${smartSlotText(slot)}`,
+    [[`Automatic${!slot.worker&&compiled.immediateWorkers[index]?` (${compiled.immediateWorkers[index]})`:''}`,''],...SMART_WORKERS.map(worker=>[`Worker ${worker}`,worker] as [string,string])],slot.worker??'',
+    value=>smartEdit(draft=>{const next={...draft.immediate[index]!};if(value)next.worker=value as SmartWorker;else delete next.worker;draft.immediate[index]=next;}))));
+  const standby=group('Backup workers'),auto=document.createElement('label'),autoBox=document.createElement('input');autoBox.type='checkbox';autoBox.id='smart-adv-standby-auto';
+  autoBox.checked=!smartDraft.advanced.standby;auto.append(autoBox,' Choose backup workers automatically');
+  autoBox.addEventListener('change',()=>smartEdit(draft=>{if(autoBox.checked)delete draft.advanced.standby;else draft.advanced.standby=[...compiled.standby];}));
+  const boxes=smartElement('div','smart-adv-workers');
+  for(const worker of SMART_WORKERS){const label=document.createElement('label'),box=document.createElement('input');box.type='checkbox';box.id=`smart-adv-standby-${worker}`;
+    box.checked=compiled.standby.includes(worker);box.disabled=!smartDraft.advanced.standby;label.append(box,` ${worker}`);
+    box.addEventListener('change',()=>smartEdit(draft=>{const chosen=new Set(draft.advanced.standby??[]);if(box.checked)chosen.add(worker);else chosen.delete(worker);
+      draft.advanced.standby=SMART_WORKERS.filter(value=>chosen.has(value));}));boxes.append(label);}
+  standby.append(auto,boxes);
+  const limits=group('Attempt limits'),limit=(key:'wave2'|'rescue'|'total',label:string)=>smartField(`smart-adv-${key}`,label,smartDraft.advanced[key]===undefined?'':String(smartDraft.advanced[key]),
+    `Automatic: ${compiled.budgets[key]}`,value=>smartEdit(draft=>{if(value==='')delete draft.advanced[key];else draft.advanced[key]=Number(value);}),'number');
+  limits.append(limit('wave2','Maximum backup sends'),limit('rescue','Maximum reopened-slot sends'),limit('total','Maximum total sends'));
+  const slots=group('Per-slot strategy and exact rates');
+  const all=[...smartDraft.immediate.map((slot,index)=>({slot,index,kind:'immediate' as const})),...smartDraft.backups.map((slot,index)=>({slot,index,kind:'backups' as const}))];
+  all.forEach(({slot,index,kind},position)=>{
+    const row=smartElement('div','smart-adv-slot'),immediate=kind==='immediate';
+    const defaults={wave1:immediate,wave2:!immediate,rescue:smartDraft.retryReopened},effective=slot.permissions??defaults;
+    const patch=(mutate:(next:SmartSlot)=>void)=>smartEdit(draft=>{const next=JSON.parse(JSON.stringify(draft[kind][index])) as SmartSlot;mutate(next);draft[kind][index]=next;});
+    const permission=(field:'wave2'|'rescue',label:string)=>smartSelect(`smart-adv-${field}-${position}`,label,[['Automatic',''],['Yes','yes'],['No','no']],slot.permissions?(effective[field]?'yes':'no'):'',
+      value=>patch(next=>{const current={...(next.permissions??defaults)};current[field]=value===''?defaults[field]:value==='yes';
+        if(JSON.stringify({...current,wave1:immediate||current.wave1})===JSON.stringify(defaults))delete next.permissions;else next.permissions=current;}));
+    const rate=slot.rate,rateField=(key:'source'|'capturedAt'|'date',label:string,placeholder:string,type='text')=>smartField(`smart-adv-${key}-${position}`,label,rate?String(rate[key]):'',placeholder,
+      value=>patch(next=>{if(next.rate)next.rate={...next.rate,[key]:value};}),type);
+    row.append(smartElement('strong','',`${immediate?'Attempt':'Backup'} ${index+1} · ${smartSlotText(slot)}`),
+      smartField(`smart-adv-priority-${position}`,'Priority',slot.priority===undefined?'':String(slot.priority),`Automatic: ${position+1}`,
+        value=>patch(next=>{if(value==='')delete next.priority;else next.priority=Number(value);}),'number'),
+      permission('wave2','Can be used as a backup'),permission('rescue','Can retry if reopened'),
+      smartField(`smart-adv-prices-${position}`,'Exact hourly prices (₱, comma separated)',rate?rate.perHour.join(','):'','Blank: use the confirmed rates',value=>patch(next=>{
+        if(!value){delete next.rate;return;}
+        next.rate={source:next.rate?.source||smartDraft.rates.source||'operator confirmed',capturedAt:next.rate?.capturedAt||new Date().toISOString(),
+          status:next.rate?.status??'OPERATOR_CONFIRMED',date:next.rate?.date||smartContext().targetDate,perHour:value.split(',').map(part=>Number(part.trim())),actionable:next.rate?.actionable??true};})),
+      rateField('source','Rate source','Uses the rate card'),
+      smartSelect(`smart-adv-status-${position}`,'Evidence status',[['Operator confirmed','OPERATOR_CONFIRMED'],['Current venue schedule','VENUE_SCHEDULE'],['Target date published','TARGET_DATE_PUBLISHED'],['Reference only','REFERENCE']],
+        rate?.status??'OPERATOR_CONFIRMED',value=>patch(next=>{if(next.rate)next.rate={...next.rate,status:value as NonNullable<SmartSlot['rate']>['status']};})),
+      rateField('capturedAt','Captured time (ISO)','Uses the rate card'),rateField('date','Applicable date','Uses the rate card','date'));
+    for(const control of row.querySelectorAll<HTMLInputElement|HTMLSelectElement>('[id^="smart-adv-source"],[id^="smart-adv-status"],[id^="smart-adv-capturedAt"],[id^="smart-adv-date"]'))control.disabled=!rate;
+    slots.append(row);
   });
+  const card=group('Rate card evidence'),table=smartDraft.rates,tableField=(key:'source'|'capturedAt'|'date',label:string,type='text')=>smartField(`smart-adv-card-${key}`,label,table[key],'',
+    value=>smartEdit(draft=>{draft.rates={...draft.rates,[key]:value};}),type);
+  card.append(tableField('source','Source'),smartSelect('smart-adv-card-status','Evidence status',[['Operator confirmed','OPERATOR_CONFIRMED'],['Current venue schedule','VENUE_SCHEDULE']],table.status,
+    value=>smartEdit(draft=>{draft.rates={...draft.rates,status:value as SmartDraft['rates']['status']};})),tableField('capturedAt','Captured time (ISO)'),tableField('date','Applicable date','date'));
+  const compiledView=group('Compiled authorization (read only)');
+  compiledView.append(smartElement('pre','smart-adv-json',JSON.stringify(compiled.phase3??{problems:compiled.problems},null,2)));
+  body.replaceChildren(workers,standby,limits,slots,card,compiledView);
 }
-function p3Apply(value?:Phase3Draft){
-  const draft=value??{enabled:false,rows:[p3DefaultRow(0)],standby:[],source:'',status:'OPERATOR_CONFIRMED' as const,date:'',capturedAt:'',
-    wave2Max:0,rescueMax:0,totalMax:1,concurrent:false,rescueEnabled:false};
-  input('phase3-enabled').checked=draft.enabled;input('p3-count').value=String(draft.rows.length);p3RenderRows(draft.rows);
-  input('p3-rate-source').value=draft.source;input('p3-rate-status').value=draft.status;input('p3-rate-date').value=draft.date;
-  input('p3-rate-captured').value=draft.capturedAt;
-  for(const worker of PRECISION_WORKERS)input(`p3-standby-${worker}`).checked=draft.standby.includes(worker);
-  input('p3-wave2-max').value=String(draft.wave2Max);input('p3-rescue-max').value=String(draft.rescueMax);
-  input('p3-total-max').value=String(draft.totalMax);input('p3-concurrent').checked=draft.concurrent;input('p3-rescue-enabled').checked=draft.rescueEnabled;
+function renderSmart(force=false){
+  const unready=unreadyWorkers(),compiled=compileSmartPlan(smartDraft,{targetDate:latest?.booking?.targetDate??'',unavailable:unready});
+  const key=JSON.stringify([smartDraft,latest?.booking?.targetDate,[...unready],smartRatesOpen,precisionMode]);
+  if(!force&&key===smartRenderKey)return compiled;
+  smartRenderKey=key;
+  const focused=document.activeElement instanceof HTMLElement&&document.activeElement.closest('#smart-editor')?document.activeElement.id:'';
+  const rows=(kind:'immediate'|'backups',empty:string)=>smartDraft[kind].length?smartDraft[kind].map((slot,index)=>smartRow(kind,slot,index,compiled,unready)):[smartElement('li','empty',empty)];
+  byId('smart-immediate').replaceChildren(...rows('immediate','No immediate attempts yet. Add at least one.'));
+  byId('smart-backups').replaceChildren(...rows('backups','No backup choices. Only the immediate attempts will be sent.'));
+  const count=smartDraft.immediate.length+smartDraft.backups.length;
+  (byId('smart-add-immediate') as HTMLButtonElement).disabled=smartDraft.immediate.length>=SMART_WORKERS.length||count>=SMART_MAX_SLOTS;
+  (byId('smart-add-backup') as HTMLButtonElement).disabled=count>=SMART_MAX_SLOTS;
+  const standby=compiled.standby;
+  byId('smart-backup-workers').textContent=!smartDraft.backups.length?'':standby.length?`${standby.length} backup worker${standby.length===1?'':'s'} available: ${standby.join(', ')}`:'No backup worker is free. Backups can only be tried as reopened slots.';
+  input('smart-concurrent').checked=smartDraft.useBackupsImmediately;input('smart-rescue').checked=smartDraft.retryReopened;
+  byId('smart-rescue-max-row').hidden=!smartDraft.retryReopened;input('smart-rescue-max').value=String(smartDraft.maxReopenedAttempts);
+  const rates=smartDraft.rates,review=compiled.rates.filter(rate=>rate.needsReview).length;
+  const usesHour=(evening:boolean)=>[...smartDraft.immediate,...smartDraft.backups].some(slot=>!slot.rate&&Array.from({length:slot.durationHours},(_,offset)=>Number(slot.start.slice(0,2))+offset>=16).includes(evening));
+  const rateText=(label:string,value:number|null,needed:boolean)=>value!==null?[`${label} ${smartPeso(value)}/hour`]:needed?[`${label} rate not set`]:[];
+  byId('smart-rate-summary').textContent=(rates.day!==null||rates.evening!==null)&&rates.date
+    ? [...rateText('Daytime',rates.day,usesHour(false)),...rateText('Evening',rates.evening,usesHour(true)),`${rates.status==='VENUE_SCHEDULE'?'from the venue schedule':'confirmed with the venue'} for ${dateLabel(rates.date)}`,
+      ...(review?[`${review} slot${review===1?' needs':'s need'} review`]:[])].join(' · ')
+    : 'No rates confirmed yet. Review rates before saving.';
+  byId('smart-review-rates').dataset.attention=String(review>0);
+  byId('smart-rate-review').hidden=!smartRatesOpen;
+  smartSummary(compiled,unready);smartAdvanced(compiled);
+  if(focused){const again=document.getElementById(focused);if(again&&again!==document.activeElement)again.focus();}
+  return compiled;
 }
-function p3FromSaved(saved:BookingSetup['PRECISION_PHASE3']|undefined):Phase3Draft|undefined{
-  if(!saved)return undefined;
-  return {enabled:true,rows:saved.candidates.map((c,i)=>({priority:c.priority,court:c.court,start:c.start,durationHours:c.durationHours,
-    worker:saved.wave1.find(value=>value.candidateIndex===i)?.workerId??'',wave2:c.permissions.wave2,rescue:c.permissions.rescue,
-    prices:c.rateEvidence.perHour.join(','),source:c.rateEvidence.source,
-    status:c.rateEvidence.status==='VENUE_SCHEDULE'?'VENUE_SCHEDULE':'OPERATOR_CONFIRMED',
-    date:c.rateEvidence.date,capturedAt:c.rateEvidence.capturedAt})),standby:[...saved.standby],source:saved.candidates[0]?.rateEvidence.source??'',
-    status:saved.candidates[0]?.rateEvidence.status==='VENUE_SCHEDULE'?'VENUE_SCHEDULE':'OPERATOR_CONFIRMED',
-    date:saved.candidates[0]?.rateEvidence.date??'',capturedAt:saved.candidates[0]?.rateEvidence.capturedAt??'',
-    wave2Max:saved.budgets.wave2,rescueMax:saved.budgets.rescue,
-    totalMax:saved.budgets.total,concurrent:saved.concurrentWave2,rescueEnabled:saved.rescueEnabled};
-}
-function p3Setup():BookingSetup['PRECISION_PHASE3']{
-  const draft=p3Draft();
-  return {candidates:draft.rows.map(row=>({court:row.court,start:row.start,durationHours:row.durationHours,priority:row.priority,
-    permissions:{wave1:!!row.worker,wave2:row.wave2,rescue:row.rescue},rateEvidence:{source:row.source||draft.source,
-      capturedAt:row.capturedAt||draft.capturedAt,
-      status:row.status??draft.status,date:row.date||draft.date,
-      perHour:row.prices.split(',').map(value=>Number(value.trim())),actionable:true}})),
-    wave1:draft.rows.flatMap((row,index)=>row.worker?[{workerId:row.worker as typeof PRECISION_WORKERS[number],candidateIndex:index}]:[]),
-    standby:draft.standby as Array<typeof PRECISION_WORKERS[number]>,budgets:{wave2:draft.wave2Max,rescue:draft.rescueMax,total:draft.totalMax},
-    concurrentWave2:draft.concurrent,rescueEnabled:draft.rescueEnabled};
-}
-byId('p3-standby').replaceChildren(...PRECISION_WORKERS.map(worker=>{const label=document.createElement('label');const box=document.createElement('input');
-  box.id=`p3-standby-${worker}`;box.type='checkbox';label.append(box,` Worker ${worker} standby`);label.addEventListener('change',changed);return label;}));
-p3Apply();
+byId('smart-add-immediate').onclick=()=>smartEdit(draft=>{draft.immediate.push(smartNewSlot());});
+byId('smart-add-backup').onclick=()=>smartEdit(draft=>{draft.backups.push(smartNewSlot());});
+byId('smart-concurrent').addEventListener('change',()=>smartEdit(draft=>{draft.useBackupsImmediately=input('smart-concurrent').checked;}));
+byId('smart-rescue').addEventListener('change',()=>smartEdit(draft=>{draft.retryReopened=input('smart-rescue').checked;}));
+byId('smart-rescue-max').addEventListener('change',()=>smartEdit(draft=>{draft.maxReopenedAttempts=Math.min(7,Math.max(1,Math.floor(Number(input('smart-rescue-max').value))||1));}));
+byId('smart-review-rates').onclick=()=>{smartRatesOpen=!smartRatesOpen;
+  if(smartRatesOpen){input('smart-rate-day').value=smartDraft.rates.day===null?'':String(smartDraft.rates.day);input('smart-rate-evening').value=smartDraft.rates.evening===null?'':String(smartDraft.rates.evening);
+    input('smart-rate-status').value=smartDraft.rates.status;}
+  renderSmart(true);if(smartRatesOpen)input('smart-rate-day').focus();};
+byId('smart-rate-cancel').onclick=()=>{smartRatesOpen=false;renderSmart(true);};
+byId('smart-rate-confirm').onclick=()=>{
+  const read=(id:string)=>{const value=input(id).value.trim();return value===''?null:Number(value);};
+  const day=read('smart-rate-day'),evening=read('smart-rate-evening'),target=latest?.booking?.targetDate;
+  if(!target||[day,evening].some(value=>value!==null&&!(Number.isFinite(value)&&value>0))||(day===null&&evening===null)){byId('smart-rate-summary').textContent='Enter at least one positive hourly rate.';return;}
+  smartRatesOpen=false;smartEdit(draft=>{draft.rates=confirmSmartRates(day,evening,input('smart-rate-status').value as SmartDraft['rates']['status'],target,new Date());});
+};
 for(let i=0;i<PRECISION_WORKERS.length;i++){
   (byId(`precision-court-${i}`) as HTMLSelectElement).replaceChildren(...Array.from({length:7},(_,c)=>new Option(`Court ${c+1}`,String(c+1))));
   (byId(`precision-start-${i}`) as HTMLSelectElement).replaceChildren(...hours.map(h=>new Option(friendly(h),h)));
@@ -214,24 +304,27 @@ function precisionRows():PrecisionRow[]{
 }
 function precisionSelected(){return workflow==='release'&&input('precision-strategy').value==='precision';}
 function strategyFields():Pick<BookingSetup,'RELEASE_STRATEGY'|'PRECISION_TARGETS'|'PRECISION_PHASE3'>{
-  return precisionSelected()?{RELEASE_STRATEGY:'precision',PRECISION_TARGETS:precisionRows(),
-    ...(input('phase3-enabled').checked?{PRECISION_TARGETS:[],PRECISION_PHASE3:p3Setup()}:{})}:{RELEASE_STRATEGY:'general',PRECISION_TARGETS:releaseDraft?.precisionTargets??[]};
+  if(!precisionSelected())return {RELEASE_STRATEGY:'general',PRECISION_TARGETS:releaseDraft?.precisionTargets??[]};
+  if(precisionMode!=='smart')return {RELEASE_STRATEGY:'precision',PRECISION_TARGETS:precisionRows()};
+  const compiled=smartCompiled();
+  return {RELEASE_STRATEGY:'precision',PRECISION_TARGETS:[],...(compiled.phase3?{PRECISION_PHASE3:compiled.phase3}:{})};
 }
 /** Precision is Proofless Direct, Standard only: lock those two fields while it is selected. */
 function syncStrategy(){
   const precision=precisionSelected(),count=Number(input('precision-count').value)||1;
   byId('precision-strategy').parentElement!.hidden=workflow!=='release';
   byId('setup-fields').classList.toggle('precision-mode',precision);byId('precision-setup').hidden=!precision;
-  byId('legacy-precision-setup').hidden=input('phase3-enabled').checked;byId('phase3-editor').hidden=!input('phase3-enabled').checked;
+  const smart=precisionMode==='smart';input('precision-mode-smart').checked=smart;input('precision-mode-fixed').checked=!smart;
+  byId('legacy-precision-setup').hidden=smart;byId('smart-editor').hidden=!smart;byId('legacy-freeze-note').hidden=smart;
   for(let i=0;i<PRECISION_WORKERS.length;i++)byId(`precision-row-${i}`).hidden=i>=count;
   if(precision){input('booking-method').value='proofless';input('booking-type').value='standard';if(Number(input('duration').value)>3)input('duration').value='3';}
   (byId('booking-method') as HTMLSelectElement).disabled=precision;(byId('booking-type') as HTMLSelectElement).disabled=precision;
 }
-function formDraft():FormDraft{return {releaseStrategy:input('precision-strategy').value==='precision'?'precision':'general',precisionCount:Number(input('precision-count').value)||1,precisionTargets:precisionRows(),phase3:p3Draft(),method:input('booking-method').value as 'browser'|'hybrid'|'api-first'|'proofless',strategy:input('booking-type').value as 'standard'|'extended',date:input('test-date').value,courtCount:Number(input('court-count').value) as CourtCount,start:input('start-time').value,duration:Number(input('duration').value),attempts:Number(input('attempts').value),courtOrder:[...courtOrder],fallbackTimes:[...fallbackTimes],exactA:input('exact-a').value,exactB:input('exact-b').value};}
+function formDraft():FormDraft{return {releaseStrategy:input('precision-strategy').value==='precision'?'precision':'general',precisionCount:Number(input('precision-count').value)||1,precisionTargets:precisionRows(),precisionMode,smart:cloneSmart(smartDraft),method:input('booking-method').value as 'browser'|'hybrid'|'api-first'|'proofless',strategy:input('booking-type').value as 'standard'|'extended',date:input('test-date').value,courtCount:Number(input('court-count').value) as CourtCount,start:input('start-time').value,duration:Number(input('duration').value),attempts:Number(input('attempts').value),courtOrder:[...courtOrder],fallbackTimes:[...fallbackTimes],exactA:input('exact-a').value,exactB:input('exact-b').value};}
 function applyDraft(d:FormDraft){input('precision-strategy').value=d.releaseStrategy;input('precision-count').value=String(Math.min(PRECISION_WORKERS.length,Math.max(1,d.precisionCount)));
   d.precisionTargets.slice(0,PRECISION_WORKERS.length).forEach((t,i)=>{input(`precision-court-${i}`).value=String(t.court);input(`precision-start-${i}`).value=t.start;input(`precision-duration-${i}`).value=String(t.durationHours);});
-  p3Apply(d.phase3);
-  input('booking-method').value=d.method;input('booking-type').value=d.strategy;input('test-date').value=d.date;input('court-count').value=String(d.courtCount);input('start-time').value=d.start;input('duration').value=String(d.duration);input('attempts').value=String(d.attempts);courtOrder=[...d.courtOrder];fallbackTimes=[...d.fallbackTimes];input('exact-a').value=d.exactA;input('exact-b').value=d.exactB;editors();syncStrategy();}
+  precisionMode=d.precisionMode??'fixed';smartDraft=cloneSmart(d.smart??emptySmartDraft());smartRatesOpen=false;
+  input('booking-method').value=d.method;input('booking-type').value=d.strategy;input('test-date').value=d.date;input('court-count').value=String(d.courtCount);input('start-time').value=d.start;input('duration').value=String(d.duration);input('attempts').value=String(d.attempts);courtOrder=[...d.courtOrder];fallbackTimes=[...d.fallbackTimes];input('exact-a').value=d.exactA;input('exact-b').value=d.exactB;editors();syncStrategy();renderSmart(true);}
 function storeDraft(){const d=formDraft();if(workflow==='test')testDraft=d;else releaseDraft=d;}
 function reconcileReleaseDraft(){
   if(workflow!=='release')return;
@@ -359,7 +452,7 @@ function renderQrSummary(state:Dashboard){
 /** Browsers the current plan needs, so the strip can flag a needed browser that is closed. */
 function neededWorkers():WorkerId[]{
   if(workflow==='release'&&precisionSelected()){
-    if(input('phase3-enabled').checked){const draft=p3Draft();return [...new Set([...draft.rows.map(row=>row.worker).filter(Boolean),...draft.standby])] as WorkerId[];}
+    if(precisionMode==='smart'){const compiled=smartCompiled();return [...new Set([...compiled.immediateWorkers.filter(worker=>worker!==null),...compiled.standby])] as WorkerId[];}
     return PRECISION_WORKERS.slice(0,Number(input('precision-count').value)||1) as WorkerId[];
   }
   const strategy=input('booking-type').value,count=Number(input('court-count').value);
@@ -575,12 +668,13 @@ function status(id: string, text: string, tone: string) { const el = byId(id); e
 function gateRows(gates:[string,boolean][]){return gates.map(([label,ok])=>{const row=document.createElement('div');row.className=`gate ${ok?'good':'warn'}`;
   const mark=document.createElement('span');mark.className='gate-mark';mark.textContent=ok?'✓':'–';mark.setAttribute('aria-label',ok?'Done':'Pending');row.append(mark,document.createTextNode(label));return row;});}
 function render(state: Dashboard) {
-  renderPrecision(state);
   latest = state;
+  renderPrecision(state);
   renderQrSummary(state);
   renderStatusBar(state);
   renderSlotWatch(state);
   renderForensics(state);
+  renderPhase4(state);
   byId('headline').textContent = state.headline; byId('detail').textContent = state.detail;
   const armed=!!state.scheduledRelease;
   const busy = state.operation !== 'idle'&&state.operation!=='scheduled';
@@ -640,7 +734,8 @@ function render(state: Dashboard) {
   byId('capability-status').textContent=`Selection ${state.capabilities.selectionReady?'ready':'unverified'} · checkout ${state.capabilities.checkoutReady?'verified':'unverified'} · payment handoff ${state.capabilities.paymentBoundaryReady?'verified':'unverified'}`;
   const b=state.booking;
   if(b){
-     if(!releaseDirty&&loadedPlan!==b.fingerprint){loadedPlan=b.fingerprint;releaseDraft={releaseStrategy:b.setup.RELEASE_STRATEGY??'general',precisionCount:Math.max(1,b.setup.PRECISION_TARGETS?.length??0),precisionTargets:[...(b.setup.PRECISION_TARGETS??[])],phase3:p3FromSaved(b.setup.PRECISION_PHASE3),method:b.setup.BOOKING_METHOD??'browser',strategy:b.setup.BOOKING_TYPE??'standard',date:testDraft?.date??input('test-date').value,courtCount:b.setup.COURT_COUNT,start:b.setup.START_TIME,duration:b.setup.DURATION_HOURS,attempts:b.setup.MAX_SELECTION_ATTEMPTS,courtOrder:[...b.setup.PREFERRED_COURTS],fallbackTimes:[...b.setup.FALLBACK_TIMES],exactA:'',exactB:''};if(b.fallbackReconciliation.removed.length){releaseAdjustment=b.fallbackReconciliation;releaseDirty=true;}if(workflow==='release'){applyDraft(releaseDraft);dirty=releaseDirty;}}
+     if(!releaseDirty&&loadedPlan!==b.fingerprint){loadedPlan=b.fingerprint;releaseDraft={releaseStrategy:b.setup.RELEASE_STRATEGY??'general',precisionCount:Math.max(1,b.setup.PRECISION_TARGETS?.length??0),precisionTargets:[...(b.setup.PRECISION_TARGETS??[])],precisionMode:b.setup.PRECISION_PHASE3?'smart':'fixed',smart:b.setup.PRECISION_PHASE3?smartDraftFromPhase3(b.setup.PRECISION_PHASE3,{targetDate:b.targetDate,unavailable:unreadyWorkers()}):undefined,method:b.setup.BOOKING_METHOD??'browser',strategy:b.setup.BOOKING_TYPE??'standard',date:testDraft?.date??input('test-date').value,courtCount:b.setup.COURT_COUNT,start:b.setup.START_TIME,duration:b.setup.DURATION_HOURS,attempts:b.setup.MAX_SELECTION_ATTEMPTS,courtOrder:[...b.setup.PREFERRED_COURTS],fallbackTimes:[...b.setup.FALLBACK_TIMES],exactA:'',exactB:''};if(b.fallbackReconciliation.removed.length){releaseAdjustment=b.fallbackReconciliation;releaseDirty=true;}if(workflow==='release'){applyDraft(releaseDraft);dirty=releaseDirty;}}
+     if(workflow==='release'&&precisionMode==='smart')renderSmart();
     byId('booking-preview').textContent=`${dual?'2 COURTS / SAME TIME BLOCK\n':''}TARGET  ${dateLabel(b.targetDate)}\nREQUIRED SLOTS  ${b.slots.join(' · ')}\nCOURT ORDER  ${b.setup.PREFERRED_COURTS.join(' → ')}\nFALLBACK STARTS  ${b.setup.FALLBACK_TIMES.map(friendly).join(' → ')||'None'}\n${b.setup.MAX_SELECTION_ATTEMPTS} candidate attempts · No price ceiling\nPLAYER  Configured ✓`;
   }
 
@@ -785,8 +880,7 @@ function render(state: Dashboard) {
    const savedSetup=state.booking?.setup;
    if(savedSetup?.RELEASE_STRATEGY==='precision'){
      const p=savedSetup.PRECISION_PHASE3;
-     byId('saved-plan-summary').textContent=p?`PRECISION PHASE 3 · GOAL: 1 HOLD\n${p.wave1.map(a=>{const t=p.candidates[a.candidateIndex]!;
-       return `Wave 1 Worker ${a.workerId} · Court ${t.court} · ${t.start}–${endFriendly(t.start,t.durationHours)} · PHP ${t.rateEvidence.perHour.reduce((x,y)=>x+y,0)} (${t.rateEvidence.status})`;}).join('\n')}\nStandby: ${p.standby.join(', ')||'none'} · Wave 2 max ${p.budgets.wave2} · Rescue max ${p.budgets.rescue} · Total max ${p.budgets.total}\nMore than one temporary hold may be created. Payment remains manual. UNKNOWN stops later sends.\nTarget: ${dateLabel(state.booking!.targetDate)}`:
+     byId('saved-plan-summary').textContent=p?smartSavedSummary(p,state.booking!.targetDate):
        `PRECISION RELEASE · GOAL: 1 COURT · PROOFLESS DIRECT\n${savedSetup.PRECISION_TARGETS.map((t,i)=>`Worker ${PRECISION_WORKERS[i]} · Court ${t.court} · ${friendly(t.start)}–${endFriendly(t.start,t.durationHours)} · ${t.durationHours} h`).join('\n')}\nIndependent attempts: more than one temporary QR hold may be created. Payment remains manual.\nTarget: ${dateLabel(state.booking!.targetDate)}`;
    }
    else byId('saved-plan-summary').textContent=state.booking?(`${state.booking.setup.BOOKING_METHOD.toUpperCase()} · ${state.booking.setup.BOOKING_TYPE.toUpperCase()} · ${state.booking.setup.COURT_COUNT} court${state.booking.setup.COURT_COUNT===1?'':'s'}\n${friendly(state.booking.setup.START_TIME)}–${endFriendly(state.booking.setup.START_TIME,state.booking.setup.DURATION_HOURS)} · ${state.booking.setup.DURATION_HOURS} hours\nCourt priority: ${state.booking.setup.PREFERRED_COURTS.join(' → ')}\nFallback starts: ${state.booking.setup.FALLBACK_TIMES.map(friendly).join(', ')||'None'}\nTarget: ${dateLabel(state.booking.targetDate)}`):'No saved plan available.';
@@ -887,17 +981,15 @@ byId('terms').addEventListener('change',()=>{void window.thirsty.authorizeTerms(
  for(const id of ['booking-method','test-date','court-count','start-time','duration','attempts','exact-a','exact-b'])byId(id).addEventListener('change',changed);
 for(const id of ['precision-strategy','precision-count',...PRECISION_WORKERS.map((_,i)=>i).flatMap(i=>[`precision-court-${i}`,`precision-start-${i}`,`precision-duration-${i}`])])
   byId(id).addEventListener('change',()=>{syncStrategy();changed();});
-byId('phase3-enabled').addEventListener('change',()=>{if(input('phase3-enabled').checked&&!input('p3-rate-date').value)
-  input('p3-rate-date').value=latest?.booking?.targetDate??'';
-  if(input('phase3-enabled').checked&&!input('p3-rate-captured').value)input('p3-rate-captured').value=new Date().toISOString();
-  syncStrategy();changed();});
-byId('p3-count').addEventListener('change',()=>{const rows=p3Draft().rows,count=Math.min(21,Math.max(1,Number(input('p3-count').value)||1));
-  input('p3-count').value=String(count);p3RenderRows(Array.from({length:count},(_,i)=>rows[i]??p3DefaultRow(i)));changed();});
-for(const id of ['p3-rate-source','p3-rate-status','p3-rate-date','p3-rate-captured','p3-wave2-max','p3-rescue-max','p3-total-max','p3-concurrent','p3-rescue-enabled'])
-  byId(id).addEventListener('change',changed);
+for(const id of ['precision-mode-fixed','precision-mode-smart'])byId(id).addEventListener('change',()=>{
+  precisionMode=input('precision-mode-smart').checked?'smart':'fixed';
+  // Switching an empty Smart plan on starts from the fixed attempts already on screen.
+  if(precisionMode==='smart'&&!smartDraft.immediate.length&&!smartDraft.backups.length)smartDraft.immediate=precisionRows().map(row=>({...row}));
+  syncStrategy();renderSmart(true);changed();});
 byId('booking-type').addEventListener('change',()=>{const extended=input('booking-type').value==='extended',d=Number(input('duration').value);if(extended&&d<4)input('duration').value='4';if(!extended&&d>3)input('duration').value='3';syncViableControls();changed();});
 byId('add-fallback').onclick=()=>{const h=input('fallback-time').value;if(h===input('start-time').value||fallbackTimes.includes(h)){byId('edit-status').textContent='Choose a different fallback start.';return;}if(workflow==='release'){const reconciliation=reconcileFallbackTimes(input('start-time').value,Number(input('duration').value),[...fallbackTimes,h]);if(reconciliation.removed.length){releaseAdjustment=reconciliation;byId('edit-status').textContent=bookingSetupProblem({...currentSetup(),FALLBACK_TIMES:[...fallbackTimes,h]})??'That fallback does not fit the current booking.';if(latest)render(latest);return;}}fallbackTimes.push(h);editors();changed();};
 byId('save-booking').onclick=()=>{void(async()=>{
+  if(precisionSelected()&&precisionMode==='smart'){const compiled=smartCompiled();if(!compiled.phase3){byId('edit-status').textContent=compiled.problems[0]??'Resolve the Smart backups items first.';renderSmart(true);return;}}
    const setup:BookingSetup={...strategyFields(),BOOKING_METHOD:input('booking-method').value as 'browser'|'hybrid'|'api-first'|'proofless',BOOKING_TYPE:input('booking-type').value as 'standard'|'extended',COURT_COUNT:Number(input('court-count').value) as CourtCount,START_TIME:input('start-time').value,DURATION_HOURS:Number(input('duration').value),PREFERRED_COURTS:courtOrder,FALLBACK_COURTS:[],FALLBACK_TIMES:fallbackTimes,MAX_SELECTION_ATTEMPTS:Number(input('attempts').value)};
   await window.thirsty.saveBooking(setup);const state=await window.thirsty.getStatus();
   if(state.headline==='Booking plan saved'){releaseDirty=false;if(workflow==='release')dirty=false;loadedPlan='';byId('edit-status').textContent='BOOKING PLAN SAVED';render(state);}else byId('edit-status').textContent='Plan rejected. Check duration and unique times.';
@@ -920,6 +1012,123 @@ function testRequest(){
 }
  function currentSetup():BookingSetup{return {...strategyFields(),BOOKING_METHOD:input('booking-method').value as 'browser'|'hybrid'|'api-first'|'proofless',BOOKING_TYPE:input('booking-type').value as 'standard'|'extended',COURT_COUNT:Number(input('court-count').value) as CourtCount,START_TIME:input('start-time').value,DURATION_HOURS:Number(input('duration').value),PREFERRED_COURTS:courtOrder,FALLBACK_COURTS:[],FALLBACK_TIMES:fallbackTimes,MAX_SELECTION_ATTEMPTS:Number(input('attempts').value)};}
 byId('test-booking').onclick=()=>{const authorized=input('terms').checked;input('terms').checked=false;void window.thirsty.testBooking({...testRequest(),authorizeTerms:authorized as true}).catch(()=>{byId('detail').textContent='Check booking fields and Terms authorization.';});};
+// Phase 4 views. Plain summaries first; technical metrics only under Details. Nothing here saves, prepares or arms.
+const QUALITY_LABEL:Record<string,string>={GOOD:'Good',FAIR:'Fair',POOR:'Poor · too late or too coarse for the 8:00 moment',NONE:'Not observed'};
+const ORIGIN_LABEL:Record<string,string>={REAL_RELEASE:'current release architecture',HISTORICAL_PRE_PHASE3:'historical, before the current release architecture',SYNTHETIC:'synthetic test data',OFFLINE_BENCHMARK:'offline benchmark'};
+const OUTCOME_LABEL:Record<string,string>={OBJECTIVE_ACHIEVED:'Hold verified',OBJECTIVE_ACHIEVED_EXTRA_HOLD:'Hold verified; another attempt also holds a court',
+  OBJECTIVE_NOT_ACHIEVED_ALL_REJECTED:'All sent attempts were rejected',ALL_REJECTED_WAITING_FOR_REOPEN:'All sent attempts were rejected',MANUAL_RECONCILIATION_REQUIRED:'UNKNOWN result; checked manually',
+  NOTHING_DISPATCHED:'Nothing was sent',API_NO_AVAILABLE_CANDIDATE:'No available candidate was found',SPECIAL_SESSION_NOT_AVAILABLE:'The plan found no usable session'};
+const VERDICT_LABEL:Record<string,[string,string]>={READY:['Ready','good'],NEEDS_ATTENTION:['Needs attention','warn'],INSUFFICIENT_DATA:['Insufficient data','muted']};
+const secondsText=(ms:number|null|undefined)=>ms===null||ms===undefined?'not recorded':`${ms<0?'−':'+'}${(Math.abs(ms)/1000).toFixed(1)} s`;
+const outcomeText=(code:string|null)=>code?OUTCOME_LABEL[code]??code.replaceAll('_',' ').toLowerCase():'Not recorded';
+function detailsList(summaryText:string,lines:string[]){
+  const details=smartElement('details','tool-details'),list=smartElement('ul','');details.append(smartElement('summary','',summaryText),list);
+  list.append(...lines.map(line=>smartElement('li','',line)));return details;
+}
+function factList(rows:Array<[string,string]>){
+  const facts=smartElement('dl','insight-facts');
+  for(const [name,value] of rows){const item=document.createElement('div');item.append(smartElement('dt','',name),smartElement('dd','',value));facts.append(item);}
+  return facts;
+}
+let phase4Key='';
+function renderPhase4(state:Dashboard){
+  const key=JSON.stringify([state.intelligence,state.phase4]);if(key===phase4Key)return;phase4Key=key;
+  const intelligence=state.intelligence,phase=state.phase4;
+  const real=(intelligence?.releases??[]).filter(release=>release.origin==='REAL_RELEASE'||release.origin==='HISTORICAL_PRE_PHASE3');
+  const release=real[0],host=byId('release-insights');
+  if(!release)host.replaceChildren(smartElement('p','empty',intelligence?.generatedAt?'No recorded release yet.':'No release intelligence yet. Use Tools → Rebuild intelligence.'));
+  else{
+    const earlier=real.slice(1).map(value=>value.firstPublishedResponseOffsetMs).filter((value):value is number=>value!==null).sort((a,b)=>a-b);
+    const median=earlier.length?earlier[Math.floor(earlier.length/2)]!:null;
+    host.replaceChildren(factList([['Release',`${dateLabel(release.targetDate)} target · ${ORIGIN_LABEL[release.origin]??release.origin}`],
+      ['First useful grid',release.firstPublishedResponseOffsetMs===null?'Not observed':`answered ${secondsText(release.firstPublishedResponseOffsetMs)} after 8:00 · quality ${QUALITY_LABEL[release.quality]??release.quality}`],
+      ['Attempts',`${release.attempts.immediate} immediate · ${release.attempts.backup} backup · ${release.attempts.reopened} reopened-slot`],
+      ['Result',outcomeText(release.outcome)],
+      ['Reopened slots',release.reopened?`${release.reopened} court-hour${release.reopened===1?'':'s'} were seen reopening later (cause unknown)`:'None observed'],
+      ['Compared with history',median===null?'No earlier release to compare yet.':`Earlier releases answered their first useful grid at a median ${secondsText(median)} (${earlier.length} release${earlier.length===1?'':'s'}).`]]),
+      detailsList('Details',[...release.reasons,...release.notes,`Release record ${release.key}`]));
+  }
+  const busy=!!phase?.busy;
+  for(const id of ['rebuild-intelligence','clear-intelligence','run-network-check','replay-saved'])(byId(id) as HTMLButtonElement).disabled=busy;
+  byId('intelligence-status').textContent=phase?.message||(intelligence?.generatedAt
+    ?`Last rebuilt ${new Date(intelligence.generatedAt).toLocaleString('en-GB',{timeZone:'Asia/Manila'})} Manila · ${intelligence.realReleases} real release${intelligence.realReleases===1?'':'s'} · ${intelligence.adequateReleases} well observed`:'Not built yet.');
+  const list=byId('intelligence-list');
+  list.replaceChildren(...(intelligence?.releases??[]).map(value=>{const line=smartElement('div','intelligence-line');
+    line.append(smartElement('strong','',`${dateLabel(value.targetDate)} · ${ORIGIN_LABEL[value.origin]??value.origin}`),
+      smartElement('span','',`Quality ${QUALITY_LABEL[value.quality]??value.quality} · first grid ${secondsText(value.firstPublishedResponseOffsetMs)} · ${value.attempts.immediate+value.attempts.backup+value.attempts.reopened} attempts · ${outcomeText(value.outcome)}`));return line;}),
+    ...(phase?.warmth?[smartElement('p','small',`Connection warmth: ${phase.warmth.verdict}. ${phase.warmth.reasons.join(' ')}`)]:[]));
+  if(!intelligence?.releases.length)list.append(smartElement('p','empty','No releases recorded.'));
+  const net=phase?.networkReadiness,result=byId('network-result');
+  if(net){const [label,tone]=VERDICT_LABEL[net.verdict]??[net.verdict,'muted'];const head=smartElement('p','tool-verdict',label);head.dataset.tone=tone;
+    result.replaceChildren(head,smartElement('p','small',net.reasons.join(' ')),detailsList('Details',[
+      `Measured ${new Date(net.measuredAt).toLocaleString('en-GB',{timeZone:'Asia/Manila'})} Manila · ${net.target}`,
+      `${net.succeeded} of ${net.requests} reads succeeded · ${net.complete} complete`,
+      `Read time median ${net.medianMs??'—'} ms · p90 ${net.p90Ms??'needs 10 reads'} · p95 ${net.p95Ms??'needs 20 reads'} · max ${net.maxMs??'—'} ms`,
+      `Connections: ${net.newConnections} new, ${net.reusedRequests} reused · setup ${net.connectMs.length?net.connectMs.map(value=>`${value} ms`).join(', '):'none'} · DNS ${net.dnsMs??'—'} ms · ${net.protocol}`,
+      `Network clock: ${net.clock.kept} of ${net.clock.samples} samples kept · offset ${net.clock.offsetMs??'—'} ms · round trip ${net.clock.minRoundTripMs??'—'}–${net.clock.medianRoundTripMs??'—'} ms · spread ${net.clock.spreadMs??'—'} ms · ${net.clock.quality}`,
+      `Interfaces: ${net.interfaces.map(value=>`${value.name} (${value.kind})`).join(', ')||'none reported'} · link speed not measured`,
+      net.history.previousRuns?`Earlier checks: ${net.history.previousRuns}, median read time ${net.history.previousMedianMs??'—'} ms`:'No earlier checks to compare.']));}
+  else if(phase?.busy==='network')result.replaceChildren(smartElement('p','small','Checking…'));
+}
+function renderReplay(host:HTMLElement,summary:Awaited<ReturnType<Bridge['replayPlan']>>){
+  if(summary.blocked){host.replaceChildren(smartElement('p','small',summary.blocked));return;}
+  const cards=summary.results.map(result=>{
+    const card=smartElement('div','replay-card');card.append(smartElement('strong','',`${dateLabel(result.targetDate)} release · ${ORIGIN_LABEL[result.origin]??result.origin}`),smartElement('p','replay-statement',result.statement));
+    const lines=result.immediate.map(value=>`Immediate · Court ${value.court} · ${smartRange(value.startTime,Number(value.endTime.slice(0,2))-Number(value.startTime.slice(0,2)))}: ${value.firstPublished.replaceAll('_',' ').toLowerCase()} in the first published grid${value.firstPublishedRead?` (answered ${secondsText(value.firstPublishedRead.responseOffsetMs)})`:''}`);
+    if(result.backup)lines.push(`Backup opportunity at ${secondsText(result.backup.atResponseOffsetMs)}: ${result.backup.selections.map(value=>`Court ${value.court} ${value.startTime}–${value.endTime} (Worker ${value.workerId}, ${smartPeso(value.amount)})`).join('; ')}`);
+    for(const value of result.rescue)lines.push(`Reopened-slot opportunity at ${secondsText(value.atResponseOffsetMs)}: Court ${value.court} ${value.startTime}–${value.endTime}`);
+    if(result.conflicts.length)lines.push(`${result.conflicts.length} open backup${result.conflicts.length===1?' was':'s were'} skipped because an active attempt overlapped it.`);
+    card.append(smartElement('ul','',undefined));card.lastElementChild!.append(...lines.map(line=>smartElement('li','',line)));
+    card.append(detailsList('Details',[...result.censored,...result.assumptions,`Evidence used: ${Object.entries(result.fitness).map(([key,count])=>`${count} ${key.replaceAll('_',' ').toLowerCase()}`).join(', ')||'none'}`,
+      ...result.forensicOpenings.map(value=>`Observed open (${value.fitness.replaceAll('_',' ').toLowerCase()}): Court ${value.court} ${value.startTime}–${value.endTime}, read #${value.seq} answered ${secondsText(value.responseOffsetMs)}`)]));
+    return card;
+  });
+  host.replaceChildren(...(cards.length?cards:[smartElement('p','small','No recorded release has a court/hour grid to replay yet.')]),
+    ...summary.skipped.map(value=>smartElement('p','small',`Not replayed (${value.releaseKey.split('@')[0]} target): ${value.reason}`)));
+}
+function adviceRequest(){
+  const courts=input('advisor-courts').value.split(/[ ,]+/).filter(Boolean).map(Number);
+  const exclude=input('advisor-exclude').value.split(/[ ,]+/).filter(Boolean).map(value=>{const match=/^([1-7])@(\d{1,2})(?::00)?$/.exec(value.trim());
+    return match?{court:Number(match[1]),start:`${match[2]!.padStart(2,'0')}:00`}:null;});
+  if(!courts.length||courts.some(court=>!Number.isInteger(court)||court<1||court>7))return 'Courts must be numbers from 1 to 7, separated by commas.';
+  if(exclude.some(value=>value===null))return 'Write exclusions like 3@19:00, separated by commas.';
+  if(input('advisor-from').value>input('advisor-to').value)return 'The earliest start must not be after the latest start.';
+  return {courts,earliestStart:input('advisor-from').value,latestStart:input('advisor-to').value,durationHours:Number(input('advisor-duration').value),
+    immediate:Math.min(7,Math.max(0,Math.floor(Number(input('advisor-immediate').value)||0))),backups:Math.min(14,Math.max(0,Math.floor(Number(input('advisor-backups').value)||0))),
+    exclude:exclude as Array<{court:number;start:string}>,existing:[...smartDraft.immediate,...smartDraft.backups].map(({court,start,durationHours})=>({court,start,durationHours}))};
+}
+function renderAdvice(result:Awaited<ReturnType<Bridge['adviseFromHistory']>>){
+  if('blocked' in result){byId('advisor-status').textContent=result.blocked;byId('advisor-results').replaceChildren();return;}
+  byId('advisor-status').textContent=`${result.rule} ${result.notes.join(' ')} Well-observed ${result.dayOfWeek} releases: ${result.wellObservedReleases}.`;
+  byId('advisor-results').replaceChildren(...result.suggestions.map(suggestion=>{
+    const card=smartElement('div','advisor-card'),list=smartElement('ul','');
+    card.append(smartElement('span','advisor-role',suggestion.role==='IMMEDIATE'?'Immediate attempt':'Backup choice'),smartElement('strong','',suggestion.title),list);
+    list.append(...suggestion.lines.map(line=>smartElement('li','',line)));
+    const add=smartButton('Add to draft',`Add ${suggestion.title} to the draft as ${suggestion.role==='IMMEDIATE'?'an immediate attempt':'a backup choice'}`,false,()=>{
+      const slot={court:suggestion.court,start:suggestion.start,durationHours:suggestion.durationHours};
+      const present=[...smartDraft.immediate,...smartDraft.backups].some(value=>value.court===slot.court&&value.start===slot.start&&value.durationHours===slot.durationHours);
+      if(present||(suggestion.role==='IMMEDIATE'&&smartDraft.immediate.length>=SMART_WORKERS.length)){add.textContent=present?'Already in draft':'Immediate list full';add.disabled=true;return;}
+      smartEdit(draft=>{(suggestion.role==='IMMEDIATE'?draft.immediate:draft.backups).push(slot);});add.textContent='Added to draft';add.disabled=true;});
+    const row=smartElement('div','button-row');row.append(add);card.append(row);return card;
+  }));
+}
+for(const id of ['advisor-from','advisor-to'])(byId(id) as HTMLSelectElement).replaceChildren(...hours.map(h=>new Option(friendly(h),h)));
+input('advisor-from').value='17:00';input('advisor-to').value='20:00';
+byId('smart-suggest').onclick=()=>{const panel=byId('smart-advisor');panel.hidden=!panel.hidden;
+  if(!panel.hidden){input('advisor-immediate').value=String(Math.max(1,smartDraft.immediate.length||4));input('advisor-backups').value=String(Math.max(0,smartDraft.backups.length||3));}};
+byId('smart-advisor-close').onclick=()=>{byId('smart-advisor').hidden=true;};
+byId('advisor-run').onclick=()=>{const request=adviceRequest();if(typeof request==='string'){byId('advisor-status').textContent=request;return;}
+  byId('advisor-status').textContent='Reading release history…';
+  void window.thirsty.adviseFromHistory(request).then(renderAdvice).catch(()=>{byId('advisor-status').textContent='Suggestions are unavailable right now.';});};
+byId('smart-replay').onclick=()=>{const compiled=smartCompiled(),host=byId('smart-replay-results');
+  if(!compiled.phase3){host.replaceChildren(smartElement('p','small','Resolve the items above before replaying this draft.'));return;}
+  host.replaceChildren(smartElement('p','small','Replaying recorded releases…'));
+  void window.thirsty.replayPlan({source:'draft',phase3:compiled.phase3}).then(summary=>renderReplay(host,summary)).catch(()=>{host.replaceChildren(smartElement('p','small','Replay is unavailable right now.'));});};
+byId('replay-saved').onclick=()=>{const host=byId('replay-results');host.replaceChildren(smartElement('p','small','Replaying recorded releases…'));
+  void window.thirsty.replayPlan({source:'saved'}).then(summary=>renderReplay(host,summary)).catch(()=>{host.replaceChildren(smartElement('p','small','Replay is unavailable right now.'));});};
+byId('run-network-check').onclick=()=>{void window.thirsty.runNetworkCheck().catch(()=>{});};
+byId('rebuild-intelligence').onclick=()=>{void window.thirsty.rebuildIntelligence().catch(()=>{});};
+byId('clear-intelligence').onclick=()=>{void window.thirsty.clearIntelligence().catch(()=>{});};
 window.thirsty.onStatus(render);
 void window.thirsty.getStatus().then(render);
 setInterval(tick, 100);
@@ -942,35 +1151,47 @@ const PRECISION_STATE_TEXT:Record<string,[string,'ok'|'warn'|'bad'|'']>={EXCLUDE
   WINDOW_MISSED:['NOT DISPATCHED — window missed','warn'],NOT_DISPATCHED:['NOT DISPATCHED','warn'],REJECTED:['REJECTED by Onda',''],
   UNKNOWN:['UNKNOWN — may have been sent · do not retry','bad'],HOLD_VERIFIED:['HOLD VERIFIED','ok'],
   HOLD_VERIFIED_QR_ATTENTION:['HOLD VERIFIED · QR HANDOFF NEEDS ATTENTION — use Show Browser','bad'],QR_READY:['HOLD VERIFIED · QR READY','ok']};
+/** Next Release summary of a saved Smart plan, generated from the saved authorization itself. */
+function smartSavedSummary(plan:NonNullable<BookingSetup['PRECISION_PHASE3']>,targetDate:string){
+  const description=describeSmartPlan(plan as SmartPhase3,{unavailable:unreadyWorkers()});
+  return ['PRECISION · SMART BACKUPS · GOAL: 1 HOLD',`${description.summary} · maximum ${description.maxSends} sends`,
+    ...description.sections.flatMap(section=>[section.title.toUpperCase(),...section.lines.map(line=>`  ${line}`)]),...description.warnings,`Target: ${dateLabel(targetDate)}`].join('\n');
+}
+const SMART_OUTCOME:Record<string,string>={OBJECTIVE_ACHIEVED:'Hold verified',OBJECTIVE_ACHIEVED_EXTRA_HOLD:'Hold verified · another attempt also holds a court',
+  MANUAL_RECONCILIATION_REQUIRED:'UNKNOWN result · check Onda manually; nothing more will be sent',ALL_REJECTED_WAITING_FOR_REOPEN:'All attempts rejected',NOTHING_DISPATCHED:'Nothing was sent'};
+const AVAILABILITY_STATUS:Record<string,string>={ACTIONABLE_FRESH:'Fresh · usable for backups',FORENSIC_ONLY_CACHE_AGE_UNKNOWN:'Cached or age unknown · not used',
+  FORENSIC_ONLY_STALE:'Too old · not used',FORENSIC_ONLY_INCOMPLETE:'Incomplete · not used',FORENSIC_ONLY_OUTDATED_REQUEST:'Older read answered late · not used',
+  UNRELEASED:'Not released yet',FAILED:'Read failed'};
+const ATTEMPT_LABEL:Record<string,string>={WAVE_1:'Immediate attempt',WAVE_2:'Backup attempt',RESCUE:'Reopened-slot attempt'};
 function renderPrecision(state:Dashboard){
   const setup=state.booking?.setup,live=state.precision;
   if(setup?.RELEASE_STRATEGY==='precision'&&setup.PRECISION_PHASE3){
-    const p=setup.PRECISION_PHASE3,phase=state.phase3,panel=byId('precision-panel');panel.hidden=false;
+    const p=setup.PRECISION_PHASE3 as SmartPhase3,phase=state.phase3,panel=byId('precision-panel');panel.hidden=false;
     const current=state.slotWatch?.current?.seq===phase?.seq&&phase?.fitness==='ACTIONABLE_FRESH';
-    byId('precision-summary').textContent=[`Phase 3 · ${phase?.outcome??(phase?.frozen?'FROZEN':'configured')}`,
-      `Wave 1: ${p.wave1.length} · Standby: ${p.standby.join(', ')||'none'} · Wave 2 max: ${p.budgets.wave2} · Rescue max: ${p.budgets.rescue} · Total max: ${p.budgets.total}`,
-      `Latest observation: ${phase?.fitness??'pending'} · cache ${phase?.cache??'unknown'}`].join('\n');
-    const lines=p.candidates.map((c,i)=>{
-      const line=document.createElement('div');line.className='precision-line';
-      const worker=p.wave1.find(value=>value.candidateIndex===i)?.workerId;
-      const end=`${String(Number(c.start.slice(0,2))+c.durationHours).padStart(2,'0')}:00`;
-      const title=document.createElement('strong');title.textContent=`#${c.priority} · Court ${c.court} · ${c.start}–${end} · Wave 1 ${worker??'none'} · Wave 2 ${c.permissions.wave2?'yes':'no'} · Rescue ${c.permissions.rescue?'yes':'no'}`;
-      const hours=Array.from({length:c.durationHours},(_,offset)=>`${String(Number(c.start.slice(0,2))+offset).padStart(2,'0')}:00`);
-      const cells=hours.map(hour=>state.slotWatch?.cells.find(value=>value.court===c.court&&value.hour===hour));
+    const description=describeSmartPlan(p,{unavailable:unreadyWorkers()});
+    byId('precision-summary').textContent=[`Smart backups · ${SMART_OUTCOME[phase?.outcome??'']??(phase?.frozen?'Plan frozen for release':'Configured')}`,
+      `${description.summary} · maximum ${description.maxSends} sends`,
+      `Availability status: ${AVAILABILITY_STATUS[phase?.fitness??'']??'Waiting for the released schedule'}`].join('\n');
+    const assigned=new Map(p.wave1.map(value=>[value.candidateIndex,value.workerId] as const));
+    const backups=p.candidates.map((_,index)=>index).filter(index=>!assigned.has(index)).sort((a,b)=>p.candidates[a]!.priority-p.candidates[b]!.priority||a-b);
+    const lines=[...p.wave1.map(value=>value.candidateIndex),...backups].map((index,position)=>{
+      const c=p.candidates[index]!,worker=assigned.get(index),line=document.createElement('div');line.className='precision-line';
+      const title=document.createElement('strong');title.textContent=worker?`Immediate · Worker ${worker} · Court ${c.court} · ${smartRange(c.start,c.durationHours)}`
+        :`Backup ${position-p.wave1.length+1} · Court ${c.court} · ${smartRange(c.start,c.durationHours)}`;
+      const slotHours=Array.from({length:c.durationHours},(_,offset)=>`${String(Number(c.start.slice(0,2))+offset).padStart(2,'0')}:00`);
+      const cells=slotHours.map(hour=>state.slotWatch?.cells.find(value=>value.court===c.court&&value.hour===hour));
       const freshOpen=current&&cells.every(cell=>cell?.state==='OPEN'&&typeof cell.currentPrice==='number'&&cell.currentPrice>0);
-      const latestAmount=freshOpen?cells.reduce((total,cell)=>total+cell!.currentPrice!,0):null;
-      const evidence=document.createElement('span');evidence.textContent=freshOpen?`Fresh OPEN · current PHP ${latestAmount}`:
-        phase?.fitness==='FORENSIC_ONLY_CACHE_AGE_UNKNOWN'?'Cached/uncertain · no adaptive send':
-        phase?.fitness==='FORENSIC_ONLY_STALE'?'Stale · no adaptive send':
-        phase?.fitness==='FORENSIC_ONLY_INCOMPLETE'?'Incomplete · no adaptive send':
-        cells.some(cell=>cell?.state==='TAKEN')?'Unavailable':phase?.fitness==='UNRELEASED'?'Unreleased':'Evidence pending/unknown';
-      const price=document.createElement('span');price.textContent=`Expected PHP ${c.rateEvidence.perHour.reduce((a,b)=>a+b,0)} · ${c.rateEvidence.status} · ${c.rateEvidence.source}`;
+      const evidence=document.createElement('span');evidence.textContent=freshOpen?`Fresh open · released price ${smartPeso(cells.reduce((total,cell)=>total+cell!.currentPrice!,0))}`:
+        cells.some(cell=>cell?.state==='TAKEN')?'Unavailable':AVAILABILITY_STATUS[phase?.fitness??'']??'Waiting for the released schedule';
+      const price=document.createElement('span');price.textContent=worker?`Expected ${smartPeso(c.rateEvidence.perHour.reduce((a,b)=>a+b,0))}`:'Uses the released price';
       line.append(title,evidence,price);return line;
     });
-    for(const worker of p.standby){const line=document.createElement('div');line.className='precision-line';line.textContent=`Worker ${worker} · STANDBY · no target assigned`;lines.push(line);}
+    for(const worker of p.standby){const line=document.createElement('div');line.className='precision-line';line.textContent=`Backup worker ${worker} · waits for a fresh opening`;lines.push(line);}
     for(const attempt of phase?.attempts??[]){const line=document.createElement('div');line.className='precision-line';
-      line.textContent=`${attempt.wave} · Worker ${attempt.workerId} · candidate ${attempt.candidateId.slice(0,8)} · ${attempt.state}`;lines.push(line);}
-    byId('precision-table').replaceChildren(...lines);return;
+      line.textContent=`${ATTEMPT_LABEL[attempt.wave]??attempt.wave} · Worker ${attempt.workerId} · ${attempt.state}`;lines.push(line);}
+    byId('precision-table').replaceChildren(...lines);
+    if(state.identityIssues?.length)byId('precision-summary').textContent+=`\n${state.identityIssues.join('\n')}`;
+    return;
   }
   const configured=setup?.RELEASE_STRATEGY==='precision'?setup.PRECISION_TARGETS:[];
   const rows=live?.targets.length?live.targets:configured.map((t,i)=>({workerId:PRECISION_WORKERS[i]!,court:t.court,startTime:t.start,

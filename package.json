@@ -38,7 +38,10 @@
     "release:fleet": "tsx src/fleet-validation-cli.ts",
     "bench:release": "tsx scripts/benchmark-precision-release.ts",
     "release:forensics": "tsx src/release-forensics-cli.ts",
-    "phase3:simulate": "tsx scripts/simulate-precision-phase3.ts"
+    "phase3:simulate": "tsx scripts/simulate-precision-phase3.ts",
+    "phase4:replay": "tsx scripts/replay-phase4-fixtures.ts",
+    "phase4:research": "tsx scripts/phase4-research.ts",
+    "intelligence:rebuild": "tsx scripts/phase4-research.ts --rebuild"
   },
   "dependencies": {
     "@fingerprintjs/fingerprintjs": "5.2.0",
