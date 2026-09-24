@@ -1,26 +1,35 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { constants as osConstants, getPriority, setPriority } from 'node:os';
 import { join, resolve } from 'node:path';
 import { mkdir, open } from 'node:fs/promises';
 import { performance } from 'node:perf_hooks';
 import { chromium, type Browser, type Page } from 'playwright';
 import { z } from 'zod';
 import { ONDA_URL, VENUE, loadConfig, planFingerprint, releaseMsForTargetDate } from '../config.js';
-import { NETWORK_CLOCK_MAX_AGE_MS, readNetworkClock, synchronizeNetworkClock } from '../network-clock.js';
+import { consensusState, NETWORK_CLOCK_MAX_AGE_MS, queryGoogleClockConsensus, readNetworkClock, recordClockEvidence, writeNetworkClockState } from '../network-clock.js';
+import { adoptConsensus, DEFAULT_SPIN_TAIL_MS, RELEASE_CLOCK_ROUNDS, TrustedReleaseClock } from '../release-clock.js';
+import { armedNothingFired, armPrecisionRace, disarmUnfired, dispatchArmedPrecisionRace, type ArmedPrecisionRace } from './armed-dispatch.js';
 import { classifyTargetEvidence, readPreReleaseEvidence } from './pre-release-evidence.js';
-import { classifyPrecisionDispatchError, dispatchPrecisionRace, freezePrecisionRace, precisionTargetPlan, reducePrecisionOutcome,
-  validatePrecisionTargets, VerifiedHoldQrError, type PrecisionAttempt, type PrecisionAttemptState } from './precision-race.js';
+import { freezePrecisionRace, precisionTargetPlan, reducePrecisionOutcome,
+  validatePrecisionTargets, VerifiedHoldQrError, classifyPrecisionDispatchError,
+  type PrecisionAttempt, type PrecisionAttemptState, type PrecisionTarget } from './precision-race.js';
+import { authorizePrecision, precisionCandidateId, PrecisionSession, classifyActionableObservation, pricedPrecisionPlan,
+  type ActionableObservation, type AvailabilityObservation } from './precision-phase3.js';
 import { browserIdentity, verifyDedicatedChromeAsync } from '../browser.js';
 import { emitUiEvent } from '../ui-events.js';
 import { discoverApiAvailability } from './availability-engine.js';
 import { OndaLiveAvailabilityProvider, THIRSTY_PICKLE_FACILITY_ID } from './live-availability-provider.js';
 import { parseAvailability } from './availability-parser.js';
 import { DurableSubmissionJournal } from './durable-submission-journal.js';
+import { SubmissionDispatchError } from './submission-errors.js';
 import { loadLocalCheckoutCustomer } from './local-customer.js';
+import { assertActiveCustomersValid, resolveActiveCustomers } from './customer-identity.js';
 import { submitCalendarFreeTwoHourCheckout } from './calendar-free-checkout.js';
 import { officialCheckoutUrl } from './checkout-restoration.js';
 import type { AvailabilitySnapshot, BookingPlan, BookingPreferences } from './types.js';
 import { OndaBrowserSessionTransport, type BrowserTransportObservation, type CheckoutHttpResponse } from './browser-session-transport.js';
+import { ProviderTraceSet, type CdpSessionLike } from './checkout-provider-trace.js';
 import { calendarFreeSecurityContext } from './calendar-free-security-context.js';
 import { firstUnjournaledAvailableCandidate } from './candidate-journal.js';
 import { standardCheckoutChunks } from './extended-checkout.js';
@@ -47,7 +56,16 @@ const command = z.object({ mode: z.enum(['prepare', 'dry', 'audit', 'live', 'liv
   checkoutMethod:z.enum(['proof-based','proofless']).optional(),clockOffsetMs:z.number().finite().optional(),releaseMs: z.number().int().positive().optional(), fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
   preferences: preferencesSchema.optional() }).strict().parse(JSON.parse(process.argv[2] ?? '{}'));
 const abort = new AbortController();
-process.on('message', message => { if ((message as { type?: string })?.type === 'abort') abort.abort(); });
+const phase3Observations:AvailabilityObservation[]=[];
+process.on('message', message => {
+  if ((message as { type?: string })?.type === 'abort') abort.abort();
+  const received=message as {type?:string;date?:string;releaseMs?:number;observation?:AvailabilityObservation};
+  if(received?.type==='slotObservation'&&received.date===command.date&&received.releaseMs===command.releaseMs&&
+    received.observation&&Number.isSafeInteger(received.observation.seq)&&
+    received.observation.seq>0&&Number.isFinite(received.observation.requestOffsetMs)&&
+    Number.isFinite(received.observation.responseOffsetMs)&&phase3Observations.length<1500)
+    phase3Observations.push(received.observation);
+});
 const started = performance.now();
 // The Google offset captured at arming is refreshed before release (T-10 min);
 // every scheduling decision reads the latest value through nowMs().
@@ -113,6 +131,18 @@ const persistLatestVerifiedHold=async()=>{
   persistedVerifiedHoldExpiry=latestVerifiedHoldExpiry;
 };
 interface WorkerSession { workerId:WorkerId; browser: Browser; page: Page; port: number }
+// Passive checkout provider trace (see checkout-provider-trace.ts). Attached in the background well
+// before any POST, written only after every POST has settled; checkout never depends on it.
+let providerTraces:ProviderTraceSet|undefined,providerTracesSaved=false;
+const openTraceSession=(page:Page)=>()=>page.context().newCDPSession(page) as unknown as Promise<CdpSessionLike>;
+const persistProviderTraces=async()=>{
+  if(!providerTraces||providerTracesSaved)return;
+  providerTracesSaved=true;
+  const path=await providerTraces.persist(resolve('.local/release-forensics',progressLog.runId));
+  const records=providerTraces.records(),unavailable=providerTraces.statuses().filter(value=>value.status==='unavailable');
+  trace('PROVIDER_TRACE_SAVED',{status:path?'SUCCESS':'FAILED',traceCount:records.length,traceComplete:records.filter(value=>value.complete).length,
+    ...(unavailable.length?{traceUnavailable:unavailable.map(value=>`${value.workerId}:${value.code??'UNAVAILABLE'}`).join(',')}:{})});
+};
 async function prepareWorker(workerId:WorkerId): Promise<WorkerSession> {
   const identity = browserIdentity(workerId);
   stage('PREPARING_BROWSER', { workerId });
@@ -170,12 +200,16 @@ const readEvidence=(date:string,releaseMs:number,checkpoint:string,retry=true)=>
   onRead:read=>stage('PRE_RELEASE_AUDIT_READ',{checkpoint,readSource:read.source,attemptNo:read.attempt,ok:read.ok,
     ...(read.failedCourts?.length?{failedCourts:read.failedCourts.join(',')}:{})})});
 const sleepUntil=async(at:number)=>{while(nowMs()<at){ensureActive();await pause(Math.min(30_000,Math.max(1,at-nowMs())));}};
+const tenth=(value:number)=>Math.round(value*10)/10;
 async function refreshNetworkClock(checkpoint:string):Promise<boolean>{
   try{
-    const state=await synchronizeNetworkClock(),previous=clockOffsetMs;
+    const consensus=await queryGoogleClockConsensus(),previous=clockOffsetMs;
+    const state=writeNetworkClockState(consensusState(consensus));
+    try{recordClockEvidence(consensus,checkpoint);}catch{/* sanitized evidence is best-effort */}
     clockOffsetMs=state.offsetMs;lastClockSyncAtMs=Date.parse(state.synchronizedAt);
     stage('NETWORK_CLOCK_REFRESHED',{checkpoint,offsetMs:Math.round(state.offsetMs),roundTripMs:Math.round(state.roundTripMs),
-      deltaMs:Math.round(state.offsetMs-previous)});
+      deltaMs:Math.round(state.offsetMs-previous),sampleCount:consensus.sampleCount,spreadMs:tenth(consensus.spreadMs),uncertaintyMs:tenth(consensus.uncertaintyMs),
+      ...(consensus.quality==='GOOD'?{}:{code:'CLOCK_CONSENSUS_DEGRADED'})});
     return true;
   }catch(error){stage('NETWORK_CLOCK_REFRESH_FAILED',{checkpoint,code:safeApiFailureCode(error,'NETWORK_CLOCK_SYNC_FAILED')});return false;}
 }
@@ -184,6 +218,39 @@ function assertClockFresh(){
   if(command.clockOffsetMs===undefined)return;
   if(lastClockSyncAtMs===undefined||!Number.isFinite(lastClockSyncAtMs)||nowMs()-lastClockSyncAtMs>NETWORK_CLOCK_MAX_AGE_MS)
     throw Error('NETWORK_CLOCK_STALE');
+}
+/**
+ * Near-release consensus for Precision (T-60 s and T-30 s). Each round samples every approved
+ * Google NTP host; a GOOD round re-anchors the trusted clock on the monotonic clock, so the
+ * final wait and the final no-early check use the same clock and a later wall-clock step cannot
+ * move the release instant. A degraded or failed round keeps the previous clock; with no round
+ * adopted the fresh T-10 min consensus is used, and a stale sync still fails closed.
+ */
+let releaseClock:TrustedReleaseClock|undefined;
+async function prepareReleaseClock(releaseMs:number):Promise<TrustedReleaseClock>{
+  let clock:TrustedReleaseClock|undefined;
+  for(const round of RELEASE_CLOCK_ROUNDS){
+    const at=releaseMs-round.beforeMs;
+    if(nowMs()>at+5_000)continue;
+    await sleepUntil(at);
+    try{
+      const consensus=await queryGoogleClockConsensus({timeoutMs:1_000});
+      try{recordClockEvidence(consensus,round.label);}catch{/* sanitized evidence is best-effort */}
+      if(consensus.quality!=='GOOD'){
+        stage('NETWORK_CLOCK_CONSENSUS_REJECTED',{checkpoint:round.label,code:'CLOCK_CONSENSUS_DEGRADED',sampleCount:consensus.sampleCount});continue;
+      }
+      const previous=clock??TrustedReleaseClock.fromOffset(clockOffsetMs,{method:'previous-sync',sampleCount:0});
+      const adopted=adoptConsensus(previous,TrustedReleaseClock.fromOffset(consensus.offsetMs,{method:consensus.method,sampleCount:consensus.sampleCount,
+        spreadMs:consensus.spreadMs,uncertaintyMs:consensus.uncertaintyMs,quality:consensus.quality}),releaseMs);
+      clock=adopted.clock;
+      if(!adopted.jumpRejected){clockOffsetMs=consensus.offsetMs;lastClockSyncAtMs=nowMs();}
+      stage('NETWORK_CLOCK_CONSENSUS',{checkpoint:round.label,offsetMs:tenth(consensus.offsetMs),roundTripMs:tenth(consensus.minRoundTripMs),
+        deltaMs:tenth(consensus.offsetMs-previous.offsetMs),sampleCount:consensus.sampleCount,spreadMs:tenth(consensus.spreadMs),
+        uncertaintyMs:tenth(consensus.uncertaintyMs),...(adopted.jumpRejected?{code:'CLOCK_JUMP_REJECTED'}:{})});
+    }catch(error){stage('NETWORK_CLOCK_CONSENSUS_FAILED',{checkpoint:round.label,code:safeApiFailureCode(error,'NETWORK_CLOCK_SYNC_FAILED')});}
+  }
+  assertClockFresh();
+  return clock??TrustedReleaseClock.fromOffset(clockOffsetMs,{method:'t-10m-consensus',sampleCount:0});
 }
 /** Resync at T-10 min (retry at T-5 min), never inside the final minutes before dispatch. */
 async function refreshClockBeforeRelease(releaseMs:number){
@@ -199,12 +266,13 @@ try {
   const config = loadConfig();
   const requested = command.preferences;
   // Precision Release: the saved plan authorizes 1-3 exact, independent one-court targets (never COURT_COUNT).
-  const precisionTargets=!requested&&config.RELEASE_STRATEGY==='precision'&&command.mode!=='audit'
+  const phase3=!requested&&config.RELEASE_STRATEGY==='precision'&&command.mode!=='audit'?config.PRECISION_PHASE3:undefined;
+  const precisionTargets=!phase3&&!requested&&config.RELEASE_STRATEGY==='precision'&&command.mode!=='audit'
     ?validatePrecisionTargets(config.PRECISION_TARGETS,command.date):undefined;
-  if(precisionTargets&&(config.BOOKING_METHOD!=='proofless'||command.checkoutMethod!=='proofless'||config.BOOKING_TYPE!=='standard'))
+  if((precisionTargets||phase3)&&(config.BOOKING_METHOD!=='proofless'||command.checkoutMethod!=='proofless'||config.BOOKING_TYPE!=='standard'))
     throw Error('PRECISION_REQUIRES_PROOFLESS_STANDARD');
   stage('RUN_CONFIGURATION',{bookingMethod:config.BOOKING_METHOD,
-    workerCount:precisionTargets?.length??requiredWorkerIds(config.BOOKING_TYPE,config.COURT_COUNT).length,
+    workerCount:precisionTargets?.length??(phase3?phase3.wave1.length+phase3.standby.length:requiredWorkerIds(config.BOOKING_TYPE,config.COURT_COUNT).length),
     prewarmLeadMs:API_SECURITY_PREWARM_LEAD_MS,
     ...(command.releaseMs?{releaseMs:command.releaseMs}:{})});
   const strategy = requested?.strategy ?? config.BOOKING_TYPE;
@@ -226,19 +294,29 @@ try {
   if ((command.mode === 'live' || command.mode === 'live-now') && process.env.ONDA_API_FIRST_LIVE !== 'ARMED')
     throw Error('API_LIVE_NOT_ARMED');
   if (command.mode === 'live' && !command.releaseMs) throw Error('API_RELEASE_TIME_REQUIRED');
-  const workerIds:WorkerId[]=precisionTargets?precisionTargets.map(target=>target.workerId):requiredWorkerIds(strategy,courtCount);
+  const workerIds:WorkerId[]=phase3?[...phase3.wave1.map(value=>value.workerId),...phase3.standby]:precisionTargets?precisionTargets.map(target=>target.workerId):requiredWorkerIds(strategy,courtCount);
   // An armed Precision race tolerates one worker's browser or identity failure: that
   // attempt is recorded as not dispatched and the others stay eligible. Preparation
   // and the dry audit still require every configured worker, while the operator is present.
-  const precisionLive=!!precisionTargets&&command.mode==='live';
-  const unavailableWorkers=new Map<WorkerId,{state:'BROWSER_FAILED'|'IDENTITY_FAILED';code:string}>();
+  const precisionLive=!!(precisionTargets||phase3)&&command.mode==='live';
+  const unavailableWorkers=new Map<WorkerId,{state:'BROWSER_FAILED'|'IDENTITY_FAILED';code:string;duplicateOf?:WorkerId}>();
   if(command.mode==='live'||command.mode==='live-now')liveLock=await ApiAutomationLock.acquire(strategy,workerIds);
-  const customers:Partial<Record<WorkerId,ReturnType<typeof loadLocalCheckoutCustomer>>>|undefined=command.mode==='dry'?undefined:
-    Object.fromEntries(workerIds.flatMap(worker=>{
-      if(!precisionLive)return [[worker,loadLocalCheckoutCustomer(worker)]];
-      try{return [[worker,loadLocalCheckoutCustomer(worker)]];}
-      catch(error){unavailableWorkers.set(worker,{state:'IDENTITY_FAILED',code:safeApiFailureCode(error,'CUSTOMER_BINDING_MISSING')});return [];}
-    }));
+  // Customer identities of the workers THIS run needs: each binding valid and every Onda customer ID
+  // unique (first worker in A-G order keeps a shared ID). General fails closed on any invalid identity;
+  // Precision disables only the affected attempt, in preparation as well as at release.
+  let customers:Partial<Record<WorkerId,ReturnType<typeof loadLocalCheckoutCustomer>>>|undefined;
+  if(command.mode!=='dry'||precisionTargets||phase3){
+    const identities=resolveActiveCustomers(workerIds);
+    for(const identity of identities)if(!identity.ok)stage('CUSTOMER_IDENTITY_INVALID',{workerId:identity.worker,code:identity.code,
+      ...(identity.duplicateOf?{duplicateOf:identity.duplicateOf}:{})});
+    if(precisionTargets||phase3){
+      for(const identity of identities)if(!identity.ok)unavailableWorkers.set(identity.worker,{state:'IDENTITY_FAILED',code:identity.code,
+        ...(identity.duplicateOf?{duplicateOf:identity.duplicateOf}:{})});
+      if(!identities.some(identity=>identity.ok))throw Error('PRECISION_NO_VALID_CUSTOMER_IDENTITY');
+      customers=Object.fromEntries(identities.flatMap(identity=>identity.ok?[[identity.worker,identity.customer]]:[]));
+    }else customers=assertActiveCustomersValid(identities);
+    if(command.mode==='dry'&&!precisionTargets&&!phase3)customers=undefined;
+  }
   // The dedicated profiles are independent. Wait for both checks to settle so
   // a failure in one browser cannot leave an unobserved preparation running.
   const prepared=await Promise.allSettled(workerIds.map(prepareWorker));
@@ -257,6 +335,7 @@ try {
       process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT='SUPERVISED_ONE_SHOT';
     }
     const responseCaptures=new Map<WorkerId,(response:CheckoutHttpResponse)=>Promise<void>>();
+    const activeWaveContexts=new Map<WorkerId,{candidateId:string;wave:'WAVE_1'|'WAVE_2'|'RESCUE'}>();
     const releaseTransports=new Map<WorkerId,OndaBrowserSessionTransport>();
     const activeAttemptContexts=new Map<WorkerId,DiagnosticCorrelation>();
     const activeTransportOperations=new Map<string,Array<(stage:string,extra?:Record<string,unknown>)=>void>>();
@@ -273,9 +352,12 @@ try {
     };
     const observeTransport=(workerId:WorkerId,raw:BrowserTransportObservation)=>{
       const context=transportContext(workerId);
-      // Release lateness on the final pre-POST gate and on the observed POST (network-corrected clock).
+      // Release lateness on the final pre-POST gate and on the observed POST (network-corrected clock;
+      // the anchored release clock once Precision has prepared it).
       const observation=(raw.event==='CHECKOUT_PRE_POST'||raw.event==='CHECKOUT_HTTP_POST_INITIATED')&&command.releaseMs
-        ?{...raw,releaseLatenessMs:nowMs()-command.releaseMs} as unknown as BrowserTransportObservation:raw;
+        ?{...raw,releaseLatenessMs:tenth((releaseClock?.nowMs()??nowMs())-command.releaseMs)} as unknown as BrowserTransportObservation:raw;
+      // These two fire between the release instant and the POST: time is captured now, bookkeeping runs afterwards.
+      if(observation.event==='CHECKOUT_FUNCTION_ENTERED'||observation.event==='CHECKOUT_PRE_POST'){diagnostics.observeDeferred(observation.event,context,observation);return;}
       if(observation.event==='SECURITY_PREPARATION_STARTED'){
         beginTransport(`${workerId}:security:${observation.securitySource}`,'security',observation.event,context,observation);return;
       }
@@ -289,6 +371,11 @@ try {
         endTransport(`${workerId}:slot`,observation.event,context,observation);return;
       }
       if(observation.event==='CHECKOUT_HTTP_POST_INITIATED'){
+        // This worker's POST has left its page. Once every traced POST has, the passive traces enable Network (later macrotask).
+        providerTraces?.postInitiated(workerId);
+        const waveContext=activeWaveContexts.get(workerId);
+        if(waveContext)setImmediate(()=>stage('PHASE3_DISPATCH',{workerId,candidateId:waveContext.candidateId,
+          wave:waveContext.wave,attemptId:context.attemptId??'unknown'}));
         beginTransport(`${workerId}:checkout`,'checkout',observation.event,context,observation);return;
       }
       if(observation.event==='CHECKOUT_RESPONSE_COMPLETED'){
@@ -415,56 +502,73 @@ try {
         journals:directories.map(directory=>new DurableSubmissionJournal(directory))};
     });
     type ProoflessAttempt=ReturnType<typeof makeProoflessAttempts>[number];
-    const executeProoflessAttempt=async(attempt:ProoflessAttempt,releaseMs?:number,dispatch:{requirePreparedContext?:boolean}={})=>{
-      const {plan,workerId,session,customer,transport,keys,directories,journals,lane,attemptType,attemptId}=attempt;
-      const correlation={workerId,lane,attemptType,attemptId};
+    type ProoflessBinding={correlation:DiagnosticCorrelation&{workerId:WorkerId;attemptId:string};started:number;workerTiming:()=>{workerId:WorkerId;workerElapsedMs:number};captured:{token?:string;bookingNo?:string}};
+    /** Before any send: binds the attempt's diagnostics correlation and its private response capture. */
+    const bindProoflessAttempt=(value:{plan:BookingPlan;workerId:WorkerId;lane:ReturnType<typeof diagnosticLaneForWorker>;attemptType:DiagnosticAttemptType;attemptId:string;directory:string},
+      startedStage='DIAGNOSTIC_ATTEMPT_STARTED'):ProoflessBinding=>{
+      const {plan,workerId}=value,correlation={workerId,lane:value.lane,attemptType:value.attemptType,attemptId:value.attemptId};
       activeAttemptContexts.set(workerId,correlation);
-      diagnostics.observe('DIAGNOSTIC_ATTEMPT_STARTED',correlation,{court:plan.courts[0]!.court,startTime:plan.startTime,durationHours:plan.durationHours});
-      const workerStarted=performance.now(),workerTiming=()=>({workerId,workerElapsedMs:Math.round(performance.now()-workerStarted)});
-      let token:string|undefined,bookingNo:string|undefined;
+      diagnostics.observe(startedStage,correlation,{court:plan.courts[0]!.court,startTime:plan.startTime,durationHours:plan.durationHours});
+      const captured:{token?:string;bookingNo?:string}={};
       responseCaptures.set(workerId,async response=>{
-        await saveOnce(directories[0]!,'checkout-response-private.json',sanitizedCheckoutCapture(response));
-        try{const value=JSON.parse(response.body) as {bookings?:Array<{booking_no?:string;checkoutToken?:string}>};
-          bookingNo=value.bookings?.[0]?.booking_no;token=value.bookings?.[0]?.checkoutToken;}catch{}
+        providerTraces?.captureFallback({workerId,attemptId:value.attemptId,...activeWaveContexts.get(workerId)},response);
+        await saveOnce(value.directory,'checkout-response-private.json',sanitizedCheckoutCapture(response));
+        try{const parsed=JSON.parse(response.body) as {bookings?:Array<{booking_no?:string;checkoutToken?:string}>};
+          captured.bookingNo=parsed.bookings?.[0]?.booking_no;captured.token=parsed.bookings?.[0]?.checkoutToken;}catch{}
       });
+      const binding:ProoflessBinding={correlation,started:performance.now(),captured,
+        workerTiming:()=>({workerId,workerElapsedMs:Math.round(performance.now()-binding.started)})};
+      return binding;
+    };
+    const unbindProoflessAttempt=(binding:ProoflessBinding)=>{
+      if(activeAttemptContexts.get(binding.correlation.workerId)?.attemptId===binding.correlation.attemptId)activeAttemptContexts.delete(binding.correlation.workerId);
+    };
+    /** A validated pending booking: record it, then open the official QR page. A QR failure never reads as "no hold". */
+    const completeVerifiedProoflessHold=async(binding:ProoflessBinding,session:WorkerSession,plan:BookingPlan,hold:Awaited<ReturnType<typeof submitDirectCheckout>>)=>{
+      const {correlation,workerTiming}=binding,{workerId}=correlation,bookingNo=binding.captured.bookingNo,token=binding.captured.token;
+      verifiedHold=true;retainLiveLock=true;
+      if(!latestVerifiedHoldExpiry||Date.parse(hold.holdExpiresAt)>Date.parse(latestVerifiedHoldExpiry))latestVerifiedHoldExpiry=hold.holdExpiresAt;
+      const bookingTarget={date:command.date,court:plan.courts[0]!.court,...(plan.courts[1]?{courtB:plan.courts[1].court}:{}),
+        startTime:plan.startTime,durationHours:plan.durationHours};
+      stage('PENDING_HOLD',{...workerTiming(),...bookingTarget,bookingId:hold.bookingIds[0]!,bookingNo:bookingNo??'',
+        holdExpiresAt:hold.holdExpiresAt,price:plan.totalPrice});
+      diagnostics.observe('DIAGNOSTIC_VERIFIED_HOLD',correlation,{...bookingTarget,price:plan.totalPrice});
+      // From here the booking is real and validated; a QR page failure must never read as "no hold".
+      try{
+      if(!token||!bookingNo)throw Error('OFFICIAL_CHECKOUT_TOKEN_MISSING');
+      const grant=await session.page.evaluate(async({bookingNo,token})=>{const url=new URL(`/api/public/bookings/booking-no/${encodeURIComponent(bookingNo)}`,location.origin);
+        url.searchParams.set('checkoutToken',token);url.searchParams.set('grantCheckoutAccess','1');
+        return (await fetch(url,{credentials:'include',cache:'no-store'})).status;},{bookingNo,token});
+      if(grant!==200)throw Error('OFFICIAL_CHECKOUT_ACCESS_FAILED');
+      await session.page.goto(officialCheckoutUrl(hold.bookingIds[0]!),{waitUntil:'domcontentloaded',timeout:45_000});
+      await session.page.getByText('QRPH',{exact:true}).first().waitFor({state:'visible',timeout:20_000});
+      const body=await session.page.locator('body').innerText();
+      if(!body.includes('Pending')||!body.replaceAll(',','').includes(plan.totalPrice.toFixed(2)))throw Error('OFFICIAL_CHECKOUT_STATE_MISMATCH');
+      await showWorkerPage(session.page,workerId);
+      stage('OFFICIAL_QRPH_HANDOFF',{...workerTiming(),...bookingTarget,bookingId:hold.bookingIds[0]!,bookingNo,
+        holdExpiresAt:hold.holdExpiresAt,price:plan.totalPrice});
+      diagnostics.observe('DIAGNOSTIC_QR_HANDOFF',correlation,{...bookingTarget,price:plan.totalPrice});
+      }catch(error){
+        const code=safeApiFailureCode(error,'OFFICIAL_QR_HANDOFF_FAILED');
+        stage('QR_HANDOFF_NEEDS_ATTENTION',{...workerTiming(),...bookingTarget,code,bookingId:hold.bookingIds[0]!,bookingNo:bookingNo??'',
+          holdExpiresAt:hold.holdExpiresAt,price:plan.totalPrice});
+        await showWorkerPage(session.page,workerId).catch(()=>undefined);
+        throw new VerifiedHoldQrError(code,{bookingId:hold.bookingIds[0]!,...(bookingNo?{bookingNo}:{}),holdExpiresAt:hold.holdExpiresAt,amount:plan.totalPrice});
+      }
+      diagnostics.observe('DIAGNOSTIC_ATTEMPT_COMPLETED',correlation,{workerOutcome:'VERIFIED_HOLD'});
+      return hold;
+    };
+    const executeProoflessAttempt=async(attempt:ProoflessAttempt,releaseMs?:number,dispatch:{requirePreparedContext?:boolean;beforePost?:()=>void}={})=>{
+      const {plan,workerId,session,customer,transport,directories,journals,lane,attemptType,attemptId}=attempt;
+      const binding=bindProoflessAttempt({plan,workerId,lane,attemptType,attemptId,directory:directories[0]!});
       try{
         const hold=await submitDirectCheckout(plan,customer,transport,journals[0]!,releaseMs,journals.slice(1),nowMs,dispatch);
-        verifiedHold=true;retainLiveLock=true;
-        if(!latestVerifiedHoldExpiry||Date.parse(hold.holdExpiresAt)>Date.parse(latestVerifiedHoldExpiry))latestVerifiedHoldExpiry=hold.holdExpiresAt;
-        const bookingTarget={date:command.date,court:plan.courts[0]!.court,...(plan.courts[1]?{courtB:plan.courts[1].court}:{}),
-          startTime:plan.startTime,durationHours:plan.durationHours};
-        stage('PENDING_HOLD',{...workerTiming(),...bookingTarget,bookingId:hold.bookingIds[0]!,bookingNo:bookingNo??'',
-          holdExpiresAt:hold.holdExpiresAt,price:plan.totalPrice});
-        diagnostics.observe('DIAGNOSTIC_VERIFIED_HOLD',correlation,{...bookingTarget,price:plan.totalPrice});
-        // From here the booking is real and validated; a QR page failure must never read as "no hold".
-        try{
-        if(!token||!bookingNo)throw Error('OFFICIAL_CHECKOUT_TOKEN_MISSING');
-        const grant=await session.page.evaluate(async({bookingNo,token})=>{const url=new URL(`/api/public/bookings/booking-no/${encodeURIComponent(bookingNo)}`,location.origin);
-          url.searchParams.set('checkoutToken',token);url.searchParams.set('grantCheckoutAccess','1');
-          return (await fetch(url,{credentials:'include',cache:'no-store'})).status;},{bookingNo,token});
-        if(grant!==200)throw Error('OFFICIAL_CHECKOUT_ACCESS_FAILED');
-        await session.page.goto(officialCheckoutUrl(hold.bookingIds[0]!),{waitUntil:'domcontentloaded',timeout:45_000});
-        await session.page.getByText('QRPH',{exact:true}).first().waitFor({state:'visible',timeout:20_000});
-        const body=await session.page.locator('body').innerText();
-        if(!body.includes('Pending')||!body.replaceAll(',','').includes(plan.totalPrice.toFixed(2)))throw Error('OFFICIAL_CHECKOUT_STATE_MISMATCH');
-        await showWorkerPage(session.page,workerId);
-        stage('OFFICIAL_QRPH_HANDOFF',{...workerTiming(),...bookingTarget,bookingId:hold.bookingIds[0]!,bookingNo,
-          holdExpiresAt:hold.holdExpiresAt,price:plan.totalPrice});
-        diagnostics.observe('DIAGNOSTIC_QR_HANDOFF',correlation,{...bookingTarget,price:plan.totalPrice});
-        }catch(error){
-          const code=safeApiFailureCode(error,'OFFICIAL_QR_HANDOFF_FAILED');
-          stage('QR_HANDOFF_NEEDS_ATTENTION',{...workerTiming(),...bookingTarget,code,bookingId:hold.bookingIds[0]!,bookingNo:bookingNo??'',
-            holdExpiresAt:hold.holdExpiresAt,price:plan.totalPrice});
-          await showWorkerPage(session.page,workerId).catch(()=>undefined);
-          throw new VerifiedHoldQrError(code,{bookingId:hold.bookingIds[0]!,...(bookingNo?{bookingNo}:{}),holdExpiresAt:hold.holdExpiresAt,amount:plan.totalPrice});
-        }
-        diagnostics.observe('DIAGNOSTIC_ATTEMPT_COMPLETED',correlation,{workerOutcome:'VERIFIED_HOLD'});
-        return hold;
+        return await completeVerifiedProoflessHold(binding,session,plan,hold);
       }catch(error){
-        diagnostics.observe('DIAGNOSTIC_ATTEMPT_COMPLETED',correlation,{workerOutcome:'FAILED',
+        diagnostics.observe('DIAGNOSTIC_ATTEMPT_COMPLETED',binding.correlation,{workerOutcome:'FAILED',
           failureCategory:safeDiagnosticCode(error,'CHECKOUT_ATTEMPT_FAILED')});
         throw error;
-      }finally{if(activeAttemptContexts.get(workerId)?.attemptId===attemptId)activeAttemptContexts.delete(workerId);}
+      }finally{unbindProoflessAttempt(binding);}
     };
     const recordWarmFailures=(name:string,workers:readonly WorkerId[],results:readonly PromiseSettledResult<void>[],fallback:string)=>
       results.forEach((result,index)=>{if(result.status==='rejected')stage(name,{workerId:workers[index]!,status:'rejected',
@@ -499,17 +603,17 @@ try {
     const runPrecision=async(targets:ReturnType<typeof validatePrecisionTargets>)=>{
       const date=command.date,releaseMs=command.releaseMs??releaseMsForTargetDate(config,date);
       const states=new Map<WorkerId,PrecisionAttemptState>(),codes=new Map<WorkerId,string>();
-      const setState=(target:(typeof targets)[number],state:PrecisionAttemptState,code?:string)=>{
+      const setState=(target:(typeof targets)[number],state:PrecisionAttemptState,code?:string,duplicateOf?:WorkerId)=>{
         states.set(target.workerId,state);if(code)codes.set(target.workerId,code);
         stage('PRECISION_ATTEMPT_STATE',{workerId:target.workerId,court:target.court,startTime:target.start,endTime:target.end,
-          durationHours:target.durationHours,attemptState:state,...(code?{code}:{})});
+          durationHours:target.durationHours,attemptState:state,...(code?{code}:{}),...(duplicateOf?{duplicateOf}:{})});
       };
       stage('PRECISION_RACE_CONFIGURED',{date,targetCount:targets.length,releaseMs});
       for(const target of targets)stage('PRECISION_TARGET',{workerId:target.workerId,court:target.court,startTime:target.start,
         endTime:target.end,durationHours:target.durationHours,assumedPrice:target.assumedAmount});
       for(const target of targets){
         const unavailable=unavailableWorkers.get(target.workerId);
-        if(unavailable)setState(target,unavailable.state,unavailable.code);
+        if(unavailable)setState(target,unavailable.state,unavailable.code,unavailable.duplicateOf);
         else if(command.mode==='live'&&!releaseTransports.get(target.workerId))setState(target,'BROWSER_FAILED','API_CHECKOUT_WORKER_MISSING');
       }
       const eligible=new Map<WorkerId,boolean>();
@@ -567,33 +671,75 @@ try {
         notDispatched:[...states].map(([workerId,state])=>({workerId,state,code:codes.get(workerId)??null}))});
       stage('PRECISION_FROZEN',{targetCount:targets.length,frozenCount:race.attempts.length});
       if(race.attempts.length){
-        const prooflessAttempts=new Map(race.attempts.map(attempt=>[attempt.target.workerId,makeProoflessAttempts([attempt.plan],[attempt.target.workerId])[0]!]));
-        let dispatching:Promise<void>|undefined;
-        // The lock enters FINAL_ACTION_DISPATCHING once, before the first journal is begun.
-        const enterDispatch=()=>dispatching??=(async()=>{await liveLock?.dispatching();retainLiveLock=true;
-          stage('PRECISION_DISPATCHING',{frozenCount:race.attempts.length});})();
-        const results=await dispatchPrecisionRace(race,{now:nowMs,prewarmLeadMs:API_SECURITY_PREWARM_LEAD_MS,
-          waitUntil:async at=>{while(nowMs()<at){ensureActive();await pause(Math.min(500,Math.max(1,at-nowMs())));}},
-          prewarm:async attempt=>{
-            const transport=releaseTransports.get(attempt.target.workerId);if(!transport)throw Error('API_CHECKOUT_WORKER_MISSING');
-            stage('SECURITY_PREWARM_STARTED',{workerId:attempt.target.workerId});await transport.prepareCheckoutContext();
-          },
-          dispatch:async attempt=>{
-            await enterDispatch();
-            try{await executeProoflessAttempt(prooflessAttempts.get(attempt.target.workerId)!,releaseMs,{requirePreparedContext:true});return {state:'QR_READY'};}
-            catch(error){
-              return classifyPrecisionDispatchError(error,async()=>{
-                try{return (await journalFor(attempt.target).read(attempt.target.targetKey)).state;}
-                catch(readError){if((readError as NodeJS.ErrnoException).code==='ENOENT')return undefined;throw readError;}
-              });
-            }
-          },
-          onEvent:event=>{
-            if(event.kind==='prewarm-ready')stage('SECURITY_PREWARM_READY',{workerId:event.workerId});
-            else if(event.kind==='prewarm-failed')stage('SECURITY_PREWARM_FAILED',{workerId:event.workerId,code:event.code??'SECURITY_PREWARM_FAILED'});
-            else if(event.kind==='prewarm-retry')stage('SECURITY_PREWARM_RETRY',{workerId:event.workerId});
-          }});
-        for(const result of results)setState(result.attempt.target,result.state,result.code);
+        // Pre-release: bind diagnostics/response capture, then durably arm the lock, every journal and every one-shot.
+        const bindings=new Map(race.attempts.map(attempt=>{
+          const workerId=attempt.target.workerId,lane=diagnosticLaneForWorker(workerId);
+          return [workerId,bindProoflessAttempt({plan:attempt.plan,workerId,lane,attemptType:'official',attemptId:diagnostics.nextAttemptId(lane,workerId,'official'),
+            directory:resolve('.local/api-booking/api-first-journals',attempt.target.targetKey)},'DIAGNOSTIC_ATTEMPT_ARMED')] as const;
+        }));
+        let armed:ArmedPrecisionRace,previousPriority:number|undefined;
+        try{armed=await armPrecisionRace(race,{lock:liveLock,customerFor:worker=>customers![worker]!,
+          journalRoot:resolve('.local/api-booking/api-first-journals'),releaseMs,now:nowMs});}
+        catch(error){for(const binding of bindings.values())unbindProoflessAttempt(binding);throw error;}
+        retainLiveLock=true;
+        stage('PRECISION_ARMED',{frozenCount:race.attempts.length,unsentCount:armed.unarmed.length,releaseMs});
+        for(const value of armed.unarmed){setState(value.attempt.target,value.state,value.code);unbindProoflessAttempt(bindings.get(value.attempt.target.workerId)!);}
+        // T-2 min: passive DevTools sessions attach in the background with no domain enabled (no per-request cost).
+        // Each enables Network only after its own POST has left; nothing on the release path waits for them.
+        const traces=providerTraces=new ProviderTraceSet(progressLog.runId,'release',releaseMs,()=>(releaseClock?.nowMs()??nowMs())-releaseMs);
+        for(const attempt of armed.attempts){
+          const session=sessions.find(value=>value.workerId===attempt.target.workerId);
+          if(session)traces.start({workerId:attempt.target.workerId,attemptId:bindings.get(attempt.target.workerId)?.correlation.attemptId,
+            court:attempt.target.court,startTime:attempt.target.start,endTime:attempt.target.end},openTraceSession(session.page));
+        }
+        // After the one-second dispatch window no POST can start: enable any trace whose request event was not seen.
+        setTimeout(()=>traces.enableAll(),Math.max(0,armed.dispatchDeadlineMs+100-nowMs())).unref();
+        try{
+          releaseClock=await prepareReleaseClock(releaseMs);
+          const outcome=await dispatchArmedPrecisionRace(armed,{clock:releaseClock,prewarmLeadMs:API_SECURITY_PREWARM_LEAD_MS,spinTailMs:DEFAULT_SPIN_TAIL_MS,
+            isAborted:()=>abort.signal.aborted,sleep:pause,transportFor:worker=>releaseTransports.get(worker),
+            prewarm:async attempt=>{
+              const transport=releaseTransports.get(attempt.target.workerId);if(!transport)throw Error('API_CHECKOUT_WORKER_MISSING');
+              stage('SECURITY_PREWARM_STARTED',{workerId:attempt.target.workerId});await transport.prepareCheckoutContext();
+            },
+            onVerifiedHold:async(attempt,hold)=>{
+              const session=sessions.find(value=>value.workerId===attempt.target.workerId)!;
+              await completeVerifiedProoflessHold(bindings.get(attempt.target.workerId)!,session,attempt.plan,hold);
+              return {state:'QR_READY'};
+            },
+            // Written only after every ready POST has been started (never on the path to a POST).
+            afterFire:async()=>{await liveLock?.dispatching();stage('PRECISION_DISPATCHING',{frozenCount:race.attempts.length});},
+            // HIGH (never REALTIME) only for the last second before release until the POSTs have left.
+            onFinalApproach:()=>{try{previousPriority=getPriority();setPriority(osConstants.priority.PRIORITY_HIGH);}catch{previousPriority=undefined;}},
+            onReleaseWindowEnd:()=>{if(previousPriority!==undefined){try{setPriority(previousPriority);}catch{}previousPriority=undefined;}},
+            onEvent:event=>{
+              if(event.kind==='prewarm-ready')stage('SECURITY_PREWARM_READY',{workerId:event.workerId});
+              else if(event.kind==='prewarm-failed')stage('SECURITY_PREWARM_FAILED',{workerId:event.workerId,code:event.code??'SECURITY_PREWARM_FAILED'});
+              else if(event.kind==='prewarm-retry')stage('SECURITY_PREWARM_RETRY',{workerId:event.workerId});
+              else if(event.kind==='dispatch-start'){const binding=bindings.get(event.workerId),plan=race.attempts.find(value=>value.target.workerId===event.workerId)?.plan;
+                if(binding&&plan){binding.started=performance.now();
+                  diagnostics.observe('DIAGNOSTIC_ATTEMPT_STARTED',binding.correlation,{court:plan.courts[0]!.court,startTime:plan.startTime,durationHours:plan.durationHours});}}
+              else if(event.kind==='settled'){const binding=bindings.get(event.workerId);if(binding){
+                // A verified hold records its own completion; everything else (including a QR failure) is recorded here, as before.
+                if(event.state!=='QR_READY')diagnostics.observe('DIAGNOSTIC_ATTEMPT_COMPLETED',binding.correlation,
+                  {workerOutcome:'FAILED',failureCategory:event.code??'CHECKOUT_ATTEMPT_FAILED'});
+                unbindProoflessAttempt(binding);}}
+            }});
+          if(outcome.afterFireError)stage('PRECISION_LOCK_DISPATCHING_FAILED',{code:outcome.afterFireError});
+          for(const result of outcome.results)setState(result.attempt.target,result.state,result.code);
+          // Every attempt has settled: only now is the trace written.
+          await persistProviderTraces().catch(()=>undefined);
+        }catch(error){
+          for(const binding of bindings.values())unbindProoflessAttempt(binding);
+          // Reachable only before any POST started (abort, stale clock or another pre-release failure).
+          // This live process still holds every unspent permit, so it can prove each attempt unsent.
+          await disarmUnfired(armed,safeApiFailureCode(error,'ARMED_NOT_DISPATCHED'),nowMs).catch(()=>[]);
+          if(armedNothingFired(armed)){
+            for(const attempt of armed.attempts)setState(attempt.target,'NOT_DISPATCHED',safeApiFailureCode(error,'ARMED_NOT_DISPATCHED'));
+            retainLiveLock=false;await liveLock?.release();liveLock=undefined;
+          }
+          throw error;
+        }
       }
       await persistLatestVerifiedHold();
       const summary=reducePrecisionOutcome(targets.map(target=>states.get(target.workerId)??'NOT_DISPATCHED'));
@@ -604,7 +750,198 @@ try {
       else retainLiveLock=true;
       if(!summary.achieved)throw Error(summary.outcome);
     };
-    if(precisionTargets)await runPrecision(precisionTargets);
+    const runPhase3=async()=>{
+      const draft=phase3!,releaseMs=command.releaseMs??releaseMsForTargetDate(config,command.date),date=command.date;
+      const authorization=authorizePrecision({date,releaseMs,candidates:draft.candidates,
+        wave1:draft.wave1.map(value=>({workerId:value.workerId,candidateId:precisionCandidateId(date,draft.candidates[value.candidateIndex]!)})),
+        standby:draft.standby,budgets:draft.budgets,concurrentWave2:draft.concurrentWave2,
+        rescueEnabled:draft.rescueEnabled,authorizedAt:new Date(nowMs()).toISOString()});
+      const session=new PrecisionSession(authorization),byId=new Map(authorization.candidates.map(value=>[value.id,value]));
+      stage('PHASE3_AUTHORIZATION',{candidateCount:authorization.candidates.length,wave1Count:authorization.wave1.length,
+        standbyCount:authorization.standby.length,maxWave2:authorization.budgets.wave2,maxRescue:authorization.budgets.rescue,
+        maxTotal:authorization.budgets.total,fingerprint:authorization.fingerprint});
+      for(const candidate of authorization.candidates)stage('PHASE3_CANDIDATE',{candidateId:candidate.id,court:candidate.court,
+        startTime:candidate.start,endTime:candidate.end,durationHours:candidate.durationHours,priority:candidate.priority,
+        amount:candidate.expectedAmount,rateStatus:candidate.rateEvidence.status,source:candidate.rateEvidence.source});
+      if(authorization.warning)stage('PHASE3_DIVERSIFICATION_WARNING',{message:authorization.warning});
+      if(command.mode==='dry'){
+        stage('PHASE3_DRY_COMPLETE',{candidateCount:authorization.candidates.length,wave1Count:authorization.wave1.length});return;
+      }
+      if(command.mode!=='live'||nowMs()>releaseMs-20_000)throw Error('PRECISION_TOO_LATE_TO_FREEZE');
+      await refreshClockBeforeRelease(releaseMs);
+      await sleepUntil(releaseMs-2*60_000);
+      assertClockFresh();
+      for(const candidate of authorization.candidates){
+        const journal=new DurableSubmissionJournal(resolve('.local/api-booking/api-first-journals',candidate.logicalKey));
+        if(await journal.peekDisposition(candidate.logicalKey).catch(()=>'blocked' as const)==='blocked')
+          throw Error('PHASE3_PRIOR_JOURNAL_UNRESOLVED');
+      }
+      const wave1:PrecisionAttempt[]=[];
+      for(const assignment of authorization.wave1){
+        const candidate=byId.get(assignment.candidateId)!;
+        if(unavailableWorkers.has(assignment.workerId)||!releaseTransports.has(assignment.workerId)){
+          stage('PHASE3_WORKER_EXCLUDED',{workerId:assignment.workerId,candidateId:candidate.id});continue;
+        }
+        const journal=new DurableSubmissionJournal(resolve('.local/api-booking/api-first-journals',candidate.logicalKey));
+        if(await journal.recycleReusable(candidate.logicalKey).catch(()=>'blocked' as const)==='blocked'){
+          stage('PHASE3_JOURNAL_BLOCKED',{workerId:assignment.workerId,candidateId:candidate.id});continue;
+        }
+        const target:PrecisionTarget={court:candidate.court,start:candidate.start,durationHours:candidate.durationHours,
+          end:candidate.end,workerId:assignment.workerId,targetKey:candidate.logicalKey,assumedAmount:candidate.expectedAmount};
+        wave1.push({target,plan:pricedPrecisionPlan(candidate,date,candidate.rateEvidence.perHour)});
+        stage('PHASE3_WAVE1_PRICE',{workerId:assignment.workerId,candidateId:candidate.id,amount:candidate.expectedAmount,
+          source:candidate.rateEvidence.source,rateStatus:candidate.rateEvidence.status,capturedAt:candidate.rateEvidence.capturedAt});
+      }
+      const frozen=freezePrecisionRace(date,releaseMs,wave1);
+      await saveOnce(resolve('.local/api-booking/precision-races'),`${progressLog.runId}-phase3-freeze.json`,
+        {runId:progressLog.runId,frozenAt:new Date(nowMs()).toISOString(),authorization,wave1Freeze:frozen.fingerprint});
+      stage('PHASE3_FROZEN',{candidateCount:authorization.candidates.length,wave1Count:wave1.length,
+        fingerprint:authorization.fingerprint});
+      const bindings=new Map(wave1.map(attempt=>{
+        const workerId=attempt.target.workerId,lane=diagnosticLaneForWorker(workerId),candidate=authorization.candidates.find(value=>value.logicalKey===attempt.target.targetKey)!;
+        activeWaveContexts.set(workerId,{candidateId:candidate.id,wave:'WAVE_1'});
+        return [workerId,bindProoflessAttempt({plan:attempt.plan,workerId,lane,attemptType:'official',
+          attemptId:diagnostics.nextAttemptId(lane,workerId,'official'),
+          directory:resolve('.local/api-booking/api-first-journals',attempt.target.targetKey)},'DIAGNOSTIC_ATTEMPT_ARMED')] as const;
+      }));
+      const armed=await armPrecisionRace(frozen,{lock:liveLock,customerFor:worker=>customers![worker]!,
+        journalRoot:resolve('.local/api-booking/api-first-journals'),releaseMs,now:nowMs});
+      retainLiveLock=true;
+      const traces=providerTraces=new ProviderTraceSet(progressLog.runId,'release',releaseMs,()=>(releaseClock?.nowMs()??nowMs())-releaseMs);
+      for(const workerId of workerIds){const workerSession=sessions.find(value=>value.workerId===workerId);
+        if(workerSession)traces.start({workerId,attemptId:bindings.get(workerId)?.correlation.attemptId},openTraceSession(workerSession.page));}
+      setTimeout(()=>traces.enableAll(),Math.max(0,armed.dispatchDeadlineMs+100-nowMs())).unref();
+      // Standby security is genuine and refreshed separately. Its failure never blocks Wave 1.
+      const standbyReady=(async()=>{await sleepUntil(releaseMs-30_000).catch(()=>undefined);
+        if(abort.signal.aborted)return;
+        await Promise.allSettled(authorization.standby.map(async workerId=>{
+          const transport=releaseTransports.get(workerId);if(!transport)throw Error('API_CHECKOUT_WORKER_MISSING');
+          try{await transport.prepareCheckoutContext();stage('PHASE3_STANDBY_READY',{workerId});}
+          catch(error){stage('PHASE3_STANDBY_FAILED',{workerId,code:safeApiFailureCode(error,'SECURITY_PREWARM_FAILED')});}
+        }));})();
+      let newestSeq=0,securityRefreshMs=2500,wave1Fired=false,wave1Settled=false;
+      const refreshFitness=(evidence:ActionableObservation,at=nowMs())=>{
+        const latency=Math.max(0,evidence.observation.responseOffsetMs-evidence.observation.requestOffsetMs);
+        const maxAgeMs=Math.min(15_000,Math.max(6_000,2*latency+securityRefreshMs+1000));
+        return classifyActionableObservation(evidence.observation,newestSeq,releaseMs,at,maxAgeMs);
+      };
+      const pending=new Set<Promise<void>>();
+      const dispatchAdaptive=(selection:ReturnType<PrecisionSession['select']>[number],wave:'WAVE_2'|'RESCUE')=>{
+        let recordedAttemptId:string|undefined;
+        const task=(async()=>{
+          const {candidate,workerId,prices,evidenceSeq}=selection,transport=releaseTransports.get(workerId);
+          if(!transport||unavailableWorkers.has(workerId))return;
+          const started=performance.now();
+          try{await transport.prepareCheckoutContext(wave==='RESCUE');securityRefreshMs=Math.max(securityRefreshMs,performance.now()-started);}
+          catch(error){stage('PHASE3_SECURITY_FAILED',{workerId,candidateId:candidate.id,code:safeApiFailureCode(error,'SECURITY_PREWARM_FAILED')});return;}
+          const current=session.latest;
+          if(!current||current.observation.seq!==evidenceSeq||refreshFitness(current).fitness!=='ACTIONABLE_FRESH'||
+            verifiedHold||abort.signal.aborted||session.attempts.some(value=>value.state==='UNKNOWN'||value.state==='VERIFIED')||
+            (wave==='RESCUE'&&session.attempts.some(value=>value.state==='IN_FLIGHT')))return;
+          const journal=new DurableSubmissionJournal(resolve('.local/api-booking/api-first-journals',candidate.logicalKey));
+          if(await journal.recycleReusable(candidate.logicalKey).catch(()=>'blocked' as const)==='blocked'){
+            stage('PHASE3_JOURNAL_BLOCKED',{workerId,candidateId:candidate.id});return;}
+          if(!session.latest||session.latest.observation.seq!==evidenceSeq||refreshFitness(session.latest).fitness!=='ACTIONABLE_FRESH')return;
+          const plan=pricedPrecisionPlan(candidate,date,prices),attempt=makeProoflessAttempts([plan],[workerId])[0]!;
+          recordedAttemptId=attempt.attemptId;
+          activeWaveContexts.set(workerId,{candidateId:candidate.id,wave});
+          traces.updateContext(workerId,{workerId,attemptId:attempt.attemptId,court:candidate.court,startTime:candidate.start,endTime:candidate.end});
+          await saveOnce(resolve('.local/api-booking/precision-races'),`${progressLog.runId}-${attempt.attemptId}.json`,
+            {runId:progressLog.runId,authorizationFingerprint:authorization.fingerprint,candidateId:candidate.id,
+              workerId,wave,evidenceSeq,prices,evaluatedAt:new Date(nowMs()).toISOString()});
+          session.record({id:attempt.attemptId,candidateId:candidate.id,workerId,wave,state:'IN_FLIGHT',evidenceSeq,
+            ...(selection.reopenEpoch!==undefined?{reopenEpoch:selection.reopenEpoch}:{})});
+          stage('PHASE3_ATTEMPT_RESERVED',{workerId,candidateId:candidate.id,wave,evidenceSeq,attemptId:attempt.attemptId,amount:plan.totalPrice,
+            court:candidate.court,startTime:candidate.start,endTime:candidate.end});
+          try{
+            await executeProoflessAttempt(attempt,undefined,{requirePreparedContext:true,beforePost:()=>{
+              const fresh=session.latest;
+              if((releaseClock?.nowMs()??nowMs())<releaseMs||abort.signal.aborted||verifiedHold||!fresh||fresh.observation.seq!==evidenceSeq||
+                (wave==='RESCUE'&&session.attempts.some(value=>value.id!==attempt.attemptId&&value.state==='IN_FLIGHT'))||
+                refreshFitness(fresh).fitness!=='ACTIONABLE_FRESH'||session.attempts.some(value=>value.state==='UNKNOWN'||value.state==='VERIFIED'))
+                throw new SubmissionDispatchError('PHASE3_DISPATCH_GUARD_CLOSED',false);
+            }});
+            session.attempts.find(value=>value.id===attempt.attemptId)!.state='VERIFIED';
+          }catch(error){const state=await classifyPrecisionDispatchError(error,async()=>{
+            try{return (await journal.read(candidate.logicalKey)).state;}catch{return undefined;}});
+            session.attempts.find(value=>value.id===attempt.attemptId)!.state=state.state==='REJECTED'||state.state==='NOT_DISPATCHED'?'REJECTED':
+              state.state==='QR_READY'||state.state==='HOLD_VERIFIED_QR_ATTENTION'?'VERIFIED':'UNKNOWN';
+            stage('PHASE3_SETTLED',{workerId,candidateId:candidate.id,wave,attemptId:attempt.attemptId,state:state.state,code:state.code??'COMPLETED'});
+          }
+        })().catch(error=>{const value=session.attempts.find(value=>value.id===recordedAttemptId);
+          if(value)value.state='UNKNOWN';
+          stage('PHASE3_ADAPTIVE_FAILED',{code:safeApiFailureCode(error,'PHASE3_ADAPTIVE_FAILED')});});
+        pending.add(task);void task.finally(()=>pending.delete(task));
+      };
+      const adaptiveLoop=(async()=>{
+        while(!abort.signal.aborted&&nowMs()<releaseMs+15*60_000){
+          for(const observation of phase3Observations.splice(0)){
+            newestSeq=Math.max(newestSeq,observation.seq);
+            const latency=Math.max(0,observation.responseOffsetMs-observation.requestOffsetMs);
+            const maxAge=Math.min(15_000,Math.max(6_000,2*latency+securityRefreshMs+1000));
+            const evidence=classifyActionableObservation(observation,newestSeq,releaseMs,nowMs(),maxAge);
+            session.observe(evidence);
+            stage('PHASE3_EVIDENCE',{seq:observation.seq,fitness:evidence.fitness,cache:observation.cache?.status??'UNKNOWN'});
+            if(evidence.fitness!=='ACTIONABLE_FRESH')continue;
+            const fresh=refreshFitness(evidence);
+            if(fresh.fitness!=='ACTIONABLE_FRESH')continue;
+            if(authorization.rescueEnabled&&pending.size===0)
+              for(const choice of session.select('RESCUE',nowMs(),maxAge))dispatchAdaptive(choice,'RESCUE');
+          }
+          const current=session.latest;
+          if(current&&wave1Fired&&(authorization.concurrentWave2||wave1Settled)){
+            const latency=Math.max(0,current.observation.responseOffsetMs-current.observation.requestOffsetMs);
+            const maxAge=Math.min(15_000,Math.max(6_000,2*latency+securityRefreshMs+1000));
+            for(const choice of session.select('WAVE_2',nowMs(),maxAge))dispatchAdaptive(choice,'WAVE_2');
+          }
+          if(verifiedHold||session.attempts.some(value=>value.state==='UNKNOWN'))break;
+          await pause(25).catch(()=>undefined);
+        }
+        await Promise.allSettled([...pending]);
+      })();
+      try{
+        releaseClock=await prepareReleaseClock(releaseMs);
+        let previousPriority:number|undefined;
+        const outcome=await dispatchArmedPrecisionRace(armed,{clock:releaseClock,prewarmLeadMs:API_SECURITY_PREWARM_LEAD_MS,
+          spinTailMs:DEFAULT_SPIN_TAIL_MS,isAborted:()=>abort.signal.aborted,sleep:pause,
+          transportFor:worker=>releaseTransports.get(worker),prewarm:async attempt=>{
+            const transport=releaseTransports.get(attempt.target.workerId);if(!transport)throw Error('API_CHECKOUT_WORKER_MISSING');
+            await transport.prepareCheckoutContext();},
+          onVerifiedHold:async(attempt,hold)=>{const workerSession=sessions.find(value=>value.workerId===attempt.target.workerId)!;
+            await completeVerifiedProoflessHold(bindings.get(attempt.target.workerId)!,workerSession,attempt.plan,hold);return {state:'QR_READY'};},
+          afterFire:async()=>{await liveLock?.dispatching();},
+          onFinalApproach:()=>{try{previousPriority=getPriority();setPriority(osConstants.priority.PRIORITY_HIGH);}catch{previousPriority=undefined;}},
+          onReleaseWindowEnd:()=>{if(previousPriority!==undefined){try{setPriority(previousPriority);}catch{}previousPriority=undefined;}},
+          onEvent:event=>{const binding=bindings.get(event.workerId);
+            if(event.kind==='dispatch-start'&&binding){wave1Fired=true;const candidate=authorization.candidates.find(value=>value.logicalKey===
+              wave1.find(attempt=>attempt.target.workerId===event.workerId)?.target.targetKey)!;
+              session.record({id:binding.correlation.attemptId,candidateId:candidate.id,workerId:event.workerId,wave:'WAVE_1',state:'IN_FLIGHT'});
+              stage('PHASE3_WAVE1_STARTED',{workerId:event.workerId,candidateId:candidate.id,wave:'WAVE_1',attemptId:binding.correlation.attemptId,
+                court:candidate.court,startTime:candidate.start,endTime:candidate.end,amount:candidate.expectedAmount});}
+            if(event.kind==='settled'&&binding){const attempt=session.attempts.find(value=>value.id===binding.correlation.attemptId);
+              if(attempt)attempt.state=event.state==='REJECTED'?'REJECTED':event.state==='QR_READY'||event.state==='HOLD_VERIFIED_QR_ATTENTION'?'VERIFIED':'UNKNOWN';
+              stage('PHASE3_SETTLED',{workerId:event.workerId,candidateId:attempt?.candidateId??'',wave:'WAVE_1',
+                attemptId:binding.correlation.attemptId,state:event.state??'UNKNOWN'});
+              unbindProoflessAttempt(binding);}
+          }});
+        wave1Settled=true;
+        for(const result of outcome.results)if(!session.attempts.some(value=>value.workerId===result.attempt.target.workerId))
+          stage('PHASE3_WAVE1_UNSENT',{workerId:result.attempt.target.workerId,state:result.state});
+        await standbyReady;
+        await adaptiveLoop;
+        await persistLatestVerifiedHold();
+        await persistProviderTraces().catch(()=>undefined);
+        stage('PHASE3_OUTCOME',{outcome:session.status,verifiedCount:session.attempts.filter(value=>value.state==='VERIFIED').length,
+          unknownCount:session.attempts.filter(value=>value.state==='UNKNOWN').length,attemptCount:session.attempts.length});
+        if(session.status==='ALL_REJECTED_WAITING_FOR_REOPEN'||session.status==='NOTHING_DISPATCHED'){
+          retainLiveLock=false;await liveLock?.release();liveLock=undefined;
+        }
+        if(session.status!=='OBJECTIVE_ACHIEVED'&&session.status!=='OBJECTIVE_ACHIEVED_EXTRA_HOLD')throw Error(session.status);
+      }catch(error){await disarmUnfired(armed,safeApiFailureCode(error,'ARMED_NOT_DISPATCHED'),nowMs).catch(()=>[]);
+        await persistProviderTraces().catch(()=>undefined);throw error;}
+    };
+    if(phase3)await runPhase3();
+    else if(precisionTargets)await runPrecision(precisionTargets);
     else {
     const preferences:BookingPreferences={mode:strategy,targetDate:command.date,durationHours:duration,
       preferredStartTimes:[requested?.start??config.START_TIME],fallbackStartTimes:requested?.fallbackStarts??config.FALLBACK_TIMES,
@@ -708,9 +1045,20 @@ try {
       // Failure therefore remains conclusively pre-dispatch and releases the
       // automation lock through the normal finally path.
       if(command.mode==='live-now')await finishWarmup();
+      if(command.mode==='live-now'){
+        // Immediate operator test (no release deadline): wait at most 3 s for the passive sessions to attach, then send
+        // regardless. Each trace enables Network only after its POST has left, exactly as in a release.
+        let referenceMs=nowMs();
+        const traces=providerTraces=new ProviderTraceSet(progressLog.runId,'dispatch-start',null,()=>nowMs()-referenceMs);
+        for(const attempt of attempts)traces.start({workerId:attempt.workerId,attemptId:attempt.attemptId,court:attempt.plan.courts[0]!.court,
+          startTime:attempt.plan.startTime,endTime:attempt.plan.endTime},openTraceSession(attempt.session.page));
+        await traces.ready(3_000);
+        referenceMs=nowMs();traces.referenceMs=referenceMs;
+      }
       await liveLock?.dispatching();retainLiveLock=true;
       stage('PRIMARY_PROOFLESS_DISPATCHING',{workerCount:attempts.length});
       const outcomes=await Promise.allSettled(attempts.map(attempt=>executeProoflessAttempt(attempt,command.releaseMs,{requirePreparedContext:command.mode==='live'})));
+      await persistProviderTraces().catch(()=>undefined);
       attempts.forEach((attempt,index)=>{const outcome=outcomes[index]!;
         const code=outcome.status==='rejected'&&outcome.reason instanceof Error&&/^[A-Z][A-Z0-9_]{0,79}$/.test(outcome.reason.message)
           ?outcome.reason.message:outcome.status==='rejected'?'DIRECT_WORKER_FAILED':'COMPLETED';
@@ -769,6 +1117,8 @@ try {
    // path: one worker may have created a verified hold before another worker
    // failed. Keep that latest expiry durable before closing browser transports.
    await persistLatestVerifiedHold().catch(()=>{retainLiveLock=true;});
+  // Normally already written right after dispatch settled; this covers exceptional exits.
+  await persistProviderTraces().catch(()=>undefined);
   // This process attaches to a browser owned by the desktop installation.
   // Closing a CDP attachment closes its transport; the independently launched Chrome windows stay open.
   await Promise.allSettled(connectedBrowsers.map(browser => browser.close()));

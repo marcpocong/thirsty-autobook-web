@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import { reconcileBookingSetupFallbacks, reconcileFallbackTimes } from './booking-setup.js';
 import { PRECISION_MAX_ATTEMPTS, WORKER_IDS } from './workers.js';
 import { networkNowMs } from './network-clock.js';
+import { PRECISION_MAX_CANDIDATES } from './api-booking/precision-phase3.js';
 export const ONDA_URL = 'https://app.onda.fit/book/thirsty-pickle';
 export const VENUE = 'Thirsty Pickle | SM Seaside';
 const hour = z.string().regex(/^(0[89]|1[0-9]|2[0-3]):00$/);
@@ -14,6 +15,16 @@ const courts = z.array(z.number().int().min(1).max(7));
 export const PrecisionTargetSchema = z.object({ court: z.number().int().min(1).max(7), start: hour, durationHours: z.number().int().min(1).max(3) }).strict();
 const releaseStrategy = z.enum(['general', 'precision']).default('general');
 const precisionTargets = z.array(PrecisionTargetSchema).max(PRECISION_MAX_ATTEMPTS).default([]);
+const precisionWorker = z.enum(['A', 'B', 'C', 'D', 'E', 'F', 'G']);
+const rateEvidence = z.object({ source: z.string().min(1).max(100), capturedAt: z.iso.datetime(), status: z.enum(['TARGET_DATE_PUBLISHED', 'VENUE_SCHEDULE', 'OPERATOR_CONFIRMED', 'REFERENCE']),
+    date: z.iso.date(), perHour: z.array(z.number().positive()).min(1).max(3), actionable: z.boolean() }).strict();
+export const PrecisionPhase3Schema = z.object({
+    candidates: z.array(z.object({ court: z.number().int().min(1).max(7), start: hour, durationHours: z.number().int().min(1).max(3),
+        priority: z.number().int().min(1), permissions: z.object({ wave1: z.boolean(), wave2: z.boolean(), rescue: z.boolean() }).strict(), rateEvidence }).strict()).min(1).max(PRECISION_MAX_CANDIDATES),
+    wave1: z.array(z.object({ workerId: precisionWorker, candidateIndex: z.number().int().min(0).max(PRECISION_MAX_CANDIDATES - 1) }).strict()).min(1).max(7),
+    standby: z.array(precisionWorker).max(7), budgets: z.object({ wave2: z.number().int().min(0).max(7), rescue: z.number().int().min(0).max(7), total: z.number().int().min(1).max(28) }).strict(),
+    concurrentWave2: z.boolean(), rescueEnabled: z.boolean(),
+}).strict();
 function checkPrecision(c, ctx) {
     if (c.RELEASE_STRATEGY !== 'precision')
         return;
@@ -21,6 +32,35 @@ function checkPrecision(c, ctx) {
         ctx.addIssue({ code: 'custom', message: 'Precision Release uses Proofless Direct only.', path: ['BOOKING_METHOD'] });
     if (c.BOOKING_TYPE !== 'standard')
         ctx.addIssue({ code: 'custom', message: 'Precision Release supports Standard 1-3 hour targets only.', path: ['BOOKING_TYPE'] });
+    if (c.PRECISION_PHASE3) {
+        const p = c.PRECISION_PHASE3, workers = [...p.wave1.map(value => value.workerId), ...p.standby];
+        if (new Set(workers).size !== workers.length)
+            ctx.addIssue({ code: 'custom', message: 'Precision workers must be unique across Wave 1 and standby.', path: ['PRECISION_PHASE3'] });
+        if (p.wave1.some(value => !p.candidates[value.candidateIndex]?.permissions.wave1))
+            ctx.addIssue({ code: 'custom', message: 'Wave 1 assignment must name a Wave 1 eligible candidate.', path: ['PRECISION_PHASE3'] });
+        if (p.wave1.some(value => p.candidates[value.candidateIndex]?.rateEvidence.status === 'REFERENCE' ||
+            !p.candidates[value.candidateIndex]?.rateEvidence.actionable))
+            ctx.addIssue({ code: 'custom', message: 'Wave 1 requires actionable, explicitly confirmed rate evidence.', path: ['PRECISION_PHASE3'] });
+        if (p.budgets.wave2 > p.standby.length || p.budgets.total < p.wave1.length || p.budgets.total > p.wave1.length + p.budgets.wave2 + p.budgets.rescue ||
+            (p.budgets.rescue > 0 && !p.rescueEnabled))
+            ctx.addIssue({ code: 'custom', message: 'Precision dispatch budgets are inconsistent.', path: ['PRECISION_PHASE3'] });
+        for (const candidate of p.candidates)
+            if (Number(candidate.start.slice(0, 2)) + candidate.durationHours > 24 || candidate.rateEvidence.perHour.length !== candidate.durationHours)
+                ctx.addIssue({ code: 'custom', message: 'Candidate duration or hourly rate is invalid.', path: ['PRECISION_PHASE3'] });
+        for (const [index, candidate] of p.candidates.entries())
+            for (const other of p.candidates.slice(index + 1))
+                if (candidate.court === other.court && candidate.start === other.start && candidate.durationHours === other.durationHours)
+                    ctx.addIssue({ code: 'custom', message: 'Exact duplicate Precision candidate.', path: ['PRECISION_PHASE3'] });
+        for (const [index, assignment] of p.wave1.entries())
+            for (const other of p.wave1.slice(index + 1)) {
+                const a = p.candidates[assignment.candidateIndex], b = p.candidates[other.candidateIndex];
+                if (assignment.candidateIndex === other.candidateIndex || a && b && a.court === b.court &&
+                    Number(a.start.slice(0, 2)) < Number(b.start.slice(0, 2)) + b.durationHours &&
+                    Number(b.start.slice(0, 2)) < Number(a.start.slice(0, 2)) + a.durationHours)
+                    ctx.addIssue({ code: 'custom', message: 'Wave 1 assignments conflict on the same court and time.', path: ['PRECISION_PHASE3'] });
+            }
+        return;
+    }
     const t = c.PRECISION_TARGETS;
     if (t.length < 1 || t.length > PRECISION_MAX_ATTEMPTS)
         ctx.addIssue({ code: 'custom', message: `Configure 1 to ${PRECISION_MAX_ATTEMPTS} Precision attempts.`, path: ['PRECISION_TARGETS'] });
@@ -37,6 +77,7 @@ export const ConfigSchema = z.object({
     BOOKING_TYPE: z.enum(['standard', 'extended']).default('standard'),
     RELEASE_STRATEGY: releaseStrategy,
     PRECISION_TARGETS: precisionTargets,
+    PRECISION_PHASE3: PrecisionPhase3Schema.optional(),
     COURT_COUNT: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7)]).default(1),
     ONDA_URL: z.literal(ONDA_URL).default(ONDA_URL),
     TIMEZONE: z.string().refine(v => IANAZone.isValidZone(v), 'Invalid timezone').default('Asia/Manila'),
@@ -161,6 +202,7 @@ export const BookingSetupSchema = z.object({
     BOOKING_TYPE: ConfigSchema.shape.BOOKING_TYPE,
     RELEASE_STRATEGY: releaseStrategy,
     PRECISION_TARGETS: precisionTargets,
+    PRECISION_PHASE3: PrecisionPhase3Schema.optional(),
     COURT_COUNT: ConfigSchema.shape.COURT_COUNT,
     START_TIME: hour, DURATION_HOURS: z.number().int().min(1).max(6),
     PREFERRED_COURTS: courts.length(7), FALLBACK_COURTS: z.array(z.never()).default([]),
@@ -196,7 +238,7 @@ export function planFingerprint(c) {
         method: c.BOOKING_METHOD, strategy: c.BOOKING_TYPE, courtCount: c.COURT_COUNT,
         schedule: ObservationSchema.parse(c), target: calculateTarget(c), attempts: c.MAX_SELECTION_ATTEMPTS,
         // Present only for Precision, so a General plan keeps exactly its previous fingerprint.
-        ...(c.RELEASE_STRATEGY === 'precision' ? { releaseStrategy: 'precision', precisionTargets: c.PRECISION_TARGETS } : {})
+        ...(c.RELEASE_STRATEGY === 'precision' ? { releaseStrategy: 'precision', precisionTargets: c.PRECISION_TARGETS, precisionPhase3: c.PRECISION_PHASE3 } : {})
     })).digest('hex');
 }
 export function releaseCalendar(c, now = DateTime.fromMillis(networkNowMs())) {

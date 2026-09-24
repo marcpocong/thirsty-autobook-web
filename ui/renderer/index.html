@@ -80,6 +80,8 @@
         <div id="precision-setup" class="editor-block precision-setup" hidden>
           <h3>Precision Release · goal: 1 successful court</h3>
           <p class="small">Proofless Direct · Standard 1–3 hours · each attempt is exactly one court, one exact time and one dedicated player/browser. Release only.</p>
+          <label><input id="phase3-enabled" type="checkbox"> Phase 3 candidate pool and adaptive waves</label>
+          <div id="legacy-precision-setup">
           <label>Precision attempts<select id="precision-count"><option value="1">1 attempt</option><option value="2">2 attempts</option><option value="3">3 attempts</option><option value="4">4 attempts</option><option value="5">5 attempts</option><option value="6">6 attempts</option><option value="7">7 attempts</option></select></label>
           <div class="precision-rows">
             <div class="precision-row" id="precision-row-0"><strong>Worker A</strong><label>Court<select id="precision-court-0"></select></label><label>Start<select id="precision-start-0"></select></label><label>Duration<select id="precision-duration-0"><option value="1">1 h</option><option value="2">2 h</option><option value="3">3 h</option></select></label><span id="precision-evidence-0" class="small precision-evidence"></span></div>
@@ -89,6 +91,23 @@
             <div class="precision-row" id="precision-row-4"><strong>Worker E</strong><label>Court<select id="precision-court-4"></select></label><label>Start<select id="precision-start-4"></select></label><label>Duration<select id="precision-duration-4"><option value="1">1 h</option><option value="2">2 h</option><option value="3">3 h</option></select></label><span id="precision-evidence-4" class="small precision-evidence"></span></div>
             <div class="precision-row" id="precision-row-5"><strong>Worker F</strong><label>Court<select id="precision-court-5"></select></label><label>Start<select id="precision-start-5"></select></label><label>Duration<select id="precision-duration-5"><option value="1">1 h</option><option value="2">2 h</option><option value="3">3 h</option></select></label><span id="precision-evidence-5" class="small precision-evidence"></span></div>
             <div class="precision-row" id="precision-row-6"><strong>Worker G</strong><label>Court<select id="precision-court-6"></select></label><label>Start<select id="precision-start-6"></select></label><label>Duration<select id="precision-duration-6"><option value="1">1 h</option><option value="2">2 h</option><option value="3">3 h</option></select></label><span id="precision-evidence-6" class="small precision-evidence"></span></div>
+          </div>
+          </div>
+          <div id="phase3-editor" hidden>
+            <p class="small">Authorize exact candidates. Wave 1 fires at release; Wave 2 uses only a fresh published Slot Watch grid. Rescue is off unless enabled here.</p>
+            <label>Authorized candidates <input id="p3-count" type="number" min="1" max="21" value="1"></label>
+            <div id="p3-rows" class="precision-rows"></div>
+            <label>Rate source <input id="p3-rate-source" placeholder="Current venue schedule or operator confirmed" maxlength="100"></label>
+            <label>Rate evidence captured (ISO) <input id="p3-rate-captured" placeholder="2026-09-24T00:00:00Z"></label>
+            <label>Rate status <select id="p3-rate-status"><option value="OPERATOR_CONFIRMED">Operator confirmed</option><option value="VENUE_SCHEDULE">Current venue schedule</option></select></label>
+            <label>Rate applicable date <input id="p3-rate-date" type="date"></label>
+            <div id="p3-standby"></div>
+            <div class="setup-grid"><label>Max Wave 2 sends <input id="p3-wave2-max" type="number" min="0" max="7" value="0"></label>
+              <label>Max Rescue sends <input id="p3-rescue-max" type="number" min="0" max="7" value="0"></label>
+              <label>Max total sends <input id="p3-total-max" type="number" min="1" max="28" value="1"></label></div>
+            <label><input id="p3-concurrent" type="checkbox"> Allow Wave 2 while Wave 1 responses are pending</label>
+            <label><input id="p3-rescue-enabled" type="checkbox"> Enable Reopen Rescue</label>
+            <p class="small">Hourly prices must be entered for every candidate. A stale or cached OPEN is never enough for an adaptive send. UNKNOWN stops later dispatch.</p>
           </div>
           <p class="precision-warning"><strong>These are independent checkout attempts. More than one temporary QR hold may be created. Payment remains manual.</strong></p>
           <p class="small">Evidence is read at T−60, T−30, T−10 and T−2 min. The set freezes 2 minutes before release: a target showing a public booking or unknown evidence then is excluded, and no court, time or attempt is ever added or changed. Nothing is cancelled automatically.</p>
@@ -118,11 +137,12 @@
   <div id="view-slots" class="view-grid" aria-label="Slots" hidden>
     <section id="slot-watch-card" class="panel slot-watch">
       <div class="section-title"><div><p class="eyebrow">Release slot watch · read only</p><h2>Court/hour timeline</h2></div><div class="button-row"><button id="watch-next-release" class="secondary" type="button">Watch next release</button><button id="stop-slot-watch" class="secondary" type="button" hidden>Stop watching</button></div></div>
-      <p class="small intro">Every armed release is watched automatically. All 112 court/hours are read from 60 seconds before release until 15 minutes after, timestamped on the network clock, so you can see when each slot opened and how fast it was taken. It never selects, holds, or books.</p>
+      <p class="small intro">Every armed release is watched automatically. All 112 court/hours are read from 60 seconds before release until 15 minutes after on the network clock. Early reads overlap (up to a small cap) so one slow answer cannot hide the rest, and each read keeps its request and response time. It shows what Onda returned, not why. It never selects, holds, or books.</p>
       <div id="slot-watch-meta" class="slot-watch-meta"></div>
+      <div id="slot-matrix-mode" class="slot-mode-toggle" role="group" aria-label="Matrix shown"><button type="button" class="secondary" data-mode="current" aria-pressed="true">Current</button><button type="button" class="secondary" data-mode="first" aria-pressed="false">First published</button></div>
       <div id="slot-watch-matrix"></div>
       <div id="slot-watch-summary"></div>
-      <div class="slot-timeline-head"><h3>Changes</h3><span class="small">Time since release · each change happened within ± the gap since the previous read</span></div>
+      <div class="slot-timeline-head"><h3>Changes</h3><span class="small">Request start of the read that first showed the change · the change happened between the two reads listed</span></div>
       <div id="slot-watch-timeline" class="slot-timeline" role="log" aria-label="Slot changes"><p class="empty">No slot changes recorded yet.</p></div>
     </section>
     <section class="panel slot-history"><h2>Previous release watches</h2><p class="small">Saved locally with a full read-by-read log and a plain-text report.</p><div id="slot-watch-history" class="slot-history-list"><p class="empty">No finished watches yet.</p></div></section>
@@ -134,6 +154,7 @@
     <section class="panel run-timing"><div><h2>Current run timing</h2><p class="small">Browser ready to finish; startup and preparation excluded.</p></div><strong id="run-timing">No browser-ready run active</strong></section>
     <section class="panel run-history"><div class="section-title"><div><h2>Previous runs</h2><p class="small">Click any run for its full timeline. The headline time is browser-ready to finish; startup and Reset &amp; Prepare are excluded.</p></div><span class="small">SAVED LOCALLY</span></div><div id="run-history-list" aria-live="polite"><p class="empty">No completed browser-ready runs recorded yet.</p></div></section>
     <section class="panel activity"><div class="section-title"><div><h2>Activity</h2><p class="small">Live milestones and exact timing for the current run.</p></div><span class="small" id="activity-state">LOCAL PROCESS OUTPUT</span><button id="activity-expand" class="activity-expand" type="button" aria-expanded="false">Maximize</button></div><div id="log" role="log" aria-live="polite" aria-label="Activity log"><p class="empty">Activity will appear here as commands run.</p></div></section>
+    <section class="panel release-forensics"><div class="section-title"><div><h2>Release forensics</h2><p class="small">Written automatically after each live run: POST timing, the first published grid, provider response timing. Evidence only; full detail in the local report.</p></div><span class="small">SAVED LOCALLY</span></div><div id="release-forensics-list"><p class="empty">No forensic report yet. One is written automatically after each live run.</p></div></section>
     <section class="panel previous-holds" id="previous-holds" hidden><h2>Previous payment holds</h2><p class="small">Verified holds retained when another run was prepared. Recorded expiry is not a payment result; check each QR tab in Chrome.</p><div id="previous-holds-list"></div></section>
   </div>
 

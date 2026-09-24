@@ -14,9 +14,10 @@ import { resetPracticeSession } from './practice-reset.js';
 import {requiredWorkerIds,WORKER_IDS} from '../src/workers.js';
 import {focusDedicatedBrowser} from '../src/browser-window.js';
 import type {ConfirmRequest} from './types.js';
-import {networkNowMs,synchronizeNetworkClock} from '../src/network-clock.js';
+import {networkNowMs,readNetworkClock,synchronizeNetworkClock} from '../src/network-clock.js';
 import {closeBotBrowsers,countBotBrowsers} from './browser-cleanup.js';
 import {SlotWatch,readSlotWatchHistory} from '../src/slot-watch.js';
+import {buildReleaseForensics,forensicInputsFor,forensicsDigest,readReleaseForensicsHistory} from '../src/release-forensics.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 process.chdir(root);
@@ -60,9 +61,12 @@ const controller = new Controller({
     message:`Close ${open} Chrome browser${open===1?'':'s'} started by the bot?`,
     detail:`Only Chrome windows using the bot's own profiles are closed. Your normal Chrome is not touched.${qrPages?`\n\n${qrPages} QR payment page${qrPages===1?' is':'s are'} still open. Closing does NOT cancel ${qrPages===1?'that hold':'those holds'} on Onda, but you would lose the open QR page${qrPages===1?'':'s'}. Pay first if you want ${qrPages===1?'it':'them'}.`:''}${lock?'\n\nA retained automation lock stays recorded; Reset & Prepare will inspect it before the next run.':''}\n\nThe browsers reopen with Reset & Prepare.`,
     confirmLabel:`Close ${open} browser${open===1?'':'s'}`}),
-  startSlotWatch:(input,onUpdate)=>{const watch=new SlotWatch({...input,directory:resolve(root,'.local/slot-watch'),now:()=>networkNowMs(resolve(root,'.local/network-clock.json')),onUpdate});
+  startSlotWatch:(input,onUpdate,onObservation)=>{const clockPath=resolve(root,'.local/network-clock.json');
+    const watch=new SlotWatch({...input,directory:resolve(root,'.local/slot-watch'),now:()=>networkNowMs(clockPath),clockOffset:()=>readNetworkClock(clockPath)?.offsetMs??input.clockOffsetMs,onUpdate,onObservation});
     return {id:watch.id,done:watch.done,stop:reason=>watch.stop(reason)};},
   slotWatchHistory:()=>readSlotWatchHistory(resolve(root,'.local/slot-watch')),
+  buildReleaseForensics:({runId,status})=>{const inputs=forensicInputsFor(root,runId);return inputs?forensicsDigest(buildReleaseForensics({...inputs,status})):undefined;},
+  releaseForensicsHistory:()=>readReleaseForensicsHistory(resolve(root,'.local/release-forensics')),
   confirm: async (kind='observe',plan) => confirmModal({tone:'question', title: kind==='full'?'Arm Full Booking to QR?':kind==='selection'?'Arm booking selection?':kind==='dry'?'Arm Dry Race?':'Arm release observation?',
     message: kind==='full'?'ARM FULL BOOKING?':kind==='selection'?'ARM BOOKING SELECTION?':kind==='dry'?'ARM DRY RACE?':'Arm release observation?',
     detail: (plan ? describePlan(plan)+'\n\n' : '') + (kind==='full'?'Terms authorization: YES, for this booking only.\nFinal automation boundary: QR Checkout.\nThe bot will continue through Onda until the QR payment page is reached, then stop. Payment itself remains manual.':kind==='selection'?'At release this automation MAY SELECT available court slots.\nSelection Only stops before Proceed. Selection is not a reservation.':'This waits for release and performs read-only refresh/date navigation. No court slots will be selected.'),

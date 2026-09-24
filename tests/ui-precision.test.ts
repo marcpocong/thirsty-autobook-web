@@ -125,3 +125,33 @@ describe('Precision Release with seven attempts (A-G)', () => {
     } finally { if (previous === undefined) delete process.env.THIRSTY_API_INSTALLATION; else process.env.THIRSTY_API_INSTALLATION = previous; }
   });
 });
+
+describe('customer-identity problems surface at Reset & Prepare', () => {
+  it('shows "Worker B — customer identity invalid: duplicates Worker A" and that the other attempts remain usable', async () => {
+    const previous = process.env.THIRSTY_API_INSTALLATION; process.env.THIRSTY_API_INSTALLATION = '1';
+    try {
+      const view = bookingView(ConfigSchema.parse({ ...defaultSetup, BOOKING_METHOD: 'proofless', DURATION_HOURS: 3, RELEASE_STRATEGY: 'precision', PRECISION_TARGETS: targets, ...players }));
+      const runner: Runner = (command, event) => {
+        if (typeof command === 'object' && command.kind === 'apiRun' && ['prepare', 'dry'].includes(command.mode)) {
+          event({ type: 'apiStage', stage: 'RUN_STARTED', elapsedMs: 0 });
+          event({ type: 'apiStage', stage: 'CUSTOMER_IDENTITY_INVALID', elapsedMs: 1, workerId: 'B', code: 'DUPLICATE_ONDA_CUSTOMER_ID', duplicateOf: 'A' });
+          if (command.mode === 'dry') event({ type: 'apiStage', stage: 'PRECISION_ATTEMPT_STATE', elapsedMs: 2, workerId: 'B', court: 5, startTime: '17:00', endTime: '20:00',
+            attemptState: 'IDENTITY_FAILED', code: 'DUPLICATE_ONDA_CUSTOMER_ID', duplicateOf: 'A' });
+        }
+        return { pid: 1, done: Promise.resolve(0), stop: async () => undefined };
+      };
+      const controller = new Controller({ runner, lock: async () => false, cdp: async () => true,
+        browserHealth: async () => ({ A: true, B: true, C: true }), playerStatus: () => ({ primary: true, extended: true, third: true }),
+        clock: () => ({ ...clockStatus(ObservationSchema.parse({}), DateTime.fromISO('2026-09-24T06:00:00+08:00')), releaseMs: Date.parse('2026-09-24T00:00:00.000Z') + 86_400_000, targetDate: view.targetDate }),
+        confirm: async () => true, publish: () => undefined, booking: () => view, saveBooking: () => view });
+      await controller.resetPrepare({ workflow: 'release', strategy: 'standard', setup: view.setup });
+      expect(controller.state.apiFirstReady).toBe(true);
+      expect(controller.state.detail).toContain('Worker B — customer identity invalid: duplicates Worker A. Worker B will not dispatch; the other valid Precision attempts remain usable.');
+      expect(controller.state.identityIssues).toHaveLength(1);
+      expect(controller.state.precision?.targets.find(target => target.workerId === 'B')).toMatchObject({ state: 'IDENTITY_FAILED', duplicateOf: 'A' });
+      const uuid=/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+      expect(controller.state.detail).not.toMatch(uuid);
+      expect(controller.state.identityIssues!.join(' ')).not.toMatch(uuid);
+    } finally { if (previous === undefined) delete process.env.THIRSTY_API_INSTALLATION; else process.env.THIRSTY_API_INSTALLATION = previous; }
+  });
+});

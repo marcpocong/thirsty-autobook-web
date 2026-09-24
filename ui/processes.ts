@@ -4,13 +4,15 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { resolve } from 'node:path';
 import { UiEventSchema, type UiEvent } from '../src/ui-events.js';
 import type { Command } from './types.js';
+import type { AvailabilityObservation } from '../src/slot-evidence.js';
 import { z } from 'zod';
 import { PracticeSchema } from '../src/practice.js';
 import {requireCapability} from '../src/capabilities.js';
 import { DualPracticeSchema, requireDualFullAuthorization } from '../src/dual-practice.js';
 import {ScheduledReleaseContextSchema} from '../src/scheduled-release.js';
 
-export interface RunningCommand { pid: number | undefined; done: Promise<number>; stop(): Promise<void> }
+export interface RunningCommand { pid: number | undefined; done: Promise<number>; stop(): Promise<void>;
+  sendObservation?(observation: AvailabilityObservation, date: string, releaseMs: number): void }
 export type Runner = (command: Command, onEvent: (event: UiEvent) => void, onLine: (line: string, error: boolean) => void, confirmBooking?:(plan:BookingPlan)=>Promise<boolean>) => RunningCommand;
 export function sanitizeLine(text: string): string {
   return text.replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '').replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '')
@@ -123,7 +125,10 @@ export function createRunner(root: string, node: string): Runner {
       stream?.on('end', () => { if (buffer) consume(buffer); });
     }
     let stopping: Promise<void> | undefined;
-    return { pid: child.pid, done, stop: () => stopping ??= (async () => {
+    return { pid: child.pid, done, sendObservation: (observation, date, releaseMs) => {
+      if (typeof command === 'object' && command.kind === 'apiRun' && command.mode === 'live' && child.connected)
+        child.send({ type: 'slotObservation', date, releaseMs, observation }, () => {});
+    }, stop: () => stopping ??= (async () => {
       if (ended) return;
       if (spec.automation && child.connected) child.send({ type: 'abort' }, () => {});
       // Single Node owns Playwright. Give its shared abort path 350 ms to exit,

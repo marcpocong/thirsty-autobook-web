@@ -1,10 +1,23 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, open, readFile, rename, rmdir } from 'node:fs/promises';
+import { link, mkdir, open, readFile, rename, rmdir, unlink } from 'node:fs/promises';
 import { resolve, join, dirname } from 'node:path';
 const unspentPermits = new WeakSet();
 export function consumeSubmissionPermit(permit, expectedKey) {
     if (!permit || permit.key !== expectedKey || !unspentPermits.delete(permit))
         throw Error('SUBMISSION_PERMIT_INVALID_OR_USED');
+}
+export function isSubmissionPermitUnspent(permit) { return unspentPermits.has(permit); }
+/** Makes an unspent permit unusable. Returns true only if it was still unspent (so no POST can ever have used it). */
+export function revokeSubmissionPermit(permit) { return unspentPermits.delete(permit); }
+const ONE_SHOT_FILE = 'supervised-one-shot.json';
+function validAttempt(attempt, stage) {
+    return /^[a-f0-9]{64}$/.test(attempt.attemptId) && /^[a-f0-9]{64}$/.test(attempt.planFingerprint) &&
+        /^\d{4}-\d{2}-\d{2}$|^unknown$/.test(attempt.targetDate) && Array.isArray(attempt.courtIds) &&
+        !attempt.courtIds.some(court => !Number.isInteger(court) || court < 1 || court > 7) &&
+        Number.isInteger(attempt.expectedBookingCount) && attempt.expectedBookingCount >= 1 &&
+        Number.isFinite(attempt.maximumAmount) && attempt.maximumAmount >= 0 && attempt.stage === stage &&
+        (stage !== 'armed' || Number.isSafeInteger(attempt.releaseMs) && Number.isSafeInteger(attempt.dispatchDeadlineMs) &&
+            attempt.releaseMs > 0 && attempt.dispatchDeadlineMs >= attempt.releaseMs);
 }
 /** Write-once, cross-process duplicate guard. Records are never automatically cleared. */
 export class DurableSubmissionJournal {
@@ -25,11 +38,7 @@ export class DurableSubmissionJournal {
         const path = this.path(key);
         const safeAttempt = attempt ?? { attemptId: key, planFingerprint: key, targetDate: 'unknown', courtIds: [], hourlyBoundaries: [],
             expectedBookingCount: 1, maximumAmount: 0, stage: 'dispatching' };
-        if (!/^[a-f0-9]{64}$/.test(safeAttempt.attemptId) || !/^[a-f0-9]{64}$/.test(safeAttempt.planFingerprint) ||
-            !/^\d{4}-\d{2}-\d{2}$|^unknown$/.test(safeAttempt.targetDate) || !Array.isArray(safeAttempt.courtIds) ||
-            safeAttempt.courtIds.some(court => !Number.isInteger(court) || court < 1 || court > 7) ||
-            !Number.isInteger(safeAttempt.expectedBookingCount) || safeAttempt.expectedBookingCount < 1 ||
-            !Number.isFinite(safeAttempt.maximumAmount) || safeAttempt.maximumAmount < 0 || safeAttempt.stage !== 'dispatching')
+        if (!validAttempt(safeAttempt, 'dispatching'))
             throw Error('SUBMISSION_ATTEMPT_INVALID');
         let handle;
         try {
@@ -47,6 +56,91 @@ export class DurableSubmissionJournal {
         }
         finally {
             await handle.close();
+        }
+    }
+    /**
+     * Pre-release durable intent for one exact Precision target. The record appears
+     * complete or not at all: it is written and flushed under a temporary name and
+     * hard-linked into place (EEXIST = this logical target already has a record),
+     * then flushed again so the new name is durable before any permit exists.
+     */
+    async arm(key, now, attempt) {
+        if (!validAttempt(attempt, 'armed'))
+            throw Error('SUBMISSION_ATTEMPT_INVALID');
+        await mkdir(this.directory, { recursive: true, mode: 0o700 });
+        const time = now.toISOString();
+        await this.createComplete(this.path(key), JSON.stringify({ key, state: 'armed', createdAt: time, updatedAt: time, attempt }), 'DUPLICATE_LOGICAL_BOOKING_BLOCKED');
+    }
+    /**
+     * Claims the write-once one-shot for an armed record, before release. The permit
+     * exists only after the claim file is complete and flushed, so a missing or
+     * incomplete claim file proves no permit (and therefore no POST) ever existed.
+     */
+    async claimArmedOneShot(key, now = new Date()) {
+        const intent = await this.read(key);
+        if (intent.key !== key || intent.state !== 'armed')
+            throw Error('SUBMISSION_STATE_INVALID');
+        await this.createComplete(join(resolve(this.directory), ONE_SHOT_FILE), JSON.stringify({ claimedAt: now.toISOString(), mode: 'armed' }), 'SUPERVISED_ONE_SHOT_ALREADY_USED');
+        const permit = Object.freeze({ key });
+        unspentPermits.add(permit);
+        return permit;
+    }
+    /** True when the one-shot claim file exists with complete content (a permit may have been issued). */
+    async oneShotClaimed() {
+        try {
+            const value = JSON.parse(await readFile(join(resolve(this.directory), ONE_SHOT_FILE), 'utf8'));
+            return typeof value.claimedAt === 'string' && Number.isFinite(Date.parse(value.claimedAt));
+        }
+        catch (error) {
+            if (error.code === 'ENOENT' || error instanceof SyntaxError)
+                return false;
+            throw error;
+        }
+    }
+    async createComplete(path, content, existsCode) {
+        const temporary = join(dirname(path), `.${randomUUID()}.arming`);
+        const handle = await open(temporary, 'wx', 0o600);
+        let linked = false;
+        try {
+            await handle.writeFile(content);
+            await handle.sync();
+            try {
+                await link(temporary, path);
+                linked = true;
+            }
+            catch (error) {
+                const code = error.code;
+                if (code === 'EEXIST')
+                    throw Error(existsCode);
+                if (!['EPERM', 'ENOTSUP', 'ENOSYS', 'EXDEV', 'EINVAL'].includes(code ?? ''))
+                    throw error;
+            }
+            // Flush again through the same file so the new directory entry is durable too.
+            if (linked)
+                await handle.sync();
+        }
+        finally {
+            await handle.close();
+            await unlink(temporary).catch(() => undefined);
+        }
+        if (linked)
+            return;
+        // File systems without hard links: exclusive create + write + flush (an interrupted write stays unreadable, never "complete").
+        let fallback;
+        try {
+            fallback = await open(path, 'wx', 0o600);
+        }
+        catch (error) {
+            if (error.code === 'EEXIST')
+                throw Error(existsCode);
+            throw error;
+        }
+        try {
+            await fallback.writeFile(content);
+            await fallback.sync();
+        }
+        finally {
+            await fallback.close();
         }
     }
     async claimSupervisedOneShot(key, now = new Date()) {
@@ -77,7 +171,7 @@ export class DurableSubmissionJournal {
     async mark(key, state, now = new Date(), diagnostic, observedResponse, failureCode) {
         const path = this.path(key);
         const prior = JSON.parse(await readFile(path, 'utf8'));
-        if (prior.key !== key || prior.state !== 'dispatching')
+        if (prior.key !== key || (prior.state !== 'dispatching' && prior.state !== 'armed'))
             throw Error('SUBMISSION_STATE_INVALID');
         if (diagnostic && (!Number.isInteger(diagnostic.status) || diagnostic.status < 100 || diagnostic.status > 599 ||
             !['http-rejection', 'invalid-response'].includes(diagnostic.category) ||
@@ -117,6 +211,31 @@ export class DurableSubmissionJournal {
     async read(key) {
         return JSON.parse(await readFile(this.path(key), 'utf8'));
     }
+    /**
+     * Read-only preview of recycleReusable (no lock, no archive move): whether a new
+     * attempt on this logical target would be allowed. Used by fleet validation.
+     */
+    async peekDisposition(key, now = new Date()) {
+        let record;
+        try {
+            record = await this.read(key);
+        }
+        catch (error) {
+            if (error.code === 'ENOENT')
+                return 'unused';
+            return 'blocked';
+        }
+        if (record.key !== key || record.attempt?.attemptId !== key)
+            return 'blocked';
+        if (record.state === 'armed')
+            return await this.oneShotClaimed().catch(() => true) ? 'blocked' : 'reusable';
+        const observed = record.observedResponse, expiries = observed?.holdExpiresAt;
+        const rejected = record.state === 'rejected' && !observed?.success && !observed?.bookingIds?.length && !observed?.bookingNumbers?.length &&
+            !observed?.bookingSessionIds?.length && !observed?.holdExpiresAt?.length && !observed?.transactionId;
+        const expired = record.state === 'verified' && !!expiries?.length && expiries.length === record.attempt.expectedBookingCount &&
+            expiries.every(value => Number.isFinite(Date.parse(value)) && Date.parse(value) <= now.getTime());
+        return rejected || expired ? 'reusable' : 'blocked';
+    }
     /** Archive conclusive outcomes before permitting another attempt for the same block. */
     async recycleReusable(key, now = new Date()) {
         if (!/^[a-f0-9]{64}$/.test(key))
@@ -145,6 +264,16 @@ export class DurableSubmissionJournal {
             const expiries = record.observedResponse?.holdExpiresAt;
             if (record.key !== key || record.attempt?.attemptId !== key || !Number.isFinite(now.getTime()))
                 return 'blocked';
+            // Armed without a complete one-shot claim: arming never finished, no permit was ever
+            // issued, so no POST can have left. Anything else armed may have been sent.
+            if (record.state === 'armed') {
+                if (await this.oneShotClaimed())
+                    return 'blocked';
+                const archiveRoot = join(parent, 'unsent-attempts');
+                await mkdir(archiveRoot, { recursive: true, mode: 0o700 });
+                await rename(resolve(this.directory), join(archiveRoot, `${key}-${now.toISOString().replace(/[:.]/g, '-')}-${randomUUID()}`));
+                return 'reused';
+            }
             const rejected = record.state === 'rejected' && !record.observedResponse?.success &&
                 !record.observedResponse?.bookingIds?.length && !record.observedResponse?.bookingNumbers?.length &&
                 !record.observedResponse?.bookingSessionIds?.length && !record.observedResponse?.holdExpiresAt?.length &&

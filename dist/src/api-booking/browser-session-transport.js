@@ -7,6 +7,34 @@ const ORIGIN = 'https://app.onda.fit';
 const SLOT_PATH = '/api/public/is-slot-available';
 const CHECKOUT_PATH = '/api/bookings/public-checkout';
 const MAX_RESPONSE_BYTES = 1_000_000;
+/**
+ * Armed Precision requests: the journal key and the exact JSON body are computed
+ * once, before release, for a deeply frozen request object. Because the object can
+ * never change afterwards, the cached values stay exact and the release instant
+ * needs no hashing or serialization. Unarmed requests are unaffected.
+ */
+const armedRequests = new WeakMap();
+function deeplyFrozen(value) {
+    if (value === null || typeof value !== 'object')
+        return true;
+    return Object.isFrozen(value) && Object.values(value).every(deeplyFrozen);
+}
+function requestKey(request) {
+    const [first] = request.items;
+    const last = request.items.at(-1);
+    if (!first || !last || request.items.length > 6)
+        throw new BrowserSessionTransportError('CHECKOUT_ITEMS_INVALID');
+    return DurableSubmissionJournal.key(request.facilityId, first.spaceId, first.date, first.startTime, last.endTime);
+}
+export function armCheckoutRequest(request) {
+    if (!deeplyFrozen(request))
+        throw new BrowserSessionTransportError('ARMED_REQUEST_NOT_FROZEN');
+    if (request.items.some(item => item.availabilityProof !== null))
+        throw new BrowserSessionTransportError('DIRECT_PROOFLESS_SHAPE_INVALID');
+    const armed = { key: requestKey(request), body: JSON.stringify(request) };
+    armedRequests.set(request, armed);
+    return armed;
+}
 export class BrowserSessionTransportError extends SubmissionDispatchError {
     constructor(code, dispatched = false, diagnostic, confirmedRejected = false) {
         super(code, dispatched, diagnostic, confirmedRejected);
@@ -99,13 +127,13 @@ export class OndaBrowserSessionTransport {
             throw error;
         }
     }
-    async prepareCheckoutContext() {
+    async prepareCheckoutContext(forceRefresh = false) {
         this.assertPage();
         if (process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT !== 'SUPERVISED_ONE_SHOT')
             throw new BrowserSessionTransportError('LIVE_SUBMISSION_DISABLED');
         // An armed run may acquire the genuine page context just before release.
         // Keep it only briefly and consume it once at checkout.
-        if (this.preparedHeaders && this.preparedAt !== undefined && Date.now() - this.preparedAt >= 0 &&
+        if (!forceRefresh && this.preparedHeaders && this.preparedAt !== undefined && Date.now() - this.preparedAt >= 0 &&
             Date.now() - this.preparedAt <= 20_000) {
             this.observe({ event: 'SECURITY_PREPARATION_STARTED', securitySource: 'RECENT_CONTEXT_REUSE' });
             this.observe({ event: 'SECURITY_PREPARATION_COMPLETED', securitySource: 'RECENT_CONTEXT_REUSE', durationMs: 0 });
@@ -127,6 +155,8 @@ export class OndaBrowserSessionTransport {
                     durationMs: Math.max(0, Math.round(performance.now() - started)), failureCategory: 'SECURITY_CONTEXT_ACQUISITION_FAILED' });
                 throw error;
             }
+            if (forceRefresh)
+                return this.prepareCheckoutContext(true);
             return;
         }
         const preparation = (async () => {
@@ -158,7 +188,7 @@ export class OndaBrowserSessionTransport {
         if (this.page.isClosed() || this.page.url() !== ONDA_URL)
             throw new BrowserSessionTransportError('ONDA_SESSION_PAGE_INVALID');
     }
-    async post(path, body, extraHeaders) {
+    async post(path, body, extraHeaders, bodyText) {
         this.assertPage();
         const checkout = path === CHECKOUT_PATH;
         const networkStarted = performance.now();
@@ -176,15 +206,21 @@ export class OndaBrowserSessionTransport {
             this.page.on?.('request', requestListener);
         let result;
         try {
-            result = await this.page.evaluate(async ({ url, payload, headers }) => {
+            result = await this.page.evaluate(async ({ url, payload, text, headers }) => {
+                const started = performance.now();
                 const response = await fetch(url, { method: 'POST', credentials: 'same-origin', redirect: 'error',
                     cache: 'no-store', headers: { 'Content-Type': 'application/json', ...headers },
-                    body: JSON.stringify(payload) });
+                    body: typeof text === 'string' ? text : JSON.stringify(payload) });
+                const responseReceivedMs = performance.now() - started;
+                const body = await response.text();
                 return { status: response.status, contentType: response.headers.get('content-type') ?? '',
                     server: response.headers.get('server') ?? '', cloudflareRay: response.headers.get('cf-ray') ?? '',
                     cfMitigated: response.headers.get('cf-mitigated') ?? '',
-                    body: await response.text() };
-            }, { url: `${ORIGIN}${path}`, payload: body, headers: extraHeaders ?? {} });
+                    vercelId: response.headers.get('x-vercel-id') ?? '', requestId: response.headers.get('x-request-id') ?? '',
+                    serverTiming: response.headers.get('server-timing') ?? '', responseReceivedMs,
+                    responseCompletedMs: performance.now() - started, body };
+            }, bodyText === undefined ? { url: `${ORIGIN}${path}`, payload: body, text: undefined, headers: extraHeaders ?? {} }
+                : { url: `${ORIGIN}${path}`, payload: null, text: bodyText, headers: extraHeaders ?? {} });
         }
         catch {
             if (checkout)
@@ -197,10 +233,12 @@ export class OndaBrowserSessionTransport {
             if (checkout)
                 this.page.off?.('request', requestListener);
         }
+        const networkDurationMs = Math.max(0, Math.round(performance.now() - networkStarted));
+        const diagnostic = result.status === 200 ? undefined : checkoutDiagnostic(result);
         if (checkout)
-            this.observe({ event: 'CHECKOUT_RESPONSE_COMPLETED',
-                networkDurationMs: Math.max(0, Math.round(performance.now() - networkStarted)), statusCode: result.status,
-                dispatchState: 'RESPONSE_CAPTURED', ...(result.status === 200 ? {} : { failureCategory: 'ONDA_HTTP_STATUS_INVALID' }) });
+            this.observe({ event: 'CHECKOUT_RESPONSE_COMPLETED', networkDurationMs, statusCode: result.status,
+                dispatchState: 'RESPONSE_CAPTURED', ...(diagnostic ? { failureCategory: 'ONDA_HTTP_STATUS_INVALID',
+                    errorHint: diagnostic.errorHint, responseSource: diagnostic.responseSource } : {}) });
         if (path === CHECKOUT_PATH && this.captureCheckoutResponse) {
             try {
                 await this.captureCheckoutResponse(result);
@@ -215,8 +253,8 @@ export class OndaBrowserSessionTransport {
         catch {
             throw new BrowserSessionTransportError('ONDA_SESSION_DISCONNECTED_AFTER_DISPATCH', true);
         }
-        if (result.status !== 200)
-            throw new BrowserSessionTransportError('ONDA_HTTP_STATUS_INVALID', true, checkoutDiagnostic(result), confirmedApplicationConflict(result));
+        if (diagnostic)
+            throw new BrowserSessionTransportError('ONDA_HTTP_STATUS_INVALID', true, diagnostic, confirmedApplicationConflict(result));
         if (!result.contentType.toLowerCase().includes('application/json'))
             throw new BrowserSessionTransportError('ONDA_CONTENT_TYPE_INVALID', true);
         if (Buffer.byteLength(result.body, 'utf8') > MAX_RESPONSE_BYTES)
@@ -290,12 +328,8 @@ export class OndaBrowserSessionTransport {
             Date.now() - preparedAt > 120_000)
             throw new BrowserSessionTransportError('CURRENT_CHECKOUT_HEADERS_STALE');
         this.assertPage();
-        const [first] = request.items;
-        const last = request.items.at(-1);
-        if (!first || !last || request.items.length > 6)
-            throw new BrowserSessionTransportError('CHECKOUT_ITEMS_INVALID');
-        const expectedKey = DurableSubmissionJournal.key(request.facilityId, first.spaceId, first.date, first.startTime, last.endTime);
-        consumeSubmissionPermit(permit, expectedKey);
+        const armed = armedRequests.get(request);
+        consumeSubmissionPermit(permit, armed?.key ?? requestKey(request));
         // Last gate before the network: a late dispatch stops here, still provably unsent.
         options.beforePost?.();
         this.observe({ event: 'CHECKOUT_PRE_POST', preparedContextAgeMs: Math.max(0, Date.now() - preparedAt), securitySource });
@@ -303,7 +337,7 @@ export class OndaBrowserSessionTransport {
         return this.post(CHECKOUT_PATH, request, {
             'X-Turnstile-Token': current.turnstileToken,
             'X-Onda-Public-Fingerprint': current.publicFingerprint,
-        });
+        }, armed?.body);
     }
 }
 //# sourceMappingURL=browser-session-transport.js.map

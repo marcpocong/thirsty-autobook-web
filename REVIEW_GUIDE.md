@@ -1,6 +1,6 @@
 # Current implementation review guide
 
-This document is the entry point for human and AI review of the repository state published on 2026-09-23. `README.md` describes operator use. The other root reports are retained historical checkpoints and should not override current source, tests, or this guide when their limits differ.
+This guide records the broader desktop application at the 2026-09-23 checkpoint. For the current 2026-09-24 Precision release architecture, start with [REVIEW_PHASES_1_TO_3_2026-09-24.md](REVIEW_PHASES_1_TO_3_2026-09-24.md), then read the Phase 1–3 reports and source. `README.md` describes operator use.
 
 ## What changed in this snapshot
 

@@ -2,7 +2,7 @@
 
 Windows 11 / Node 24 / TypeScript / Playwright / dedicated Chrome. All files live directly in this project root.
 
-The existing single-court booking flow has live evidence, including the [September 12 production run](RELEASE_RUN_REPORT_2026-09-12.md). Automation stops at the verified QR payment hold; payment remains manual. The current tree adds API-first booking, up to seven courts, per-checkout worker isolation, richer run/QR history, a read-only release slot watch that timestamps every court/hour around each release, and a one-click close for all bot browsers. The one-off Special Friday session experiment is archived under [archive/special-friday](archive/special-friday/README.md). Start with [REVIEW_GUIDE.md](REVIEW_GUIDE.md) when reviewing the current implementation; the phase reports below are historical checkpoints.
+The existing single-court booking flow has live evidence, including the [September 12 production run](RELEASE_RUN_REPORT_2026-09-12.md). Automation stops at the verified QR payment hold; payment remains manual. The current tree adds API-first booking, up to seven courts, per-checkout worker isolation, richer run/QR history, a read-only release slot watch, and a one-click close for all bot browsers. Precision Release Phases 1–3 add fast pre-armed Wave 1 dispatch, release forensics, and an explicitly authorized adaptive candidate pool; they have offline verification but no live 08:00 validation. The one-off Special Friday session experiment is archived under [archive/special-friday](archive/special-friday/README.md). Start with [the current Phase 1–3 review guide](REVIEW_PHASES_1_TO_3_2026-09-24.md) for human or AI review; [REVIEW_GUIDE.md](REVIEW_GUIDE.md) covers the broader desktop application at an earlier checkpoint.
 
 
 ## Current booking model
@@ -36,7 +36,7 @@ Preparation emits sanitized per-browser evidence and the controller accepts it o
 
 ## Release slot watch
 
-Every armed release (API-first, Proofless Direct, or browser mode) automatically starts a **read-only slot watch** in the desktop app. **Watch next release** in the **Slots** view starts one without booking anything. It reads Onda's public availability for all 112 court/hours of the target date from 60 seconds before release until 15 minutes after: every 10 s before release, every 0.5 s for the first 10 s after, every 1 s to one minute, every 5 s to five minutes, then every 30 s. Onda's public booking records are read at −60 s, +2 s, +10 s, +30 s, +1, +2, +5, +10 and +15 minutes to tell real bookings apart from venue blocks. It never touches a browser, lock, hold, or checkout, and it runs in the app process, so it keeps observing after the booking run itself has finished or failed.
+Every armed release (API-first, Proofless Direct, or browser mode) automatically starts a **read-only slot watch** in the desktop app. **Watch next release** in the **Slots** view starts one without booking anything. It reads Onda's public availability for all 112 court/hours of the target date from 60 seconds before release until 15 minutes after: scheduled reads at T+0, +0.25, +0.5, +1, +2 and +5 s, then every 1 s to one minute, every 5 s to five minutes, and every 30 s to 15 minutes, with up to six availability reads in flight. Onda's public booking records are read at −60 s, +2 s, +10 s, +30 s, +1, +2, +5, +10 and +15 minutes. These records can show a booking exists; they cannot prove the reason for an unavailable slot. Slot Watch never touches a browser, lock, hold, or checkout, and it runs in the app process, so it keeps observing after the booking run itself has finished or failed.
 
 Every timestamp uses the Google-synchronized network clock. Each read records its request and response times, latency, time since release, and the exact 112-cell matrix (`O` open, `X` taken/unavailable, `U` not yet released, `?` unknown). Each cell change records when it was first seen and the window since the previous read, which bounds when it actually happened. Files are written under `.local/slot-watch/`:
 
@@ -97,7 +97,7 @@ npm test
 npm run ui:build
 ```
 
-The checked-in offline suite currently contains 71 files and 825 tests. It must stay network-isolated: it uses fixtures and test-owned Chromium, never a live booking. `npm run exe:build` is a Windows packaging/deployment command; it refreshes the parent installation as well as the launcher and should be run only when that local installation update is intended.
+The 2026-09-24 offline suite passed 85 files and 983 tests. It must stay network-isolated: it uses fixtures and test-owned Chromium, never a live booking. `npm run exe:build` is a Windows packaging/deployment command; it refreshes the parent installation as well as the launcher and should be run only when that local installation update is intended.
 
 Practice requires all four explicit target arguments. If either requested slot is unavailable, it stops; it never silently picks another target. On an uncertain selection, failure or abort, inspect and clear selection manually. Only rerun practice for an appropriate noncompetitive target.
 

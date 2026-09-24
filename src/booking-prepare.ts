@@ -18,15 +18,18 @@ import { assertDiagnosticSchedule } from './diagnostic-schedule.js';
 import { pidAlive } from '../ui/locks.js';
 import {WORKER_IDS,type WorkerId} from './workers.js';
 
-type RetainedRecord={stage?:string;stageAt?:string;state?:string;handoff?:unknown;holdExpiresAt?:string};
+type RetainedRecord={stage?:string;stageAt?:string;state?:string;handoff?:unknown;holdExpiresAt?:string;dispatchDeadlineAt?:string};
 export class PreparationBlockedError extends Error { constructor(code:string,readonly browserId:WorkerId,readonly review:BrowserReview){super(code);} }
 export function assertResetSafe(record:RetainedRecord|undefined,browser:BrowserReview,now=Date.now()){
-  if(record?.stage==='FINAL_ACTION_DISPATCHING'){
+  if(record?.stage==='FINAL_ACTION_DISPATCHING'||record?.stage==='FINAL_ACTION_ARMED'){
     if(browser.hold==='Expired')return;
-    const stageAt=Date.parse(record.stageAt??'');
+    // An armed Precision record may still have sent a POST up to its dispatch deadline, so its
+    // safety window starts there (a proofless POST leaves the tab on Schedule, so a clean tab
+    // alone proves nothing). Without that field an armed record never recovers from Schedule alone.
+    const reference=Date.parse((record.stage==='FINAL_ACTION_ARMED'?record.dispatchDeadlineAt:record.stageAt)??'');
     // New records may recover after the validated ten-minute maximum plus a
     // conservative minute, but legacy records never recover from Schedule alone.
-    if(Number.isFinite(stageAt)&&now-stageAt>660000&&browser.clean&&browser.page==='Schedule'&&browser.selected===0&&browser.hold==='Not detected')return;
+    if(Number.isFinite(reference)&&now-reference>660000&&browser.clean&&browser.page==='Schedule'&&browser.selected===0&&browser.hold==='Not detected')return;
     throw Error('PAYMENT_HOLD_MAY_BE_ACTIVE');
   }
   if(!record?.stage&&['checkout','unknown'].includes(record?.state??''))throw Error('PAYMENT_HOLD_MAY_BE_ACTIVE');

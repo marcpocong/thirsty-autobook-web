@@ -40,7 +40,8 @@ export async function readRetainedHold(root, now = Date.now()) {
         const lock = JSON.parse(await readFile(resolve(root, '.local/automation.lock'), 'utf8'));
         const workers = lock.mode === 'extended' ? await Promise.all(['a', 'b'].map(id => readFile(resolve(root, `.local/dual/worker-${id}.lock`), 'utf8').then(raw => JSON.parse(raw)).catch(() => ({})))) : [];
         const records = [lock, ...workers];
-        const stage = records.some(record => record.stage === 'FINAL_ACTION_DISPATCHING') ? 'FINAL_ACTION_DISPATCHING' : records.some(record => record.stage === 'HOLD_VERIFIED') ? 'HOLD_VERIFIED' : null;
+        // An armed Precision lock is shown (and recovered) exactly like an unresolved final action.
+        const stage = records.some(record => record.stage === 'FINAL_ACTION_DISPATCHING' || record.stage === 'FINAL_ACTION_ARMED') ? 'FINAL_ACTION_DISPATCHING' : records.some(record => record.stage === 'HOLD_VERIFIED') ? 'HOLD_VERIFIED' : null;
         if (!stage)
             return null;
         const expiries = records.filter(record => record.stage === 'HOLD_VERIFIED').map(record => record.holdExpiresAt).filter((value) => typeof value === 'string' && Number.isFinite(Date.parse(value)));

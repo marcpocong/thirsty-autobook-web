@@ -103,6 +103,21 @@ describe('Proofless checkout lane',()=>{
       }finally{await rm(root,{recursive:true,force:true});}
     }
   });
+  it('rechecks an adaptive final guard after durable claim and before the POST',async()=>{
+    const root=await mkdtemp(join(tmpdir(),'adaptive-final-guard-'));
+    try{
+      const plan=eveningPlan('17:00',3),journal=new DurableSubmissionJournal(join(root,'journal'));
+      let sent=0,guarded=0;
+      const transport={publicCheckoutProofless:async(_request:unknown,_permit:unknown,options:{beforePost?:()=>void})=>{
+        options.beforePost?.();sent++;throw Error('POST_MUST_NOT_RUN');}} as unknown as OndaBrowserSessionTransport;
+      await expect(submitDirectCheckout(plan,customer,transport,journal,undefined,[],Date.now,
+        {requirePreparedContext:true,beforePost:()=>{if(++guarded===2)throw new SubmissionDispatchError('PHASE3_DISPATCH_GUARD_CLOSED',false);}}))
+        .rejects.toThrow('PHASE3_DISPATCH_GUARD_CLOSED');
+      const key=DurableSubmissionJournal.key('5f8786bd-dc61-4509-b893-74cda8f783f7',plan.courts[0]!.spaceId,date,'17:00','20:00');
+      expect({sent,guarded,state:(await journal.read(key)).state}).toEqual({sent:0,guarded:2,state:'rejected'});
+      expect(await journal.recycleReusable(key)).toBe('reused');
+    }finally{await rm(root,{recursive:true,force:true});}
+  });
   it('verifies an exact pending hold and keeps an amount mismatch unknown',async()=>{
     for(const mismatch of [false,true]){
       const root=await mkdtemp(join(tmpdir(),'direct-response-test-'));

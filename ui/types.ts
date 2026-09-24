@@ -13,7 +13,8 @@ import type {ScheduledReleaseContext} from '../src/scheduled-release.js';
 import type {PreviousHold} from './status.js';
 import type {CourtCount,WorkerId} from '../src/workers.js';
 import type {BrowserFocusResult} from '../src/browser-window.js';
-import type {SlotWatchSummary,SlotWatchView} from '../src/slot-watch.js';
+import type {SlotWatchDigest,SlotWatchView} from '../src/slot-watch.js';
+import type {ReleaseForensicsDigest} from '../src/release-forensics.js';
 export type DualPracticeCommand = { kind:'dualDry'; date:string } | { kind:'dualPractice'|'dualFullPractice'; input:DualPracticeInput };
 export interface ConfirmRequest { id:string; tone:'question'|'warning'; title:string; message:string; detail:string; confirmLabel:string; cancelLabel?:string }
 export interface ApiRunPreferences {strategy:'standard'|'extended';date:string;start:string;duration:number;courtCount:CourtCount;maximum?:number;priority:number[];fallbackStarts:string[];exact?:number[][]}
@@ -24,11 +25,15 @@ export interface RunTiming { runId:string; label:string; startedAt:string; elaps
 export interface RunHistoryEntry { runId:string; label:string; startedAt:string; endedAt:string; outcome:string; totalElapsedMs:number; readyAt?:string; readyElapsedMs?:number; activities:Activity[]; qrHandoffs?:QrHandoffSummary[] }
 export interface QrHandoffSummary { checkout?:WorkerId; status?:'hold-created'|'qr-ready'; courts:number[]; date:string; startTime:string; endTime:string; amount:number; verifiedAt:string; holdExpiresAt?:string; bookingId?:string; bookingNo?:string }
 export interface PrecisionTargetView { workerId:WorkerId; court:number; startTime:string; endTime:string; durationHours:number; assumedPrice?:number;
-  evidence?:string; eligible?:boolean; checkpoint?:string; state?:string; code?:string; security?:'ready'|'failed'; bookingNo?:string; holdExpiresAt?:string }
+  evidence?:string; eligible?:boolean; checkpoint?:string; state?:string; code?:string; duplicateOf?:WorkerId; security?:'ready'|'failed'; bookingNo?:string; holdExpiresAt?:string }
 /** Live Precision race view built from runner stage events; purely informational. */
 export interface PrecisionView { targets:PrecisionTargetView[]; frozen:boolean; frozenCount?:number; frozenAt?:string; checkpoint?:string; checkpointAt?:string; outcome?:string }
 export interface Dashboard {
+  phase3?:{fitness?:string;cache?:string;seq?:number;outcome?:string;frozen?:boolean;
+    attempts:Array<{workerId:string;candidateId:string;wave:string;state:string}>};
   precision?:PrecisionView|null;
+  /** Customer-identity problems found by the latest preparation or run (worker letters and codes only). */
+  identityIssues?:string[];
   bookingResult?:Extract<UiEvent,{type:'bookingResult'}>;
   workflow?:'test'|'release';
   preparedAt?:number;
@@ -45,7 +50,9 @@ export interface Dashboard {
   operation: 'idle' | 'scheduled' | 'chrome' | 'inspect' | 'prepare' | 'confirming' | 'observe' | 'selection' | 'full' | 'dry' | 'practice' | 'stopping' | 'saving' | 'reviewing' | 'clearing' | 'resetting' | 'fullPractice' | 'apiPreview' | 'blockAudit' | 'closingBrowsers';
   /** Live read-only court/hour observation around the next or current release. */
   slotWatch?:SlotWatchView|null;
-  slotWatchHistory?:SlotWatchSummary[];
+  slotWatchHistory?:SlotWatchDigest[];
+  /** Post-run forensic digests (newest first) for the Runs view. */
+  releaseForensics?:ReleaseForensicsDigest[];
   headline: string; detail: string; ready: boolean; cdp: boolean; lock: boolean;
   canPrepareOverHold?:boolean;
   retainedLockStage?:'HOLD_VERIFIED'|'FINAL_ACTION_DISPATCHING'|null;

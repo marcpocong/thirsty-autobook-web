@@ -157,7 +157,10 @@ export function createRunner(root, node) {
                 consume(buffer); });
         }
         let stopping;
-        return { pid: child.pid, done, stop: () => stopping ??= (async () => {
+        return { pid: child.pid, done, sendObservation: (observation, date, releaseMs) => {
+                if (typeof command === 'object' && command.kind === 'apiRun' && command.mode === 'live' && child.connected)
+                    child.send({ type: 'slotObservation', date, releaseMs, observation }, () => { });
+            }, stop: () => stopping ??= (async () => {
                 if (ended)
                     return;
                 if (spec.automation && child.connected)
