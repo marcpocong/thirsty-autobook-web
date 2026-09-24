@@ -4,6 +4,8 @@
 
 The live 08:00 Precision Release run for **Saturday, September 26, 2026** failed. The final runner outcome was **`OBJECTIVE_NOT_ACHIEVED_ALL_REJECTED`**.
 
+**Later status (September 24, 22:45 Asia/Manila):** A read-only check against the installed private runtime validated A-G's contact bindings and found seven distinct Onda customer IDs. Worker B's duplicate-ID configuration blocker is resolved locally. The run findings below remain the historical record of the 08:00 attempt; B did not dispatch in that run. This later check did not prepare browsers or test checkout.
+
 - The configured objective was one verified temporary hold from four independent exact targets.
 - Worker B was excluded before the race because its private Onda customer ID duplicated Worker A's ID. No request was sent for B.
 - Workers A, C and D successfully prepared their browsers and checkout security.
@@ -364,9 +366,9 @@ The request builder assumed PHP 600 for 15:00–16:00 and PHP 700 thereafter. Th
 
 ## Recommendations before the next live release
 
-### 1. Fix Worker B's customer binding
+### 1. Recheck Worker B's binding before a future run (resolved locally after this run)
 
-Assign B a real, unique Onda customer UUID observed from B's own official customer flow and verify it against B's contact hash. Do not copy another worker's UUID and do not guess or fabricate one. Run Reset & Prepare afterwards and confirm there is no `DUPLICATE_ONDA_CUSTOMER_ID` warning.
+This was an open recommendation when the 08:00 run ended. The later installed-runtime check confirmed B now has a locally valid contact binding and a customer ID distinct from A-G. Revalidate the required workers and their browsers for the exact future plan before preparing or arming; the later identity check alone is not a checkout or release-readiness test.
 
 ### 2. Review all active worker identities together
 

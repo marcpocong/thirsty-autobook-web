@@ -80,7 +80,10 @@
         <div id="precision-setup" class="editor-block precision-setup" hidden>
           <h3>Precision Release · goal: 1 successful court</h3>
           <p class="small">Proofless Direct · Standard 1–3 hours · each attempt is exactly one court, one exact time and one dedicated player/browser. Release only.</p>
-          <label><input id="phase3-enabled" type="checkbox"> Phase 3 candidate pool and adaptive waves</label>
+          <div class="plan-mode" role="radiogroup" aria-label="Precision plan">
+            <label class="plan-mode-option"><input id="precision-mode-fixed" type="radio" name="precision-mode" value="fixed" checked><span><strong>Fixed attempts</strong><small>Send only the exact attempts listed at 8:00.</small></span></label>
+            <label class="plan-mode-option"><input id="precision-mode-smart" type="radio" name="precision-mode" value="smart"><span><strong>Smart backups</strong><small>Send immediate attempts at 8:00, then use only pre-approved backup slots when fresh availability confirms they are open.</small></span></label>
+          </div>
           <div id="legacy-precision-setup">
           <label>Precision attempts<select id="precision-count"><option value="1">1 attempt</option><option value="2">2 attempts</option><option value="3">3 attempts</option><option value="4">4 attempts</option><option value="5">5 attempts</option><option value="6">6 attempts</option><option value="7">7 attempts</option></select></label>
           <div class="precision-rows">
@@ -93,24 +96,64 @@
             <div class="precision-row" id="precision-row-6"><strong>Worker G</strong><label>Court<select id="precision-court-6"></select></label><label>Start<select id="precision-start-6"></select></label><label>Duration<select id="precision-duration-6"><option value="1">1 h</option><option value="2">2 h</option><option value="3">3 h</option></select></label><span id="precision-evidence-6" class="small precision-evidence"></span></div>
           </div>
           </div>
-          <div id="phase3-editor" hidden>
-            <p class="small">Authorize exact candidates. Wave 1 fires at release; Wave 2 uses only a fresh published Slot Watch grid. Rescue is off unless enabled here.</p>
-            <label>Authorized candidates <input id="p3-count" type="number" min="1" max="21" value="1"></label>
-            <div id="p3-rows" class="precision-rows"></div>
-            <label>Rate source <input id="p3-rate-source" placeholder="Current venue schedule or operator confirmed" maxlength="100"></label>
-            <label>Rate evidence captured (ISO) <input id="p3-rate-captured" placeholder="2026-09-24T00:00:00Z"></label>
-            <label>Rate status <select id="p3-rate-status"><option value="OPERATOR_CONFIRMED">Operator confirmed</option><option value="VENUE_SCHEDULE">Current venue schedule</option></select></label>
-            <label>Rate applicable date <input id="p3-rate-date" type="date"></label>
-            <div id="p3-standby"></div>
-            <div class="setup-grid"><label>Max Wave 2 sends <input id="p3-wave2-max" type="number" min="0" max="7" value="0"></label>
-              <label>Max Rescue sends <input id="p3-rescue-max" type="number" min="0" max="7" value="0"></label>
-              <label>Max total sends <input id="p3-total-max" type="number" min="1" max="28" value="1"></label></div>
-            <label><input id="p3-concurrent" type="checkbox"> Allow Wave 2 while Wave 1 responses are pending</label>
-            <label><input id="p3-rescue-enabled" type="checkbox"> Enable Reopen Rescue</label>
-            <p class="small">Hourly prices must be entered for every candidate. A stale or cached OPEN is never enough for an adaptive send. UNKNOWN stops later dispatch.</p>
+          <div id="smart-editor" class="smart-editor" hidden>
+            <section class="smart-card" aria-labelledby="smart-immediate-title">
+              <div class="smart-card-head"><div><h4 id="smart-immediate-title">Immediate attempts</h4><p class="small">These are sent immediately at 8:00. They do not wait for the released schedule.</p></div><button id="smart-add-immediate" class="secondary compact" type="button">Add immediate attempt</button></div>
+              <ol id="smart-immediate" class="smart-list"></ol>
+            </section>
+            <section class="smart-card" aria-labelledby="smart-backups-title">
+              <div class="smart-card-head"><div><h4 id="smart-backups-title">Backup choices</h4><p class="small">If fresh released availability shows one of these approved slots is open, an unused worker may try it. The order is your priority.</p></div><div class="smart-head-actions"><button id="smart-suggest" class="secondary compact" type="button">Suggest from history</button><button id="smart-add-backup" class="secondary compact" type="button">Add backup slot</button></div></div>
+              <ol id="smart-backups" class="smart-list"></ol>
+              <p id="smart-backup-workers" class="small smart-note"></p>
+              <div id="smart-advisor" class="smart-advisor" hidden>
+                <div class="smart-card-head"><div><h4>Suggest from history</h4><p class="small">Read-only. Uses saved release observations. Suggestions change only this draft; nothing is saved, prepared or armed.</p></div><button id="smart-advisor-close" class="secondary compact" type="button">Close</button></div>
+                <div class="smart-advisor-inputs">
+                  <label>Courts<input id="advisor-courts" value="1,2,3,4,5,6,7" autocomplete="off"></label>
+                  <label>Earliest start<select id="advisor-from"></select></label>
+                  <label>Latest start<select id="advisor-to"></select></label>
+                  <label>Duration<select id="advisor-duration"><option value="1">1 hour</option><option value="2">2 hours</option><option value="3" selected>3 hours</option></select></label>
+                  <label>Immediate attempts<input id="advisor-immediate" type="number" min="0" max="7" value="4"></label>
+                  <label>Backup choices<input id="advisor-backups" type="number" min="0" max="14" value="3"></label>
+                  <label class="smart-wide">Exclude (court@start, e.g. 3@19:00)<input id="advisor-exclude" autocomplete="off"></label>
+                </div>
+                <div class="button-row"><button id="advisor-run" class="secondary compact" type="button">Suggest</button></div>
+                <p id="advisor-status" class="small" role="status"></p>
+                <div id="advisor-results" class="advisor-results"></div>
+              </div>
+            </section>
+            <section class="smart-card">
+              <h4>Backup behavior</h4>
+              <label class="smart-toggle"><input id="smart-concurrent" type="checkbox"><span><strong>Use backups immediately when a fresh opening appears</strong><small>Backups may be sent while immediate attempts are still waiting for Onda to respond. This improves reaction time but can create more than one temporary hold. Payment remains manual.</small></span></label>
+            </section>
+            <section class="smart-card">
+              <h4>Try reopened slots</h4>
+              <label class="smart-toggle"><input id="smart-rescue" type="checkbox"><span><strong>Try approved slots again if they reopen later</strong><small>Only after all earlier attempts are conclusively rejected. Nothing is retried after an UNKNOWN result. All immediate attempts and backup choices above may be retried.</small></span></label>
+              <label id="smart-rescue-max-row" class="smart-inline" hidden>Maximum reopened-slot attempts <input id="smart-rescue-max" type="number" min="1" max="7" value="1"></label>
+            </section>
+            <section class="smart-card">
+              <div class="smart-card-head"><div><h4>Rates</h4><p id="smart-rate-summary" class="small"></p></div><button id="smart-review-rates" class="secondary compact" type="button">Review rates</button></div>
+              <div id="smart-rate-review" class="smart-rate-review" hidden>
+                <label>Daytime rate, before 4 PM (₱ per hour)<input id="smart-rate-day" type="number" min="1" step="1" inputmode="numeric"></label>
+                <label>Evening rate, from 4 PM (₱ per hour)<input id="smart-rate-evening" type="number" min="1" step="1" inputmode="numeric"></label>
+                <label>Confirmed from<select id="smart-rate-status"><option value="VENUE_SCHEDULE">The venue's current schedule</option><option value="OPERATOR_CONFIRMED">I confirmed with the venue</option></select></label>
+                <div class="button-row"><button id="smart-rate-confirm" class="secondary compact" type="button">Confirm rates for the next release</button><button id="smart-rate-cancel" class="secondary compact" type="button">Cancel</button></div>
+                <p class="small">Immediate attempts use these confirmed rates. Backups and reopened slots always use the prices in the fresh released schedule.</p>
+              </div>
+            </section>
+            <section class="smart-card smart-summary" aria-live="polite">
+              <h4>What will happen</h4>
+              <div id="smart-summary" class="smart-summary-body"></div>
+              <ul id="smart-problems" class="smart-problems"></ul>
+              <div class="smart-replay"><button id="smart-replay" class="secondary compact" type="button">Replay this draft against past releases</button><div id="smart-replay-results" class="tool-result"></div></div>
+            </section>
+            <details id="smart-advanced" class="smart-advanced">
+              <summary>Advanced settings</summary>
+              <p class="small">These settings control the internal release strategy. Most users should leave them unchanged.</p>
+              <div id="smart-advanced-body"></div>
+            </details>
           </div>
           <p class="precision-warning"><strong>These are independent checkout attempts. More than one temporary QR hold may be created. Payment remains manual.</strong></p>
-          <p class="small">Evidence is read at T−60, T−30, T−10 and T−2 min. The set freezes 2 minutes before release: a target showing a public booking or unknown evidence then is excluded, and no court, time or attempt is ever added or changed. Nothing is cancelled automatically.</p>
+          <p id="legacy-freeze-note" class="small">Evidence is read at T−60, T−30, T−10 and T−2 min. The set freezes 2 minutes before release: a target showing a public booking or unknown evidence then is excluded, and no court, time or attempt is ever added or changed. Nothing is cancelled automatically.</p>
         </div>
         <div id="player-details" class="player-details" aria-label="Player details used for booking"></div>
         <div class="setup-grid editors general-only"><div class="editor-block"><h3>Court priority</h3><ol id="court-order"></ol></div><div class="editor-block"><h3>Fallback starts · in order</h3><div class="button-row"><select id="fallback-time" aria-label="Add fallback start time"></select><button id="add-fallback" class="secondary" type="button">Add</button></div><ol id="fallback-order"></ol><p class="small">Primary time × court order, then each fallback × court order.</p></div></div>
@@ -154,6 +197,7 @@
     <section class="panel run-timing"><div><h2>Current run timing</h2><p class="small">Browser ready to finish; startup and preparation excluded.</p></div><strong id="run-timing">No browser-ready run active</strong></section>
     <section class="panel run-history"><div class="section-title"><div><h2>Previous runs</h2><p class="small">Click any run for its full timeline. The headline time is browser-ready to finish; startup and Reset &amp; Prepare are excluded.</p></div><span class="small">SAVED LOCALLY</span></div><div id="run-history-list" aria-live="polite"><p class="empty">No completed browser-ready runs recorded yet.</p></div></section>
     <section class="panel activity"><div class="section-title"><div><h2>Activity</h2><p class="small">Live milestones and exact timing for the current run.</p></div><span class="small" id="activity-state">LOCAL PROCESS OUTPUT</span><button id="activity-expand" class="activity-expand" type="button" aria-expanded="false">Maximize</button></div><div id="log" role="log" aria-live="polite" aria-label="Activity log"><p class="empty">Activity will appear here as commands run.</p></div></section>
+    <section class="panel release-insights" id="release-insights-card"><div class="section-title"><div><h2>Release insights</h2><p class="small">What the latest recorded release showed, in plain terms. Built from local logs after each release; evidence only.</p></div><span class="small">SAVED LOCALLY</span></div><div id="release-insights"><p class="empty">No release intelligence yet. Use Tools → Rebuild intelligence.</p></div></section>
     <section class="panel release-forensics"><div class="section-title"><div><h2>Release forensics</h2><p class="small">Written automatically after each live run: POST timing, the first published grid, provider response timing. Evidence only; full detail in the local report.</p></div><span class="small">SAVED LOCALLY</span></div><div id="release-forensics-list"><p class="empty">No forensic report yet. One is written automatically after each live run.</p></div></section>
     <section class="panel previous-holds" id="previous-holds" hidden><h2>Previous payment holds</h2><p class="small">Verified holds retained when another run was prepared. Recorded expiry is not a payment result; check each QR tab in Chrome.</p><div id="previous-holds-list"></div></section>
   </div>
@@ -164,6 +208,22 @@
       <div class="section-title"><div><p class="eyebrow">Dedicated Chrome windows</p><h2>Bot browsers</h2></div><button id="close-browsers-tools" class="danger-button" type="button">Close all bot browsers</button></div>
       <p class="small">Each checkout uses its own Chrome window and profile (A–H). Closing only affects these windows — your normal Chrome is never touched. It is blocked while a run is active or a release is armed; Reset &amp; Prepare reopens what a run needs.</p>
       <div id="browser-list" class="browser-list"></div>
+    </section>
+    <section class="panel tool-card" id="network-card">
+      <div class="section-title"><div><p class="eyebrow">Read only · bounded</p><h2>Network readiness</h2></div><button id="run-network-check" class="secondary" type="button">Run network check</button></div>
+      <p class="small">Sends 5 read-only availability reads and one network-clock check. No browser, no checkout, no booking. Paused near a release.</p>
+      <div id="network-result" class="tool-result"><p class="empty">No network check yet.</p></div>
+    </section>
+    <section class="panel tool-card" id="intelligence-card">
+      <div class="section-title"><div><p class="eyebrow">Derived from local logs</p><h2>Release intelligence</h2></div><div class="button-row"><button id="rebuild-intelligence" class="secondary" type="button">Rebuild intelligence</button><button id="clear-intelligence" class="secondary" type="button">Clear derived intelligence</button></div></div>
+      <p class="small">Rebuilds history from Slot Watch, run and forensic logs. Raw logs are never changed; clearing removes only the derived files.</p>
+      <p id="intelligence-status" class="small" role="status"></p>
+      <details id="intelligence-history" class="tool-details"><summary>View history</summary><div id="intelligence-list"></div></details>
+    </section>
+    <section class="panel tool-card" id="replay-card">
+      <div class="section-title"><div><p class="eyebrow">Offline · no checkout</p><h2>Strategy replay</h2></div><button id="replay-saved" class="secondary" type="button">Replay current plan</button></div>
+      <p class="small">Runs the saved plan through the real release rules against recorded releases. It shows observed opportunities only; it never predicts a win.</p>
+      <div id="replay-results" class="tool-result"><p class="empty">No replay yet.</p></div>
     </section>
     <details id="advanced" class="panel">
       <summary>Legacy browser-mode tools &amp; diagnostics</summary>

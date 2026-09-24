@@ -15,6 +15,11 @@ import type {CourtCount,WorkerId} from '../src/workers.js';
 import type {BrowserFocusResult} from '../src/browser-window.js';
 import type {SlotWatchDigest,SlotWatchView} from '../src/slot-watch.js';
 import type {ReleaseForensicsDigest} from '../src/release-forensics.js';
+import type {IntelligenceDigest} from '../src/release-intelligence.js';
+import type {ReadinessResult} from '../src/network-readiness.js';
+import type {WarmthAssessment} from '../src/checkout-path-research.js';
+import type {AdvisorResult} from '../src/release-advisor.js';
+import type {ReplaySummary} from './controller.js';
 export type DualPracticeCommand = { kind:'dualDry'; date:string } | { kind:'dualPractice'|'dualFullPractice'; input:DualPracticeInput };
 export interface ConfirmRequest { id:string; tone:'question'|'warning'; title:string; message:string; detail:string; confirmLabel:string; cancelLabel?:string }
 export interface ApiRunPreferences {strategy:'standard'|'extended';date:string;start:string;duration:number;courtCount:CourtCount;maximum?:number;priority:number[];fallbackStarts:string[];exact?:number[][]}
@@ -53,6 +58,9 @@ export interface Dashboard {
   slotWatchHistory?:SlotWatchDigest[];
   /** Post-run forensic digests (newest first) for the Runs view. */
   releaseForensics?:ReleaseForensicsDigest[];
+  /** Phase 4 derived release intelligence (read-only digest). */
+  intelligence?:IntelligenceDigest|null;
+  phase4?:{busy:'rebuild'|'network'|null;message:string;networkReadiness?:ReadinessResult|null;networkHistory?:Array<{measuredAt:string;verdict:string;medianMs:number|null}>;warmth?:WarmthAssessment|null};
   headline: string; detail: string; ready: boolean; cdp: boolean; lock: boolean;
   canPrepareOverHold?:boolean;
   retainedLockStage?:'HOLD_VERIFIED'|'FINAL_ACTION_DISPATCHING'|null;
@@ -80,6 +88,9 @@ export interface Bridge {
   closeBotBrowsers():Promise<void>;
   watchNextRelease():Promise<void>;
   stopSlotWatch():Promise<void>;
+  rebuildIntelligence():Promise<void>; clearIntelligence():Promise<void>; runNetworkCheck():Promise<void>;
+  replayPlan(input:{source:'saved'}|{source:'draft';phase3:unknown}|{source:'draft';targets:unknown}):Promise<ReplaySummary>;
+  adviseFromHistory(input:Record<string,unknown>):Promise<AdvisorResult|{blocked:string}>;
   resetPrepare(input:PreparationInput):Promise<void>;
   apiPreview(date:string):Promise<void>;
   checkReleaseBlocks(date:string):Promise<void>;

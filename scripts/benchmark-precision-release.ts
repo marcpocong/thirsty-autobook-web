@@ -15,6 +15,10 @@
  *     launching reads at -1.2 s, -0.6 s, T+0, +0.25 s ... against a local HTTP server; reads launched in the
  *     release window hang for 6 s, like Onda's release-time reads.
  *
+ * Phase 4, --phase4 on: a continuous Phase 4 workload (intelligence rebuild + replay + advisor, scripts/phase4-load.ts)
+ * runs in a SEPARATE process for the whole benchmark, like the desktop main process. Pessimistic: production pauses
+ * Phase 4 from 10 minutes before release until 15 minutes after.
+ *
  * --response-delay <ms> holds each synthetic 409 (default 0) so a late-enabled trace can see it; use the same value for OFF and ON.
  *
  * Usage: npx tsx scripts/benchmark-precision-release.ts --mode legacy --workers 1,3,7 --runs 100 [--tail 20] [--priority high] [--phase2 on] [--response-delay 50]
@@ -41,7 +45,8 @@ const phase2 = phase3 || args.get('phase2') === 'on' || args.get('phase2') === '
 /** --phase2 trace: the provider trace only, without the in-process slot watch. */
 const phase2Watch = phase3 || args.get('phase2') === 'on';
 const responseDelayMs = Number(args.get('response-delay') ?? 0);
-const label = args.get('label') ?? `${mode}${tailMs !== undefined ? `-tail${tailMs}` : ''}${priority !== 'normal' ? `-${priority}` : ''}${phase3?'-phase3':phase2 ? (phase2Watch ? '-phase2on' : '-phase2trace') : ''}`;
+const phase4 = args.get('phase4') === 'on';
+const label = args.get('label') ?? `${mode}${tailMs !== undefined ? `-tail${tailMs}` : ''}${priority !== 'normal' ? `-${priority}` : ''}${phase3?'-phase3':phase2 ? (phase2Watch ? '-phase2on' : '-phase2trace') : ''}${phase4?'-phase4on':''}`;
 const sourceRoot = resolve(import.meta.dirname, '..');
 const scratch = resolve(args.get('scratch') ?? join(process.env.TEMP ?? sourceRoot, 'thirsty-precision-bench'));
 const outDir = resolve(args.get('out') ?? join(sourceRoot, '.local/benchmarks'));
@@ -351,8 +356,14 @@ const sessions: BenchSession[] = [];
 const traceCounts: number[] = [], watchLaunches: number[] = [];
 const report: Record<string, unknown> = { label, mode, runsPerConfiguration: runs, tailMs: tailMs ?? null, priority, startedAt: new Date().toISOString(),
   host: { platform: process.platform, node: process.version }, notes: 'Offline: headless Chrome over CDP, DNS disabled, app.onda.fit fulfilled locally. Times are ms relative to the monotonic release deadline.' };
+let phase4Load: ChildProcess | undefined;
 try {
   for (let index = 0; index < Math.max(...workerCounts); index++) sessions.push(await launch(index));
+  if (phase4) {
+    phase4Load = spawn(process.execPath, [join(sourceRoot, 'node_modules/tsx/dist/cli.mjs'), join(sourceRoot, 'scripts/phase4-load.ts'), join(scratch, 'phase4-load')],
+      { cwd: sourceRoot, stdio: ['pipe', 'pipe', 'inherit'] });
+    await new Promise(done => setTimeout(done, 3_000)); // the workload is running before the first measured release
+  }
   const raw: RunRecord[] = [];
   const configurations: Record<string, unknown> = {};
   for (const count of workerCounts) {
@@ -366,6 +377,12 @@ try {
   }
   report.configurations = configurations;
   if (phase2) report.phase2 = { providerTraceCompleteRecordsPerRun: stats(traceCounts), slotWatchLaunchesPerRun: stats(watchLaunches) };
+  if (phase4Load) {
+    const output: Buffer[] = []; phase4Load.stdout!.on('data', chunk => output.push(chunk));
+    const exited = new Promise(done => phase4Load!.once('exit', done)); phase4Load.stdin!.end('stop\n'); await exited;
+    report.phase4 = { workload: 'separate process: intelligence rebuild + replay + advisor over 8 full-size releases, looping', ...JSON.parse(Buffer.concat(output).toString().trim().split('\n').at(-1) || '{}') };
+    phase4Load = undefined;
+  }
   report.finishedAt = new Date().toISOString();
   await mkdir(outDir, { recursive: true });
   const base = join(outDir, `${new Date().toISOString().replace(/[:.]/g, '-')}-${label}`);
@@ -375,5 +392,6 @@ try {
 } finally {
   await Promise.allSettled(sessions.map(session => session.browser.close()));
   for (const session of sessions) session.process.kill();
+  phase4Load?.kill();
   benchServer?.close();
 }

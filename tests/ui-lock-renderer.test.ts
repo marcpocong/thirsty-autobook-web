@@ -27,7 +27,8 @@ async function renderer(extra:Record<string,unknown>={}){
     authorizeTerms:async(authorized:boolean)=>{value.termsAuthorized=authorized;w.fixturePublish(value);},
     resetPrepare:async()=>{},armFullBooking:async()=>{},reviewLock:async()=>{},saveBooking:async()=>{},
     onConfirmRequest:(callback:any)=>{w.fixtureConfirmRequest=callback;return ()=>{};},confirmResponse:async(id:string,confirmed:boolean)=>{w.fixtureConfirmResponse={id,confirmed};}};},state);
-  const source=(await readFile('src/booking-setup.ts','utf8'))+'\n'+(await readFile('ui/renderer/app.ts','utf8')).replace(/^import .*booking-setup\.js';\r?\n/m,'');
+  const source=(await readFile('src/booking-setup.ts','utf8'))+'\n'+(await readFile('src/precision-simple.ts','utf8'))+'\n'+(await readFile('ui/renderer/app.ts','utf8'))
+    .replace(/^import .*booking-setup\.js';\r?\n/m,'').replace(/^import \{[^}]*\} from '\.\.\/\.\.\/src\/precision-simple\.js';\r?\n/m,'');
   await page.addScriptTag({type:'module',content:stripTypeScriptTypes(source)});
   await page.waitForFunction(expected=>document.getElementById('headline')?.textContent===expected,state.headline);
   return page;

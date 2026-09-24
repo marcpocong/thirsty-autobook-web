@@ -146,6 +146,9 @@ The BEFORE 3-worker max (788 ms) is one CDP stall (transport call -> request eve
 
 ## 4. Worker B
 
-See the Phase 1 report: B stays disabled (`DUPLICATE_ONDA_CUSTOMER_ID`) until a distinct Onda customer ID is
-obtained through B's own official customer flow. The only such flow in the repo selects a court slot, which the
-Phase 1 rules exclude.
+At the September 24 08:00 run, B was excluded because its configured Onda customer ID duplicated A's.
+This was the status when the Phase 1 benchmark was written. At 22:45 Asia/Manila on September 24,
+a read-only check using the installed runtime's `.local/private/.env.local` and
+`loadLocalCheckoutCustomer` validated the contact bindings for A-G and found seven distinct customer IDs.
+B no longer has the duplicate-ID configuration blocker. This local check did not prepare browsers,
+dispatch a checkout, or prove a successful B booking; release readiness still needs a fresh check.

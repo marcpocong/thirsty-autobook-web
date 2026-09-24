@@ -14,7 +14,7 @@ import { classifyTargetEvidence, readPreReleaseEvidence } from './pre-release-ev
 import { freezePrecisionRace, precisionTargetPlan, reducePrecisionOutcome,
   validatePrecisionTargets, VerifiedHoldQrError, classifyPrecisionDispatchError,
   type PrecisionAttempt, type PrecisionAttemptState, type PrecisionTarget } from './precision-race.js';
-import { authorizePrecision, precisionCandidateId, PrecisionSession, classifyActionableObservation, pricedPrecisionPlan,
+import { authorizePrecision, precisionCandidateId, PrecisionSession, classifyActionableObservation, pricedPrecisionPlan, adaptiveMaxAgeMs,
   type ActionableObservation, type AvailabilityObservation } from './precision-phase3.js';
 import { browserIdentity, verifyDedicatedChromeAsync } from '../browser.js';
 import { emitUiEvent } from '../ui-events.js';
@@ -822,7 +822,7 @@ try {
       let newestSeq=0,securityRefreshMs=2500,wave1Fired=false,wave1Settled=false;
       const refreshFitness=(evidence:ActionableObservation,at=nowMs())=>{
         const latency=Math.max(0,evidence.observation.responseOffsetMs-evidence.observation.requestOffsetMs);
-        const maxAgeMs=Math.min(15_000,Math.max(6_000,2*latency+securityRefreshMs+1000));
+        const maxAgeMs=adaptiveMaxAgeMs(latency,securityRefreshMs);
         return classifyActionableObservation(evidence.observation,newestSeq,releaseMs,at,maxAgeMs);
       };
       const pending=new Set<Promise<void>>();
@@ -878,7 +878,7 @@ try {
           for(const observation of phase3Observations.splice(0)){
             newestSeq=Math.max(newestSeq,observation.seq);
             const latency=Math.max(0,observation.responseOffsetMs-observation.requestOffsetMs);
-            const maxAge=Math.min(15_000,Math.max(6_000,2*latency+securityRefreshMs+1000));
+            const maxAge=adaptiveMaxAgeMs(latency,securityRefreshMs);
             const evidence=classifyActionableObservation(observation,newestSeq,releaseMs,nowMs(),maxAge);
             session.observe(evidence);
             stage('PHASE3_EVIDENCE',{seq:observation.seq,fitness:evidence.fitness,cache:observation.cache?.status??'UNKNOWN'});
@@ -891,7 +891,7 @@ try {
           const current=session.latest;
           if(current&&wave1Fired&&(authorization.concurrentWave2||wave1Settled)){
             const latency=Math.max(0,current.observation.responseOffsetMs-current.observation.requestOffsetMs);
-            const maxAge=Math.min(15_000,Math.max(6_000,2*latency+securityRefreshMs+1000));
+            const maxAge=adaptiveMaxAgeMs(latency,securityRefreshMs);
             for(const choice of session.select('WAVE_2',nowMs(),maxAge))dispatchAdaptive(choice,'WAVE_2');
           }
           if(verifiedHold||session.attempts.some(value=>value.state==='UNKNOWN'))break;

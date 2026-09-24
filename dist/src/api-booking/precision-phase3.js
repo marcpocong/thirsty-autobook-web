@@ -101,6 +101,11 @@ export function classifyActionableObservation(observation, newestAnsweredSeq, re
         fitness = 'ACTIONABLE_FRESH';
     return { observation, fitness, ageMs };
 }
+/** Freshness window for adaptive evidence: max(6 s, 2 × read latency + security refresh + 1 s), capped at 15 s.
+ * Shared by the release runner and the offline replay so both apply the same rule. */
+export function adaptiveMaxAgeMs(readLatencyMs, securityRefreshMs) {
+    return Math.min(15_000, Math.max(6_000, 2 * readLatencyMs + securityRefreshMs + 1000));
+}
 export function candidatePriceFromObservation(candidate, evidence) {
     if (evidence.fitness !== 'ACTIONABLE_FRESH')
         return null;
