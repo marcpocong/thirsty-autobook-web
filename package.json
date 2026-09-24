@@ -34,7 +34,11 @@
     "dual:practice:dry": "tsx src/dual-entry.ts dry",
     "dual:practice:selection": "tsx src/dual-entry.ts practice",
     "dual:practice:full": "tsx src/dual-entry.ts full",
-    "dual:race:dry": "tsx src/dual-entry.ts race:dry"
+    "dual:race:dry": "tsx src/dual-entry.ts race:dry",
+    "release:fleet": "tsx src/fleet-validation-cli.ts",
+    "bench:release": "tsx scripts/benchmark-precision-release.ts",
+    "release:forensics": "tsx src/release-forensics-cli.ts",
+    "phase3:simulate": "tsx scripts/simulate-precision-phase3.ts"
   },
   "dependencies": {
     "@fingerprintjs/fingerprintjs": "5.2.0",

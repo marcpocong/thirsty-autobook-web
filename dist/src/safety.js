@@ -1,4 +1,6 @@
 import { setTimeout as delay } from 'node:timers/promises';
+/** Stages after which a checkout POST may have left (or may still leave). */
+export const FINAL_ACTION_STAGES = ['FINAL_ACTION_ARMED', 'FINAL_ACTION_DISPATCHING'];
 export class Safety {
     persistStage;
     async stage(stage, evidence) { await this.persistStage?.(stage, evidence); }

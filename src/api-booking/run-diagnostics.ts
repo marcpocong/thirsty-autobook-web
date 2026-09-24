@@ -25,7 +25,7 @@ const allowedFields = new Set([
   'challengeState','activeAvailability','activeSecurity','activeSlotChecks','activeCheckouts','droppedCount','retryCount',
   'verifiedHoldCount','qrHandoffCount','partialHolds','coreElapsedMs','slowestStages',
   'absentEvidence','finalCode','aborted','workerOutcome','court','startTime','durationHours','price','responseObserved',
-  'releaseLatenessMs','checkpoint',
+  'releaseLatenessMs','checkpoint','errorHint','responseSource',
 ]);
 
 export function diagnosticLaneForWorker(_workerId: WorkerId): DiagnosticLane {
@@ -75,10 +75,20 @@ export class RunDiagnostics {
     return `${lane}-${workerId}-${attemptType}-${++this.attemptCounter}`;
   }
 
-  observe(stage: string, correlation: DiagnosticCorrelation = {}, extra: Record<string, unknown> = {}): void {
+  /**
+   * Captures the event time now but records it on a later macrotask. Used on the
+   * release hot path so diagnostics bookkeeping runs after every POST has started.
+   */
+  observeDeferred(stage: string, correlation: DiagnosticCorrelation = {}, extra: Record<string, unknown> = {}): void {
+    const timing = { wall: this.wallClock(), mono: this.monotonic() };
+    setImmediate(() => this.observe(stage, correlation, extra, timing));
+  }
+
+  observe(stage: string, correlation: DiagnosticCorrelation = {}, extra: Record<string, unknown> = {},
+    timing?: { wall: Date; mono: number }): void {
     try {
-      const elapsedMs = Math.max(0, Math.round(this.monotonic() - this.started));
-      const at = this.wallClock().toISOString();
+      const elapsedMs = Math.max(0, Math.round((timing?.mono ?? this.monotonic()) - this.started));
+      const at = (timing?.wall ?? this.wallClock()).toISOString();
       const safe = sanitizeDiagnosticExtra({ ...correlation, timingKind: 'EVENT_TIMESTAMP', eventAt: at, ...extra,
         activeAvailability: this.active.availability, activeSecurity: this.active.security,
         activeSlotChecks: this.active.slotCheck, activeCheckouts: this.active.checkout });

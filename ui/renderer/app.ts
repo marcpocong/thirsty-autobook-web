@@ -86,7 +86,11 @@ const requiredWorkers=(strategy:string,count:number):WorkerId[]=>['A','B','C','D
 const workerLabel=(worker:WorkerId)=>worker==='A'?'Primary player':`Player ${'ABCDEFGH'.indexOf(worker)+1}`;
 const ALL_WORKERS:WorkerId[]=['A','B','C','D','E','F','G','H'];
 type PrecisionRow={court:number;start:string;durationHours:number};
-interface FormDraft {releaseStrategy:'general'|'precision';precisionCount:number;precisionTargets:PrecisionRow[];method:'browser'|'hybrid'|'api-first'|'proofless';strategy:'standard'|'extended';date:string;courtCount:CourtCount;start:string;duration:number;attempts:number;courtOrder:number[];fallbackTimes:string[];exactA:string;exactB:string}
+type Phase3RowDraft={priority:number;court:number;start:string;durationHours:number;worker:string;wave2:boolean;rescue:boolean;prices:string;
+  source?:string;status?:'OPERATOR_CONFIRMED'|'VENUE_SCHEDULE';date?:string;capturedAt?:string};
+type Phase3Draft={enabled:boolean;rows:Phase3RowDraft[];standby:string[];source:string;status:'OPERATOR_CONFIRMED'|'VENUE_SCHEDULE';date:string;capturedAt:string;
+  wave2Max:number;rescueMax:number;totalMax:number;concurrent:boolean;rescueEnabled:boolean};
+interface FormDraft {releaseStrategy:'general'|'precision';precisionCount:number;precisionTargets:PrecisionRow[];phase3?:Phase3Draft;method:'browser'|'hybrid'|'api-first'|'proofless';strategy:'standard'|'extended';date:string;courtCount:CourtCount;start:string;duration:number;attempts:number;courtOrder:number[];fallbackTimes:string[];exactA:string;exactB:string}
 let testDraft:FormDraft|undefined,releaseDraft:FormDraft|undefined,testDirty=false,releaseDirty=false;
 let releaseAdjustment:FallbackReconciliation|undefined;
 // The layout is static in index.html; only these few controls move with the active view.
@@ -124,6 +128,81 @@ input('dual-date').value=input('practice-date').value;
 for(const id of ['dual-court-a','dual-court-b'])(byId(id) as HTMLSelectElement).replaceChildren(...Array.from({length:7},(_,i)=>new Option(`Court ${i+1}`,String(i+1))));
 input('dual-court-a').value='7';input('dual-court-b').value='6';
 const PRECISION_WORKERS=['A','B','C','D','E','F','G'] as const;
+const p3DefaultRow=(index:number):Phase3RowDraft=>({priority:index+1,court:[7,5,3,6,4,2,1][index%7]!,start:'17:00',durationHours:3,
+  worker:index===0?'A':'',wave2:false,rescue:false,prices:''});
+function p3Draft():Phase3Draft{
+  const rows=[...byId('p3-rows').children].map((_,i):Phase3RowDraft=>({priority:Number(input(`p3-priority-${i}`).value),court:Number(input(`p3-court-${i}`).value),
+    start:input(`p3-start-${i}`).value,durationHours:Number(input(`p3-duration-${i}`).value),worker:input(`p3-worker-${i}`).value,
+    wave2:input(`p3-wave2-${i}`).checked,rescue:input(`p3-rescue-${i}`).checked,prices:input(`p3-prices-${i}`).value,
+    source:input(`p3-source-${i}`).value,status:(input(`p3-status-${i}`).value||undefined) as Phase3RowDraft['status'],
+    date:input(`p3-date-${i}`).value,capturedAt:input(`p3-captured-${i}`).value}));
+  return {enabled:input('phase3-enabled').checked,rows,standby:PRECISION_WORKERS.filter(worker=>input(`p3-standby-${worker}`).checked),
+    source:input('p3-rate-source').value,status:input('p3-rate-status').value as Phase3Draft['status'],date:input('p3-rate-date').value,
+    capturedAt:input('p3-rate-captured').value,
+    wave2Max:Number(input('p3-wave2-max').value),rescueMax:Number(input('p3-rescue-max').value),totalMax:Number(input('p3-total-max').value),
+    concurrent:input('p3-concurrent').checked,rescueEnabled:input('p3-rescue-enabled').checked};
+}
+function p3RenderRows(rows:Phase3RowDraft[]){
+  const container=byId('p3-rows');container.replaceChildren();
+  rows.forEach((row,i)=>{
+    const line=document.createElement('div');line.className='precision-row';
+    const label=(title:string,element:HTMLElement)=>{const item=document.createElement('label');item.textContent=title;item.append(element);line.append(item);};
+    const select=(id:string,choices:Array<[string,string]>,value:string)=>{const element=document.createElement('select');element.id=id;
+      element.replaceChildren(...choices.map(([text,value])=>new Option(text,value)));element.value=value;return element;};
+    const field=(id:string,value:string,type='text')=>{const element=document.createElement('input');element.id=id;element.type=type;element.value=value;return element;};
+    const check=(id:string,value:boolean)=>{const element=document.createElement('input');element.id=id;element.type='checkbox';element.checked=value;return element;};
+    const title=document.createElement('strong');title.textContent=`Candidate ${i+1}`;line.append(title);
+    label('Priority',field(`p3-priority-${i}`,String(row.priority),'number'));
+    label('Court',select(`p3-court-${i}`,Array.from({length:7},(_,c)=>[`Court ${c+1}`,String(c+1)]),String(row.court)));
+    label('Start',select(`p3-start-${i}`,hours.map(h=>[friendly(h),h]),row.start));
+    label('Hours',select(`p3-duration-${i}`,['1','2','3'].map(value=>[value,value]),String(row.durationHours)));
+    label('Wave 1 worker',select(`p3-worker-${i}`,[['None',''],...PRECISION_WORKERS.map(worker=>[worker,worker] as [string,string])],row.worker));
+    label('Wave 2',check(`p3-wave2-${i}`,row.wave2));label('Rescue',check(`p3-rescue-${i}`,row.rescue));
+    const price=field(`p3-prices-${i}`,row.prices);price.placeholder='Per-hour PHP, e.g. 700,700,700';label('Hourly prices',price);
+    label('Rate source override',field(`p3-source-${i}`,row.source??''));
+    label('Rate status override',select(`p3-status-${i}`,[['Use default',''],['Operator confirmed','OPERATOR_CONFIRMED'],
+      ['Current venue schedule','VENUE_SCHEDULE']],row.status??''));
+    label('Applicable date override',field(`p3-date-${i}`,row.date??'','date'));
+    label('Captured time override (ISO)',field(`p3-captured-${i}`,row.capturedAt??''));
+    line.addEventListener('change',changed);container.append(line);
+  });
+}
+function p3Apply(value?:Phase3Draft){
+  const draft=value??{enabled:false,rows:[p3DefaultRow(0)],standby:[],source:'',status:'OPERATOR_CONFIRMED' as const,date:'',capturedAt:'',
+    wave2Max:0,rescueMax:0,totalMax:1,concurrent:false,rescueEnabled:false};
+  input('phase3-enabled').checked=draft.enabled;input('p3-count').value=String(draft.rows.length);p3RenderRows(draft.rows);
+  input('p3-rate-source').value=draft.source;input('p3-rate-status').value=draft.status;input('p3-rate-date').value=draft.date;
+  input('p3-rate-captured').value=draft.capturedAt;
+  for(const worker of PRECISION_WORKERS)input(`p3-standby-${worker}`).checked=draft.standby.includes(worker);
+  input('p3-wave2-max').value=String(draft.wave2Max);input('p3-rescue-max').value=String(draft.rescueMax);
+  input('p3-total-max').value=String(draft.totalMax);input('p3-concurrent').checked=draft.concurrent;input('p3-rescue-enabled').checked=draft.rescueEnabled;
+}
+function p3FromSaved(saved:BookingSetup['PRECISION_PHASE3']|undefined):Phase3Draft|undefined{
+  if(!saved)return undefined;
+  return {enabled:true,rows:saved.candidates.map((c,i)=>({priority:c.priority,court:c.court,start:c.start,durationHours:c.durationHours,
+    worker:saved.wave1.find(value=>value.candidateIndex===i)?.workerId??'',wave2:c.permissions.wave2,rescue:c.permissions.rescue,
+    prices:c.rateEvidence.perHour.join(','),source:c.rateEvidence.source,
+    status:c.rateEvidence.status==='VENUE_SCHEDULE'?'VENUE_SCHEDULE':'OPERATOR_CONFIRMED',
+    date:c.rateEvidence.date,capturedAt:c.rateEvidence.capturedAt})),standby:[...saved.standby],source:saved.candidates[0]?.rateEvidence.source??'',
+    status:saved.candidates[0]?.rateEvidence.status==='VENUE_SCHEDULE'?'VENUE_SCHEDULE':'OPERATOR_CONFIRMED',
+    date:saved.candidates[0]?.rateEvidence.date??'',capturedAt:saved.candidates[0]?.rateEvidence.capturedAt??'',
+    wave2Max:saved.budgets.wave2,rescueMax:saved.budgets.rescue,
+    totalMax:saved.budgets.total,concurrent:saved.concurrentWave2,rescueEnabled:saved.rescueEnabled};
+}
+function p3Setup():BookingSetup['PRECISION_PHASE3']{
+  const draft=p3Draft();
+  return {candidates:draft.rows.map(row=>({court:row.court,start:row.start,durationHours:row.durationHours,priority:row.priority,
+    permissions:{wave1:!!row.worker,wave2:row.wave2,rescue:row.rescue},rateEvidence:{source:row.source||draft.source,
+      capturedAt:row.capturedAt||draft.capturedAt,
+      status:row.status??draft.status,date:row.date||draft.date,
+      perHour:row.prices.split(',').map(value=>Number(value.trim())),actionable:true}})),
+    wave1:draft.rows.flatMap((row,index)=>row.worker?[{workerId:row.worker as typeof PRECISION_WORKERS[number],candidateIndex:index}]:[]),
+    standby:draft.standby as Array<typeof PRECISION_WORKERS[number]>,budgets:{wave2:draft.wave2Max,rescue:draft.rescueMax,total:draft.totalMax},
+    concurrentWave2:draft.concurrent,rescueEnabled:draft.rescueEnabled};
+}
+byId('p3-standby').replaceChildren(...PRECISION_WORKERS.map(worker=>{const label=document.createElement('label');const box=document.createElement('input');
+  box.id=`p3-standby-${worker}`;box.type='checkbox';label.append(box,` Worker ${worker} standby`);label.addEventListener('change',changed);return label;}));
+p3Apply();
 for(let i=0;i<PRECISION_WORKERS.length;i++){
   (byId(`precision-court-${i}`) as HTMLSelectElement).replaceChildren(...Array.from({length:7},(_,c)=>new Option(`Court ${c+1}`,String(c+1))));
   (byId(`precision-start-${i}`) as HTMLSelectElement).replaceChildren(...hours.map(h=>new Option(friendly(h),h)));
@@ -134,21 +213,24 @@ function precisionRows():PrecisionRow[]{
   return Array.from({length:Number(input('precision-count').value)||1},(_,i)=>({court:Number(input(`precision-court-${i}`).value),start:input(`precision-start-${i}`).value,durationHours:Number(input(`precision-duration-${i}`).value)}));
 }
 function precisionSelected(){return workflow==='release'&&input('precision-strategy').value==='precision';}
-function strategyFields():Pick<BookingSetup,'RELEASE_STRATEGY'|'PRECISION_TARGETS'>{
-  return precisionSelected()?{RELEASE_STRATEGY:'precision',PRECISION_TARGETS:precisionRows()}:{RELEASE_STRATEGY:'general',PRECISION_TARGETS:releaseDraft?.precisionTargets??[]};
+function strategyFields():Pick<BookingSetup,'RELEASE_STRATEGY'|'PRECISION_TARGETS'|'PRECISION_PHASE3'>{
+  return precisionSelected()?{RELEASE_STRATEGY:'precision',PRECISION_TARGETS:precisionRows(),
+    ...(input('phase3-enabled').checked?{PRECISION_TARGETS:[],PRECISION_PHASE3:p3Setup()}:{})}:{RELEASE_STRATEGY:'general',PRECISION_TARGETS:releaseDraft?.precisionTargets??[]};
 }
 /** Precision is Proofless Direct, Standard only: lock those two fields while it is selected. */
 function syncStrategy(){
   const precision=precisionSelected(),count=Number(input('precision-count').value)||1;
   byId('precision-strategy').parentElement!.hidden=workflow!=='release';
   byId('setup-fields').classList.toggle('precision-mode',precision);byId('precision-setup').hidden=!precision;
+  byId('legacy-precision-setup').hidden=input('phase3-enabled').checked;byId('phase3-editor').hidden=!input('phase3-enabled').checked;
   for(let i=0;i<PRECISION_WORKERS.length;i++)byId(`precision-row-${i}`).hidden=i>=count;
   if(precision){input('booking-method').value='proofless';input('booking-type').value='standard';if(Number(input('duration').value)>3)input('duration').value='3';}
   (byId('booking-method') as HTMLSelectElement).disabled=precision;(byId('booking-type') as HTMLSelectElement).disabled=precision;
 }
-function formDraft():FormDraft{return {releaseStrategy:input('precision-strategy').value==='precision'?'precision':'general',precisionCount:Number(input('precision-count').value)||1,precisionTargets:precisionRows(),method:input('booking-method').value as 'browser'|'hybrid'|'api-first'|'proofless',strategy:input('booking-type').value as 'standard'|'extended',date:input('test-date').value,courtCount:Number(input('court-count').value) as CourtCount,start:input('start-time').value,duration:Number(input('duration').value),attempts:Number(input('attempts').value),courtOrder:[...courtOrder],fallbackTimes:[...fallbackTimes],exactA:input('exact-a').value,exactB:input('exact-b').value};}
+function formDraft():FormDraft{return {releaseStrategy:input('precision-strategy').value==='precision'?'precision':'general',precisionCount:Number(input('precision-count').value)||1,precisionTargets:precisionRows(),phase3:p3Draft(),method:input('booking-method').value as 'browser'|'hybrid'|'api-first'|'proofless',strategy:input('booking-type').value as 'standard'|'extended',date:input('test-date').value,courtCount:Number(input('court-count').value) as CourtCount,start:input('start-time').value,duration:Number(input('duration').value),attempts:Number(input('attempts').value),courtOrder:[...courtOrder],fallbackTimes:[...fallbackTimes],exactA:input('exact-a').value,exactB:input('exact-b').value};}
 function applyDraft(d:FormDraft){input('precision-strategy').value=d.releaseStrategy;input('precision-count').value=String(Math.min(PRECISION_WORKERS.length,Math.max(1,d.precisionCount)));
   d.precisionTargets.slice(0,PRECISION_WORKERS.length).forEach((t,i)=>{input(`precision-court-${i}`).value=String(t.court);input(`precision-start-${i}`).value=t.start;input(`precision-duration-${i}`).value=String(t.durationHours);});
+  p3Apply(d.phase3);
   input('booking-method').value=d.method;input('booking-type').value=d.strategy;input('test-date').value=d.date;input('court-count').value=String(d.courtCount);input('start-time').value=d.start;input('duration').value=String(d.duration);input('attempts').value=String(d.attempts);courtOrder=[...d.courtOrder];fallbackTimes=[...d.fallbackTimes];input('exact-a').value=d.exactA;input('exact-b').value=d.exactB;editors();syncStrategy();}
 function storeDraft(){const d=formDraft();if(workflow==='test')testDraft=d;else releaseDraft=d;}
 function reconcileReleaseDraft(){
@@ -276,6 +358,10 @@ function renderQrSummary(state:Dashboard){
 }
 /** Browsers the current plan needs, so the strip can flag a needed browser that is closed. */
 function neededWorkers():WorkerId[]{
+  if(workflow==='release'&&precisionSelected()){
+    if(input('phase3-enabled').checked){const draft=p3Draft();return [...new Set([...draft.rows.map(row=>row.worker).filter(Boolean),...draft.standby])] as WorkerId[];}
+    return PRECISION_WORKERS.slice(0,Number(input('precision-count').value)||1) as WorkerId[];
+  }
   const strategy=input('booking-type').value,count=Number(input('court-count').value);
   return requiredWorkers(strategy,count);
 }
@@ -329,14 +415,19 @@ function renderStatusBar(state:Dashboard){
   const label=!watch?'Idle':watch.status==='waiting'?`Waiting · ${dateLabel(watch.date).split(',')[0]}`:watch.status==='watching'?`Watching · ${watch.polls} reads`:watch.status==='finished'?'Finished':'Stopped';
   watchText.textContent=label;watchText.dataset.tone=!watch?'muted':watch.status==='watching'?'good':watch.status==='waiting'?'warn':'muted';
 }
-const slotStateInfo={OPEN:{label:'Open',symbol:'✓',css:'slot-open'},TAKEN:{label:'Taken / unavailable',symbol:'×',css:'slot-taken'},UNRELEASED:{label:'Not released yet',symbol:'—',css:'slot-unreleased'},UNKNOWN:{label:'Unknown',symbol:'?',css:'slot-unknown'}} as const;
+const slotStateInfo={OPEN:{label:'Open',symbol:'✓',css:'slot-open'},TAKEN:{label:'Unavailable',symbol:'×',css:'slot-taken'},UNRELEASED:{label:'Not published yet',symbol:'—',css:'slot-unreleased'},UNKNOWN:{label:'Unknown',symbol:'?',css:'slot-unknown'}} as const;
+const evidenceLabel={OPEN:'Open',UNAVAILABLE:'Unavailable',UNKNOWN:'Unknown'} as const;
+const evidenceSlot={OPEN:'OPEN',UNAVAILABLE:'TAKEN',UNKNOWN:'UNKNOWN'} as const;
 const relative=(ms:number)=>`${ms<0?'−':'+'}${(Math.abs(ms)/1000).toFixed(3)} s`;
 const manilaMs=(iso:string)=>new Date(iso).toLocaleTimeString('en-GB',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit',second:'2-digit',fractionalSecondDigits:3});
-let selectedWatchId:string|undefined,renderedSlotWatch='';
+type ReadRef={seq:number;requestOffsetMs:number;responseOffsetMs:number};
+/** A read is shown by its request start AND its response; the state it returned existed somewhere in between. */
+const readText=(read:ReadRef,prefix='#')=>`${prefix}${read.seq} req ${relative(read.requestOffsetMs)} → resp ${relative(read.responseOffsetMs)}`;
+let selectedWatchId:string|undefined,renderedSlotWatch='',slotMatrixMode:'current'|'first'='current';
 type SlotSummary=NonNullable<Dashboard['slotWatchHistory']>[number];
 type SlotView=NonNullable<Dashboard['slotWatch']>;
 function slotFact(label:string,value:string,extra=''){const fact=document.createElement('div');fact.className=`slot-fact ${extra}`;const name=document.createElement('span'),text=document.createElement('strong');name.textContent=label;text.textContent=value;fact.append(name,text);return fact;}
-function slotMatrix(cells:SlotView['cells'],ours:Set<string>,recentSince?:number){
+function slotMatrix(cells:SlotView['cells'],ours:Set<string>,mode:'current'|'first',recentSince?:number){
   const scroll=document.createElement('div');scroll.className='audit-matrix-scroll';scroll.tabIndex=0;
   const table=document.createElement('table');table.className='audit-matrix';
   const head=document.createElement('tr');head.append(Object.assign(document.createElement('th'),{textContent:'Court'}));
@@ -345,12 +436,14 @@ function slotMatrix(cells:SlotView['cells'],ours:Set<string>,recentSince?:number
   for(const court of [1,2,3,4,5,6,7]){
     const row=document.createElement('tr'),label=document.createElement('th');label.scope='row';label.textContent=`C${court}`;label.title=`Court ${court}`;row.append(label);
     for(const hour of hours){
-      const cell=cells.find(value=>value.court===court&&value.hour===hour),info=slotStateInfo[cell?.state??'UNKNOWN'],td=document.createElement('td');
+      const cell=cells.find(value=>value.court===court&&value.hour===hour);
+      const state=mode==='first'?(cell?.first?evidenceSlot[cell.first]:'UNKNOWN'):cell?.state??'UNKNOWN',info=slotStateInfo[state],td=document.createElement('td');
       const mine=ours.has(`${court}/${hour}`);
-      td.className=`slot-cell ${info.css}${cell?.record?' slot-record':''}${mine?' slot-ours':''}${recentSince!==undefined&&cell?.changedSinceReleaseMs!==undefined&&cell.changedSinceReleaseMs>=recentSince?' slot-recent':''}`;
+      td.className=`slot-cell ${info.css}${mode==='current'&&cell?.record?' slot-record':''}${mine?' slot-ours':''}${mode==='current'&&recentSince!==undefined&&cell?.changedSinceReleaseMs!==undefined&&cell.changedSinceReleaseMs>=recentSince?' slot-recent':''}`;
       td.textContent=info.symbol;
-      if(cell?.changedSinceReleaseMs!==undefined){const when=document.createElement('small');when.textContent=`${cell.changedSinceReleaseMs<0?'−':'+'}${Math.abs(cell.changedSinceReleaseMs/1000).toFixed(1)}s`;td.append(when);}
-      td.title=`Court ${court} · ${friendly(hour)} · ${info.label}${cell?.record?' · public booking record':''}${mine?' · held by this bot':''}${cell?.changedSinceReleaseMs!==undefined?` · last change ${relative(cell.changedSinceReleaseMs)} after release`:''}`;
+      if(mode==='current'&&cell?.changedSinceReleaseMs!==undefined){const when=document.createElement('small');when.textContent=`${cell.changedSinceReleaseMs<0?'−':'+'}${Math.abs(cell.changedSinceReleaseMs/1000).toFixed(1)}s`;td.append(when);}
+      const first=cell?.first?` · first published: ${evidenceLabel[cell.first]}${typeof cell.firstPrice==='number'?` · PHP ${cell.firstPrice}`:''}`:' · not yet published';
+      td.title=`Court ${court} · ${friendly(hour)} · ${mode==='first'?'first published grid':'now'}: ${info.label}${mode==='current'&&cell?.record?' · public booking record':''}${mine?' · verified hold by this bot':''}${mode==='current'?first:''}${mode==='current'&&cell?.changedSinceReleaseMs!==undefined?` · last change seen in a read answered ${relative(cell.changedSinceReleaseMs)} after release`:''}`;
       td.setAttribute('aria-label',td.title);row.append(td);
     }
     tbody.append(row);
@@ -359,7 +452,7 @@ function slotMatrix(cells:SlotView['cells'],ours:Set<string>,recentSince?:number
   const legend=document.createElement('div');legend.className='slot-legend';
   for(const state of ['OPEN','TAKEN','UNRELEASED','UNKNOWN'] as const){const item=document.createElement('span'),mark=document.createElement('i');mark.className=`slot-cell ${slotStateInfo[state].css}`;item.append(mark,document.createTextNode(slotStateInfo[state].label));legend.append(item);}
   const record=document.createElement('span'),recordMark=document.createElement('i');recordMark.className='slot-cell slot-unknown slot-record';record.append(recordMark,document.createTextNode('Public booking record'));
-  const mine=document.createElement('span'),mineMark=document.createElement('i');mineMark.className='slot-cell slot-taken slot-ours';mine.append(mineMark,document.createTextNode('Held by this bot'));
+  const mine=document.createElement('span'),mineMark=document.createElement('i');mineMark.className='slot-cell slot-taken slot-ours';mine.append(mineMark,document.createTextNode('Verified hold by this bot'));
   legend.append(record,mine);
   const wrap=document.createElement('div');wrap.append(scroll,legend);return wrap;
 }
@@ -367,13 +460,14 @@ function slotTimeline(entries:SlotView['timeline']){
   if(!entries.length)return [Object.assign(document.createElement('p'),{className:'empty',textContent:'No slot changes recorded yet.'})];
   return entries.map(entry=>{
     const row=document.createElement('div');
-    const kind=entry.kind==='published'?'published':entry.kind==='record'?'record':entry.to==='TAKEN'?'taken':entry.to==='OPEN'?'opened':'other';row.className=`slot-event ${kind}`;
-    const time=document.createElement('time');time.textContent=relative(entry.sinceReleaseMs);
+    const kind=entry.kind==='published'?'published':entry.kind==='record'?'record':entry.to==='UNAVAILABLE'?'taken':entry.to==='OPEN'?'opened':'other';row.className=`slot-event ${kind}`;
+    const time=document.createElement('time');time.textContent=`req ${relative(entry.after.requestOffsetMs)}`;time.title='Request start of the first read that showed this';
     const where=document.createElement('strong');where.textContent=entry.kind==='published'?'Schedule published':`Court ${entry.court} · ${friendly(entry.hour)}`;
     const what=document.createElement('span');
-    what.textContent=entry.kind==='published'?`${entry.openCount??0} open · ${entry.takenCount??0} already unavailable at first read`
-      :entry.kind==='record'?(entry.appeared?'Public booking record appeared':'Public booking record removed'):`${slotStateInfo[entry.from??'UNKNOWN'].label} → ${slotStateInfo[entry.to??'UNKNOWN'].label}`;
-    const gap=document.createElement('span');gap.className='window';gap.textContent=`${entry.windowMs===null?'first read':`±${(entry.windowMs/1000).toFixed(3)} s`} · ${manilaMs(entry.observedAt)}`;
+    what.textContent=entry.kind==='published'?`${entry.openCount??0} open · ${entry.unavailableCount??0} unavailable · ${entry.unknownCount??0} unknown in the first published grid`
+      :entry.kind==='record'?(entry.appeared?'Public booking record appeared':'Public booking record no longer listed'):`${evidenceLabel[entry.from??'UNKNOWN']} → ${evidenceLabel[entry.to??'UNKNOWN']}`;
+    const gap=document.createElement('span');gap.className='window';const prefix=entry.kind==='record'?'#b':'#';
+    gap.textContent=`${entry.before?`between ${readText(entry.before,prefix)}`:'first read'} and ${readText(entry.after,prefix)}${entry.overlapping?' · reads overlapped':''}`;
     row.append(time,where,what,gap);return row;
   });
 }
@@ -382,10 +476,16 @@ function oursFor(state:Dashboard,date:string){
   for(const hold of state.qrHandoffs??[])if(hold.date===date)for(const court of hold.courts)for(const slot of hourlySlots(hold.startTime,hold.endTime))ours.add(`${court}/${slot.slice(0,5)}`);
   return ours;
 }
+function summaryCells(summary:SlotSummary,mode:'current'|'first'):SlotView['cells']{
+  const matrix=mode==='first'?summary.firstPublishedMatrix??'':summary.finalMatrix;
+  return matrix.split(',').filter(Boolean).flatMap(row=>{const [court,codes]=row.split(':');return [...(codes??'')].map((code,index)=>{
+    const state=(code==='O'?'OPEN':code==='X'?'TAKEN':code==='U'?'UNRELEASED':'UNKNOWN') as SlotView['cells'][number]['state'];
+    return {court:Number(court),hour:hours[index]!,state,record:false,...(mode==='first'?{first:state==='OPEN'?'OPEN' as const:state==='TAKEN'?'UNAVAILABLE' as const:'UNKNOWN' as const}:{})};});});
+}
 function renderSlotWatch(state:Dashboard){
   const live=state.slotWatch??null,history=state.slotWatchHistory??[];
   const selected=selectedWatchId?history.find(entry=>entry.id===selectedWatchId):undefined;
-  const signature=JSON.stringify({live,selected:selected?.id,history:history.map(entry=>entry.id),ours:state.qrHandoffs});
+  const signature=JSON.stringify({live,selected:selected?.id,history:history.map(entry=>entry.id),ours:state.qrHandoffs,slotMatrixMode});
   const active=!!live&&(live.status==='waiting'||live.status==='watching');
   input('watch-next-release').hidden=active;input('stop-slot-watch').hidden=!active;
   if(signature===renderedSlotWatch)return;
@@ -393,6 +493,7 @@ function renderSlotWatch(state:Dashboard){
   const summary:SlotSummary|undefined=selected??live?.summary;
   const date=selected?.date??live?.date,releaseMs=selected?.releaseMs??live?.releaseMs;
   const meta=byId('slot-watch-meta');meta.replaceChildren();
+  for(const button of document.querySelectorAll<HTMLButtonElement>('#slot-matrix-mode button'))button.setAttribute('aria-pressed',String(button.dataset.mode===slotMatrixMode));
   if(!date||releaseMs===undefined){
     const empty=document.createElement('div');empty.className='audit-empty';
     empty.append(Object.assign(document.createElement('strong'),{textContent:'No release watched yet'}),Object.assign(document.createElement('span'),{textContent:'Arm a release, or press Watch next release to observe one without booking.'}));
@@ -402,23 +503,31 @@ function renderSlotWatch(state:Dashboard){
     const status=selected?selected.status:live!.status;
     const badge=document.createElement('span');badge.className=`slot-status-badge ${status}`;badge.textContent=selected?`SAVED · ${status.toUpperCase()}`:status.toUpperCase();
     const statusFact=slotFact('Status','');statusFact.querySelector('strong')!.replaceChildren(badge);
-    meta.append(statusFact,slotFact('Target date',dateLabel(date)),slotFact('Release',`${manilaMs(new Date(releaseMs).toISOString())} Manila`),
-      slotFact('Reads',selected?`${selected.polls} (${selected.failedPolls} failed)`:`${live!.polls} (${live!.failedPolls} failed)`),
+    const reads=selected?`${selected.availability.answered+selected.availability.failed} (${selected.availability.failed} failed)`:`${live!.polls} (${live!.failedPolls} failed)`;
+    meta.append(statusFact,slotFact('Target date',dateLabel(date)),slotFact('Release',`${manilaMs(new Date(releaseMs).toISOString())} Manila`),slotFact('Reads',reads),
+      ...(!selected&&live?[slotFact('In flight',`${live.inFlight} of ${live.maxInFlight}${live.notLaunched?` · ${live.notLaunched} not launched`:''}`)]:[]),
       ...(!selected&&live?.lastLatencyMs!==undefined?[slotFact('Last read',`${live.lastLatencyMs} ms${live.lastError?` · ${live.lastError}`:''}`)]:[]),
       (()=>{const path=selected?.reportPath??summary?.reportPath??live!.logPath,fact=slotFact(summary?'Report':'Log file',path.split(/[\\/]/).at(-1)??path,'path');fact.title=path;return fact;})());
-    const cells:SlotView['cells']=selected?(selected.finalMatrix.split(',').filter(Boolean).flatMap(row=>{const [court,codes]=row.split(':');return [...(codes??'')].map((code,index)=>({court:Number(court),hour:hours[index]!,
-      state:(code==='O'?'OPEN':code==='X'?'TAKEN':code==='U'?'UNRELEASED':'UNKNOWN') as SlotView['cells'][number]['state'],record:false}));})):live!.cells;
+    const cells:SlotView['cells']=selected?summaryCells(selected,slotMatrixMode):live!.cells;
     const recent=!selected&&live?.lastPollAt?Date.parse(live.lastPollAt)-releaseMs-1500:undefined;
-    byId('slot-watch-matrix').replaceChildren(slotMatrix(cells,oursFor(state,date),recent));
+    byId('slot-watch-matrix').replaceChildren(slotMatrix(cells,oursFor(state,date),slotMatrixMode,recent));
     const facts=byId('slot-watch-summary');facts.replaceChildren();
-    if(summary){
-      const box=document.createElement('div');box.className='slot-summary';
-      box.append(slotFact('Date visible after release',summary.releaseVisibleSinceReleaseMs===null?'Not observed':relative(summary.releaseVisibleSinceReleaseMs)),
-        slotFact('Fastest take',summary.fastestTakeMs===null?'None observed':relative(summary.fastestTakeMs)),
-        slotFact('Taken after opening',String(summary.taken.length)),slotFact('Never open at release',`${summary.neverOpen.length} (${summary.neverOpen.filter(cell=>!cell.record).length} without booking record)`),
-        slotFact('Reopened later',String(summary.reopened.length)),slotFact('Median read time',summary.medianLatencyMs===null?'—':`${summary.medianLatencyMs} ms`));
-      facts.append(box);
+    const publication=summary?.publication??live?.publication;
+    const box=document.createElement('div');box.className='slot-summary';
+    if(summary?.legacy)box.append(slotFact('Saved watch','Older format · details in its report'));
+    else{
+      box.append(slotFact('First published grid',publication?.firstPublished?readText(publication.firstPublished):'Not observed yet'),
+        ...(publication?.lastUnpublished?[slotFact('Last read without the date',readText(publication.lastUnpublished))]:[]));
+      if(summary){
+        const counts=summary.firstPublishedCounts;
+        box.append(slotFact('At first publication',counts?`${counts.OPEN} open · ${counts.UNAVAILABLE} unavailable${counts.UNKNOWN?` · ${counts.UNKNOWN} unknown`:''}`:'—'),
+          slotFact('Open → unavailable',String(summary.openToUnavailable.length)),
+          slotFact('Unavailable at first publication',`${summary.unavailableAtFirstPublication.length} (${summary.unavailableAtFirstPublication.filter(cell=>!cell.record).length} without public booking record · cause unknown)`),
+          slotFact('Unavailable → open',String(summary.reopened.length)),slotFact('Median read time',summary.availability.medianLatencyMs===null?'—':`${Math.round(summary.availability.medianLatencyMs)} ms`),
+          slotFact('Max in flight',`${summary.availability.maxInFlight} of ${summary.schedule?.maxInFlight??'?'}${summary.availability.notLaunched?` · ${summary.availability.notLaunched} not launched`:''}`));
+      }
     }
+    facts.append(box);
     const timeline=byId('slot-watch-timeline'),atBottom=timeline.scrollTop+timeline.clientHeight>=timeline.scrollHeight-20;
     timeline.replaceChildren(...slotTimeline(selected?selected.timeline:live!.timeline));
     if(atBottom)timeline.scrollTop=timeline.scrollHeight;
@@ -428,11 +537,38 @@ function renderSlotWatch(state:Dashboard){
   else list.replaceChildren(...history.map(entry=>{
     const button=document.createElement('button');button.type='button';button.className='slot-history-item';button.setAttribute('aria-pressed',String(entry.id===selectedWatchId));
     const title=document.createElement('strong');title.textContent=`${dateLabel(entry.date)} · release ${new Date(entry.releaseMs).toLocaleString('en-GB',{timeZone:'Asia/Manila',dateStyle:'medium',timeStyle:'short'})}`;
-    const fast=document.createElement('span');fast.className='fast';fast.textContent=entry.fastestTakeMs===null?'no takes':`fastest ${relative(entry.fastestTakeMs)}`;
-    const meta=document.createElement('span');meta.className='meta';meta.textContent=`${entry.taken.length} taken after opening · ${entry.neverOpen.length} never open · ${entry.polls} reads · ${entry.status}${entry.id===selectedWatchId?' · showing':''}`;
+    const fast=document.createElement('span');fast.className='fast';fast.textContent=entry.legacy?'older format':entry.publication.firstPublished?`published req ${relative(entry.publication.firstPublished.requestOffsetMs)}`:'date not seen';
+    const meta=document.createElement('span');meta.className='meta';meta.textContent=entry.legacy?`${entry.availability.answered} reads · ${entry.status}${entry.id===selectedWatchId?' · showing':''}`
+      :`${entry.openToUnavailable.length} open → unavailable · ${entry.unavailableAtFirstPublication.length} unavailable at first publication · ${entry.availability.answered} reads · ${entry.status}${entry.id===selectedWatchId?' · showing':''}`;
     button.append(title,fast,meta);
     button.onclick=()=>{selectedWatchId=selectedWatchId===entry.id?undefined:entry.id;if(latest)render(latest);};
     return button;
+  }));
+}
+const forensicState=(value:string|null)=>value??'not observed';
+let renderedForensics='';
+/** Runs view: one concise card per generated forensic report; the raw detail stays in the local report. */
+function renderForensics(state:Dashboard){
+  const list=state.releaseForensics??[],signature=JSON.stringify(list);
+  if(signature===renderedForensics)return;
+  renderedForensics=signature;
+  const host=byId('release-forensics-list');
+  if(!list.length){host.replaceChildren(Object.assign(document.createElement('p'),{className:'empty',textContent:'No forensic report yet. One is written automatically after each live run.'}));return;}
+  host.replaceChildren(...list.map(entry=>{
+    const card=document.createElement('details');card.className='forensic-item';
+    const summary=document.createElement('summary');
+    const title=document.createElement('strong');title.textContent=`${dateLabel(entry.date)} · ${entry.reference==='release'&&entry.referenceMs!==null?`release ${new Date(entry.referenceMs).toLocaleString('en-GB',{timeZone:'Asia/Manila',dateStyle:'medium',timeStyle:'short'})}`:'immediate test'} · ${entry.status.toUpperCase()}`;
+    const facts=document.createElement('span');facts.className='meta';
+    facts.textContent=`First POST ${entry.firstPostOffsetMs===null?'—':relative(entry.firstPostOffsetMs)} · last POST ${entry.lastPostOffsetMs===null?'—':relative(entry.lastPostOffsetMs)} · first published grid ${entry.firstPublished?readText(entry.firstPublished):'not observed'} · provider trace ${entry.traceAvailable?'available':'unavailable'}${entry.outcome?` · ${entry.outcome}`:''}`;
+    summary.append(title,facts);
+    const rows=document.createElement('div');rows.className='forensic-targets';
+    for(const target of entry.targets){
+      const row=document.createElement('div');row.className='forensic-target';
+      row.textContent=`Worker ${target.workerId} · Court ${target.court} · ${target.startTime}–${target.endTime} · POST ${target.postOffsetMs===null?'not sent':relative(target.postOffsetMs)} · first published ${forensicState(target.firstPublishedState)} · ${target.statusCode===null?'no response':`HTTP ${target.statusCode}${target.errorHint?` ${target.errorHint}`:''}`}${target.headersOffsetMs!==null?` · headers ${relative(target.headersOffsetMs)}`:''}${target.bodyOffsetMs!==null?` · body ${relative(target.bodyOffsetMs)}`:''}${target.protocol?` · ${target.protocol}${target.reused===null?'':target.reused?' reused':' new connection'}`:''}`;
+      rows.append(row);
+    }
+    const path=document.createElement('p');path.className='small forensic-path';path.textContent=`Report: ${entry.reportPath}`;path.title=entry.reportPath;
+    card.append(summary,rows,path);return card;
   }));
 }
 function status(id: string, text: string, tone: string) { const el = byId(id); el.textContent = text; el.dataset.tone = tone; }
@@ -444,6 +580,7 @@ function render(state: Dashboard) {
   renderQrSummary(state);
   renderStatusBar(state);
   renderSlotWatch(state);
+  renderForensics(state);
   byId('headline').textContent = state.headline; byId('detail').textContent = state.detail;
   const armed=!!state.scheduledRelease;
   const busy = state.operation !== 'idle'&&state.operation!=='scheduled';
@@ -503,7 +640,7 @@ function render(state: Dashboard) {
   byId('capability-status').textContent=`Selection ${state.capabilities.selectionReady?'ready':'unverified'} · checkout ${state.capabilities.checkoutReady?'verified':'unverified'} · payment handoff ${state.capabilities.paymentBoundaryReady?'verified':'unverified'}`;
   const b=state.booking;
   if(b){
-     if(!releaseDirty&&loadedPlan!==b.fingerprint){loadedPlan=b.fingerprint;releaseDraft={releaseStrategy:b.setup.RELEASE_STRATEGY??'general',precisionCount:Math.max(1,b.setup.PRECISION_TARGETS?.length??0),precisionTargets:[...(b.setup.PRECISION_TARGETS??[])],method:b.setup.BOOKING_METHOD??'browser',strategy:b.setup.BOOKING_TYPE??'standard',date:testDraft?.date??input('test-date').value,courtCount:b.setup.COURT_COUNT,start:b.setup.START_TIME,duration:b.setup.DURATION_HOURS,attempts:b.setup.MAX_SELECTION_ATTEMPTS,courtOrder:[...b.setup.PREFERRED_COURTS],fallbackTimes:[...b.setup.FALLBACK_TIMES],exactA:'',exactB:''};if(b.fallbackReconciliation.removed.length){releaseAdjustment=b.fallbackReconciliation;releaseDirty=true;}if(workflow==='release'){applyDraft(releaseDraft);dirty=releaseDirty;}}
+     if(!releaseDirty&&loadedPlan!==b.fingerprint){loadedPlan=b.fingerprint;releaseDraft={releaseStrategy:b.setup.RELEASE_STRATEGY??'general',precisionCount:Math.max(1,b.setup.PRECISION_TARGETS?.length??0),precisionTargets:[...(b.setup.PRECISION_TARGETS??[])],phase3:p3FromSaved(b.setup.PRECISION_PHASE3),method:b.setup.BOOKING_METHOD??'browser',strategy:b.setup.BOOKING_TYPE??'standard',date:testDraft?.date??input('test-date').value,courtCount:b.setup.COURT_COUNT,start:b.setup.START_TIME,duration:b.setup.DURATION_HOURS,attempts:b.setup.MAX_SELECTION_ATTEMPTS,courtOrder:[...b.setup.PREFERRED_COURTS],fallbackTimes:[...b.setup.FALLBACK_TIMES],exactA:'',exactB:''};if(b.fallbackReconciliation.removed.length){releaseAdjustment=b.fallbackReconciliation;releaseDirty=true;}if(workflow==='release'){applyDraft(releaseDraft);dirty=releaseDirty;}}
     byId('booking-preview').textContent=`${dual?'2 COURTS / SAME TIME BLOCK\n':''}TARGET  ${dateLabel(b.targetDate)}\nREQUIRED SLOTS  ${b.slots.join(' · ')}\nCOURT ORDER  ${b.setup.PREFERRED_COURTS.join(' → ')}\nFALLBACK STARTS  ${b.setup.FALLBACK_TIMES.map(friendly).join(' → ')||'None'}\n${b.setup.MAX_SELECTION_ATTEMPTS} candidate attempts · No price ceiling\nPLAYER  Configured ✓`;
   }
 
@@ -612,7 +749,7 @@ function render(state: Dashboard) {
    const duration=Number(input('duration').value),start=Number(input('start-time').value.slice(0,2)),strategy=input('booking-type').value;
   const count=Number(input('court-count').value),releaseText=state.clock?new Date(state.clock.releaseMs).toLocaleString('en-US',{timeZone:state.clock.timezone,month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'Calculating';
    const method=input('booking-method').value==='browser'?'NORMAL BROWSER':input('booking-method').value==='hybrid'?'HYBRID AVAILABILITY':proofless?'PROOFLESS DIRECT':'API-FIRST · WITH PROOFS';
-   const workers=requiredWorkers(strategy,count),checkoutCount=workers.length;
+   const workers=workflow==='release'?neededWorkers():requiredWorkers(strategy,count),checkoutCount=workers.length;
     byId('booking-preview').textContent=`${workflow==='release'?`RELEASE PLAN\nRelease: ${releaseText}\nTarget: ${state.clock?dateLabel(state.clock.targetDate):'Not configured'}\n`:''}${method}\n${strategy.toUpperCase()} | ${count} COURT${count===1?'':'S'}\n${friendly(input('start-time').value)} -> ${endFriendly(input('start-time').value,duration)} | ${duration} hours\nFallback starts: ${fallbackTimes.map(friendly).join(' -> ')||'None'}\nCourt priority: ${courtOrder.join(' -> ')}\n${strategy==='extended'?`Extended split: ${duration===4?'3h + 1h (alternatives 2h + 2h, 1h + 3h)':duration===5?'3h + 2h (alternative 2h + 3h)':'3h + 3h'}\n`:''}${workers.length} browser${workers.length===1?'':'s'} | ${checkoutCount} checkout${checkoutCount===1?'':'s'} | Players: ${workers.join(' + ')}\nNo price ceiling\nAttempts: ${input('attempts').value} | Payment: MANUAL${proofless?'\nProofless Direct: Reset & Prepare audits all court/hour blocks; the armed run refreshes them at 7:30, selects the first unblocked saved fallback, and submits without availability proofs. Proofless tests require your manual confirmation that the exact cells are open.':input('booking-method').value==='api-first'?'\nAPI first: availability and fresh per-hour proofs are acquired before checkout.':''}`;
   if(duration>6){byId('booking-preview').textContent='Extended booking supports up to 6 consecutive hours.';input('test-booking').disabled=true;input('arm').disabled=true;}
    const runWorkers=requiredWorkers(strategy,count),playerReadyByWorker={A:playerStatus.primary,B:playerStatus.extended,C:playerStatus.third,D:playerStatus.fourth,E:playerStatus.fifth,F:playerStatus.sixth,G:playerStatus.seventh,H:playerStatus.eighth};
@@ -638,7 +775,7 @@ function render(state: Dashboard) {
   }
   const apiPrepared=!!state.apiFirstReady&&!!state.ready&&!!state.booking&&['api-first','proofless'].includes(state.booking.setup.BOOKING_METHOD)&&!state.lock;
   const prepared=apiPrepared||!!state.preparedContext&&state.preparedContext.workflow==='release'&&state.preparedContext.configFingerprint===state.booking?.fingerprint;
-   const required=requiredWorkers(strategy,count);
+   const required=workflow==='release'?neededWorkers():requiredWorkers(strategy,count);
   const verificationGates:[string,boolean][]=apiFirst
     ? [['Onda venue verified',apiPrepared],[proofless?'Court/hour block audit complete':'Availability checked',proofless?state.assumedPrice!==undefined&&state.assumedPrice!==null:state.apiStage?.stage==='CANDIDATE_READY'||!!state.observedPrice]]
     : [['Onda verified',prepared],['All Courts verified',prepared],['Selected slots: 0',prepared],['Payment holds: none',prepared&&!state.lock]];
@@ -646,7 +783,12 @@ function render(state: Dashboard) {
   byId('release-readiness').replaceChildren(...gateRows(gates));
   byId('release-readiness-card').dataset.state=armed?'armed':prepared?'prepared':'draft';byId('sleep-warning').hidden=!armed;byId('sleep-warning').textContent=`Sleep protection: ${state.sleepProtection?'ACTIVE':'NOT AVAILABLE'} | Keep the PC powered on. Do not hibernate or close the laptop lid if Windows sleeps on lid close.`;
    const savedSetup=state.booking?.setup;
-   if(savedSetup?.RELEASE_STRATEGY==='precision')byId('saved-plan-summary').textContent=`PRECISION RELEASE · GOAL: 1 COURT · PROOFLESS DIRECT\n${savedSetup.PRECISION_TARGETS.map((t,i)=>`Worker ${PRECISION_WORKERS[i]} · Court ${t.court} · ${friendly(t.start)}–${endFriendly(t.start,t.durationHours)} · ${t.durationHours} h`).join('\n')}\nIndependent attempts: more than one temporary QR hold may be created. Payment remains manual.\nTarget: ${dateLabel(state.booking!.targetDate)}`;
+   if(savedSetup?.RELEASE_STRATEGY==='precision'){
+     const p=savedSetup.PRECISION_PHASE3;
+     byId('saved-plan-summary').textContent=p?`PRECISION PHASE 3 · GOAL: 1 HOLD\n${p.wave1.map(a=>{const t=p.candidates[a.candidateIndex]!;
+       return `Wave 1 Worker ${a.workerId} · Court ${t.court} · ${t.start}–${endFriendly(t.start,t.durationHours)} · PHP ${t.rateEvidence.perHour.reduce((x,y)=>x+y,0)} (${t.rateEvidence.status})`;}).join('\n')}\nStandby: ${p.standby.join(', ')||'none'} · Wave 2 max ${p.budgets.wave2} · Rescue max ${p.budgets.rescue} · Total max ${p.budgets.total}\nMore than one temporary hold may be created. Payment remains manual. UNKNOWN stops later sends.\nTarget: ${dateLabel(state.booking!.targetDate)}`:
+       `PRECISION RELEASE · GOAL: 1 COURT · PROOFLESS DIRECT\n${savedSetup.PRECISION_TARGETS.map((t,i)=>`Worker ${PRECISION_WORKERS[i]} · Court ${t.court} · ${friendly(t.start)}–${endFriendly(t.start,t.durationHours)} · ${t.durationHours} h`).join('\n')}\nIndependent attempts: more than one temporary QR hold may be created. Payment remains manual.\nTarget: ${dateLabel(state.booking!.targetDate)}`;
+   }
    else byId('saved-plan-summary').textContent=state.booking?(`${state.booking.setup.BOOKING_METHOD.toUpperCase()} · ${state.booking.setup.BOOKING_TYPE.toUpperCase()} · ${state.booking.setup.COURT_COUNT} court${state.booking.setup.COURT_COUNT===1?'':'s'}\n${friendly(state.booking.setup.START_TIME)}–${endFriendly(state.booking.setup.START_TIME,state.booking.setup.DURATION_HOURS)} · ${state.booking.setup.DURATION_HOURS} hours\nCourt priority: ${state.booking.setup.PREFERRED_COURTS.join(' → ')}\nFallback starts: ${state.booking.setup.FALLBACK_TIMES.map(friendly).join(', ')||'None'}\nTarget: ${dateLabel(state.booking.targetDate)}`):'No saved plan available.';
   const actualAmount=state.handoff?.amount??state.observedPrice??state.selection?.amount;
    byId('observed-price').hidden=(actualAmount===undefined||actualAmount===null)&&(state.assumedPrice===undefined||state.assumedPrice===null);
@@ -733,6 +875,7 @@ function tick() {
 byId('check-release-blocks').addEventListener('click',()=>{void window.thirsty.checkReleaseBlocks(input('block-audit-date').value).catch(async()=>{render(await window.thirsty.getStatus());});});
 for(const id of ['close-browsers','close-browsers-tools'])byId(id).addEventListener('click',()=>{void window.thirsty.closeBotBrowsers().catch(async()=>{render(await window.thirsty.getStatus());});});
 byId('watch-next-release').addEventListener('click',()=>{selectedWatchId=undefined;void window.thirsty.watchNextRelease().catch(async()=>{render(await window.thirsty.getStatus());});});
+for(const button of document.querySelectorAll<HTMLButtonElement>('#slot-matrix-mode button'))button.addEventListener('click',()=>{slotMatrixMode=button.dataset.mode==='first'?'first':'current';if(latest)render(latest);});
 byId('stop-slot-watch').addEventListener('click',()=>{void window.thirsty.stopSlotWatch().catch(async()=>{render(await window.thirsty.getStatus());});});
 byId('status-watch').addEventListener('click',()=>{selectedWatchId=undefined;showView('slots');});
 byId('block-audit-date').addEventListener('change',()=>{if(latest)render(latest);});
@@ -744,6 +887,14 @@ byId('terms').addEventListener('change',()=>{void window.thirsty.authorizeTerms(
  for(const id of ['booking-method','test-date','court-count','start-time','duration','attempts','exact-a','exact-b'])byId(id).addEventListener('change',changed);
 for(const id of ['precision-strategy','precision-count',...PRECISION_WORKERS.map((_,i)=>i).flatMap(i=>[`precision-court-${i}`,`precision-start-${i}`,`precision-duration-${i}`])])
   byId(id).addEventListener('change',()=>{syncStrategy();changed();});
+byId('phase3-enabled').addEventListener('change',()=>{if(input('phase3-enabled').checked&&!input('p3-rate-date').value)
+  input('p3-rate-date').value=latest?.booking?.targetDate??'';
+  if(input('phase3-enabled').checked&&!input('p3-rate-captured').value)input('p3-rate-captured').value=new Date().toISOString();
+  syncStrategy();changed();});
+byId('p3-count').addEventListener('change',()=>{const rows=p3Draft().rows,count=Math.min(21,Math.max(1,Number(input('p3-count').value)||1));
+  input('p3-count').value=String(count);p3RenderRows(Array.from({length:count},(_,i)=>rows[i]??p3DefaultRow(i)));changed();});
+for(const id of ['p3-rate-source','p3-rate-status','p3-rate-date','p3-rate-captured','p3-wave2-max','p3-rescue-max','p3-total-max','p3-concurrent','p3-rescue-enabled'])
+  byId(id).addEventListener('change',changed);
 byId('booking-type').addEventListener('change',()=>{const extended=input('booking-type').value==='extended',d=Number(input('duration').value);if(extended&&d<4)input('duration').value='4';if(!extended&&d>3)input('duration').value='3';syncViableControls();changed();});
 byId('add-fallback').onclick=()=>{const h=input('fallback-time').value;if(h===input('start-time').value||fallbackTimes.includes(h)){byId('edit-status').textContent='Choose a different fallback start.';return;}if(workflow==='release'){const reconciliation=reconcileFallbackTimes(input('start-time').value,Number(input('duration').value),[...fallbackTimes,h]);if(reconciliation.removed.length){releaseAdjustment=reconciliation;byId('edit-status').textContent=bookingSetupProblem({...currentSetup(),FALLBACK_TIMES:[...fallbackTimes,h]})??'That fallback does not fit the current booking.';if(latest)render(latest);return;}}fallbackTimes.push(h);editors();changed();};
 byId('save-booking').onclick=()=>{void(async()=>{
@@ -793,6 +944,34 @@ const PRECISION_STATE_TEXT:Record<string,[string,'ok'|'warn'|'bad'|'']>={EXCLUDE
   HOLD_VERIFIED_QR_ATTENTION:['HOLD VERIFIED · QR HANDOFF NEEDS ATTENTION — use Show Browser','bad'],QR_READY:['HOLD VERIFIED · QR READY','ok']};
 function renderPrecision(state:Dashboard){
   const setup=state.booking?.setup,live=state.precision;
+  if(setup?.RELEASE_STRATEGY==='precision'&&setup.PRECISION_PHASE3){
+    const p=setup.PRECISION_PHASE3,phase=state.phase3,panel=byId('precision-panel');panel.hidden=false;
+    const current=state.slotWatch?.current?.seq===phase?.seq&&phase?.fitness==='ACTIONABLE_FRESH';
+    byId('precision-summary').textContent=[`Phase 3 · ${phase?.outcome??(phase?.frozen?'FROZEN':'configured')}`,
+      `Wave 1: ${p.wave1.length} · Standby: ${p.standby.join(', ')||'none'} · Wave 2 max: ${p.budgets.wave2} · Rescue max: ${p.budgets.rescue} · Total max: ${p.budgets.total}`,
+      `Latest observation: ${phase?.fitness??'pending'} · cache ${phase?.cache??'unknown'}`].join('\n');
+    const lines=p.candidates.map((c,i)=>{
+      const line=document.createElement('div');line.className='precision-line';
+      const worker=p.wave1.find(value=>value.candidateIndex===i)?.workerId;
+      const end=`${String(Number(c.start.slice(0,2))+c.durationHours).padStart(2,'0')}:00`;
+      const title=document.createElement('strong');title.textContent=`#${c.priority} · Court ${c.court} · ${c.start}–${end} · Wave 1 ${worker??'none'} · Wave 2 ${c.permissions.wave2?'yes':'no'} · Rescue ${c.permissions.rescue?'yes':'no'}`;
+      const hours=Array.from({length:c.durationHours},(_,offset)=>`${String(Number(c.start.slice(0,2))+offset).padStart(2,'0')}:00`);
+      const cells=hours.map(hour=>state.slotWatch?.cells.find(value=>value.court===c.court&&value.hour===hour));
+      const freshOpen=current&&cells.every(cell=>cell?.state==='OPEN'&&typeof cell.currentPrice==='number'&&cell.currentPrice>0);
+      const latestAmount=freshOpen?cells.reduce((total,cell)=>total+cell!.currentPrice!,0):null;
+      const evidence=document.createElement('span');evidence.textContent=freshOpen?`Fresh OPEN · current PHP ${latestAmount}`:
+        phase?.fitness==='FORENSIC_ONLY_CACHE_AGE_UNKNOWN'?'Cached/uncertain · no adaptive send':
+        phase?.fitness==='FORENSIC_ONLY_STALE'?'Stale · no adaptive send':
+        phase?.fitness==='FORENSIC_ONLY_INCOMPLETE'?'Incomplete · no adaptive send':
+        cells.some(cell=>cell?.state==='TAKEN')?'Unavailable':phase?.fitness==='UNRELEASED'?'Unreleased':'Evidence pending/unknown';
+      const price=document.createElement('span');price.textContent=`Expected PHP ${c.rateEvidence.perHour.reduce((a,b)=>a+b,0)} · ${c.rateEvidence.status} · ${c.rateEvidence.source}`;
+      line.append(title,evidence,price);return line;
+    });
+    for(const worker of p.standby){const line=document.createElement('div');line.className='precision-line';line.textContent=`Worker ${worker} · STANDBY · no target assigned`;lines.push(line);}
+    for(const attempt of phase?.attempts??[]){const line=document.createElement('div');line.className='precision-line';
+      line.textContent=`${attempt.wave} · Worker ${attempt.workerId} · candidate ${attempt.candidateId.slice(0,8)} · ${attempt.state}`;lines.push(line);}
+    byId('precision-table').replaceChildren(...lines);return;
+  }
   const configured=setup?.RELEASE_STRATEGY==='precision'?setup.PRECISION_TARGETS:[];
   const rows=live?.targets.length?live.targets:configured.map((t,i)=>({workerId:PRECISION_WORKERS[i]!,court:t.court,startTime:t.start,
     endTime:`${String(Number(t.start.slice(0,2))+t.durationHours).padStart(2,'0')}:00`,durationHours:t.durationHours}));
@@ -802,12 +981,14 @@ function renderPrecision(state:Dashboard){
     live?.frozen?`FROZEN at ${live.frozenAt?new Date(live.frozenAt).toLocaleTimeString('en-GB',{timeZone:'Asia/Manila'}):'T-2 min'} · ${live.frozenCount??0} attempt(s) will be sent at release · no further changes`:
     live?.checkpoint?`Latest evidence: ${live.checkpoint}${live.checkpointAt?` at ${new Date(live.checkpointAt).toLocaleTimeString('en-GB',{timeZone:'Asia/Manila'})}`:''} · freezes at T-2 min`:
     'Configured targets · evidence appears after Reset & Prepare and at T-60, T-30, T-10 and T-2 min.';
+  if(state.identityIssues?.length)byId('precision-summary').textContent+=`\n${state.identityIssues.join('\n')}`;
   byId('precision-table').replaceChildren(...rows.map(row=>{
     const line=document.createElement('div');line.className='precision-line';
     const target=document.createElement('strong');target.textContent=`Worker ${row.workerId} · Court ${row.court} · ${row.startTime}–${row.endTime}`;
     const evidence=document.createElement('span');const ev='evidence' in row?row.evidence:undefined;
     evidence.textContent=ev?`${PRECISION_EVIDENCE_TEXT[ev]??ev}${'eligible' in row&&row.eligible===false?' · NOT ELIGIBLE':''}`:'Evidence pending';
-    const status=document.createElement('span');const st='state' in row?row.state:undefined;const [text,tone]=st?PRECISION_STATE_TEXT[st]??[st,'']:['Awaiting release',''];
+    const status=document.createElement('span');const st='state' in row?row.state:undefined;const dup='duplicateOf' in row?row.duplicateOf:undefined;
+    const [text,tone]=st==='IDENTITY_FAILED'&&dup?[`NOT DISPATCHED — IDENTITY FAILED: duplicate Onda customer ID (duplicates Worker ${dup})`,'warn' as const]:st?PRECISION_STATE_TEXT[st]??[st,'']:['Awaiting release',''];
     status.textContent=text+('security' in row&&row.security==='failed'&&!st?' · security prewarm failed':'')+('bookingNo' in row&&row.bookingNo?` · Booking ${row.bookingNo}`:'')+
       ('holdExpiresAt' in row&&row.holdExpiresAt?` · hold until ${new Date(row.holdExpiresAt).toLocaleTimeString('en-GB',{timeZone:'Asia/Manila'})}`:'');
     if(tone)status.dataset.tone=tone;

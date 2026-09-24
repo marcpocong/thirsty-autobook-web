@@ -142,42 +142,29 @@ export function prooflessRequest(plan:BookingPlan,customer:CheckoutCustomer):Pro
 export interface DirectDispatchOptions {
   /** Scheduled release: never acquire security inline after the window check. */
   requirePreparedContext?:boolean;
+  /** Trusted final guard for a post-release adaptive attempt. */
+  beforePost?:()=>void;
 }
-type DirectTransport=Pick<OndaBrowserSessionTransport,'publicCheckoutProofless'>;
-export async function submitDirectCheckout(plan:BookingPlan,customer:CheckoutCustomer,transport:DirectTransport,
-  journal:DurableSubmissionJournal,releaseMs?:number,additionalJournals:DurableSubmissionJournal[]=[],now:()=>number=Date.now,
-  dispatch:DirectDispatchOptions={}):Promise<VerifiedPublicCheckout>{
-  const request=prooflessRequest(plan,customer),keys=standardPlanJournalKeys(plan,THIRSTY_PICKLE_FACILITY_ID);
-  const journals=[journal,...additionalJournals];
-  if(journals.length!==keys.length)throw Error('SUBMISSION_JOURNAL_COUNT_INVALID');
-  const fingerprint=createHash('sha256').update(JSON.stringify({courts:plan.courts.map(court=>court.court),date:plan.targetDate,
+export type DirectTransport=Pick<OndaBrowserSessionTransport,'publicCheckoutProofless'>;
+export function prooflessPlanFingerprint(plan:BookingPlan):string{
+  return createHash('sha256').update(JSON.stringify({courts:plan.courts.map(court=>court.court),date:plan.targetDate,
     start:plan.startTime,end:plan.endTime,price:plan.totalPrice,method:'direct-proofless'})).digest('hex');
-  const begun:Array<{journal:DurableSubmissionJournal;key:string}>=[];
-  try{
-    for(const [index,key] of keys.entries()){
-      const current=journals[index]!;
-      await current.begin(key,new Date(now()),{attemptId:key,planFingerprint:fingerprint,targetDate:plan.targetDate,
-        courtIds:plan.courts.map(court=>court.court),hourlyBoundaries:plan.courts.flatMap(court=>court.slots.map(slot=>({startTime:slot.startTime,endTime:slot.endTime}))),
-        expectedBookingCount:request.items.length,maximumAmount:plan.totalPrice,stage:'dispatching'});
-      begun.push({journal:current,key});
-    }
-  }catch(error){
-    await Promise.allSettled(begun.map(entry=>entry.journal.mark(entry.key,'rejected',new Date(now()),undefined,undefined,'DUPLICATE_LOGICAL_BOOKING_BLOCKED')));
-    throw error;
-  }
+}
+export interface JournalEntry {journal:DurableSubmissionJournal;key:string}
+/**
+ * Awaits one checkout send and records its outcome on every journal of the attempt:
+ * a validated pending hold is 'verified'; a confirmed application rejection or a
+ * provably unsent failure is 'rejected'; anything that may have left without a
+ * conclusive answer is 'unknown' and surfaces as SUBMISSION_OUTCOME_UNKNOWN_RECONCILIATION_REQUIRED.
+ * Shared by the legacy per-release path and the armed Precision path. Never retries.
+ */
+export async function recordDirectCheckoutOutcome(send:()=>Promise<unknown>,request:ProoflessCheckoutRequest,plan:BookingPlan,
+  entries:readonly JournalEntry[],now:()=>number):Promise<VerifiedPublicCheckout>{
   const markAll=(state:'unknown'|'verified'|'rejected',diagnostic?:Parameters<DurableSubmissionJournal['mark']>[3],
     observed?:Parameters<DurableSubmissionJournal['mark']>[4],failureCode?:string)=>
-    Promise.all(begun.map(entry=>entry.journal.mark(entry.key,state,new Date(now()),diagnostic,observed,failureCode)));
-  const key=keys[0]!;
-  let permit;
-  try{permit=await journal.claimSupervisedOneShot(key);}catch(error){await markAll('rejected');throw error;}
+    Promise.all(entries.map(entry=>entry.journal.mark(entry.key,state,new Date(now()),diagnostic,observed,failureCode)));
   try{
-    const windowCheck=()=>{if(releaseMs!==undefined){try{assertDirectDispatchWindow(releaseMs,now());}catch{throw new SubmissionDispatchError('DIRECT_RELEASE_WINDOW_MISSED',false);}}};
-    windowCheck();
-    // The window is checked again as the transport's final step, so a request can
-    // never pass here and then leave seconds later after security work.
-    const raw=await transport.publicCheckoutProofless(request,permit,{
-      requirePreparedContext:dispatch.requirePreparedContext===true,...(releaseMs!==undefined?{beforePost:windowCheck}:{})});
+    const raw=await send();
     // Response validation compares booking identities, amounts, dates and sessions; it does not inspect proof strings.
     let verified:VerifiedPublicCheckout;
     try{verified=validatePublicCheckoutResponse(raw,request as unknown as PublicCheckoutRequest,plan,new Date(now()),plan.totalPrice);}
@@ -193,4 +180,38 @@ export async function submitDirectCheckout(plan:BookingPlan,customer:CheckoutCus
     if(dispatched&&!rejected)throw Error('SUBMISSION_OUTCOME_UNKNOWN_RECONCILIATION_REQUIRED');
     throw error;
   }
+}
+export async function submitDirectCheckout(plan:BookingPlan,customer:CheckoutCustomer,transport:DirectTransport,
+  journal:DurableSubmissionJournal,releaseMs?:number,additionalJournals:DurableSubmissionJournal[]=[],now:()=>number=Date.now,
+  dispatch:DirectDispatchOptions={}):Promise<VerifiedPublicCheckout>{
+  const request=prooflessRequest(plan,customer),keys=standardPlanJournalKeys(plan,THIRSTY_PICKLE_FACILITY_ID);
+  const journals=[journal,...additionalJournals];
+  if(journals.length!==keys.length)throw Error('SUBMISSION_JOURNAL_COUNT_INVALID');
+  const fingerprint=prooflessPlanFingerprint(plan);
+  const begun:JournalEntry[]=[];
+  try{
+    for(const [index,key] of keys.entries()){
+      const current=journals[index]!;
+      await current.begin(key,new Date(now()),{attemptId:key,planFingerprint:fingerprint,targetDate:plan.targetDate,
+        courtIds:plan.courts.map(court=>court.court),hourlyBoundaries:plan.courts.flatMap(court=>court.slots.map(slot=>({startTime:slot.startTime,endTime:slot.endTime}))),
+        expectedBookingCount:request.items.length,maximumAmount:plan.totalPrice,stage:'dispatching'});
+      begun.push({journal:current,key});
+    }
+  }catch(error){
+    await Promise.allSettled(begun.map(entry=>entry.journal.mark(entry.key,'rejected',new Date(now()),undefined,undefined,'DUPLICATE_LOGICAL_BOOKING_BLOCKED')));
+    throw error;
+  }
+  const key=keys[0]!;
+  let permit;
+  try{permit=await journal.claimSupervisedOneShot(key);}
+  catch(error){await Promise.all(begun.map(entry=>entry.journal.mark(entry.key,'rejected',new Date(now()))));throw error;}
+  const windowCheck=()=>{if(releaseMs!==undefined){try{assertDirectDispatchWindow(releaseMs,now());}catch{throw new SubmissionDispatchError('DIRECT_RELEASE_WINDOW_MISSED',false);}}
+    dispatch.beforePost?.();};
+  return recordDirectCheckoutOutcome(async()=>{
+    windowCheck();
+    // The window is checked again as the transport's final step, so a request can
+    // never pass here and then leave seconds later after security work.
+    return transport.publicCheckoutProofless(request,permit,{
+      requirePreparedContext:dispatch.requirePreparedContext===true,...(releaseMs!==undefined||dispatch.beforePost?{beforePost:windowCheck}:{})});
+  },request,plan,begun,now);
 }

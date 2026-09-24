@@ -1,8 +1,12 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import type { RateLimitEvidence } from './rate-limit.js';
 
-export type CheckoutStage='SELECTION'|'SELECTION_VERIFIED'|'REVIEW'|'PAYMENT_SUMMARY'|'FINAL_ACTION_DISPATCHING'|'HOLD_VERIFIED';
-export interface StageEvidence {holdVerifiedAt?:string;holdExpiresAt?:string}
+/** FINAL_ACTION_ARMED (Precision, before release): the dispatch set is frozen and a POST may start at releaseAt.
+ * Recovery treats it at least as conservatively as FINAL_ACTION_DISPATCHING. */
+export type CheckoutStage='SELECTION'|'SELECTION_VERIFIED'|'REVIEW'|'PAYMENT_SUMMARY'|'FINAL_ACTION_ARMED'|'FINAL_ACTION_DISPATCHING'|'HOLD_VERIFIED';
+export interface StageEvidence {holdVerifiedAt?:string;holdExpiresAt?:string;armedAt?:string;releaseAt?:string;dispatchDeadlineAt?:string;armedCount?:number}
+/** Stages after which a checkout POST may have left (or may still leave). */
+export const FINAL_ACTION_STAGES:readonly string[]=['FINAL_ACTION_ARMED','FINAL_ACTION_DISPATCHING'];
 export class Safety {
   persistStage?: (stage:CheckoutStage,evidence?:StageEvidence)=>Promise<void>;
   async stage(stage:CheckoutStage,evidence?:StageEvidence){await this.persistStage?.(stage,evidence);}

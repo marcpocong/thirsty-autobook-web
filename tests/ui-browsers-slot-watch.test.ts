@@ -117,6 +117,42 @@ describe('Release slot watch control', () => {
     }
   });
 
+  it('builds the forensic report only after the runner exits, then finalizes it when the release watch ends', async () => {
+    const previous = process.env.THIRSTY_API_TEST_INSTALLATION;
+    process.env.THIRSTY_API_TEST_INSTALLATION = '1';
+    try {
+      const watches = fakeWatches();
+      let finish!: (code: number) => void, runnerExited = false;
+      const builds: Array<{ runId: string; status: string; runnerExited: boolean }> = [];
+      const runner: Runner = (command, onEvent) => {
+        if (typeof command !== 'object' || command.kind !== 'apiRun' || command.mode !== 'live') return { pid: 1, done: Promise.resolve(0), stop: async () => undefined };
+        setImmediate(() => onEvent({ type: 'apiStage', stage: 'RUN_STARTED', at: new Date().toISOString(), elapsedMs: 0, runId: 'run-live-1' } as never));
+        return { pid: 1, stop: async () => finish(130), done: new Promise<number>(resolve => { finish = code => { runnerExited = true; resolve(code); }; }) };
+      };
+      const releaseMs = Date.now() + 3_600_000, future = { ...clock(), releaseMs, targetDate: plan().targetDate };
+      const digest = (runId: string, status: string) => ({ runId, status, reportPath: `C:\\bot\\.local\\release-forensics\\${runId}\\report.txt` }) as never;
+      const c = controller({ startSlotWatch: watches.start, clock: () => future, releaseForensicsHistory: () => [],
+        buildReleaseForensics: input => { builds.push({ ...input, runnerExited }); return digest(input.runId, input.status); } }, runner);
+      await c.resetPrepare({ workflow: 'release', strategy: 'standard' });
+      await c.authorizeTerms(true);
+      const armed = c.armFullBooking();
+      await vi.waitFor(() => expect(c.state.apiStage?.stage).toBe('RUN_STARTED'));
+      await new Promise(done => setTimeout(done, 20));
+      expect(builds).toEqual([]);
+      finish(1); await armed;
+      await vi.waitFor(() => expect(builds).toHaveLength(1));
+      // The release watch is still observing: preliminary now, final when it ends.
+      expect(builds[0]).toEqual({ runId: 'run-live-1', status: 'preliminary', runnerExited: true });
+      await c.stopSlotWatch();
+      await vi.waitFor(() => expect(builds).toHaveLength(2));
+      expect(builds[1]).toEqual({ runId: 'run-live-1', status: 'final', runnerExited: true });
+      expect(c.state.logs.some(line => line.text.includes('Release forensics final: C:\\bot\\.local\\release-forensics\\run-live-1\\report.txt'))).toBe(true);
+    } finally {
+      if (previous === undefined) delete process.env.THIRSTY_API_TEST_INSTALLATION;
+      else process.env.THIRSTY_API_TEST_INSTALLATION = previous;
+    }
+  });
+
   it('keeps an operator-started watch running through Emergency Stop', async () => {
     const watches = fakeWatches();
     let finish!: (code: number) => void;

@@ -63,7 +63,7 @@ export async function reviewLock(root, owned, probe, alive = pidAlive, probeB) {
         return reviewDual(root, raw, data, owned, probe, probeB, alive);
     if (data.mode === 'extended' || Array.isArray(data.workers) && data.workers.length > 1)
         return { ...unknownBrowser, runID, pid, alive: pid === null ? null : alive(pid), owned, fingerprint: createHash('sha256').update(raw).digest('hex'), verifiedAt: new Date().toISOString(), reason: 'USE_RESET_AND_PREPARE', canClear: false };
-    if (data.stage === 'FINAL_ACTION_DISPATCHING')
+    if (data.stage === 'FINAL_ACTION_DISPATCHING' || data.stage === 'FINAL_ACTION_ARMED')
         return { ...unknownBrowser, runID, pid, alive: pid === null ? null : alive(pid), owned, fingerprint: createHash('sha256').update(raw).digest('hex'), verifiedAt: new Date().toISOString(), reason: 'PAYMENT_HOLD_MAY_BE_ACTIVE', canClear: false };
     if (data.stage === 'HOLD_VERIFIED' || data.handoff || data.state === 'hold') {
         const expiry = typeof data.holdExpiresAt === 'string' ? Date.parse(data.holdExpiresAt) : NaN;
@@ -123,7 +123,7 @@ async function reviewDual(root, raw, data, owned, probe, probeB, alive) {
         } })();
         const matching = state.id === id && state.runID === runID && state.pid === coordinatorPid && coordinatorPid !== null && Array.isArray(data.workers) && data.workers.length === 2 && data.workers[i]?.id === id && data.workers[i]?.pid === coordinatorPid && data.workers[i]?.runID === runID;
         const browser = await (i === 0 ? probe : probeB ?? (async () => unknownBrowser))().catch(() => unknownBrowser);
-        return { ...browser, id, pid: matching ? state.pid : null, alive: matching ? alive(state.pid) : null, recordedState: state.stage === 'FINAL_ACTION_DISPATCHING' ? 'FINAL_ACTION_DISPATCHING' : state.stage === 'HOLD_VERIFIED' ? 'hold' : ['clean', 'selection', 'checkout', 'hold', 'unknown'].includes(state.state) ? state.state : 'unknown' };
+        return { ...browser, id, pid: matching ? state.pid : null, alive: matching ? alive(state.pid) : null, recordedState: state.stage === 'FINAL_ACTION_DISPATCHING' || state.stage === 'FINAL_ACTION_ARMED' ? 'FINAL_ACTION_DISPATCHING' : state.stage === 'HOLD_VERIFIED' ? 'hold' : ['clean', 'selection', 'checkout', 'hold', 'unknown'].includes(state.state) ? state.state : 'unknown' };
     }));
     const clean = workers.every(w => w.clean && w.page === 'Schedule' && w.selected === 0 && w.hold === 'Not detected' && w.alive === false);
     const hold = workers.some(w => w.hold === 'Active') ? 'Active' : workers.every(w => w.hold === 'Not detected') ? 'Not detected' : 'Unknown';

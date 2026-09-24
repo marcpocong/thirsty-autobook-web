@@ -21,6 +21,11 @@ const PRECISION_OUTCOME_HEADLINE = {
     OBJECTIVE_NOT_ACHIEVED_NOTHING_DISPATCHED: 'OBJECTIVE NOT ACHIEVED · NOTHING DISPATCHED',
 };
 const precisionOutcomeHeadline = (code) => code ? PRECISION_OUTCOME_HEADLINE[code] : undefined;
+/** Operator text for an invalid customer identity. Uses worker letters and codes only, never a customer ID. */
+function identityIssueText(event, precision) {
+    const problem = event.code === 'DUPLICATE_ONDA_CUSTOMER_ID' && event.duplicateOf ? `duplicates Worker ${event.duplicateOf}` : event.code ?? 'binding invalid';
+    return `Worker ${event.workerId} — customer identity invalid: ${problem}` + (precision ? `. Worker ${event.workerId} will not dispatch; the other valid Precision attempts remain usable.` : '. This plan cannot run until it is fixed.');
+}
 export const PRECISION_STATE_LABEL = {
     EXCLUDED_BEFORE_FREEZE: 'NOT DISPATCHED — excluded before freeze', BROWSER_FAILED: 'NOT DISPATCHED — browser failed',
     IDENTITY_FAILED: 'NOT DISPATCHED — player/customer binding missing', JOURNAL_BLOCKED: 'NOT DISPATCHED — earlier attempt on record',
@@ -40,6 +45,8 @@ const errors = {
     OBJECTIVE_NOT_ACHIEVED_ALL_REJECTED: 'Every dispatched Precision attempt was rejected by Onda. No hold was created.',
     OBJECTIVE_NOT_ACHIEVED_NOTHING_DISPATCHED: 'No Precision attempt was dispatched. See each attempt for the reason.',
     OBJECTIVE_NOT_CONFIRMED_MANUAL_RECONCILIATION: 'An attempt may have been sent without a confirmed outcome. DO NOT retry. Check Onda and Chrome manually; the lock is retained.',
+    DUPLICATE_ONDA_CUSTOMER_ID: 'Two workers in this plan share one Onda customer ID. Fix ONDA_CUSTOMER_*_ID in .local/private/.env.local. Nothing was sent.',
+    PRECISION_NO_VALID_CUSTOMER_IDENTITY: 'No Precision worker has a valid, unique Onda customer identity. Nothing was sent.',
     EXTENDED_DURATION_LIMIT: 'Extended two-browser booking currently supports up to 6 consecutive hours.',
     PAYMENT_HOLD_MAY_BE_ACTIVE: 'A retained payment hold may still be active. Reset & Prepare cannot clear it until its timer has elapsed and the browser is verified clean.',
     TARGET_NOT_AVAILABLE: 'TARGET NOT AVAILABLE. No booking was created.',
@@ -131,11 +138,16 @@ export class Controller {
     slotWatch;
     /** The watch shown in the UI; it keeps showing its final state after it ends until another watch replaces it. */
     displayedSlotWatchId;
+    /** Runner run ID of the latest API process, from its RUN_STARTED event. */
+    runnerRunId;
+    /** Runner runs whose forensic report waits for this slot watch (by watch ID) to finish. */
+    pendingForensics = new Map();
     constructor(deps) {
         this.deps = deps;
         this.state.runHistory = this.deps.activityJournal?.history?.() ?? [];
         this.state.slotWatch = null;
         this.state.slotWatchHistory = this.readSlotWatchHistory();
+        this.state.releaseForensics = this.readForensicsHistory();
     }
     readSlotWatchHistory() { try {
         return this.deps.slotWatchHistory?.() ?? [];
@@ -143,6 +155,34 @@ export class Controller {
     catch {
         return [];
     } }
+    readForensicsHistory() { try {
+        return this.deps.releaseForensicsHistory?.() ?? [];
+    }
+    catch {
+        return [];
+    } }
+    /** Post-run forensics: file reads and two small writes in this process, never in the runner, never before the runner has exited. */
+    buildForensics(runId, status) {
+        if (!this.deps.buildReleaseForensics)
+            return;
+        try {
+            const digest = this.deps.buildReleaseForensics({ runId, status });
+            this.state.releaseForensics = this.readForensicsHistory();
+            if (digest)
+                this.log(`Release forensics ${status}: ${digest.reportPath}`);
+        }
+        catch {
+            this.log('Release forensics report could not be written; the raw logs are unchanged.', true);
+        }
+        this.publish();
+    }
+    /** After a live API run: a final report now, or a preliminary one now and the final one when its slot watch ends. */
+    scheduleForensics(runId, date, releaseMs) {
+        const watch = releaseMs !== undefined && this.slotWatch?.date === date && this.slotWatch.releaseMs === releaseMs ? this.slotWatch : undefined;
+        if (watch)
+            this.pendingForensics.set(watch.id, [...(this.pendingForensics.get(watch.id) ?? []), runId]);
+        setImmediate(() => this.buildForensics(runId, watch ? 'preliminary' : 'final'));
+    }
     /** Starts the read-only court/hour watch for one release; a watch already covering it is kept. */
     beginSlotWatch(date, releaseMs, reason) {
         if (!this.deps.startSlotWatch)
@@ -169,7 +209,10 @@ export class Controller {
                 return;
             this.state.slotWatch = view;
             this.publish();
-        });
+        }, observation => { try {
+            this.active?.sendObservation?.(observation, date, releaseMs);
+        }
+        catch { /* telemetry only */ } });
         id = handle.id;
         this.displayedSlotWatchId = id;
         const watch = { id, reason, date, releaseMs, stop: reason => handle.stop(reason), done: handle.done };
@@ -182,9 +225,14 @@ export class Controller {
             if (this.slotWatch?.id === watch.id)
                 this.slotWatch = undefined;
             this.state.slotWatchHistory = this.readSlotWatchHistory();
-            this.log(`Slot watch ${summary.status} for ${summary.date}: ${summary.polls} reads, ${summary.taken.length} slot${summary.taken.length === 1 ? '' : 's'} taken after opening${summary.fastestTakeMs === null ? '' : `, fastest ${(summary.fastestTakeMs / 1000).toFixed(3)} s after release`}. Report: ${summary.reportPath}`);
+            const reads = summary.availability, first = summary.publication?.firstPublished;
+            this.log(`Slot watch ${summary.status} for ${summary.date}: ${reads?.answered ?? 0} reads answered${reads?.notLaunched ? ` · ${reads.notLaunched} not launched` : ''}${first ? ` · first published grid requested ${(first.requestOffsetMs / 1000).toFixed(3)} s, answered ${(first.responseOffsetMs / 1000).toFixed(3)} s after release` : ''} · ${summary.openToUnavailable?.length ?? 0} open → unavailable. Report: ${summary.reportPath}`);
+            for (const runId of this.pendingForensics.get(watch.id) ?? [])
+                this.buildForensics(runId, 'final');
+            this.pendingForensics.delete(watch.id);
         }).catch(() => { if (this.slotWatch?.id === watch.id)
-            this.slotWatch = undefined; });
+            this.slotWatch = undefined; for (const runId of this.pendingForensics.get(watch.id) ?? [])
+            this.buildForensics(runId, 'final'); this.pendingForensics.delete(watch.id); });
         return true;
     }
     /** A cancelled or aborted release has nothing to observe; an operator-started watch keeps running. */
@@ -277,9 +325,17 @@ export class Controller {
         }
     }
     publish() { this.deps.publish(structuredClone(this.state)); }
+    trackIdentity(event) {
+        if (event.stage !== 'CUSTOMER_IDENTITY_INVALID' || !event.workerId)
+            return;
+        const text = identityIssueText(event, this.state.booking?.setup.RELEASE_STRATEGY === 'precision');
+        const issues = (this.state.identityIssues ?? []).filter(issue => !issue.startsWith(`Worker ${event.workerId} `));
+        this.state.identityIssues = [...issues, text].sort();
+    }
     trackPrecision(event) {
         if (event.stage === 'RUN_STARTED') {
             this.state.precision = null;
+            this.state.phase3 = undefined;
             return;
         }
         const perAttempt = ['SECURITY_PREWARM_READY', 'SECURITY_PREWARM_FAILED', 'PENDING_HOLD', 'OFFICIAL_QRPH_HANDOFF', 'QR_HANDOFF_NEEDS_ATTENTION'];
@@ -313,6 +369,8 @@ export class Controller {
         if (event.stage === 'PRECISION_ATTEMPT_STATE' && target) {
             target.state = event.attemptState;
             target.code = event.code;
+            if (event.duplicateOf)
+                target.duplicateOf = event.duplicateOf;
         }
         if (event.stage === 'SECURITY_PREWARM_READY' && target)
             target.security = 'ready';
@@ -335,6 +393,31 @@ export class Controller {
         if (event.stage === 'PRECISION_OUTCOME')
             view.outcome = event.outcome;
         this.state.precision = view;
+    }
+    trackPhase3(event) {
+        if (!event.stage.startsWith('PHASE3_'))
+            return;
+        const view = this.state.phase3 ?? { attempts: [] };
+        if (event.stage === 'PHASE3_FROZEN')
+            view.frozen = true;
+        if (event.stage === 'PHASE3_EVIDENCE') {
+            view.fitness = event.fitness;
+            view.cache = event.cache;
+            view.seq = event.seq;
+        }
+        if (event.stage === 'PHASE3_OUTCOME')
+            view.outcome = event.outcome;
+        if ((event.stage === 'PHASE3_ATTEMPT_RESERVED' || event.stage === 'PHASE3_DISPATCH' || event.stage === 'PHASE3_SETTLED') && event.workerId && event.candidateId && event.wave) {
+            const found = view.attempts.find(value => value.workerId === event.workerId && value.candidateId === event.candidateId && value.wave === event.wave);
+            if (found) {
+                if (event.stage === 'PHASE3_SETTLED' || !['REJECTED', 'UNKNOWN', 'VERIFIED', 'QR_READY', 'HOLD_VERIFIED_QR_ATTENTION'].includes(found.state))
+                    found.state = event.stage === 'PHASE3_ATTEMPT_RESERVED' ? 'RESERVED' : event.stage === 'PHASE3_DISPATCH' ? 'IN_FLIGHT' : event.state ?? 'UNKNOWN';
+            }
+            else
+                view.attempts.push({ workerId: event.workerId, candidateId: event.candidateId, wave: event.wave,
+                    state: event.stage === 'PHASE3_ATTEMPT_RESERVED' ? 'RESERVED' : event.stage === 'PHASE3_DISPATCH' ? 'IN_FLIGHT' : event.state ?? 'UNKNOWN' });
+        }
+        this.state.phase3 = view;
     }
     clearApiStage() { this.state.apiStage = null; this.state.observedPrice = null; this.state.assumedPrice = null; }
     rememberQrHandoff(summary) {
@@ -571,12 +654,16 @@ export class Controller {
     }
     event = (event) => {
         if (event.type === 'apiStage') {
+            this.trackIdentity(event);
             if (event.price !== undefined)
                 this.state.observedPrice = event.price;
             if (event.assumedPrice !== undefined)
                 this.state.assumedPrice = event.assumedPrice;
-            if (event.stage === 'RUN_STARTED')
+            if (event.stage === 'RUN_STARTED') {
                 this.apiReadyWorkers.clear();
+                if (event.runId)
+                    this.runnerRunId = event.runId;
+            }
             if (event.stage === 'BROWSER_READY' && this.state.operation !== 'prepare' && event.workerId) {
                 this.apiReadyWorkers.add(event.workerId);
                 const required = this.state.workflow === 'test' && this.apiTestPreferences
@@ -587,6 +674,7 @@ export class Controller {
             }
             this.state.apiStage = event;
             this.trackPrecision(event);
+            this.trackPhase3(event);
             const labels = { RUN_STARTED: 'API run started', EXPIRED_HOLD_REUSABLE: 'Expired verified hold released for a new test', FINISHED_ATTEMPT_REUSABLE: 'Finished attempt archived for a new test', PREPARING_BROWSER: 'Preparing isolated Chrome', BROWSER_READY: 'API browser ready',
                 WAITING_FOR_BLOCK_AUDIT: 'Waiting for 7:30 block audit', PRIMARY_PROOFLESS_PLAN_READY: 'Proofless court plan resolved', PRIMARY_PROOFLESS_DISPATCHING: 'Dispatching proofless checkout', PRIMARY_PROOFLESS_OUTCOME: 'Proofless checkout outcome recorded', WAITING_FOR_RELEASE: 'Waiting for release', SECURITY_PREWARM_STARTED: 'Preparing checkout security before release', SECURITY_PREWARM_READY: 'Checkout security ready for release', RELEASE_TRIGGERED: 'Release reached', FETCHING_AVAILABILITY: 'Fetching live API availability',
                 WORKER_OUTCOME: 'Checkout outcome recorded', CANDIDATE_READY: 'API candidate ready', DRY_RUN_COMPLETE: 'API dry run complete', FRESH_VERIFICATION_AND_PROOFS: 'Fresh verification and slot proofs',
@@ -595,8 +683,8 @@ export class Controller {
                 NETWORK_CLOCK_REFRESHED: 'Network clock refreshed', NETWORK_CLOCK_REFRESH_FAILED: 'Network clock refresh failed', QR_HANDOFF_NEEDS_ATTENTION: 'HOLD VERIFIED · QR handoff needs attention',
                 PRECISION_RACE_CONFIGURED: 'Precision race configured', PRECISION_TARGET: 'Precision target authorized', PRECISION_EVIDENCE_READ: 'Precision evidence read',
                 PRECISION_TARGET_EVIDENCE: 'Precision target evidence', PRECISION_ATTEMPT_STATE: 'Precision attempt updated', PRECISION_DRY_COMPLETE: 'Precision targets checked',
-                PRECISION_FROZEN: 'Precision targets frozen', PRECISION_DISPATCHING: 'Dispatching Precision attempts', SECURITY_PREWARM_FAILED: 'Checkout security failed for one worker',
-                SECURITY_PREWARM_RETRY: 'Retrying checkout security for one worker', PRECISION_OUTCOME: 'Precision race settled' };
+                PRECISION_FROZEN: 'Precision targets frozen', PRECISION_ARMED: 'Precision attempts armed for release', PRECISION_DISPATCHING: 'Dispatching Precision attempts', NETWORK_CLOCK_CONSENSUS: 'Release clock consensus', NETWORK_CLOCK_CONSENSUS_REJECTED: 'Release clock round not trusted', NETWORK_CLOCK_CONSENSUS_FAILED: 'Release clock round failed', PRECISION_LOCK_DISPATCHING_FAILED: 'Dispatch record update failed', SECURITY_PREWARM_FAILED: 'Checkout security failed for one worker',
+                SECURITY_PREWARM_RETRY: 'Retrying checkout security for one worker', PRECISION_OUTCOME: 'Precision race settled', CUSTOMER_IDENTITY_INVALID: 'Customer identity invalid' };
             labels.HUMAN_VERIFICATION_REQUIRED = 'Human verification required in Chrome';
             labels.HUMAN_VERIFICATION_COMPLETE = 'Human verification complete';
             this.state.headline = labels[event.stage] ?? event.stage.replaceAll('_', ' ');
@@ -616,9 +704,15 @@ export class Controller {
             if (['PRECISION_TARGET_EVIDENCE', 'PROOFLESS_TARGET_EVIDENCE'].includes(event.stage))
                 this.state.detail = `${event.workerId ? `Worker ${event.workerId} · ` : ''}Court ${event.court} · ${event.startTime}${event.endTime ? `–${event.endTime}` : ''}${event.checkpoint ? ` · ${event.checkpoint}` : ''} · ${TARGET_EVIDENCE_LABEL[event.evidence] ?? event.evidence}${event.eligible === false ? ' · NOT ELIGIBLE' : ''}`;
             if (event.stage === 'PRECISION_ATTEMPT_STATE')
-                this.state.detail = `Worker ${event.workerId} · Court ${event.court} · ${event.startTime}–${event.endTime} · ${PRECISION_STATE_LABEL[event.attemptState ?? ''] ?? event.attemptState}${event.code ? ` · ${event.code}` : ''}`;
+                this.state.detail = `Worker ${event.workerId} · Court ${event.court} · ${event.startTime}–${event.endTime} · ${PRECISION_STATE_LABEL[event.attemptState ?? ''] ?? event.attemptState}${event.duplicateOf ? ` · duplicates Worker ${event.duplicateOf}` : event.code ? ` · ${event.code}` : ''}`;
+            if (event.stage === 'CUSTOMER_IDENTITY_INVALID')
+                this.state.detail = identityIssueText(event, this.state.booking?.setup.RELEASE_STRATEGY === 'precision');
             if (event.stage === 'NETWORK_CLOCK_REFRESHED')
-                this.state.detail = `${event.checkpoint} · offset ${event.offsetMs} ms · round trip ${event.roundTripMs} ms · change ${event.deltaMs} ms`;
+                this.state.detail = `${event.checkpoint} · offset ${event.offsetMs} ms · round trip ${event.roundTripMs} ms · change ${event.deltaMs} ms` + (event.sampleCount !== undefined ? ` · ${event.sampleCount} samples · spread ${event.spreadMs} ms · ±${event.uncertaintyMs} ms` : '');
+            if (event.stage === 'NETWORK_CLOCK_CONSENSUS')
+                this.state.detail = `${event.checkpoint} · offset ${event.offsetMs} ms · ${event.sampleCount} samples · fastest round trip ${event.roundTripMs} ms · spread ${event.spreadMs} ms · ±${event.uncertaintyMs} ms · change ${event.deltaMs} ms` + (event.code === 'CLOCK_JUMP_REJECTED' ? ' · large earlier jump not adopted' : '');
+            if (event.stage === 'PRECISION_ARMED')
+                this.state.detail = `${event.frozenCount} attempt(s) armed: requests, journals and one-shot permits are ready before release${event.unsentCount ? ` · ${event.unsentCount} could not be armed` : ''}`;
             const timing = `${event.elapsedMs} ms total · +${event.sincePreviousMs ?? 0} ms since prior stage`;
             this.state.detail += ` · ${timing}`;
             if (['PENDING_HOLD', 'OFFICIAL_QRPH_HANDOFF'].includes(event.stage) && event.date && event.court && event.startTime && event.durationHours && event.price !== undefined) {
@@ -764,6 +858,7 @@ export class Controller {
         if (this.state.runTiming && !this.state.runTiming.endedAt && !this.state.runTiming.label.startsWith('release ·'))
             this.state.runTiming.label = typeof command === 'object' && command.kind === 'testBooking' ? `${(command.input.method ?? 'browser').toUpperCase()} TEST` : typeof command === 'object' && command.kind === 'apiRun' ? `API ${command.mode.toUpperCase()}` : descriptor;
         this.log(`Process started: ${descriptor}`);
+        const runnerBefore = this.runnerRunId;
         const active = this.deps.runner(command, this.event, (line, error) => this.log(line, error), async (plan) => { if (generation !== this.generation)
             return false; const answer = await this.deps.confirmBooking?.(plan, typeof command === 'object' && command.kind === 'testBooking' ? command.input.maximum : 0) ?? false; return generation === this.generation && answer; });
         this.active = active;
@@ -778,6 +873,9 @@ export class Controller {
         finally {
             if (this.active === active)
                 this.active = undefined;
+            // The runner process has exited: every POST it made has settled, so the forensic report can be built.
+            if (typeof command === 'object' && command.kind === 'apiRun' && (command.mode === 'live' || command.mode === 'live-now') && this.runnerRunId && this.runnerRunId !== runnerBefore)
+                this.scheduleForensics(this.runnerRunId, command.date, command.releaseMs);
         }
     }
     async operation(kind, work) {
@@ -907,6 +1005,7 @@ export class Controller {
         this.clearPreparation();
         this.preparationResult = undefined;
         this.pendingPreparation = undefined;
+        this.state.identityIssues = [];
         try {
             const input = PreparationSchema.parse(value);
             this.state.qrHandoffs = [];
@@ -990,7 +1089,7 @@ export class Controller {
                         this.state.ready = true;
                         this.state.headline = 'API BROWSER READY';
                         const count = planWorkerIds(release.setup).length;
-                        this.state.detail = `${count} API browser${count === 1 ? ' is' : 's are'} ready. Authorize Terms, then arm the next release.`;
+                        this.state.detail = `${count} API browser${count === 1 ? ' is' : 's are'} ready. Authorize Terms, then arm the next release.` + (this.state.identityIssues?.length ? `\n${this.state.identityIssues.join('\n')}` : '');
                         return;
                     }
                 }

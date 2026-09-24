@@ -239,8 +239,19 @@ main { max-width: 1280px; margin: auto; padding: 16px 24px 96px; }
 .slot-event.opened { border-left-color: var(--brand); }
 .slot-event.record { border-left-color: #ff8a80; }
 .slot-event.published { border-left-color: var(--warning); background: var(--warning-bg); }
-.slot-event .window { font: 10px Consolas, monospace; color: var(--muted); white-space: nowrap; }
+.slot-event .window { font: 10px Consolas, monospace; color: var(--muted); overflow-wrap: anywhere; }
 .slot-history-list { display: grid; gap: 7px; margin-top: 10px; }
+.slot-mode-toggle { display: inline-flex; gap: 6px; margin: 0 0 8px; }
+.slot-mode-toggle button { padding: 4px 10px; font-size: 11px; }
+.slot-mode-toggle button[aria-pressed=true] { color: var(--brand-bright); border-color: var(--line-strong); }
+#view-runs .release-forensics { grid-column: 1 / -1; }
+.forensic-item { margin-top: 8px; padding: 9px 12px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.forensic-item summary { display: grid; gap: 3px; cursor: pointer; }
+.forensic-item summary strong { font-size: 12px; }
+.forensic-item .meta { font: 10px Consolas, monospace; color: var(--muted); overflow-wrap: anywhere; }
+.forensic-targets { display: grid; gap: 4px; margin-top: 8px; }
+.forensic-target { font: 11px Consolas, monospace; color: var(--text-2); overflow-wrap: anywhere; }
+.forensic-path { margin: 8px 0 0; overflow-wrap: anywhere; }
 .slot-history-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 14px; width: 100%; padding: 10px 12px; text-align: left; color: inherit; background: #0b1d13; border: 1px solid #294b38; border-radius: var(--radius-sm); }
 .slot-history-item:hover, .slot-history-item[aria-pressed=true] { background: #10271a; border-color: var(--line-strong); }
 .slot-history-item strong { font-size: 12px; }
@@ -450,3 +461,4 @@ footer > div { display: flex; align-items: center; gap: 8px; font-size: 11px; co
 .precision-table { display: grid; gap: 6px; }
 .precision-table .precision-line { display: flex; flex-wrap: wrap; gap: 6px 12px; padding: 6px 8px; border-radius: 8px; background: rgba(127,127,127,.08); }
 .precision-table .precision-line [data-tone] { font-weight: 600; }
+#precision-summary { white-space: pre-line; }

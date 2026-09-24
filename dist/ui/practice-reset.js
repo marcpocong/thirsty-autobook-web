@@ -71,7 +71,7 @@ export async function resetPracticeSession(root, reviewLock, probeBrowser, cdp) 
     }
     if (before) {
         const r = JSON.parse(before.raw);
-        if (r.stage === 'FINAL_ACTION_DISPATCHING' || r.stage === 'HOLD_VERIFIED')
+        if (r.stage === 'FINAL_ACTION_DISPATCHING' || r.stage === 'FINAL_ACTION_ARMED' || r.stage === 'HOLD_VERIFIED')
             throw Error('PAYMENT_HOLD_MAY_BE_ACTIVE');
         if (!r.stage)
             throw Error('USE_RESET_AND_PREPARE');

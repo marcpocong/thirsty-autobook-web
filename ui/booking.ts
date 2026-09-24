@@ -3,10 +3,12 @@ import { playerReadiness, BookingSetupSchema, loadConfigWithReconciliation, calc
 import type {FallbackReconciliation} from '../src/booking-setup.js';
 import { candidatePlans, describeBookingPlan } from '../src/booking-plan.js';
 import { PRECISION_WORKER_IDS } from '../src/workers.js';
+import { authorizePrecision, precisionCandidateId } from '../src/api-booking/precision-phase3.js';
 export const defaultSetup: BookingSetup = { BOOKING_METHOD:'browser', BOOKING_TYPE:'standard', RELEASE_STRATEGY:'general', PRECISION_TARGETS:[], COURT_COUNT:1, START_TIME: '08:00', DURATION_HOURS: 2, PREFERRED_COURTS: [7,6,5,4,3,2,1], FALLBACK_COURTS: [], FALLBACK_TIMES: [], MAX_SELECTION_ATTEMPTS: 3 };
 export function bookingView(c: Config, fallbackReconciliation:FallbackReconciliation={valid:c.FALLBACK_TIMES,removed:[]}) {
   const target = calculateTarget(c);
-  const setup = BookingSetupSchema.parse({ BOOKING_METHOD:c.BOOKING_METHOD, BOOKING_TYPE:c.BOOKING_TYPE, RELEASE_STRATEGY:c.RELEASE_STRATEGY, PRECISION_TARGETS:c.PRECISION_TARGETS, COURT_COUNT:c.COURT_COUNT, START_TIME:c.START_TIME, DURATION_HOURS:c.DURATION_HOURS, PREFERRED_COURTS:[...c.PREFERRED_COURTS,...c.FALLBACK_COURTS], FALLBACK_COURTS:[], FALLBACK_TIMES:c.FALLBACK_TIMES, MAX_SELECTION_ATTEMPTS:c.MAX_SELECTION_ATTEMPTS });
+  const setup = BookingSetupSchema.parse({ BOOKING_METHOD:c.BOOKING_METHOD, BOOKING_TYPE:c.BOOKING_TYPE, RELEASE_STRATEGY:c.RELEASE_STRATEGY, PRECISION_TARGETS:c.PRECISION_TARGETS,
+    ...(c.PRECISION_PHASE3?{PRECISION_PHASE3:c.PRECISION_PHASE3}:{}), COURT_COUNT:c.COURT_COUNT, START_TIME:c.START_TIME, DURATION_HOURS:c.DURATION_HOURS, PREFERRED_COURTS:[...c.PREFERRED_COURTS,...c.FALLBACK_COURTS], FALLBACK_COURTS:[], FALLBACK_TIMES:c.FALLBACK_TIMES, MAX_SELECTION_ATTEMPTS:c.MAX_SELECTION_ATTEMPTS });
   const players=playerReadiness(c);
   return { setup, fallbackReconciliation, targetDate:target.targetDate, releaseMs:target.releaseMs, preferences:target.preferences, playerConfigured:players.primary, extendedPlayerConfigured:players.extended,thirdPlayerConfigured:players.third,fourthPlayerConfigured:players.fourth,fifthPlayerConfigured:players.fifth,sixthPlayerConfigured:players.sixth,seventhPlayerConfigured:players.seventh,eighthPlayerConfigured:players.eighth,fingerprint:planFingerprint(c),
     slots:target.preferences[0]!.hours.map(h => `${h}–${String(Number(h.slice(0,2))+1).padStart(2,'0')}:00`) };
@@ -29,6 +31,24 @@ export function describePlan(plan: BookingView) {
 
 /** Arming text for Precision Release: every exact target, and what the operator is authorizing. */
 export function describePrecisionPlan(plan: BookingView) {
+  if(plan.setup.PRECISION_PHASE3){
+    const draft=plan.setup.PRECISION_PHASE3;
+    const auth=authorizePrecision({date:plan.targetDate,releaseMs:plan.releaseMs,candidates:draft.candidates,
+      wave1:draft.wave1.map(value=>({workerId:value.workerId,candidateId:precisionCandidateId(plan.targetDate,draft.candidates[value.candidateIndex]!)})),
+      standby:draft.standby,budgets:draft.budgets,concurrentWave2:draft.concurrentWave2,
+      rescueEnabled:draft.rescueEnabled,authorizedAt:new Date().toISOString()});
+    const byId=new Map(auth.candidates.map(value=>[value.id,value]));
+    return ['PRECISION RELEASE PHASE 3 · GOAL: 1 VERIFIED HOLD',`Target date: ${plan.targetDate}`,
+      'Wave 1 exact sends:',...auth.wave1.map(value=>{const c=byId.get(value.candidateId)!;
+        return `Worker ${value.workerId} → Court ${c.court} ${c.start}–${c.end} · PHP ${c.expectedAmount} · ${c.rateEvidence.status} (${c.rateEvidence.source}, ${c.rateEvidence.capturedAt})`;}),
+      `Standby: ${auth.standby.length?auth.standby.map(value=>`Worker ${value}`).join(', '):'none'} (no target assigned yet)`,
+      `${auth.candidates.filter(value=>value.permissions.wave2).length} Wave 2 authorized candidate(s); max ${auth.budgets.wave2} sends.`,
+      `Rescue ${auth.rescueEnabled?'ENABLED':'OFF'}; max ${auth.budgets.rescue} sends.`,
+      `Maximum total sends: ${auth.budgets.total}. Concurrent Wave 2 while Wave 1 responses are pending: ${auth.concurrentWave2?'YES':'NO'}.`,
+      ...(auth.warning?[auth.warning]:[]),
+      'More than one temporary hold may be created. Payment remains manual. UNKNOWN stops all later dispatch. No automatic cancellation.',
+      'Wave 2 and Rescue require fresh published, complete, uncached OPEN cells and current hourly prices.'].join('\n');
+  }
   const targets=plan.setup.PRECISION_TARGETS;
   const end=(start:string,hours:number)=>`${String(Number(start.slice(0,2))+hours).padStart(2,'0')}:00`;
   const price=(start:string,hours:number)=>Array.from({length:hours},(_,i)=>Number(start.slice(0,2))+i>=16?700:600).reduce((a,b)=>a+b,0);

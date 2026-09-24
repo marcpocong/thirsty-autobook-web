@@ -33,6 +33,17 @@ export class ApiAutomationLock {
         }
         return lock;
     }
+    /**
+     * Precision pre-release arm: one durable rewrite well before T-0, so the release
+     * instant itself needs no lock I/O. From here recovery must assume a POST may have
+     * left once releaseAt has passed.
+     */
+    async armed(releaseMs, dispatchDeadlineMs, armedCount) {
+        if (!Number.isSafeInteger(releaseMs) || !Number.isSafeInteger(dispatchDeadlineMs) || dispatchDeadlineMs < releaseMs || !Number.isInteger(armedCount) || armedCount < 1)
+            throw Error('LOCK_ARM_INVALID');
+        await this.enqueue(() => this.write('FINAL_ACTION_ARMED', { armedAt: new Date().toISOString(), releaseAt: new Date(releaseMs).toISOString(),
+            dispatchDeadlineAt: new Date(dispatchDeadlineMs).toISOString(), armedCount }));
+    }
     async dispatching() { await this.enqueue(() => this.write('FINAL_ACTION_DISPATCHING')); }
     async held(holdExpiresAt) {
         if (!Number.isFinite(Date.parse(holdExpiresAt)) || Date.parse(holdExpiresAt) <= Date.now())

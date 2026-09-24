@@ -1,11 +1,15 @@
 import { createSocket } from 'node:dgram';
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { z } from 'zod';
+import { clockConsensus } from './release-clock.js';
 const NTP_UNIX_EPOCH_SECONDS = 2_208_988_800;
 const STATE_PATH = resolve('.local/network-clock.json');
 export const NETWORK_CLOCK_MAX_AGE_MS = 2 * 60 * 60_000;
-const ClockStateSchema = z.object({ source: z.string().regex(/^time(?:[1-4])?\.google\.com$/), offsetMs: z.number().finite(), roundTripMs: z.number().finite().nonnegative(), synchronizedAt: z.iso.datetime() }).strict();
+const ClockStateSchema = z.object({ source: z.string().regex(/^time(?:[1-4])?\.google\.com$/), offsetMs: z.number().finite(), roundTripMs: z.number().finite().nonnegative(), synchronizedAt: z.iso.datetime(),
+    // Present when the offset is a multi-sample consensus (ntp-consensus-v1); source/roundTripMs then describe its fastest kept sample.
+    method: z.literal('ntp-consensus-v1').optional(), sampleCount: z.number().int().nonnegative().optional(), keptCount: z.number().int().nonnegative().optional(),
+    spreadMs: z.number().finite().nonnegative().optional(), uncertaintyMs: z.number().finite().nonnegative().optional(), quality: z.enum(['GOOD', 'DEGRADED']).optional() }).strict();
 function writeTimestamp(packet, offset, unixMs) {
     const seconds = Math.floor(unixMs / 1000) + NTP_UNIX_EPOCH_SECONDS;
     const fraction = Math.floor(((unixMs % 1000) / 1000) * 0x1_0000_0000);
@@ -54,6 +58,34 @@ async function sample(host, timeoutMs = 2500) {
             finish(Error('NETWORK_CLOCK_TRANSPORT_FAILED')); });
     });
 }
+export const GOOGLE_NTP_HOSTS = ['time.google.com', 'time1.google.com', 'time2.google.com', 'time3.google.com', 'time4.google.com'];
+/** One bounded consensus round: every approved Google host, several spaced samples each, all in parallel. */
+export async function queryGoogleClockConsensus(options = {}) {
+    const { samplesPerHost = 2, spacingMs = 120, timeoutMs = 1200, hosts = GOOGLE_NTP_HOSTS } = options;
+    const sampler = options.sampler ?? (async (host, timeout) => { const value = await sample(host, timeout); return { host: value.source, offsetMs: value.offsetMs, roundTripMs: value.roundTripMs }; });
+    const settled = await Promise.allSettled(Array.from({ length: samplesPerHost }, (_, round) => hosts.map(async (host) => {
+        if (round)
+            await new Promise(done => setTimeout(done, round * spacingMs));
+        return sampler(host, timeoutMs);
+    })).flat());
+    return clockConsensus(settled.flatMap(result => result.status === 'fulfilled' ? [result.value] : []), options.minKept);
+}
+export function consensusState(consensus, wallNow = Date.now()) {
+    const best = consensus.samples.filter(value => value.kept).sort((a, b) => a.roundTripMs - b.roundTripMs)[0];
+    return ClockStateSchema.parse({ source: consensus.bestHost, offsetMs: consensus.offsetMs, roundTripMs: best.roundTripMs, synchronizedAt: new Date(wallNow + consensus.offsetMs).toISOString(),
+        method: consensus.method, sampleCount: consensus.sampleCount, keptCount: consensus.keptCount, spreadMs: consensus.spreadMs, uncertaintyMs: consensus.uncertaintyMs, quality: consensus.quality });
+}
+/** Sanitized evidence of one consensus round (hosts, offsets and round trips only). */
+export function recordClockEvidence(consensus, checkpoint, directory = resolve('.local/network-clock-evidence'), wallNow = Date.now()) {
+    if (!/^[A-Z0-9_+-]{1,24}$/.test(checkpoint))
+        throw Error('NETWORK_CLOCK_CHECKPOINT_INVALID');
+    mkdirSync(directory, { recursive: true, mode: 0o700 });
+    const at = new Date(wallNow + consensus.offsetMs).toISOString();
+    const path = join(directory, `${at.replace(/[:.]/g, '-')}-${checkpoint}.json`);
+    writeFileSync(path, JSON.stringify({ checkpoint, capturedAt: at, ...consensus }, null, 2) + '\n', { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+    return path;
+}
+/** Single fastest sample (pre-consensus method); kept for callers that need one quick reading. */
 export async function queryGoogleNetworkClock() {
     const settled = await Promise.allSettled(['time.google.com', 'time1.google.com', 'time2.google.com'].map(host => sample(host)));
     const values = settled.flatMap(result => result.status === 'fulfilled' ? [result.value] : []).sort((a, b) => a.roundTripMs - b.roundTripMs);
@@ -61,8 +93,12 @@ export async function queryGoogleNetworkClock() {
         throw Error('NETWORK_CLOCK_SYNC_FAILED');
     return ClockStateSchema.parse(values[0]);
 }
-export async function synchronizeNetworkClock(path = STATE_PATH) {
-    const state = await queryGoogleNetworkClock();
+/** Consensus sync (any successful sample is accepted here; a near-release round uses its own stricter rule). */
+export async function synchronizeNetworkClock(path = STATE_PATH, round = () => queryGoogleClockConsensus()) {
+    const state = consensusState(await round());
+    return writeNetworkClockState(state, path);
+}
+export function writeNetworkClockState(state, path = STATE_PATH) {
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
     const temporary = `${path}.tmp`;
     writeFileSync(temporary, JSON.stringify(state, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 });

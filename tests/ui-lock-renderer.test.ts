@@ -281,27 +281,55 @@ it('shows every bot browser, brings one forward, and closes them all from the st
   await page.close();
 });
 
-it('shows the live release slot watch with exact change times',async()=>{
+it('shows the live release slot watch with request/response windows, observer health and the first published grid',async()=>{
   const hours=Array.from({length:16},(_,i)=>`${String(i+8).padStart(2,'0')}:00`);
   const releaseMs=Date.parse('2026-09-24T00:00:00.000Z');
-  const cells=[1,2,3,4,5,6,7].flatMap(court=>hours.map(hour=>({court,hour,state:court===7&&hour==='18:00'?'TAKEN':'OPEN',record:court===7&&hour==='18:00',...(court===7&&hour==='18:00'?{changedSinceReleaseMs:790}:{})})));
-  const timeline=[{seq:2,court:0,hour:'',kind:'published',openCount:112,takenCount:0,observedAt:'2026-09-24T00:00:00.290Z',sinceReleaseMs:290,windowMs:null},
-    {seq:3,court:7,hour:'18:00',kind:'state',from:'OPEN',to:'TAKEN',observedAt:'2026-09-24T00:00:00.790Z',sinceReleaseMs:790,windowMs:500}];
+  const target=(court:number,hour:string)=>court===7&&hour==='18:00';
+  const cells=[1,2,3,4,5,6,7].flatMap(court=>hours.map(hour=>({court,hour,state:target(court,hour)?'TAKEN':'OPEN',record:target(court,hour),first:'OPEN',firstPrice:Number(hour.slice(0,2))>=16?700:600,
+    ...(target(court,hour)?{changedSinceReleaseMs:790}:{})})));
+  const r2={seq:2,requestOffsetMs:250,responseOffsetMs:290},r3={seq:3,requestOffsetMs:500,responseOffsetMs:790};
+  const timeline=[{kind:'published',court:0,hour:'',openCount:112,unavailableCount:0,unknownCount:0,before:{seq:1,requestOffsetMs:-2000,responseOffsetMs:-1800},after:r2,overlapping:false},
+    {kind:'state',court:7,hour:'18:00',from:'OPEN',to:'UNAVAILABLE',before:r2,after:r3,overlapping:false}];
   const page=await renderer({slotWatch:{id:'w1',date:'2026-09-26',releaseMs,status:'watching',startedAt:'2026-09-23T23:59:00.000Z',endsAtMs:releaseMs+900000,polls:3,failedPolls:0,
-    lastPollAt:'2026-09-24T00:00:00.790Z',lastLatencyMs:40,dateReleased:true,cells,timeline,logPath:'C:\\bot\\.local\\slot-watch\\2026-09-26_w1.ndjson'}});
+    inFlight:1,maxInFlight:6,notLaunched:0,publication:{lastUnpublished:{seq:1,requestOffsetMs:-2000,responseOffsetMs:-1800},firstPublished:r2,firstPublishedResponse:r2},current:r3,
+    lastPollAt:'2026-09-24T00:00:00.790Z',lastLatencyMs:40,dateReleased:true,cells,timeline,logPath:'C:\\bot\\.local\\slot-watch\\2026-09-26_w1.ndjson'},
+    releaseForensics:[{runId:'run-1',date:'2026-09-26',reference:'release',referenceMs:releaseMs,status:'final',generatedAt:'2026-09-24T00:15:01.000Z',
+      firstPostOffsetMs:3.4,lastPostOffsetMs:5.1,firstPublished:r2,traceAvailable:true,outcome:'OBJECTIVE_NOT_ACHIEVED_ALL_REJECTED',
+      targets:[{workerId:'A',court:3,startTime:'15:00',endTime:'18:00',postOffsetMs:3.4,firstPublishedState:'FULLY OPEN',statusCode:409,errorHint:'availability',finalState:'REJECTED',
+        headersOffsetMs:17483.4,bodyOffsetMs:17544,protocol:'h2',reused:true}],reportPath:'C:\\bot\\.local\\release-forensics\\run-1\\report.txt'}]});
   expect(await page.locator('#status-watch-text').innerText()).toContain('Watching · 3 reads');
   await page.locator('#status-watch').click();
   expect(await page.locator('#view-slots').isVisible()).toBe(true);
   const taken=page.locator('#slot-watch-matrix td.slot-taken');
   expect(await taken.count()).toBe(1);
-  expect(await taken.getAttribute('title')).toContain('Court 7 · 6:00 PM · Taken / unavailable · public booking record · last change +0.790 s after release');
-  expect(await page.locator('#slot-watch-matrix td.slot-open small').count()).toBe(0);
+  expect(await taken.getAttribute('title')).toBe('Court 7 · 6:00 PM · now: Unavailable · public booking record · first published: Open · PHP 700 · last change seen in a read answered +0.790 s after release');
+  expect(await page.locator('#slot-watch-meta').innerText()).toContain('1 of 6');
+  const facts=await page.locator('#slot-watch-summary').innerText();
+  expect(facts).toContain('#2 req +0.250 s → resp +0.290 s');
+  expect(facts).toContain('#1 req −2.000 s → resp −1.800 s');
   const rows=await page.locator('#slot-watch-timeline .slot-event').allInnerTexts();
   expect(rows[0]).toContain('Schedule published');
-  expect(rows[1]).toContain('+0.790 s');
-  expect(rows[1]).toContain('Open → Taken / unavailable');
+  expect(rows[1]).toContain('req +0.500 s');
+  expect(rows[1]).toContain('Open → Unavailable');
+  expect(rows[1]).toContain('between #2 req +0.250 s → resp +0.290 s and #3 req +0.500 s → resp +0.790 s');
+  const text=await page.locator('#view-slots').innerText();
+  expect(text).not.toMatch(/venue block|bot hold|admin block|likely|how fast it was taken|Taken/);
+  // The first published grid: court 7 at 6 PM was open then.
+  await page.locator('#slot-matrix-mode button[data-mode="first"]').click();
+  expect(await page.locator('#slot-watch-matrix td.slot-taken').count()).toBe(0);
+  expect(await page.locator('#slot-matrix-mode button[data-mode="first"]').getAttribute('aria-pressed')).toBe('true');
   expect(await page.locator('#stop-slot-watch').isVisible()).toBe(true);
   expect(await page.locator('#watch-next-release').isVisible()).toBe(false);
+  // Runs: concise forensic card; raw detail stays in the local report.
+  await page.locator('[data-view="runs"]').click();
+  const card=page.locator('#release-forensics-list .forensic-item');
+  expect(await card.count()).toBe(1);
+  const summary=await card.locator('summary').innerText();
+  expect(summary).toContain('FINAL');
+  expect(summary).toContain('First POST +0.003 s · last POST +0.005 s · first published grid #2 req +0.250 s → resp +0.290 s · provider trace available');
+  await card.locator('summary').click();
+  expect(await card.locator('.forensic-target').innerText()).toBe('Worker A · Court 3 · 15:00–18:00 · POST +0.003 s · first published FULLY OPEN · HTTP 409 availability · headers +17.483 s · body +17.544 s · h2 reused');
+  expect(await card.locator('.forensic-path').innerText()).toContain('release-forensics');
   await page.close();
 });
 
@@ -367,5 +395,22 @@ it('shows up to seven Precision rows (A-G) and a seven-worker status panel',asyn
   expect(await page.locator('#precision-row-3').isVisible()).toBe(true);
   expect(await page.locator('#precision-row-4').isVisible()).toBe(false);
   expect(await page.locator('.precision-warning').innerText()).toBe('These are independent checkout attempts. More than one temporary QR hold may be created. Payment remains manual.');
+  await page.close();
+});
+
+it('marks a duplicate-identity Precision worker as not dispatching while the others stay listed',async()=>{
+  const precisionBooking=bookingView(ConfigSchema.parse({...defaultSetup,BOOKING_METHOD:'proofless',DURATION_HOURS:3,RELEASE_STRATEGY:'precision',
+    PRECISION_TARGETS:[{court:7,start:'17:00',durationHours:3},{court:5,start:'17:00',durationHours:3},{court:3,start:'17:00',durationHours:3}],
+    PLAYER_FULL_NAME:'Fixture Player',PLAYER_PHONE:'09123456789',PLAYER_EMAIL:'fixture@example.invalid'}));
+  const page=await renderer({booking:precisionBooking,identityIssues:['Worker B — customer identity invalid: duplicates Worker A. Worker B will not dispatch; the other valid Precision attempts remain usable.'],
+    precision:{frozen:false,targets:[
+      {workerId:'A',court:7,startTime:'17:00',endTime:'20:00',durationHours:3,evidence:'NO_PUBLIC_BOOKING_DATE_UNRELEASED',eligible:true},
+      {workerId:'B',court:5,startTime:'17:00',endTime:'20:00',durationHours:3,state:'IDENTITY_FAILED',code:'DUPLICATE_ONDA_CUSTOMER_ID',duplicateOf:'A'},
+      {workerId:'C',court:3,startTime:'17:00',endTime:'20:00',durationHours:3,evidence:'NO_PUBLIC_BOOKING_DATE_UNRELEASED',eligible:true}]}});
+  const lines=await page.locator('#precision-table .precision-line').allInnerTexts();
+  expect(lines[1]).toContain('NOT DISPATCHED — IDENTITY FAILED: duplicate Onda customer ID (duplicates Worker A)');
+  expect(lines[0]).toContain('Awaiting release');
+  expect(lines[2]).toContain('Awaiting release');
+  expect(await page.locator('#precision-summary').innerText()).toContain('Worker B — customer identity invalid: duplicates Worker A');
   await page.close();
 });

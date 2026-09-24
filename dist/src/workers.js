@@ -10,6 +10,8 @@ export const PRECISION_MAX_ATTEMPTS = 7;
 export const PRECISION_WORKER_IDS = WORKER_IDS.slice(0, PRECISION_MAX_ATTEMPTS);
 /** Workers a saved plan needs: one per Precision attempt (A-G in row order, no grouping), otherwise the General allocation. */
 export function planWorkerIds(setup) {
+    if (setup.RELEASE_STRATEGY === 'precision' && setup.PRECISION_PHASE3)
+        return [...new Set([...setup.PRECISION_PHASE3.wave1.map(value => value.workerId), ...setup.PRECISION_PHASE3.standby])];
     if (setup.RELEASE_STRATEGY === 'precision')
         return PRECISION_WORKER_IDS.slice(0, Math.max(1, Math.min(PRECISION_MAX_ATTEMPTS, setup.PRECISION_TARGETS?.length ?? 0)));
     return requiredWorkerIds(setup.BOOKING_TYPE, setup.COURT_COUNT);
