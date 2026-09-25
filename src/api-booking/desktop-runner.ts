@@ -118,7 +118,9 @@ const sanitizedCheckoutCapture=(response:CheckoutHttpResponse)=>{
   let parsed:unknown;
   try{parsed=JSON.parse(response.body);}catch{}
   return {capturedAt:new Date(nowMs()).toISOString(),status:response.status,contentType:response.contentType,
-    diagnostic:checkoutDiagnostic(response),observed:observedResponse(parsed,'RESPONSE_CAPTURED')};
+    diagnostic:checkoutDiagnostic(response),observed:observedResponse(parsed,'RESPONSE_CAPTURED'),
+    // Structure-first evidence of a rejection (sanitized in the transport); never the body text.
+    ...(response.evidence?{evidence:response.evidence}:{})};
 };
 const connectedBrowsers: Browser[] = [];
 let liveLock:ApiAutomationLock|undefined,retainLiveLock=false,verifiedHold=false;
