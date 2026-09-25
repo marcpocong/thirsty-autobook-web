@@ -1,0 +1,11 @@
+{"type":"run-start","runId":"c57b6679-2581-4b9b-9405-65abf3437824","label":"prepare","at":"2026-09-23T02:01:18.830Z","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"c57b6679-2581-4b9b-9405-65abf3437824","at":"2026-09-23T02:01:18.830Z","text":"Run started: prepare · Timing log: <install>/.local\\booking-runs\\c57b6679-2581-4b9b-9405-65abf3437824.ndjson","level":"info","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"c57b6679-2581-4b9b-9405-65abf3437824","at":"2026-09-23T02:01:18.841Z","text":"Checking the old worker, Onda browser, selected slots, and payment hold before API preparation.","level":"info","elapsedMs":11,"deltaMs":11}
+{"type":"activity","runId":"c57b6679-2581-4b9b-9405-65abf3437824","at":"2026-09-23T02:01:21.974Z","text":"Preparing a fresh schedule while retaining the previous verified hold record and QR tab.","level":"info","elapsedMs":3144,"deltaMs":3133}
+{"type":"activity","runId":"c57b6679-2581-4b9b-9405-65abf3437824","at":"2026-09-23T02:01:21.977Z","text":"Process started: resetPrepare","level":"info","elapsedMs":3147,"deltaMs":3}
+{"type":"activity","runId":"c57b6679-2581-4b9b-9405-65abf3437824","at":"2026-09-23T02:01:23.464Z","text":"Preparation: Starting required browser(s)...","level":"info","elapsedMs":4633,"deltaMs":1486}
+{"type":"activity","runId":"c57b6679-2581-4b9b-9405-65abf3437824","at":"2026-09-23T02:01:23.505Z","text":"Preparation: Checking previous session...","level":"info","elapsedMs":4675,"deltaMs":42}
+{"type":"activity","runId":"c57b6679-2581-4b9b-9405-65abf3437824","at":"2026-09-23T02:01:31.005Z","text":"Preparation: Preparing Onda...","level":"info","elapsedMs":12175,"deltaMs":7500}
+{"type":"activity","runId":"c57b6679-2581-4b9b-9405-65abf3437824","at":"2026-09-23T02:01:33.228Z","text":"AUTOMATION ABORTED — USER CONTROL RESTORED","level":"info","elapsedMs":14398,"deltaMs":2223}
+{"type":"activity","runId":"c57b6679-2581-4b9b-9405-65abf3437824","at":"2026-09-23T02:01:33.232Z","text":"Run finished: aborted","level":"info","elapsedMs":14402,"deltaMs":4}
+{"type":"run-end","runId":"c57b6679-2581-4b9b-9405-65abf3437824","at":"2026-09-23T02:01:33.238Z","elapsedMs":14408,"outcome":"aborted","label":"resetPrepare"}

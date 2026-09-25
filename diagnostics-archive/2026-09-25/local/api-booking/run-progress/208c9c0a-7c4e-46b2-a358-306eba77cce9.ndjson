@@ -1,0 +1,11 @@
+{"runId":"208c9c0a-7c4e-46b2-a358-306eba77cce9","mode":"prepare","targetDate":"2026-09-23","stage":"RUN_STARTED","at":"2026-09-22T17:50:34.852Z","elapsedMs":1,"sincePreviousMs":1}
+{"runId":"208c9c0a-7c4e-46b2-a358-306eba77cce9","mode":"prepare","targetDate":"2026-09-23","stage":"RUN_CONFIGURATION","at":"2026-09-22T17:50:34.857Z","elapsedMs":6,"sincePreviousMs":5,"sessionMode":"normal","bookingMethod":"api-first","workerCount":4}
+{"runId":"208c9c0a-7c4e-46b2-a358-306eba77cce9","mode":"prepare","targetDate":"2026-09-23","stage":"PREPARING_BROWSER","at":"2026-09-22T17:50:34.862Z","elapsedMs":11,"sincePreviousMs":5,"workerId":"A"}
+{"runId":"208c9c0a-7c4e-46b2-a358-306eba77cce9","mode":"prepare","targetDate":"2026-09-23","stage":"PREPARING_BROWSER","at":"2026-09-22T17:50:34.887Z","elapsedMs":36,"sincePreviousMs":25,"workerId":"B"}
+{"runId":"208c9c0a-7c4e-46b2-a358-306eba77cce9","mode":"prepare","targetDate":"2026-09-23","stage":"PREPARING_BROWSER","at":"2026-09-22T17:50:34.901Z","elapsedMs":50,"sincePreviousMs":14,"workerId":"C"}
+{"runId":"208c9c0a-7c4e-46b2-a358-306eba77cce9","mode":"prepare","targetDate":"2026-09-23","stage":"PREPARING_BROWSER","at":"2026-09-22T17:50:34.912Z","elapsedMs":61,"sincePreviousMs":11,"workerId":"D"}
+{"runId":"208c9c0a-7c4e-46b2-a358-306eba77cce9","mode":"prepare","targetDate":"2026-09-23","stage":"BROWSER_READY","at":"2026-09-22T17:50:36.526Z","elapsedMs":1675,"sincePreviousMs":1614,"workerId":"C","port":19446}
+{"runId":"208c9c0a-7c4e-46b2-a358-306eba77cce9","mode":"prepare","targetDate":"2026-09-23","stage":"BROWSER_READY","at":"2026-09-22T17:50:36.528Z","elapsedMs":1677,"sincePreviousMs":2,"workerId":"A","port":19444}
+{"runId":"208c9c0a-7c4e-46b2-a358-306eba77cce9","mode":"prepare","targetDate":"2026-09-23","stage":"BROWSER_READY","at":"2026-09-22T17:50:36.529Z","elapsedMs":1678,"sincePreviousMs":1,"workerId":"B","port":19445}
+{"runId":"208c9c0a-7c4e-46b2-a358-306eba77cce9","mode":"prepare","targetDate":"2026-09-23","stage":"BROWSER_READY","at":"2026-09-22T17:50:36.530Z","elapsedMs":1679,"sincePreviousMs":1,"workerId":"D","port":19447}
+{"runId":"208c9c0a-7c4e-46b2-a358-306eba77cce9","mode":"prepare","targetDate":"2026-09-23","stage":"PROCESS_EXIT","at":"2026-09-22T17:50:36.540Z","elapsedMs":1688,"sincePreviousMs":9,"exitCode":0}

@@ -1,0 +1,9 @@
+{"runId":"bb76134e-930e-494b-90ac-2c565e75c473","mode":"dry","targetDate":"2026-09-21","stage":"RUN_STARTED","at":"2026-09-20T20:50:26.436Z","elapsedMs":1,"sincePreviousMs":1}
+{"runId":"bb76134e-930e-494b-90ac-2c565e75c473","mode":"dry","targetDate":"2026-09-21","stage":"PREPARING_BROWSER","at":"2026-09-20T20:50:26.457Z","elapsedMs":22,"sincePreviousMs":21,"workerId":"A"}
+{"runId":"bb76134e-930e-494b-90ac-2c565e75c473","mode":"dry","targetDate":"2026-09-21","stage":"BROWSER_READY","at":"2026-09-20T20:50:28.870Z","elapsedMs":2435,"sincePreviousMs":2413,"workerId":"A","port":19444}
+{"runId":"bb76134e-930e-494b-90ac-2c565e75c473","mode":"dry","targetDate":"2026-09-21","stage":"PREPARING_BROWSER","at":"2026-09-20T20:50:28.895Z","elapsedMs":2460,"sincePreviousMs":25,"workerId":"B"}
+{"runId":"bb76134e-930e-494b-90ac-2c565e75c473","mode":"dry","targetDate":"2026-09-21","stage":"BROWSER_READY","at":"2026-09-20T20:50:31.323Z","elapsedMs":4888,"sincePreviousMs":2428,"workerId":"B","port":19445}
+{"runId":"bb76134e-930e-494b-90ac-2c565e75c473","mode":"dry","targetDate":"2026-09-21","stage":"FETCHING_AVAILABILITY","at":"2026-09-20T20:50:31.323Z","elapsedMs":4888,"sincePreviousMs":0}
+{"runId":"bb76134e-930e-494b-90ac-2c565e75c473","mode":"dry","targetDate":"2026-09-21","stage":"CANDIDATE_READY","at":"2026-09-20T20:50:31.736Z","elapsedMs":5301,"sincePreviousMs":413,"date":"2026-09-21","court":2,"courtB":2,"startTime":"08:00","durationHours":6,"price":3600,"availabilityMs":413}
+{"runId":"bb76134e-930e-494b-90ac-2c565e75c473","mode":"dry","targetDate":"2026-09-21","stage":"DRY_RUN_COMPLETE","at":"2026-09-20T20:50:31.736Z","elapsedMs":5301,"sincePreviousMs":0}
+{"runId":"bb76134e-930e-494b-90ac-2c565e75c473","mode":"dry","targetDate":"2026-09-21","stage":"PROCESS_EXIT","at":"2026-09-20T20:50:31.743Z","elapsedMs":5308,"sincePreviousMs":7,"exitCode":0}

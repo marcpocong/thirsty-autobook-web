@@ -1,0 +1,10 @@
+{"runId":"3b478e95-5f58-46cd-9715-8e852f1c224e","mode":"prepare","targetDate":"2026-09-24","stage":"RUN_STARTED","at":"2026-09-21T20:39:05.327Z","elapsedMs":40,"sincePreviousMs":40}
+{"runId":"3b478e95-5f58-46cd-9715-8e852f1c224e","mode":"prepare","targetDate":"2026-09-24","stage":"PREPARING_BROWSER","at":"2026-09-21T20:39:05.358Z","elapsedMs":71,"sincePreviousMs":31,"workerId":"A"}
+{"runId":"3b478e95-5f58-46cd-9715-8e852f1c224e","mode":"prepare","targetDate":"2026-09-24","stage":"PREPARING_BROWSER","at":"2026-09-21T20:39:05.373Z","elapsedMs":85,"sincePreviousMs":14,"workerId":"B"}
+{"runId":"3b478e95-5f58-46cd-9715-8e852f1c224e","mode":"prepare","targetDate":"2026-09-24","stage":"PREPARING_BROWSER","at":"2026-09-21T20:39:05.386Z","elapsedMs":98,"sincePreviousMs":13,"workerId":"C"}
+{"runId":"3b478e95-5f58-46cd-9715-8e852f1c224e","mode":"prepare","targetDate":"2026-09-24","stage":"PREPARING_BROWSER","at":"2026-09-21T20:39:05.394Z","elapsedMs":107,"sincePreviousMs":9,"workerId":"D"}
+{"runId":"3b478e95-5f58-46cd-9715-8e852f1c224e","mode":"prepare","targetDate":"2026-09-24","stage":"BROWSER_READY","at":"2026-09-21T20:39:06.933Z","elapsedMs":1646,"sincePreviousMs":1539,"workerId":"A","port":19444}
+{"runId":"3b478e95-5f58-46cd-9715-8e852f1c224e","mode":"prepare","targetDate":"2026-09-24","stage":"BROWSER_READY","at":"2026-09-21T20:39:06.956Z","elapsedMs":1669,"sincePreviousMs":23,"workerId":"D","port":19447}
+{"runId":"3b478e95-5f58-46cd-9715-8e852f1c224e","mode":"prepare","targetDate":"2026-09-24","stage":"BROWSER_READY","at":"2026-09-21T20:39:06.967Z","elapsedMs":1679,"sincePreviousMs":10,"workerId":"B","port":19445}
+{"runId":"3b478e95-5f58-46cd-9715-8e852f1c224e","mode":"prepare","targetDate":"2026-09-24","stage":"BROWSER_READY","at":"2026-09-21T20:39:07.023Z","elapsedMs":1736,"sincePreviousMs":57,"workerId":"C","port":19446}
+{"runId":"3b478e95-5f58-46cd-9715-8e852f1c224e","mode":"prepare","targetDate":"2026-09-24","stage":"PROCESS_EXIT","at":"2026-09-21T20:39:07.035Z","elapsedMs":1748,"sincePreviousMs":12,"exitCode":0}

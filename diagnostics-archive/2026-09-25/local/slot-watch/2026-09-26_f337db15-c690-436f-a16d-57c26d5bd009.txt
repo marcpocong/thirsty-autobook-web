@@ -1,0 +1,20 @@
+RELEASE SLOT WATCH — target 2026-09-26
+Release: 2026-09-24 08:00:00.000 Manila · network clock synchronized (offset 47.2 ms)
+Watch stopped: release aborted · 0 reads (0 failed) · median read ? ms
+Target date first visible: not observed after release
+Open at first read: 0 · still open at end: 0
+Fastest take: none observed
+
+TAKEN AFTER OPENING (a slot changed between the previous read and the time shown)
+  none observed
+
+NEVER OPEN (already unavailable at the first published read)
+  none
+
+REOPENED LATER (for example an unpaid hold expiring)
+  none
+
+FINAL MATRIX (O open, X taken, U unreleased, ? unknown)
+       08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+
+Full read-by-read log: <install>/.local\slot-watch\2026-09-26_f337db15-c690-436f-a16d-57c26d5bd009.ndjson

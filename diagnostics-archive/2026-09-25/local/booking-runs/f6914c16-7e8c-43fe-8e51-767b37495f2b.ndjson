@@ -1,0 +1,7 @@
+{"type":"run-start","runId":"f6914c16-7e8c-43fe-8e51-767b37495f2b","label":"blockAudit","at":"2026-09-24T23:26:29.757Z","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"f6914c16-7e8c-43fe-8e51-767b37495f2b","at":"2026-09-24T23:26:29.758Z","text":"Run started: blockAudit · Timing log: <install>/.local\\booking-runs\\f6914c16-7e8c-43fe-8e51-767b37495f2b.ndjson","level":"info","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"f6914c16-7e8c-43fe-8e51-767b37495f2b","at":"2026-09-24T23:26:29.769Z","text":"Process started: blockAudit","level":"info","elapsedMs":12,"deltaMs":12}
+{"type":"activity","runId":"f6914c16-7e8c-43fe-8e51-767b37495f2b","at":"2026-09-24T23:26:30.827Z","text":"2026-09-28 · Open 0 · Blocked 14 · Unreleased 98 · Unknown 0. No hold or booking was created.","level":"info","elapsedMs":1070,"deltaMs":1058}
+{"type":"activity","runId":"f6914c16-7e8c-43fe-8e51-767b37495f2b","at":"2026-09-24T23:26:30.839Z","text":"Process completed: blockAudit · exit code 0","level":"info","elapsedMs":1082,"deltaMs":12}
+{"type":"activity","runId":"f6914c16-7e8c-43fe-8e51-767b37495f2b","at":"2026-09-24T23:26:30.845Z","text":"Run finished: complete","level":"info","elapsedMs":1087,"deltaMs":5}
+{"type":"run-end","runId":"f6914c16-7e8c-43fe-8e51-767b37495f2b","at":"2026-09-24T23:26:30.850Z","elapsedMs":1092,"outcome":"complete","label":"blockAudit"}

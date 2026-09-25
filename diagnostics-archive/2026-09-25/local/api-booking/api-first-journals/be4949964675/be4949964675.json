@@ -1,0 +1,76 @@
+{
+  "key": "be494996467546b536e94e8b3d3229c6b47869dd708348180a0791cd179c7c34",
+  "state": "verified",
+  "createdAt": "2026-09-21T21:00:20.320Z",
+  "updatedAt": "2026-09-21T21:00:22.113Z",
+  "attempt": {
+    "attemptId": "be494996467546b536e94e8b3d3229c6b47869dd708348180a0791cd179c7c34",
+    "planFingerprint": "[REDACTED]",
+    "targetDate": "2026-09-23",
+    "courtIds": [
+      7,
+      6
+    ],
+    "hourlyBoundaries": [
+      {
+        "startTime": "08:00",
+        "endTime": "09:00"
+      },
+      {
+        "startTime": "09:00",
+        "endTime": "10:00"
+      },
+      {
+        "startTime": "10:00",
+        "endTime": "11:00"
+      },
+      {
+        "startTime": "08:00",
+        "endTime": "09:00"
+      },
+      {
+        "startTime": "09:00",
+        "endTime": "10:00"
+      },
+      {
+        "startTime": "10:00",
+        "endTime": "11:00"
+      }
+    ],
+    "expectedBookingCount": 6,
+    "maximumAmount": 3600,
+    "stage": "dispatching"
+  },
+  "observedResponse": {
+    "success": true,
+    "bookingIds": [
+      "[ref-176]",
+      "[ref-177]",
+      "[ref-178]",
+      "[ref-179]",
+      "[ref-180]",
+      "[ref-181]"
+    ],
+    "bookingNumbers": [
+      "[ref-182]",
+      "[ref-183]",
+      "[ref-184]",
+      "[ref-185]",
+      "[ref-186]",
+      "[ref-187]"
+    ],
+    "bookingSessionIds": "[REDACTED]",
+    "holdExpiresAt": [
+      "2026-09-21T21:10:22.097+00:00",
+      "2026-09-21T21:10:22.097+00:00",
+      "2026-09-21T21:10:22.097+00:00",
+      "2026-09-21T21:10:22.097+00:00",
+      "2026-09-21T21:10:22.097+00:00",
+      "2026-09-21T21:10:22.097+00:00"
+    ],
+    "transactionAmount": 3600,
+    "transactionId": "[ref-190]",
+    "trustedTotalAmount": 3600,
+    "validationCode": "CHECKOUT_RESPONSE_VERIFIED"
+  }
+}

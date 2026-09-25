@@ -1,0 +1,13 @@
+{"runId":"ac6521b4-f1ae-4ebc-9049-1db715289b2b","mode":"live-now","targetDate":"2026-09-23","stage":"RUN_STARTED","at":"2026-09-22T17:50:20.329Z","elapsedMs":1,"sincePreviousMs":1}
+{"runId":"ac6521b4-f1ae-4ebc-9049-1db715289b2b","mode":"live-now","targetDate":"2026-09-23","stage":"RUN_CONFIGURATION","at":"2026-09-22T17:50:20.335Z","elapsedMs":6,"sincePreviousMs":5,"sessionMode":"normal","bookingMethod":"api-first","workerCount":4}
+{"runId":"ac6521b4-f1ae-4ebc-9049-1db715289b2b","mode":"live-now","targetDate":"2026-09-23","stage":"PREPARING_BROWSER","at":"2026-09-22T17:50:20.350Z","elapsedMs":21,"sincePreviousMs":15,"workerId":"A"}
+{"runId":"ac6521b4-f1ae-4ebc-9049-1db715289b2b","mode":"live-now","targetDate":"2026-09-23","stage":"PREPARING_BROWSER","at":"2026-09-22T17:50:20.374Z","elapsedMs":46,"sincePreviousMs":25,"workerId":"B"}
+{"runId":"ac6521b4-f1ae-4ebc-9049-1db715289b2b","mode":"live-now","targetDate":"2026-09-23","stage":"PREPARING_BROWSER","at":"2026-09-22T17:50:20.387Z","elapsedMs":58,"sincePreviousMs":12,"workerId":"C"}
+{"runId":"ac6521b4-f1ae-4ebc-9049-1db715289b2b","mode":"live-now","targetDate":"2026-09-23","stage":"PREPARING_BROWSER","at":"2026-09-22T17:50:20.399Z","elapsedMs":70,"sincePreviousMs":12,"workerId":"D"}
+{"runId":"ac6521b4-f1ae-4ebc-9049-1db715289b2b","mode":"live-now","targetDate":"2026-09-23","stage":"BROWSER_READY","at":"2026-09-22T17:50:21.947Z","elapsedMs":1618,"sincePreviousMs":1548,"workerId":"C","port":19446}
+{"runId":"ac6521b4-f1ae-4ebc-9049-1db715289b2b","mode":"live-now","targetDate":"2026-09-23","stage":"BROWSER_READY","at":"2026-09-22T17:50:21.953Z","elapsedMs":1624,"sincePreviousMs":6,"workerId":"D","port":19447}
+{"runId":"ac6521b4-f1ae-4ebc-9049-1db715289b2b","mode":"live-now","targetDate":"2026-09-23","stage":"BROWSER_READY","at":"2026-09-22T17:50:21.965Z","elapsedMs":1637,"sincePreviousMs":13,"workerId":"B","port":19445}
+{"runId":"ac6521b4-f1ae-4ebc-9049-1db715289b2b","mode":"live-now","targetDate":"2026-09-23","stage":"BROWSER_READY","at":"2026-09-22T17:50:21.969Z","elapsedMs":1640,"sincePreviousMs":3,"workerId":"A","port":19444}
+{"runId":"ac6521b4-f1ae-4ebc-9049-1db715289b2b","mode":"live-now","targetDate":"2026-09-23","stage":"FETCHING_AVAILABILITY","at":"2026-09-22T17:50:21.969Z","elapsedMs":1641,"sincePreviousMs":1}
+{"runId":"ac6521b4-f1ae-4ebc-9049-1db715289b2b","mode":"live-now","targetDate":"2026-09-23","stage":"FAILED","at":"2026-09-22T17:50:23.442Z","elapsedMs":3113,"sincePreviousMs":1472,"code":"API_NO_AVAILABLE_CANDIDATE"}
+{"runId":"ac6521b4-f1ae-4ebc-9049-1db715289b2b","mode":"live-now","targetDate":"2026-09-23","stage":"PROCESS_EXIT","at":"2026-09-22T17:50:23.457Z","elapsedMs":3128,"sincePreviousMs":15,"exitCode":1}

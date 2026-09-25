@@ -1,0 +1,1874 @@
+{
+  "version": 1,
+  "key": "2026-09-24@2026-09-22T00-00-00-000Z",
+  "origin": "HISTORICAL_PRE_PHASE3",
+  "targetDate": "2026-09-24",
+  "dayOfWeek": "Thursday",
+  "releaseMs": 1790035200000,
+  "releaseAt": "2026-09-22T00:00:00.000Z",
+  "sources": {
+    "slotWatch": [],
+    "runProgress": [
+      "7df09f44-3908-4191-a12d-092fbdba6b83.ndjson"
+    ],
+    "stoppedBeforeRelease": [
+      "e132b978-d9e0-4022-be80-47a8e1e7b531.ndjson",
+      "a82bcd07-cddb-440d-9b8e-11997896c02a.ndjson"
+    ],
+    "forensics": [],
+    "bookingRuns": [
+      "47182ef4-64f1-488d-8a1a-269586fe39ff",
+      "668e8d6b-723f-49b8-a3fa-0d7a01aa594a",
+      "9d5479b8-adb9-4bff-a0f8-91fd680867ee",
+      "ce8762d2-1419-4950-bb5c-5a7fc9c7332e",
+      "e2823851-f03d-492f-b0e1-511226a02d54"
+    ],
+    "ignoredDuplicates": []
+  },
+  "quality": {
+    "label": "NONE",
+    "reasons": [
+      "No published availability was observed after release."
+    ],
+    "metrics": {
+      "source": "none",
+      "observerVersion": null,
+      "earliestRequestOffsetMs": null,
+      "earliestResponseOffsetMs": null,
+      "firstPublishedRequestOffsetMs": null,
+      "firstPublishedResponseOffsetMs": null,
+      "firstPublishedComplete": null,
+      "firstPublishedCache": null,
+      "cacheCertain": false,
+      "readsAnswered": 0,
+      "readsFailed": 0,
+      "readsNotLaunched": 0,
+      "bookingReadsAnswered": 0,
+      "bookingReadsFailed": 0,
+      "failedCourtQueries": 0,
+      "bookingsItemized": false,
+      "overlappingChanges": 0
+    }
+  },
+  "firstPublished": null,
+  "coarseSamples": [],
+  "cells": [
+    {
+      "court": 1,
+      "hour": "08:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 1,
+      "hour": "09:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 1,
+      "hour": "10:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 1,
+      "hour": "11:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 1,
+      "hour": "12:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 1,
+      "hour": "13:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 1,
+      "hour": "14:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 1,
+      "hour": "15:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 1,
+      "hour": "16:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 1,
+      "hour": "17:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 1,
+      "hour": "18:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 1,
+      "hour": "19:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 1,
+      "hour": "20:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 1,
+      "hour": "21:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 1,
+      "hour": "22:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 1,
+      "hour": "23:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 2,
+      "hour": "08:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 2,
+      "hour": "09:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 2,
+      "hour": "10:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 2,
+      "hour": "11:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 2,
+      "hour": "12:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 2,
+      "hour": "13:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 2,
+      "hour": "14:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 2,
+      "hour": "15:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 2,
+      "hour": "16:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 2,
+      "hour": "17:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 2,
+      "hour": "18:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 2,
+      "hour": "19:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 2,
+      "hour": "20:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 2,
+      "hour": "21:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 2,
+      "hour": "22:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 2,
+      "hour": "23:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 3,
+      "hour": "08:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 3,
+      "hour": "09:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 3,
+      "hour": "10:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 3,
+      "hour": "11:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 3,
+      "hour": "12:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 3,
+      "hour": "13:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 3,
+      "hour": "14:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 3,
+      "hour": "15:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 3,
+      "hour": "16:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 3,
+      "hour": "17:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 3,
+      "hour": "18:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 3,
+      "hour": "19:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 3,
+      "hour": "20:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 3,
+      "hour": "21:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 3,
+      "hour": "22:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 3,
+      "hour": "23:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 4,
+      "hour": "08:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 4,
+      "hour": "09:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 4,
+      "hour": "10:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 4,
+      "hour": "11:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 4,
+      "hour": "12:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 4,
+      "hour": "13:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 4,
+      "hour": "14:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 4,
+      "hour": "15:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 4,
+      "hour": "16:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 4,
+      "hour": "17:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 4,
+      "hour": "18:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 4,
+      "hour": "19:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 4,
+      "hour": "20:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 4,
+      "hour": "21:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 4,
+      "hour": "22:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 4,
+      "hour": "23:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 5,
+      "hour": "08:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 5,
+      "hour": "09:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 5,
+      "hour": "10:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 5,
+      "hour": "11:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 5,
+      "hour": "12:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 5,
+      "hour": "13:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 5,
+      "hour": "14:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 5,
+      "hour": "15:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 5,
+      "hour": "16:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 5,
+      "hour": "17:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 5,
+      "hour": "18:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 5,
+      "hour": "19:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 5,
+      "hour": "20:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 5,
+      "hour": "21:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 5,
+      "hour": "22:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 5,
+      "hour": "23:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 6,
+      "hour": "08:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 6,
+      "hour": "09:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 6,
+      "hour": "10:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 6,
+      "hour": "11:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 6,
+      "hour": "12:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 6,
+      "hour": "13:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 6,
+      "hour": "14:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 6,
+      "hour": "15:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 6,
+      "hour": "16:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 6,
+      "hour": "17:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 6,
+      "hour": "18:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 6,
+      "hour": "19:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 6,
+      "hour": "20:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 6,
+      "hour": "21:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 6,
+      "hour": "22:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 6,
+      "hour": "23:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 7,
+      "hour": "08:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 7,
+      "hour": "09:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 7,
+      "hour": "10:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 7,
+      "hour": "11:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 7,
+      "hour": "12:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 7,
+      "hour": "13:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 7,
+      "hour": "14:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 7,
+      "hour": "15:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 7,
+      "hour": "16:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 7,
+      "hour": "17:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 7,
+      "hour": "18:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 7,
+      "hour": "19:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 7,
+      "hour": "20:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 7,
+      "hour": "21:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 7,
+      "hour": "22:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    },
+    {
+      "court": 7,
+      "hour": "23:00",
+      "first": "?",
+      "price": null,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": null,
+        "10000": null
+      },
+      "lost": null,
+      "reopen": null,
+      "record": null
+    }
+  ],
+  "transitions": {
+    "openToUnavailable": 0,
+    "reopened": 0,
+    "reopenedCacheUncertain": 0,
+    "overlapping": 0
+  },
+  "publicRecords": {
+    "itemized": false,
+    "cellsWithRecord": null,
+    "unavailableWithoutRecordAtFirst": null
+  },
+  "attempts": [],
+  "dispatch": {
+    "posts": 0,
+    "firstPostOffsetMs": null,
+    "lastPostOffsetMs": null,
+    "spreadMs": null
+  },
+  "outcome": "API_NO_AVAILABLE_CANDIDATE",
+  "clock": {
+    "offsetMs": null,
+    "roundTripMs": null,
+    "rounds": 0
+  },
+  "notes": []
+}

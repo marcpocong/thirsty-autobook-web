@@ -1,0 +1,1171 @@
+{
+  "version": 1,
+  "runId": "fc62669a-bfe5-4726-998a-fa0616bd1e19",
+  "mode": "live",
+  "date": "2026-09-27",
+  "reference": "release",
+  "referenceMs": 1790294400000,
+  "status": "final",
+  "generatedAt": "2026-09-25T00:15:00.703Z",
+  "sources": {
+    "runProgress": "<install>/.local\\api-booking\\run-progress\\fc62669a-bfe5-4726-998a-fa0616bd1e19.ndjson",
+    "observer": "<install>/.local\\slot-watch\\2026-09-27_60d68777-0022-471a-99aa-3a47543858f4.ndjson",
+    "observerVersion": 2,
+    "providerTrace": "<install>/.local\\release-forensics\\fc62669a-bfe5-4726-998a-fa0616bd1e19\\provider-trace.ndjson"
+  },
+  "clock": {
+    "rounds": [
+      {
+        "checkpoint": "T-10M",
+        "offsetMs": 20,
+        "roundTripMs": 43,
+        "sampleCount": 10,
+        "spreadMs": 12.7,
+        "uncertaintyMs": 21.5,
+        "deltaMs": 15,
+        "adopted": true
+      },
+      {
+        "checkpoint": "T-60S",
+        "offsetMs": 24.3,
+        "roundTripMs": 44,
+        "sampleCount": 10,
+        "spreadMs": 10.4,
+        "uncertaintyMs": 22.3,
+        "deltaMs": 4.7,
+        "adopted": true
+      },
+      {
+        "checkpoint": "T-30S",
+        "offsetMs": 23.3,
+        "roundTripMs": 44,
+        "sampleCount": 10,
+        "spreadMs": 4.2,
+        "uncertaintyMs": 24.2,
+        "deltaMs": -1,
+        "adopted": true
+      }
+    ],
+    "dispatchOffsetMs": 23.3,
+    "observerOffsetMs": 19.6,
+    "observerMinusDispatchMs": -3.7
+  },
+  "dispatch": {
+    "posts": 7,
+    "firstPostOffsetMs": 9.8,
+    "lastPostOffsetMs": 11.7,
+    "spreadMs": 1.9
+  },
+  "outcome": "ALL_REJECTED_WAITING_FOR_REOPEN",
+  "observer": {
+    "publication": {
+      "lastUnpublished": {
+        "seq": 7,
+        "requestOffsetMs": -1987.4,
+        "responseOffsetMs": -1779.4
+      },
+      "firstPublished": {
+        "seq": 8,
+        "requestOffsetMs": 15.6,
+        "responseOffsetMs": 4141.6,
+        "cache": {
+          "status": "MISS",
+          "ageS": 0
+        }
+      },
+      "firstPublishedResponse": {
+        "seq": 8,
+        "requestOffsetMs": 15.6,
+        "responseOffsetMs": 4141.6
+      }
+    },
+    "firstPublishedMatrix": "1:OOOOOOOOOOOOOOOO,2:OOOOOOOOOOOOOOOO,3:OOOOOOOOXXOOOOOO,4:OOOOOOOOXXXOOOOO,5:OOOOOOOOOOOOOOOO,6:OOOOOOOOOOOOOOOO,7:OOOOOOOOOOOOOOOO",
+    "firstPublishedCounts": {
+      "OPEN": 107,
+      "UNAVAILABLE": 5,
+      "UNKNOWN": 0
+    },
+    "reads": {
+      "launched": 136,
+      "answered": 127,
+      "failed": 0,
+      "notLaunched": 9,
+      "maxInFlight": 6,
+      "earlyOffsetsMs": [
+        0,
+        250,
+        500,
+        1000,
+        2000,
+        5000
+      ]
+    },
+    "bookingReads": {
+      "answered": 8,
+      "failed": 0,
+      "failedCourtQueries": 0,
+      "itemized": true
+    },
+    "openToUnavailable": 95,
+    "reopened": 79,
+    "unavailableWithoutRecordAtFirstPublication": 0
+  },
+  "trace": {
+    "available": true,
+    "records": 7,
+    "complete": 7,
+    "unavailableWorkers": []
+  },
+  "phase3": {
+    "fingerprint": "[REDACTED]",
+    "candidateCount": 11,
+    "maxWave2": 0,
+    "maxRescue": 0,
+    "maxTotal": 7,
+    "attempts": [
+      {
+        "attemptId": "core-A-official-1",
+        "candidateId": "21f81fe8d04d861fce8c839ab5d757e58e0b5da5ff83d9585a68bd5d54b9a066",
+        "workerId": "A",
+        "wave": "WAVE_1",
+        "court": 7,
+        "startTime": "19:00",
+        "endTime": "22:00",
+        "evidenceSeq": null,
+        "postOffsetMs": 9.8,
+        "state": "REJECTED",
+        "statusCode": 409,
+        "providerTrace": true,
+        "fallback": {
+          "type": "response-fallback",
+          "workerId": "A",
+          "attemptId": "core-A-official-1",
+          "candidateId": "21f81fe8d04d861fce8c839ab5d757e58e0b5da5ff83d9585a68bd5d54b9a066",
+          "wave": "WAVE_1",
+          "status": 409,
+          "contentType": "application/json",
+          "server": "Vercel",
+          "cfRay": null,
+          "vercelId": "sin1::sin1::p8z7w-1790294400030-a73f748bcd1f",
+          "requestId": null,
+          "serverTiming": null,
+          "responseReceivedMs": 34612.4,
+          "responseCompletedMs": 34612.6
+        }
+      },
+      {
+        "attemptId": "core-B-official-2",
+        "candidateId": "6ff22c70f69e41ba9c6bb76bc8b4fade7f8422c8194513ac4adcfe30970aafed",
+        "workerId": "B",
+        "wave": "WAVE_1",
+        "court": 6,
+        "startTime": "19:00",
+        "endTime": "22:00",
+        "evidenceSeq": null,
+        "postOffsetMs": 10.5,
+        "state": "REJECTED",
+        "statusCode": 409,
+        "providerTrace": true,
+        "fallback": {
+          "type": "response-fallback",
+          "workerId": "B",
+          "attemptId": "core-B-official-2",
+          "candidateId": "6ff22c70f69e41ba9c6bb76bc8b4fade7f8422c8194513ac4adcfe30970aafed",
+          "wave": "WAVE_1",
+          "status": 409,
+          "contentType": "application/json",
+          "server": "Vercel",
+          "cfRay": null,
+          "vercelId": "sin1::sin1::9tkzx-1790294400031-dd767626ebff",
+          "requestId": null,
+          "serverTiming": null,
+          "responseReceivedMs": 29551.3,
+          "responseCompletedMs": 29551.6
+        }
+      },
+      {
+        "attemptId": "core-C-official-3",
+        "candidateId": "5186cf932de0142132a9ad9e5a9d5cb0a2ff7e63c98caad9d6a56811f224dbdf",
+        "workerId": "C",
+        "wave": "WAVE_1",
+        "court": 5,
+        "startTime": "19:00",
+        "endTime": "22:00",
+        "evidenceSeq": null,
+        "postOffsetMs": 10.6,
+        "state": "REJECTED",
+        "statusCode": 409,
+        "providerTrace": true,
+        "fallback": {
+          "type": "response-fallback",
+          "workerId": "C",
+          "attemptId": "core-C-official-3",
+          "candidateId": "5186cf932de0142132a9ad9e5a9d5cb0a2ff7e63c98caad9d6a56811f224dbdf",
+          "wave": "WAVE_1",
+          "status": 409,
+          "contentType": "application/json",
+          "server": "Vercel",
+          "cfRay": null,
+          "vercelId": "sin1::sin1::rlfmg-1790294400032-46c4b8097878",
+          "requestId": null,
+          "serverTiming": null,
+          "responseReceivedMs": 29815.4,
+          "responseCompletedMs": 29815.8
+        }
+      },
+      {
+        "attemptId": "core-D-official-4",
+        "candidateId": "eff27bfc9a73d9bc47117c7b970661955ba1f6fb416963def41aea4851ab27d0",
+        "workerId": "D",
+        "wave": "WAVE_1",
+        "court": 4,
+        "startTime": "19:00",
+        "endTime": "22:00",
+        "evidenceSeq": null,
+        "postOffsetMs": 10.6,
+        "state": "REJECTED",
+        "statusCode": 409,
+        "providerTrace": true,
+        "fallback": {
+          "type": "response-fallback",
+          "workerId": "D",
+          "attemptId": "core-D-official-4",
+          "candidateId": "eff27bfc9a73d9bc47117c7b970661955ba1f6fb416963def41aea4851ab27d0",
+          "wave": "WAVE_1",
+          "status": 409,
+          "contentType": "application/json",
+          "server": "Vercel",
+          "cfRay": null,
+          "vercelId": "sin1::sin1::rss2s-1790294400031-ad67912a9919",
+          "requestId": null,
+          "serverTiming": null,
+          "responseReceivedMs": 29101.2,
+          "responseCompletedMs": 29101.3
+        }
+      },
+      {
+        "attemptId": "core-F-official-6",
+        "candidateId": "e9b14c0cdb821e41157f2b57a3386482846ef17b5819da9206ab9f9b31dc7287",
+        "workerId": "F",
+        "wave": "WAVE_1",
+        "court": 2,
+        "startTime": "15:00",
+        "endTime": "18:00",
+        "evidenceSeq": null,
+        "postOffsetMs": 10.7,
+        "state": "REJECTED",
+        "statusCode": 409,
+        "providerTrace": true,
+        "fallback": {
+          "type": "response-fallback",
+          "workerId": "F",
+          "attemptId": "core-F-official-6",
+          "candidateId": "e9b14c0cdb821e41157f2b57a3386482846ef17b5819da9206ab9f9b31dc7287",
+          "wave": "WAVE_1",
+          "status": 409,
+          "contentType": "application/json",
+          "server": "Vercel",
+          "cfRay": null,
+          "vercelId": "sin1::sin1::m5p5p-1790294400038-eda31da31ebb",
+          "requestId": null,
+          "serverTiming": null,
+          "responseReceivedMs": 33849.7,
+          "responseCompletedMs": 33849.9
+        }
+      },
+      {
+        "attemptId": "core-E-official-5",
+        "candidateId": "8bcb34195d35e7ffe098670f7edf3778d0763221c325566cff5aedf4971b4c00",
+        "workerId": "E",
+        "wave": "WAVE_1",
+        "court": 3,
+        "startTime": "19:00",
+        "endTime": "22:00",
+        "evidenceSeq": null,
+        "postOffsetMs": 11.6,
+        "state": "REJECTED",
+        "statusCode": 409,
+        "providerTrace": true,
+        "fallback": {
+          "type": "response-fallback",
+          "workerId": "E",
+          "attemptId": "core-E-official-5",
+          "candidateId": "8bcb34195d35e7ffe098670f7edf3778d0763221c325566cff5aedf4971b4c00",
+          "wave": "WAVE_1",
+          "status": 409,
+          "contentType": "application/json",
+          "server": "Vercel",
+          "cfRay": null,
+          "vercelId": "sin1::sin1::gqthg-1790294400032-bcbd8236050a",
+          "requestId": null,
+          "serverTiming": null,
+          "responseReceivedMs": 32168.1,
+          "responseCompletedMs": 32168.4
+        }
+      },
+      {
+        "attemptId": "core-G-official-7",
+        "candidateId": "36414a6a2b84eed2a9b7ce4d3358cdb3b269d5444e1d31c2863c61e12f51fb10",
+        "workerId": "G",
+        "wave": "WAVE_1",
+        "court": 1,
+        "startTime": "15:00",
+        "endTime": "18:00",
+        "evidenceSeq": null,
+        "postOffsetMs": 11.7,
+        "state": "REJECTED",
+        "statusCode": 409,
+        "providerTrace": true,
+        "fallback": {
+          "type": "response-fallback",
+          "workerId": "G",
+          "attemptId": "core-G-official-7",
+          "candidateId": "36414a6a2b84eed2a9b7ce4d3358cdb3b269d5444e1d31c2863c61e12f51fb10",
+          "wave": "WAVE_1",
+          "status": 409,
+          "contentType": "application/json",
+          "server": "Vercel",
+          "cfRay": null,
+          "vercelId": "sin1::sin1::lp9st-1790294400034-2e1077ff7233",
+          "requestId": null,
+          "serverTiming": null,
+          "responseReceivedMs": 32968.2,
+          "responseCompletedMs": 32968.3
+        }
+      }
+    ]
+  },
+  "targets": [
+    {
+      "workerId": "A",
+      "court": 7,
+      "startTime": "19:00",
+      "endTime": "22:00",
+      "attemptId": "core-A-official-1",
+      "finalState": null,
+      "finalCode": null,
+      "post": {
+        "offsetMs": 9.8,
+        "source": "run-trace"
+      },
+      "response": {
+        "statusCode": 409,
+        "errorHint": "availability",
+        "responseSource": "application",
+        "completedOffsetMs": 34619.8,
+        "networkDurationMs": 34618
+      },
+      "grid": {
+        "hours": [
+          "19:00",
+          "20:00",
+          "21:00"
+        ],
+        "firstPublished": {
+          "observation": {
+            "seq": 8,
+            "requestOffsetMs": 15.6,
+            "responseOffsetMs": 4141.6
+          },
+          "state": "FULLY_OPEN",
+          "hours": [
+            {
+              "hour": "19:00",
+              "state": "OPEN",
+              "price": 700
+            },
+            {
+              "hour": "20:00",
+              "state": "OPEN",
+              "price": 700
+            },
+            {
+              "hour": "21:00",
+              "state": "OPEN",
+              "price": 700
+            }
+          ]
+        },
+        "firstFullyOpen": {
+          "seq": 8,
+          "requestOffsetMs": 15.6,
+          "responseOffsetMs": 4141.6
+        },
+        "firstUnavailable": {
+          "observation": {
+            "seq": 12,
+            "requestOffsetMs": 2011.6,
+            "responseOffsetMs": 16999.6
+          },
+          "hours": [
+            "19:00"
+          ]
+        },
+        "firstRecord": {
+          "observation": {
+            "seq": 3,
+            "requestOffsetMs": 30007.6,
+            "responseOffsetMs": 33711.6
+          },
+          "hours": [
+            "19:00",
+            "20:00",
+            "21:00"
+          ]
+        },
+        "reopen": null,
+        "latest": {
+          "observation": {
+            "seq": 127,
+            "requestOffsetMs": 900005.6,
+            "responseOffsetMs": 900617.6
+          },
+          "state": "FULLY_UNAVAILABLE"
+        }
+      },
+      "provider": {
+        "complete": true,
+        "protocol": "h2",
+        "reused": true,
+        "headersOffsetMs": 34620,
+        "bodyOffsetMs": 34620.5,
+        "timingSource": "browser",
+        "dnsMs": null,
+        "connectMs": null,
+        "tlsMs": null,
+        "sendMs": 0.3,
+        "waitMs": 34609.3,
+        "server": "Vercel",
+        "cfRay": null,
+        "cfMitigated": null,
+        "vercelId": "sin1::sin1::p8z7w-1790294400030-a73f748bcd1f",
+        "requestId": null,
+        "vercelCache": "MISS",
+        "ageS": null,
+        "serverTiming": null,
+        "failure": null
+      }
+    },
+    {
+      "workerId": "B",
+      "court": 6,
+      "startTime": "19:00",
+      "endTime": "22:00",
+      "attemptId": "core-B-official-2",
+      "finalState": null,
+      "finalCode": null,
+      "post": {
+        "offsetMs": 10.5,
+        "source": "run-trace"
+      },
+      "response": {
+        "statusCode": 409,
+        "errorHint": "availability",
+        "responseSource": "application",
+        "completedOffsetMs": 29558.5,
+        "networkDurationMs": 29557
+      },
+      "grid": {
+        "hours": [
+          "19:00",
+          "20:00",
+          "21:00"
+        ],
+        "firstPublished": {
+          "observation": {
+            "seq": 8,
+            "requestOffsetMs": 15.6,
+            "responseOffsetMs": 4141.6
+          },
+          "state": "FULLY_OPEN",
+          "hours": [
+            {
+              "hour": "19:00",
+              "state": "OPEN",
+              "price": 700
+            },
+            {
+              "hour": "20:00",
+              "state": "OPEN",
+              "price": 700
+            },
+            {
+              "hour": "21:00",
+              "state": "OPEN",
+              "price": 700
+            }
+          ]
+        },
+        "firstFullyOpen": {
+          "seq": 8,
+          "requestOffsetMs": 15.6,
+          "responseOffsetMs": 4141.6
+        },
+        "firstUnavailable": {
+          "observation": {
+            "seq": 20,
+            "requestOffsetMs": 19004.6,
+            "responseOffsetMs": 28867.6
+          },
+          "hours": [
+            "20:00"
+          ]
+        },
+        "firstRecord": {
+          "observation": {
+            "seq": 3,
+            "requestOffsetMs": 30007.6,
+            "responseOffsetMs": 33711.6
+          },
+          "hours": [
+            "19:00",
+            "20:00",
+            "21:00"
+          ]
+        },
+        "reopen": {
+          "before": {
+            "seq": 21,
+            "requestOffsetMs": 20000.6,
+            "responseOffsetMs": 28922.6
+          },
+          "after": {
+            "seq": 22,
+            "requestOffsetMs": 21004.6,
+            "responseOffsetMs": 21104.6
+          },
+          "overlapping": true
+        },
+        "latest": {
+          "observation": {
+            "seq": 127,
+            "requestOffsetMs": 900005.6,
+            "responseOffsetMs": 900617.6
+          },
+          "state": "FULLY_UNAVAILABLE"
+        }
+      },
+      "provider": {
+        "complete": true,
+        "protocol": "h2",
+        "reused": true,
+        "headersOffsetMs": 29558.9,
+        "bodyOffsetMs": 29559.6,
+        "timingSource": "browser",
+        "dnsMs": null,
+        "connectMs": null,
+        "tlsMs": null,
+        "sendMs": 0.2,
+        "waitMs": 29547.7,
+        "server": "Vercel",
+        "cfRay": null,
+        "cfMitigated": null,
+        "vercelId": "sin1::sin1::9tkzx-1790294400031-dd767626ebff",
+        "requestId": null,
+        "vercelCache": "MISS",
+        "ageS": null,
+        "serverTiming": null,
+        "failure": null
+      }
+    },
+    {
+      "workerId": "C",
+      "court": 5,
+      "startTime": "19:00",
+      "endTime": "22:00",
+      "attemptId": "core-C-official-3",
+      "finalState": null,
+      "finalCode": null,
+      "post": {
+        "offsetMs": 10.6,
+        "source": "run-trace"
+      },
+      "response": {
+        "statusCode": 409,
+        "errorHint": "availability",
+        "responseSource": "application",
+        "completedOffsetMs": 29824.6,
+        "networkDurationMs": 29822
+      },
+      "grid": {
+        "hours": [
+          "19:00",
+          "20:00",
+          "21:00"
+        ],
+        "firstPublished": {
+          "observation": {
+            "seq": 8,
+            "requestOffsetMs": 15.6,
+            "responseOffsetMs": 4141.6
+          },
+          "state": "FULLY_OPEN",
+          "hours": [
+            {
+              "hour": "19:00",
+              "state": "OPEN",
+              "price": 700
+            },
+            {
+              "hour": "20:00",
+              "state": "OPEN",
+              "price": 700
+            },
+            {
+              "hour": "21:00",
+              "state": "OPEN",
+              "price": 700
+            }
+          ]
+        },
+        "firstFullyOpen": {
+          "seq": 8,
+          "requestOffsetMs": 15.6,
+          "responseOffsetMs": 4141.6
+        },
+        "firstUnavailable": {
+          "observation": {
+            "seq": 20,
+            "requestOffsetMs": 19004.6,
+            "responseOffsetMs": 28867.6
+          },
+          "hours": [
+            "19:00",
+            "20:00",
+            "21:00"
+          ]
+        },
+        "firstRecord": {
+          "observation": {
+            "seq": 3,
+            "requestOffsetMs": 30007.6,
+            "responseOffsetMs": 33711.6
+          },
+          "hours": [
+            "19:00",
+            "20:00",
+            "21:00"
+          ]
+        },
+        "reopen": {
+          "before": {
+            "seq": 21,
+            "requestOffsetMs": 20000.6,
+            "responseOffsetMs": 28922.6
+          },
+          "after": {
+            "seq": 22,
+            "requestOffsetMs": 21004.6,
+            "responseOffsetMs": 21104.6
+          },
+          "overlapping": true
+        },
+        "latest": {
+          "observation": {
+            "seq": 127,
+            "requestOffsetMs": 900005.6,
+            "responseOffsetMs": 900617.6
+          },
+          "state": "FULLY_UNAVAILABLE"
+        }
+      },
+      "provider": {
+        "complete": true,
+        "protocol": "h2",
+        "reused": true,
+        "headersOffsetMs": 29821.2,
+        "bodyOffsetMs": 29822.3,
+        "timingSource": "browser",
+        "dnsMs": null,
+        "connectMs": null,
+        "tlsMs": null,
+        "sendMs": 0.2,
+        "waitMs": 29809.9,
+        "server": "Vercel",
+        "cfRay": null,
+        "cfMitigated": null,
+        "vercelId": "sin1::sin1::rlfmg-1790294400032-46c4b8097878",
+        "requestId": null,
+        "vercelCache": "MISS",
+        "ageS": null,
+        "serverTiming": null,
+        "failure": null
+      }
+    },
+    {
+      "workerId": "D",
+      "court": 4,
+      "startTime": "19:00",
+      "endTime": "22:00",
+      "attemptId": "core-D-official-4",
+      "finalState": null,
+      "finalCode": null,
+      "post": {
+        "offsetMs": 10.6,
+        "source": "run-trace"
+      },
+      "response": {
+        "statusCode": 409,
+        "errorHint": "availability",
+        "responseSource": "application",
+        "completedOffsetMs": 29109.6,
+        "networkDurationMs": 29107
+      },
+      "grid": {
+        "hours": [
+          "19:00",
+          "20:00",
+          "21:00"
+        ],
+        "firstPublished": {
+          "observation": {
+            "seq": 8,
+            "requestOffsetMs": 15.6,
+            "responseOffsetMs": 4141.6
+          },
+          "state": "FULLY_OPEN",
+          "hours": [
+            {
+              "hour": "19:00",
+              "state": "OPEN",
+              "price": 700
+            },
+            {
+              "hour": "20:00",
+              "state": "OPEN",
+              "price": 700
+            },
+            {
+              "hour": "21:00",
+              "state": "OPEN",
+              "price": 700
+            }
+          ]
+        },
+        "firstFullyOpen": {
+          "seq": 8,
+          "requestOffsetMs": 15.6,
+          "responseOffsetMs": 4141.6
+        },
+        "firstUnavailable": {
+          "observation": {
+            "seq": 12,
+            "requestOffsetMs": 2011.6,
+            "responseOffsetMs": 16999.6
+          },
+          "hours": [
+            "21:00"
+          ]
+        },
+        "firstRecord": {
+          "observation": {
+            "seq": 3,
+            "requestOffsetMs": 30007.6,
+            "responseOffsetMs": 33711.6
+          },
+          "hours": [
+            "19:00",
+            "20:00",
+            "21:00"
+          ]
+        },
+        "reopen": null,
+        "latest": {
+          "observation": {
+            "seq": 127,
+            "requestOffsetMs": 900005.6,
+            "responseOffsetMs": 900617.6
+          },
+          "state": "FULLY_UNAVAILABLE"
+        }
+      },
+      "provider": {
+        "complete": true,
+        "protocol": "h2",
+        "reused": true,
+        "headersOffsetMs": 29109.5,
+        "bodyOffsetMs": 29109.8,
+        "timingSource": "browser",
+        "dnsMs": null,
+        "connectMs": null,
+        "tlsMs": null,
+        "sendMs": 0.2,
+        "waitMs": 29098.2,
+        "server": "Vercel",
+        "cfRay": null,
+        "cfMitigated": null,
+        "vercelId": "sin1::sin1::rss2s-1790294400031-ad67912a9919",
+        "requestId": null,
+        "vercelCache": "MISS",
+        "ageS": null,
+        "serverTiming": null,
+        "failure": null
+      }
+    },
+    {
+      "workerId": "E",
+      "court": 3,
+      "startTime": "19:00",
+      "endTime": "22:00",
+      "attemptId": "core-E-official-5",
+      "finalState": null,
+      "finalCode": null,
+      "post": {
+        "offsetMs": 11.6,
+        "source": "run-trace"
+      },
+      "response": {
+        "statusCode": 409,
+        "errorHint": "availability",
+        "responseSource": "application",
+        "completedOffsetMs": 32175.6,
+        "networkDurationMs": 32173
+      },
+      "grid": {
+        "hours": [
+          "19:00",
+          "20:00",
+          "21:00"
+        ],
+        "firstPublished": {
+          "observation": {
+            "seq": 8,
+            "requestOffsetMs": 15.6,
+            "responseOffsetMs": 4141.6
+          },
+          "state": "FULLY_OPEN",
+          "hours": [
+            {
+              "hour": "19:00",
+              "state": "OPEN",
+              "price": 700
+            },
+            {
+              "hour": "20:00",
+              "state": "OPEN",
+              "price": 700
+            },
+            {
+              "hour": "21:00",
+              "state": "OPEN",
+              "price": 700
+            }
+          ]
+        },
+        "firstFullyOpen": {
+          "seq": 8,
+          "requestOffsetMs": 15.6,
+          "responseOffsetMs": 4141.6
+        },
+        "firstUnavailable": {
+          "observation": {
+            "seq": 15,
+            "requestOffsetMs": 10013.6,
+            "responseOffsetMs": 18919.6
+          },
+          "hours": [
+            "20:00"
+          ]
+        },
+        "firstRecord": {
+          "observation": {
+            "seq": 3,
+            "requestOffsetMs": 30007.6,
+            "responseOffsetMs": 33711.6
+          },
+          "hours": [
+            "19:00",
+            "20:00",
+            "21:00"
+          ]
+        },
+        "reopen": {
+          "before": {
+            "seq": 15,
+            "requestOffsetMs": 10013.6,
+            "responseOffsetMs": 18919.6
+          },
+          "after": {
+            "seq": 16,
+            "requestOffsetMs": 11011.6,
+            "responseOffsetMs": 17769.6
+          },
+          "overlapping": true
+        },
+        "latest": {
+          "observation": {
+            "seq": 127,
+            "requestOffsetMs": 900005.6,
+            "responseOffsetMs": 900617.6
+          },
+          "state": "FULLY_UNAVAILABLE"
+        }
+      },
+      "provider": {
+        "complete": true,
+        "protocol": "h2",
+        "reused": true,
+        "headersOffsetMs": 32176.8,
+        "bodyOffsetMs": 32177.4,
+        "timingSource": "browser",
+        "dnsMs": null,
+        "connectMs": null,
+        "tlsMs": null,
+        "sendMs": 0.2,
+        "waitMs": 32164.9,
+        "server": "Vercel",
+        "cfRay": null,
+        "cfMitigated": null,
+        "vercelId": "sin1::sin1::gqthg-1790294400032-bcbd8236050a",
+        "requestId": null,
+        "vercelCache": "MISS",
+        "ageS": null,
+        "serverTiming": null,
+        "failure": null
+      }
+    },
+    {
+      "workerId": "F",
+      "court": 2,
+      "startTime": "15:00",
+      "endTime": "18:00",
+      "attemptId": "core-F-official-6",
+      "finalState": null,
+      "finalCode": null,
+      "post": {
+        "offsetMs": 10.7,
+        "source": "run-trace"
+      },
+      "response": {
+        "statusCode": 409,
+        "errorHint": "availability",
+        "responseSource": "application",
+        "completedOffsetMs": 33857.7,
+        "networkDurationMs": 33855
+      },
+      "grid": {
+        "hours": [
+          "15:00",
+          "16:00",
+          "17:00"
+        ],
+        "firstPublished": {
+          "observation": {
+            "seq": 8,
+            "requestOffsetMs": 15.6,
+            "responseOffsetMs": 4141.6
+          },
+          "state": "FULLY_OPEN",
+          "hours": [
+            {
+              "hour": "15:00",
+              "state": "OPEN",
+              "price": 700
+            },
+            {
+              "hour": "16:00",
+              "state": "OPEN",
+              "price": 700
+            },
+            {
+              "hour": "17:00",
+              "state": "OPEN",
+              "price": 700
+            }
+          ]
+        },
+        "firstFullyOpen": {
+          "seq": 8,
+          "requestOffsetMs": 15.6,
+          "responseOffsetMs": 4141.6
+        },
+        "firstUnavailable": {
+          "observation": {
+            "seq": 12,
+            "requestOffsetMs": 2011.6,
+            "responseOffsetMs": 16999.6
+          },
+          "hours": [
+            "16:00"
+          ]
+        },
+        "firstRecord": {
+          "observation": {
+            "seq": 3,
+            "requestOffsetMs": 30007.6,
+            "responseOffsetMs": 33711.6
+          },
+          "hours": [
+            "15:00",
+            "16:00",
+            "17:00"
+          ]
+        },
+        "reopen": null,
+        "latest": {
+          "observation": {
+            "seq": 127,
+            "requestOffsetMs": 900005.6,
+            "responseOffsetMs": 900617.6
+          },
+          "state": "FULLY_UNAVAILABLE"
+        }
+      },
+      "provider": {
+        "complete": true,
+        "protocol": "h2",
+        "reused": true,
+        "headersOffsetMs": 33858.4,
+        "bodyOffsetMs": 33858.8,
+        "timingSource": "browser",
+        "dnsMs": null,
+        "connectMs": null,
+        "tlsMs": null,
+        "sendMs": 0.2,
+        "waitMs": 33847.1,
+        "server": "Vercel",
+        "cfRay": null,
+        "cfMitigated": null,
+        "vercelId": "sin1::sin1::m5p5p-1790294400038-eda31da31ebb",
+        "requestId": null,
+        "vercelCache": "MISS",
+        "ageS": null,
+        "serverTiming": null,
+        "failure": null
+      }
+    },
+    {
+      "workerId": "G",
+      "court": 1,
+      "startTime": "15:00",
+      "endTime": "18:00",
+      "attemptId": "core-G-official-7",
+      "finalState": null,
+      "finalCode": null,
+      "post": {
+        "offsetMs": 11.7,
+        "source": "run-trace"
+      },
+      "response": {
+        "statusCode": 409,
+        "errorHint": "availability",
+        "responseSource": "application",
+        "completedOffsetMs": 32976.7,
+        "networkDurationMs": 32973
+      },
+      "grid": {
+        "hours": [
+          "15:00",
+          "16:00",
+          "17:00"
+        ],
+        "firstPublished": {
+          "observation": {
+            "seq": 8,
+            "requestOffsetMs": 15.6,
+            "responseOffsetMs": 4141.6
+          },
+          "state": "FULLY_OPEN",
+          "hours": [
+            {
+              "hour": "15:00",
+              "state": "OPEN",
+              "price": 700
+            },
+            {
+              "hour": "16:00",
+              "state": "OPEN",
+              "price": 700
+            },
+            {
+              "hour": "17:00",
+              "state": "OPEN",
+              "price": 700
+            }
+          ]
+        },
+        "firstFullyOpen": {
+          "seq": 8,
+          "requestOffsetMs": 15.6,
+          "responseOffsetMs": 4141.6
+        },
+        "firstUnavailable": {
+          "observation": {
+            "seq": 15,
+            "requestOffsetMs": 10013.6,
+            "responseOffsetMs": 18919.6
+          },
+          "hours": [
+            "15:00"
+          ]
+        },
+        "firstRecord": {
+          "observation": {
+            "seq": 3,
+            "requestOffsetMs": 30007.6,
+            "responseOffsetMs": 33711.6
+          },
+          "hours": [
+            "15:00",
+            "16:00",
+            "17:00"
+          ]
+        },
+        "reopen": {
+          "before": {
+            "seq": 15,
+            "requestOffsetMs": 10013.6,
+            "responseOffsetMs": 18919.6
+          },
+          "after": {
+            "seq": 16,
+            "requestOffsetMs": 11011.6,
+            "responseOffsetMs": 17769.6
+          },
+          "overlapping": true
+        },
+        "latest": {
+          "observation": {
+            "seq": 127,
+            "requestOffsetMs": 900005.6,
+            "responseOffsetMs": 900617.6
+          },
+          "state": "FULLY_UNAVAILABLE"
+        }
+      },
+      "provider": {
+        "complete": true,
+        "protocol": "h2",
+        "reused": true,
+        "headersOffsetMs": 32977.9,
+        "bodyOffsetMs": 32978.3,
+        "timingSource": "browser",
+        "dnsMs": null,
+        "connectMs": null,
+        "tlsMs": null,
+        "sendMs": 0.1,
+        "waitMs": 32965.8,
+        "server": "Vercel",
+        "cfRay": null,
+        "cfMitigated": null,
+        "vercelId": "sin1::sin1::lp9st-1790294400034-2e1077ff7233",
+        "requestId": null,
+        "vercelCache": "MISS",
+        "ageS": null,
+        "serverTiming": null,
+        "failure": null
+      }
+    }
+  ],
+  "limitations": [
+    "An availability read shows Onda's state at an unknown moment between its request start and its response. No source here gives the provider-side moment of a change.",
+    "Unavailable without a matching public booking record: the cause is not visible in Onda's public data.",
+    "A public booking record shows that a booking record exists. It does not show who made it, whether it belongs to this bot, or why.",
+    "POST initiation is the Playwright request event in the runner (trusted release clock). Header and body times are that instant plus Chrome intervals from its network request start (under 1 ms after the request event); they carry the few-ms delivery lag of that event.",
+    "The provider trace enables DevTools Network only after each POST has left, so it never adds work at the release instant; a response that arrives before it is enabled (tens of ms) is not traced.",
+    "Response timing and headers describe what arrived at this PC. They do not establish how Onda queued or ordered requests, or why a request was accepted or rejected.",
+    "The observer and the dispatch clocks differ by -3.7 ms (observer minus dispatch); comparisons between grid reads and POST times carry that difference."
+  ],
+  "reportPath": "<install>/.local\\release-forensics\\fc62669a-bfe5-4726-998a-fa0616bd1e19\\report.txt",
+  "summaryPath": "<install>/.local\\release-forensics\\fc62669a-bfe5-4726-998a-fa0616bd1e19\\summary.json"
+}

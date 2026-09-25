@@ -1,0 +1,25 @@
+{
+  "startedAt": "2026-09-22T09:03:12.458Z",
+  "target": {
+    "date": "2026-09-26",
+    "court": 3,
+    "spaceId": "0e853a91-33b6-4de2-9237-778007a9313b",
+    "startTime": "08:00",
+    "endTime": "09:00",
+    "amount": 600
+  },
+  "dispatched": true,
+  "outcome": "rejected",
+  "preflight": {
+    "status": 200,
+    "occupied": false
+  },
+  "dispatchedAt": "2026-09-22T09:03:18.707Z",
+  "responseStatus": 400,
+  "responseContentType": "application/json",
+  "error": "This booking date is not available yet.",
+  "responseKeys": [
+    "success",
+    "error"
+  ]
+}

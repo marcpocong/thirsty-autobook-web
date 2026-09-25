@@ -1,0 +1,11 @@
+{
+  "pid": "[REDACTED]",
+  "runID": "453f1628-c8c6-40d2-b9d8-cdfe35bd1ce5",
+  "mode": "extended",
+  "workers": [
+    "A",
+    "B"
+  ],
+  "stage": "FINAL_ACTION_DISPATCHING",
+  "stageAt": "2026-09-21T07:21:42.216Z"
+}

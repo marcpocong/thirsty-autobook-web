@@ -1,0 +1,73 @@
+{"type":"run-start","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","label":"fullPractice","at":"2026-09-20T20:38:58.421Z","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:38:58.422Z","text":"Run started: fullPractice · Timing log: <install>/.local\\booking-runs\\6c3f0a4f-b37a-432d-8c6d-a15434beb84d.ndjson","level":"info","elapsedMs":0,"deltaMs":0}
+{"type":"browser-ready","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:38:58.424Z","elapsedMs":2}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:38:58.424Z","text":"Process started: testBooking · browser","level":"info","elapsedMs":3,"deltaMs":3}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:01.945Z","text":"Browser A · preferenceResolved","level":"info","elapsedMs":3523,"deltaMs":3521}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:01.945Z","text":"Browser A · selectionInitialGridValidationStarted","level":"info","elapsedMs":3524,"deltaMs":1}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:01.946Z","text":"Browser A · selectionInitialGridValidationCompleted","level":"info","elapsedMs":3524,"deltaMs":0}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:01.946Z","text":"Browser A · fullGuardStarted","level":"info","elapsedMs":3524,"deltaMs":0}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:01.964Z","text":"Browser A · fullGuardCompleted","level":"info","elapsedMs":3543,"deltaMs":18}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:01.965Z","text":"Browser A · selectionPreparationStarted","level":"info","elapsedMs":3543,"deltaMs":0}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:01.968Z","text":"Browser A · selectionPreparationCompleted","level":"info","elapsedMs":3546,"deltaMs":3}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:01.968Z","text":"Browser A · selectionAttemptStarted","level":"info","elapsedMs":3546,"deltaMs":1}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:01.968Z","text":"Browser A · firstClickGuardStarted","level":"info","elapsedMs":3546,"deltaMs":0}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:01.971Z","text":"Browser A · lightGuardCompleted","level":"info","elapsedMs":3549,"deltaMs":2}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:01.971Z","text":"Browser A · firstClickGuardCompleted","level":"info","elapsedMs":3549,"deltaMs":0}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:01.971Z","text":"Browser A · firstSlotClickDispatchStarted","level":"info","elapsedMs":3549,"deltaMs":0}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:01.971Z","text":"Browser A · slot1ClickStarted","level":"info","elapsedMs":3549,"deltaMs":0}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:02.018Z","text":"Browser A · slot1StateConfirmed","level":"info","elapsedMs":3596,"deltaMs":46}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:02.020Z","text":"Browser A · lightGuardCompleted","level":"info","elapsedMs":3598,"deltaMs":2}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:02.020Z","text":"Browser A · slot2ClickStarted","level":"info","elapsedMs":3598,"deltaMs":0}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:02.073Z","text":"Browser A · slot2StateConfirmed","level":"info","elapsedMs":3651,"deltaMs":53}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:02.075Z","text":"Browser A · lightGuardCompleted","level":"info","elapsedMs":3653,"deltaMs":1}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:02.075Z","text":"Browser A · slot3ClickStarted","level":"info","elapsedMs":3653,"deltaMs":0}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:02.166Z","text":"Browser A · slot3StateConfirmed","level":"info","elapsedMs":3744,"deltaMs":91}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:02.180Z","text":"Browser A · fullGuardCompleted","level":"info","elapsedMs":3758,"deltaMs":14}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:02.180Z","text":"Browser A · selectionFinalVerificationStarted","level":"info","elapsedMs":3758,"deltaMs":0}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:02.180Z","text":"Browser A · selectionFinalGridRead","level":"info","elapsedMs":3759,"deltaMs":0}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:02.180Z","text":"Browser A · selectionFullGridRead","level":"info","elapsedMs":3759,"deltaMs":0}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:02.187Z","text":"Browser A · selectionSummaryRead","level":"info","elapsedMs":3765,"deltaMs":6}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:02.200Z","text":"Browser A · selectionSummaryVerified","level":"info","elapsedMs":3778,"deltaMs":13}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:02.203Z","text":"Browser A · selectionFinalVerificationCompleted","level":"info","elapsedMs":3781,"deltaMs":2}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:02.203Z","text":"Browser A · selectionVerified","level":"info","elapsedMs":3781,"deltaMs":0}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:02.203Z","text":"Browser A · proceedActionable","level":"info","elapsedMs":3781,"deltaMs":0}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:02.217Z","text":"Browser A · fullGuardCompleted","level":"info","elapsedMs":3795,"deltaMs":14}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:02.217Z","text":"Browser A · preProceedGridRead","level":"info","elapsedMs":3795,"deltaMs":0}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:02.225Z","text":"Browser A · selectionSummaryRead","level":"info","elapsedMs":3803,"deltaMs":7}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:02.232Z","text":"Browser A · bookingProceedStarted","level":"info","elapsedMs":3810,"deltaMs":7}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:03.097Z","text":"Browser A · bookingProceedClicked","level":"info","elapsedMs":4675,"deltaMs":865}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:03.097Z","text":"Browser A · proceedClicked","level":"info","elapsedMs":4675,"deltaMs":0}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:03.108Z","text":"Browser A · reviewParsed","level":"info","elapsedMs":4685,"deltaMs":10}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:03.110Z","text":"Browser A · reviewDetected","level":"info","elapsedMs":4688,"deltaMs":2}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:03.113Z","text":"Browser A · reviewValidated","level":"info","elapsedMs":4691,"deltaMs":3}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:03.113Z","text":"Browser A · playerFillStarted","level":"info","elapsedMs":4691,"deltaMs":0}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:03.119Z","text":"Browser A · playerFormDetected","level":"info","elapsedMs":4697,"deltaMs":6}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:03.166Z","text":"Browser A · playerFillCompleted","level":"info","elapsedMs":4744,"deltaMs":46}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:03.166Z","text":"Browser A · playerProceedStarted","level":"info","elapsedMs":4744,"deltaMs":1}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:03.997Z","text":"Browser A · playerProceedClicked","level":"info","elapsedMs":5575,"deltaMs":830}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:07.929Z","text":"Browser A · reviewParsed","level":"info","elapsedMs":9507,"deltaMs":3932}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:07.943Z","text":"Browser A · paymentSummaryParsed","level":"info","elapsedMs":9521,"deltaMs":14}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:07.943Z","text":"Browser A · paymentSummaryDetected","level":"info","elapsedMs":9522,"deltaMs":1}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:07.947Z","text":"Browser A · paymentSummaryValidated","level":"info","elapsedMs":9525,"deltaMs":3}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:07.947Z","text":"Browser A · termsCheckStarted","level":"info","elapsedMs":9525,"deltaMs":1}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:07.952Z","text":"Browser A · termsControlDetected","level":"info","elapsedMs":9530,"deltaMs":4}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:07.982Z","text":"Browser A · termsControlDetected","level":"info","elapsedMs":9560,"deltaMs":30}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:09.496Z","text":"Browser A · termsControlDetected","level":"info","elapsedMs":11074,"deltaMs":1514}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:09.523Z","text":"Browser A · termsControlDetected","level":"info","elapsedMs":11101,"deltaMs":27}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:09.530Z","text":"Browser A · termsChecked","level":"info","elapsedMs":11108,"deltaMs":7}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:09.537Z","text":"Browser A · reviewParsed","level":"info","elapsedMs":11114,"deltaMs":6}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:09.551Z","text":"Browser A · termsControlDetected","level":"info","elapsedMs":11129,"deltaMs":15}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:09.568Z","text":"Browser A · finalButtonActionable","level":"info","elapsedMs":11146,"deltaMs":17}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:09.570Z","text":"Browser A · finalOndaActionStarted","level":"info","elapsedMs":11148,"deltaMs":2}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:09.597Z","text":"Browser A · finalOndaButtonClicked","level":"info","elapsedMs":11174,"deltaMs":27}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:09.597Z","text":"Browser A · paymentBoundaryReached","level":"info","elapsedMs":11175,"deltaMs":0}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:09.597Z","text":"Browser A · Command completed","level":"info","elapsedMs":11175,"deltaMs":0}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:12.657Z","text":"Browser A · checkoutPageDetected","level":"info","elapsedMs":14235,"deltaMs":3060}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:12.657Z","text":"Browser A · holdStatusDetected","level":"info","elapsedMs":14236,"deltaMs":0}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:13.755Z","text":"Browser A · qrHandoffVerified","level":"info","elapsedMs":15333,"deltaMs":1097}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:13.755Z","text":"Browser A · Command completed","level":"info","elapsedMs":15334,"deltaMs":1}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:13.759Z","text":"Payment handoff verified. Payment remains manual.","level":"info","elapsedMs":15336,"deltaMs":3}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:13.759Z","text":"Booking result: PAYMENT HOLD ACTIVE · STANDARD BOOKING\n2026-09-22 · 1 court(s) · 3 hours\nCheckout A: Primary player | 08:00–11:00 · Court 7\n1 checkout(s), 1 temporary payment hold(s). Payment is manual. No price ceiling.\nCheckout 1: PAYMENT HOLD ACTIVE","level":"info","elapsedMs":15337,"deltaMs":1}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:13.775Z","text":"Process completed: testBooking · browser · exit code 0","level":"info","elapsedMs":15353,"deltaMs":16}
+{"type":"activity","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:13.775Z","text":"Run finished: complete","level":"info","elapsedMs":15353,"deltaMs":0}
+{"type":"run-end","runId":"6c3f0a4f-b37a-432d-8c6d-a15434beb84d","at":"2026-09-20T20:39:13.776Z","elapsedMs":15353,"outcome":"complete","readyElapsedMs":15351,"label":"BROWSER TEST"}

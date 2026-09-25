@@ -1,0 +1,6 @@
+{
+  "reconciledAt": "2026-09-21T20:07:49.613Z",
+  "reason": "OFFICIAL_HTTP_409_CONFIRMED_NO_BOOKINGS",
+  "responseStatus": 409,
+  "sourceKey": "ca3d61b4bbe121b0b12dbca802715a3a9ba3a2e78aeefc8f16379a19466b016b"
+}

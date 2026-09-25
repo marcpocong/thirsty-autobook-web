@@ -1,0 +1,17 @@
+{"type":"run-start","runId":"82045593-1c8d-4249-a4b0-7042bee2d7bd","label":"prepare","at":"2026-09-21T07:19:56.573Z","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"82045593-1c8d-4249-a4b0-7042bee2d7bd","at":"2026-09-21T07:19:56.574Z","text":"Run started: prepare · Timing log: <install>/.local\\booking-runs\\82045593-1c8d-4249-a4b0-7042bee2d7bd.ndjson","level":"info","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"82045593-1c8d-4249-a4b0-7042bee2d7bd","at":"2026-09-21T07:19:56.576Z","text":"Checking the old worker, Onda browser, selected slots, and payment hold before API preparation.","level":"info","elapsedMs":1,"deltaMs":1}
+{"type":"activity","runId":"82045593-1c8d-4249-a4b0-7042bee2d7bd","at":"2026-09-21T07:19:56.577Z","text":"Unresolved final action requires every API browser to be inspected by Reset & Prepare.","level":"info","elapsedMs":2,"deltaMs":1}
+{"type":"activity","runId":"82045593-1c8d-4249-a4b0-7042bee2d7bd","at":"2026-09-21T07:19:56.577Z","text":"Process started: resetPrepare","level":"info","elapsedMs":3,"deltaMs":0}
+{"type":"activity","runId":"82045593-1c8d-4249-a4b0-7042bee2d7bd","at":"2026-09-21T07:19:58.564Z","text":"Preparation: Starting required browser(s)...","level":"info","elapsedMs":1990,"deltaMs":1988}
+{"type":"activity","runId":"82045593-1c8d-4249-a4b0-7042bee2d7bd","at":"2026-09-21T07:19:58.572Z","text":"Preparation: Checking previous session...","level":"info","elapsedMs":1997,"deltaMs":7}
+{"type":"activity","runId":"82045593-1c8d-4249-a4b0-7042bee2d7bd","at":"2026-09-21T07:20:10.721Z","text":"Preparation: Preparing Onda...","level":"info","elapsedMs":14147,"deltaMs":12150}
+{"type":"activity","runId":"82045593-1c8d-4249-a4b0-7042bee2d7bd","at":"2026-09-21T07:20:15.647Z","text":"Preparation: Checking payment holds...","level":"info","elapsedMs":19072,"deltaMs":4925}
+{"type":"activity","runId":"82045593-1c8d-4249-a4b0-7042bee2d7bd","at":"2026-09-21T07:20:15.647Z","text":"Preparation: Verifying calendar...","level":"info","elapsedMs":19073,"deltaMs":0}
+{"type":"activity","runId":"82045593-1c8d-4249-a4b0-7042bee2d7bd","at":"2026-09-21T07:20:20.168Z","text":"Preparation: Verifying grids...","level":"info","elapsedMs":23594,"deltaMs":4522}
+{"type":"activity","runId":"82045593-1c8d-4249-a4b0-7042bee2d7bd","at":"2026-09-21T07:20:20.238Z","text":"Preparation: Checking booking availability...","level":"info","elapsedMs":23663,"deltaMs":69}
+{"type":"activity","runId":"82045593-1c8d-4249-a4b0-7042bee2d7bd","at":"2026-09-21T07:20:20.239Z","text":"BROWSER_COUNT_MISMATCH","level":"error","elapsedMs":23664,"deltaMs":1}
+{"type":"activity","runId":"82045593-1c8d-4249-a4b0-7042bee2d7bd","at":"2026-09-21T07:20:20.239Z","text":"BROWSER_COUNT_MISMATCH","level":"error","elapsedMs":23665,"deltaMs":1}
+{"type":"activity","runId":"82045593-1c8d-4249-a4b0-7042bee2d7bd","at":"2026-09-21T07:20:20.257Z","text":"COMMAND_FAILED","level":"error","elapsedMs":23683,"deltaMs":18}
+{"type":"activity","runId":"82045593-1c8d-4249-a4b0-7042bee2d7bd","at":"2026-09-21T07:20:20.258Z","text":"Run finished: failed","level":"error","elapsedMs":23683,"deltaMs":0}
+{"type":"run-end","runId":"82045593-1c8d-4249-a4b0-7042bee2d7bd","at":"2026-09-21T07:20:20.258Z","elapsedMs":23684,"outcome":"failed","label":"resetPrepare"}

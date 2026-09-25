@@ -1,0 +1,6 @@
+{"type":"run-start","runId":"28d8065f-5058-4b98-8f9a-93400647955a","label":"prepare","at":"2026-09-20T20:46:58.812Z","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"28d8065f-5058-4b98-8f9a-93400647955a","at":"2026-09-20T20:46:58.813Z","text":"Run started: prepare · Timing log: <install>/.local\\booking-runs\\28d8065f-5058-4b98-8f9a-93400647955a.ndjson","level":"info","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"28d8065f-5058-4b98-8f9a-93400647955a","at":"2026-09-20T20:46:58.819Z","text":"A previous payment hold is recorded until 21 Sept 2026, 04:49:11 Manila (2:13 remaining). Payment remains manual. Reset & Prepare can recheck after expiry.","level":"error","elapsedMs":6,"deltaMs":6}
+{"type":"activity","runId":"28d8065f-5058-4b98-8f9a-93400647955a","at":"2026-09-20T20:46:58.870Z","text":"PAYMENT_HOLD_MAY_BE_ACTIVE","level":"error","elapsedMs":57,"deltaMs":51}
+{"type":"activity","runId":"28d8065f-5058-4b98-8f9a-93400647955a","at":"2026-09-20T20:46:58.870Z","text":"Run finished: failed","level":"error","elapsedMs":57,"deltaMs":0}
+{"type":"run-end","runId":"28d8065f-5058-4b98-8f9a-93400647955a","at":"2026-09-20T20:46:58.870Z","elapsedMs":57,"outcome":"failed","label":"prepare"}

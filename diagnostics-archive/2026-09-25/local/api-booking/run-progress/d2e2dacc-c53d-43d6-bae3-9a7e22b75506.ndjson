@@ -1,0 +1,10 @@
+{"runId":"d2e2dacc-c53d-43d6-bae3-9a7e22b75506","mode":"prepare","targetDate":"2026-09-23","stage":"RUN_STARTED","at":"2026-09-21T20:39:50.042Z","elapsedMs":1,"sincePreviousMs":1}
+{"runId":"d2e2dacc-c53d-43d6-bae3-9a7e22b75506","mode":"prepare","targetDate":"2026-09-23","stage":"PREPARING_BROWSER","at":"2026-09-21T20:39:50.051Z","elapsedMs":9,"sincePreviousMs":8,"workerId":"A"}
+{"runId":"d2e2dacc-c53d-43d6-bae3-9a7e22b75506","mode":"prepare","targetDate":"2026-09-23","stage":"PREPARING_BROWSER","at":"2026-09-21T20:39:50.066Z","elapsedMs":24,"sincePreviousMs":15,"workerId":"B"}
+{"runId":"d2e2dacc-c53d-43d6-bae3-9a7e22b75506","mode":"prepare","targetDate":"2026-09-23","stage":"PREPARING_BROWSER","at":"2026-09-21T20:39:50.080Z","elapsedMs":38,"sincePreviousMs":14,"workerId":"C"}
+{"runId":"d2e2dacc-c53d-43d6-bae3-9a7e22b75506","mode":"prepare","targetDate":"2026-09-23","stage":"PREPARING_BROWSER","at":"2026-09-21T20:39:50.091Z","elapsedMs":50,"sincePreviousMs":12,"workerId":"D"}
+{"runId":"d2e2dacc-c53d-43d6-bae3-9a7e22b75506","mode":"prepare","targetDate":"2026-09-23","stage":"BROWSER_READY","at":"2026-09-21T20:39:51.747Z","elapsedMs":1705,"sincePreviousMs":1655,"workerId":"C","port":19446}
+{"runId":"d2e2dacc-c53d-43d6-bae3-9a7e22b75506","mode":"prepare","targetDate":"2026-09-23","stage":"BROWSER_READY","at":"2026-09-21T20:39:51.750Z","elapsedMs":1708,"sincePreviousMs":3,"workerId":"D","port":19447}
+{"runId":"d2e2dacc-c53d-43d6-bae3-9a7e22b75506","mode":"prepare","targetDate":"2026-09-23","stage":"BROWSER_READY","at":"2026-09-21T20:39:51.750Z","elapsedMs":1708,"sincePreviousMs":0,"workerId":"A","port":19444}
+{"runId":"d2e2dacc-c53d-43d6-bae3-9a7e22b75506","mode":"prepare","targetDate":"2026-09-23","stage":"BROWSER_READY","at":"2026-09-21T20:39:51.752Z","elapsedMs":1711,"sincePreviousMs":3,"workerId":"B","port":19445}
+{"runId":"d2e2dacc-c53d-43d6-bae3-9a7e22b75506","mode":"prepare","targetDate":"2026-09-23","stage":"PROCESS_EXIT","at":"2026-09-21T20:39:51.762Z","elapsedMs":1720,"sincePreviousMs":9,"exitCode":0}

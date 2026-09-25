@@ -1,0 +1,98 @@
+RELEASE SLOT WATCH — target 2026-09-26
+Release: 2026-09-24 08:00:00.000 Manila · network clock synchronized (offset 43.4 ms)
+Watch finished: window complete · 115 reads (4 failed) · median read 199 ms
+Target date first visible: +15.744 s
+Open at first read: 55 · still open at end: 15
+Fastest take: +29.489 s
+
+TAKEN AFTER OPENING (a slot changed between the previous read and the time shown)
+    +29.489 s  Court 1 1 PM  open +15.744 s → taken (±13.745 s) · booking record seen +31.776 s
+    +29.489 s  Court 1 7 PM  open +15.744 s → taken (±13.745 s) · booking record seen +31.776 s
+    +29.489 s  Court 1 8 PM  open +15.744 s → taken (±13.745 s) · booking record seen +31.776 s
+    +29.489 s  Court 1 10 PM open +15.744 s → taken (±13.745 s) · booking record seen +31.776 s
+    +29.489 s  Court 1 11 PM open +15.744 s → taken (±13.745 s)
+    +29.489 s  Court 2 1 PM  open +15.744 s → taken (±13.745 s) · booking record seen +31.776 s
+    +29.489 s  Court 2 2 PM  open +15.744 s → taken (±13.745 s) · booking record seen +31.776 s
+    +29.489 s  Court 2 3 PM  open +15.744 s → taken (±13.745 s) · booking record seen +31.776 s
+    +29.489 s  Court 2 7 PM  open +15.744 s → taken (±13.745 s) · booking record seen +31.776 s
+    +29.489 s  Court 2 8 PM  open +15.744 s → taken (±13.745 s) · booking record seen +31.776 s
+    +29.489 s  Court 2 9 PM  open +15.744 s → taken (±13.745 s) · booking record seen +31.776 s
+    +29.489 s  Court 2 10 PM open +15.744 s → taken (±13.745 s) · booking record seen +31.776 s
+    +29.489 s  Court 2 11 PM open +15.744 s → taken (±13.745 s)
+    +29.489 s  Court 3 8 PM  open +15.744 s → taken (±13.745 s) · booking record seen +31.776 s
+    +29.489 s  Court 3 9 PM  open +15.744 s → taken (±13.745 s) · booking record seen +31.776 s
+    +29.489 s  Court 3 10 PM open +15.744 s → taken (±13.745 s) · booking record seen +31.776 s
+    +29.489 s  Court 3 11 PM open +15.744 s → taken (±13.745 s)
+    +29.489 s  Court 4 8 PM  open +15.744 s → taken (±13.745 s) · booking record seen +31.776 s
+    +29.489 s  Court 4 9 PM  open +15.744 s → taken (±13.745 s) · booking record seen +31.776 s
+    +29.489 s  Court 4 10 PM open +15.744 s → taken (±13.745 s) · booking record seen +31.776 s
+    +29.489 s  Court 4 11 PM open +15.744 s → taken (±13.745 s)
+    +29.489 s  Court 5 11 PM open +15.744 s → taken (±13.745 s)
+    +29.489 s  Court 6 1 PM  open +15.744 s → taken (±13.745 s) · booking record seen +31.776 s
+    +29.489 s  Court 6 2 PM  open +15.744 s → taken (±13.745 s) · booking record seen +31.776 s
+    +29.489 s  Court 6 3 PM  open +15.744 s → taken (±13.745 s) · booking record seen +31.776 s
+    +29.489 s  Court 6 11 PM open +15.744 s → taken (±13.745 s)
+    +29.489 s  Court 7 1 PM  open +15.744 s → taken (±13.745 s) · booking record seen +31.776 s
+    +29.489 s  Court 7 2 PM  open +15.744 s → taken (±13.745 s) · booking record seen +31.776 s
+    +29.489 s  Court 7 3 PM  open +15.744 s → taken (±13.745 s) · booking record seen +31.776 s
+    +29.489 s  Court 7 4 PM  open +15.744 s → taken (±13.745 s) · booking record seen +31.776 s
+    +29.489 s  Court 7 5 PM  open +15.744 s → taken (±13.745 s) · booking record seen +31.776 s
+    +29.489 s  Court 7 9 PM  open +15.744 s → taken (±13.745 s) · booking record seen +31.776 s
+    +29.489 s  Court 7 10 PM open +15.744 s → taken (±13.745 s) · booking record seen +31.776 s
+    +29.489 s  Court 7 11 PM open +15.744 s → taken (±13.745 s)
+    +30.827 s  Court 1 9 PM  open +15.744 s → taken (±1.338 s) · booking record seen +31.776 s
+    +56.470 s  Court 1 9 AM  open +15.744 s → taken (±1.380 s) · booking record seen +60.370 s
+    +56.470 s  Court 1 10 AM open +15.744 s → taken (±1.380 s) · booking record seen +60.370 s
+    +56.470 s  Court 1 11 AM open +15.744 s → taken (±1.380 s) · booking record seen +60.370 s
+    +56.470 s  Court 2 9 AM  open +15.744 s → taken (±1.380 s) · booking record seen +60.370 s
+    +56.470 s  Court 2 10 AM open +15.744 s → taken (±1.380 s) · booking record seen +60.370 s
+    +56.470 s  Court 2 11 AM open +15.744 s → taken (±1.380 s) · booking record seen +60.370 s
+    +90.452 s  Court 7 9 AM  open +15.744 s → taken (±5.248 s) · booking record seen +120.295 s
+    +90.452 s  Court 7 10 AM open +15.744 s → taken (±5.248 s) · booking record seen +120.295 s
+    +90.452 s  Court 7 11 AM open +15.744 s → taken (±5.248 s) · booking record seen +120.295 s
+   +450.196 s  Court 6 8 AM  open +15.744 s → taken (±29.813 s) · booking record seen +600.422 s
+   +450.196 s  Court 6 9 AM  open +15.744 s → taken (±29.813 s) · booking record seen +600.422 s
+   +450.196 s  Court 6 10 AM open +15.744 s → taken (±29.813 s) · booking record seen +600.422 s
+   +540.201 s  Court 7 12 PM open +15.744 s → taken (±29.789 s) · booking record seen +600.422 s
+   +720.497 s  Court 6 12 PM open +15.744 s → taken (±30.079 s) · booking record seen +900.482 s
+
+NEVER OPEN (already unavailable at the first published read)
+  Court 1: 2 PM (booked), 3 PM (booked), 4 PM (booked), 5 PM (booked), 6 PM (booked)
+  Court 2: 4 PM (booked), 5 PM (booked), 6 PM (booked)
+  Court 3: 8 AM (no booking record — likely venue block), 9 AM (no booking record — likely venue block), 10 AM (no booking record — likely venue block), 11 AM (no booking record — likely venue block), 12 PM (no booking record — likely venue block), 1 PM (no booking record — likely venue block), 2 PM (no booking record — likely venue block), 3 PM (no booking record — likely venue block), 4 PM (no booking record — likely venue block), 5 PM (no booking record — likely venue block), 6 PM (no booking record — likely venue block), 7 PM (no booking record — likely venue block)
+  Court 4: 8 AM (no booking record — likely venue block), 9 AM (no booking record — likely venue block), 10 AM (no booking record — likely venue block), 11 AM (no booking record — likely venue block), 12 PM (no booking record — likely venue block), 1 PM (no booking record — likely venue block), 2 PM (no booking record — likely venue block), 3 PM (no booking record — likely venue block), 4 PM (no booking record — likely venue block), 5 PM (no booking record — likely venue block), 6 PM (no booking record — likely venue block), 7 PM (no booking record — likely venue block)
+  Court 5: 8 AM (no booking record — likely venue block), 9 AM (no booking record — likely venue block), 10 AM (no booking record — likely venue block), 11 AM (no booking record — likely venue block), 12 PM (no booking record — likely venue block), 1 PM (no booking record — likely venue block), 2 PM (no booking record — likely venue block), 3 PM (no booking record — likely venue block), 4 PM (no booking record — likely venue block), 5 PM (no booking record — likely venue block), 6 PM (no booking record — likely venue block), 7 PM (no booking record — likely venue block), 8 PM (booked), 9 PM (booked), 10 PM (booked)
+  Court 6: 4 PM (booked), 5 PM (no booking record — likely venue block), 6 PM (no booking record — likely venue block), 7 PM (no booking record — likely venue block), 8 PM (booked), 9 PM (booked), 10 PM (booked)
+  Court 7: 6 PM (booked), 7 PM (booked), 8 PM (booked)
+
+REOPENED LATER (for example an unpaid hold expiring)
+    +31.776 s  Court 1 9 PM
+    +31.776 s  Court 2 7 PM
+    +31.776 s  Court 7 9 PM
+    +32.537 s  Court 1 9 PM
+    +36.096 s  Court 1 9 PM
+   +630.479 s  Court 1 9 PM
+   +630.479 s  Court 1 11 PM
+   +630.479 s  Court 2 2 PM
+   +630.479 s  Court 3 8 PM
+   +630.479 s  Court 4 8 PM
+   +630.479 s  Court 4 9 PM
+   +630.479 s  Court 6 1 PM
+   +630.479 s  Court 6 11 PM
+   +630.479 s  Court 7 2 PM
+   +630.479 s  Court 7 5 PM
+   +690.418 s  Court 7 9 AM
+   +690.418 s  Court 7 10 AM
+   +690.418 s  Court 7 11 AM
+
+FINAL MATRIX (O open, X taken, U unreleased, ? unknown)
+       08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+  C1    O  X  X  X  O  X  X  X  X  X  X  X  X  O  X  O
+  C2    O  X  X  X  O  X  O  X  X  X  X  X  X  X  X  X
+  C3    X  X  X  X  X  X  X  X  X  X  X  X  O  X  X  X
+  C4    X  X  X  X  X  X  X  X  X  X  X  X  O  O  X  X
+  C5    X  X  X  X  X  X  X  X  X  X  X  X  X  X  X  X
+  C6    X  X  X  O  X  X  X  X  X  X  X  X  X  X  X  O
+  C7    O  X  X  X  X  X  O  X  X  O  X  X  X  X  X  X
+
+Full read-by-read log: <install>/.local\slot-watch\2026-09-26_d4cc58f6-2624-48fa-a60e-40736380511d.ndjson

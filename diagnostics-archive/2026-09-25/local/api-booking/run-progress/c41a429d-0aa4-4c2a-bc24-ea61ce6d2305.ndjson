@@ -1,0 +1,16 @@
+{"runId":"c41a429d-0aa4-4c2a-bc24-ea61ce6d2305","mode":"live-now","targetDate":"2026-09-23","stage":"RUN_STARTED","at":"2026-09-21T20:02:42.680Z","elapsedMs":1,"sincePreviousMs":1}
+{"runId":"c41a429d-0aa4-4c2a-bc24-ea61ce6d2305","mode":"live-now","targetDate":"2026-09-23","stage":"PREPARING_BROWSER","at":"2026-09-21T20:02:42.730Z","elapsedMs":51,"sincePreviousMs":50,"workerId":"A"}
+{"runId":"c41a429d-0aa4-4c2a-bc24-ea61ce6d2305","mode":"live-now","targetDate":"2026-09-23","stage":"PREPARING_BROWSER","at":"2026-09-21T20:02:44.075Z","elapsedMs":1396,"sincePreviousMs":1345,"workerId":"B"}
+{"runId":"c41a429d-0aa4-4c2a-bc24-ea61ce6d2305","mode":"live-now","targetDate":"2026-09-23","stage":"PREPARING_BROWSER","at":"2026-09-21T20:02:45.327Z","elapsedMs":2648,"sincePreviousMs":1252,"workerId":"C"}
+{"runId":"c41a429d-0aa4-4c2a-bc24-ea61ce6d2305","mode":"live-now","targetDate":"2026-09-23","stage":"PREPARING_BROWSER","at":"2026-09-21T20:02:46.608Z","elapsedMs":3929,"sincePreviousMs":1281,"workerId":"D"}
+{"runId":"c41a429d-0aa4-4c2a-bc24-ea61ce6d2305","mode":"live-now","targetDate":"2026-09-23","stage":"BROWSER_READY","at":"2026-09-21T20:02:47.959Z","elapsedMs":5279,"sincePreviousMs":1350,"workerId":"A","port":19444}
+{"runId":"c41a429d-0aa4-4c2a-bc24-ea61ce6d2305","mode":"live-now","targetDate":"2026-09-23","stage":"BROWSER_READY","at":"2026-09-21T20:02:47.967Z","elapsedMs":5288,"sincePreviousMs":9,"workerId":"D","port":19447}
+{"runId":"c41a429d-0aa4-4c2a-bc24-ea61ce6d2305","mode":"live-now","targetDate":"2026-09-23","stage":"BROWSER_READY","at":"2026-09-21T20:02:47.968Z","elapsedMs":5289,"sincePreviousMs":1,"workerId":"B","port":19445}
+{"runId":"c41a429d-0aa4-4c2a-bc24-ea61ce6d2305","mode":"live-now","targetDate":"2026-09-23","stage":"BROWSER_READY","at":"2026-09-21T20:02:47.971Z","elapsedMs":5292,"sincePreviousMs":3,"workerId":"C","port":19446}
+{"runId":"c41a429d-0aa4-4c2a-bc24-ea61ce6d2305","mode":"live-now","targetDate":"2026-09-23","stage":"FETCHING_AVAILABILITY","at":"2026-09-21T20:02:47.971Z","elapsedMs":5292,"sincePreviousMs":0}
+{"runId":"c41a429d-0aa4-4c2a-bc24-ea61ce6d2305","mode":"live-now","targetDate":"2026-09-23","stage":"EXPIRED_HOLD_REUSABLE","at":"2026-09-21T20:02:48.644Z","elapsedMs":5965,"sincePreviousMs":673}
+{"runId":"c41a429d-0aa4-4c2a-bc24-ea61ce6d2305","mode":"live-now","targetDate":"2026-09-23","stage":"EXPIRED_HOLD_REUSABLE","at":"2026-09-21T20:02:48.644Z","elapsedMs":5965,"sincePreviousMs":0}
+{"runId":"c41a429d-0aa4-4c2a-bc24-ea61ce6d2305","mode":"live-now","targetDate":"2026-09-23","stage":"EXPIRED_HOLD_REUSABLE","at":"2026-09-21T20:02:48.644Z","elapsedMs":5965,"sincePreviousMs":0}
+{"runId":"c41a429d-0aa4-4c2a-bc24-ea61ce6d2305","mode":"live-now","targetDate":"2026-09-23","stage":"EXPIRED_HOLD_REUSABLE","at":"2026-09-21T20:02:48.644Z","elapsedMs":5965,"sincePreviousMs":0}
+{"runId":"c41a429d-0aa4-4c2a-bc24-ea61ce6d2305","mode":"live-now","targetDate":"2026-09-23","stage":"FAILED","at":"2026-09-21T20:02:48.804Z","elapsedMs":6125,"sincePreviousMs":160,"code":"API_NO_UNUSED_CANDIDATE"}
+{"runId":"c41a429d-0aa4-4c2a-bc24-ea61ce6d2305","mode":"live-now","targetDate":"2026-09-23","stage":"PROCESS_EXIT","at":"2026-09-21T20:02:48.819Z","elapsedMs":6139,"sincePreviousMs":14,"exitCode":1}

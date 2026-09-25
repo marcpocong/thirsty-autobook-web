@@ -1,0 +1,9 @@
+{"type":"run-start","runId":"b46c57bc-3fe0-4e13-a23b-6b9c513d3d0d","label":"prepare","at":"2026-09-20T19:47:32.208Z","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"b46c57bc-3fe0-4e13-a23b-6b9c513d3d0d","at":"2026-09-20T19:47:32.209Z","text":"Run started: prepare · Timing log: [REDACTED_LOCAL_PATH]\\Downloads\\Thirsty Bot API Test\\.local\\booking-runs\\b46c57bc-3fe0-4e13-a23b-6b9c513d3d0d.ndjson","level":"info","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"b46c57bc-3fe0-4e13-a23b-6b9c513d3d0d","at":"2026-09-20T19:47:32.210Z","text":"Process started: apiRun · prepare","level":"info","elapsedMs":1,"deltaMs":1}
+{"type":"activity","runId":"b46c57bc-3fe0-4e13-a23b-6b9c513d3d0d","at":"2026-09-20T19:47:32.813Z","text":"API run started · Timing log: .local/api-booking/run-progress/5a89ecb8-abf5-4812-8c3a-1d0bb2036064.ndjson · 1 ms total · +1 ms since prior stage","level":"info","elapsedMs":606,"deltaMs":605}
+{"type":"activity","runId":"b46c57bc-3fe0-4e13-a23b-6b9c513d3d0d","at":"2026-09-20T19:47:32.819Z","text":"Preparing isolated Chrome · Progress recorded · 7 ms total · +6 ms since prior stage","level":"info","elapsedMs":611,"deltaMs":5}
+{"type":"activity","runId":"b46c57bc-3fe0-4e13-a23b-6b9c513d3d0d","at":"2026-09-20T19:47:36.868Z","text":"API browser ready · Progress recorded · 4055 ms total · +4048 ms since prior stage","level":"info","elapsedMs":4660,"deltaMs":4049}
+{"type":"activity","runId":"b46c57bc-3fe0-4e13-a23b-6b9c513d3d0d","at":"2026-09-20T19:47:36.896Z","text":"Process completed: apiRun · prepare · exit code 0","level":"info","elapsedMs":4687,"deltaMs":27}
+{"type":"activity","runId":"b46c57bc-3fe0-4e13-a23b-6b9c513d3d0d","at":"2026-09-20T19:47:36.896Z","text":"Run finished: complete","level":"info","elapsedMs":4687,"deltaMs":0}
+{"type":"run-end","runId":"b46c57bc-3fe0-4e13-a23b-6b9c513d3d0d","at":"2026-09-20T19:47:36.896Z","elapsedMs":4687,"outcome":"complete","label":"API PREPARE"}

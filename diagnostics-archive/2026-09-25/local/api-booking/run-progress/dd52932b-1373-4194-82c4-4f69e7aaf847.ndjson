@@ -1,0 +1,10 @@
+{"runId":"dd52932b-1373-4194-82c4-4f69e7aaf847","mode":"live-now","targetDate":"2026-09-21","stage":"RUN_STARTED","at":"2026-09-20T20:51:49.082Z","elapsedMs":1,"sincePreviousMs":1}
+{"runId":"dd52932b-1373-4194-82c4-4f69e7aaf847","mode":"live-now","targetDate":"2026-09-21","stage":"PREPARING_BROWSER","at":"2026-09-20T20:51:49.133Z","elapsedMs":52,"sincePreviousMs":51,"workerId":"A"}
+{"runId":"dd52932b-1373-4194-82c4-4f69e7aaf847","mode":"live-now","targetDate":"2026-09-21","stage":"BROWSER_READY","at":"2026-09-20T20:51:51.633Z","elapsedMs":2551,"sincePreviousMs":2499,"workerId":"A","port":19444}
+{"runId":"dd52932b-1373-4194-82c4-4f69e7aaf847","mode":"live-now","targetDate":"2026-09-21","stage":"PREPARING_BROWSER","at":"2026-09-20T20:51:51.633Z","elapsedMs":2551,"sincePreviousMs":0,"workerId":"B"}
+{"runId":"dd52932b-1373-4194-82c4-4f69e7aaf847","mode":"live-now","targetDate":"2026-09-21","stage":"BROWSER_READY","at":"2026-09-20T20:51:54.076Z","elapsedMs":4995,"sincePreviousMs":2444,"workerId":"B","port":19445}
+{"runId":"dd52932b-1373-4194-82c4-4f69e7aaf847","mode":"live-now","targetDate":"2026-09-21","stage":"FETCHING_AVAILABILITY","at":"2026-09-20T20:51:54.076Z","elapsedMs":4995,"sincePreviousMs":0}
+{"runId":"dd52932b-1373-4194-82c4-4f69e7aaf847","mode":"live-now","targetDate":"2026-09-21","stage":"EXPIRED_HOLD_REUSABLE","at":"2026-09-20T20:51:54.478Z","elapsedMs":5396,"sincePreviousMs":401}
+{"runId":"dd52932b-1373-4194-82c4-4f69e7aaf847","mode":"live-now","targetDate":"2026-09-21","stage":"EXPIRED_HOLD_REUSABLE","at":"2026-09-20T20:51:54.478Z","elapsedMs":5396,"sincePreviousMs":0}
+{"runId":"dd52932b-1373-4194-82c4-4f69e7aaf847","mode":"live-now","targetDate":"2026-09-21","stage":"CANDIDATE_READY","at":"2026-09-20T20:51:54.478Z","elapsedMs":5396,"sincePreviousMs":0,"date":"2026-09-21","court":2,"courtB":2,"startTime":"08:00","durationHours":6,"price":3600,"availabilityMs":397}
+{"runId":"dd52932b-1373-4194-82c4-4f69e7aaf847","mode":"live-now","targetDate":"2026-09-21","stage":"FRESH_VERIFICATION_AND_PROOFS","at":"2026-09-20T20:51:54.478Z","elapsedMs":5397,"sincePreviousMs":1,"workerId":"A"}

@@ -1,0 +1,11 @@
+{"type":"run-start","runId":"2991e379-898b-452b-9f30-3445bc762ce0","label":"prepare","at":"2026-09-21T08:41:09.455Z","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"2991e379-898b-452b-9f30-3445bc762ce0","at":"2026-09-21T08:41:09.456Z","text":"Run started: prepare · Timing log: <install>/.local\\booking-runs\\2991e379-898b-452b-9f30-3445bc762ce0.ndjson","level":"info","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"2991e379-898b-452b-9f30-3445bc762ce0","at":"2026-09-21T08:41:09.458Z","text":"Process started: apiRun · prepare","level":"info","elapsedMs":1,"deltaMs":1}
+{"type":"activity","runId":"2991e379-898b-452b-9f30-3445bc762ce0","at":"2026-09-21T08:41:10.632Z","text":"API run started · Timing log: .local/api-booking/run-progress/37b9b521-d805-4402-9ff5-6c756b2cef3b.ndjson · 1 ms total · +1 ms since prior stage","level":"info","elapsedMs":1179,"deltaMs":1177}
+{"type":"activity","runId":"2991e379-898b-452b-9f30-3445bc762ce0","at":"2026-09-21T08:41:10.638Z","text":"Preparing isolated Chrome · Progress recorded · 7 ms total · +6 ms since prior stage","level":"info","elapsedMs":1183,"deltaMs":5}
+{"type":"activity","runId":"2991e379-898b-452b-9f30-3445bc762ce0","at":"2026-09-21T08:41:13.498Z","text":"API browser ready · Progress recorded · 2867 ms total · +2860 ms since prior stage","level":"info","elapsedMs":4045,"deltaMs":2861}
+{"type":"activity","runId":"2991e379-898b-452b-9f30-3445bc762ce0","at":"2026-09-21T08:41:13.500Z","text":"Preparing isolated Chrome · Progress recorded · 2869 ms total · +2 ms since prior stage","level":"info","elapsedMs":4045,"deltaMs":1}
+{"type":"activity","runId":"2991e379-898b-452b-9f30-3445bc762ce0","at":"2026-09-21T08:41:17.409Z","text":"API run needs attention · CDP_NOT_LISTENING · 6777 ms total · +3908 ms since prior stage","level":"error","elapsedMs":7954,"deltaMs":3908}
+{"type":"activity","runId":"2991e379-898b-452b-9f30-3445bc762ce0","at":"2026-09-21T08:41:17.425Z","text":"COMMAND_FAILED","level":"error","elapsedMs":7969,"deltaMs":15}
+{"type":"activity","runId":"2991e379-898b-452b-9f30-3445bc762ce0","at":"2026-09-21T08:41:17.425Z","text":"Run finished: failed","level":"error","elapsedMs":7969,"deltaMs":0}
+{"type":"run-end","runId":"2991e379-898b-452b-9f30-3445bc762ce0","at":"2026-09-21T08:41:17.425Z","elapsedMs":7969,"outcome":"failed","label":"API PREPARE"}

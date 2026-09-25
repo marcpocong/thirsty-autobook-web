@@ -1,0 +1,4 @@
+{"type":"run-start","runId":"b367ba4e-f24d-46ac-bd4b-8f8bd9be2512","label":"saving","at":"2026-09-23T03:56:13.676Z","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"b367ba4e-f24d-46ac-bd4b-8f8bd9be2512","at":"2026-09-23T03:56:13.676Z","text":"Run started: saving · Timing log: <install>/.local\\booking-runs\\b367ba4e-f24d-46ac-bd4b-8f8bd9be2512.ndjson","level":"info","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"b367ba4e-f24d-46ac-bd4b-8f8bd9be2512","at":"2026-09-23T03:56:13.688Z","text":"Run finished: complete","level":"info","elapsedMs":11,"deltaMs":11}
+{"type":"run-end","runId":"b367ba4e-f24d-46ac-bd4b-8f8bd9be2512","at":"2026-09-23T03:56:13.693Z","elapsedMs":16,"outcome":"complete","label":"saving"}

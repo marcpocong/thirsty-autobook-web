@@ -1,0 +1,10 @@
+{"type":"run-start","runId":"e9522d79-b0d5-4ada-bc53-f03e36469183","label":"blockAudit","at":"2026-09-23T02:15:31.389Z","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"e9522d79-b0d5-4ada-bc53-f03e36469183","at":"2026-09-23T02:15:31.390Z","text":"Run started: blockAudit · Timing log: <install>/.local\\booking-runs\\e9522d79-b0d5-4ada-bc53-f03e36469183.ndjson","level":"info","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"e9522d79-b0d5-4ada-bc53-f03e36469183","at":"2026-09-23T02:15:31.401Z","text":"Process started: apiRun · audit","level":"info","elapsedMs":11,"deltaMs":11}
+{"type":"activity","runId":"e9522d79-b0d5-4ada-bc53-f03e36469183","at":"2026-09-23T02:15:32.674Z","text":"API run started · Timing log: .local/api-booking/run-progress/2a2717f2-315f-424b-b360-2f120d3568cf.ndjson · 1 ms total · +1 ms since prior stage","level":"info","elapsedMs":1287,"deltaMs":1276}
+{"type":"activity","runId":"e9522d79-b0d5-4ada-bc53-f03e36469183","at":"2026-09-23T02:15:32.680Z","text":"RUN CONFIGURATION · Progress recorded · 7 ms total · +6 ms since prior stage","level":"info","elapsedMs":1295,"deltaMs":8}
+{"type":"activity","runId":"e9522d79-b0d5-4ada-bc53-f03e36469183","at":"2026-09-23T02:15:33.501Z","text":"2026-09-26 · Open 0 · Blocked 9 · Unreleased 0 · Unknown 103. No hold or booking was created.","level":"info","elapsedMs":2111,"deltaMs":816}
+{"type":"activity","runId":"e9522d79-b0d5-4ada-bc53-f03e36469183","at":"2026-09-23T02:15:33.500Z","text":"BLOCK AUDIT COMPLETE · Progress recorded · 826 ms total · +819 ms since prior stage","level":"info","elapsedMs":2120,"deltaMs":9}
+{"type":"activity","runId":"e9522d79-b0d5-4ada-bc53-f03e36469183","at":"2026-09-23T02:15:33.536Z","text":"Process completed: apiRun · audit · exit code 0","level":"info","elapsedMs":2146,"deltaMs":25}
+{"type":"activity","runId":"e9522d79-b0d5-4ada-bc53-f03e36469183","at":"2026-09-23T02:15:33.539Z","text":"Run finished: complete","level":"info","elapsedMs":2149,"deltaMs":4}
+{"type":"run-end","runId":"e9522d79-b0d5-4ada-bc53-f03e36469183","at":"2026-09-23T02:15:33.543Z","elapsedMs":2153,"outcome":"complete","label":"API AUDIT"}

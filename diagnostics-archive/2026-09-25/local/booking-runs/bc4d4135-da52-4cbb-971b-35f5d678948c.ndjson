@@ -1,0 +1,12 @@
+{"type":"run-start","runId":"bc4d4135-da52-4cbb-971b-35f5d678948c","label":"prepare","at":"2026-09-23T03:16:16.214Z","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"bc4d4135-da52-4cbb-971b-35f5d678948c","at":"2026-09-23T03:16:16.214Z","text":"Run started: prepare · Timing log: <install>/.local\\booking-runs\\bc4d4135-da52-4cbb-971b-35f5d678948c.ndjson","level":"info","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"bc4d4135-da52-4cbb-971b-35f5d678948c","at":"2026-09-23T03:16:16.225Z","text":"Checking the old worker, Onda browser, selected slots, and payment hold before API preparation.","level":"info","elapsedMs":11,"deltaMs":11}
+{"type":"activity","runId":"bc4d4135-da52-4cbb-971b-35f5d678948c","at":"2026-09-23T03:16:16.268Z","text":"Preparing a fresh schedule while retaining the previous verified hold record and QR tab.","level":"info","elapsedMs":54,"deltaMs":43}
+{"type":"activity","runId":"bc4d4135-da52-4cbb-971b-35f5d678948c","at":"2026-09-23T03:16:16.272Z","text":"Process started: resetPrepare","level":"info","elapsedMs":57,"deltaMs":4}
+{"type":"activity","runId":"bc4d4135-da52-4cbb-971b-35f5d678948c","at":"2026-09-23T03:16:17.523Z","text":"Preparation: Starting required browser(s)...","level":"info","elapsedMs":1309,"deltaMs":1252}
+{"type":"activity","runId":"bc4d4135-da52-4cbb-971b-35f5d678948c","at":"2026-09-23T03:16:17.554Z","text":"Preparation: Checking previous session...","level":"info","elapsedMs":1340,"deltaMs":31}
+{"type":"activity","runId":"bc4d4135-da52-4cbb-971b-35f5d678948c","at":"2026-09-23T03:17:17.583Z","text":"Dedicated Chrome could not be started. Check Activity, then retry Reset & Prepare.","level":"error","elapsedMs":61368,"deltaMs":60028}
+{"type":"activity","runId":"bc4d4135-da52-4cbb-971b-35f5d678948c","at":"2026-09-23T03:17:17.586Z","text":"CHROME_START_FAILED","level":"error","elapsedMs":61372,"deltaMs":4}
+{"type":"activity","runId":"bc4d4135-da52-4cbb-971b-35f5d678948c","at":"2026-09-23T03:17:17.595Z","text":"COMMAND_FAILED","level":"error","elapsedMs":61381,"deltaMs":9}
+{"type":"activity","runId":"bc4d4135-da52-4cbb-971b-35f5d678948c","at":"2026-09-23T03:17:17.601Z","text":"Run finished: failed","level":"error","elapsedMs":61387,"deltaMs":6}
+{"type":"run-end","runId":"bc4d4135-da52-4cbb-971b-35f5d678948c","at":"2026-09-23T03:17:17.607Z","elapsedMs":61393,"outcome":"failed","label":"resetPrepare"}

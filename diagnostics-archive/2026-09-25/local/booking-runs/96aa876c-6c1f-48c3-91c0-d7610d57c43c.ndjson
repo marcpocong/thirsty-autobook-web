@@ -1,0 +1,5 @@
+{"type":"run-start","runId":"96aa876c-6c1f-48c3-91c0-d7610d57c43c","label":"prepare","at":"2026-09-21T07:20:53.692Z","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"96aa876c-6c1f-48c3-91c0-d7610d57c43c","at":"2026-09-21T07:20:53.693Z","text":"Run started: prepare · Timing log: <install>/.local\\booking-runs\\96aa876c-6c1f-48c3-91c0-d7610d57c43c.ndjson","level":"info","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"96aa876c-6c1f-48c3-91c0-d7610d57c43c","at":"2026-09-21T07:20:53.693Z","text":"API_FIRST_COURT_COUNT_UNSUPPORTED","level":"error","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"96aa876c-6c1f-48c3-91c0-d7610d57c43c","at":"2026-09-21T07:20:53.694Z","text":"Run finished: failed","level":"error","elapsedMs":1,"deltaMs":0}
+{"type":"run-end","runId":"96aa876c-6c1f-48c3-91c0-d7610d57c43c","at":"2026-09-21T07:20:53.694Z","elapsedMs":1,"outcome":"failed","label":"prepare"}

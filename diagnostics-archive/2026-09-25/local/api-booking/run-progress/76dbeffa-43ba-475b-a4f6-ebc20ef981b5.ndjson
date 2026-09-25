@@ -1,0 +1,4 @@
+{"runId":"76dbeffa-43ba-475b-a4f6-ebc20ef981b5","mode":"prepare","targetDate":"2026-09-21","stage":"RUN_STARTED","at":"2026-09-20T19:07:20.458Z","elapsedMs":1,"sincePreviousMs":1}
+{"runId":"76dbeffa-43ba-475b-a4f6-ebc20ef981b5","mode":"prepare","targetDate":"2026-09-21","stage":"PREPARING_BROWSER","at":"2026-09-20T19:07:20.464Z","elapsedMs":7,"sincePreviousMs":6,"workerId":"A"}
+{"runId":"76dbeffa-43ba-475b-a4f6-ebc20ef981b5","mode":"prepare","targetDate":"2026-09-21","stage":"BROWSER_READY","at":"2026-09-20T19:07:23.067Z","elapsedMs":2609,"sincePreviousMs":2602,"workerId":"A","port":19444}
+{"runId":"76dbeffa-43ba-475b-a4f6-ebc20ef981b5","mode":"prepare","targetDate":"2026-09-21","stage":"PROCESS_EXIT","at":"2026-09-20T19:07:23.071Z","elapsedMs":2613,"sincePreviousMs":4,"exitCode":0}

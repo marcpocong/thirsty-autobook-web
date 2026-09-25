@@ -1,0 +1,5 @@
+{"type":"run-start","runId":"8a215af6-e96a-4ced-a574-83c146ff00ef","label":"closingBrowsers","at":"2026-09-24T09:38:29.834Z","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"8a215af6-e96a-4ced-a574-83c146ff00ef","at":"2026-09-24T09:38:29.834Z","text":"Run started: closingBrowsers · Timing log: <install>/.local\\booking-runs\\8a215af6-e96a-4ced-a574-83c146ff00ef.ndjson","level":"info","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"8a215af6-e96a-4ced-a574-83c146ff00ef","at":"2026-09-24T09:38:39.778Z","text":"Closed 4 bot Chrome browsers (4 force-closed after not responding). Your own Chrome windows were not touched.","level":"info","elapsedMs":9943,"deltaMs":9943}
+{"type":"activity","runId":"8a215af6-e96a-4ced-a574-83c146ff00ef","at":"2026-09-24T09:38:39.782Z","text":"Run finished: complete","level":"info","elapsedMs":9948,"deltaMs":5}
+{"type":"run-end","runId":"8a215af6-e96a-4ced-a574-83c146ff00ef","at":"2026-09-24T09:38:39.787Z","elapsedMs":9953,"outcome":"complete","label":"closingBrowsers"}
