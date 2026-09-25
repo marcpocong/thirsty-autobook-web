@@ -25,7 +25,7 @@ const allowedFields = new Set([
   'challengeState','activeAvailability','activeSecurity','activeSlotChecks','activeCheckouts','droppedCount','retryCount',
   'verifiedHoldCount','qrHandoffCount','partialHolds','coreElapsedMs','slowestStages',
   'absentEvidence','finalCode','aborted','workerOutcome','court','startTime','durationHours','price','responseObserved',
-  'releaseLatenessMs','checkpoint','errorHint','responseSource','responseBytes','bodyShape',
+  'releaseLatenessMs','checkpoint','errorHint','responseSource','responseBytes','bodyShape','calibrationUncertaintyMs',
 ]);
 
 export function diagnosticLaneForWorker(_workerId: WorkerId): DiagnosticLane {
