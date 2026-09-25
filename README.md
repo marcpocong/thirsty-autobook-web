@@ -176,7 +176,7 @@ The activity log streams opt-in validated `THIRSTY_EVENT` messages and sanitized
 
 Locks are deliberately retained after an aborted or failed command. The old **Reset Practice Session** diagnostic remains conservative: it refuses a recorded QR/payment hold, selected slots, or an active worker, closes and reopens only the project Chrome profile, and clears local practice page state. Use the normal **Reset & Prepare** action for current booking locks. A development abort test does not authorize silently clearing another run’s lock.
 
-Current implementation and validation details are summarized in [REVIEW_GUIDE.md](REVIEW_GUIDE.md). Phase, investigation and performance reports are retained as dated evidence and may describe older limits or intermediate designs.
+Current implementation and validation details are summarized in [REVIEW_GUIDE.md](REVIEW_GUIDE.md). Phase, investigation and performance reports are retained as dated evidence and may describe older limits or intermediate designs. The [server-side arbitration investigation](SERVER_ARBITRATION_INVESTIGATION.md) explains why the 2026-09-25 release checkouts were answered 409 after ~30 s and ranks the next safe experiments.
 
 ## QR handoff and retained holds
 

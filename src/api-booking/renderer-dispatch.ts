@@ -93,22 +93,27 @@ export const RENDERER_ARMED_CHECKOUT_SOURCE = `async (args) => {
   if (registry[args.key]) return { refused: 'RENDERER_ALREADY_ARMED', armedAt };
   const slot = { disarmed: false, fired: false };
   registry[args.key] = slot;
-  if (location.href !== args.pageUrl) return { refused: 'RENDERER_PAGE_INVALID', armedAt };
-  if (!(args.fireAtRendererMs < args.notAfterRendererMs) || args.fireAtRendererMs - armedAt > args.maxArmAheadMs) return { refused: 'RENDERER_ARM_WINDOW_INVALID', armedAt };
+  // A refusal is provably unsent: it releases the key. A fired key stays taken for the page's lifetime.
+  const refuse = (code, firedAt) => {
+    if (registry[args.key] === slot) delete registry[args.key];
+    return firedAt === undefined ? { refused: code, armedAt } : { refused: code, armedAt, firedAt };
+  };
+  if (location.href !== args.pageUrl) return refuse('RENDERER_PAGE_INVALID');
+  if (!(args.fireAtRendererMs < args.notAfterRendererMs) || args.fireAtRendererMs - armedAt > args.maxArmAheadMs) return refuse('RENDERER_ARM_WINDOW_INVALID');
   const channel = new MessageChannel();
   while (performance.now() < args.fireAtRendererMs - args.syncSpinMs) {
-    if (slot.disarmed) { channel.port1.close(); return { refused: 'RENDERER_DISARMED', armedAt }; }
+    if (slot.disarmed) { channel.port1.close(); return refuse('RENDERER_DISARMED'); }
     await new Promise((resolve) => { channel.port1.onmessage = () => resolve(); channel.port2.postMessage(0); });
   }
   channel.port1.close();
-  if (slot.disarmed) return { refused: 'RENDERER_DISARMED', armedAt };
+  if (slot.disarmed) return refuse('RENDERER_DISARMED');
   while (performance.now() < args.fireAtRendererMs) { /* final synchronous spin, at most syncSpinMs */ }
   while (Date.now() < args.releaseWallMs - args.wallGuardToleranceMs) {
-    if (performance.now() > args.notAfterRendererMs) return { refused: 'RENDERER_WALL_GUARD', armedAt };
+    if (performance.now() > args.notAfterRendererMs) return refuse('RENDERER_WALL_GUARD');
   }
   const firedAt = performance.now();
-  if (firedAt > args.notAfterRendererMs) return { refused: 'RENDERER_WINDOW_MISSED', armedAt, firedAt };
-  if (location.href !== args.pageUrl) return { refused: 'RENDERER_PAGE_INVALID', armedAt };
+  if (firedAt > args.notAfterRendererMs) return refuse('RENDERER_WINDOW_MISSED', firedAt);
+  if (location.href !== args.pageUrl) return refuse('RENDERER_PAGE_INVALID');
   slot.fired = true;
   const response = await fetch(args.url, { method: 'POST', credentials: 'same-origin', redirect: 'error', cache: 'no-store',
     headers: Object.assign({ 'Content-Type': 'application/json' }, args.headers), body: args.text });

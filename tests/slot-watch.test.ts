@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { SLOT_WATCH_EARLY_OFFSETS_MS, SLOT_WATCH_MAX_IN_FLIGHT, SlotWatch, readSlotWatchHistory, slotWatchSchedule, type SlotWatchView } from '../src/slot-watch.js';
+import { SLOT_WATCH_EARLY_OFFSETS_MS, SLOT_WATCH_MAX_IN_FLIGHT, SlotWatch, readSlotWatchHistory, slotWatchSchedule, type SlotWatchView, SLOT_WATCH_HOLD_EXPIRY_WINDOW_MS } from '../src/slot-watch.js';
 import type { AvailabilitySlot, AvailabilitySnapshot } from '../src/api-booking/types.js';
 import type { PublicBookingRecords } from '../src/api-booking/public-bookings.js';
 import { VirtualClock } from './helpers/virtual-clock.js';
@@ -41,6 +41,9 @@ describe('Release slot watch schedule', () => {
     expect(availability.filter(offset => offset >= 0 && offset < 10_000).length).toBeLessThan(20);
     expect(bookings).toEqual([-60_000, 2_000, 10_000, 30_000, 60_000, 120_000, 300_000, 600_000, 900_000]);
     expect(bookings.length * 10).toBeLessThan(availability.length);
+    // 1 s reads across the hold-expiry window (+9:55 to +11:05): first-wave holds reopen 10 min after they were created.
+    expect(availability.filter(offset => offset >= SLOT_WATCH_HOLD_EXPIRY_WINDOW_MS[0] && offset <= SLOT_WATCH_HOLD_EXPIRY_WINDOW_MS[1]))
+      .toEqual(Array.from({ length: 71 }, (_, index) => 595_000 + index * 1_000));
   });
 });
 

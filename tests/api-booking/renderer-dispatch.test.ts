@@ -93,6 +93,9 @@ describe('page-side armed checkout (static source, virtual clock)', () => {
     expect(await first).toMatchObject({ fired: true });
     expect(realm.fetches).toHaveLength(1);
     expect(realm.disarm('k1')).toBe('ALREADY_FIRED');
+    // A fired key stays taken for the page's lifetime, even for a later, otherwise valid arm.
+    expect(await realm.armed(args(realm.now() + 10))).toMatchObject({ refused: 'RENDERER_ALREADY_ARMED' });
+    expect(realm.fetches).toHaveLength(1);
 
     const other = pageRealm({ step: 0.01 });
     const pending = other.armed(args(1_040, { key: 'k2' }));
@@ -101,6 +104,10 @@ describe('page-side armed checkout (static source, virtual clock)', () => {
     expect(await pending).toMatchObject({ refused: 'RENDERER_DISARMED' });
     expect(other.disarm('missing')).toBe('NOT_ARMED');
     expect(other.fetches).toEqual([]);
+    // A refusal is provably unsent and releases the key: a later arm (with a fresh permit on the Node side) may fire.
+    expect(other.disarm('k2')).toBe('NOT_ARMED');
+    expect(await other.armed(args(other.now() + 10, { key: 'k2' }))).toMatchObject({ fired: true });
+    expect(other.fetches).toHaveLength(1);
   });
 });
 

@@ -1,6 +1,6 @@
 import { parseVercelId } from '../api-booking/response-evidence.js';
 import { targetEvidence, type AvailabilityObservation, type BookingObservation } from '../slot-evidence.js';
-import type { Line, Provenance } from './archive-evidence.js';
+import { holdReopenings, type Line, type Provenance } from './archive-evidence.js';
 
 /**
  * Normalized, machine-readable timeline of one release (schema `release-timeline/v1`).
@@ -17,7 +17,7 @@ import type { Line, Provenance } from './archive-evidence.js';
 export type TimelineCategory =
   | 'release-deadline' | 'clock-sync' | 'arm' | 'security-preparation' | 'scheduler-fired' | 'worker-invoked' | 'transport-invoked'
   | 'evaluate-entered' | 'renderer-fetch-invoked' | 'browser-request-observed' | 'provider-edge-evidence' | 'response-start' | 'response-complete'
-  | 'outcome' | 'availability-observation' | 'publication' | 'inventory-disappearance' | 'booking-observation';
+  | 'outcome' | 'availability-observation' | 'publication' | 'inventory-disappearance' | 'booking-observation' | 'hold-expiry';
 export type ClockDomain = 'dispatch' | 'pc-wall→dispatch' | 'observer→dispatch' | 'provider-embedded' | 'browser-monotonic' | 'none';
 
 export interface TimelineEvent {
@@ -211,6 +211,23 @@ export function buildReleaseTimeline(input: ReleaseTimelineInput): ReleaseTimeli
       note: 'The first read (in request order) that showed any target hour unavailable. The provider-side moment lies before its response and is not otherwise observable; overlapping reads can disagree.' });
   }
 
+  // Taken cells that reopened around +10 min: pending holds created during the release reaching hold_expires_at.
+  const targets = workers.flatMap(worker => {
+    const armed = target(worker), court = num(armed?.court), startTime = str(armed?.startTime), hours = num(armed?.durationHours);
+    return court === undefined || !startTime || hours === undefined ? [] : Array.from({ length: hours }, (_, index) =>
+      ({ worker, cell: `${court}/${String(Number(startTime.slice(0, 2)) + index).padStart(2, '0')}:00` }));
+  });
+  for (const reopening of holdReopenings(availability.filter(value => value.outcome === 'ok'))) {
+    const cell = `${reopening.court}/${reopening.hour}`;
+    push({ tMs: tenth(reopening.reopenWindowMs[0]), tEndMs: tenth(reopening.reopenWindowMs[1]), category: 'hold-expiry', subject: `cell:C${reopening.court} ${reopening.hour}`,
+      evidence: 'INFERENCE', clockDomain: 'observer→dispatch', uncertaintyMs: null,
+      source: { file: input.slotWatchFile ?? 'slot-watch', locator: `availability seq ${reopening.lastTakenRead.seq} → ${reopening.firstOpenRead.seq}` },
+      data: { court: reopening.court, hour: reopening.hour, targetOf: targets.filter(value => value.cell === cell).map(value => value.worker),
+        commitNoLaterThanMs: tenth(reopening.commitNoLaterThanMs), commitWindowIfExactExpiryMs: reopening.commitWindowIfExactExpiryMs.map(tenth),
+        lastTakenRead: reopening.lastTakenRead, firstOpenRead: reopening.firstOpenRead, retakenBy: reopening.retakenBy },
+      note: 'A taken cell reopened ~10 min after release. INFERENCE: the pending hold that blocked it reached hold_expires_at (commit + 10 min) unpaid, so it was created no later than commitNoLaterThanMs; a cancellation would look the same.' });
+  }
+
   for (const entry of input.journals ?? []) {
     const record = entry.record, attempt = (record.attempt ?? {}) as Line;
     push({ tMs: epoch(record.updatedAt) !== undefined ? tenth(epoch(record.updatedAt)! - releaseMs) : null, category: 'outcome', subject: `journal:${String(record.key ?? '').slice(0, 10)}`,
@@ -222,7 +239,7 @@ export function buildReleaseTimeline(input: ReleaseTimelineInput): ReleaseTimeli
 
   const order: Record<TimelineCategory, number> = { 'release-deadline': 0, 'clock-sync': 1, arm: 2, 'security-preparation': 3, 'scheduler-fired': 4, 'worker-invoked': 5,
     'transport-invoked': 6, 'evaluate-entered': 7, 'renderer-fetch-invoked': 8, 'browser-request-observed': 9, 'provider-edge-evidence': 10, 'response-start': 11,
-    'response-complete': 12, outcome: 13, 'availability-observation': 14, publication: 15, 'inventory-disappearance': 16, 'booking-observation': 17 };
+    'response-complete': 12, outcome: 13, 'availability-observation': 14, publication: 15, 'inventory-disappearance': 16, 'booking-observation': 17, 'hold-expiry': 18 };
   events.sort((a, b) => (a.tMs ?? Number.MAX_SAFE_INTEGER) - (b.tMs ?? Number.MAX_SAFE_INTEGER) || order[a.category] - order[b.category] || a.subject.localeCompare(b.subject));
   return { releaseMs, dispatchOffsetMs, observerOffsetMs, dispatchUncertaintyMs, events };
 }

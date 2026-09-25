@@ -31,6 +31,13 @@ export const SLOT_WATCH_AFTER_MS = 15 * 60_000;
 /** Release-relative launches that may overlap. Six launches, six slots: six 6-second reads all still launch. */
 export const SLOT_WATCH_EARLY_OFFSETS_MS: readonly number[] = [0, 250, 500, 1_000, 2_000, 5_000];
 export const SLOT_WATCH_MAX_IN_FLIGHT = 6;
+/**
+ * Pending holds expire 10 minutes after the checkout that created them (hold_expires_at). On 2026-09-24/25 many
+ * first-wave holds reopened between the +10:00 and +10:30 reads. A 1 s cadence across this window dates each
+ * reopening, i.e. each first-wave hold's creation (commit) + 10 min, or shows that holds reopen in one batch
+ * (a periodic cleanup, which would not date them). Same read, same cadence as the first minute after release.
+ */
+export const SLOT_WATCH_HOLD_EXPIRY_WINDOW_MS: readonly [number, number] = [595_000, 665_000];
 /** Release-time reads took up to ~6 s on 2026-09-23/24; the old 5 s limit discarded them. */
 export const SLOT_WATCH_READ_TIMEOUT_MS = 15_000;
 export const SLOT_WATCH_BOOKING_TIMEOUT_MS = 10_000;
@@ -40,7 +47,7 @@ const TIMELINE_LIMIT = 600;
 
 export interface SlotWatchSchedule { availability: number[]; bookings: number[] }
 
-/** Sparse before release, an overlapping burst at release, 1 s to a minute, then sparse; public records at a few moments only. */
+/** Sparse before release, an overlapping burst at release, 1 s to a minute, then sparse, 1 s again across the hold-expiry window; public records at a few moments only. */
 export function slotWatchSchedule(): SlotWatchSchedule {
   const availability = new Set<number>();
   for (let t = -SLOT_WATCH_BEFORE_MS; t < 0; t += 10_000) availability.add(t);
@@ -49,6 +56,7 @@ export function slotWatchSchedule(): SlotWatchSchedule {
   for (let t = 6_000; t <= 60_000; t += 1_000) availability.add(t);
   for (let t = 65_000; t <= 300_000; t += 5_000) availability.add(t);
   for (let t = 330_000; t <= SLOT_WATCH_AFTER_MS; t += 30_000) availability.add(t);
+  for (let t = SLOT_WATCH_HOLD_EXPIRY_WINDOW_MS[0]; t <= SLOT_WATCH_HOLD_EXPIRY_WINDOW_MS[1]; t += 1_000) availability.add(t);
   return { availability: [...availability].sort((a, b) => a - b),
     bookings: [-SLOT_WATCH_BEFORE_MS, 2_000, 10_000, 30_000, 60_000, 120_000, 300_000, 600_000, SLOT_WATCH_AFTER_MS] };
 }
