@@ -6,6 +6,7 @@ import type { ProoflessCheckoutRequest } from './proofless-checkout.js';
 import { SubmissionDispatchError } from './submission-errors.js';
 import { checkoutDiagnostic, type CheckoutDiagnostic } from './checkout-diagnostics.js';
 import { CalendarFreeSecurityError } from './calendar-free-security-context.js';
+import { responseEvidence, type ResponseEvidence } from './response-evidence.js';
 
 const ORIGIN = 'https://app.onda.fit';
 const SLOT_PATH = '/api/public/is-slot-available';
@@ -31,14 +32,29 @@ export type BrowserTransportObservation =
   | { event: 'CHECKOUT_HTTP_POST_INITIATED'; initiationEvidence: 'PLAYWRIGHT_REQUEST_EVENT' }
   | { event: 'CHECKOUT_RESPONSE_COMPLETED'; networkDurationMs: number; statusCode?: number; dispatchState: 'RESPONSE_CAPTURED' | 'UNKNOWN'; failureCategory?: string;
       /** Bounded categories from checkoutDiagnostic (never response text). */
-      errorHint?: CheckoutDiagnostic['errorHint']; responseSource?: CheckoutDiagnostic['responseSource'] };
+      errorHint?: CheckoutDiagnostic['errorHint']; responseSource?: CheckoutDiagnostic['responseSource'];
+      /** Body size and a 12-hex prefix of the sanitized shape fingerprint (rejections only), to tell response classes apart. */
+      responseBytes?: number; bodyShape?: string;
+      /** Renderer performance.now() marks of this POST (see CheckoutRendererTiming); mapped to trusted time after dispatch. */
+      renderer?: CheckoutRendererTiming };
 export type BrowserTransportObserver = (observation: BrowserTransportObservation) => void;
 
 /** Values must come from the current normal site flow immediately before checkout; this transport cannot create them. */
 export type CurrentCheckoutHeadersProvider = () => Promise<CurrentCheckoutHeaders>;
+/**
+ * performance.now() marks taken inside the page (renderer clock, ms since the document's timeOrigin):
+ * entry into the evaluate function, the instant just before fetch() is called, response headers, and body read.
+ * They cost one clock read before fetch() and are returned with the response, never on the path to it.
+ */
+export interface CheckoutRendererTiming { timeOrigin: number; enteredAt: number; fetchAt: number; headersAt: number; completedAt: number }
 export interface CheckoutHttpResponse { status: number; contentType: string; server: string;
   vercelId?: string; requestId?: string; serverTiming?: string; responseReceivedMs?: number; responseCompletedMs?: number;
-  cloudflareRay: string; cfMitigated: string; body: string }
+  cloudflareRay: string; cfMitigated: string; body: string;
+  /** Allowlisted response headers read in the page (values validated again before anything is stored). */
+  headers?: Record<string, string>;
+  renderer?: CheckoutRendererTiming;
+  /** Sanitized structure-first evidence for a non-200 checkout response (never the body text). */
+  evidence?: ResponseEvidence }
 export type CheckoutResponseCapture = (response: CheckoutHttpResponse) => Promise<void>;
 /** Release-dispatch guards. A scheduled release must not spend seconds acquiring
  * security after its window check, so it can require the prewarmed context and
@@ -87,6 +103,22 @@ function securityContextError(error: unknown): BrowserSessionTransportError {
   return error instanceof CalendarFreeSecurityError && /^[A-Z][A-Z0-9_]{0,63}$/.test(error.code)
     ? new BrowserSessionTransportError(error.code)
     : new BrowserSessionTransportError('CURRENT_CHECKOUT_HEADERS_UNAVAILABLE');
+}
+
+/** Exact private values of one request (identity fields and the security header values), for response redaction. */
+function privateRequestValues(body: unknown, headers: Record<string, string> | undefined): string[] {
+  const values: string[] = [];
+  const record = body !== null && typeof body === 'object' ? body as Record<string, unknown> : {};
+  for (const key of ['clientId', 'customerId', 'customerEmail', 'customerPhone', 'customerFirstName', 'customerLastName', 'userId']) {
+    const value = record[key];
+    if (typeof value === 'string') values.push(value);
+  }
+  const phone = typeof record.customerPhone === 'string' ? record.customerPhone.replace(/\D/g, '') : '';
+  if (phone.length >= 10) values.push(phone, phone.replace(/^0/, ''), phone.replace(/^0/, '63'));
+  const email = typeof record.customerEmail === 'string' ? record.customerEmail : '';
+  if (email.includes('@')) values.push(email.split('@')[0]!);
+  for (const value of Object.values(headers ?? {})) if (typeof value === 'string') values.push(value);
+  return values.filter(value => value.trim().length >= 3);
 }
 
 function confirmedApplicationConflict(result: CheckoutHttpResponse): boolean {
@@ -221,18 +253,29 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
     let result: CheckoutHttpResponse;
     try {
       result = await this.page.evaluate(async ({ url, payload, text, headers }) => {
-        const started = performance.now();
-        const response = await fetch(url, { method: 'POST', credentials: 'same-origin', redirect: 'error',
+        const enteredAt = performance.now();
+        const init: RequestInit = { method: 'POST', credentials: 'same-origin', redirect: 'error',
           cache: 'no-store', headers: { 'Content-Type': 'application/json', ...headers },
-          body: typeof text === 'string' ? text : JSON.stringify(payload) });
-        const responseReceivedMs = performance.now() - started;
+          body: typeof text === 'string' ? text : JSON.stringify(payload) };
+        const started = performance.now();
+        const response = await fetch(url, init);
+        const headersAt = performance.now();
         const body = await response.text();
+        const completedAt = performance.now();
+        // Read after the response only: provider diagnostics (validated again in Node before anything is stored).
+        const kept: Record<string, string> = {};
+        for (const name of ['content-length', 'date', 'age', 'cache-control', 'x-vercel-cache', 'x-matched-path', 'retry-after', 'x-ratelimit-limit',
+          'x-ratelimit-remaining', 'x-ratelimit-reset', 'ratelimit', 'ratelimit-policy', 'ratelimit-limit', 'ratelimit-remaining', 'ratelimit-reset', 'x-powered-by', 'via']) {
+          const value = response.headers.get(name);
+          if (value !== null) kept[name] = value;
+        }
         return { status: response.status, contentType: response.headers.get('content-type') ?? '',
           server: response.headers.get('server') ?? '', cloudflareRay: response.headers.get('cf-ray') ?? '',
           cfMitigated: response.headers.get('cf-mitigated') ?? '',
           vercelId: response.headers.get('x-vercel-id') ?? '', requestId: response.headers.get('x-request-id') ?? '',
-          serverTiming: response.headers.get('server-timing') ?? '', responseReceivedMs,
-          responseCompletedMs: performance.now() - started, body };
+          serverTiming: response.headers.get('server-timing') ?? '', responseReceivedMs: headersAt - started,
+          responseCompletedMs: completedAt - started, body, headers: kept,
+          renderer: { timeOrigin: performance.timeOrigin, enteredAt, fetchAt: started, headersAt, completedAt } };
       }, bodyText === undefined ? { url: `${ORIGIN}${path}`, payload: body, text: undefined, headers: extraHeaders ?? {} }
         : { url: `${ORIGIN}${path}`, payload: null, text: bodyText, headers: extraHeaders ?? {} });
     } catch {
@@ -245,9 +288,16 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
     }
     const networkDurationMs = Math.max(0, Math.round(performance.now() - networkStarted));
     const diagnostic = result.status === 200 ? undefined : checkoutDiagnostic(result);
+    // A rejection keeps structure-first evidence (never text); private request values are redacted exactly.
+    if (checkout && diagnostic) result.evidence = responseEvidence({ status: result.status, contentType: result.contentType, body: result.body,
+      headers: { ...(result.headers ?? {}), server: result.server, 'x-vercel-id': result.vercelId, 'x-request-id': result.requestId,
+        'server-timing': result.serverTiming, 'cf-ray': result.cloudflareRay, 'cf-mitigated': result.cfMitigated } }, privateRequestValues(body, extraHeaders));
     if (checkout) this.observe({ event: 'CHECKOUT_RESPONSE_COMPLETED', networkDurationMs, statusCode: result.status,
       dispatchState: 'RESPONSE_CAPTURED', ...(diagnostic ? { failureCategory: 'ONDA_HTTP_STATUS_INVALID',
-        errorHint: diagnostic.errorHint, responseSource: diagnostic.responseSource } : {}) });
+        errorHint: diagnostic.errorHint, responseSource: diagnostic.responseSource } : {}),
+      ...(typeof result.body === 'string' ? { responseBytes: Buffer.byteLength(result.body, 'utf8') } : {}),
+      ...(result.evidence?.body.shapeFingerprint ? { bodyShape: result.evidence.body.shapeFingerprint.slice(0, 12) } : {}),
+      ...(result.renderer ? { renderer: result.renderer } : {}) });
     if (path === CHECKOUT_PATH && this.captureCheckoutResponse) {
       try { await this.captureCheckoutResponse(result); }
       catch { throw new BrowserSessionTransportError('CHECKOUT_RESPONSE_CAPTURE_FAILED', true); }
