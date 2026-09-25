@@ -695,6 +695,14 @@ Benchmark raw and summary JSON were written to the session's scratch directory. 
   - One earlier stressed run, with heavier load and probably the container's default Node 22, failed a different real-timer test in the same file ("a verified hold is handed to the QR step…": no verified hold, consistent with dispatch starved past its window and refusing, i.e. fail-closed).
   - The dispatcher changes are confined to the renderer branch, which these tests do not enable. The added real-Chromium tests do raise the suite's CPU load, though.
   - No cause was established, so this is recorded as open rather than dismissed.
+- **CI on the pull request (both fixed).**
+  - The first run failed the new real-Chromium renderer dispatch test. On a busy runner, one page-clock calibration was looser than the production 2 ms limit, so that attempt correctly fell back to the Node path, and the test treated the fallback as a failure. The test now calibrates adaptively as production does. It accepts a looser bound, which can only make the page fire later. It retries only fallbacks caused by load. Under 4 busy loops, the renderer tests failed 1 of 6 runs before the change and 0 of 8 after.
+  - A later run failed a pre-existing test, `tests/api-booking/phase2-independence.test.ts` › "an observer that crashes…", with one attempt `UNKNOWN`.
+    - The test faked an unwritable observer log by closing the Slot Watch's file descriptor while the watch kept using that number.
+    - A checkout journal file opened during the release could receive the same number. The watch then wrote its failure records into the journal and, at stop, closed the journal's descriptor.
+    - The defect was test-only: in production the watch closes its own descriptor once, after every read has settled.
+    - The test now gives the watch a read-only descriptor, so every write still fails, and checks that nothing after the header reached the log. Vitest runs each test file in its own process, so this race cannot explain the armed-dispatch failures above.
+    - With 80 observer writes around the release, the old test failed 12 of 12 runs and the new one 0 of 12. On the fix commit (`66331f8`), both CI runs passed.
 - **Found by review and fixed:**
   - a hanging renderer calibration could have held the Node path past release; it is now bounded;
   - the benchmark reused page keys and was refused (`RENDERER_ALREADY_ARMED`, a correct refusal), which led to refused keys being released while fired keys stay sticky;
