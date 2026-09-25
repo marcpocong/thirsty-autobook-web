@@ -1,4 +1,4 @@
-import { closeSync } from 'node:fs';
+import { closeSync, openSync } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
@@ -102,11 +102,16 @@ describe('Phase 2 observer and telemetry cannot affect checkout', () => {
         watch = new SlotWatch({ date, releaseMs, directory: join(root, 'watch-crash'), schedule: { availability: [-200, 0, 50], bookings: [-200, 0] },
           readAvailability: () => { throw Error('OBSERVER_EXPLODED'); }, readBookings: () => Promise.reject(Error('BOOKINGS_EXPLODED')),
           onUpdate: () => { throw Error('UI_EXPLODED'); } });
-        // The log handle breaks under the watch: every later write fails.
-        closeSync((watch as unknown as { handle: number }).handle);
+        // The log handle breaks under the watch: every later write fails. The watch gets a read-only descriptor rather
+        // than a closed number, which the next open (a checkout journal file) would reuse and the watch would then corrupt.
+        const log = watch as unknown as { handle: number }, writable = log.handle;
+        log.handle = openSync(watch.path, 'r');
+        closeSync(writable);
       });
       await wait(result.releaseMs + 150 - Date.now());
       const summary = await watch!.stop('test complete');
+      // Nothing after the header reached the log: every later write failed.
+      expect((await readFile(watch!.path, 'utf8')).trim().split('\n').map(line => JSON.parse(line).type)).toEqual(['header']);
       expect(summary.availability).toMatchObject({ launched: 3, failed: 3, answered: 0 });
       expect(result.states).toEqual(baseline.states);
       for (const lateness of result.postLatenessMs) expect(lateness).toBeLessThan(50);
