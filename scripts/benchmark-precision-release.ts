@@ -21,7 +21,17 @@
  *
  * --response-delay <ms> holds each synthetic 409 (default 0) so a late-enabled trace can see it; use the same value for OFF and ON.
  *
+ * Critical path and experimental dispatch (armed mode only):
+ *   --dispatch node|renderer   node (default): the production T-0 path. renderer: ONDA_EXPERIMENTAL renderer-resident dispatch
+ *                              (renderer-dispatch.ts), which needs --prewarm-lead >= 1300 so calibration ends before the final approach.
+ *   --prewarm-lead <ms>        security prewarm lead (default 1000). Compare modes at the SAME lead.
+ *   --critical-path on|off     per-worker critical-path rows (critical-path.ts), mapped through an INDEPENDENT post-run renderer clock
+ *                              calibration (not the one the dispatcher planned with); default on.
+ *   --renderer-calibration adaptive|fixed8   page clock calibration in renderer mode (default adaptive, as the runner).
+ *   --chrome <path>            Chrome/Chromium binary (default: Windows Chrome locations, then BENCH_CHROME, then Playwright's Chromium).
+ *
  * Usage: npx tsx scripts/benchmark-precision-release.ts --mode legacy --workers 1,3,7 --runs 100 [--tail 20] [--priority high] [--phase2 on] [--response-delay 50]
+ *        npx tsx scripts/benchmark-precision-release.ts --mode armed --dispatch renderer --prewarm-lead 1400 --workers 1,3,7 --runs 80
  */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, writeSync } from 'node:fs';
@@ -46,11 +56,18 @@ const phase2 = phase3 || args.get('phase2') === 'on' || args.get('phase2') === '
 const phase2Watch = phase3 || args.get('phase2') === 'on';
 const responseDelayMs = Number(args.get('response-delay') ?? 0);
 const phase4 = args.get('phase4') === 'on';
-const label = args.get('label') ?? `${mode}${tailMs !== undefined ? `-tail${tailMs}` : ''}${priority !== 'normal' ? `-${priority}` : ''}${phase3?'-phase3':phase2 ? (phase2Watch ? '-phase2on' : '-phase2trace') : ''}${phase4?'-phase4on':''}`;
+const dispatchMode = (args.get('dispatch') ?? 'node') as 'node' | 'renderer';
+const prewarmLeadMs = Number(args.get('prewarm-lead') ?? 1000);
+const criticalPathOn = mode === 'armed' && (args.get('critical-path') ?? 'on') === 'on';
+/** Renderer mode: page clock calibration, 'adaptive' (runner default: up to 32 round trips until ≤ 1.5 ms) or 'fixed8' (8 round trips). */
+const rendererCalibration = (args.get('renderer-calibration') ?? 'adaptive') as 'adaptive' | 'fixed8';
+const label = args.get('label') ?? `${mode}${tailMs !== undefined ? `-tail${tailMs}` : ''}${priority !== 'normal' ? `-${priority}` : ''}${phase3?'-phase3':phase2 ? (phase2Watch ? '-phase2on' : '-phase2trace') : ''}${phase4?'-phase4on':''}${dispatchMode === 'renderer' ? `-renderer${rendererCalibration === 'fixed8' ? '-fixed8' : ''}` : ''}${prewarmLeadMs !== 1000 ? `-lead${prewarmLeadMs}` : ''}${mode === 'armed' && !criticalPathOn ? '-nocp' : ''}`;
 const sourceRoot = resolve(import.meta.dirname, '..');
 const scratch = resolve(args.get('scratch') ?? join(process.env.TEMP ?? sourceRoot, 'thirsty-precision-bench'));
 const outDir = resolve(args.get('out') ?? join(sourceRoot, '.local/benchmarks'));
 if (!['legacy', 'armed'].includes(mode) || workerCounts.some(count => ![1, 2, 3, 4, 5, 6, 7].includes(count)) || !(runs >= 1) || (phase2 && mode !== 'armed')) throw Error('BENCH_ARGS_INVALID');
+// Renderer calibration runs between the prewarm and the final approach (T-1 s): it needs a prewarm lead well above 1 s.
+if (!['adaptive', 'fixed8'].includes(rendererCalibration) || !['node', 'renderer'].includes(dispatchMode) || (dispatchMode === 'renderer' && (mode !== 'armed' || !(prewarmLeadMs >= 1300))) || !(prewarmLeadMs >= 200 && prewarmLeadMs <= 10_000)) throw Error('BENCH_ARGS_INVALID');
 process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT = 'SUPERVISED_ONE_SHOT';
 // A benchmark that stops must say why.
 process.on('exit', code => { try { writeSync(2, `bench exit code ${code}
@@ -79,6 +96,8 @@ const { RunDiagnostics } = await import(moduleUrl('src/api-booking/run-diagnosti
 const { THIRSTY_PICKLE_FACILITY_ID } = await import(moduleUrl('src/api-booking/live-availability-provider.ts')) as typeof import('../src/api-booking/live-availability-provider.js');
 const armedModule = mode === 'armed' ? await import(moduleUrl('src/api-booking/armed-dispatch.ts')) as typeof import('../src/api-booking/armed-dispatch.js') : undefined;
 const clockModule = mode === 'armed' ? await import(moduleUrl('src/release-clock.ts')) as typeof import('../src/release-clock.js') : undefined;
+const cp = criticalPathOn ? await import(moduleUrl('src/api-booking/critical-path.ts')) as typeof import('../src/api-booking/critical-path.js') : undefined;
+const rc = mode === 'armed' ? await import(moduleUrl('src/api-booking/renderer-clock.ts')) as typeof import('../src/api-booking/renderer-clock.js') : undefined;
 const p2 = phase2 ? {
   ...await import(moduleUrl('src/slot-watch.ts')) as typeof import('../src/slot-watch.js'),
   ...await import(moduleUrl('src/api-booking/checkout-provider-trace.ts')) as typeof import('../src/api-booking/checkout-provider-trace.js'),
@@ -111,10 +130,12 @@ const benchBookings = async (signal: AbortSignal) => {
   return { blocks: [], failedCourts: [] };
 };
 
-const chromePath = [join(process.env.ProgramFiles ?? '', 'Google/Chrome/Application/chrome.exe'),
+const chromePath = [args.get('chrome') ?? '', join(process.env.ProgramFiles ?? '', 'Google/Chrome/Application/chrome.exe'),
   join(process.env['ProgramFiles(x86)'] ?? '', 'Google/Chrome/Application/chrome.exe'),
-  join(process.env.LOCALAPPDATA ?? '', 'Google/Chrome/Application/chrome.exe')].find(existsSync);
+  join(process.env.LOCALAPPDATA ?? '', 'Google/Chrome/Application/chrome.exe'), process.env.BENCH_CHROME ?? '', chromium.executablePath()].find(path => path && existsSync(path));
 if (!chromePath) throw Error('CHROME_NOT_FOUND');
+// Chrome refuses to start as root without disabling its sandbox (Linux containers only; never on the Windows desktop).
+const rootOnLinux = process.platform === 'linux' && process.getuid?.() === 0;
 
 interface BenchSession { index: number; browser: Browser; page: Page; process: ChildProcess; routeSeen: number[] }
 const SYNTHETIC_409 = JSON.stringify({ success: false, error: 'Synthetic benchmark conflict (offline).' });
@@ -130,7 +151,7 @@ async function launch(index: number): Promise<BenchSession> {
   }
   const child = spawn(chromePath!, ['--headless=new', `--remote-debugging-port=${port}`, '--remote-debugging-address=127.0.0.1',
     `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', '--disable-background-networking',
-    '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1', '--proxy-server=http://127.0.0.1:9', 'about:blank'],
+    '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1', '--proxy-server=http://127.0.0.1:9', ...(rootOnLinux ? ['--no-sandbox'] : []), 'about:blank'],
   { stdio: 'ignore', windowsHide: true });
   const deadline = Date.now() + 20_000;
   while (true) {
@@ -185,7 +206,8 @@ const legacyPause = (ms: number) => new Promise<void>(done => {
 const legacyWaitUntil = async (at: number) => { while (Date.now() < at) await legacyPause(Math.min(500, Math.max(1, at - Date.now()))); };
 
 type Marks = Record<string, number>;
-interface RunRecord { run: number; workers: number; releaseMono: number; wake: number; shared: Marks; perWorker: Record<string, Marks>; states: string[]; cpuMsArmToWake: number }
+interface RunRecord { run: number; workers: number; releaseMono: number; wake: number; shared: Marks; perWorker: Record<string, Marks>; states: string[]; cpuMsArmToWake: number;
+  critical?: import('../src/api-booking/critical-path.js').CriticalPathRow[]; planModes?: string[] }
 
 async function runOnce(sessions: BenchSession[], count: number, runIndex: number): Promise<RunRecord> {
   const runDir = join(scratch, 'runs', `${label}-${count}w-${runIndex}-${Date.now()}`);
@@ -198,14 +220,18 @@ async function runOnce(sessions: BenchSession[], count: number, runIndex: number
   const progressLog = new ApiRunProgressLog('bench', date);
   const diagnostics = new RunDiagnostics(progressLog, started);
   const stage = (name: string, extra: Record<string, string | number | boolean> = {}) => progressLog.record(name, new Date().toISOString(), Math.round(performance.now() - started), extra);
-  const releaseMs = Date.now() + 1500 + Math.floor(Math.random() * 50);
+  const releaseMs = Date.now() + Math.max(1500, prewarmLeadMs + 600) + Math.floor(Math.random() * 50);
   const shared: Marks = {}, perWorker: Record<string, Marks> = {};
   const mark = (worker: string, name: string) => { (perWorker[worker] ??= {})[name] ??= performance.now(); };
   const frozen = race.freezePrecisionRace(date, releaseMs, targets.map(target => ({ target, plan: race.precisionTargetPlan(target, date) })));
   let traces: InstanceType<NonNullable<typeof p2>['ProviderTraceSet']> | undefined;
+  let recorder: InstanceType<NonNullable<typeof cp>['CriticalPathRecorder']> | undefined;
+  const planModes: string[] = [];
+  const pageFor = new Map(targets.map((target, index) => [target.workerId, sessions[index]!.page] as const));
   const transports = new Map(targets.map((target, index) => {
     const session = sessions[index]!;
     const transport = new OndaBrowserSessionTransport(session.page, syntheticHeaders, async () => undefined, {}, observation => {
+      recorder?.observeTransport(target.workerId, observation);
       if (observation.event === 'CHECKOUT_FUNCTION_ENTERED') mark(target.workerId, 'transportEntered');
       if (observation.event === 'CHECKOUT_PRE_POST') mark(target.workerId, 'prePost');
       if (observation.event === 'CHECKOUT_HTTP_POST_INITIATED') { mark(target.workerId, 'requestEvent'); traces?.postInitiated(target.workerId); }
@@ -217,6 +243,9 @@ async function runOnce(sessions: BenchSession[], count: number, runIndex: number
     return [target.workerId, transport] as const;
   }));
   const routeBaseline = sessions.map(session => session.routeSeen.length);
+  // Renderer mode keeps a per-page registry of fired keys (never re-armed on that page). Every run reuses the same
+  // pages and keys, so clear it first: equivalent to giving each run a fresh page.
+  if (dispatchMode === 'renderer') await Promise.all(sessions.map(session => session.page.evaluate('delete globalThis.__thirstyRendererDispatch')));
   let releaseMono = 0, cpuMs = NaN;
   let results: Array<{ state: string }> = [];
 
@@ -285,13 +314,22 @@ async function runOnce(sessions: BenchSession[], count: number, runIndex: number
     const cpuStart = process.cpuUsage();
     const deadlineMono = trusted.monotonicDeadline(releaseMs);
     releaseMono = deadlineMono;
+    if (cp) recorder = new cp.CriticalPathRecorder(releaseMs, deadlineMono, trusted.offsetMs - trusted.wallDisagreementMs(), targets.map(target => target.workerId));
     const outcome = await armed.dispatchArmedPrecisionRace(armedSet, {
-      clock: trusted, prewarmLeadMs: 1000, ...(tailMs !== undefined ? { spinTailMs: tailMs } : {}),
+      clock: trusted, prewarmLeadMs, ...(tailMs !== undefined ? { spinTailMs: tailMs } : {}),
       prewarm: async attempt => transports.get(attempt.target.workerId)!.prepareCheckoutContext(),
       transportFor: worker => transports.get(worker)!,
       isAborted: () => false,
-      onWake: () => { shared.wake ??= performance.now(); const cpu = process.cpuUsage(cpuStart); cpuMs = (cpu.user + cpu.system) / 1000; },
-      onMark: (worker, name) => mark(worker, name),
+      onWake: () => { recorder?.mark('*', 'schedulerFired'); shared.wake ??= performance.now(); const cpu = process.cpuUsage(cpuStart); cpuMs = (cpu.user + cpu.system) / 1000; },
+      onMark: (worker, name) => {
+        if (name === 'transportCall') recorder?.mark(worker, 'workerInvoked'); else if (name === 'rendererArm') recorder?.mark(worker, 'rendererArmSent');
+        mark(worker, name);
+      },
+      ...(dispatchMode === 'renderer' ? { rendererDispatch: { pageUrl: ONDA_URL, transportFor: (worker: import('../src/workers.js').WorkerId) => transports.get(worker)!,
+        calibrate: async (attempt: { target: { workerId: import('../src/workers.js').WorkerId } }) => rendererCalibration === 'fixed8'
+          ? rc!.calibrateRendererClock(await rc!.sampleRendererClock(pageFor.get(attempt.target.workerId)!, 8))
+          : rc!.calibrateRendererClockAdaptive(pageFor.get(attempt.target.workerId)!, { targetUncertaintyMs: 1.5, maxSamples: 32 }),
+        onPlan: (event: { workerId: string; mode: string; code?: string }) => planModes.push(`${event.mode}${event.code ? `:${event.code}` : ''}`) } } : {}),
       ...(phase3Session?{onEvent:(event:{kind:string;workerId:string;state?:string})=>{
         const candidate=phase3Session.authorization.candidates.find(value=>value.court===targets.find(target=>target.workerId===event.workerId)?.court);
         if(!candidate)return;
@@ -305,6 +343,10 @@ async function runOnce(sessions: BenchSession[], count: number, runIndex: number
         onReleaseWindowEnd: () => setPriority(0, osConstants.priority.PRIORITY_NORMAL) } : {}),
     });
     results = outcome.results;
+    // Independent post-run calibration (never the dispatcher's own), taken after every POST settled.
+    if (recorder) for (const [worker, page] of pageFor) {
+      try { recorder.calibration(worker, rc!.calibrateRendererClock(await rc!.sampleRendererClock(page, 8))); } catch { /* row keeps Node marks only */ }
+    }
     if (traces) { const path = await traces.persist(join(runDir, 'forensics')); if (!path) throw Error('BENCH_TRACE_NOT_WRITTEN'); traceCounts.push(traces.records().filter(value => value.complete).length); }
     if (watch) { const summary = await watch.stop('bench run complete'); watchLaunches.push(summary.availability.launched); }
   }
@@ -318,7 +360,7 @@ async function runOnce(sessions: BenchSession[], count: number, runIndex: number
   return { run: runIndex, workers: count, releaseMono, wake: relative(shared.wake ?? NaN),
     shared: Object.fromEntries(Object.entries(shared).map(([key, value]) => [key, relative(value)])),
     perWorker: Object.fromEntries(Object.entries(perWorker).map(([worker, marks]) => [worker, Object.fromEntries(Object.entries(marks).map(([key, value]) => [key, relative(value)]))])),
-    states: results.map(result => result.state), cpuMsArmToWake: cpuMs };
+    states: results.map(result => result.state), cpuMsArmToWake: cpuMs, ...(recorder ? { critical: recorder.rows() } : {}), ...(planModes.length ? { planModes } : {}) };
 }
 
 function summarize(records: RunRecord[]) {
@@ -349,6 +391,51 @@ function summarize(records: RunRecord[]) {
     transportCallToRequestEvent: stats(diff('transportCall', 'requestEvent')),
     cpuMsArmToWake: stats(records.map(record => record.cpuMsArmToWake).filter(Number.isFinite)),
     armDurationBeforeRelease: stats(records.flatMap(record => Number.isFinite(record.shared.armStart) && Number.isFinite(record.shared.armEnd) ? [record.shared.armEnd! - record.shared.armStart!] : [])),
+    ...(records.some(record => record.critical) ? { criticalPath: summarizeCritical(records) } : {}),
+  };
+}
+
+/** Critical-path summary: the renderer fetch() call and Chrome's own request start, both release-relative on the trusted clock. */
+function summarizeCritical(records: RunRecord[]) {
+  const rows = records.flatMap(record => record.critical ?? []);
+  const finite = (values: Array<number | null | undefined>) => values.filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+  const spread = (pick: (row: import('../src/api-booking/critical-path.js').CriticalPathRow) => number | null | undefined) => stats(records.flatMap(record => {
+    const values = finite((record.critical ?? []).map(pick));
+    return values.length === record.workers && values.length > 1 ? [Math.max(...values) - Math.min(...values)] : [];
+  }));
+  const count = (values: Array<number | null | undefined>, test: (value: number) => boolean) => finite(values).filter(test).length;
+  const modes = records.flatMap(record => record.planModes ?? []);
+  return {
+    rows: rows.length,
+    dispatchModes: Object.fromEntries([...new Set(rows.map(row => row.dispatchMode))].map(value => [value, rows.filter(row => row.dispatchMode === value).length])),
+    planEvents: Object.fromEntries([...new Set(modes)].map(value => [value, modes.filter(mode => mode === value).length])),
+    releaseToFetchInvoked: stats(finite(rows.map(row => row.fetchInvokedMs?.ms))),
+    releaseToFetchInvokedLowerBound: stats(finite(rows.map(row => row.fetchInvokedMs?.lowMs))),
+    releaseToFetchInvokedUpperBound: stats(finite(rows.map(row => row.fetchInvokedMs?.highMs))),
+    releaseToBrowserRequestStart: stats(finite(rows.map(row => row.browserRequestStartMs))),
+    releaseToRequestObserved: stats(finite(rows.map(row => row.requestObservedMs))),
+    fetchInvokedSpread: spread(row => row.fetchInvokedMs?.ms),
+    browserRequestStartSpread: spread(row => row.browserRequestStartMs),
+    requestObservedSpread: spread(row => row.requestObservedMs),
+    routeSeenSpread: stats(records.flatMap(record => {
+      const values = finite(Object.values(record.perWorker).map(marks => marks.routeSeen));
+      return values.length === record.workers && values.length > 1 ? [Math.max(...values) - Math.min(...values)] : [];
+    })),
+    segments: {
+      prePostToRendererEntry: stats(finite(rows.map(row => row.segments.nodeToRendererMs))),
+      rendererEntryToFetch: stats(finite(rows.map(row => row.segments.rendererToFetchMs))),
+      fetchToBrowserRequestStart: stats(finite(rows.map(row => row.segments.fetchToRequestStartMs))),
+      browserRequestStartToRequestEvent: stats(finite(rows.map(row => row.segments.requestEventLagMs))),
+    },
+    postRunCalibrationUncertainty: stats(finite(rows.map(row => row.calibration?.uncertaintyMs))),
+    earlyTransmission: {
+      /** fetch() provably before release even at the calibration's latest mapping. Must be 0. */
+      fetchProvablyEarly: count(rows.map(row => row.fetchInvokedMs?.highMs), value => value < 0),
+      /** fetch() not provably after release at the calibration's earliest mapping (inside post-run calibration error). */
+      fetchNotProvablyOnTime: count(rows.map(row => row.fetchInvokedMs?.lowMs), value => value < 0),
+      browserRequestStartBeforeRelease: count(rows.map(row => row.browserRequestStartMs), value => value < 0),
+      routeSeenBeforeRelease: count(records.flatMap(record => Object.values(record.perWorker).map(marks => marks.routeSeen)), value => value < 0),
+    },
   };
 }
 

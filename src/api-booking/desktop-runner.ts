@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { constants as osConstants, getPriority, setPriority } from 'node:os';
 import { join, resolve } from 'node:path';
-import { mkdir, open } from 'node:fs/promises';
+import { mkdir, open, writeFile } from 'node:fs/promises';
 import { performance } from 'node:perf_hooks';
 import { chromium, type Browser, type Page } from 'playwright';
 import { z } from 'zod';
@@ -30,6 +30,9 @@ import { officialCheckoutUrl } from './checkout-restoration.js';
 import type { AvailabilitySnapshot, BookingPlan, BookingPreferences } from './types.js';
 import { OndaBrowserSessionTransport, type BrowserTransportObservation, type CheckoutHttpResponse } from './browser-session-transport.js';
 import { ProviderTraceSet, type CdpSessionLike } from './checkout-provider-trace.js';
+import { CriticalPathRecorder, warmUpCriticalPath, type CriticalPathRow } from './critical-path.js';
+import { calibrateRendererClock, calibrateRendererClockAdaptive, sampleRendererClock } from './renderer-clock.js';
+import { rendererDispatchEnabled } from './renderer-dispatch.js';
 import { calendarFreeSecurityContext } from './calendar-free-security-context.js';
 import { firstUnjournaledAvailableCandidate } from './candidate-journal.js';
 import { standardCheckoutChunks } from './extended-checkout.js';
@@ -118,7 +121,9 @@ const sanitizedCheckoutCapture=(response:CheckoutHttpResponse)=>{
   let parsed:unknown;
   try{parsed=JSON.parse(response.body);}catch{}
   return {capturedAt:new Date(nowMs()).toISOString(),status:response.status,contentType:response.contentType,
-    diagnostic:checkoutDiagnostic(response),observed:observedResponse(parsed,'RESPONSE_CAPTURED')};
+    diagnostic:checkoutDiagnostic(response),observed:observedResponse(parsed,'RESPONSE_CAPTURED'),
+    // Structure-first evidence of a rejection (sanitized in the transport); never the body text.
+    ...(response.evidence?{evidence:response.evidence}:{})};
 };
 const connectedBrowsers: Browser[] = [];
 let liveLock:ApiAutomationLock|undefined,retainLiveLock=false,verifiedHold=false;
@@ -134,8 +139,47 @@ interface WorkerSession { workerId:WorkerId; browser: Browser; page: Page; port:
 // Passive checkout provider trace (see checkout-provider-trace.ts). Attached in the background well
 // before any POST, written only after every POST has settled; checkout never depends on it.
 let providerTraces:ProviderTraceSet|undefined,providerTracesSaved=false;
+// Critical-path telemetry (critical-path.ts): in-memory marks during dispatch; renderer clocks are
+// calibrated and the file is written only after every POST has settled.
+let criticalPath:CriticalPathRecorder|undefined,criticalPathPages=new Map<string,Page>(),criticalPathSaved=false;
+const startCriticalPath=(clock:TrustedReleaseClock,releaseMs:number,pages:ReadonlyMap<string,Page>)=>{
+  criticalPathPages=new Map(pages);criticalPathSaved=false;
+  try{warmUpCriticalPath();}catch{/* telemetry only */}
+  criticalPath=new CriticalPathRecorder(releaseMs,clock.monotonicDeadline(releaseMs),clock.offsetMs-clock.wallDisagreementMs(),[...pages.keys()]);
+  return criticalPath;
+};
+const persistCriticalPath=async()=>{
+  const recorder=criticalPath;
+  if(!recorder||criticalPathSaved)return;
+  criticalPathSaved=true;
+  for(const workerId of recorder.workerIds()){
+    const page=criticalPathPages.get(workerId);if(!page||page.isClosed())continue;
+    try{recorder.calibration(workerId,calibrateRendererClock(await sampleRendererClock(page,8)));}catch{/* the row keeps Node-side marks only */}
+  }
+  try{
+    const directory=resolve('.local/release-forensics',progressLog.runId);await mkdir(directory,{recursive:true,mode:0o700});
+    await writeFile(join(directory,'critical-path.ndjson'),recorder.toNdjson({runId:progressLog.runId}),{mode:0o600,flag:'wx'});
+    const rows=recorder.rows(),worst=(pick:(row:CriticalPathRow)=>number|null)=>{const values=rows.map(pick).filter((value):value is number=>value!==null);return values.length?Math.max(...values):-1;};
+    stage('CRITICAL_PATH_SAVED',{workerCount:rows.length,maxPrePostMs:worst(row=>row.prePostMs),maxFetchInvokedMs:worst(row=>row.fetchInvokedMs?.ms??null),
+      maxBrowserRequestStartMs:worst(row=>row.browserRequestStartMs),maxRequestObservedMs:worst(row=>row.requestObservedMs)});
+  }catch{stage('CRITICAL_PATH_SAVED',{outcome:'FAILED'});}
+};
+/**
+ * EXPERIMENTAL renderer-resident dispatch deps, only when ONDA_EXPERIMENTAL_RENDERER_DISPATCH=RENDERER_RESIDENT_V1.
+ * Without the flag this returns {} and the dispatch is exactly the Node-triggered path.
+ */
+const experimentalRendererDispatch=(pageFor:(worker:WorkerId)=>Page|undefined,transportFor:(worker:WorkerId)=>OndaBrowserSessionTransport|undefined)=>
+  rendererDispatchEnabled()?{rendererDispatch:{pageUrl:ONDA_URL,transportFor,
+    calibrate:async(attempt:{target:{workerId:WorkerId}})=>{const page=pageFor(attempt.target.workerId);if(!page)throw Error('RENDERER_PAGE_MISSING');
+      return calibrateRendererClockAdaptive(page,{targetUncertaintyMs:1.5,maxSamples:32});},
+    // Called inside the arm pass: in-memory now, logging on a later macrotask.
+    onPlan:(event:{workerId:WorkerId;mode:'renderer'|'node-fallback';code?:string;calibration?:import('./renderer-clock.js').RendererClockCalibration})=>{
+      if(event.mode==='renderer'){criticalPath?.mode(event.workerId,'renderer-experimental');criticalPath?.calibration(event.workerId,event.calibration);}
+      setImmediate(()=>stage('RENDERER_DISPATCH_PLAN',{workerId:event.workerId,outcome:event.mode==='renderer'?'RENDERER_ARMED':'NODE_FALLBACK',...(event.code?{code:event.code}:{}),
+        ...(event.calibration?{uncertaintyMs:Math.round(event.calibration.uncertaintyMs*100)/100}:{})}));}}}:{};
 const openTraceSession=(page:Page)=>()=>page.context().newCDPSession(page) as unknown as Promise<CdpSessionLike>;
 const persistProviderTraces=async()=>{
+  await persistCriticalPath().catch(()=>undefined);
   if(!providerTraces||providerTracesSaved)return;
   providerTracesSaved=true;
   const path=await providerTraces.persist(resolve('.local/release-forensics',progressLog.runId));
@@ -351,13 +395,15 @@ try {
       if(end)end(stage,extra);else diagnostics.observe(stage,context,extra);
     };
     const observeTransport=(workerId:WorkerId,raw:BrowserTransportObservation)=>{
+      criticalPath?.observeTransport(workerId,raw);
       const context=transportContext(workerId);
       // Release lateness on the final pre-POST gate and on the observed POST (network-corrected clock;
       // the anchored release clock once Precision has prepared it).
       const observation=(raw.event==='CHECKOUT_PRE_POST'||raw.event==='CHECKOUT_HTTP_POST_INITIATED')&&command.releaseMs
         ?{...raw,releaseLatenessMs:tenth((releaseClock?.nowMs()??nowMs())-command.releaseMs)} as unknown as BrowserTransportObservation:raw;
-      // These two fire between the release instant and the POST: time is captured now, bookkeeping runs afterwards.
-      if(observation.event==='CHECKOUT_FUNCTION_ENTERED'||observation.event==='CHECKOUT_PRE_POST'){diagnostics.observeDeferred(observation.event,context,observation);return;}
+      // These fire between the release instant (or the experimental renderer arm) and the POST: time is captured now, bookkeeping runs afterwards.
+      if(observation.event==='CHECKOUT_FUNCTION_ENTERED'||observation.event==='CHECKOUT_PRE_POST'||observation.event==='RENDERER_DISPATCH_ARMED'){
+        diagnostics.observeDeferred(observation.event,context,observation);return;}
       if(observation.event==='SECURITY_PREPARATION_STARTED'){
         beginTransport(`${workerId}:security:${observation.securitySource}`,'security',observation.event,context,observation);return;
       }
@@ -696,8 +742,13 @@ try {
         setTimeout(()=>traces.enableAll(),Math.max(0,armed.dispatchDeadlineMs+100-nowMs())).unref();
         try{
           releaseClock=await prepareReleaseClock(releaseMs);
+          const recorder=startCriticalPath(releaseClock,releaseMs,new Map(armed.attempts.flatMap(attempt=>{
+            const session=sessions.find(value=>value.workerId===attempt.target.workerId);return session?[[attempt.target.workerId,session.page] as const]:[];})));
           const outcome=await dispatchArmedPrecisionRace(armed,{clock:releaseClock,prewarmLeadMs:API_SECURITY_PREWARM_LEAD_MS,spinTailMs:DEFAULT_SPIN_TAIL_MS,
             isAborted:()=>abort.signal.aborted,sleep:pause,transportFor:worker=>releaseTransports.get(worker),
+            onWake:()=>recorder.mark('*','schedulerFired'),onMark:(worker,name)=>{if(name==='transportCall')recorder.mark(worker,'workerInvoked');
+              else if(name==='rendererArm')recorder.mark(worker,'rendererArmSent');},
+            ...experimentalRendererDispatch(worker=>sessions.find(value=>value.workerId===worker)?.page,worker=>releaseTransports.get(worker)),
             prewarm:async attempt=>{
               const transport=releaseTransports.get(attempt.target.workerId);if(!transport)throw Error('API_CHECKOUT_WORKER_MISSING');
               stage('SECURITY_PREWARM_STARTED',{workerId:attempt.target.workerId});await transport.prepareCheckoutContext();
@@ -902,8 +953,13 @@ try {
       try{
         releaseClock=await prepareReleaseClock(releaseMs);
         let previousPriority:number|undefined;
+        const recorder=startCriticalPath(releaseClock,releaseMs,new Map(armed.attempts.flatMap(attempt=>{
+          const workerSession=sessions.find(value=>value.workerId===attempt.target.workerId);return workerSession?[[attempt.target.workerId,workerSession.page] as const]:[];})));
         const outcome=await dispatchArmedPrecisionRace(armed,{clock:releaseClock,prewarmLeadMs:API_SECURITY_PREWARM_LEAD_MS,
           spinTailMs:DEFAULT_SPIN_TAIL_MS,isAborted:()=>abort.signal.aborted,sleep:pause,
+          onWake:()=>recorder.mark('*','schedulerFired'),onMark:(worker,name)=>{if(name==='transportCall')recorder.mark(worker,'workerInvoked');
+            else if(name==='rendererArm')recorder.mark(worker,'rendererArmSent');},
+          ...experimentalRendererDispatch(worker=>sessions.find(value=>value.workerId===worker)?.page,worker=>releaseTransports.get(worker)),
           transportFor:worker=>releaseTransports.get(worker),prewarm:async attempt=>{
             const transport=releaseTransports.get(attempt.target.workerId);if(!transport)throw Error('API_CHECKOUT_WORKER_MISSING');
             await transport.prepareCheckoutContext();},

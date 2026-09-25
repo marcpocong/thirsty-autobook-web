@@ -1,5 +1,6 @@
 import { mkdir, open } from 'node:fs/promises';
 import { join } from 'node:path';
+import type { ResponseEvidence } from './response-evidence.js';
 
 /**
  * Passive provider/network trace for checkout POSTs.
@@ -41,6 +42,8 @@ export interface ProviderResponseFallback {
   status: number; contentType: string | null; server: string | null; cfRay: string | null;
   vercelId: string | null; requestId: string | null; serverTiming: ServerTimingEntry[] | null;
   responseReceivedMs: number | null; responseCompletedMs: number | null;
+  /** Sanitized structure-first evidence of a rejected response (response-evidence.ts); never body text. */
+  evidence?: ResponseEvidence;
 }
 export interface ProviderTraceRecord {
   type: 'provider-trace';
@@ -319,7 +322,7 @@ export class ProviderTraceSet {
   fallbacks(): ProviderResponseFallback[] { return this.responseFallbacks.map(value => structuredClone(value)); }
   captureFallback(context: Pick<ProviderResponseFallback, 'workerId' | 'attemptId' | 'candidateId' | 'wave'>,
     response: { status: number; contentType: string; server: string; cloudflareRay: string;
-      vercelId?: string; requestId?: string; serverTiming?: string; responseReceivedMs?: number; responseCompletedMs?: number }): void {
+      vercelId?: string; requestId?: string; serverTiming?: string; responseReceivedMs?: number; responseCompletedMs?: number; evidence?: ResponseEvidence }): void {
     try {
       const timing = (value: number | undefined) => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 120_000 ? tenth(value) : null;
       if (!Number.isInteger(response.status) || response.status < 100 || response.status > 599) return;
@@ -329,7 +332,9 @@ export class ProviderTraceSet {
         status: response.status, contentType: sanitizeContentType(response.contentType), server: sanitizeHeader('server', response.server),
         cfRay: sanitizeHeader('cf-ray', response.cloudflareRay), vercelId: sanitizeHeader('x-vercel-id', response.vercelId),
         requestId: sanitizeHeader('x-request-id', response.requestId), serverTiming: sanitizeServerTiming(response.serverTiming),
-        responseReceivedMs: timing(response.responseReceivedMs), responseCompletedMs: timing(response.responseCompletedMs) });
+        responseReceivedMs: timing(response.responseReceivedMs), responseCompletedMs: timing(response.responseCompletedMs),
+        // Already sanitized by the transport; copied structurally so a later mutation cannot leak into the file.
+        ...(response.evidence ? { evidence: structuredClone(response.evidence) } : {}) });
     } catch { /* telemetry must never affect checkout */ }
   }
 

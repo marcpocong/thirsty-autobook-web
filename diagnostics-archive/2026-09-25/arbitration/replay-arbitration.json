@@ -1,0 +1,3455 @@
+{
+ "schema": "release-replay/v1",
+ "purpose": "Compatibility of provider arbitration models with observed release signatures. A HYPOTHESIS tool: a compatible model is not proven; a model that never reproduces a signature is contradicted only within the explored parameter ranges.",
+ "grid": {
+  "modelVariants": [
+   "A_EDGE_FIFO:admission=2",
+   "A_EDGE_FIFO:admission=4",
+   "A_EDGE_FIFO:admission=8",
+   "B_INSTANCE_ADMISSION:instances=4,conn=1",
+   "B_INSTANCE_ADMISSION:instances=8,conn=1",
+   "B_INSTANCE_ADMISSION:instances=16,conn=1",
+   "C_PESSIMISTIC_COURT_LOCK:hold=300",
+   "C_PESSIMISTIC_COURT_LOCK:hold=600",
+   "C_PESSIMISTIC_COURT_LOCK:hold=900",
+   "D_OPTIMISTIC:service=300",
+   "D_OPTIMISTIC:service=600",
+   "D_OPTIMISTIC:service=900",
+   "E_RETRY_BACKOFF:retries=3,base=500",
+   "E_RETRY_BACKOFF:retries=3,base=2000",
+   "E_RETRY_BACKOFF:retries=6,base=500",
+   "E_RETRY_BACKOFF:retries=6,base=2000",
+   "F_FACILITY_DATE_SERIAL:fifo,hold=300",
+   "F_FACILITY_DATE_SERIAL:fifo,hold=300,instances=16,conn=1",
+   "F_FACILITY_DATE_SERIAL:fifo,hold=600",
+   "F_FACILITY_DATE_SERIAL:fifo,hold=600,instances=16,conn=1",
+   "F_FACILITY_DATE_SERIAL:fifo,hold=900",
+   "F_FACILITY_DATE_SERIAL:fifo,hold=900,instances=16,conn=1",
+   "F_FACILITY_DATE_SERIAL:random,hold=300",
+   "F_FACILITY_DATE_SERIAL:random,hold=300,instances=16,conn=1",
+   "F_FACILITY_DATE_SERIAL:random,hold=600",
+   "F_FACILITY_DATE_SERIAL:random,hold=600,instances=16,conn=1",
+   "F_FACILITY_DATE_SERIAL:random,hold=900",
+   "F_FACILITY_DATE_SERIAL:random,hold=900,instances=16,conn=1",
+   "G_LANES:optimistic,prooflessExtra=10000",
+   "G_LANES:optimistic,prooflessExtra=30000",
+   "G_LANES:facility-fifo,hold=600,prooflessExtra=3000",
+   "G_LANES:facility-fifo,hold=600,prooflessExtra=10000",
+   "H_PER_IP:perIp=1",
+   "H_PER_IP:perIp=2",
+   "P_PROCESSOR_SHARING:capacity=2",
+   "P_PROCESSOR_SHARING:capacity=4",
+   "P_PROCESSOR_SHARING:capacity=8",
+   "P_PROCESSOR_SHARING:capacity=4,facility-fifo,hold=300"
+  ],
+  "crowdVariants": [
+   "checkouts=20,arrivalMean=200,reads/s=10,preRelease=0",
+   "checkouts=20,arrivalMean=200,reads/s=10,preRelease=0.3",
+   "checkouts=20,arrivalMean=200,reads/s=40,preRelease=0",
+   "checkouts=20,arrivalMean=200,reads/s=40,preRelease=0.3",
+   "checkouts=20,arrivalMean=1000,reads/s=10,preRelease=0",
+   "checkouts=20,arrivalMean=1000,reads/s=10,preRelease=0.3",
+   "checkouts=20,arrivalMean=1000,reads/s=40,preRelease=0",
+   "checkouts=20,arrivalMean=1000,reads/s=40,preRelease=0.3",
+   "checkouts=20,arrivalMean=4000,reads/s=10,preRelease=0",
+   "checkouts=20,arrivalMean=4000,reads/s=10,preRelease=0.3",
+   "checkouts=20,arrivalMean=4000,reads/s=40,preRelease=0",
+   "checkouts=20,arrivalMean=4000,reads/s=40,preRelease=0.3",
+   "checkouts=40,arrivalMean=200,reads/s=10,preRelease=0",
+   "checkouts=40,arrivalMean=200,reads/s=10,preRelease=0.3",
+   "checkouts=40,arrivalMean=200,reads/s=40,preRelease=0",
+   "checkouts=40,arrivalMean=200,reads/s=40,preRelease=0.3",
+   "checkouts=40,arrivalMean=1000,reads/s=10,preRelease=0",
+   "checkouts=40,arrivalMean=1000,reads/s=10,preRelease=0.3",
+   "checkouts=40,arrivalMean=1000,reads/s=40,preRelease=0",
+   "checkouts=40,arrivalMean=1000,reads/s=40,preRelease=0.3",
+   "checkouts=40,arrivalMean=4000,reads/s=10,preRelease=0",
+   "checkouts=40,arrivalMean=4000,reads/s=10,preRelease=0.3",
+   "checkouts=40,arrivalMean=4000,reads/s=40,preRelease=0",
+   "checkouts=40,arrivalMean=4000,reads/s=40,preRelease=0.3",
+   "checkouts=80,arrivalMean=200,reads/s=10,preRelease=0",
+   "checkouts=80,arrivalMean=200,reads/s=10,preRelease=0.3",
+   "checkouts=80,arrivalMean=200,reads/s=40,preRelease=0",
+   "checkouts=80,arrivalMean=200,reads/s=40,preRelease=0.3",
+   "checkouts=80,arrivalMean=1000,reads/s=10,preRelease=0",
+   "checkouts=80,arrivalMean=1000,reads/s=10,preRelease=0.3",
+   "checkouts=80,arrivalMean=1000,reads/s=40,preRelease=0",
+   "checkouts=80,arrivalMean=1000,reads/s=40,preRelease=0.3",
+   "checkouts=80,arrivalMean=4000,reads/s=10,preRelease=0",
+   "checkouts=80,arrivalMean=4000,reads/s=10,preRelease=0.3",
+   "checkouts=80,arrivalMean=4000,reads/s=40,preRelease=0",
+   "checkouts=80,arrivalMean=4000,reads/s=40,preRelease=0.3",
+   "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0",
+   "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0.3",
+   "checkouts=160,arrivalMean=200,reads/s=40,preRelease=0",
+   "checkouts=160,arrivalMean=200,reads/s=40,preRelease=0.3",
+   "checkouts=160,arrivalMean=1000,reads/s=10,preRelease=0",
+   "checkouts=160,arrivalMean=1000,reads/s=10,preRelease=0.3",
+   "checkouts=160,arrivalMean=1000,reads/s=40,preRelease=0",
+   "checkouts=160,arrivalMean=1000,reads/s=40,preRelease=0.3",
+   "checkouts=160,arrivalMean=4000,reads/s=10,preRelease=0",
+   "checkouts=160,arrivalMean=4000,reads/s=10,preRelease=0.3",
+   "checkouts=160,arrivalMean=4000,reads/s=40,preRelease=0",
+   "checkouts=160,arrivalMean=4000,reads/s=40,preRelease=0.3"
+  ],
+  "seeds": [
+   1000,
+   1001,
+   1002,
+   1003,
+   1004
+  ]
+ },
+ "days": [
+  {
+   "label": "2026-09-25",
+   "provenance": [
+    "FACT: send offsets (Playwright request events) and response offsets (CHECKOUT_PRE_POST + network duration) on the dispatch clock",
+    "INFERENCE: edge arrival = x-vercel-id embedded number (UNDOCUMENTED meaning) on the dispatch clock",
+    "FACT: Slot Watch read request/response offsets, shifted to the dispatch clock",
+    "INFERENCE: every one of our requests (7 browsers and the Slot Watch) left from one public IP"
+   ],
+   "signatures": {
+    "latencyWindowMs": [
+     28500,
+     36000
+    ],
+    "spreadWindowMs": [
+     4000,
+     7500
+    ],
+    "allConflict": true,
+    "arrivalOrderTau": {
+     "observed": 0.3333,
+     "tolerance": 0.3
+    },
+    "readFlush": true,
+    "readOvertake": true
+   },
+   "observedSelfScore": {
+    "latency": true,
+    "conflict": true,
+    "spread": true,
+    "order": true,
+    "readFlush": true,
+    "readOvertake": true,
+    "score": 6,
+    "applicable": 6,
+    "full": true,
+    "metrics": {
+     "firstResponseMs": 29108.8,
+     "lastResponseMs": 34618.4,
+     "spreadMs": 5509.600000000002,
+     "arrivalTau": 0.3333,
+     "conflicts": 7,
+     "flushes": 2,
+     "overtakes": 2
+    }
+   },
+   "families": [
+    {
+     "family": "A_EDGE_FIFO",
+     "verdict": "NOT_REPRODUCED_IN_GRID",
+     "cells": 144,
+     "cellsWithAnyFullMatch": 0,
+     "maxSignatureRates": {
+      "latency": 0.8,
+      "conflict": 0.6,
+      "spread": 0.2,
+      "order": 1,
+      "readFlush": 0.6,
+      "readOvertake": 0
+     },
+     "best": {
+      "model": "A_EDGE_FIFO:admission=8",
+      "crowd": "checkouts=160,arrivalMean=1000,reads/s=10,preRelease=0.3",
+      "seeds": 5,
+      "fullMatchRate": 0,
+      "meanScore": 1.6,
+      "applicable": 6,
+      "signatureRates": {
+       "latency": 0,
+       "conflict": 0.4,
+       "spread": 0,
+       "order": 1,
+       "readFlush": 0.2,
+       "readOvertake": 0
+      },
+      "ourLatencyMs": {
+       "n": 35,
+       "min": 5688,
+       "p50": 7481,
+       "p95": 8186,
+       "p99": 8219,
+       "max": 8219,
+       "mean": 7348
+      }
+     }
+    },
+    {
+     "family": "B_INSTANCE_ADMISSION",
+     "verdict": "NOT_REPRODUCED_IN_GRID",
+     "cells": 144,
+     "cellsWithAnyFullMatch": 0,
+     "maxSignatureRates": {
+      "latency": 0,
+      "conflict": 0.6,
+      "spread": 1,
+      "order": 1,
+      "readFlush": 1,
+      "readOvertake": 1
+     },
+     "best": {
+      "model": "B_INSTANCE_ADMISSION:instances=4,conn=1",
+      "crowd": "checkouts=80,arrivalMean=200,reads/s=10,preRelease=0.3",
+      "seeds": 5,
+      "fullMatchRate": 0,
+      "meanScore": 2.8,
+      "applicable": 6,
+      "signatureRates": {
+       "latency": 0,
+       "conflict": 0,
+       "spread": 1,
+       "order": 0.6,
+       "readFlush": 0.4,
+       "readOvertake": 0.8
+      },
+      "ourLatencyMs": {
+       "n": 35,
+       "min": 3561,
+       "p50": 7582,
+       "p95": 11186,
+       "p99": 11560,
+       "max": 11560,
+       "mean": 7535
+      }
+     }
+    },
+    {
+     "family": "C_PESSIMISTIC_COURT_LOCK",
+     "verdict": "NOT_REPRODUCED_IN_GRID",
+     "cells": 144,
+     "cellsWithAnyFullMatch": 0,
+     "maxSignatureRates": {
+      "latency": 0,
+      "conflict": 0.8,
+      "spread": 1,
+      "order": 1,
+      "readFlush": 0,
+      "readOvertake": 0
+     },
+     "best": {
+      "model": "C_PESSIMISTIC_COURT_LOCK:hold=300",
+      "crowd": "checkouts=160,arrivalMean=200,reads/s=40,preRelease=0.3",
+      "seeds": 5,
+      "fullMatchRate": 0,
+      "meanScore": 2.2,
+      "applicable": 6,
+      "signatureRates": {
+       "latency": 0,
+       "conflict": 0.6,
+       "spread": 1,
+       "order": 0.6,
+       "readFlush": 0,
+       "readOvertake": 0
+      },
+      "ourLatencyMs": {
+       "n": 35,
+       "min": 1275,
+       "p50": 3318,
+       "p95": 7788,
+       "p99": 7835,
+       "max": 7835,
+       "mean": 3545
+      }
+     }
+    },
+    {
+     "family": "D_OPTIMISTIC",
+     "verdict": "NOT_REPRODUCED_IN_GRID",
+     "cells": 144,
+     "cellsWithAnyFullMatch": 0,
+     "maxSignatureRates": {
+      "latency": 0,
+      "conflict": 0.6,
+      "spread": 0,
+      "order": 1,
+      "readFlush": 0,
+      "readOvertake": 0
+     },
+     "best": {
+      "model": "D_OPTIMISTIC:service=300",
+      "crowd": "checkouts=80,arrivalMean=200,reads/s=10,preRelease=0",
+      "seeds": 5,
+      "fullMatchRate": 0,
+      "meanScore": 1.2,
+      "applicable": 6,
+      "signatureRates": {
+       "latency": 0,
+       "conflict": 0.2,
+       "spread": 0,
+       "order": 1,
+       "readFlush": 0,
+       "readOvertake": 0
+      },
+      "ourLatencyMs": {
+       "n": 35,
+       "min": 702,
+       "p50": 1110,
+       "p95": 1564,
+       "p99": 1659,
+       "max": 1659,
+       "mean": 1112
+      }
+     }
+    },
+    {
+     "family": "E_RETRY_BACKOFF",
+     "verdict": "NOT_REPRODUCED_IN_GRID",
+     "cells": 192,
+     "cellsWithAnyFullMatch": 0,
+     "maxSignatureRates": {
+      "latency": 0,
+      "conflict": 0.8,
+      "spread": 0.8,
+      "order": 1,
+      "readFlush": 0,
+      "readOvertake": 0
+     },
+     "best": {
+      "model": "E_RETRY_BACKOFF:retries=3,base=500",
+      "crowd": "checkouts=160,arrivalMean=1000,reads/s=10,preRelease=0",
+      "seeds": 5,
+      "fullMatchRate": 0,
+      "meanScore": 1.6,
+      "applicable": 6,
+      "signatureRates": {
+       "latency": 0,
+       "conflict": 0,
+       "spread": 0.8,
+       "order": 0.8,
+       "readFlush": 0,
+       "readOvertake": 0
+      },
+      "ourLatencyMs": {
+       "n": 35,
+       "min": 677,
+       "p50": 1136,
+       "p95": 8896,
+       "p99": 9329,
+       "max": 9329,
+       "mean": 2837
+      }
+     }
+    },
+    {
+     "family": "F_FACILITY_DATE_SERIAL",
+     "verdict": "NOT_REPRODUCED_IN_GRID",
+     "cells": 576,
+     "cellsWithAnyFullMatch": 0,
+     "maxSignatureRates": {
+      "latency": 0,
+      "conflict": 1,
+      "spread": 1,
+      "order": 1,
+      "readFlush": 1,
+      "readOvertake": 1
+     },
+     "best": {
+      "model": "F_FACILITY_DATE_SERIAL:fifo,hold=300,instances=16,conn=1",
+      "crowd": "checkouts=40,arrivalMean=4000,reads/s=10,preRelease=0.3",
+      "seeds": 5,
+      "fullMatchRate": 0,
+      "meanScore": 2.8,
+      "applicable": 6,
+      "signatureRates": {
+       "latency": 0,
+       "conflict": 0,
+       "spread": 0.8,
+       "order": 1,
+       "readFlush": 0,
+       "readOvertake": 1
+      },
+      "ourLatencyMs": {
+       "n": 35,
+       "min": 2580,
+       "p50": 4224,
+       "p95": 10810,
+       "p99": 12798,
+       "max": 12798,
+       "mean": 5590
+      }
+     }
+    },
+    {
+     "family": "G_LANES",
+     "verdict": "NOT_REPRODUCED_IN_GRID",
+     "cells": 192,
+     "cellsWithAnyFullMatch": 0,
+     "maxSignatureRates": {
+      "latency": 0.2,
+      "conflict": 1,
+      "spread": 1,
+      "order": 0.8,
+      "readFlush": 0,
+      "readOvertake": 0
+     },
+     "best": {
+      "model": "G_LANES:optimistic,prooflessExtra=10000",
+      "crowd": "checkouts=80,arrivalMean=200,reads/s=10,preRelease=0",
+      "seeds": 5,
+      "fullMatchRate": 0,
+      "meanScore": 2.6,
+      "applicable": 6,
+      "signatureRates": {
+       "latency": 0,
+       "conflict": 1,
+       "spread": 0.8,
+       "order": 0.8,
+       "readFlush": 0,
+       "readOvertake": 0
+      },
+      "ourLatencyMs": {
+       "n": 35,
+       "min": 7270,
+       "p50": 10808,
+       "p95": 14462,
+       "p99": 19216,
+       "max": 19216,
+       "mean": 11418
+      }
+     }
+    },
+    {
+     "family": "H_PER_IP",
+     "verdict": "NOT_REPRODUCED_IN_GRID",
+     "cells": 96,
+     "cellsWithAnyFullMatch": 0,
+     "maxSignatureRates": {
+      "latency": 0,
+      "conflict": 0.8,
+      "spread": 1,
+      "order": 0.4,
+      "readFlush": 1,
+      "readOvertake": 0
+     },
+     "best": {
+      "model": "H_PER_IP:perIp=1",
+      "crowd": "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0.3",
+      "seeds": 5,
+      "fullMatchRate": 0,
+      "meanScore": 2.8,
+      "applicable": 6,
+      "signatureRates": {
+       "latency": 0,
+       "conflict": 0.8,
+       "spread": 1,
+       "order": 0,
+       "readFlush": 1,
+       "readOvertake": 0
+      },
+      "ourLatencyMs": {
+       "n": 35,
+       "min": 876,
+       "p50": 4049,
+       "p95": 8017,
+       "p99": 8181,
+       "max": 8181,
+       "mean": 4256
+      }
+     }
+    },
+    {
+     "family": "P_PROCESSOR_SHARING",
+     "verdict": "NOT_REPRODUCED_IN_GRID",
+     "cells": 192,
+     "cellsWithAnyFullMatch": 0,
+     "maxSignatureRates": {
+      "latency": 0,
+      "conflict": 0.8,
+      "spread": 1,
+      "order": 1,
+      "readFlush": 0.8,
+      "readOvertake": 0.2
+     },
+     "best": {
+      "model": "P_PROCESSOR_SHARING:capacity=2",
+      "crowd": "checkouts=20,arrivalMean=200,reads/s=40,preRelease=0",
+      "seeds": 5,
+      "fullMatchRate": 0,
+      "meanScore": 2,
+      "applicable": 6,
+      "signatureRates": {
+       "latency": 0,
+       "conflict": 0,
+       "spread": 0.6,
+       "order": 0.8,
+       "readFlush": 0.6,
+       "readOvertake": 0
+      },
+      "ourLatencyMs": {
+       "n": 35,
+       "min": 65493,
+       "p50": 70061,
+       "p95": 72102,
+       "p99": 72666,
+       "max": 72666,
+       "mean": 69988
+      }
+     }
+    }
+   ],
+   "topCells": [
+    {
+     "model": "B_INSTANCE_ADMISSION:instances=4,conn=1",
+     "crowd": "checkouts=80,arrivalMean=200,reads/s=10,preRelease=0.3",
+     "seeds": 5,
+     "fullMatchRate": 0,
+     "meanScore": 2.8,
+     "applicable": 6,
+     "signatureRates": {
+      "latency": 0,
+      "conflict": 0,
+      "spread": 1,
+      "order": 0.6,
+      "readFlush": 0.4,
+      "readOvertake": 0.8
+     },
+     "ourLatencyMs": {
+      "n": 35,
+      "min": 3561,
+      "p50": 7582,
+      "p95": 11186,
+      "p99": 11560,
+      "max": 11560,
+      "mean": 7535
+     }
+    },
+    {
+     "model": "B_INSTANCE_ADMISSION:instances=4,conn=1",
+     "crowd": "checkouts=80,arrivalMean=1000,reads/s=10,preRelease=0.3",
+     "seeds": 5,
+     "fullMatchRate": 0,
+     "meanScore": 2.8,
+     "applicable": 6,
+     "signatureRates": {
+      "latency": 0,
+      "conflict": 0,
+      "spread": 1,
+      "order": 0.8,
+      "readFlush": 0,
+      "readOvertake": 1
+     },
+     "ourLatencyMs": {
+      "n": 35,
+      "min": 3233,
+      "p50": 7708,
+      "p95": 10912,
+      "p99": 11399,
+      "max": 11399,
+      "mean": 7808
+     }
+    },
+    {
+     "model": "B_INSTANCE_ADMISSION:instances=4,conn=1",
+     "crowd": "checkouts=80,arrivalMean=4000,reads/s=10,preRelease=0.3",
+     "seeds": 5,
+     "fullMatchRate": 0,
+     "meanScore": 2.8,
+     "applicable": 6,
+     "signatureRates": {
+      "latency": 0,
+      "conflict": 0,
+      "spread": 1,
+      "order": 0.8,
+      "readFlush": 0,
+      "readOvertake": 1
+     },
+     "ourLatencyMs": {
+      "n": 35,
+      "min": 2978,
+      "p50": 7476,
+      "p95": 11314,
+      "p99": 11545,
+      "max": 11545,
+      "mean": 7657
+     }
+    },
+    {
+     "model": "B_INSTANCE_ADMISSION:instances=8,conn=1",
+     "crowd": "checkouts=80,arrivalMean=200,reads/s=10,preRelease=0.3",
+     "seeds": 5,
+     "fullMatchRate": 0,
+     "meanScore": 2.8,
+     "applicable": 6,
+     "signatureRates": {
+      "latency": 0,
+      "conflict": 0,
+      "spread": 1,
+      "order": 1,
+      "readFlush": 0,
+      "readOvertake": 0.8
+     },
+     "ourLatencyMs": {
+      "n": 35,
+      "min": 1093,
+      "p50": 3611,
+      "p95": 6717,
+      "p99": 6745,
+      "max": 6745,
+      "mean": 3922
+     }
+    },
+    {
+     "model": "F_FACILITY_DATE_SERIAL:fifo,hold=300,instances=16,conn=1",
+     "crowd": "checkouts=40,arrivalMean=4000,reads/s=10,preRelease=0.3",
+     "seeds": 5,
+     "fullMatchRate": 0,
+     "meanScore": 2.8,
+     "applicable": 6,
+     "signatureRates": {
+      "latency": 0,
+      "conflict": 0,
+      "spread": 0.8,
+      "order": 1,
+      "readFlush": 0,
+      "readOvertake": 1
+     },
+     "ourLatencyMs": {
+      "n": 35,
+      "min": 2580,
+      "p50": 4224,
+      "p95": 10810,
+      "p99": 12798,
+      "max": 12798,
+      "mean": 5590
+     }
+    },
+    {
+     "model": "H_PER_IP:perIp=1",
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0.3",
+     "seeds": 5,
+     "fullMatchRate": 0,
+     "meanScore": 2.8,
+     "applicable": 6,
+     "signatureRates": {
+      "latency": 0,
+      "conflict": 0.8,
+      "spread": 1,
+      "order": 0,
+      "readFlush": 1,
+      "readOvertake": 0
+     },
+     "ourLatencyMs": {
+      "n": 35,
+      "min": 876,
+      "p50": 4049,
+      "p95": 8017,
+      "p99": 8181,
+      "max": 8181,
+      "mean": 4256
+     }
+    },
+    {
+     "model": "H_PER_IP:perIp=1",
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=40,preRelease=0.3",
+     "seeds": 5,
+     "fullMatchRate": 0,
+     "meanScore": 2.8,
+     "applicable": 6,
+     "signatureRates": {
+      "latency": 0,
+      "conflict": 0.8,
+      "spread": 1,
+      "order": 0,
+      "readFlush": 1,
+      "readOvertake": 0
+     },
+     "ourLatencyMs": {
+      "n": 35,
+      "min": 653,
+      "p50": 4141,
+      "p95": 7777,
+      "p99": 7924,
+      "max": 7924,
+      "mean": 4137
+     }
+    },
+    {
+     "model": "H_PER_IP:perIp=1",
+     "crowd": "checkouts=160,arrivalMean=1000,reads/s=10,preRelease=0.3",
+     "seeds": 5,
+     "fullMatchRate": 0,
+     "meanScore": 2.8,
+     "applicable": 6,
+     "signatureRates": {
+      "latency": 0,
+      "conflict": 0.8,
+      "spread": 1,
+      "order": 0,
+      "readFlush": 1,
+      "readOvertake": 0
+     },
+     "ourLatencyMs": {
+      "n": 35,
+      "min": 759,
+      "p50": 4388,
+      "p95": 7899,
+      "p99": 7951,
+      "max": 7951,
+      "mean": 4221
+     }
+    },
+    {
+     "model": "B_INSTANCE_ADMISSION:instances=4,conn=1",
+     "crowd": "checkouts=80,arrivalMean=4000,reads/s=10,preRelease=0",
+     "seeds": 5,
+     "fullMatchRate": 0,
+     "meanScore": 2.6,
+     "applicable": 6,
+     "signatureRates": {
+      "latency": 0,
+      "conflict": 0,
+      "spread": 0.2,
+      "order": 1,
+      "readFlush": 0.4,
+      "readOvertake": 1
+     },
+     "ourLatencyMs": {
+      "n": 35,
+      "min": 723,
+      "p50": 2068,
+      "p95": 5218,
+      "p99": 6029,
+      "max": 6029,
+      "mean": 2254
+     }
+    },
+    {
+     "model": "B_INSTANCE_ADMISSION:instances=8,conn=1",
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0.3",
+     "seeds": 5,
+     "fullMatchRate": 0,
+     "meanScore": 2.6,
+     "applicable": 6,
+     "signatureRates": {
+      "latency": 0,
+      "conflict": 0.2,
+      "spread": 0.6,
+      "order": 0.6,
+      "readFlush": 0.2,
+      "readOvertake": 1
+     },
+     "ourLatencyMs": {
+      "n": 35,
+      "min": 2263,
+      "p50": 7166,
+      "p95": 10809,
+      "p99": 13114,
+      "max": 13114,
+      "mean": 6953
+     }
+    },
+    {
+     "model": "B_INSTANCE_ADMISSION:instances=8,conn=1",
+     "crowd": "checkouts=160,arrivalMean=1000,reads/s=10,preRelease=0.3",
+     "seeds": 5,
+     "fullMatchRate": 0,
+     "meanScore": 2.6,
+     "applicable": 6,
+     "signatureRates": {
+      "latency": 0,
+      "conflict": 0.2,
+      "spread": 0.8,
+      "order": 0.4,
+      "readFlush": 0.2,
+      "readOvertake": 1
+     },
+     "ourLatencyMs": {
+      "n": 35,
+      "min": 2506,
+      "p50": 7537,
+      "p95": 12435,
+      "p99": 13487,
+      "max": 13487,
+      "mean": 7382
+     }
+    },
+    {
+     "model": "B_INSTANCE_ADMISSION:instances=16,conn=1",
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0.3",
+     "seeds": 5,
+     "fullMatchRate": 0,
+     "meanScore": 2.6,
+     "applicable": 6,
+     "signatureRates": {
+      "latency": 0,
+      "conflict": 0.4,
+      "spread": 0.8,
+      "order": 0.6,
+      "readFlush": 0,
+      "readOvertake": 0.8
+     },
+     "ourLatencyMs": {
+      "n": 35,
+      "min": 1167,
+      "p50": 4191,
+      "p95": 6534,
+      "p99": 7696,
+      "max": 7696,
+      "mean": 4179
+     }
+    }
+   ]
+  },
+  {
+   "label": "2026-09-24",
+   "provenance": [
+    "FACT: send and response offsets on the runner clock",
+    "INFERENCE: edge = send + 20 ms (no provider stamp retained)",
+    "Reads are not replayed (they timed out client-side at 5 s that day)"
+   ],
+   "signatures": {
+    "latencyWindowMs": [
+     16500,
+     29500
+    ],
+    "spreadWindowMs": [
+     8000,
+     13000
+    ],
+    "allConflict": true,
+    "arrivalOrderTau": null,
+    "readFlush": null,
+    "readOvertake": null
+   },
+   "observedSelfScore": {
+    "latency": true,
+    "conflict": true,
+    "spread": true,
+    "order": null,
+    "readFlush": null,
+    "readOvertake": null,
+    "score": 3,
+    "applicable": 3,
+    "full": true,
+    "metrics": {
+     "firstResponseMs": 17635.1,
+     "lastResponseMs": 28411.1,
+     "spreadMs": 10776,
+     "arrivalTau": -1,
+     "conflicts": 3,
+     "flushes": 0,
+     "overtakes": 0
+    }
+   },
+   "families": [
+    {
+     "family": "A_EDGE_FIFO",
+     "verdict": "NOT_REPRODUCED_IN_GRID",
+     "cells": 144,
+     "cellsWithAnyFullMatch": 0,
+     "maxSignatureRates": {
+      "latency": 1,
+      "conflict": 1,
+      "spread": 0,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "best": {
+      "model": "A_EDGE_FIFO:admission=2",
+      "crowd": "checkouts=80,arrivalMean=200,reads/s=10,preRelease=0.3",
+      "seeds": 5,
+      "fullMatchRate": 0,
+      "meanScore": 2,
+      "applicable": 3,
+      "signatureRates": {
+       "latency": 1,
+       "conflict": 1,
+       "spread": 0,
+       "order": null,
+       "readFlush": null,
+       "readOvertake": null
+      },
+      "ourLatencyMs": {
+       "n": 15,
+       "min": 18005,
+       "p50": 20981,
+       "p95": 24680,
+       "p99": 24680,
+       "max": 24680,
+       "mean": 20900
+      }
+     }
+    },
+    {
+     "family": "B_INSTANCE_ADMISSION",
+     "verdict": "COMPATIBLE_SOMEWHERE_IN_GRID",
+     "cells": 144,
+     "cellsWithAnyFullMatch": 1,
+     "maxSignatureRates": {
+      "latency": 0.8,
+      "conflict": 1,
+      "spread": 0.2,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "best": {
+      "model": "B_INSTANCE_ADMISSION:instances=4,conn=1",
+      "crowd": "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0.3",
+      "seeds": 5,
+      "fullMatchRate": 0.2,
+      "meanScore": 2,
+      "applicable": 3,
+      "signatureRates": {
+       "latency": 0.8,
+       "conflict": 1,
+       "spread": 0.2,
+       "order": null,
+       "readFlush": null,
+       "readOvertake": null
+      },
+      "ourLatencyMs": {
+       "n": 15,
+       "min": 15508,
+       "p50": 20470,
+       "p95": 26539,
+       "p99": 26539,
+       "max": 26539,
+       "mean": 20489
+      }
+     }
+    },
+    {
+     "family": "C_PESSIMISTIC_COURT_LOCK",
+     "verdict": "NOT_REPRODUCED_IN_GRID",
+     "cells": 144,
+     "cellsWithAnyFullMatch": 0,
+     "maxSignatureRates": {
+      "latency": 0,
+      "conflict": 1,
+      "spread": 0.4,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "best": {
+      "model": "C_PESSIMISTIC_COURT_LOCK:hold=600",
+      "crowd": "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0.3",
+      "seeds": 5,
+      "fullMatchRate": 0,
+      "meanScore": 1.4,
+      "applicable": 3,
+      "signatureRates": {
+       "latency": 0,
+       "conflict": 1,
+       "spread": 0.4,
+       "order": null,
+       "readFlush": null,
+       "readOvertake": null
+      },
+      "ourLatencyMs": {
+       "n": 15,
+       "min": 3742,
+       "p50": 7206,
+       "p95": 13921,
+       "p99": 13921,
+       "max": 13921,
+       "mean": 7899
+      }
+     }
+    },
+    {
+     "family": "D_OPTIMISTIC",
+     "verdict": "NOT_REPRODUCED_IN_GRID",
+     "cells": 144,
+     "cellsWithAnyFullMatch": 0,
+     "maxSignatureRates": {
+      "latency": 0,
+      "conflict": 1,
+      "spread": 0,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "best": {
+      "model": "D_OPTIMISTIC:service=300",
+      "crowd": "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0.3",
+      "seeds": 5,
+      "fullMatchRate": 0,
+      "meanScore": 1,
+      "applicable": 3,
+      "signatureRates": {
+       "latency": 0,
+       "conflict": 1,
+       "spread": 0,
+       "order": null,
+       "readFlush": null,
+       "readOvertake": null
+      },
+      "ourLatencyMs": {
+       "n": 15,
+       "min": 719,
+       "p50": 1058,
+       "p95": 1830,
+       "p99": 1830,
+       "max": 1830,
+       "mean": 1089
+      }
+     }
+    },
+    {
+     "family": "E_RETRY_BACKOFF",
+     "verdict": "NOT_REPRODUCED_IN_GRID",
+     "cells": 192,
+     "cellsWithAnyFullMatch": 0,
+     "maxSignatureRates": {
+      "latency": 0.6,
+      "conflict": 1,
+      "spread": 0.6,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "best": {
+      "model": "E_RETRY_BACKOFF:retries=3,base=2000",
+      "crowd": "checkouts=80,arrivalMean=200,reads/s=40,preRelease=0.3",
+      "seeds": 5,
+      "fullMatchRate": 0,
+      "meanScore": 1.6,
+      "applicable": 3,
+      "signatureRates": {
+       "latency": 0.6,
+       "conflict": 0.8,
+       "spread": 0.2,
+       "order": null,
+       "readFlush": null,
+       "readOvertake": null
+      },
+      "ourLatencyMs": {
+       "n": 15,
+       "min": 938,
+       "p50": 18152,
+       "p95": 23830,
+       "p99": 23830,
+       "max": 23830,
+       "mean": 16725
+      }
+     }
+    },
+    {
+     "family": "F_FACILITY_DATE_SERIAL",
+     "verdict": "COMPATIBLE_SOMEWHERE_IN_GRID",
+     "cells": 576,
+     "cellsWithAnyFullMatch": 7,
+     "maxSignatureRates": {
+      "latency": 0.6,
+      "conflict": 1,
+      "spread": 0.8,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "best": {
+      "model": "F_FACILITY_DATE_SERIAL:fifo,hold=600,instances=16,conn=1",
+      "crowd": "checkouts=40,arrivalMean=200,reads/s=40,preRelease=0.3",
+      "seeds": 5,
+      "fullMatchRate": 0.2,
+      "meanScore": 1.4,
+      "applicable": 3,
+      "signatureRates": {
+       "latency": 0.2,
+       "conflict": 0.8,
+       "spread": 0.4,
+       "order": null,
+       "readFlush": null,
+       "readOvertake": null
+      },
+      "ourLatencyMs": {
+       "n": 15,
+       "min": 3189,
+       "p50": 17083,
+       "p95": 28672,
+       "p99": 28672,
+       "max": 28672,
+       "mean": 16170
+      }
+     }
+    },
+    {
+     "family": "G_LANES",
+     "verdict": "NOT_REPRODUCED_IN_GRID",
+     "cells": 192,
+     "cellsWithAnyFullMatch": 0,
+     "maxSignatureRates": {
+      "latency": 1,
+      "conflict": 1,
+      "spread": 0.8,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "best": {
+      "model": "G_LANES:facility-fifo,hold=600,prooflessExtra=3000",
+      "crowd": "checkouts=40,arrivalMean=200,reads/s=40,preRelease=0",
+      "seeds": 5,
+      "fullMatchRate": 0,
+      "meanScore": 2,
+      "applicable": 3,
+      "signatureRates": {
+       "latency": 1,
+       "conflict": 1,
+       "spread": 0,
+       "order": null,
+       "readFlush": null,
+       "readOvertake": null
+      },
+      "ourLatencyMs": {
+       "n": 15,
+       "min": 23734,
+       "p50": 26305,
+       "p95": 28293,
+       "p99": 28293,
+       "max": 28293,
+       "mean": 26184
+      }
+     }
+    },
+    {
+     "family": "H_PER_IP",
+     "verdict": "NOT_REPRODUCED_IN_GRID",
+     "cells": 96,
+     "cellsWithAnyFullMatch": 0,
+     "maxSignatureRates": {
+      "latency": 0,
+      "conflict": 1,
+      "spread": 0,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "best": {
+      "model": "H_PER_IP:perIp=1",
+      "crowd": "checkouts=80,arrivalMean=200,reads/s=10,preRelease=0.3",
+      "seeds": 5,
+      "fullMatchRate": 0,
+      "meanScore": 1,
+      "applicable": 3,
+      "signatureRates": {
+       "latency": 0,
+       "conflict": 1,
+       "spread": 0,
+       "order": null,
+       "readFlush": null,
+       "readOvertake": null
+      },
+      "ourLatencyMs": {
+       "n": 15,
+       "min": 810,
+       "p50": 1971,
+       "p95": 4063,
+       "p99": 4063,
+       "max": 4063,
+       "mean": 2218
+      }
+     }
+    },
+    {
+     "family": "P_PROCESSOR_SHARING",
+     "verdict": "COMPATIBLE_SOMEWHERE_IN_GRID",
+     "cells": 192,
+     "cellsWithAnyFullMatch": 3,
+     "maxSignatureRates": {
+      "latency": 1,
+      "conflict": 1,
+      "spread": 1,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "best": {
+      "model": "P_PROCESSOR_SHARING:capacity=4",
+      "crowd": "checkouts=40,arrivalMean=200,reads/s=40,preRelease=0.3",
+      "seeds": 5,
+      "fullMatchRate": 0.2,
+      "meanScore": 2,
+      "applicable": 3,
+      "signatureRates": {
+       "latency": 1,
+       "conflict": 0.8,
+       "spread": 0.2,
+       "order": null,
+       "readFlush": null,
+       "readOvertake": null
+      },
+      "ourLatencyMs": {
+       "n": 15,
+       "min": 18801,
+       "p50": 24103,
+       "p95": 28169,
+       "p99": 28169,
+       "max": 28169,
+       "mean": 23987
+      }
+     }
+    }
+   ],
+   "topCells": [
+    {
+     "model": "B_INSTANCE_ADMISSION:instances=4,conn=1",
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0.3",
+     "seeds": 5,
+     "fullMatchRate": 0.2,
+     "meanScore": 2,
+     "applicable": 3,
+     "signatureRates": {
+      "latency": 0.8,
+      "conflict": 1,
+      "spread": 0.2,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "ourLatencyMs": {
+      "n": 15,
+      "min": 15508,
+      "p50": 20470,
+      "p95": 26539,
+      "p99": 26539,
+      "max": 26539,
+      "mean": 20489
+     }
+    },
+    {
+     "model": "P_PROCESSOR_SHARING:capacity=4",
+     "crowd": "checkouts=40,arrivalMean=200,reads/s=40,preRelease=0.3",
+     "seeds": 5,
+     "fullMatchRate": 0.2,
+     "meanScore": 2,
+     "applicable": 3,
+     "signatureRates": {
+      "latency": 1,
+      "conflict": 0.8,
+      "spread": 0.2,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "ourLatencyMs": {
+      "n": 15,
+      "min": 18801,
+      "p50": 24103,
+      "p95": 28169,
+      "p99": 28169,
+      "max": 28169,
+      "mean": 23987
+     }
+    },
+    {
+     "model": "F_FACILITY_DATE_SERIAL:fifo,hold=600,instances=16,conn=1",
+     "crowd": "checkouts=40,arrivalMean=200,reads/s=40,preRelease=0.3",
+     "seeds": 5,
+     "fullMatchRate": 0.2,
+     "meanScore": 1.4,
+     "applicable": 3,
+     "signatureRates": {
+      "latency": 0.2,
+      "conflict": 0.8,
+      "spread": 0.4,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "ourLatencyMs": {
+      "n": 15,
+      "min": 3189,
+      "p50": 17083,
+      "p95": 28672,
+      "p99": 28672,
+      "max": 28672,
+      "mean": 16170
+     }
+    },
+    {
+     "model": "F_FACILITY_DATE_SERIAL:fifo,hold=600,instances=16,conn=1",
+     "crowd": "checkouts=80,arrivalMean=200,reads/s=10,preRelease=0.3",
+     "seeds": 5,
+     "fullMatchRate": 0.2,
+     "meanScore": 1.4,
+     "applicable": 3,
+     "signatureRates": {
+      "latency": 0.2,
+      "conflict": 1,
+      "spread": 0.2,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "ourLatencyMs": {
+      "n": 15,
+      "min": 15020,
+      "p50": 32365,
+      "p95": 52184,
+      "p99": 52184,
+      "max": 52184,
+      "mean": 29857
+     }
+    },
+    {
+     "model": "F_FACILITY_DATE_SERIAL:fifo,hold=900",
+     "crowd": "checkouts=80,arrivalMean=1000,reads/s=10,preRelease=0.3",
+     "seeds": 5,
+     "fullMatchRate": 0.2,
+     "meanScore": 1.4,
+     "applicable": 3,
+     "signatureRates": {
+      "latency": 0.2,
+      "conflict": 0.8,
+      "spread": 0.4,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "ourLatencyMs": {
+      "n": 15,
+      "min": 19584,
+      "p50": 29316,
+      "p95": 56752,
+      "p99": 56752,
+      "max": 56752,
+      "mean": 29437
+     }
+    },
+    {
+     "model": "F_FACILITY_DATE_SERIAL:random,hold=300,instances=16,conn=1",
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=40,preRelease=0.3",
+     "seeds": 5,
+     "fullMatchRate": 0.2,
+     "meanScore": 1.2,
+     "applicable": 3,
+     "signatureRates": {
+      "latency": 0.2,
+      "conflict": 0.8,
+      "spread": 0.2,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "ourLatencyMs": {
+      "n": 15,
+      "min": 4612,
+      "p50": 23131,
+      "p95": 45554,
+      "p99": 45554,
+      "max": 45554,
+      "mean": 23944
+     }
+    },
+    {
+     "model": "F_FACILITY_DATE_SERIAL:random,hold=900,instances=16,conn=1",
+     "crowd": "checkouts=80,arrivalMean=4000,reads/s=10,preRelease=0.3",
+     "seeds": 5,
+     "fullMatchRate": 0.2,
+     "meanScore": 1.2,
+     "applicable": 3,
+     "signatureRates": {
+      "latency": 0.2,
+      "conflict": 0.8,
+      "spread": 0.2,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "ourLatencyMs": {
+      "n": 15,
+      "min": 9520,
+      "p50": 30292,
+      "p95": 80241,
+      "p99": 80241,
+      "max": 80241,
+      "mean": 36864
+     }
+    },
+    {
+     "model": "P_PROCESSOR_SHARING:capacity=4,facility-fifo,hold=300",
+     "crowd": "checkouts=40,arrivalMean=200,reads/s=40,preRelease=0",
+     "seeds": 5,
+     "fullMatchRate": 0.2,
+     "meanScore": 1.2,
+     "applicable": 3,
+     "signatureRates": {
+      "latency": 0.4,
+      "conflict": 0.2,
+      "spread": 0.6,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "ourLatencyMs": {
+      "n": 15,
+      "min": 13316,
+      "p50": 23444,
+      "p95": 31141,
+      "p99": 31141,
+      "max": 31141,
+      "mean": 24030
+     }
+    },
+    {
+     "model": "F_FACILITY_DATE_SERIAL:random,hold=900",
+     "crowd": "checkouts=40,arrivalMean=4000,reads/s=40,preRelease=0.3",
+     "seeds": 5,
+     "fullMatchRate": 0.2,
+     "meanScore": 1,
+     "applicable": 3,
+     "signatureRates": {
+      "latency": 0.2,
+      "conflict": 0.6,
+      "spread": 0.2,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "ourLatencyMs": {
+      "n": 15,
+      "min": 2245,
+      "p50": 20969,
+      "p95": 38027,
+      "p99": 38027,
+      "max": 38027,
+      "mean": 20722
+     }
+    },
+    {
+     "model": "P_PROCESSOR_SHARING:capacity=4",
+     "crowd": "checkouts=40,arrivalMean=200,reads/s=40,preRelease=0",
+     "seeds": 5,
+     "fullMatchRate": 0.2,
+     "meanScore": 1,
+     "applicable": 3,
+     "signatureRates": {
+      "latency": 0.6,
+      "conflict": 0.2,
+      "spread": 0.2,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "ourLatencyMs": {
+      "n": 15,
+      "min": 16478,
+      "p50": 24709,
+      "p95": 31712,
+      "p99": 31712,
+      "max": 31712,
+      "mean": 24606
+     }
+    },
+    {
+     "model": "F_FACILITY_DATE_SERIAL:random,hold=900,instances=16,conn=1",
+     "crowd": "checkouts=80,arrivalMean=200,reads/s=40,preRelease=0",
+     "seeds": 5,
+     "fullMatchRate": 0.2,
+     "meanScore": 0.8,
+     "applicable": 3,
+     "signatureRates": {
+      "latency": 0.2,
+      "conflict": 0.4,
+      "spread": 0.2,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "ourLatencyMs": {
+      "n": 15,
+      "min": 2982,
+      "p50": 25261,
+      "p95": 68562,
+      "p99": 68562,
+      "max": 68562,
+      "mean": 30595
+     }
+    },
+    {
+     "model": "A_EDGE_FIFO:admission=2",
+     "crowd": "checkouts=80,arrivalMean=200,reads/s=10,preRelease=0.3",
+     "seeds": 5,
+     "fullMatchRate": 0,
+     "meanScore": 2,
+     "applicable": 3,
+     "signatureRates": {
+      "latency": 1,
+      "conflict": 1,
+      "spread": 0,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "ourLatencyMs": {
+      "n": 15,
+      "min": 18005,
+      "p50": 20981,
+      "p95": 24680,
+      "p99": 24680,
+      "max": 24680,
+      "mean": 20900
+     }
+    }
+   ]
+  },
+  {
+   "label": "2026-09-23",
+   "provenance": [
+    "FACT: journal createdAt/updatedAt on the runner network-corrected clock",
+    "INFERENCE: edge = send + 20 ms",
+    "Reads are not replayed (few samples, PC wall clock)"
+   ],
+   "signatures": {
+    "latencyWindowMs": [
+     10500,
+     14500
+    ],
+    "spreadWindowMs": [
+     800,
+     3000
+    ],
+    "allConflict": true,
+    "arrivalOrderTau": null,
+    "readFlush": null,
+    "readOvertake": null
+   },
+   "observedSelfScore": {
+    "latency": true,
+    "conflict": true,
+    "spread": true,
+    "order": null,
+    "readFlush": null,
+    "readOvertake": null,
+    "score": 3,
+    "applicable": 3,
+    "full": true,
+    "metrics": {
+     "firstResponseMs": 11543,
+     "lastResponseMs": 13336,
+     "spreadMs": 1793,
+     "arrivalTau": 1,
+     "conflicts": 2,
+     "flushes": 0,
+     "overtakes": 0
+    }
+   },
+   "families": [
+    {
+     "family": "A_EDGE_FIFO",
+     "verdict": "COMPATIBLE_SOMEWHERE_IN_GRID",
+     "cells": 144,
+     "cellsWithAnyFullMatch": 2,
+     "maxSignatureRates": {
+      "latency": 0.6,
+      "conflict": 1,
+      "spread": 0.8,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "best": {
+      "model": "A_EDGE_FIFO:admission=2",
+      "crowd": "checkouts=40,arrivalMean=1000,reads/s=40,preRelease=0.3",
+      "seeds": 5,
+      "fullMatchRate": 0.2,
+      "meanScore": 1.2,
+      "applicable": 3,
+      "signatureRates": {
+       "latency": 0.2,
+       "conflict": 0.4,
+       "spread": 0.6,
+       "order": null,
+       "readFlush": null,
+       "readOvertake": null
+      },
+      "ourLatencyMs": {
+       "n": 10,
+       "min": 6089,
+       "p50": 7444,
+       "p95": 11734,
+       "p99": 11734,
+       "max": 11734,
+       "mean": 8037
+      }
+     }
+    },
+    {
+     "family": "B_INSTANCE_ADMISSION",
+     "verdict": "COMPATIBLE_SOMEWHERE_IN_GRID",
+     "cells": 144,
+     "cellsWithAnyFullMatch": 3,
+     "maxSignatureRates": {
+      "latency": 0.4,
+      "conflict": 1,
+      "spread": 1,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "best": {
+      "model": "B_INSTANCE_ADMISSION:instances=4,conn=1",
+      "crowd": "checkouts=160,arrivalMean=4000,reads/s=10,preRelease=0.3",
+      "seeds": 5,
+      "fullMatchRate": 0.2,
+      "meanScore": 1.8,
+      "applicable": 3,
+      "signatureRates": {
+       "latency": 0.2,
+       "conflict": 0.8,
+       "spread": 0.8,
+       "order": null,
+       "readFlush": null,
+       "readOvertake": null
+      },
+      "ourLatencyMs": {
+       "n": 10,
+       "min": 10318,
+       "p50": 14859,
+       "p95": 19859,
+       "p99": 19859,
+       "max": 19859,
+       "mean": 14655
+      }
+     }
+    },
+    {
+     "family": "C_PESSIMISTIC_COURT_LOCK",
+     "verdict": "COMPATIBLE_SOMEWHERE_IN_GRID",
+     "cells": 144,
+     "cellsWithAnyFullMatch": 3,
+     "maxSignatureRates": {
+      "latency": 0.2,
+      "conflict": 1,
+      "spread": 1,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "best": {
+      "model": "C_PESSIMISTIC_COURT_LOCK:hold=900",
+      "crowd": "checkouts=160,arrivalMean=4000,reads/s=10,preRelease=0.3",
+      "seeds": 5,
+      "fullMatchRate": 0.2,
+      "meanScore": 1.8,
+      "applicable": 3,
+      "signatureRates": {
+       "latency": 0.2,
+       "conflict": 1,
+       "spread": 0.6,
+       "order": null,
+       "readFlush": null,
+       "readOvertake": null
+      },
+      "ourLatencyMs": {
+       "n": 10,
+       "min": 4808,
+       "p50": 7526,
+       "p95": 15674,
+       "p99": 15674,
+       "max": 15674,
+       "mean": 8840
+      }
+     }
+    },
+    {
+     "family": "D_OPTIMISTIC",
+     "verdict": "NOT_REPRODUCED_IN_GRID",
+     "cells": 144,
+     "cellsWithAnyFullMatch": 0,
+     "maxSignatureRates": {
+      "latency": 0,
+      "conflict": 1,
+      "spread": 0.6,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "best": {
+      "model": "D_OPTIMISTIC:service=600",
+      "crowd": "checkouts=160,arrivalMean=200,reads/s=40,preRelease=0.3",
+      "seeds": 5,
+      "fullMatchRate": 0,
+      "meanScore": 1.6,
+      "applicable": 3,
+      "signatureRates": {
+       "latency": 0,
+       "conflict": 1,
+       "spread": 0.6,
+       "order": null,
+       "readFlush": null,
+       "readOvertake": null
+      },
+      "ourLatencyMs": {
+       "n": 10,
+       "min": 884,
+       "p50": 1178,
+       "p95": 2056,
+       "p99": 2056,
+       "max": 2056,
+       "mean": 1385
+      }
+     }
+    },
+    {
+     "family": "E_RETRY_BACKOFF",
+     "verdict": "NOT_REPRODUCED_IN_GRID",
+     "cells": 192,
+     "cellsWithAnyFullMatch": 0,
+     "maxSignatureRates": {
+      "latency": 0,
+      "conflict": 1,
+      "spread": 0.8,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "best": {
+      "model": "E_RETRY_BACKOFF:retries=3,base=2000",
+      "crowd": "checkouts=160,arrivalMean=1000,reads/s=10,preRelease=0.3",
+      "seeds": 5,
+      "fullMatchRate": 0,
+      "meanScore": 1.8,
+      "applicable": 3,
+      "signatureRates": {
+       "latency": 0,
+       "conflict": 1,
+       "spread": 0.8,
+       "order": null,
+       "readFlush": null,
+       "readOvertake": null
+      },
+      "ourLatencyMs": {
+       "n": 10,
+       "min": 15023,
+       "p50": 18223,
+       "p95": 24218,
+       "p99": 24218,
+       "max": 24218,
+       "mean": 19421
+      }
+     }
+    },
+    {
+     "family": "F_FACILITY_DATE_SERIAL",
+     "verdict": "COMPATIBLE_SOMEWHERE_IN_GRID",
+     "cells": 576,
+     "cellsWithAnyFullMatch": 14,
+     "maxSignatureRates": {
+      "latency": 0.6,
+      "conflict": 1,
+      "spread": 1,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "best": {
+      "model": "F_FACILITY_DATE_SERIAL:fifo,hold=300",
+      "crowd": "checkouts=160,arrivalMean=4000,reads/s=40,preRelease=0.3",
+      "seeds": 5,
+      "fullMatchRate": 0.2,
+      "meanScore": 1.8,
+      "applicable": 3,
+      "signatureRates": {
+       "latency": 0.2,
+       "conflict": 1,
+       "spread": 0.6,
+       "order": null,
+       "readFlush": null,
+       "readOvertake": null
+      },
+      "ourLatencyMs": {
+       "n": 10,
+       "min": 12389,
+       "p50": 15607,
+       "p95": 18957,
+       "p99": 18957,
+       "max": 18957,
+       "mean": 15610
+      }
+     }
+    },
+    {
+     "family": "G_LANES",
+     "verdict": "COMPATIBLE_SOMEWHERE_IN_GRID",
+     "cells": 192,
+     "cellsWithAnyFullMatch": 28,
+     "maxSignatureRates": {
+      "latency": 0.8,
+      "conflict": 1,
+      "spread": 1,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "best": {
+      "model": "G_LANES:optimistic,prooflessExtra=10000",
+      "crowd": "checkouts=80,arrivalMean=4000,reads/s=10,preRelease=0",
+      "seeds": 5,
+      "fullMatchRate": 0.4,
+      "meanScore": 2.4,
+      "applicable": 3,
+      "signatureRates": {
+       "latency": 0.4,
+       "conflict": 1,
+       "spread": 1,
+       "order": null,
+       "readFlush": null,
+       "readOvertake": null
+      },
+      "ourLatencyMs": {
+       "n": 10,
+       "min": 9325,
+       "p50": 12254,
+       "p95": 14914,
+       "p99": 14914,
+       "max": 14914,
+       "mean": 11997
+      }
+     }
+    },
+    {
+     "family": "H_PER_IP",
+     "verdict": "NOT_REPRODUCED_IN_GRID",
+     "cells": 96,
+     "cellsWithAnyFullMatch": 0,
+     "maxSignatureRates": {
+      "latency": 0,
+      "conflict": 1,
+      "spread": 1,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "best": {
+      "model": "H_PER_IP:perIp=1",
+      "crowd": "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0",
+      "seeds": 5,
+      "fullMatchRate": 0,
+      "meanScore": 2,
+      "applicable": 3,
+      "signatureRates": {
+       "latency": 0,
+       "conflict": 1,
+       "spread": 1,
+       "order": null,
+       "readFlush": null,
+       "readOvertake": null
+      },
+      "ourLatencyMs": {
+       "n": 10,
+       "min": 1046,
+       "p50": 1545,
+       "p95": 2365,
+       "p99": 2365,
+       "max": 2365,
+       "mean": 1736
+      }
+     }
+    },
+    {
+     "family": "P_PROCESSOR_SHARING",
+     "verdict": "COMPATIBLE_SOMEWHERE_IN_GRID",
+     "cells": 192,
+     "cellsWithAnyFullMatch": 2,
+     "maxSignatureRates": {
+      "latency": 0.8,
+      "conflict": 1,
+      "spread": 1,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "best": {
+      "model": "P_PROCESSOR_SHARING:capacity=8",
+      "crowd": "checkouts=80,arrivalMean=200,reads/s=10,preRelease=0",
+      "seeds": 5,
+      "fullMatchRate": 0.6,
+      "meanScore": 2.6,
+      "applicable": 3,
+      "signatureRates": {
+       "latency": 0.8,
+       "conflict": 1,
+       "spread": 0.8,
+       "order": null,
+       "readFlush": null,
+       "readOvertake": null
+      },
+      "ourLatencyMs": {
+       "n": 10,
+       "min": 8791,
+       "p50": 11104,
+       "p95": 12358,
+       "p99": 12358,
+       "max": 12358,
+       "mean": 10955
+      }
+     }
+    }
+   ],
+   "topCells": [
+    {
+     "model": "P_PROCESSOR_SHARING:capacity=8",
+     "crowd": "checkouts=80,arrivalMean=200,reads/s=10,preRelease=0",
+     "seeds": 5,
+     "fullMatchRate": 0.6,
+     "meanScore": 2.6,
+     "applicable": 3,
+     "signatureRates": {
+      "latency": 0.8,
+      "conflict": 1,
+      "spread": 0.8,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "ourLatencyMs": {
+      "n": 10,
+      "min": 8791,
+      "p50": 11104,
+      "p95": 12358,
+      "p99": 12358,
+      "max": 12358,
+      "mean": 10955
+     }
+    },
+    {
+     "model": "G_LANES:optimistic,prooflessExtra=10000",
+     "crowd": "checkouts=80,arrivalMean=4000,reads/s=10,preRelease=0",
+     "seeds": 5,
+     "fullMatchRate": 0.4,
+     "meanScore": 2.4,
+     "applicable": 3,
+     "signatureRates": {
+      "latency": 0.4,
+      "conflict": 1,
+      "spread": 1,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "ourLatencyMs": {
+      "n": 10,
+      "min": 9325,
+      "p50": 12254,
+      "p95": 14914,
+      "p99": 14914,
+      "max": 14914,
+      "mean": 11997
+     }
+    },
+    {
+     "model": "G_LANES:optimistic,prooflessExtra=10000",
+     "crowd": "checkouts=20,arrivalMean=1000,reads/s=10,preRelease=0",
+     "seeds": 5,
+     "fullMatchRate": 0.4,
+     "meanScore": 2.2,
+     "applicable": 3,
+     "signatureRates": {
+      "latency": 0.6,
+      "conflict": 0.6,
+      "spread": 1,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "ourLatencyMs": {
+      "n": 10,
+      "min": 9449,
+      "p50": 12026,
+      "p95": 13672,
+      "p99": 13672,
+      "max": 13672,
+      "mean": 12155
+     }
+    },
+    {
+     "model": "G_LANES:optimistic,prooflessExtra=10000",
+     "crowd": "checkouts=20,arrivalMean=4000,reads/s=10,preRelease=0",
+     "seeds": 5,
+     "fullMatchRate": 0.4,
+     "meanScore": 2.2,
+     "applicable": 3,
+     "signatureRates": {
+      "latency": 0.6,
+      "conflict": 0.6,
+      "spread": 1,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "ourLatencyMs": {
+      "n": 10,
+      "min": 9220,
+      "p50": 12193,
+      "p95": 13672,
+      "p99": 13672,
+      "max": 13672,
+      "mean": 12129
+     }
+    },
+    {
+     "model": "G_LANES:optimistic,prooflessExtra=10000",
+     "crowd": "checkouts=20,arrivalMean=200,reads/s=10,preRelease=0",
+     "seeds": 5,
+     "fullMatchRate": 0.4,
+     "meanScore": 2,
+     "applicable": 3,
+     "signatureRates": {
+      "latency": 0.6,
+      "conflict": 0.6,
+      "spread": 0.8,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "ourLatencyMs": {
+      "n": 10,
+      "min": 9449,
+      "p50": 12306,
+      "p95": 14537,
+      "p99": 14537,
+      "max": 14537,
+      "mean": 12374
+     }
+    },
+    {
+     "model": "G_LANES:optimistic,prooflessExtra=10000",
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=40,preRelease=0",
+     "seeds": 5,
+     "fullMatchRate": 0.4,
+     "meanScore": 2,
+     "applicable": 3,
+     "signatureRates": {
+      "latency": 0.4,
+      "conflict": 1,
+      "spread": 0.6,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "ourLatencyMs": {
+      "n": 10,
+      "min": 8681,
+      "p50": 11226,
+      "p95": 18945,
+      "p99": 18945,
+      "max": 18945,
+      "mean": 12168
+     }
+    },
+    {
+     "model": "G_LANES:optimistic,prooflessExtra=10000",
+     "crowd": "checkouts=160,arrivalMean=1000,reads/s=10,preRelease=0",
+     "seeds": 5,
+     "fullMatchRate": 0.4,
+     "meanScore": 2,
+     "applicable": 3,
+     "signatureRates": {
+      "latency": 0.4,
+      "conflict": 1,
+      "spread": 0.6,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "ourLatencyMs": {
+      "n": 10,
+      "min": 7770,
+      "p50": 12169,
+      "p95": 14615,
+      "p99": 14615,
+      "max": 14615,
+      "mean": 11795
+     }
+    },
+    {
+     "model": "G_LANES:optimistic,prooflessExtra=10000",
+     "crowd": "checkouts=40,arrivalMean=4000,reads/s=10,preRelease=0",
+     "seeds": 5,
+     "fullMatchRate": 0.4,
+     "meanScore": 1.8,
+     "applicable": 3,
+     "signatureRates": {
+      "latency": 0.4,
+      "conflict": 0.8,
+      "spread": 0.6,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "ourLatencyMs": {
+      "n": 10,
+      "min": 9052,
+      "p50": 11510,
+      "p95": 13317,
+      "p99": 13317,
+      "max": 13317,
+      "mean": 11456
+     }
+    },
+    {
+     "model": "P_PROCESSOR_SHARING:capacity=8",
+     "crowd": "checkouts=80,arrivalMean=1000,reads/s=40,preRelease=0.3",
+     "seeds": 5,
+     "fullMatchRate": 0.4,
+     "meanScore": 1.6,
+     "applicable": 3,
+     "signatureRates": {
+      "latency": 0.4,
+      "conflict": 0.6,
+      "spread": 0.6,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "ourLatencyMs": {
+      "n": 10,
+      "min": 9652,
+      "p50": 11019,
+      "p95": 15361,
+      "p99": 15361,
+      "max": 15361,
+      "mean": 11621
+     }
+    },
+    {
+     "model": "G_LANES:optimistic,prooflessExtra=10000",
+     "crowd": "checkouts=80,arrivalMean=200,reads/s=40,preRelease=0.3",
+     "seeds": 5,
+     "fullMatchRate": 0.2,
+     "meanScore": 2,
+     "applicable": 3,
+     "signatureRates": {
+      "latency": 0.4,
+      "conflict": 1,
+      "spread": 0.6,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "ourLatencyMs": {
+      "n": 10,
+      "min": 9329,
+      "p50": 12916,
+      "p95": 16176,
+      "p99": 16176,
+      "max": 16176,
+      "mean": 12689
+     }
+    },
+    {
+     "model": "G_LANES:optimistic,prooflessExtra=10000",
+     "crowd": "checkouts=160,arrivalMean=4000,reads/s=10,preRelease=0",
+     "seeds": 5,
+     "fullMatchRate": 0.2,
+     "meanScore": 2,
+     "applicable": 3,
+     "signatureRates": {
+      "latency": 0.4,
+      "conflict": 1,
+      "spread": 0.6,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "ourLatencyMs": {
+      "n": 10,
+      "min": 9366,
+      "p50": 12455,
+      "p95": 14748,
+      "p99": 14748,
+      "max": 14748,
+      "mean": 12275
+     }
+    },
+    {
+     "model": "B_INSTANCE_ADMISSION:instances=4,conn=1",
+     "crowd": "checkouts=160,arrivalMean=4000,reads/s=10,preRelease=0.3",
+     "seeds": 5,
+     "fullMatchRate": 0.2,
+     "meanScore": 1.8,
+     "applicable": 3,
+     "signatureRates": {
+      "latency": 0.2,
+      "conflict": 0.8,
+      "spread": 0.8,
+      "order": null,
+      "readFlush": null,
+      "readOvertake": null
+     },
+     "ourLatencyMs": {
+      "n": 10,
+      "min": 10318,
+      "p50": 14859,
+      "p95": 19859,
+      "p99": 19859,
+      "max": 19859,
+      "mean": 14655
+     }
+    }
+   ]
+  }
+ ],
+ "joint": [
+  {
+   "model": "A_EDGE_FIFO:admission=2",
+   "reproducesEveryDay": false,
+   "perDay": [
+    {
+     "day": "2026-09-25",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-24",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=80,arrivalMean=200,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-23",
+     "bestFullMatchRate": 0.2,
+     "crowd": "checkouts=40,arrivalMean=1000,reads/s=40,preRelease=0.3"
+    }
+   ]
+  },
+  {
+   "model": "A_EDGE_FIFO:admission=4",
+   "reproducesEveryDay": false,
+   "perDay": [
+    {
+     "day": "2026-09-25",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-24",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-23",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0.3"
+    }
+   ]
+  },
+  {
+   "model": "A_EDGE_FIFO:admission=8",
+   "reproducesEveryDay": false,
+   "perDay": [
+    {
+     "day": "2026-09-25",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=1000,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-24",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=80,arrivalMean=200,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-23",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0.3"
+    }
+   ]
+  },
+  {
+   "model": "B_INSTANCE_ADMISSION:instances=16,conn=1",
+   "reproducesEveryDay": false,
+   "perDay": [
+    {
+     "day": "2026-09-25",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-24",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=80,arrivalMean=200,reads/s=40,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-23",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=40,preRelease=0.3"
+    }
+   ]
+  },
+  {
+   "model": "B_INSTANCE_ADMISSION:instances=4,conn=1",
+   "reproducesEveryDay": false,
+   "perDay": [
+    {
+     "day": "2026-09-25",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=80,arrivalMean=200,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-24",
+     "bestFullMatchRate": 0.2,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-23",
+     "bestFullMatchRate": 0.2,
+     "crowd": "checkouts=160,arrivalMean=4000,reads/s=10,preRelease=0.3"
+    }
+   ]
+  },
+  {
+   "model": "B_INSTANCE_ADMISSION:instances=8,conn=1",
+   "reproducesEveryDay": false,
+   "perDay": [
+    {
+     "day": "2026-09-25",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=80,arrivalMean=200,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-24",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=40,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-23",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=80,arrivalMean=1000,reads/s=40,preRelease=0.3"
+    }
+   ]
+  },
+  {
+   "model": "C_PESSIMISTIC_COURT_LOCK:hold=300",
+   "reproducesEveryDay": false,
+   "perDay": [
+    {
+     "day": "2026-09-25",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=40,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-24",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=40,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-23",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0.3"
+    }
+   ]
+  },
+  {
+   "model": "C_PESSIMISTIC_COURT_LOCK:hold=600",
+   "reproducesEveryDay": false,
+   "perDay": [
+    {
+     "day": "2026-09-25",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-24",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-23",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=1000,reads/s=40,preRelease=0.3"
+    }
+   ]
+  },
+  {
+   "model": "C_PESSIMISTIC_COURT_LOCK:hold=900",
+   "reproducesEveryDay": false,
+   "perDay": [
+    {
+     "day": "2026-09-25",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-24",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=80,arrivalMean=200,reads/s=40,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-23",
+     "bestFullMatchRate": 0.2,
+     "crowd": "checkouts=160,arrivalMean=4000,reads/s=10,preRelease=0.3"
+    }
+   ]
+  },
+  {
+   "model": "D_OPTIMISTIC:service=300",
+   "reproducesEveryDay": false,
+   "perDay": [
+    {
+     "day": "2026-09-25",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=80,arrivalMean=200,reads/s=10,preRelease=0"
+    },
+    {
+     "day": "2026-09-24",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-23",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=40,preRelease=0.3"
+    }
+   ]
+  },
+  {
+   "model": "D_OPTIMISTIC:service=600",
+   "reproducesEveryDay": false,
+   "perDay": [
+    {
+     "day": "2026-09-25",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=40,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-24",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=80,arrivalMean=1000,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-23",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=40,preRelease=0.3"
+    }
+   ]
+  },
+  {
+   "model": "D_OPTIMISTIC:service=900",
+   "reproducesEveryDay": false,
+   "perDay": [
+    {
+     "day": "2026-09-25",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=80,arrivalMean=200,reads/s=10,preRelease=0"
+    },
+    {
+     "day": "2026-09-24",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0"
+    },
+    {
+     "day": "2026-09-23",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=80,arrivalMean=200,reads/s=40,preRelease=0"
+    }
+   ]
+  },
+  {
+   "model": "E_RETRY_BACKOFF:retries=3,base=2000",
+   "reproducesEveryDay": false,
+   "perDay": [
+    {
+     "day": "2026-09-25",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-24",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=80,arrivalMean=200,reads/s=40,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-23",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=1000,reads/s=10,preRelease=0.3"
+    }
+   ]
+  },
+  {
+   "model": "E_RETRY_BACKOFF:retries=3,base=500",
+   "reproducesEveryDay": false,
+   "perDay": [
+    {
+     "day": "2026-09-25",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=1000,reads/s=10,preRelease=0"
+    },
+    {
+     "day": "2026-09-24",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=80,arrivalMean=4000,reads/s=40,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-23",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0.3"
+    }
+   ]
+  },
+  {
+   "model": "E_RETRY_BACKOFF:retries=6,base=2000",
+   "reproducesEveryDay": false,
+   "perDay": [
+    {
+     "day": "2026-09-25",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-24",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0"
+    },
+    {
+     "day": "2026-09-23",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=80,arrivalMean=200,reads/s=10,preRelease=0.3"
+    }
+   ]
+  },
+  {
+   "model": "E_RETRY_BACKOFF:retries=6,base=500",
+   "reproducesEveryDay": false,
+   "perDay": [
+    {
+     "day": "2026-09-25",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-24",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-23",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0.3"
+    }
+   ]
+  },
+  {
+   "model": "F_FACILITY_DATE_SERIAL:fifo,hold=300",
+   "reproducesEveryDay": false,
+   "perDay": [
+    {
+     "day": "2026-09-25",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=80,arrivalMean=1000,reads/s=40,preRelease=0"
+    },
+    {
+     "day": "2026-09-24",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=80,arrivalMean=200,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-23",
+     "bestFullMatchRate": 0.2,
+     "crowd": "checkouts=160,arrivalMean=4000,reads/s=40,preRelease=0.3"
+    }
+   ]
+  },
+  {
+   "model": "F_FACILITY_DATE_SERIAL:fifo,hold=300,instances=16,conn=1",
+   "reproducesEveryDay": false,
+   "perDay": [
+    {
+     "day": "2026-09-25",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=40,arrivalMean=4000,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-24",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=4000,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-23",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=1000,reads/s=40,preRelease=0.3"
+    }
+   ]
+  },
+  {
+   "model": "F_FACILITY_DATE_SERIAL:fifo,hold=600",
+   "reproducesEveryDay": false,
+   "perDay": [
+    {
+     "day": "2026-09-25",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=20,arrivalMean=4000,reads/s=10,preRelease=0"
+    },
+    {
+     "day": "2026-09-24",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=80,arrivalMean=200,reads/s=40,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-23",
+     "bestFullMatchRate": 0.2,
+     "crowd": "checkouts=80,arrivalMean=4000,reads/s=10,preRelease=0.3"
+    }
+   ]
+  },
+  {
+   "model": "F_FACILITY_DATE_SERIAL:fifo,hold=600,instances=16,conn=1",
+   "reproducesEveryDay": false,
+   "perDay": [
+    {
+     "day": "2026-09-25",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=80,arrivalMean=4000,reads/s=40,preRelease=0"
+    },
+    {
+     "day": "2026-09-24",
+     "bestFullMatchRate": 0.2,
+     "crowd": "checkouts=40,arrivalMean=200,reads/s=40,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-23",
+     "bestFullMatchRate": 0.2,
+     "crowd": "checkouts=40,arrivalMean=200,reads/s=40,preRelease=0"
+    }
+   ]
+  },
+  {
+   "model": "F_FACILITY_DATE_SERIAL:fifo,hold=900",
+   "reproducesEveryDay": false,
+   "perDay": [
+    {
+     "day": "2026-09-25",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=40,arrivalMean=4000,reads/s=10,preRelease=0"
+    },
+    {
+     "day": "2026-09-24",
+     "bestFullMatchRate": 0.2,
+     "crowd": "checkouts=80,arrivalMean=1000,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-23",
+     "bestFullMatchRate": 0.2,
+     "crowd": "checkouts=20,arrivalMean=200,reads/s=10,preRelease=0.3"
+    }
+   ]
+  },
+  {
+   "model": "F_FACILITY_DATE_SERIAL:fifo,hold=900,instances=16,conn=1",
+   "reproducesEveryDay": false,
+   "perDay": [
+    {
+     "day": "2026-09-25",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=40,arrivalMean=200,reads/s=10,preRelease=0"
+    },
+    {
+     "day": "2026-09-24",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-23",
+     "bestFullMatchRate": 0.2,
+     "crowd": "checkouts=80,arrivalMean=4000,reads/s=40,preRelease=0.3"
+    }
+   ]
+  },
+  {
+   "model": "F_FACILITY_DATE_SERIAL:random,hold=300",
+   "reproducesEveryDay": false,
+   "perDay": [
+    {
+     "day": "2026-09-25",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=20,arrivalMean=1000,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-24",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=80,arrivalMean=1000,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-23",
+     "bestFullMatchRate": 0.2,
+     "crowd": "checkouts=80,arrivalMean=4000,reads/s=40,preRelease=0.3"
+    }
+   ]
+  },
+  {
+   "model": "F_FACILITY_DATE_SERIAL:random,hold=300,instances=16,conn=1",
+   "reproducesEveryDay": false,
+   "perDay": [
+    {
+     "day": "2026-09-25",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=40,arrivalMean=1000,reads/s=40,preRelease=0"
+    },
+    {
+     "day": "2026-09-24",
+     "bestFullMatchRate": 0.2,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=40,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-23",
+     "bestFullMatchRate": 0.2,
+     "crowd": "checkouts=80,arrivalMean=1000,reads/s=10,preRelease=0.3"
+    }
+   ]
+  },
+  {
+   "model": "F_FACILITY_DATE_SERIAL:random,hold=600",
+   "reproducesEveryDay": false,
+   "perDay": [
+    {
+     "day": "2026-09-25",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=40,preRelease=0"
+    },
+    {
+     "day": "2026-09-24",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=40,preRelease=0"
+    },
+    {
+     "day": "2026-09-23",
+     "bestFullMatchRate": 0.2,
+     "crowd": "checkouts=40,arrivalMean=200,reads/s=40,preRelease=0.3"
+    }
+   ]
+  },
+  {
+   "model": "F_FACILITY_DATE_SERIAL:random,hold=600,instances=16,conn=1",
+   "reproducesEveryDay": false,
+   "perDay": [
+    {
+     "day": "2026-09-25",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=80,arrivalMean=200,reads/s=10,preRelease=0"
+    },
+    {
+     "day": "2026-09-24",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=40,arrivalMean=200,reads/s=10,preRelease=0"
+    },
+    {
+     "day": "2026-09-23",
+     "bestFullMatchRate": 0.2,
+     "crowd": "checkouts=40,arrivalMean=200,reads/s=10,preRelease=0"
+    }
+   ]
+  },
+  {
+   "model": "F_FACILITY_DATE_SERIAL:random,hold=900",
+   "reproducesEveryDay": false,
+   "perDay": [
+    {
+     "day": "2026-09-25",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-24",
+     "bestFullMatchRate": 0.2,
+     "crowd": "checkouts=40,arrivalMean=4000,reads/s=40,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-23",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=1000,reads/s=10,preRelease=0.3"
+    }
+   ]
+  },
+  {
+   "model": "F_FACILITY_DATE_SERIAL:random,hold=900,instances=16,conn=1",
+   "reproducesEveryDay": false,
+   "perDay": [
+    {
+     "day": "2026-09-25",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=40,arrivalMean=200,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-24",
+     "bestFullMatchRate": 0.2,
+     "crowd": "checkouts=80,arrivalMean=4000,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-23",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0.3"
+    }
+   ]
+  },
+  {
+   "model": "G_LANES:facility-fifo,hold=600,prooflessExtra=10000",
+   "reproducesEveryDay": false,
+   "perDay": [
+    {
+     "day": "2026-09-25",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=80,arrivalMean=4000,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-24",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=40,arrivalMean=200,reads/s=40,preRelease=0"
+    },
+    {
+     "day": "2026-09-23",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=40,arrivalMean=4000,reads/s=10,preRelease=0"
+    }
+   ]
+  },
+  {
+   "model": "G_LANES:facility-fifo,hold=600,prooflessExtra=3000",
+   "reproducesEveryDay": false,
+   "perDay": [
+    {
+     "day": "2026-09-25",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=80,arrivalMean=1000,reads/s=40,preRelease=0"
+    },
+    {
+     "day": "2026-09-24",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=40,arrivalMean=200,reads/s=40,preRelease=0"
+    },
+    {
+     "day": "2026-09-23",
+     "bestFullMatchRate": 0.2,
+     "crowd": "checkouts=20,arrivalMean=4000,reads/s=10,preRelease=0.3"
+    }
+   ]
+  },
+  {
+   "model": "G_LANES:optimistic,prooflessExtra=10000",
+   "reproducesEveryDay": false,
+   "perDay": [
+    {
+     "day": "2026-09-25",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=80,arrivalMean=200,reads/s=10,preRelease=0"
+    },
+    {
+     "day": "2026-09-24",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=1000,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-23",
+     "bestFullMatchRate": 0.4,
+     "crowd": "checkouts=80,arrivalMean=4000,reads/s=10,preRelease=0"
+    }
+   ]
+  },
+  {
+   "model": "G_LANES:optimistic,prooflessExtra=30000",
+   "reproducesEveryDay": false,
+   "perDay": [
+    {
+     "day": "2026-09-25",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=80,arrivalMean=200,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-24",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=80,arrivalMean=4000,reads/s=10,preRelease=0"
+    },
+    {
+     "day": "2026-09-23",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=40,preRelease=0.3"
+    }
+   ]
+  },
+  {
+   "model": "H_PER_IP:perIp=1",
+   "reproducesEveryDay": false,
+   "perDay": [
+    {
+     "day": "2026-09-25",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-24",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=80,arrivalMean=200,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-23",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0"
+    }
+   ]
+  },
+  {
+   "model": "H_PER_IP:perIp=2",
+   "reproducesEveryDay": false,
+   "perDay": [
+    {
+     "day": "2026-09-25",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-24",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=80,arrivalMean=200,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-23",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=4000,reads/s=40,preRelease=0.3"
+    }
+   ]
+  },
+  {
+   "model": "P_PROCESSOR_SHARING:capacity=2",
+   "reproducesEveryDay": false,
+   "perDay": [
+    {
+     "day": "2026-09-25",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=20,arrivalMean=200,reads/s=40,preRelease=0"
+    },
+    {
+     "day": "2026-09-24",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-23",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=80,arrivalMean=200,reads/s=40,preRelease=0.3"
+    }
+   ]
+  },
+  {
+   "model": "P_PROCESSOR_SHARING:capacity=4",
+   "reproducesEveryDay": false,
+   "perDay": [
+    {
+     "day": "2026-09-25",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=20,arrivalMean=1000,reads/s=40,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-24",
+     "bestFullMatchRate": 0.2,
+     "crowd": "checkouts=40,arrivalMean=200,reads/s=40,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-23",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=40,arrivalMean=1000,reads/s=10,preRelease=0.3"
+    }
+   ]
+  },
+  {
+   "model": "P_PROCESSOR_SHARING:capacity=4,facility-fifo,hold=300",
+   "reproducesEveryDay": false,
+   "perDay": [
+    {
+     "day": "2026-09-25",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=20,arrivalMean=1000,reads/s=10,preRelease=0"
+    },
+    {
+     "day": "2026-09-24",
+     "bestFullMatchRate": 0.2,
+     "crowd": "checkouts=40,arrivalMean=200,reads/s=40,preRelease=0"
+    },
+    {
+     "day": "2026-09-23",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=40,arrivalMean=200,reads/s=10,preRelease=0.3"
+    }
+   ]
+  },
+  {
+   "model": "P_PROCESSOR_SHARING:capacity=8",
+   "reproducesEveryDay": false,
+   "perDay": [
+    {
+     "day": "2026-09-25",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=1000,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-24",
+     "bestFullMatchRate": 0,
+     "crowd": "checkouts=160,arrivalMean=200,reads/s=10,preRelease=0.3"
+    },
+    {
+     "day": "2026-09-23",
+     "bestFullMatchRate": 0.6,
+     "crowd": "checkouts=80,arrivalMean=200,reads/s=10,preRelease=0"
+    }
+   ]
+  }
+ ],
+ "search": {
+  "day": "2026-09-25",
+  "samplesPerFamily": 400,
+  "seeds": [
+   1000,
+   1001,
+   1002
+  ],
+  "ranges": "log-uniform: crowd checkouts 20–400, arrival mean 0.1–8 s, pre-release share 0–0.6, reads 5–60/s, pre-lock work 0.2–1.5 s, in-lock work 0.15–1.5 s (C: 0.3–5 s, D: 0.15–5 s); family knobs as in src/arbitration/release-replay.ts; half of the draws add a replica/cache read path (share 0–0.8) that the fixed grid does not have",
+  "families": [
+   {
+    "family": "A_EDGE_FIFO",
+    "samples": 400,
+    "seeds": 3,
+    "cellsWithAnyFullMatch": 0,
+    "best": {
+     "model": "A_EDGE_FIFO:search#57",
+     "crowd": "search#57",
+     "seeds": 3,
+     "fullMatchRate": 0,
+     "meanScore": 3,
+     "applicable": 6,
+     "signatureRates": {
+      "latency": 0,
+      "conflict": 1,
+      "spread": 0,
+      "order": 1,
+      "readFlush": 1,
+      "readOvertake": 0
+     },
+     "ourLatencyMs": {
+      "n": 21,
+      "min": 5474,
+      "p50": 7144,
+      "p95": 8245,
+      "p99": 8443,
+      "max": 8443,
+      "mean": 7143
+     },
+     "params": {
+      "checkouts": 286,
+      "arrivalMeanMs": 247,
+      "preReleaseShare": 0.2,
+      "readsPerSecond": 6,
+      "preLockMs": 509,
+      "holdMs": 845,
+      "admissionLimit": 12,
+      "replicaReadShare": 0
+     }
+    },
+    "maxSignatureRates": {
+     "latency": 1,
+     "conflict": 1,
+     "spread": 1,
+     "order": 1,
+     "readFlush": 1,
+     "readOvertake": 0
+    }
+   },
+   {
+    "family": "B_INSTANCE_ADMISSION",
+    "samples": 400,
+    "seeds": 3,
+    "cellsWithAnyFullMatch": 0,
+    "best": {
+     "model": "B_INSTANCE_ADMISSION:search#149",
+     "crowd": "search#149",
+     "seeds": 3,
+     "fullMatchRate": 0,
+     "meanScore": 4.333,
+     "applicable": 6,
+     "signatureRates": {
+      "latency": 0,
+      "conflict": 1,
+      "spread": 0.667,
+      "order": 1,
+      "readFlush": 1,
+      "readOvertake": 0.667
+     },
+     "ourLatencyMs": {
+      "n": 21,
+      "min": 4286,
+      "p50": 9926,
+      "p95": 13211,
+      "p99": 15122,
+      "max": 15122,
+      "mean": 9806
+     },
+     "params": {
+      "checkouts": 98,
+      "arrivalMeanMs": 126,
+      "preReleaseShare": 0.53,
+      "readsPerSecond": 30,
+      "preLockMs": 803,
+      "holdMs": 265,
+      "instances": 6,
+      "replicaReadShare": 0
+     }
+    },
+    "maxSignatureRates": {
+     "latency": 0.333,
+     "conflict": 1,
+     "spread": 1,
+     "order": 1,
+     "readFlush": 1,
+     "readOvertake": 1
+    }
+   },
+   {
+    "family": "C_PESSIMISTIC_COURT_LOCK",
+    "samples": 400,
+    "seeds": 3,
+    "cellsWithAnyFullMatch": 0,
+    "best": {
+     "model": "C_PESSIMISTIC_COURT_LOCK:search#84",
+     "crowd": "search#84",
+     "seeds": 3,
+     "fullMatchRate": 0,
+     "meanScore": 2.667,
+     "applicable": 6,
+     "signatureRates": {
+      "latency": 0,
+      "conflict": 1,
+      "spread": 1,
+      "order": 0.667,
+      "readFlush": 0,
+      "readOvertake": 0
+     },
+     "ourLatencyMs": {
+      "n": 21,
+      "min": 1629,
+      "p50": 4776,
+      "p95": 7738,
+      "p99": 8597,
+      "max": 8597,
+      "mean": 4701
+     },
+     "params": {
+      "checkouts": 160,
+      "arrivalMeanMs": 477,
+      "preReleaseShare": 0.49,
+      "readsPerSecond": 9,
+      "preLockMs": 976,
+      "holdMs": 364,
+      "replicaReadShare": 0.79
+     }
+    },
+    "maxSignatureRates": {
+     "latency": 0,
+     "conflict": 1,
+     "spread": 1,
+     "order": 1,
+     "readFlush": 0,
+     "readOvertake": 0
+    }
+   },
+   {
+    "family": "D_OPTIMISTIC",
+    "samples": 400,
+    "seeds": 3,
+    "cellsWithAnyFullMatch": 0,
+    "best": {
+     "model": "D_OPTIMISTIC:search#164",
+     "crowd": "search#164",
+     "seeds": 3,
+     "fullMatchRate": 0,
+     "meanScore": 2.333,
+     "applicable": 6,
+     "signatureRates": {
+      "latency": 0,
+      "conflict": 0.333,
+      "spread": 1,
+      "order": 1,
+      "readFlush": 0,
+      "readOvertake": 0
+     },
+     "ourLatencyMs": {
+      "n": 21,
+      "min": 2284,
+      "p50": 5451,
+      "p95": 8259,
+      "p99": 8880,
+      "max": 8880,
+      "mean": 5637
+     },
+     "params": {
+      "checkouts": 140,
+      "arrivalMeanMs": 357,
+      "preReleaseShare": 0.47,
+      "readsPerSecond": 5,
+      "preLockMs": 324,
+      "holdMs": 4940,
+      "replicaReadShare": 0
+     }
+    },
+    "maxSignatureRates": {
+     "latency": 0,
+     "conflict": 1,
+     "spread": 1,
+     "order": 1,
+     "readFlush": 0,
+     "readOvertake": 0
+    }
+   },
+   {
+    "family": "E_RETRY_BACKOFF",
+    "samples": 400,
+    "seeds": 3,
+    "cellsWithAnyFullMatch": 0,
+    "best": {
+     "model": "E_RETRY_BACKOFF:search#36",
+     "crowd": "search#36",
+     "seeds": 3,
+     "fullMatchRate": 0,
+     "meanScore": 2.667,
+     "applicable": 6,
+     "signatureRates": {
+      "latency": 0,
+      "conflict": 1,
+      "spread": 0.667,
+      "order": 1,
+      "readFlush": 0,
+      "readOvertake": 0
+     },
+     "ourLatencyMs": {
+      "n": 21,
+      "min": 11590,
+      "p50": 15131,
+      "p95": 16213,
+      "p99": 16377,
+      "max": 16377,
+      "mean": 14607
+     },
+     "params": {
+      "checkouts": 368,
+      "arrivalMeanMs": 2260,
+      "preReleaseShare": 0.14,
+      "readsPerSecond": 10,
+      "preLockMs": 844,
+      "holdMs": 368,
+      "retries": 4,
+      "backoffBaseMs": 537,
+      "replicaReadShare": 0.45
+     }
+    },
+    "maxSignatureRates": {
+     "latency": 0,
+     "conflict": 1,
+     "spread": 1,
+     "order": 1,
+     "readFlush": 0,
+     "readOvertake": 0
+    }
+   },
+   {
+    "family": "F_FACILITY_DATE_SERIAL",
+    "samples": 400,
+    "seeds": 3,
+    "cellsWithAnyFullMatch": 0,
+    "best": {
+     "model": "F_FACILITY_DATE_SERIAL:search#375",
+     "crowd": "search#375",
+     "seeds": 3,
+     "fullMatchRate": 0,
+     "meanScore": 3.333,
+     "applicable": 6,
+     "signatureRates": {
+      "latency": 0,
+      "conflict": 1,
+      "spread": 0.333,
+      "order": 1,
+      "readFlush": 0,
+      "readOvertake": 1
+     },
+     "ourLatencyMs": {
+      "n": 21,
+      "min": 23554,
+      "p50": 36040,
+      "p95": 41029,
+      "p99": 41427,
+      "max": 41427,
+      "mean": 35195
+     },
+     "params": {
+      "checkouts": 213,
+      "arrivalMeanMs": 238,
+      "preReleaseShare": 0.44,
+      "readsPerSecond": 52,
+      "preLockMs": 1039,
+      "holdMs": 332,
+      "lockOrder": "random",
+      "instances": 5,
+      "replicaReadShare": 0.38
+     }
+    },
+    "maxSignatureRates": {
+     "latency": 0,
+     "conflict": 1,
+     "spread": 1,
+     "order": 1,
+     "readFlush": 1,
+     "readOvertake": 1
+    }
+   },
+   {
+    "family": "G_LANES",
+    "samples": 400,
+    "seeds": 3,
+    "cellsWithAnyFullMatch": 0,
+    "best": {
+     "model": "G_LANES:search#96",
+     "crowd": "search#96",
+     "seeds": 3,
+     "fullMatchRate": 0,
+     "meanScore": 3,
+     "applicable": 6,
+     "signatureRates": {
+      "latency": 0,
+      "conflict": 1,
+      "spread": 1,
+      "order": 1,
+      "readFlush": 0,
+      "readOvertake": 0
+     },
+     "ourLatencyMs": {
+      "n": 21,
+      "min": 223915,
+      "p50": 227872,
+      "p95": 233152,
+      "p99": 234323,
+      "max": 234323,
+      "mean": 228320
+     },
+     "params": {
+      "checkouts": 216,
+      "arrivalMeanMs": 830,
+      "preReleaseShare": 0.16,
+      "readsPerSecond": 7,
+      "preLockMs": 394,
+      "holdMs": 949,
+      "prooflessExtraMs": 19691,
+      "lock": "facility-date",
+      "replicaReadShare": 0
+     }
+    },
+    "maxSignatureRates": {
+     "latency": 1,
+     "conflict": 1,
+     "spread": 1,
+     "order": 1,
+     "readFlush": 0,
+     "readOvertake": 0
+    }
+   },
+   {
+    "family": "H_PER_IP",
+    "samples": 400,
+    "seeds": 3,
+    "cellsWithAnyFullMatch": 0,
+    "best": {
+     "model": "H_PER_IP:search#49",
+     "crowd": "search#49",
+     "seeds": 3,
+     "fullMatchRate": 0,
+     "meanScore": 3,
+     "applicable": 6,
+     "signatureRates": {
+      "latency": 0,
+      "conflict": 1,
+      "spread": 1,
+      "order": 0,
+      "readFlush": 1,
+      "readOvertake": 0
+     },
+     "ourLatencyMs": {
+      "n": 21,
+      "min": 892,
+      "p50": 4322,
+      "p95": 7211,
+      "p99": 7321,
+      "max": 7321,
+      "mean": 4043
+     },
+     "params": {
+      "checkouts": 300,
+      "arrivalMeanMs": 846,
+      "preReleaseShare": 0.51,
+      "readsPerSecond": 31,
+      "preLockMs": 561,
+      "holdMs": 301,
+      "perIpLimit": 1,
+      "replicaReadShare": 0.78
+     }
+    },
+    "maxSignatureRates": {
+     "latency": 0,
+     "conflict": 1,
+     "spread": 1,
+     "order": 0.333,
+     "readFlush": 1,
+     "readOvertake": 0
+    }
+   },
+   {
+    "family": "P_PROCESSOR_SHARING",
+    "samples": 400,
+    "seeds": 3,
+    "cellsWithAnyFullMatch": 0,
+    "best": {
+     "model": "P_PROCESSOR_SHARING:search#101",
+     "crowd": "search#101",
+     "seeds": 3,
+     "fullMatchRate": 0,
+     "meanScore": 3,
+     "applicable": 6,
+     "signatureRates": {
+      "latency": 0,
+      "conflict": 0.333,
+      "spread": 0.667,
+      "order": 0.667,
+      "readFlush": 0.333,
+      "readOvertake": 1
+     },
+     "ourLatencyMs": {
+      "n": 21,
+      "min": 63600,
+      "p50": 66873,
+      "p95": 70452,
+      "p99": 71132,
+      "max": 71132,
+      "mean": 67334
+     },
+     "params": {
+      "checkouts": 35,
+      "arrivalMeanMs": 524,
+      "preReleaseShare": 0.51,
+      "readsPerSecond": 35,
+      "preLockMs": 204,
+      "holdMs": 181,
+      "sharedCapacity": 1.2,
+      "lock": "facility-date",
+      "replicaReadShare": 0.34
+     }
+    },
+    "maxSignatureRates": {
+     "latency": 0.333,
+     "conflict": 1,
+     "spread": 1,
+     "order": 1,
+     "readFlush": 1,
+     "readOvertake": 1
+    }
+   }
+  ]
+ }
+}
