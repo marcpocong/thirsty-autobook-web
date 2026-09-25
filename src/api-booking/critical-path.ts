@@ -1,0 +1,145 @@
+import { performance } from 'node:perf_hooks';
+import type { BrowserTransportObservation, CheckoutRendererTiming } from './browser-session-transport.js';
+import { rendererToNode, type RendererClockCalibration } from './renderer-clock.js';
+
+/**
+ * Release critical-path telemetry: where the milliseconds between the trusted release deadline and
+ * the checkout request actually go, per worker, across four clock domains.
+ *
+ *   trusted epoch   ── TrustedReleaseClock: anchored NTP consensus, advanced by Node's monotonic clock
+ *   Node monotonic  ── performance.now() in the runner; releaseMono = clock.monotonicDeadline(release)
+ *   renderer        ── performance.now() in each page; mapped with a round-trip calibration (renderer-clock.ts)
+ *   browser wall    ── CDP requestWillBeSent wallTime (via Playwright request.timing().startTime after the
+ *                      response); same OS wall clock as Node, mapped with the trusted clock's wall offset
+ *
+ * During dispatch the recorder only stores numbers in preallocated per-worker objects (no I/O, no
+ * formatting, no hashing, no allocation for known workers). Everything is converted and written after
+ * every POST has settled.
+ */
+export type CriticalMarkName = 'schedulerFired' | 'workerInvoked' | 'transportEntered' | 'prePost' | 'requestObserved' | 'responseObserved'
+  | 'rendererArmSent' | 'rendererArmReturned';
+export type DispatchMode = 'node' | 'renderer-experimental';
+interface WorkerRecord {
+  node: Partial<Record<CriticalMarkName, number>>;
+  renderer?: CheckoutRendererTiming & { armedAt?: number; firedAt?: number };
+  browserRequestWallMs?: number;
+  calibration?: RendererClockCalibration;
+  dispatchMode: DispatchMode;
+}
+
+export interface CriticalPathRow {
+  schema: 'critical-path/v1';
+  workerId: string;
+  dispatchMode: DispatchMode;
+  /** Release-relative ms on the trusted clock. Renderer values carry [low, high] bounds from the calibration. */
+  schedulerFiredMs: number | null;
+  workerInvokedMs: number | null;
+  transportEnteredMs: number | null;
+  prePostMs: number | null;
+  rendererArmSentMs: number | null;
+  rendererArmedMs: Bounded | null;
+  evaluateEnteredMs: Bounded | null;
+  fetchInvokedMs: Bounded | null;
+  browserRequestStartMs: number | null;
+  requestObservedMs: number | null;
+  responseHeadersMs: Bounded | null;
+  responseCompleteMs: Bounded | null;
+  responseObservedMs: number | null;
+  segments: {
+    /** Node's last gate → renderer entry (CDP command transit + renderer scheduling). */
+    nodeToRendererMs: number | null;
+    /** Renderer entry → fetch() call. */
+    rendererToFetchMs: number | null;
+    /** fetch() call → browser network request start (CDP wall stamp; ±1 ms wall/monotonic mapping). */
+    fetchToRequestStartMs: number | null;
+    /** Browser request start → Node receiving Playwright's request event (observation lag). */
+    requestEventLagMs: number | null;
+  };
+  calibration: { samples: number; uncertaintyMs: number; minRoundTripMs: number; consistent: boolean } | null;
+}
+export interface Bounded { ms: number; lowMs: number; highMs: number }
+
+const round = (value: number) => Math.round(value * 100) / 100;
+
+export class CriticalPathRecorder {
+  private readonly workers = new Map<string, WorkerRecord>();
+  private schedulerFired: number | undefined;
+
+  /**
+   * @param releaseMono Node performance.now() value of the release instant (clock.monotonicDeadline(releaseMs))
+   * @param wallToTrustedMs trusted = wall + this (clock.offsetMs − clock.wallDisagreementMs() at dispatch)
+   */
+  constructor(readonly releaseMs: number, readonly releaseMono: number, readonly wallToTrustedMs: number, workers: readonly string[] = [],
+    private readonly perf: () => number = () => performance.now(), readonly defaultMode: DispatchMode = 'node') {
+    for (const worker of workers) this.workers.set(worker, { node: {}, dispatchMode: defaultMode });
+  }
+
+  private entry(worker: string): WorkerRecord {
+    let value = this.workers.get(worker);
+    if (!value) { value = { node: {}, dispatchMode: this.defaultMode }; this.workers.set(worker, value); }
+    return value;
+  }
+
+  /** Hot-path safe: one clock read and one property write. First value wins. */
+  mark(worker: string, name: CriticalMarkName, at = this.perf()): void {
+    if (name === 'schedulerFired') { this.schedulerFired ??= at; return; }
+    const node = this.entry(worker).node;
+    if (node[name] === undefined) node[name] = at;
+  }
+  mode(worker: string, mode: DispatchMode): void { this.entry(worker).dispatchMode = mode; }
+  /** First checkout of a worker wins (a later Wave 2/Rescue POST on the same page never overwrites Wave 1). */
+  renderer(worker: string, timing: WorkerRecord['renderer']): void { const entry = this.entry(worker); if (timing && !entry.renderer) entry.renderer = { ...timing }; }
+  browserRequestWall(worker: string, wallMs: number | undefined): void {
+    const entry = this.entry(worker);
+    if (typeof wallMs === 'number' && wallMs > 0 && entry.browserRequestWallMs === undefined) entry.browserRequestWallMs = wallMs;
+  }
+  /** Maps the transport's own observations onto marks. Never throws; the timestamp is taken on entry. */
+  observeTransport(worker: string, observation: BrowserTransportObservation, at = this.perf()): void {
+    try {
+      switch (observation.event) {
+        case 'CHECKOUT_FUNCTION_ENTERED': this.mark(worker, 'transportEntered', at); break;
+        case 'CHECKOUT_PRE_POST': this.mark(worker, 'prePost', at); break;
+        case 'RENDERER_DISPATCH_ARMED': this.mark(worker, 'rendererArmSent', at); this.mode(worker, 'renderer-experimental'); break;
+        case 'CHECKOUT_HTTP_POST_INITIATED': this.mark(worker, 'requestObserved', at); break;
+        case 'CHECKOUT_RESPONSE_COMPLETED':
+          this.mark(worker, 'responseObserved', at);
+          this.renderer(worker, observation.renderer);
+          this.browserRequestWall(worker, observation.browserRequestWallMs);
+          break;
+        default: break;
+      }
+    } catch { /* telemetry only */ }
+  }
+  calibration(worker: string, calibration: RendererClockCalibration | undefined): void { if (calibration) this.entry(worker).calibration = calibration; }
+  workerIds(): string[] { return [...this.workers.keys()].sort(); }
+
+  rows(): CriticalPathRow[] {
+    const rel = (mono: number | undefined) => mono === undefined ? null : round(mono - this.releaseMono);
+    return this.workerIds().map(workerId => {
+      const record = this.workers.get(workerId)!, node = record.node, calibration = record.calibration;
+      const mapped = (rendererMs: number | undefined): Bounded | null => {
+        if (rendererMs === undefined || !calibration?.consistent || !Number.isFinite(rendererMs)) return null;
+        const value = rendererToNode(calibration, rendererMs);
+        return { ms: round(value.nodeMs - this.releaseMono), lowMs: round(value.lowMs - this.releaseMono), highMs: round(value.highMs - this.releaseMono) };
+      };
+      const evaluateEntered = mapped(record.renderer?.enteredAt), fetchInvoked = mapped(record.renderer?.firedAt ?? record.renderer?.fetchAt);
+      const browserRequestStart = record.browserRequestWallMs === undefined ? null : round(record.browserRequestWallMs + this.wallToTrustedMs - this.releaseMs);
+      const prePost = rel(node.prePost), requestObserved = rel(node.requestObserved);
+      const diff = (a: number | null | undefined, b: number | null | undefined) => a === null || a === undefined || b === null || b === undefined ? null : round(b - a);
+      return { schema: 'critical-path/v1', workerId, dispatchMode: record.dispatchMode,
+        schedulerFiredMs: rel(this.schedulerFired), workerInvokedMs: rel(node.workerInvoked), transportEnteredMs: rel(node.transportEntered), prePostMs: prePost,
+        rendererArmSentMs: rel(node.rendererArmSent), rendererArmedMs: mapped(record.renderer?.armedAt),
+        evaluateEnteredMs: evaluateEntered, fetchInvokedMs: fetchInvoked, browserRequestStartMs: browserRequestStart, requestObservedMs: requestObserved,
+        responseHeadersMs: mapped(record.renderer?.headersAt), responseCompleteMs: mapped(record.renderer?.completedAt), responseObservedMs: rel(node.responseObserved),
+        segments: { nodeToRendererMs: record.dispatchMode === 'node' ? diff(prePost, evaluateEntered?.ms) : null, rendererToFetchMs: diff(evaluateEntered?.ms, fetchInvoked?.ms),
+          fetchToRequestStartMs: diff(fetchInvoked?.ms, browserRequestStart), requestEventLagMs: diff(browserRequestStart, requestObserved) },
+        calibration: calibration ? { samples: calibration.samples, uncertaintyMs: round(calibration.uncertaintyMs), minRoundTripMs: round(calibration.minRoundTripMs), consistent: calibration.consistent } : null };
+    });
+  }
+
+  toNdjson(meta: Record<string, unknown> = {}): string {
+    const header = { schema: 'critical-path/v1', type: 'header', releaseMs: this.releaseMs, wallToTrustedMs: round(this.wallToTrustedMs), ...meta,
+      note: 'All *Ms values are milliseconds after the release instant on the trusted clock. Renderer values are mapped through a round-trip calibration and carry [lowMs, highMs].' };
+    return [header, ...this.rows()].map(line => JSON.stringify(line)).join('\n') + '\n';
+  }
+}

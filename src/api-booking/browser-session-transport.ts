@@ -7,6 +7,7 @@ import { SubmissionDispatchError } from './submission-errors.js';
 import { checkoutDiagnostic, type CheckoutDiagnostic } from './checkout-diagnostics.js';
 import { CalendarFreeSecurityError } from './calendar-free-security-context.js';
 import { responseEvidence, type ResponseEvidence } from './response-evidence.js';
+import { RENDERER_ARMED_CHECKOUT, RENDERER_DISARM, type RendererArmedOutcome, type RendererFirePlan } from './renderer-dispatch.js';
 
 const ORIGIN = 'https://app.onda.fit';
 const SLOT_PATH = '/api/public/is-slot-available';
@@ -30,13 +31,19 @@ export type BrowserTransportObservation =
   | { event: 'CHECKOUT_FUNCTION_ENTERED'; preparedContextAgeMs: number; securitySource: 'PREPARED_CONTEXT' | 'CHECKOUT_ACQUISITION' }
   | { event: 'CHECKOUT_PRE_POST'; preparedContextAgeMs: number; securitySource: 'PREPARED_CONTEXT' | 'CHECKOUT_ACQUISITION' }
   | { event: 'CHECKOUT_HTTP_POST_INITIATED'; initiationEvidence: 'PLAYWRIGHT_REQUEST_EVENT' }
+  /** EXPERIMENTAL renderer-resident dispatch: the exact request was handed to the page, which fires on its own clock. */
+  | { event: 'RENDERER_DISPATCH_ARMED'; preparedContextAgeMs: number; calibrationUncertaintyMs: number }
+  /** The page refused before fetch(): provably unsent. */
+  | { event: 'RENDERER_DISPATCH_REFUSED'; failureCategory: string }
   | { event: 'CHECKOUT_RESPONSE_COMPLETED'; networkDurationMs: number; statusCode?: number; dispatchState: 'RESPONSE_CAPTURED' | 'UNKNOWN'; failureCategory?: string;
       /** Bounded categories from checkoutDiagnostic (never response text). */
       errorHint?: CheckoutDiagnostic['errorHint']; responseSource?: CheckoutDiagnostic['responseSource'];
       /** Body size and a 12-hex prefix of the sanitized shape fingerprint (rejections only), to tell response classes apart. */
       responseBytes?: number; bodyShape?: string;
       /** Renderer performance.now() marks of this POST (see CheckoutRendererTiming); mapped to trusted time after dispatch. */
-      renderer?: CheckoutRendererTiming };
+      renderer?: CheckoutRendererTiming;
+      /** Chrome's own wall-clock stamp of the request start (CDP wallTime via Playwright, available once the response arrived). */
+      browserRequestWallMs?: number };
 export type BrowserTransportObserver = (observation: BrowserTransportObservation) => void;
 
 /** Values must come from the current normal site flow immediately before checkout; this transport cannot create them. */
@@ -46,7 +53,9 @@ export type CurrentCheckoutHeadersProvider = () => Promise<CurrentCheckoutHeader
  * entry into the evaluate function, the instant just before fetch() is called, response headers, and body read.
  * They cost one clock read before fetch() and are returned with the response, never on the path to it.
  */
-export interface CheckoutRendererTiming { timeOrigin: number; enteredAt: number; fetchAt: number; headersAt: number; completedAt: number }
+export interface CheckoutRendererTiming { timeOrigin: number; enteredAt: number; fetchAt: number; headersAt: number; completedAt: number;
+  /** Renderer-resident dispatch only: when the page accepted the arm command and when it called fetch(). */
+  armedAt?: number; firedAt?: number }
 export interface CheckoutHttpResponse { status: number; contentType: string; server: string;
   vercelId?: string; requestId?: string; serverTiming?: string; responseReceivedMs?: number; responseCompletedMs?: number;
   cloudflareRay: string; cfMitigated: string; body: string;
@@ -103,6 +112,14 @@ function securityContextError(error: unknown): BrowserSessionTransportError {
   return error instanceof CalendarFreeSecurityError && /^[A-Z][A-Z0-9_]{0,63}$/.test(error.code)
     ? new BrowserSessionTransportError(error.code)
     : new BrowserSessionTransportError('CURRENT_CHECKOUT_HEADERS_UNAVAILABLE');
+}
+
+/** Chrome's request-start wall stamp, read after the response (Playwright fills it from CDP wallTime); never before. */
+function browserRequestWall(request: { timing?(): { startTime?: number } } | undefined): { browserRequestWallMs?: number } {
+  try {
+    const value = request?.timing?.().startTime;
+    return typeof value === 'number' && Number.isFinite(value) && value > 1_000_000_000_000 ? { browserRequestWallMs: value } : {};
+  } catch { return {}; }
 }
 
 /** Exact private values of one request (identity fields and the security header values), for response redaction. */
@@ -237,22 +254,32 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
   }
 
   private async post(path: typeof SLOT_PATH | typeof CHECKOUT_PATH, body: unknown,
-    extraHeaders?: Record<string, string>, bodyText?: string): Promise<unknown> {
+    extraHeaders?: Record<string, string>, bodyText?: string, rendererPlan?: RendererFirePlan): Promise<unknown> {
     this.assertPage();
     const checkout = path === CHECKOUT_PATH;
     const networkStarted = performance.now();
     let requestObserved = false;
-    const requestListener = (request: { method(): string; url(): string }) => {
+    let observedRequest: { timing?(): { startTime?: number } } | undefined;
+    const requestListener = (request: { method(): string; url(): string; timing?(): { startTime?: number } }) => {
       try {
         if (!checkout || requestObserved || request.method() !== 'POST' || new URL(request.url()).pathname !== CHECKOUT_PATH) return;
         requestObserved = true;
+        observedRequest = request;
         this.observe({ event: 'CHECKOUT_HTTP_POST_INITIATED', initiationEvidence: 'PLAYWRIGHT_REQUEST_EVENT' });
       } catch { /* A malformed unrelated request is not diagnostic evidence. */ }
     };
     if (checkout) this.page.on?.('request', requestListener);
-    let result: CheckoutHttpResponse;
+    let result!: CheckoutHttpResponse;
+    let refused: string | undefined;
     try {
-      result = await this.page.evaluate(async ({ url, payload, text, headers }) => {
+      if (rendererPlan) {
+        // EXPERIMENTAL: the page fires on its own calibrated clock (renderer-dispatch.ts). A refusal is provably unsent.
+        if (!checkout || typeof bodyText !== 'string') throw new BrowserSessionTransportError('RENDERER_DISPATCH_REQUIRES_ARMED_CHECKOUT');
+        const outcome: RendererArmedOutcome = await this.page.evaluate(RENDERER_ARMED_CHECKOUT,
+          { ...rendererPlan, url: `${ORIGIN}${path}`, text: bodyText, headers: extraHeaders ?? {} });
+        if ('refused' in outcome) refused = typeof outcome.refused === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/.test(outcome.refused) ? outcome.refused : 'RENDERER_DISPATCH_REFUSED';
+        else { const { fired: _fired, ...response } = outcome; result = response; }
+      } else result = await this.page.evaluate(async ({ url, payload, text, headers }) => {
         const enteredAt = performance.now();
         const init: RequestInit = { method: 'POST', credentials: 'same-origin', redirect: 'error',
           cache: 'no-store', headers: { 'Content-Type': 'application/json', ...headers },
@@ -278,13 +305,19 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
           renderer: { timeOrigin: performance.timeOrigin, enteredAt, fetchAt: started, headersAt, completedAt } };
       }, bodyText === undefined ? { url: `${ORIGIN}${path}`, payload: body, text: undefined, headers: extraHeaders ?? {} }
         : { url: `${ORIGIN}${path}`, payload: null, text: bodyText, headers: extraHeaders ?? {} });
-    } catch {
+    } catch (error) {
+      if (error instanceof BrowserSessionTransportError && !error.dispatched) throw error;
       if (checkout) this.observe({ event: 'CHECKOUT_RESPONSE_COMPLETED',
         networkDurationMs: Math.max(0, Math.round(performance.now() - networkStarted)), dispatchState: 'UNKNOWN',
         failureCategory: 'ONDA_TRANSPORT_FAILED' });
       throw new BrowserSessionTransportError('ONDA_TRANSPORT_FAILED', true);
     } finally {
       if (checkout) this.page.off?.('request', requestListener);
+    }
+    if (refused !== undefined) {
+      // The page returned before calling fetch(): nothing left this browser.
+      this.observe({ event: 'RENDERER_DISPATCH_REFUSED', failureCategory: refused });
+      throw new BrowserSessionTransportError(refused, false);
     }
     const networkDurationMs = Math.max(0, Math.round(performance.now() - networkStarted));
     const diagnostic = result.status === 200 ? undefined : checkoutDiagnostic(result);
@@ -297,7 +330,7 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
         errorHint: diagnostic.errorHint, responseSource: diagnostic.responseSource } : {}),
       ...(typeof result.body === 'string' ? { responseBytes: Buffer.byteLength(result.body, 'utf8') } : {}),
       ...(result.evidence?.body.shapeFingerprint ? { bodyShape: result.evidence.body.shapeFingerprint.slice(0, 12) } : {}),
-      ...(result.renderer ? { renderer: result.renderer } : {}) });
+      ...(result.renderer ? { renderer: result.renderer } : {}), ...browserRequestWall(observedRequest) });
     if (path === CHECKOUT_PATH && this.captureCheckoutResponse) {
       try { await this.captureCheckoutResponse(result); }
       catch { throw new BrowserSessionTransportError('CHECKOUT_RESPONSE_CAPTURE_FAILED', true); }
@@ -338,6 +371,43 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
   async publicCheckoutProofless(request: ProoflessCheckoutRequest, permit: SubmissionPermit, options: CheckoutDispatchOptions = {}): Promise<unknown> {
     if(request.items.some(item=>item.availabilityProof!==null))throw new BrowserSessionTransportError('DIRECT_PROOFLESS_SHAPE_INVALID');
     return this.submitCheckout(request,permit,options);
+  }
+
+  /**
+   * EXPERIMENTAL renderer-resident dispatch (renderer-dispatch.ts): sends the exact armed request to the page
+   * before release; the page calls fetch() when its calibrated clock has certainly passed the release. Same
+   * gates as the Node path (prepared context, freshness, page, one-shot permit), plus `beforeArm`, which must
+   * prove the arm is happening before release and inside the arm lead. Requires a deep-frozen armed request.
+   */
+  async publicCheckoutProoflessRendererArmed(request: ProoflessCheckoutRequest, permit: SubmissionPermit, plan: RendererFirePlan,
+    options: { beforeArm?: () => void } = {}): Promise<unknown> {
+    if (request.items.some(item => item.availabilityProof !== null)) throw new BrowserSessionTransportError('DIRECT_PROOFLESS_SHAPE_INVALID');
+    this.assertPage();
+    if (process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT !== 'SUPERVISED_ONE_SHOT') throw new BrowserSessionTransportError('LIVE_SUBMISSION_DISABLED');
+    const armed = armedRequests.get(request);
+    if (!armed) throw new BrowserSessionTransportError('RENDERER_DISPATCH_REQUIRES_ARMED_REQUEST');
+    const current = this.preparedHeaders, preparedAt = this.preparedAt;
+    this.observe({ event: 'CHECKOUT_FUNCTION_ENTERED', preparedContextAgeMs: preparedAt === undefined ? -1 : Date.now() - preparedAt,
+      securitySource: current ? 'PREPARED_CONTEXT' : 'CHECKOUT_ACQUISITION' });
+    this.preparedHeaders = undefined;
+    this.preparedAt = undefined;
+    // A release dispatch never acquires security after its window check.
+    if (!current) throw new BrowserSessionTransportError('PREPARED_SECURITY_CONTEXT_REQUIRED');
+    if (!usable(current.turnstileToken) || !usable(current.publicFingerprint)) throw new BrowserSessionTransportError('CURRENT_CHECKOUT_HEADERS_INVALID');
+    if (preparedAt === undefined || !Number.isFinite(preparedAt) || Date.now() - preparedAt < 0 || Date.now() - preparedAt > 120_000)
+      throw new BrowserSessionTransportError('CURRENT_CHECKOUT_HEADERS_STALE');
+    if (plan.key !== armed.key) throw new BrowserSessionTransportError('RENDERER_DISPATCH_KEY_MISMATCH');
+    this.assertPage();
+    consumeSubmissionPermit(permit, armed.key);
+    options.beforeArm?.();
+    this.observe({ event: 'RENDERER_DISPATCH_ARMED', preparedContextAgeMs: Math.max(0, Date.now() - preparedAt), calibrationUncertaintyMs: plan.calibrationUncertaintyMs });
+    return this.post(CHECKOUT_PATH, request, { 'X-Turnstile-Token': current.turnstileToken, 'X-Onda-Public-Fingerprint': current.publicFingerprint },
+      armed.body, plan);
+  }
+
+  /** Best-effort disarm of an armed page (effective until the page's final ≤ 1 ms spin). Never throws. */
+  async disarmRendererCheckout(key: string): Promise<'DISARMED' | 'ALREADY_FIRED' | 'NOT_ARMED' | 'UNREACHABLE'> {
+    try { return await this.page.evaluate(RENDERER_DISARM, key); } catch { return 'UNREACHABLE'; }
   }
 
   /** Age of the prewarmed context, or undefined when none is held (never acquired, consumed, or cleared by navigation). */
