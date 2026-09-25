@@ -11,6 +11,8 @@ import {parseAvailability} from '../../src/api-booking/availability-parser.js';
 import {UiEventSchema} from '../../src/ui-events.js';
 
 const date='2026-09-25';
+/** A pending hold always expires in the future: the verifier rejects an already-expired hold. */
+const holdExpiresAt=new Date(Date.now()+10*60_000).toISOString();
 const customer={clientId:'client',customerId:'customer',customerEmail:'e@example.invalid',customerPhone:'09123456789',customerFirstName:'Fixture',customerLastName:'Player'};
 const liveSnapshot=()=>parseAvailability(availabilityFixture(date),{startDate:date,endDate:date,
   capturedAt:'2026-09-23T00:00:00.000Z',fixtureKind:'synthetic',label:'direct',now:new Date('2026-09-23T00:00:00.000Z'),maximumAgeMs:1000});
@@ -128,7 +130,7 @@ describe('Proofless checkout lane',()=>{
           customer_id:customer.customerId,space_id:item.spaceId,facility_id:item.facilityId,date:item.date,
           start_time:`${item.startTime}:00`,end_time:`${item.endTime}:00`,duration:60,rate:item.rate,
           guest_count:1,booking_status:'pending',payment_status:'pending',booking_session_id:'session',
-          hold_expires_at:'2026-09-25T02:05:00.000Z'})),
+          hold_expires_at:holdExpiresAt})),
           bookingSessions:[{requestSessionRef:'session_1',bookingSessionId:'session',facilityId:request.facilityId,
             spaceId:request.items[0]!.spaceId,date,startTime:'20:00:00',endTime:'22:00:00',durationHours:2,bookingIds:ids}],
           transaction:{id:'transaction',reference:'number-0',amount:plan.totalPrice+(mismatch?100:0),status:'pending'},
@@ -152,7 +154,7 @@ describe('Proofless checkout lane',()=>{
         customer_id:customer.customerId,space_id:item.spaceId,facility_id:item.facilityId,date:item.date,
         start_time:`${item.startTime}:00`,end_time:`${item.endTime}:00`,duration:60,rate:item.rate,guest_count:1,
         booking_status:'pending',payment_status:'pending',booking_session_id:`session-${item.sessionRef}`,
-        hold_expires_at:'2026-09-25T02:05:00.000Z'})),
+        hold_expires_at:holdExpiresAt})),
         bookingSessions:sessionRefs.map(ref=>{const items=request.items.map((item,index)=>({item,index})).filter(entry=>entry.item.sessionRef===ref);
           return {requestSessionRef:ref,bookingSessionId:`session-${ref}`,facilityId:request.facilityId,
             spaceId:items[0]!.item.spaceId,date,startTime:'08:00:00',endTime:'11:00:00',durationHours:3,
