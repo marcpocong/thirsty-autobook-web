@@ -1,0 +1,5 @@
+{"type":"run-start","runId":"ab8d2676-d7a4-4adc-8f53-61176efeb116","label":"prepare","at":"2026-09-23T22:59:27.395Z","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"ab8d2676-d7a4-4adc-8f53-61176efeb116","at":"2026-09-23T22:59:27.396Z","text":"Run started: prepare · Timing log: <install>/.local\\booking-runs\\ab8d2676-d7a4-4adc-8f53-61176efeb116.ndjson","level":"info","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"ab8d2676-d7a4-4adc-8f53-61176efeb116","at":"2026-09-23T22:59:27.402Z","text":"BOOKING_SETTINGS_INVALID","level":"error","elapsedMs":6,"deltaMs":6}
+{"type":"activity","runId":"ab8d2676-d7a4-4adc-8f53-61176efeb116","at":"2026-09-23T22:59:27.407Z","text":"Run finished: failed","level":"error","elapsedMs":11,"deltaMs":5}
+{"type":"run-end","runId":"ab8d2676-d7a4-4adc-8f53-61176efeb116","at":"2026-09-23T22:59:27.412Z","elapsedMs":16,"outcome":"failed","label":"prepare"}

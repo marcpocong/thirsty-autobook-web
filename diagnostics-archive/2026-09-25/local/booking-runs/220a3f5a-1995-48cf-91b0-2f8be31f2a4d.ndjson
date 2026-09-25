@@ -1,0 +1,13 @@
+{"type":"run-start","runId":"220a3f5a-1995-48cf-91b0-2f8be31f2a4d","label":"prepare","at":"2026-09-22T17:13:25.068Z","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"220a3f5a-1995-48cf-91b0-2f8be31f2a4d","at":"2026-09-22T17:13:25.068Z","text":"Run started: prepare · Timing log: <install>/.local\\booking-runs\\220a3f5a-1995-48cf-91b0-2f8be31f2a4d.ndjson","level":"info","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"220a3f5a-1995-48cf-91b0-2f8be31f2a4d","at":"2026-09-22T17:13:25.081Z","text":"Checking the old worker, Onda browser, selected slots, and payment hold before API preparation.","level":"info","elapsedMs":13,"deltaMs":13}
+{"type":"activity","runId":"220a3f5a-1995-48cf-91b0-2f8be31f2a4d","at":"2026-09-22T17:13:25.152Z","text":"Preparing a fresh schedule while retaining the previous verified hold record and QR tab.","level":"info","elapsedMs":84,"deltaMs":71}
+{"type":"activity","runId":"220a3f5a-1995-48cf-91b0-2f8be31f2a4d","at":"2026-09-22T17:13:25.153Z","text":"Process started: resetPrepare","level":"info","elapsedMs":84,"deltaMs":1}
+{"type":"activity","runId":"220a3f5a-1995-48cf-91b0-2f8be31f2a4d","at":"2026-09-22T17:13:25.720Z","text":"Preparation: Starting required browser(s)...","level":"info","elapsedMs":652,"deltaMs":567}
+{"type":"activity","runId":"220a3f5a-1995-48cf-91b0-2f8be31f2a4d","at":"2026-09-22T17:13:25.765Z","text":"Preparation: Checking previous session...","level":"info","elapsedMs":697,"deltaMs":45}
+{"type":"activity","runId":"220a3f5a-1995-48cf-91b0-2f8be31f2a4d","at":"2026-09-22T17:13:38.127Z","text":"Preparation: Preparing Onda...","level":"info","elapsedMs":13058,"deltaMs":12362}
+{"type":"activity","runId":"220a3f5a-1995-48cf-91b0-2f8be31f2a4d","at":"2026-09-22T17:13:45.990Z","text":"INVALID_TARGET_DATE","level":"error","elapsedMs":20922,"deltaMs":7863}
+{"type":"activity","runId":"220a3f5a-1995-48cf-91b0-2f8be31f2a4d","at":"2026-09-22T17:13:45.992Z","text":"INVALID_TARGET_DATE","level":"error","elapsedMs":20923,"deltaMs":2}
+{"type":"activity","runId":"220a3f5a-1995-48cf-91b0-2f8be31f2a4d","at":"2026-09-22T17:13:46.007Z","text":"COMMAND_FAILED","level":"error","elapsedMs":20939,"deltaMs":15}
+{"type":"activity","runId":"220a3f5a-1995-48cf-91b0-2f8be31f2a4d","at":"2026-09-22T17:13:46.008Z","text":"Run finished: failed","level":"error","elapsedMs":20939,"deltaMs":1}
+{"type":"run-end","runId":"220a3f5a-1995-48cf-91b0-2f8be31f2a4d","at":"2026-09-22T17:13:46.008Z","elapsedMs":20940,"outcome":"failed","label":"resetPrepare"}

@@ -1,0 +1,15 @@
+{"type":"run-start","runId":"ae96dee1-819a-4ccb-b1fd-34503588a3b4","label":"prepare","at":"2026-09-20T20:38:44.217Z","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"ae96dee1-819a-4ccb-b1fd-34503588a3b4","at":"2026-09-20T20:38:44.218Z","text":"Run started: prepare · Timing log: <install>/.local\\booking-runs\\ae96dee1-819a-4ccb-b1fd-34503588a3b4.ndjson","level":"info","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"ae96dee1-819a-4ccb-b1fd-34503588a3b4","at":"2026-09-20T20:38:44.219Z","text":"Process started: resetPrepare","level":"info","elapsedMs":1,"deltaMs":1}
+{"type":"activity","runId":"ae96dee1-819a-4ccb-b1fd-34503588a3b4","at":"2026-09-20T20:38:45.542Z","text":"Preparation: Starting required browser(s)...","level":"info","elapsedMs":1324,"deltaMs":1323}
+{"type":"activity","runId":"ae96dee1-819a-4ccb-b1fd-34503588a3b4","at":"2026-09-20T20:38:45.551Z","text":"Preparation: Checking previous session...","level":"info","elapsedMs":1333,"deltaMs":8}
+{"type":"activity","runId":"ae96dee1-819a-4ccb-b1fd-34503588a3b4","at":"2026-09-20T20:38:48.113Z","text":"Preparation: Preparing Onda...","level":"info","elapsedMs":3895,"deltaMs":2562}
+{"type":"activity","runId":"ae96dee1-819a-4ccb-b1fd-34503588a3b4","at":"2026-09-20T20:38:49.407Z","text":"Preparation: Checking payment holds...","level":"info","elapsedMs":5189,"deltaMs":1295}
+{"type":"activity","runId":"ae96dee1-819a-4ccb-b1fd-34503588a3b4","at":"2026-09-20T20:38:49.408Z","text":"Preparation: Verifying calendar...","level":"info","elapsedMs":5190,"deltaMs":0}
+{"type":"activity","runId":"ae96dee1-819a-4ccb-b1fd-34503588a3b4","at":"2026-09-20T20:38:50.560Z","text":"Preparation: Verifying grids...","level":"info","elapsedMs":6342,"deltaMs":1152}
+{"type":"activity","runId":"ae96dee1-819a-4ccb-b1fd-34503588a3b4","at":"2026-09-20T20:38:50.561Z","text":"Preparation: Checking booking availability...","level":"info","elapsedMs":6343,"deltaMs":1}
+{"type":"activity","runId":"ae96dee1-819a-4ccb-b1fd-34503588a3b4","at":"2026-09-20T20:38:50.564Z","text":"Preparation: Final readiness check...","level":"info","elapsedMs":6346,"deltaMs":3}
+{"type":"activity","runId":"ae96dee1-819a-4ccb-b1fd-34503588a3b4","at":"2026-09-20T20:38:50.568Z","text":"READY","level":"info","elapsedMs":6350,"deltaMs":4}
+{"type":"activity","runId":"ae96dee1-819a-4ccb-b1fd-34503588a3b4","at":"2026-09-20T20:38:50.587Z","text":"Process completed: resetPrepare · exit code 0","level":"info","elapsedMs":6369,"deltaMs":19}
+{"type":"activity","runId":"ae96dee1-819a-4ccb-b1fd-34503588a3b4","at":"2026-09-20T20:38:50.595Z","text":"Run finished: complete","level":"info","elapsedMs":6377,"deltaMs":7}
+{"type":"run-end","runId":"ae96dee1-819a-4ccb-b1fd-34503588a3b4","at":"2026-09-20T20:38:50.595Z","elapsedMs":6377,"outcome":"complete","label":"resetPrepare"}

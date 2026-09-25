@@ -1,0 +1,10 @@
+{"type":"run-start","runId":"9ea373cb-d4e9-4134-a688-2ed95d240e7f","label":"prepare","at":"2026-09-22T19:59:07.715Z","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"9ea373cb-d4e9-4134-a688-2ed95d240e7f","at":"2026-09-22T19:59:07.734Z","text":"Run started: prepare · Timing log: <install>/.local\\booking-runs\\9ea373cb-d4e9-4134-a688-2ed95d240e7f.ndjson","level":"info","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"9ea373cb-d4e9-4134-a688-2ed95d240e7f","at":"2026-09-22T19:59:07.747Z","text":"Checking the old worker, Onda browser, selected slots, and payment hold before API preparation.","level":"info","elapsedMs":13,"deltaMs":13}
+{"type":"activity","runId":"9ea373cb-d4e9-4134-a688-2ed95d240e7f","at":"2026-09-22T19:59:07.750Z","text":"Preparing a fresh schedule while retaining the previous verified hold record and QR tab.","level":"info","elapsedMs":17,"deltaMs":4}
+{"type":"activity","runId":"9ea373cb-d4e9-4134-a688-2ed95d240e7f","at":"2026-09-22T19:59:07.753Z","text":"Process started: resetPrepare","level":"info","elapsedMs":20,"deltaMs":3}
+{"type":"activity","runId":"9ea373cb-d4e9-4134-a688-2ed95d240e7f","at":"2026-09-22T19:59:08.318Z","text":"Preparation: Starting required browser(s)...","level":"info","elapsedMs":584,"deltaMs":565}
+{"type":"activity","runId":"9ea373cb-d4e9-4134-a688-2ed95d240e7f","at":"2026-09-22T19:59:08.327Z","text":"Preparation: Checking previous session...","level":"info","elapsedMs":593,"deltaMs":9}
+{"type":"activity","runId":"9ea373cb-d4e9-4134-a688-2ed95d240e7f","at":"2026-09-22T19:59:23.415Z","text":"AUTOMATION ABORTED — USER CONTROL RESTORED","level":"info","elapsedMs":15681,"deltaMs":15088}
+{"type":"activity","runId":"9ea373cb-d4e9-4134-a688-2ed95d240e7f","at":"2026-09-22T19:59:23.418Z","text":"Run finished: aborted","level":"info","elapsedMs":15684,"deltaMs":3}
+{"type":"run-end","runId":"9ea373cb-d4e9-4134-a688-2ed95d240e7f","at":"2026-09-22T19:59:23.422Z","elapsedMs":15688,"outcome":"aborted","label":"resetPrepare"}

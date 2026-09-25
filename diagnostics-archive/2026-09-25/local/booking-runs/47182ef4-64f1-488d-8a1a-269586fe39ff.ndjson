@@ -1,0 +1,23 @@
+{"type":"run-start","runId":"47182ef4-64f1-488d-8a1a-269586fe39ff","label":"prepare","at":"2026-09-21T23:38:22.704Z","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"47182ef4-64f1-488d-8a1a-269586fe39ff","at":"2026-09-21T23:38:22.705Z","text":"Run started: prepare · Timing log: <install>/.local\\booking-runs\\47182ef4-64f1-488d-8a1a-269586fe39ff.ndjson","level":"info","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"47182ef4-64f1-488d-8a1a-269586fe39ff","at":"2026-09-21T23:38:22.710Z","text":"Checking the old worker, Onda browser, selected slots, and payment hold before API preparation.","level":"info","elapsedMs":5,"deltaMs":5}
+{"type":"activity","runId":"47182ef4-64f1-488d-8a1a-269586fe39ff","at":"2026-09-21T23:38:22.751Z","text":"Preparing a fresh schedule while retaining the previous verified hold record and QR tab.","level":"info","elapsedMs":46,"deltaMs":41}
+{"type":"activity","runId":"47182ef4-64f1-488d-8a1a-269586fe39ff","at":"2026-09-21T23:38:22.752Z","text":"Process started: resetPrepare","level":"info","elapsedMs":47,"deltaMs":1}
+{"type":"activity","runId":"47182ef4-64f1-488d-8a1a-269586fe39ff","at":"2026-09-21T23:38:23.279Z","text":"Preparation: Starting required browser(s)...","level":"info","elapsedMs":574,"deltaMs":527}
+{"type":"activity","runId":"47182ef4-64f1-488d-8a1a-269586fe39ff","at":"2026-09-21T23:38:23.324Z","text":"Preparation: Checking previous session...","level":"info","elapsedMs":619,"deltaMs":45}
+{"type":"activity","runId":"47182ef4-64f1-488d-8a1a-269586fe39ff","at":"2026-09-21T23:38:42.827Z","text":"Preparation: Preparing Onda...","level":"info","elapsedMs":20122,"deltaMs":19503}
+{"type":"activity","runId":"47182ef4-64f1-488d-8a1a-269586fe39ff","at":"2026-09-21T23:38:51.962Z","text":"Preparation: Checking payment holds...","level":"info","elapsedMs":29258,"deltaMs":9136}
+{"type":"activity","runId":"47182ef4-64f1-488d-8a1a-269586fe39ff","at":"2026-09-21T23:38:51.964Z","text":"Preparation: Verifying calendar...","level":"info","elapsedMs":29260,"deltaMs":1}
+{"type":"activity","runId":"47182ef4-64f1-488d-8a1a-269586fe39ff","at":"2026-09-21T23:38:58.930Z","text":"Preparation: Verifying grids...","level":"info","elapsedMs":36226,"deltaMs":6967}
+{"type":"activity","runId":"47182ef4-64f1-488d-8a1a-269586fe39ff","at":"2026-09-21T23:38:58.971Z","text":"Preparation: Checking booking availability...","level":"info","elapsedMs":36267,"deltaMs":41}
+{"type":"activity","runId":"47182ef4-64f1-488d-8a1a-269586fe39ff","at":"2026-09-21T23:38:58.973Z","text":"Preparation: Final readiness check...","level":"info","elapsedMs":36269,"deltaMs":2}
+{"type":"activity","runId":"47182ef4-64f1-488d-8a1a-269586fe39ff","at":"2026-09-21T23:38:58.978Z","text":"READY","level":"info","elapsedMs":36273,"deltaMs":4}
+{"type":"activity","runId":"47182ef4-64f1-488d-8a1a-269586fe39ff","at":"2026-09-21T23:38:58.997Z","text":"Process completed: resetPrepare · exit code 0","level":"info","elapsedMs":36293,"deltaMs":19}
+{"type":"activity","runId":"47182ef4-64f1-488d-8a1a-269586fe39ff","at":"2026-09-21T23:38:58.998Z","text":"New schedule verified. Continuing API preparation; previous verified holds remain recorded.","level":"info","elapsedMs":36294,"deltaMs":2}
+{"type":"activity","runId":"47182ef4-64f1-488d-8a1a-269586fe39ff","at":"2026-09-21T23:38:59.000Z","text":"Process started: apiRun · prepare","level":"info","elapsedMs":36296,"deltaMs":1}
+{"type":"activity","runId":"47182ef4-64f1-488d-8a1a-269586fe39ff","at":"2026-09-21T23:38:59.511Z","text":"API run started · Timing log: .local/api-booking/run-progress/ab267af4-3946-4f2b-a385-b8bccecc2d61.ndjson · 1 ms total · +1 ms since prior stage","level":"info","elapsedMs":36810,"deltaMs":514}
+{"type":"activity","runId":"47182ef4-64f1-488d-8a1a-269586fe39ff","at":"2026-09-21T23:38:59.534Z","text":"Preparing isolated Chrome · Progress recorded · 23 ms total · +22 ms since prior stage","level":"info","elapsedMs":36831,"deltaMs":21}
+{"type":"activity","runId":"47182ef4-64f1-488d-8a1a-269586fe39ff","at":"2026-09-21T23:39:01.686Z","text":"API browser ready · Progress recorded · 2175 ms total · +2152 ms since prior stage","level":"info","elapsedMs":38982,"deltaMs":2152}
+{"type":"activity","runId":"47182ef4-64f1-488d-8a1a-269586fe39ff","at":"2026-09-21T23:39:01.711Z","text":"Process completed: apiRun · prepare · exit code 0","level":"info","elapsedMs":39007,"deltaMs":24}
+{"type":"activity","runId":"47182ef4-64f1-488d-8a1a-269586fe39ff","at":"2026-09-21T23:39:01.711Z","text":"Run finished: complete","level":"info","elapsedMs":39007,"deltaMs":1}
+{"type":"run-end","runId":"47182ef4-64f1-488d-8a1a-269586fe39ff","at":"2026-09-21T23:39:01.712Z","elapsedMs":39008,"outcome":"complete","label":"API PREPARE"}

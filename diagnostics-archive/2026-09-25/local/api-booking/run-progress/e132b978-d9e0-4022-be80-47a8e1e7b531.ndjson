@@ -1,0 +1,12 @@
+{"runId":"e132b978-d9e0-4022-be80-47a8e1e7b531","mode":"live","targetDate":"2026-09-24","stage":"RUN_STARTED","at":"2026-09-21T20:39:13.245Z","elapsedMs":1,"sincePreviousMs":1}
+{"runId":"e132b978-d9e0-4022-be80-47a8e1e7b531","mode":"live","targetDate":"2026-09-24","stage":"PREPARING_BROWSER","at":"2026-09-21T20:39:13.339Z","elapsedMs":94,"sincePreviousMs":93,"workerId":"A"}
+{"runId":"e132b978-d9e0-4022-be80-47a8e1e7b531","mode":"live","targetDate":"2026-09-24","stage":"PREPARING_BROWSER","at":"2026-09-21T20:39:13.351Z","elapsedMs":107,"sincePreviousMs":13,"workerId":"B"}
+{"runId":"e132b978-d9e0-4022-be80-47a8e1e7b531","mode":"live","targetDate":"2026-09-24","stage":"PREPARING_BROWSER","at":"2026-09-21T20:39:13.363Z","elapsedMs":119,"sincePreviousMs":12,"workerId":"C"}
+{"runId":"e132b978-d9e0-4022-be80-47a8e1e7b531","mode":"live","targetDate":"2026-09-24","stage":"PREPARING_BROWSER","at":"2026-09-21T20:39:13.374Z","elapsedMs":130,"sincePreviousMs":11,"workerId":"D"}
+{"runId":"e132b978-d9e0-4022-be80-47a8e1e7b531","mode":"live","targetDate":"2026-09-24","stage":"BROWSER_READY","at":"2026-09-21T20:39:15.030Z","elapsedMs":1785,"sincePreviousMs":1655,"workerId":"A","port":19444}
+{"runId":"e132b978-d9e0-4022-be80-47a8e1e7b531","mode":"live","targetDate":"2026-09-24","stage":"BROWSER_READY","at":"2026-09-21T20:39:15.030Z","elapsedMs":1786,"sincePreviousMs":1,"workerId":"B","port":19445}
+{"runId":"e132b978-d9e0-4022-be80-47a8e1e7b531","mode":"live","targetDate":"2026-09-24","stage":"BROWSER_READY","at":"2026-09-21T20:39:15.030Z","elapsedMs":1786,"sincePreviousMs":0,"workerId":"C","port":19446}
+{"runId":"e132b978-d9e0-4022-be80-47a8e1e7b531","mode":"live","targetDate":"2026-09-24","stage":"BROWSER_READY","at":"2026-09-21T20:39:15.032Z","elapsedMs":1787,"sincePreviousMs":1,"workerId":"D","port":19447}
+{"runId":"e132b978-d9e0-4022-be80-47a8e1e7b531","mode":"live","targetDate":"2026-09-24","stage":"WAITING_FOR_RELEASE","at":"2026-09-21T20:39:15.032Z","elapsedMs":1787,"sincePreviousMs":0,"releaseMs":1790035200000}
+{"runId":"e132b978-d9e0-4022-be80-47a8e1e7b531","mode":"live","targetDate":"2026-09-24","stage":"FAILED","at":"2026-09-21T20:39:23.347Z","elapsedMs":10102,"sincePreviousMs":8315,"code":"USER_ABORT"}
+{"runId":"e132b978-d9e0-4022-be80-47a8e1e7b531","mode":"live","targetDate":"2026-09-24","stage":"PROCESS_EXIT","at":"2026-09-21T20:39:23.355Z","elapsedMs":10110,"sincePreviousMs":8,"exitCode":1}

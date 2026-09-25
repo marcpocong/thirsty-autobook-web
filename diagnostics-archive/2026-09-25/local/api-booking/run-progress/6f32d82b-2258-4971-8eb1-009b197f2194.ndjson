@@ -1,0 +1,10 @@
+{"runId":"6f32d82b-2258-4971-8eb1-009b197f2194","mode":"prepare","targetDate":"2026-09-25","stage":"RUN_STARTED","at":"2026-09-22T09:55:26.729Z","elapsedMs":1,"sincePreviousMs":1}
+{"runId":"6f32d82b-2258-4971-8eb1-009b197f2194","mode":"prepare","targetDate":"2026-09-25","stage":"PREPARING_BROWSER","at":"2026-09-22T09:55:26.754Z","elapsedMs":25,"sincePreviousMs":24,"workerId":"A"}
+{"runId":"6f32d82b-2258-4971-8eb1-009b197f2194","mode":"prepare","targetDate":"2026-09-25","stage":"PREPARING_BROWSER","at":"2026-09-22T09:55:26.766Z","elapsedMs":38,"sincePreviousMs":13,"workerId":"B"}
+{"runId":"6f32d82b-2258-4971-8eb1-009b197f2194","mode":"prepare","targetDate":"2026-09-25","stage":"PREPARING_BROWSER","at":"2026-09-22T09:55:26.816Z","elapsedMs":87,"sincePreviousMs":49,"workerId":"C"}
+{"runId":"6f32d82b-2258-4971-8eb1-009b197f2194","mode":"prepare","targetDate":"2026-09-25","stage":"PREPARING_BROWSER","at":"2026-09-22T09:55:26.828Z","elapsedMs":99,"sincePreviousMs":12,"workerId":"D"}
+{"runId":"6f32d82b-2258-4971-8eb1-009b197f2194","mode":"prepare","targetDate":"2026-09-25","stage":"BROWSER_READY","at":"2026-09-22T09:55:30.868Z","elapsedMs":4139,"sincePreviousMs":4040,"workerId":"D","port":19447}
+{"runId":"6f32d82b-2258-4971-8eb1-009b197f2194","mode":"prepare","targetDate":"2026-09-25","stage":"BROWSER_READY","at":"2026-09-22T09:55:30.875Z","elapsedMs":4147,"sincePreviousMs":8,"workerId":"A","port":19444}
+{"runId":"6f32d82b-2258-4971-8eb1-009b197f2194","mode":"prepare","targetDate":"2026-09-25","stage":"BROWSER_READY","at":"2026-09-22T09:55:30.876Z","elapsedMs":4147,"sincePreviousMs":0,"workerId":"B","port":19445}
+{"runId":"6f32d82b-2258-4971-8eb1-009b197f2194","mode":"prepare","targetDate":"2026-09-25","stage":"BROWSER_READY","at":"2026-09-22T09:55:31.041Z","elapsedMs":4312,"sincePreviousMs":165,"workerId":"C","port":19446}
+{"runId":"6f32d82b-2258-4971-8eb1-009b197f2194","mode":"prepare","targetDate":"2026-09-25","stage":"PROCESS_EXIT","at":"2026-09-22T09:55:31.062Z","elapsedMs":4334,"sincePreviousMs":22,"exitCode":0}

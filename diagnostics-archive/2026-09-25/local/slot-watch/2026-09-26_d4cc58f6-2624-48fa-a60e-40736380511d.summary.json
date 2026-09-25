@@ -1,0 +1,2145 @@
+{
+  "version": 1,
+  "id": "d4cc58f6-2624-48fa-a60e-40736380511d",
+  "date": "2026-09-26",
+  "releaseAt": "2026-09-24T00:00:00.000Z",
+  "releaseMs": 1790208000000,
+  "startedAt": "2026-09-23T23:35:18.154Z",
+  "endedAt": "2026-09-24T00:15:00.493Z",
+  "status": "finished",
+  "reason": "window complete",
+  "clockOffsetMs": 43.362548828125,
+  "clockSynced": true,
+  "polls": 115,
+  "failedPolls": 4,
+  "medianLatencyMs": 199,
+  "releaseVisibleSinceReleaseMs": 15744,
+  "openAtFirstRead": 55,
+  "taken": [
+    {
+      "court": 1,
+      "hour": "13:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 29489,
+      "windowMs": 13745,
+      "recordSinceReleaseMs": 31776
+    },
+    {
+      "court": 1,
+      "hour": "19:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 29489,
+      "windowMs": 13745,
+      "recordSinceReleaseMs": 31776
+    },
+    {
+      "court": 1,
+      "hour": "20:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 29489,
+      "windowMs": 13745,
+      "recordSinceReleaseMs": 31776
+    },
+    {
+      "court": 1,
+      "hour": "22:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 29489,
+      "windowMs": 13745,
+      "recordSinceReleaseMs": 31776
+    },
+    {
+      "court": 1,
+      "hour": "23:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 29489,
+      "windowMs": 13745,
+      "recordSinceReleaseMs": null
+    },
+    {
+      "court": 2,
+      "hour": "13:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 29489,
+      "windowMs": 13745,
+      "recordSinceReleaseMs": 31776
+    },
+    {
+      "court": 2,
+      "hour": "14:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 29489,
+      "windowMs": 13745,
+      "recordSinceReleaseMs": 31776
+    },
+    {
+      "court": 2,
+      "hour": "15:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 29489,
+      "windowMs": 13745,
+      "recordSinceReleaseMs": 31776
+    },
+    {
+      "court": 2,
+      "hour": "19:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 29489,
+      "windowMs": 13745,
+      "recordSinceReleaseMs": 31776
+    },
+    {
+      "court": 2,
+      "hour": "20:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 29489,
+      "windowMs": 13745,
+      "recordSinceReleaseMs": 31776
+    },
+    {
+      "court": 2,
+      "hour": "21:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 29489,
+      "windowMs": 13745,
+      "recordSinceReleaseMs": 31776
+    },
+    {
+      "court": 2,
+      "hour": "22:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 29489,
+      "windowMs": 13745,
+      "recordSinceReleaseMs": 31776
+    },
+    {
+      "court": 2,
+      "hour": "23:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 29489,
+      "windowMs": 13745,
+      "recordSinceReleaseMs": null
+    },
+    {
+      "court": 3,
+      "hour": "20:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 29489,
+      "windowMs": 13745,
+      "recordSinceReleaseMs": 31776
+    },
+    {
+      "court": 3,
+      "hour": "21:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 29489,
+      "windowMs": 13745,
+      "recordSinceReleaseMs": 31776
+    },
+    {
+      "court": 3,
+      "hour": "22:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 29489,
+      "windowMs": 13745,
+      "recordSinceReleaseMs": 31776
+    },
+    {
+      "court": 3,
+      "hour": "23:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 29489,
+      "windowMs": 13745,
+      "recordSinceReleaseMs": null
+    },
+    {
+      "court": 4,
+      "hour": "20:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 29489,
+      "windowMs": 13745,
+      "recordSinceReleaseMs": 31776
+    },
+    {
+      "court": 4,
+      "hour": "21:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 29489,
+      "windowMs": 13745,
+      "recordSinceReleaseMs": 31776
+    },
+    {
+      "court": 4,
+      "hour": "22:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 29489,
+      "windowMs": 13745,
+      "recordSinceReleaseMs": 31776
+    },
+    {
+      "court": 4,
+      "hour": "23:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 29489,
+      "windowMs": 13745,
+      "recordSinceReleaseMs": null
+    },
+    {
+      "court": 5,
+      "hour": "23:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 29489,
+      "windowMs": 13745,
+      "recordSinceReleaseMs": null
+    },
+    {
+      "court": 6,
+      "hour": "13:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 29489,
+      "windowMs": 13745,
+      "recordSinceReleaseMs": 31776
+    },
+    {
+      "court": 6,
+      "hour": "14:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 29489,
+      "windowMs": 13745,
+      "recordSinceReleaseMs": 31776
+    },
+    {
+      "court": 6,
+      "hour": "15:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 29489,
+      "windowMs": 13745,
+      "recordSinceReleaseMs": 31776
+    },
+    {
+      "court": 6,
+      "hour": "23:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 29489,
+      "windowMs": 13745,
+      "recordSinceReleaseMs": null
+    },
+    {
+      "court": 7,
+      "hour": "13:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 29489,
+      "windowMs": 13745,
+      "recordSinceReleaseMs": 31776
+    },
+    {
+      "court": 7,
+      "hour": "14:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 29489,
+      "windowMs": 13745,
+      "recordSinceReleaseMs": 31776
+    },
+    {
+      "court": 7,
+      "hour": "15:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 29489,
+      "windowMs": 13745,
+      "recordSinceReleaseMs": 31776
+    },
+    {
+      "court": 7,
+      "hour": "16:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 29489,
+      "windowMs": 13745,
+      "recordSinceReleaseMs": 31776
+    },
+    {
+      "court": 7,
+      "hour": "17:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 29489,
+      "windowMs": 13745,
+      "recordSinceReleaseMs": 31776
+    },
+    {
+      "court": 7,
+      "hour": "21:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 29489,
+      "windowMs": 13745,
+      "recordSinceReleaseMs": 31776
+    },
+    {
+      "court": 7,
+      "hour": "22:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 29489,
+      "windowMs": 13745,
+      "recordSinceReleaseMs": 31776
+    },
+    {
+      "court": 7,
+      "hour": "23:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 29489,
+      "windowMs": 13745,
+      "recordSinceReleaseMs": null
+    },
+    {
+      "court": 1,
+      "hour": "21:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 30827,
+      "windowMs": 1338,
+      "recordSinceReleaseMs": 31776
+    },
+    {
+      "court": 1,
+      "hour": "09:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 56470,
+      "windowMs": 1380,
+      "recordSinceReleaseMs": 60370
+    },
+    {
+      "court": 1,
+      "hour": "10:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 56470,
+      "windowMs": 1380,
+      "recordSinceReleaseMs": 60370
+    },
+    {
+      "court": 1,
+      "hour": "11:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 56470,
+      "windowMs": 1380,
+      "recordSinceReleaseMs": 60370
+    },
+    {
+      "court": 2,
+      "hour": "09:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 56470,
+      "windowMs": 1380,
+      "recordSinceReleaseMs": 60370
+    },
+    {
+      "court": 2,
+      "hour": "10:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 56470,
+      "windowMs": 1380,
+      "recordSinceReleaseMs": 60370
+    },
+    {
+      "court": 2,
+      "hour": "11:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 56470,
+      "windowMs": 1380,
+      "recordSinceReleaseMs": 60370
+    },
+    {
+      "court": 7,
+      "hour": "09:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 90452,
+      "windowMs": 5248,
+      "recordSinceReleaseMs": 120295
+    },
+    {
+      "court": 7,
+      "hour": "10:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 90452,
+      "windowMs": 5248,
+      "recordSinceReleaseMs": 120295
+    },
+    {
+      "court": 7,
+      "hour": "11:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 90452,
+      "windowMs": 5248,
+      "recordSinceReleaseMs": 120295
+    },
+    {
+      "court": 6,
+      "hour": "08:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 450196,
+      "windowMs": 29813,
+      "recordSinceReleaseMs": 600422
+    },
+    {
+      "court": 6,
+      "hour": "09:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 450196,
+      "windowMs": 29813,
+      "recordSinceReleaseMs": 600422
+    },
+    {
+      "court": 6,
+      "hour": "10:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 450196,
+      "windowMs": 29813,
+      "recordSinceReleaseMs": 600422
+    },
+    {
+      "court": 7,
+      "hour": "12:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 540201,
+      "windowMs": 29789,
+      "recordSinceReleaseMs": 600422
+    },
+    {
+      "court": 6,
+      "hour": "12:00",
+      "openedSinceReleaseMs": 15744,
+      "takenSinceReleaseMs": 720497,
+      "windowMs": 30079,
+      "recordSinceReleaseMs": 900482
+    }
+  ],
+  "neverOpen": [
+    {
+      "court": 1,
+      "hour": "14:00",
+      "record": true
+    },
+    {
+      "court": 1,
+      "hour": "15:00",
+      "record": true
+    },
+    {
+      "court": 1,
+      "hour": "16:00",
+      "record": true
+    },
+    {
+      "court": 1,
+      "hour": "17:00",
+      "record": true
+    },
+    {
+      "court": 1,
+      "hour": "18:00",
+      "record": true
+    },
+    {
+      "court": 2,
+      "hour": "16:00",
+      "record": true
+    },
+    {
+      "court": 2,
+      "hour": "17:00",
+      "record": true
+    },
+    {
+      "court": 2,
+      "hour": "18:00",
+      "record": true
+    },
+    {
+      "court": 3,
+      "hour": "08:00",
+      "record": false
+    },
+    {
+      "court": 3,
+      "hour": "09:00",
+      "record": false
+    },
+    {
+      "court": 3,
+      "hour": "10:00",
+      "record": false
+    },
+    {
+      "court": 3,
+      "hour": "11:00",
+      "record": false
+    },
+    {
+      "court": 3,
+      "hour": "12:00",
+      "record": false
+    },
+    {
+      "court": 3,
+      "hour": "13:00",
+      "record": false
+    },
+    {
+      "court": 3,
+      "hour": "14:00",
+      "record": false
+    },
+    {
+      "court": 3,
+      "hour": "15:00",
+      "record": false
+    },
+    {
+      "court": 3,
+      "hour": "16:00",
+      "record": false
+    },
+    {
+      "court": 3,
+      "hour": "17:00",
+      "record": false
+    },
+    {
+      "court": 3,
+      "hour": "18:00",
+      "record": false
+    },
+    {
+      "court": 3,
+      "hour": "19:00",
+      "record": false
+    },
+    {
+      "court": 4,
+      "hour": "08:00",
+      "record": false
+    },
+    {
+      "court": 4,
+      "hour": "09:00",
+      "record": false
+    },
+    {
+      "court": 4,
+      "hour": "10:00",
+      "record": false
+    },
+    {
+      "court": 4,
+      "hour": "11:00",
+      "record": false
+    },
+    {
+      "court": 4,
+      "hour": "12:00",
+      "record": false
+    },
+    {
+      "court": 4,
+      "hour": "13:00",
+      "record": false
+    },
+    {
+      "court": 4,
+      "hour": "14:00",
+      "record": false
+    },
+    {
+      "court": 4,
+      "hour": "15:00",
+      "record": false
+    },
+    {
+      "court": 4,
+      "hour": "16:00",
+      "record": false
+    },
+    {
+      "court": 4,
+      "hour": "17:00",
+      "record": false
+    },
+    {
+      "court": 4,
+      "hour": "18:00",
+      "record": false
+    },
+    {
+      "court": 4,
+      "hour": "19:00",
+      "record": false
+    },
+    {
+      "court": 5,
+      "hour": "08:00",
+      "record": false
+    },
+    {
+      "court": 5,
+      "hour": "09:00",
+      "record": false
+    },
+    {
+      "court": 5,
+      "hour": "10:00",
+      "record": false
+    },
+    {
+      "court": 5,
+      "hour": "11:00",
+      "record": false
+    },
+    {
+      "court": 5,
+      "hour": "12:00",
+      "record": false
+    },
+    {
+      "court": 5,
+      "hour": "13:00",
+      "record": false
+    },
+    {
+      "court": 5,
+      "hour": "14:00",
+      "record": false
+    },
+    {
+      "court": 5,
+      "hour": "15:00",
+      "record": false
+    },
+    {
+      "court": 5,
+      "hour": "16:00",
+      "record": false
+    },
+    {
+      "court": 5,
+      "hour": "17:00",
+      "record": false
+    },
+    {
+      "court": 5,
+      "hour": "18:00",
+      "record": false
+    },
+    {
+      "court": 5,
+      "hour": "19:00",
+      "record": false
+    },
+    {
+      "court": 5,
+      "hour": "20:00",
+      "record": true
+    },
+    {
+      "court": 5,
+      "hour": "21:00",
+      "record": true
+    },
+    {
+      "court": 5,
+      "hour": "22:00",
+      "record": true
+    },
+    {
+      "court": 6,
+      "hour": "16:00",
+      "record": true
+    },
+    {
+      "court": 6,
+      "hour": "17:00",
+      "record": false
+    },
+    {
+      "court": 6,
+      "hour": "18:00",
+      "record": false
+    },
+    {
+      "court": 6,
+      "hour": "19:00",
+      "record": false
+    },
+    {
+      "court": 6,
+      "hour": "20:00",
+      "record": true
+    },
+    {
+      "court": 6,
+      "hour": "21:00",
+      "record": true
+    },
+    {
+      "court": 6,
+      "hour": "22:00",
+      "record": true
+    },
+    {
+      "court": 7,
+      "hour": "18:00",
+      "record": true
+    },
+    {
+      "court": 7,
+      "hour": "19:00",
+      "record": true
+    },
+    {
+      "court": 7,
+      "hour": "20:00",
+      "record": true
+    }
+  ],
+  "reopened": [
+    {
+      "court": 1,
+      "hour": "21:00",
+      "sinceReleaseMs": 31776
+    },
+    {
+      "court": 2,
+      "hour": "19:00",
+      "sinceReleaseMs": 31776
+    },
+    {
+      "court": 7,
+      "hour": "21:00",
+      "sinceReleaseMs": 31776
+    },
+    {
+      "court": 1,
+      "hour": "21:00",
+      "sinceReleaseMs": 32537
+    },
+    {
+      "court": 1,
+      "hour": "21:00",
+      "sinceReleaseMs": 36096
+    },
+    {
+      "court": 1,
+      "hour": "21:00",
+      "sinceReleaseMs": 630479
+    },
+    {
+      "court": 1,
+      "hour": "23:00",
+      "sinceReleaseMs": 630479
+    },
+    {
+      "court": 2,
+      "hour": "14:00",
+      "sinceReleaseMs": 630479
+    },
+    {
+      "court": 3,
+      "hour": "20:00",
+      "sinceReleaseMs": 630479
+    },
+    {
+      "court": 4,
+      "hour": "20:00",
+      "sinceReleaseMs": 630479
+    },
+    {
+      "court": 4,
+      "hour": "21:00",
+      "sinceReleaseMs": 630479
+    },
+    {
+      "court": 6,
+      "hour": "13:00",
+      "sinceReleaseMs": 630479
+    },
+    {
+      "court": 6,
+      "hour": "23:00",
+      "sinceReleaseMs": 630479
+    },
+    {
+      "court": 7,
+      "hour": "14:00",
+      "sinceReleaseMs": 630479
+    },
+    {
+      "court": 7,
+      "hour": "17:00",
+      "sinceReleaseMs": 630479
+    },
+    {
+      "court": 7,
+      "hour": "09:00",
+      "sinceReleaseMs": 690418
+    },
+    {
+      "court": 7,
+      "hour": "10:00",
+      "sinceReleaseMs": 690418
+    },
+    {
+      "court": 7,
+      "hour": "11:00",
+      "sinceReleaseMs": 690418
+    }
+  ],
+  "stillOpen": 15,
+  "fastestTakeMs": 29489,
+  "finalMatrix": "1:OXXXOXXXXXXXXOXO,2:OXXXOXOXXXXXXXXX,3:XXXXXXXXXXXXOXXX,4:XXXXXXXXXXXXOOXX,5:XXXXXXXXXXXXXXXX,6:XXXOXXXXXXXXXXXO,7:OXXXXXOXXOXXXXXX",
+  "timeline": [
+    {
+      "seq": 12,
+      "court": 0,
+      "hour": "",
+      "kind": "published",
+      "openCount": 55,
+      "takenCount": 57,
+      "observedAt": "2026-09-24T00:00:15.744Z",
+      "sinceReleaseMs": 15744,
+      "windowMs": 14847
+    },
+    {
+      "seq": 15,
+      "court": 1,
+      "hour": "13:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:29.489Z",
+      "sinceReleaseMs": 29489,
+      "windowMs": 13745
+    },
+    {
+      "seq": 15,
+      "court": 1,
+      "hour": "19:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:29.489Z",
+      "sinceReleaseMs": 29489,
+      "windowMs": 13745
+    },
+    {
+      "seq": 15,
+      "court": 1,
+      "hour": "20:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:29.489Z",
+      "sinceReleaseMs": 29489,
+      "windowMs": 13745
+    },
+    {
+      "seq": 15,
+      "court": 1,
+      "hour": "22:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:29.489Z",
+      "sinceReleaseMs": 29489,
+      "windowMs": 13745
+    },
+    {
+      "seq": 15,
+      "court": 1,
+      "hour": "23:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:29.489Z",
+      "sinceReleaseMs": 29489,
+      "windowMs": 13745
+    },
+    {
+      "seq": 15,
+      "court": 2,
+      "hour": "13:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:29.489Z",
+      "sinceReleaseMs": 29489,
+      "windowMs": 13745
+    },
+    {
+      "seq": 15,
+      "court": 2,
+      "hour": "14:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:29.489Z",
+      "sinceReleaseMs": 29489,
+      "windowMs": 13745
+    },
+    {
+      "seq": 15,
+      "court": 2,
+      "hour": "15:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:29.489Z",
+      "sinceReleaseMs": 29489,
+      "windowMs": 13745
+    },
+    {
+      "seq": 15,
+      "court": 2,
+      "hour": "19:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:29.489Z",
+      "sinceReleaseMs": 29489,
+      "windowMs": 13745
+    },
+    {
+      "seq": 15,
+      "court": 2,
+      "hour": "20:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:29.489Z",
+      "sinceReleaseMs": 29489,
+      "windowMs": 13745
+    },
+    {
+      "seq": 15,
+      "court": 2,
+      "hour": "21:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:29.489Z",
+      "sinceReleaseMs": 29489,
+      "windowMs": 13745
+    },
+    {
+      "seq": 15,
+      "court": 2,
+      "hour": "22:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:29.489Z",
+      "sinceReleaseMs": 29489,
+      "windowMs": 13745
+    },
+    {
+      "seq": 15,
+      "court": 2,
+      "hour": "23:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:29.489Z",
+      "sinceReleaseMs": 29489,
+      "windowMs": 13745
+    },
+    {
+      "seq": 15,
+      "court": 3,
+      "hour": "20:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:29.489Z",
+      "sinceReleaseMs": 29489,
+      "windowMs": 13745
+    },
+    {
+      "seq": 15,
+      "court": 3,
+      "hour": "21:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:29.489Z",
+      "sinceReleaseMs": 29489,
+      "windowMs": 13745
+    },
+    {
+      "seq": 15,
+      "court": 3,
+      "hour": "22:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:29.489Z",
+      "sinceReleaseMs": 29489,
+      "windowMs": 13745
+    },
+    {
+      "seq": 15,
+      "court": 3,
+      "hour": "23:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:29.489Z",
+      "sinceReleaseMs": 29489,
+      "windowMs": 13745
+    },
+    {
+      "seq": 15,
+      "court": 4,
+      "hour": "20:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:29.489Z",
+      "sinceReleaseMs": 29489,
+      "windowMs": 13745
+    },
+    {
+      "seq": 15,
+      "court": 4,
+      "hour": "21:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:29.489Z",
+      "sinceReleaseMs": 29489,
+      "windowMs": 13745
+    },
+    {
+      "seq": 15,
+      "court": 4,
+      "hour": "22:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:29.489Z",
+      "sinceReleaseMs": 29489,
+      "windowMs": 13745
+    },
+    {
+      "seq": 15,
+      "court": 4,
+      "hour": "23:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:29.489Z",
+      "sinceReleaseMs": 29489,
+      "windowMs": 13745
+    },
+    {
+      "seq": 15,
+      "court": 5,
+      "hour": "23:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:29.489Z",
+      "sinceReleaseMs": 29489,
+      "windowMs": 13745
+    },
+    {
+      "seq": 15,
+      "court": 6,
+      "hour": "13:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:29.489Z",
+      "sinceReleaseMs": 29489,
+      "windowMs": 13745
+    },
+    {
+      "seq": 15,
+      "court": 6,
+      "hour": "14:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:29.489Z",
+      "sinceReleaseMs": 29489,
+      "windowMs": 13745
+    },
+    {
+      "seq": 15,
+      "court": 6,
+      "hour": "15:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:29.489Z",
+      "sinceReleaseMs": 29489,
+      "windowMs": 13745
+    },
+    {
+      "seq": 15,
+      "court": 6,
+      "hour": "23:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:29.489Z",
+      "sinceReleaseMs": 29489,
+      "windowMs": 13745
+    },
+    {
+      "seq": 15,
+      "court": 7,
+      "hour": "13:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:29.489Z",
+      "sinceReleaseMs": 29489,
+      "windowMs": 13745
+    },
+    {
+      "seq": 15,
+      "court": 7,
+      "hour": "14:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:29.489Z",
+      "sinceReleaseMs": 29489,
+      "windowMs": 13745
+    },
+    {
+      "seq": 15,
+      "court": 7,
+      "hour": "15:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:29.489Z",
+      "sinceReleaseMs": 29489,
+      "windowMs": 13745
+    },
+    {
+      "seq": 15,
+      "court": 7,
+      "hour": "16:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:29.489Z",
+      "sinceReleaseMs": 29489,
+      "windowMs": 13745
+    },
+    {
+      "seq": 15,
+      "court": 7,
+      "hour": "17:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:29.489Z",
+      "sinceReleaseMs": 29489,
+      "windowMs": 13745
+    },
+    {
+      "seq": 15,
+      "court": 7,
+      "hour": "21:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:29.489Z",
+      "sinceReleaseMs": 29489,
+      "windowMs": 13745
+    },
+    {
+      "seq": 15,
+      "court": 7,
+      "hour": "22:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:29.489Z",
+      "sinceReleaseMs": 29489,
+      "windowMs": 13745
+    },
+    {
+      "seq": 15,
+      "court": 7,
+      "hour": "23:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:29.489Z",
+      "sinceReleaseMs": 29489,
+      "windowMs": 13745
+    },
+    {
+      "seq": 16,
+      "court": 1,
+      "hour": "21:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:30.827Z",
+      "sinceReleaseMs": 30827,
+      "windowMs": 1338
+    },
+    {
+      "seq": 17,
+      "court": 1,
+      "hour": "21:00",
+      "kind": "state",
+      "from": "TAKEN",
+      "to": "OPEN",
+      "observedAt": "2026-09-24T00:00:31.776Z",
+      "sinceReleaseMs": 31776,
+      "windowMs": 949
+    },
+    {
+      "seq": 17,
+      "court": 2,
+      "hour": "19:00",
+      "kind": "state",
+      "from": "TAKEN",
+      "to": "OPEN",
+      "observedAt": "2026-09-24T00:00:31.776Z",
+      "sinceReleaseMs": 31776,
+      "windowMs": 949
+    },
+    {
+      "seq": 17,
+      "court": 7,
+      "hour": "21:00",
+      "kind": "state",
+      "from": "TAKEN",
+      "to": "OPEN",
+      "observedAt": "2026-09-24T00:00:31.776Z",
+      "sinceReleaseMs": 31776,
+      "windowMs": 949
+    },
+    {
+      "seq": 17,
+      "court": 1,
+      "hour": "21:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:00:31.776Z",
+      "sinceReleaseMs": 31776,
+      "windowMs": 949
+    },
+    {
+      "seq": 17,
+      "court": 1,
+      "hour": "13:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:00:31.776Z",
+      "sinceReleaseMs": 31776,
+      "windowMs": 949
+    },
+    {
+      "seq": 17,
+      "court": 1,
+      "hour": "22:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:00:31.776Z",
+      "sinceReleaseMs": 31776,
+      "windowMs": 949
+    },
+    {
+      "seq": 17,
+      "court": 1,
+      "hour": "19:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:00:31.776Z",
+      "sinceReleaseMs": 31776,
+      "windowMs": 949
+    },
+    {
+      "seq": 17,
+      "court": 1,
+      "hour": "20:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:00:31.776Z",
+      "sinceReleaseMs": 31776,
+      "windowMs": 949
+    },
+    {
+      "seq": 17,
+      "court": 2,
+      "hour": "14:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:00:31.776Z",
+      "sinceReleaseMs": 31776,
+      "windowMs": 949
+    },
+    {
+      "seq": 17,
+      "court": 2,
+      "hour": "21:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:00:31.776Z",
+      "sinceReleaseMs": 31776,
+      "windowMs": 949
+    },
+    {
+      "seq": 17,
+      "court": 2,
+      "hour": "22:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:00:31.776Z",
+      "sinceReleaseMs": 31776,
+      "windowMs": 949
+    },
+    {
+      "seq": 17,
+      "court": 2,
+      "hour": "13:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:00:31.776Z",
+      "sinceReleaseMs": 31776,
+      "windowMs": 949
+    },
+    {
+      "seq": 17,
+      "court": 2,
+      "hour": "20:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:00:31.776Z",
+      "sinceReleaseMs": 31776,
+      "windowMs": 949
+    },
+    {
+      "seq": 17,
+      "court": 2,
+      "hour": "15:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:00:31.776Z",
+      "sinceReleaseMs": 31776,
+      "windowMs": 949
+    },
+    {
+      "seq": 17,
+      "court": 2,
+      "hour": "19:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:00:31.776Z",
+      "sinceReleaseMs": 31776,
+      "windowMs": 949
+    },
+    {
+      "seq": 17,
+      "court": 3,
+      "hour": "21:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:00:31.776Z",
+      "sinceReleaseMs": 31776,
+      "windowMs": 949
+    },
+    {
+      "seq": 17,
+      "court": 3,
+      "hour": "20:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:00:31.776Z",
+      "sinceReleaseMs": 31776,
+      "windowMs": 949
+    },
+    {
+      "seq": 17,
+      "court": 3,
+      "hour": "22:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:00:31.776Z",
+      "sinceReleaseMs": 31776,
+      "windowMs": 949
+    },
+    {
+      "seq": 17,
+      "court": 4,
+      "hour": "22:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:00:31.776Z",
+      "sinceReleaseMs": 31776,
+      "windowMs": 949
+    },
+    {
+      "seq": 17,
+      "court": 4,
+      "hour": "21:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:00:31.776Z",
+      "sinceReleaseMs": 31776,
+      "windowMs": 949
+    },
+    {
+      "seq": 17,
+      "court": 4,
+      "hour": "20:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:00:31.776Z",
+      "sinceReleaseMs": 31776,
+      "windowMs": 949
+    },
+    {
+      "seq": 17,
+      "court": 6,
+      "hour": "15:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:00:31.776Z",
+      "sinceReleaseMs": 31776,
+      "windowMs": 949
+    },
+    {
+      "seq": 17,
+      "court": 6,
+      "hour": "13:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:00:31.776Z",
+      "sinceReleaseMs": 31776,
+      "windowMs": 949
+    },
+    {
+      "seq": 17,
+      "court": 6,
+      "hour": "14:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:00:31.776Z",
+      "sinceReleaseMs": 31776,
+      "windowMs": 949
+    },
+    {
+      "seq": 17,
+      "court": 6,
+      "hour": "16:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:00:31.776Z",
+      "sinceReleaseMs": 31776,
+      "windowMs": 949
+    },
+    {
+      "seq": 17,
+      "court": 7,
+      "hour": "16:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:00:31.776Z",
+      "sinceReleaseMs": 31776,
+      "windowMs": 949
+    },
+    {
+      "seq": 17,
+      "court": 7,
+      "hour": "13:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:00:31.776Z",
+      "sinceReleaseMs": 31776,
+      "windowMs": 949
+    },
+    {
+      "seq": 17,
+      "court": 7,
+      "hour": "22:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:00:31.776Z",
+      "sinceReleaseMs": 31776,
+      "windowMs": 949
+    },
+    {
+      "seq": 17,
+      "court": 7,
+      "hour": "17:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:00:31.776Z",
+      "sinceReleaseMs": 31776,
+      "windowMs": 949
+    },
+    {
+      "seq": 17,
+      "court": 7,
+      "hour": "21:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:00:31.776Z",
+      "sinceReleaseMs": 31776,
+      "windowMs": 949
+    },
+    {
+      "seq": 17,
+      "court": 7,
+      "hour": "14:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:00:31.776Z",
+      "sinceReleaseMs": 31776,
+      "windowMs": 949
+    },
+    {
+      "seq": 17,
+      "court": 7,
+      "hour": "15:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:00:31.776Z",
+      "sinceReleaseMs": 31776,
+      "windowMs": 949
+    },
+    {
+      "seq": 18,
+      "court": 1,
+      "hour": "21:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:32.427Z",
+      "sinceReleaseMs": 32427,
+      "windowMs": 651
+    },
+    {
+      "seq": 18,
+      "court": 2,
+      "hour": "19:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:32.427Z",
+      "sinceReleaseMs": 32427,
+      "windowMs": 651
+    },
+    {
+      "seq": 18,
+      "court": 7,
+      "hour": "21:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:32.427Z",
+      "sinceReleaseMs": 32427,
+      "windowMs": 651
+    },
+    {
+      "seq": 19,
+      "court": 1,
+      "hour": "21:00",
+      "kind": "state",
+      "from": "TAKEN",
+      "to": "OPEN",
+      "observedAt": "2026-09-24T00:00:32.537Z",
+      "sinceReleaseMs": 32537,
+      "windowMs": 110
+    },
+    {
+      "seq": 20,
+      "court": 1,
+      "hour": "21:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:33.108Z",
+      "sinceReleaseMs": 33108,
+      "windowMs": 571
+    },
+    {
+      "seq": 23,
+      "court": 1,
+      "hour": "21:00",
+      "kind": "state",
+      "from": "TAKEN",
+      "to": "OPEN",
+      "observedAt": "2026-09-24T00:00:36.096Z",
+      "sinceReleaseMs": 36096,
+      "windowMs": 995
+    },
+    {
+      "seq": 24,
+      "court": 1,
+      "hour": "21:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:37.116Z",
+      "sinceReleaseMs": 37116,
+      "windowMs": 1020
+    },
+    {
+      "seq": 43,
+      "court": 1,
+      "hour": "09:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:56.470Z",
+      "sinceReleaseMs": 56470,
+      "windowMs": 1380
+    },
+    {
+      "seq": 43,
+      "court": 1,
+      "hour": "10:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:56.470Z",
+      "sinceReleaseMs": 56470,
+      "windowMs": 1380
+    },
+    {
+      "seq": 43,
+      "court": 1,
+      "hour": "11:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:56.470Z",
+      "sinceReleaseMs": 56470,
+      "windowMs": 1380
+    },
+    {
+      "seq": 43,
+      "court": 2,
+      "hour": "09:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:56.470Z",
+      "sinceReleaseMs": 56470,
+      "windowMs": 1380
+    },
+    {
+      "seq": 43,
+      "court": 2,
+      "hour": "10:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:56.470Z",
+      "sinceReleaseMs": 56470,
+      "windowMs": 1380
+    },
+    {
+      "seq": 43,
+      "court": 2,
+      "hour": "11:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:00:56.470Z",
+      "sinceReleaseMs": 56470,
+      "windowMs": 1380
+    },
+    {
+      "seq": 47,
+      "court": 1,
+      "hour": "10:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:01:00.370Z",
+      "sinceReleaseMs": 60370,
+      "windowMs": 991
+    },
+    {
+      "seq": 47,
+      "court": 1,
+      "hour": "09:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:01:00.370Z",
+      "sinceReleaseMs": 60370,
+      "windowMs": 991
+    },
+    {
+      "seq": 47,
+      "court": 1,
+      "hour": "11:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:01:00.370Z",
+      "sinceReleaseMs": 60370,
+      "windowMs": 991
+    },
+    {
+      "seq": 47,
+      "court": 2,
+      "hour": "10:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:01:00.370Z",
+      "sinceReleaseMs": 60370,
+      "windowMs": 991
+    },
+    {
+      "seq": 47,
+      "court": 2,
+      "hour": "11:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:01:00.370Z",
+      "sinceReleaseMs": 60370,
+      "windowMs": 991
+    },
+    {
+      "seq": 47,
+      "court": 2,
+      "hour": "09:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:01:00.370Z",
+      "sinceReleaseMs": 60370,
+      "windowMs": 991
+    },
+    {
+      "seq": 53,
+      "court": 7,
+      "hour": "09:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:01:30.452Z",
+      "sinceReleaseMs": 90452,
+      "windowMs": 5248
+    },
+    {
+      "seq": 53,
+      "court": 7,
+      "hour": "10:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:01:30.452Z",
+      "sinceReleaseMs": 90452,
+      "windowMs": 5248
+    },
+    {
+      "seq": 53,
+      "court": 7,
+      "hour": "11:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:01:30.452Z",
+      "sinceReleaseMs": 90452,
+      "windowMs": 5248
+    },
+    {
+      "seq": 59,
+      "court": 7,
+      "hour": "11:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:02:00.295Z",
+      "sinceReleaseMs": 120295,
+      "windowMs": 5047
+    },
+    {
+      "seq": 59,
+      "court": 7,
+      "hour": "09:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:02:00.295Z",
+      "sinceReleaseMs": 120295,
+      "windowMs": 5047
+    },
+    {
+      "seq": 59,
+      "court": 7,
+      "hour": "10:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:02:00.295Z",
+      "sinceReleaseMs": 120295,
+      "windowMs": 5047
+    },
+    {
+      "seq": 100,
+      "court": 6,
+      "hour": "08:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:07:30.196Z",
+      "sinceReleaseMs": 450196,
+      "windowMs": 29813
+    },
+    {
+      "seq": 100,
+      "court": 6,
+      "hour": "09:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:07:30.196Z",
+      "sinceReleaseMs": 450196,
+      "windowMs": 29813
+    },
+    {
+      "seq": 100,
+      "court": 6,
+      "hour": "10:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:07:30.196Z",
+      "sinceReleaseMs": 450196,
+      "windowMs": 29813
+    },
+    {
+      "seq": 103,
+      "court": 7,
+      "hour": "12:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:09:00.201Z",
+      "sinceReleaseMs": 540201,
+      "windowMs": 29789
+    },
+    {
+      "seq": 105,
+      "court": 6,
+      "hour": "08:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:10:00.422Z",
+      "sinceReleaseMs": 600422,
+      "windowMs": 30242
+    },
+    {
+      "seq": 105,
+      "court": 6,
+      "hour": "10:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:10:00.422Z",
+      "sinceReleaseMs": 600422,
+      "windowMs": 30242
+    },
+    {
+      "seq": 105,
+      "court": 6,
+      "hour": "09:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:10:00.422Z",
+      "sinceReleaseMs": 600422,
+      "windowMs": 30242
+    },
+    {
+      "seq": 105,
+      "court": 7,
+      "hour": "12:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:10:00.422Z",
+      "sinceReleaseMs": 600422,
+      "windowMs": 30242
+    },
+    {
+      "seq": 106,
+      "court": 1,
+      "hour": "21:00",
+      "kind": "state",
+      "from": "TAKEN",
+      "to": "OPEN",
+      "observedAt": "2026-09-24T00:10:30.479Z",
+      "sinceReleaseMs": 630479,
+      "windowMs": 30057
+    },
+    {
+      "seq": 106,
+      "court": 1,
+      "hour": "23:00",
+      "kind": "state",
+      "from": "TAKEN",
+      "to": "OPEN",
+      "observedAt": "2026-09-24T00:10:30.479Z",
+      "sinceReleaseMs": 630479,
+      "windowMs": 30057
+    },
+    {
+      "seq": 106,
+      "court": 2,
+      "hour": "14:00",
+      "kind": "state",
+      "from": "TAKEN",
+      "to": "OPEN",
+      "observedAt": "2026-09-24T00:10:30.479Z",
+      "sinceReleaseMs": 630479,
+      "windowMs": 30057
+    },
+    {
+      "seq": 106,
+      "court": 3,
+      "hour": "20:00",
+      "kind": "state",
+      "from": "TAKEN",
+      "to": "OPEN",
+      "observedAt": "2026-09-24T00:10:30.479Z",
+      "sinceReleaseMs": 630479,
+      "windowMs": 30057
+    },
+    {
+      "seq": 106,
+      "court": 4,
+      "hour": "20:00",
+      "kind": "state",
+      "from": "TAKEN",
+      "to": "OPEN",
+      "observedAt": "2026-09-24T00:10:30.479Z",
+      "sinceReleaseMs": 630479,
+      "windowMs": 30057
+    },
+    {
+      "seq": 106,
+      "court": 4,
+      "hour": "21:00",
+      "kind": "state",
+      "from": "TAKEN",
+      "to": "OPEN",
+      "observedAt": "2026-09-24T00:10:30.479Z",
+      "sinceReleaseMs": 630479,
+      "windowMs": 30057
+    },
+    {
+      "seq": 106,
+      "court": 6,
+      "hour": "13:00",
+      "kind": "state",
+      "from": "TAKEN",
+      "to": "OPEN",
+      "observedAt": "2026-09-24T00:10:30.479Z",
+      "sinceReleaseMs": 630479,
+      "windowMs": 30057
+    },
+    {
+      "seq": 106,
+      "court": 6,
+      "hour": "23:00",
+      "kind": "state",
+      "from": "TAKEN",
+      "to": "OPEN",
+      "observedAt": "2026-09-24T00:10:30.479Z",
+      "sinceReleaseMs": 630479,
+      "windowMs": 30057
+    },
+    {
+      "seq": 106,
+      "court": 7,
+      "hour": "14:00",
+      "kind": "state",
+      "from": "TAKEN",
+      "to": "OPEN",
+      "observedAt": "2026-09-24T00:10:30.479Z",
+      "sinceReleaseMs": 630479,
+      "windowMs": 30057
+    },
+    {
+      "seq": 106,
+      "court": 7,
+      "hour": "17:00",
+      "kind": "state",
+      "from": "TAKEN",
+      "to": "OPEN",
+      "observedAt": "2026-09-24T00:10:30.479Z",
+      "sinceReleaseMs": 630479,
+      "windowMs": 30057
+    },
+    {
+      "seq": 108,
+      "court": 7,
+      "hour": "09:00",
+      "kind": "state",
+      "from": "TAKEN",
+      "to": "OPEN",
+      "observedAt": "2026-09-24T00:11:30.418Z",
+      "sinceReleaseMs": 690418,
+      "windowMs": 29794
+    },
+    {
+      "seq": 108,
+      "court": 7,
+      "hour": "10:00",
+      "kind": "state",
+      "from": "TAKEN",
+      "to": "OPEN",
+      "observedAt": "2026-09-24T00:11:30.418Z",
+      "sinceReleaseMs": 690418,
+      "windowMs": 29794
+    },
+    {
+      "seq": 108,
+      "court": 7,
+      "hour": "11:00",
+      "kind": "state",
+      "from": "TAKEN",
+      "to": "OPEN",
+      "observedAt": "2026-09-24T00:11:30.418Z",
+      "sinceReleaseMs": 690418,
+      "windowMs": 29794
+    },
+    {
+      "seq": 109,
+      "court": 6,
+      "hour": "12:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:12:00.497Z",
+      "sinceReleaseMs": 720497,
+      "windowMs": 30079
+    },
+    {
+      "seq": 109,
+      "court": 6,
+      "hour": "13:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:12:00.497Z",
+      "sinceReleaseMs": 720497,
+      "windowMs": 30079
+    },
+    {
+      "seq": 113,
+      "court": 7,
+      "hour": "09:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:14:00.179Z",
+      "sinceReleaseMs": 840179,
+      "windowMs": 29519
+    },
+    {
+      "seq": 113,
+      "court": 7,
+      "hour": "10:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:14:00.179Z",
+      "sinceReleaseMs": 840179,
+      "windowMs": 29519
+    },
+    {
+      "seq": 113,
+      "court": 7,
+      "hour": "11:00",
+      "kind": "state",
+      "from": "OPEN",
+      "to": "TAKEN",
+      "observedAt": "2026-09-24T00:14:00.179Z",
+      "sinceReleaseMs": 840179,
+      "windowMs": 29519
+    },
+    {
+      "seq": 115,
+      "court": 6,
+      "hour": "12:00",
+      "kind": "record",
+      "appeared": true,
+      "observedAt": "2026-09-24T00:15:00.482Z",
+      "sinceReleaseMs": 900482,
+      "windowMs": 29314
+    },
+    {
+      "seq": 115,
+      "court": 1,
+      "hour": "21:00",
+      "kind": "record",
+      "appeared": false,
+      "observedAt": "2026-09-24T00:15:00.482Z",
+      "sinceReleaseMs": 900482,
+      "windowMs": 29314
+    },
+    {
+      "seq": 115,
+      "court": 2,
+      "hour": "14:00",
+      "kind": "record",
+      "appeared": false,
+      "observedAt": "2026-09-24T00:15:00.482Z",
+      "sinceReleaseMs": 900482,
+      "windowMs": 29314
+    },
+    {
+      "seq": 115,
+      "court": 3,
+      "hour": "20:00",
+      "kind": "record",
+      "appeared": false,
+      "observedAt": "2026-09-24T00:15:00.482Z",
+      "sinceReleaseMs": 900482,
+      "windowMs": 29314
+    },
+    {
+      "seq": 115,
+      "court": 4,
+      "hour": "21:00",
+      "kind": "record",
+      "appeared": false,
+      "observedAt": "2026-09-24T00:15:00.482Z",
+      "sinceReleaseMs": 900482,
+      "windowMs": 29314
+    },
+    {
+      "seq": 115,
+      "court": 4,
+      "hour": "20:00",
+      "kind": "record",
+      "appeared": false,
+      "observedAt": "2026-09-24T00:15:00.482Z",
+      "sinceReleaseMs": 900482,
+      "windowMs": 29314
+    },
+    {
+      "seq": 115,
+      "court": 7,
+      "hour": "17:00",
+      "kind": "record",
+      "appeared": false,
+      "observedAt": "2026-09-24T00:15:00.482Z",
+      "sinceReleaseMs": 900482,
+      "windowMs": 29314
+    },
+    {
+      "seq": 115,
+      "court": 7,
+      "hour": "14:00",
+      "kind": "record",
+      "appeared": false,
+      "observedAt": "2026-09-24T00:15:00.482Z",
+      "sinceReleaseMs": 900482,
+      "windowMs": 29314
+    }
+  ],
+  "logPath": "<install>/.local\\slot-watch\\2026-09-26_d4cc58f6-2624-48fa-a60e-40736380511d.ndjson",
+  "reportPath": "<install>/.local\\slot-watch\\2026-09-26_d4cc58f6-2624-48fa-a60e-40736380511d.txt"
+}

@@ -1,0 +1,223 @@
+RELEASE SLOT WATCH — target 2026-09-27
+Release: 2026-09-25 08:00:00.000 Manila · observer network clock synchronized (offset 19.6 ms)
+Watch finished: window complete
+Availability reads: 127 launched · 127 answered · 0 failed · 0 cancelled · 9 not launched (cap or late) · max 6 in flight (cap 6) · median 241 ms
+Early launches (release-relative): +0.000 s, +0.250 s, +0.500 s, +1.000 s, +2.000 s, +5.000 s; overlapping reads allowed
+Public booking reads: 8 launched · 8 answered · 0 failed · 0 failed court queries · 1 not launched
+
+Each read shows Onda's state at an unknown moment between its request and its response. Changes are listed between two reads in request order.
+
+FIRST PUBLISHED GRID
+  Last read without the date:   #7 request −1.987 s → response −1.779 s
+  First read with the date:     #8 request +0.016 s → response +4.142 s · edge cache MISS, age 0 s
+  Open 107 · unavailable 5 · unknown 0
+  (O open, X unavailable, U not published, ? unknown)
+       08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+  C1    O  O  O  O  O  O  O  O  O  O  O  O  O  O  O  O
+  C2    O  O  O  O  O  O  O  O  O  O  O  O  O  O  O  O
+  C3    O  O  O  O  O  O  O  O  X  X  O  O  O  O  O  O
+  C4    O  O  O  O  O  O  O  O  X  X  X  O  O  O  O  O
+  C5    O  O  O  O  O  O  O  O  O  O  O  O  O  O  O  O
+  C6    O  O  O  O  O  O  O  O  O  O  O  O  O  O  O  O
+  C7    O  O  O  O  O  O  O  O  O  O  O  O  O  O  O  O
+
+OPEN → UNAVAILABLE (first change per cell)
+  Court 2 2 PM  open in #11 request +1.008 s → response +9.049 s; unavailable in #12 request +2.012 s → response +17.000 s (reads overlapped: their provider-side order is not established) · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 2 4 PM  open in #11 request +1.008 s → response +9.049 s; unavailable in #12 request +2.012 s → response +17.000 s (reads overlapped: their provider-side order is not established) · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 4 12 PM open in #11 request +1.008 s → response +9.049 s; unavailable in #12 request +2.012 s → response +17.000 s (reads overlapped: their provider-side order is not established) · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 4 9 PM  open in #11 request +1.008 s → response +9.049 s; unavailable in #12 request +2.012 s → response +17.000 s (reads overlapped: their provider-side order is not established) · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 7 7 PM  open in #11 request +1.008 s → response +9.049 s; unavailable in #12 request +2.012 s → response +17.000 s (reads overlapped: their provider-side order is not established) · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 1 3 PM  open in #14 request +6.002 s → response +17.779 s; unavailable in #15 request +10.014 s → response +18.920 s (reads overlapped: their provider-side order is not established) · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 1 7 PM  open in #14 request +6.002 s → response +17.779 s; unavailable in #15 request +10.014 s → response +18.920 s (reads overlapped: their provider-side order is not established) · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 3 12 PM open in #14 request +6.002 s → response +17.779 s; unavailable in #15 request +10.014 s → response +18.920 s (reads overlapped: their provider-side order is not established) · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 3 2 PM  open in #14 request +6.002 s → response +17.779 s; unavailable in #15 request +10.014 s → response +18.920 s (reads overlapped: their provider-side order is not established) · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 3 8 PM  open in #14 request +6.002 s → response +17.779 s; unavailable in #15 request +10.014 s → response +18.920 s (reads overlapped: their provider-side order is not established) · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 4 8 PM  open in #14 request +6.002 s → response +17.779 s; unavailable in #15 request +10.014 s → response +18.920 s (reads overlapped: their provider-side order is not established) · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 5 12 PM open in #14 request +6.002 s → response +17.779 s; unavailable in #15 request +10.014 s → response +18.920 s (reads overlapped: their provider-side order is not established) · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 5 2 PM  open in #14 request +6.002 s → response +17.779 s; unavailable in #15 request +10.014 s → response +18.920 s (reads overlapped: their provider-side order is not established) · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 6 5 PM  open in #14 request +6.002 s → response +17.779 s; unavailable in #15 request +10.014 s → response +18.920 s (reads overlapped: their provider-side order is not established) · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 1 4 PM  open in #16 request +11.012 s → response +17.770 s; unavailable in #17 request +12.014 s → response +17.929 s (reads overlapped: their provider-side order is not established) · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 1 5 PM  open in #16 request +11.012 s → response +17.770 s; unavailable in #17 request +12.014 s → response +17.929 s (reads overlapped: their provider-side order is not established) · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 2 3 PM  open in #16 request +11.012 s → response +17.770 s; unavailable in #17 request +12.014 s → response +17.929 s (reads overlapped: their provider-side order is not established) · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 2 7 PM  open in #16 request +11.012 s → response +17.770 s; unavailable in #17 request +12.014 s → response +17.929 s (reads overlapped: their provider-side order is not established) · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 2 9 PM  open in #16 request +11.012 s → response +17.770 s; unavailable in #17 request +12.014 s → response +17.929 s (reads overlapped: their provider-side order is not established) · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 4 2 PM  open in #16 request +11.012 s → response +17.770 s; unavailable in #17 request +12.014 s → response +17.929 s (reads overlapped: their provider-side order is not established) · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 4 3 PM  open in #16 request +11.012 s → response +17.770 s; unavailable in #17 request +12.014 s → response +17.929 s (reads overlapped: their provider-side order is not established) · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 6 4 PM  open in #16 request +11.012 s → response +17.770 s; unavailable in #17 request +12.014 s → response +17.929 s (reads overlapped: their provider-side order is not established) · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 1 12 PM open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 1 1 PM  open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 1 2 PM  open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 1 6 PM  open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 1 8 PM  open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 1 10 PM open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 2 12 PM open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 2 1 PM  open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 2 6 PM  open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 2 8 PM  open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 2 10 PM open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 3 1 PM  open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 3 3 PM  open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 3 6 PM  open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 3 7 PM  open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 3 9 PM  open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 4 1 PM  open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 4 7 PM  open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 4 10 PM open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 5 1 PM  open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 5 3 PM  open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 5 4 PM  open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 5 5 PM  open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 5 6 PM  open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 5 7 PM  open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 5 8 PM  open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 5 9 PM  open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 5 10 PM open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 6 12 PM open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 6 1 PM  open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 6 3 PM  open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 6 6 PM  open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 6 8 PM  open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 6 10 PM open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 7 1 PM  open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 7 2 PM  open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 7 5 PM  open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 7 8 PM  open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 7 10 PM open in #19 request +18.002 s → response +18.072 s; unavailable in #20 request +19.005 s → response +28.868 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 1 9 PM  open in #24 request +23.015 s → response +28.879 s; unavailable in #25 request +24.011 s → response +28.974 s (reads overlapped: their provider-side order is not established) · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 6 7 PM  open in #24 request +23.015 s → response +28.879 s; unavailable in #25 request +24.011 s → response +28.974 s (reads overlapped: their provider-side order is not established) · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 7 4 PM  open in #24 request +23.015 s → response +28.879 s; unavailable in #25 request +24.011 s → response +28.974 s (reads overlapped: their provider-side order is not established) · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 7 9 PM  open in #24 request +23.015 s → response +28.879 s; unavailable in #25 request +24.011 s → response +28.974 s (reads overlapped: their provider-side order is not established) · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 2 5 PM  open in #28 request +29.003 s → response +29.158 s; unavailable in #29 request +30.007 s → response +32.847 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 3 10 PM open in #28 request +29.003 s → response +29.158 s; unavailable in #29 request +30.007 s → response +32.847 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 6 2 PM  open in #28 request +29.003 s → response +29.158 s; unavailable in #29 request +30.007 s → response +32.847 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 6 9 PM  open in #28 request +29.003 s → response +29.158 s; unavailable in #29 request +30.007 s → response +32.847 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 7 3 PM  open in #28 request +29.003 s → response +29.158 s; unavailable in #29 request +30.007 s → response +32.847 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 7 6 PM  open in #28 request +29.003 s → response +29.158 s; unavailable in #29 request +30.007 s → response +32.847 s · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 7 12 PM open in #29 request +30.007 s → response +32.847 s; unavailable in #30 request +31.006 s → response +32.893 s (reads overlapped: their provider-side order is not established) · public booking record first seen #b3 request +30.008 s → response +33.712 s
+  Court 7 8 AM  open in #45 request +46.016 s → response +46.086 s; unavailable in #46 request +47.012 s → response +47.325 s · public booking record first seen #b4 request +60.004 s → response +60.234 s
+  Court 7 9 AM  open in #45 request +46.016 s → response +46.086 s; unavailable in #46 request +47.012 s → response +47.325 s · public booking record first seen #b4 request +60.004 s → response +60.234 s
+  Court 7 10 AM open in #45 request +46.016 s → response +46.086 s; unavailable in #46 request +47.012 s → response +47.325 s · public booking record first seen #b4 request +60.004 s → response +60.234 s
+  Court 4 9 AM  open in #52 request +53.001 s → response +53.092 s; unavailable in #53 request +54.014 s → response +54.325 s · public booking record first seen #b4 request +60.004 s → response +60.234 s
+  Court 4 10 AM open in #52 request +53.001 s → response +53.092 s; unavailable in #53 request +54.014 s → response +54.325 s · public booking record first seen #b4 request +60.004 s → response +60.234 s
+  Court 4 11 AM open in #52 request +53.001 s → response +53.092 s; unavailable in #53 request +54.014 s → response +54.325 s · public booking record first seen #b4 request +60.004 s → response +60.234 s
+  Court 5 9 AM  open in #52 request +53.001 s → response +53.092 s; unavailable in #53 request +54.014 s → response +54.325 s · public booking record first seen #b4 request +60.004 s → response +60.234 s
+  Court 5 10 AM open in #52 request +53.001 s → response +53.092 s; unavailable in #53 request +54.014 s → response +54.325 s · public booking record first seen #b4 request +60.004 s → response +60.234 s
+  Court 5 11 AM open in #52 request +53.001 s → response +53.092 s; unavailable in #53 request +54.014 s → response +54.325 s · public booking record first seen #b4 request +60.004 s → response +60.234 s
+  Court 6 8 AM  open in #61 request +70.003 s → response +70.231 s; unavailable in #62 request +75.009 s → response +75.212 s · public booking record first seen #b5 request +120.005 s → response +120.297 s
+  Court 6 9 AM  open in #61 request +70.003 s → response +70.231 s; unavailable in #62 request +75.009 s → response +75.212 s · public booking record first seen #b5 request +120.005 s → response +120.297 s
+  Court 6 10 AM open in #61 request +70.003 s → response +70.231 s; unavailable in #62 request +75.009 s → response +75.212 s · public booking record first seen #b5 request +120.005 s → response +120.297 s
+  Court 3 9 AM  open in #64 request +85.012 s → response +85.242 s; unavailable in #65 request +90.014 s → response +90.324 s · public booking record first seen #b5 request +120.005 s → response +120.297 s
+  Court 3 10 AM open in #64 request +85.012 s → response +85.242 s; unavailable in #65 request +90.014 s → response +90.324 s · public booking record first seen #b5 request +120.005 s → response +120.297 s
+  Court 3 11 AM open in #64 request +85.012 s → response +85.242 s; unavailable in #65 request +90.014 s → response +90.324 s · public booking record first seen #b5 request +120.005 s → response +120.297 s
+  Court 1 9 AM  open in #69 request +110.011 s → response +110.227 s; unavailable in #70 request +115.015 s → response +116.223 s · public booking record first seen #b5 request +120.005 s → response +120.297 s
+  Court 1 10 AM open in #69 request +110.011 s → response +110.227 s; unavailable in #70 request +115.015 s → response +116.223 s · public booking record first seen #b5 request +120.005 s → response +120.297 s
+  Court 1 11 AM open in #69 request +110.011 s → response +110.227 s; unavailable in #70 request +115.015 s → response +116.223 s · public booking record first seen #b5 request +120.005 s → response +120.297 s
+  Court 2 9 AM  open in #69 request +110.011 s → response +110.227 s; unavailable in #70 request +115.015 s → response +116.223 s · public booking record first seen #b5 request +120.005 s → response +120.297 s
+  Court 2 10 AM open in #69 request +110.011 s → response +110.227 s; unavailable in #70 request +115.015 s → response +116.223 s · public booking record first seen #b5 request +120.005 s → response +120.297 s
+  Court 2 11 AM open in #69 request +110.011 s → response +110.227 s; unavailable in #70 request +115.015 s → response +116.223 s · public booking record first seen #b5 request +120.005 s → response +120.297 s
+  Court 6 11 AM open in #80 request +165.003 s → response +165.181 s; unavailable in #81 request +170.009 s → response +170.196 s · public booking record first seen #b6 request +300.010 s → response +300.304 s
+  Court 7 11 AM open in #80 request +165.003 s → response +165.181 s; unavailable in #81 request +170.009 s → response +170.196 s · public booking record first seen #b6 request +300.010 s → response +300.304 s
+
+UNAVAILABLE IN THE FIRST PUBLISHED GRID
+  Court 3: 4 PM (public booking record, first seen −59.746 s), 5 PM (public booking record, first seen −59.746 s)
+  Court 4: 4 PM (public booking record, first seen −59.746 s), 5 PM (public booking record, first seen −59.746 s), 6 PM (public booking record, first seen −59.746 s)
+
+UNAVAILABLE → OPEN (reopened; cause unknown)
+  Court 1 3 PM  unavailable in #15 request +10.014 s → response +18.920 s; open in #16 request +11.012 s → response +17.770 s (reads overlapped)
+  Court 1 7 PM  unavailable in #15 request +10.014 s → response +18.920 s; open in #16 request +11.012 s → response +17.770 s (reads overlapped)
+  Court 3 12 PM unavailable in #15 request +10.014 s → response +18.920 s; open in #16 request +11.012 s → response +17.770 s (reads overlapped)
+  Court 3 2 PM  unavailable in #15 request +10.014 s → response +18.920 s; open in #16 request +11.012 s → response +17.770 s (reads overlapped)
+  Court 3 8 PM  unavailable in #15 request +10.014 s → response +18.920 s; open in #16 request +11.012 s → response +17.770 s (reads overlapped)
+  Court 4 8 PM  unavailable in #15 request +10.014 s → response +18.920 s; open in #16 request +11.012 s → response +17.770 s (reads overlapped)
+  Court 5 12 PM unavailable in #15 request +10.014 s → response +18.920 s; open in #16 request +11.012 s → response +17.770 s (reads overlapped)
+  Court 5 2 PM  unavailable in #15 request +10.014 s → response +18.920 s; open in #16 request +11.012 s → response +17.770 s (reads overlapped)
+  Court 6 5 PM  unavailable in #15 request +10.014 s → response +18.920 s; open in #16 request +11.012 s → response +17.770 s (reads overlapped)
+  Court 1 12 PM unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 1 1 PM  unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 1 2 PM  unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 1 6 PM  unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 1 8 PM  unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 1 10 PM unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 2 12 PM unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 2 1 PM  unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 2 6 PM  unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 2 8 PM  unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 2 10 PM unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 3 1 PM  unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 3 3 PM  unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 3 6 PM  unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 3 7 PM  unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 3 9 PM  unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 4 1 PM  unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 4 7 PM  unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 4 10 PM unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 5 1 PM  unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 5 3 PM  unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 5 4 PM  unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 5 5 PM  unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 5 6 PM  unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 5 7 PM  unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 5 8 PM  unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 5 9 PM  unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 5 10 PM unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 6 12 PM unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 6 1 PM  unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 6 3 PM  unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 6 6 PM  unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 6 8 PM  unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 6 10 PM unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 7 1 PM  unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 7 2 PM  unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 7 5 PM  unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 7 8 PM  unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 7 10 PM unavailable in #21 request +20.001 s → response +28.923 s; open in #22 request +21.005 s → response +21.105 s (reads overlapped)
+  Court 1 4 PM  unavailable in #22 request +21.005 s → response +21.105 s; open in #23 request +22.005 s → response +22.088 s
+  Court 1 5 PM  unavailable in #22 request +21.005 s → response +21.105 s; open in #23 request +22.005 s → response +22.088 s
+  Court 2 3 PM  unavailable in #22 request +21.005 s → response +21.105 s; open in #23 request +22.005 s → response +22.088 s
+  Court 2 7 PM  unavailable in #22 request +21.005 s → response +21.105 s; open in #23 request +22.005 s → response +22.088 s
+  Court 2 9 PM  unavailable in #22 request +21.005 s → response +21.105 s; open in #23 request +22.005 s → response +22.088 s
+  Court 4 2 PM  unavailable in #22 request +21.005 s → response +21.105 s; open in #23 request +22.005 s → response +22.088 s
+  Court 4 3 PM  unavailable in #22 request +21.005 s → response +21.105 s; open in #23 request +22.005 s → response +22.088 s
+  Court 6 4 PM  unavailable in #22 request +21.005 s → response +21.105 s; open in #23 request +22.005 s → response +22.088 s
+  Court 2 5 PM  unavailable in #30 request +31.006 s → response +32.893 s; open in #31 request +32.003 s → response +32.169 s (reads overlapped)
+  Court 3 10 PM unavailable in #30 request +31.006 s → response +32.893 s; open in #31 request +32.003 s → response +32.169 s (reads overlapped)
+  Court 6 2 PM  unavailable in #30 request +31.006 s → response +32.893 s; open in #31 request +32.003 s → response +32.169 s (reads overlapped)
+  Court 6 9 PM  unavailable in #30 request +31.006 s → response +32.893 s; open in #31 request +32.003 s → response +32.169 s (reads overlapped)
+  Court 7 12 PM unavailable in #30 request +31.006 s → response +32.893 s; open in #31 request +32.003 s → response +32.169 s (reads overlapped)
+  Court 7 3 PM  unavailable in #30 request +31.006 s → response +32.893 s; open in #31 request +32.003 s → response +32.169 s (reads overlapped)
+  Court 7 6 PM  unavailable in #30 request +31.006 s → response +32.893 s; open in #31 request +32.003 s → response +32.169 s (reads overlapped)
+  Court 1 9 PM  unavailable in #33 request +34.005 s → response +34.090 s; open in #34 request +35.004 s → response +35.100 s
+  Court 6 7 PM  unavailable in #33 request +34.005 s → response +34.090 s; open in #34 request +35.004 s → response +35.100 s
+  Court 7 4 PM  unavailable in #33 request +34.005 s → response +34.090 s; open in #34 request +35.004 s → response +35.100 s
+  Court 7 9 PM  unavailable in #33 request +34.005 s → response +34.090 s; open in #34 request +35.004 s → response +35.100 s
+  Court 7 8 AM  unavailable in #46 request +47.012 s → response +47.325 s; open in #47 request +48.015 s → response +48.096 s
+  Court 7 9 AM  unavailable in #46 request +47.012 s → response +47.325 s; open in #47 request +48.015 s → response +48.096 s
+  Court 7 10 AM unavailable in #46 request +47.012 s → response +47.325 s; open in #47 request +48.015 s → response +48.096 s
+  Court 4 9 AM  unavailable in #57 request +58.004 s → response +58.079 s; open in #58 request +59.003 s → response +59.089 s
+  Court 4 10 AM unavailable in #57 request +58.004 s → response +58.079 s; open in #58 request +59.003 s → response +59.089 s
+  Court 4 11 AM unavailable in #57 request +58.004 s → response +58.079 s; open in #58 request +59.003 s → response +59.089 s
+  Court 5 9 AM  unavailable in #57 request +58.004 s → response +58.079 s; open in #58 request +59.003 s → response +59.089 s
+  Court 5 10 AM unavailable in #57 request +58.004 s → response +58.079 s; open in #58 request +59.003 s → response +59.089 s
+  Court 5 11 AM unavailable in #57 request +58.004 s → response +58.079 s; open in #58 request +59.003 s → response +59.089 s
+  Court 2 2 PM  unavailable in #117 request +600.009 s → response +600.453 s; open in #118 request +630.006 s → response +630.409 s
+  Court 2 4 PM  unavailable in #117 request +600.009 s → response +600.453 s; open in #118 request +630.006 s → response +630.409 s
+  Court 4 12 PM unavailable in #117 request +600.009 s → response +600.453 s; open in #118 request +630.006 s → response +630.409 s
+
+CURRENT MATRIX (newest answered request: #127 request +900.006 s → response +900.618 s; a late answer to an older request never replaces it)
+  (O open, X unavailable, U not published, ? unknown)
+       08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+  C1    O  X  X  X  O  O  X  X  X  X  X  X  X  X  X  O
+  C2    O  X  X  X  O  O  X  X  X  X  X  X  X  X  O  O
+  C3    O  X  X  X  O  X  O  X  X  X  X  X  X  X  O  O
+  C4    O  X  X  X  O  X  X  X  X  X  X  X  X  X  O  O
+  C5    O  X  X  X  O  X  X  X  X  X  X  X  X  X  X  O
+  C6    X  X  X  X  O  X  X  X  X  X  X  X  X  X  X  O
+  C7    X  X  X  X  O  O  X  O  X  X  X  X  X  X  X  O
+
+LIMITATIONS
+  - A read does not show the provider-side moment of a change; only the request/response interval of the reads around it.
+  - Unavailable without a matching public booking record: the cause is not visible in Onda's public data.
+  - A public booking record shows that a booking record exists. It does not show who made it or why.
+  - Responses served from Onda's edge cache (x-vercel-cache/age) may reflect an earlier state than the request time.
+
+Full read-by-read log (response order, with request order in seq): <install>/.local\slot-watch\2026-09-27_60d68777-0022-471a-99aa-3a47543858f4.ndjson

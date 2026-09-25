@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "runId": "063a8d06-6c19-4e0d-afc9-fcbf058ed77a",
+  "mode": "live",
+  "date": "2026-09-27",
+  "reference": "release",
+  "referenceMs": 1790294400000,
+  "status": "final",
+  "generatedAt": "2026-09-24T17:35:32.853Z",
+  "sources": {
+    "runProgress": "<install>/.local\\api-booking\\run-progress\\063a8d06-6c19-4e0d-afc9-fcbf058ed77a.ndjson",
+    "observer": "<install>/.local\\slot-watch\\2026-09-27_108ad87f-0cc0-4bb8-8b4a-ea515784a71b.ndjson",
+    "observerVersion": 2,
+    "providerTrace": null
+  },
+  "clock": {
+    "rounds": [],
+    "dispatchOffsetMs": null,
+    "observerOffsetMs": 469.975830078125,
+    "observerMinusDispatchMs": null
+  },
+  "dispatch": {
+    "posts": 0,
+    "firstPostOffsetMs": null,
+    "lastPostOffsetMs": null,
+    "spreadMs": null
+  },
+  "outcome": "USER_ABORT",
+  "observer": {
+    "publication": {
+      "lastUnpublished": null,
+      "firstPublished": null,
+      "firstPublishedResponse": null
+    },
+    "firstPublishedMatrix": null,
+    "firstPublishedCounts": null,
+    "reads": {
+      "launched": 0,
+      "answered": 0,
+      "failed": 0,
+      "notLaunched": 0,
+      "maxInFlight": 6,
+      "earlyOffsetsMs": [
+        0,
+        250,
+        500,
+        1000,
+        2000,
+        5000
+      ]
+    },
+    "bookingReads": {
+      "answered": 0,
+      "failed": 0,
+      "failedCourtQueries": 0,
+      "itemized": true
+    },
+    "openToUnavailable": 0,
+    "reopened": 0,
+    "unavailableWithoutRecordAtFirstPublication": 0
+  },
+  "trace": {
+    "available": false,
+    "records": 0,
+    "complete": 0,
+    "unavailableWorkers": []
+  },
+  "phase3": {
+    "fingerprint": "[REDACTED]",
+    "candidateCount": 11,
+    "maxWave2": 0,
+    "maxRescue": 0,
+    "maxTotal": 7,
+    "attempts": []
+  },
+  "targets": [],
+  "limitations": [
+    "An availability read shows Onda's state at an unknown moment between its request start and its response. No source here gives the provider-side moment of a change.",
+    "Unavailable without a matching public booking record: the cause is not visible in Onda's public data.",
+    "A public booking record shows that a booking record exists. It does not show who made it, whether it belongs to this bot, or why.",
+    "POST initiation is the Playwright request event in the runner (trusted release clock). Header and body times are that instant plus Chrome intervals from its network request start (under 1 ms after the request event); they carry the few-ms delivery lag of that event.",
+    "The provider trace enables DevTools Network only after each POST has left, so it never adds work at the release instant; a response that arrives before it is enabled (tens of ms) is not traced.",
+    "Response timing and headers describe what arrived at this PC. They do not establish how Onda queued or ordered requests, or why a request was accepted or rejected.",
+    "The observer clock offset at release is not recorded; grid-read offsets and POST offsets may differ by the change between the T-10 min and final clock rounds.",
+    "No provider trace was captured for this run (none attached, attach failed, or the run predates Phase 2): response header and body timing are not separated."
+  ],
+  "reportPath": "<install>/.local\\release-forensics\\063a8d06-6c19-4e0d-afc9-fcbf058ed77a\\report.txt",
+  "summaryPath": "<install>/.local\\release-forensics\\063a8d06-6c19-4e0d-afc9-fcbf058ed77a\\summary.json"
+}

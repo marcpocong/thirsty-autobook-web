@@ -1,0 +1,4 @@
+{"type":"run-start","runId":"a11db9f6-9406-4092-9b5b-b269efbc1836","label":"closingBrowsers","at":"2026-09-24T23:12:33.782Z","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"a11db9f6-9406-4092-9b5b-b269efbc1836","at":"2026-09-24T23:12:33.795Z","text":"Run started: closingBrowsers · Timing log: <install>/.local\\booking-runs\\a11db9f6-9406-4092-9b5b-b269efbc1836.ndjson","level":"info","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"a11db9f6-9406-4092-9b5b-b269efbc1836","at":"2026-09-24T23:12:35.590Z","text":"Run finished: complete","level":"info","elapsedMs":1795,"deltaMs":1795}
+{"type":"run-end","runId":"a11db9f6-9406-4092-9b5b-b269efbc1836","at":"2026-09-24T23:12:35.596Z","elapsedMs":1800,"outcome":"complete","label":"closingBrowsers"}

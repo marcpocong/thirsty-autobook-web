@@ -1,0 +1,10 @@
+{"runId":"845f4654-c14b-4f5b-85bc-925dda8fc883","mode":"prepare","targetDate":"2026-09-23","stage":"RUN_STARTED","at":"2026-09-21T19:57:02.874Z","elapsedMs":1,"sincePreviousMs":1}
+{"runId":"845f4654-c14b-4f5b-85bc-925dda8fc883","mode":"prepare","targetDate":"2026-09-23","stage":"PREPARING_BROWSER","at":"2026-09-21T19:57:02.886Z","elapsedMs":13,"sincePreviousMs":12,"workerId":"A"}
+{"runId":"845f4654-c14b-4f5b-85bc-925dda8fc883","mode":"prepare","targetDate":"2026-09-23","stage":"PREPARING_BROWSER","at":"2026-09-21T19:57:04.376Z","elapsedMs":1503,"sincePreviousMs":1490,"workerId":"B"}
+{"runId":"845f4654-c14b-4f5b-85bc-925dda8fc883","mode":"prepare","targetDate":"2026-09-23","stage":"PREPARING_BROWSER","at":"2026-09-21T19:57:05.912Z","elapsedMs":3039,"sincePreviousMs":1536,"workerId":"C"}
+{"runId":"845f4654-c14b-4f5b-85bc-925dda8fc883","mode":"prepare","targetDate":"2026-09-23","stage":"PREPARING_BROWSER","at":"2026-09-21T19:57:07.394Z","elapsedMs":4521,"sincePreviousMs":1482,"workerId":"D"}
+{"runId":"845f4654-c14b-4f5b-85bc-925dda8fc883","mode":"prepare","targetDate":"2026-09-23","stage":"BROWSER_READY","at":"2026-09-21T19:57:08.993Z","elapsedMs":6120,"sincePreviousMs":1599,"workerId":"A","port":19444}
+{"runId":"845f4654-c14b-4f5b-85bc-925dda8fc883","mode":"prepare","targetDate":"2026-09-23","stage":"BROWSER_READY","at":"2026-09-21T19:57:08.994Z","elapsedMs":6121,"sincePreviousMs":1,"workerId":"C","port":19446}
+{"runId":"845f4654-c14b-4f5b-85bc-925dda8fc883","mode":"prepare","targetDate":"2026-09-23","stage":"BROWSER_READY","at":"2026-09-21T19:57:09.000Z","elapsedMs":6127,"sincePreviousMs":6,"workerId":"D","port":19447}
+{"runId":"845f4654-c14b-4f5b-85bc-925dda8fc883","mode":"prepare","targetDate":"2026-09-23","stage":"BROWSER_READY","at":"2026-09-21T19:57:09.001Z","elapsedMs":6128,"sincePreviousMs":1,"workerId":"B","port":19445}
+{"runId":"845f4654-c14b-4f5b-85bc-925dda8fc883","mode":"prepare","targetDate":"2026-09-23","stage":"PROCESS_EXIT","at":"2026-09-21T19:57:09.016Z","elapsedMs":6143,"sincePreviousMs":15,"exitCode":0}

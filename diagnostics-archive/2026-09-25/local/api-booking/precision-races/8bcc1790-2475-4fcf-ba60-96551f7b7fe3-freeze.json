@@ -1,0 +1,36 @@
+{
+  "frozenAt": "2026-09-23T23:58:00.337Z",
+  "date": "2026-09-26",
+  "releaseMs": 1790208000000,
+  "freezeHash": "6ae0ed1ea5d4911b13a2da9a8373598060c52eadbded9ba915bd5698570d6f85",
+  "attempts": [
+    {
+      "workerId": "A",
+      "court": 3,
+      "start": "15:00",
+      "end": "18:00",
+      "targetKey": "f0255f1cc6a1fd9c20b45e1a8e1614c8f2c44b0b5ef55ccc44c44400df4627a2"
+    },
+    {
+      "workerId": "C",
+      "court": 5,
+      "start": "15:00",
+      "end": "18:00",
+      "targetKey": "4173e191e0db0bcccd289e187fe2cfc6602a7f804ea2a9a1489ed9c7f98c0d92"
+    },
+    {
+      "workerId": "D",
+      "court": 6,
+      "start": "15:00",
+      "end": "18:00",
+      "targetKey": "980ca330b94c34e144e01df240b99bcf2eb4aac40b39da509fb0feea2988ace5"
+    }
+  ],
+  "notDispatched": [
+    {
+      "workerId": "B",
+      "state": "IDENTITY_FAILED",
+      "code": "DUPLICATE_ONDA_CUSTOMER_ID"
+    }
+  ]
+}

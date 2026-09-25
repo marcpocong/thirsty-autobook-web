@@ -1,0 +1,12 @@
+{"runId":"828fb493-cbb5-4202-b7cf-84f7ddc45a6d","mode":"prepare","targetDate":"2026-09-25","stage":"RUN_STARTED","at":"2026-09-22T17:25:28.405Z","elapsedMs":1,"sincePreviousMs":1}
+{"runId":"828fb493-cbb5-4202-b7cf-84f7ddc45a6d","mode":"prepare","targetDate":"2026-09-25","stage":"RUN_CONFIGURATION","at":"2026-09-22T17:25:28.412Z","elapsedMs":7,"sincePreviousMs":6,"sessionMode":"special-friday","bookingMethod":"api-first","workerCount":8}
+{"runId":"828fb493-cbb5-4202-b7cf-84f7ddc45a6d","mode":"prepare","targetDate":"2026-09-25","stage":"PREPARING_BROWSER","at":"2026-09-22T17:25:28.439Z","elapsedMs":35,"sincePreviousMs":28,"workerId":"A"}
+{"runId":"828fb493-cbb5-4202-b7cf-84f7ddc45a6d","mode":"prepare","targetDate":"2026-09-25","stage":"PREPARING_BROWSER","at":"2026-09-22T17:25:28.452Z","elapsedMs":47,"sincePreviousMs":12,"workerId":"B"}
+{"runId":"828fb493-cbb5-4202-b7cf-84f7ddc45a6d","mode":"prepare","targetDate":"2026-09-25","stage":"PREPARING_BROWSER","at":"2026-09-22T17:25:28.461Z","elapsedMs":57,"sincePreviousMs":10,"workerId":"C"}
+{"runId":"828fb493-cbb5-4202-b7cf-84f7ddc45a6d","mode":"prepare","targetDate":"2026-09-25","stage":"PREPARING_BROWSER","at":"2026-09-22T17:25:28.474Z","elapsedMs":70,"sincePreviousMs":13,"workerId":"D"}
+{"runId":"828fb493-cbb5-4202-b7cf-84f7ddc45a6d","mode":"prepare","targetDate":"2026-09-25","stage":"PREPARING_BROWSER","at":"2026-09-22T17:25:28.487Z","elapsedMs":83,"sincePreviousMs":13,"workerId":"E"}
+{"runId":"828fb493-cbb5-4202-b7cf-84f7ddc45a6d","mode":"prepare","targetDate":"2026-09-25","stage":"PREPARING_BROWSER","at":"2026-09-22T17:25:28.501Z","elapsedMs":96,"sincePreviousMs":13,"workerId":"F"}
+{"runId":"828fb493-cbb5-4202-b7cf-84f7ddc45a6d","mode":"prepare","targetDate":"2026-09-25","stage":"PREPARING_BROWSER","at":"2026-09-22T17:25:28.514Z","elapsedMs":109,"sincePreviousMs":13,"workerId":"G"}
+{"runId":"828fb493-cbb5-4202-b7cf-84f7ddc45a6d","mode":"prepare","targetDate":"2026-09-25","stage":"PREPARING_BROWSER","at":"2026-09-22T17:25:28.527Z","elapsedMs":122,"sincePreviousMs":13,"workerId":"H"}
+{"runId":"828fb493-cbb5-4202-b7cf-84f7ddc45a6d","mode":"prepare","targetDate":"2026-09-25","stage":"FAILED","at":"2026-09-22T17:25:47.173Z","elapsedMs":18768,"sincePreviousMs":18646,"code":"API_FIRST_RUN_FAILED"}
+{"runId":"828fb493-cbb5-4202-b7cf-84f7ddc45a6d","mode":"prepare","targetDate":"2026-09-25","stage":"PROCESS_EXIT","at":"2026-09-22T17:25:47.173Z","elapsedMs":18769,"sincePreviousMs":1,"exitCode":1}

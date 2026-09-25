@@ -1,0 +1,55 @@
+{
+  "key": "472ec1297e3d086375a9848f1f513ea2f0d09876bd0e1422f7ac428702c2abc3",
+  "state": "unknown",
+  "createdAt": "2026-09-19T10:01:46.883Z",
+  "updatedAt": "2026-09-19T10:01:48.800Z",
+  "attempt": {
+    "attemptId": "472ec1297e3d086375a9848f1f513ea2f0d09876bd0e1422f7ac428702c2abc3",
+    "planFingerprint": "[REDACTED]",
+    "targetDate": "2026-09-21",
+    "courtIds": [
+      7
+    ],
+    "hourlyBoundaries": [
+      {
+        "startTime": "08:00",
+        "endTime": "09:00"
+      },
+      {
+        "startTime": "09:00",
+        "endTime": "10:00"
+      },
+      {
+        "startTime": "10:00",
+        "endTime": "11:00"
+      }
+    ],
+    "expectedBookingCount": 3,
+    "maximumAmount": 1800,
+    "stage": "dispatching"
+  },
+  "observedResponse": {
+    "success": true,
+    "bookingIds": [
+      "[ref-139]",
+      "[ref-140]",
+      "[ref-141]"
+    ],
+    "bookingNumbers": [
+      "[ref-142]",
+      "[ref-143]",
+      "[ref-144]"
+    ],
+    "bookingSessionIds": "[REDACTED]",
+    "holdExpiresAt": [
+      "2026-09-19T10:11:48.433+00:00",
+      "2026-09-19T10:11:48.433+00:00",
+      "2026-09-19T10:11:48.433+00:00"
+    ],
+    "transactionAmount": 1800,
+    "transactionId": "[ref-146]",
+    "trustedTotalAmount": 1800,
+    "validationCode": "CHECKOUT_BOOKING_INVALID"
+  },
+  "failureCode": "CHECKOUT_BOOKING_INVALID"
+}

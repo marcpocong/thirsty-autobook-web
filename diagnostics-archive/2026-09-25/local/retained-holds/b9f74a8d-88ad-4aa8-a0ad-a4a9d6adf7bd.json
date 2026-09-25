@@ -1,0 +1,19 @@
+{
+  "archivedAt": "2026-09-22T22:04:27.655Z",
+  "lock": {
+    "pid": "[REDACTED]",
+    "runID": "79b56de1-0a7b-422d-86e0-8f1e95c1f1fc",
+    "mode": "extended",
+    "workers": [
+      "A",
+      "B",
+      "C",
+      "D"
+    ],
+    "stage": "HOLD_VERIFIED",
+    "stageAt": "2026-09-22T19:57:01.189Z",
+    "holdVerifiedAt": "2026-09-22T19:57:01.188Z",
+    "holdExpiresAt": "2026-09-22T20:07:00.031+00:00"
+  },
+  "workers": []
+}

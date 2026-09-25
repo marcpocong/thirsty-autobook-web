@@ -1,0 +1,6 @@
+{"type":"run-start","runId":"6541693d-3ed8-4dec-9a71-745b758819eb","label":"prepare","at":"2026-09-20T21:08:15.981Z","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"6541693d-3ed8-4dec-9a71-745b758819eb","at":"2026-09-20T21:08:15.982Z","text":"Run started: prepare · Timing log: <install>/.local\\booking-runs\\6541693d-3ed8-4dec-9a71-745b758819eb.ndjson","level":"info","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"6541693d-3ed8-4dec-9a71-745b758819eb","at":"2026-09-20T21:08:15.983Z","text":"A retained checkout lock has no verified expiry. Inspect the Onda browser and use Review Lock; no new test can start.","level":"error","elapsedMs":1,"deltaMs":1}
+{"type":"activity","runId":"6541693d-3ed8-4dec-9a71-745b758819eb","at":"2026-09-20T21:08:16.020Z","text":"PAYMENT_HOLD_MAY_BE_ACTIVE","level":"error","elapsedMs":39,"deltaMs":38}
+{"type":"activity","runId":"6541693d-3ed8-4dec-9a71-745b758819eb","at":"2026-09-20T21:08:16.021Z","text":"Run finished: failed","level":"error","elapsedMs":39,"deltaMs":0}
+{"type":"run-end","runId":"6541693d-3ed8-4dec-9a71-745b758819eb","at":"2026-09-20T21:08:16.021Z","elapsedMs":39,"outcome":"failed","label":"prepare"}

@@ -1,0 +1,1976 @@
+{
+  "version": 2,
+  "id": "9d19e89c-9756-47c3-ba9b-6ea035d2851d",
+  "date": "2026-09-27",
+  "releaseAt": "2026-09-25T00:00:00.000Z",
+  "releaseMs": 1790294400000,
+  "startedAt": "2026-09-24T23:12:53.190Z",
+  "endedAt": "2026-09-24T23:21:14.986Z",
+  "status": "stopped",
+  "reason": "release aborted",
+  "clockOffsetMs": 528.009521484375,
+  "clockSynced": false,
+  "schedule": {
+    "earlyOffsetsMs": [
+      0,
+      250,
+      500,
+      1000,
+      2000,
+      5000
+    ],
+    "maxInFlight": 6,
+    "readTimeoutMs": 15000,
+    "bookingOffsetsMs": [
+      -60000,
+      2000,
+      10000,
+      30000,
+      60000,
+      120000,
+      300000,
+      600000,
+      900000
+    ]
+  },
+  "availability": {
+    "launched": 0,
+    "answered": 0,
+    "failed": 0,
+    "aborted": 0,
+    "notLaunched": 0,
+    "maxInFlight": 0,
+    "medianLatencyMs": null
+  },
+  "bookings": {
+    "launched": 0,
+    "answered": 0,
+    "failed": 0,
+    "aborted": 0,
+    "notLaunched": 0,
+    "failedCourtQueries": 0
+  },
+  "publication": {
+    "lastUnpublished": null,
+    "firstPublished": null,
+    "firstPublishedResponse": null
+  },
+  "firstPublishedMatrix": null,
+  "firstPublishedCounts": null,
+  "openToUnavailable": [],
+  "unavailableAtFirstPublication": [],
+  "reopened": [],
+  "current": null,
+  "finalMatrix": "",
+  "stillOpen": 0,
+  "timeline": [],
+  "logPath": "<install>/.local\\slot-watch\\2026-09-27_9d19e89c-9756-47c3-ba9b-6ea035d2851d.ndjson",
+  "reportPath": "<install>/.local\\slot-watch\\2026-09-27_9d19e89c-9756-47c3-ba9b-6ea035d2851d.txt",
+  "requestOrder": [],
+  "cells": [
+    {
+      "court": 1,
+      "hour": "08:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 1,
+      "hour": "09:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 1,
+      "hour": "10:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 1,
+      "hour": "11:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 1,
+      "hour": "12:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 1,
+      "hour": "13:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 1,
+      "hour": "14:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 1,
+      "hour": "15:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 1,
+      "hour": "16:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 1,
+      "hour": "17:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 1,
+      "hour": "18:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 1,
+      "hour": "19:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 1,
+      "hour": "20:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 1,
+      "hour": "21:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 1,
+      "hour": "22:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 1,
+      "hour": "23:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 2,
+      "hour": "08:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 2,
+      "hour": "09:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 2,
+      "hour": "10:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 2,
+      "hour": "11:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 2,
+      "hour": "12:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 2,
+      "hour": "13:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 2,
+      "hour": "14:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 2,
+      "hour": "15:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 2,
+      "hour": "16:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 2,
+      "hour": "17:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 2,
+      "hour": "18:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 2,
+      "hour": "19:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 2,
+      "hour": "20:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 2,
+      "hour": "21:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 2,
+      "hour": "22:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 2,
+      "hour": "23:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 3,
+      "hour": "08:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 3,
+      "hour": "09:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 3,
+      "hour": "10:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 3,
+      "hour": "11:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 3,
+      "hour": "12:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 3,
+      "hour": "13:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 3,
+      "hour": "14:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 3,
+      "hour": "15:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 3,
+      "hour": "16:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 3,
+      "hour": "17:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 3,
+      "hour": "18:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 3,
+      "hour": "19:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 3,
+      "hour": "20:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 3,
+      "hour": "21:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 3,
+      "hour": "22:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 3,
+      "hour": "23:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 4,
+      "hour": "08:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 4,
+      "hour": "09:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 4,
+      "hour": "10:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 4,
+      "hour": "11:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 4,
+      "hour": "12:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 4,
+      "hour": "13:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 4,
+      "hour": "14:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 4,
+      "hour": "15:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 4,
+      "hour": "16:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 4,
+      "hour": "17:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 4,
+      "hour": "18:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 4,
+      "hour": "19:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 4,
+      "hour": "20:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 4,
+      "hour": "21:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 4,
+      "hour": "22:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 4,
+      "hour": "23:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 5,
+      "hour": "08:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 5,
+      "hour": "09:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 5,
+      "hour": "10:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 5,
+      "hour": "11:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 5,
+      "hour": "12:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 5,
+      "hour": "13:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 5,
+      "hour": "14:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 5,
+      "hour": "15:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 5,
+      "hour": "16:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 5,
+      "hour": "17:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 5,
+      "hour": "18:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 5,
+      "hour": "19:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 5,
+      "hour": "20:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 5,
+      "hour": "21:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 5,
+      "hour": "22:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 5,
+      "hour": "23:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 6,
+      "hour": "08:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 6,
+      "hour": "09:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 6,
+      "hour": "10:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 6,
+      "hour": "11:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 6,
+      "hour": "12:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 6,
+      "hour": "13:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 6,
+      "hour": "14:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 6,
+      "hour": "15:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 6,
+      "hour": "16:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 6,
+      "hour": "17:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 6,
+      "hour": "18:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 6,
+      "hour": "19:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 6,
+      "hour": "20:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 6,
+      "hour": "21:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 6,
+      "hour": "22:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 6,
+      "hour": "23:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 7,
+      "hour": "08:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 7,
+      "hour": "09:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 7,
+      "hour": "10:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 7,
+      "hour": "11:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 7,
+      "hour": "12:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 7,
+      "hour": "13:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 7,
+      "hour": "14:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 7,
+      "hour": "15:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 7,
+      "hour": "16:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 7,
+      "hour": "17:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 7,
+      "hour": "18:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 7,
+      "hour": "19:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 7,
+      "hour": "20:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 7,
+      "hour": "21:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 7,
+      "hour": "22:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    },
+    {
+      "court": 7,
+      "hour": "23:00",
+      "firstPublished": null,
+      "firstOpen": null,
+      "firstUnavailable": null,
+      "openToUnavailable": null,
+      "unavailableToOpen": null,
+      "changes": 0,
+      "firstRecord": null,
+      "recordRemoved": null,
+      "latest": {
+        "state": "UNKNOWN",
+        "observation": null,
+        "record": null
+      }
+    }
+  ]
+}

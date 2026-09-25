@@ -1,0 +1,11 @@
+{"type":"run-start","runId":"5e7f13d3-21a4-4e1e-bf66-27245c734ccd","label":"prepare","at":"2026-09-24T23:12:47.164Z","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"5e7f13d3-21a4-4e1e-bf66-27245c734ccd","at":"2026-09-24T23:12:47.164Z","text":"Run started: prepare · Timing log: <install>/.local\\booking-runs\\5e7f13d3-21a4-4e1e-bf66-27245c734ccd.ndjson","level":"info","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"5e7f13d3-21a4-4e1e-bf66-27245c734ccd","at":"2026-09-24T23:12:47.177Z","text":"Process started: apiRun · prepare","level":"info","elapsedMs":12,"deltaMs":12}
+{"type":"activity","runId":"5e7f13d3-21a4-4e1e-bf66-27245c734ccd","at":"2026-09-24T23:12:47.741Z","text":"API run started · Timing log: .local/api-booking/run-progress/3ccfcd5d-0211-4b33-a957-28c8a9267c2d.ndjson · 2 ms total · +2 ms since prior stage","level":"info","elapsedMs":577,"deltaMs":564}
+{"type":"activity","runId":"5e7f13d3-21a4-4e1e-bf66-27245c734ccd","at":"2026-09-24T23:12:47.749Z","text":"RUN CONFIGURATION · Progress recorded · 9 ms total · +7 ms since prior stage","level":"info","elapsedMs":587,"deltaMs":11}
+{"type":"activity","runId":"5e7f13d3-21a4-4e1e-bf66-27245c734ccd","at":"2026-09-24T23:12:47.751Z","text":"Preparing isolated Chrome · Progress recorded · 12 ms total · +3 ms since prior stage","level":"info","elapsedMs":626,"deltaMs":39}
+{"type":"activity","runId":"5e7f13d3-21a4-4e1e-bf66-27245c734ccd","at":"2026-09-24T23:12:49.450Z","text":"API browser ready · Progress recorded · 1710 ms total · +1698 ms since prior stage","level":"info","elapsedMs":2285,"deltaMs":1659}
+{"type":"activity","runId":"5e7f13d3-21a4-4e1e-bf66-27245c734ccd","at":"2026-09-24T23:12:49.450Z","text":"BROWSER PREPARATION OUTCOME · Progress recorded · 1711 ms total · +1 ms since prior stage","level":"info","elapsedMs":2296,"deltaMs":11}
+{"type":"activity","runId":"5e7f13d3-21a4-4e1e-bf66-27245c734ccd","at":"2026-09-24T23:12:49.474Z","text":"AUTOMATION ABORTED — USER CONTROL RESTORED","level":"info","elapsedMs":2310,"deltaMs":13}
+{"type":"activity","runId":"5e7f13d3-21a4-4e1e-bf66-27245c734ccd","at":"2026-09-24T23:12:49.480Z","text":"Run finished: aborted","level":"info","elapsedMs":2316,"deltaMs":6}
+{"type":"run-end","runId":"5e7f13d3-21a4-4e1e-bf66-27245c734ccd","at":"2026-09-24T23:12:49.485Z","elapsedMs":2321,"outcome":"aborted","label":"API PREPARE"}

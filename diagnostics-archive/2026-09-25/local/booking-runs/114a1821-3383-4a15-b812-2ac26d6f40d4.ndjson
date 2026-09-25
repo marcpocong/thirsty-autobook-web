@@ -1,0 +1,15 @@
+{"type":"run-start","runId":"114a1821-3383-4a15-b812-2ac26d6f40d4","label":"prepare","at":"2026-09-22T19:47:56.176Z","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"114a1821-3383-4a15-b812-2ac26d6f40d4","at":"2026-09-22T19:47:56.176Z","text":"Run started: prepare · Timing log: <install>/.local\\booking-runs\\114a1821-3383-4a15-b812-2ac26d6f40d4.ndjson","level":"info","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"114a1821-3383-4a15-b812-2ac26d6f40d4","at":"2026-09-22T19:47:56.181Z","text":"Checking the old worker, Onda browser, selected slots, and payment hold before API preparation.","level":"info","elapsedMs":5,"deltaMs":5}
+{"type":"activity","runId":"114a1821-3383-4a15-b812-2ac26d6f40d4","at":"2026-09-22T19:47:56.187Z","text":"Preparing a fresh schedule while retaining the previous verified hold record and QR tab.","level":"info","elapsedMs":10,"deltaMs":5}
+{"type":"activity","runId":"114a1821-3383-4a15-b812-2ac26d6f40d4","at":"2026-09-22T19:47:56.191Z","text":"Process started: resetPrepare","level":"info","elapsedMs":14,"deltaMs":4}
+{"type":"activity","runId":"114a1821-3383-4a15-b812-2ac26d6f40d4","at":"2026-09-22T19:47:56.819Z","text":"Preparation: Starting required browser(s)...","level":"info","elapsedMs":643,"deltaMs":629}
+{"type":"activity","runId":"114a1821-3383-4a15-b812-2ac26d6f40d4","at":"2026-09-22T19:47:56.855Z","text":"Preparation: Checking previous session...","level":"info","elapsedMs":679,"deltaMs":36}
+{"type":"activity","runId":"114a1821-3383-4a15-b812-2ac26d6f40d4","at":"2026-09-22T19:48:12.677Z","text":"Preparation: Preparing Onda...","level":"info","elapsedMs":16501,"deltaMs":15822}
+{"type":"activity","runId":"114a1821-3383-4a15-b812-2ac26d6f40d4","at":"2026-09-22T19:48:28.553Z","text":"Preparation: Checking payment holds...","level":"info","elapsedMs":32377,"deltaMs":15876}
+{"type":"activity","runId":"114a1821-3383-4a15-b812-2ac26d6f40d4","at":"2026-09-22T19:48:28.559Z","text":"Preparation blocked: Browser A · remaining time unknown\nWait for expiry, then press Reset & Prepare again.","level":"error","elapsedMs":32383,"deltaMs":6}
+{"type":"activity","runId":"114a1821-3383-4a15-b812-2ac26d6f40d4","at":"2026-09-22T19:48:28.564Z","text":"A retained payment hold may still be active. Reset & Prepare cannot clear it until its timer has elapsed and the browser is verified clean.","level":"error","elapsedMs":32387,"deltaMs":5}
+{"type":"activity","runId":"114a1821-3383-4a15-b812-2ac26d6f40d4","at":"2026-09-22T19:48:28.570Z","text":"PAYMENT_HOLD_MAY_BE_ACTIVE","level":"error","elapsedMs":32393,"deltaMs":6}
+{"type":"activity","runId":"114a1821-3383-4a15-b812-2ac26d6f40d4","at":"2026-09-22T19:48:28.577Z","text":"COMMAND_FAILED","level":"error","elapsedMs":32401,"deltaMs":7}
+{"type":"activity","runId":"114a1821-3383-4a15-b812-2ac26d6f40d4","at":"2026-09-22T19:48:28.581Z","text":"Run finished: failed","level":"error","elapsedMs":32405,"deltaMs":4}
+{"type":"run-end","runId":"114a1821-3383-4a15-b812-2ac26d6f40d4","at":"2026-09-22T19:48:28.587Z","elapsedMs":32411,"outcome":"failed","label":"resetPrepare"}

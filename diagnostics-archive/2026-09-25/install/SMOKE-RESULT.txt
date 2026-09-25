@@ -1,0 +1,8 @@
+PACKAGED API TEST PREPARATION PASS
+Verified: 2026-09-19T09:55:55.3611708Z
+Mode: Test Now / API-FIRST EXPERIMENTAL
+Headline: API READY TO TEST
+Action: RUN API TEST TO QR
+Isolated Chrome window: minimized
+Terms checked: false
+Reservation submitted: false

@@ -1,0 +1,15 @@
+{"type":"run-start","runId":"1303020b-6069-41ca-b8b7-a4b5b8f4bf6e","label":"prepare","at":"2026-09-20T19:05:57.092Z","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"1303020b-6069-41ca-b8b7-a4b5b8f4bf6e","at":"2026-09-20T19:05:57.115Z","text":"Run started: prepare · Timing log: [REDACTED_LOCAL_PATH]\\Downloads\\Thirsty Bot API Test\\.local\\booking-runs\\1303020b-6069-41ca-b8b7-a4b5b8f4bf6e.ndjson","level":"info","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"1303020b-6069-41ca-b8b7-a4b5b8f4bf6e","at":"2026-09-20T19:05:57.116Z","text":"Process started: resetPrepare","level":"info","elapsedMs":1,"deltaMs":1}
+{"type":"activity","runId":"1303020b-6069-41ca-b8b7-a4b5b8f4bf6e","at":"2026-09-20T19:05:57.632Z","text":"Preparation: Starting required browser(s)...","level":"info","elapsedMs":517,"deltaMs":516}
+{"type":"activity","runId":"1303020b-6069-41ca-b8b7-a4b5b8f4bf6e","at":"2026-09-20T19:05:57.640Z","text":"Preparation: Checking previous session...","level":"info","elapsedMs":525,"deltaMs":8}
+{"type":"activity","runId":"1303020b-6069-41ca-b8b7-a4b5b8f4bf6e","at":"2026-09-20T19:05:58.866Z","text":"Preparation: Preparing Onda...","level":"info","elapsedMs":1751,"deltaMs":1227}
+{"type":"activity","runId":"1303020b-6069-41ca-b8b7-a4b5b8f4bf6e","at":"2026-09-20T19:06:00.148Z","text":"Preparation: Checking payment holds...","level":"info","elapsedMs":3034,"deltaMs":1283}
+{"type":"activity","runId":"1303020b-6069-41ca-b8b7-a4b5b8f4bf6e","at":"2026-09-20T19:06:00.148Z","text":"Preparation: Verifying calendar...","level":"info","elapsedMs":3034,"deltaMs":0}
+{"type":"activity","runId":"1303020b-6069-41ca-b8b7-a4b5b8f4bf6e","at":"2026-09-20T19:06:01.938Z","text":"Preparation: Verifying grids...","level":"info","elapsedMs":4824,"deltaMs":1790}
+{"type":"activity","runId":"1303020b-6069-41ca-b8b7-a4b5b8f4bf6e","at":"2026-09-20T19:06:01.939Z","text":"Preparation: Checking booking availability...","level":"info","elapsedMs":4825,"deltaMs":1}
+{"type":"activity","runId":"1303020b-6069-41ca-b8b7-a4b5b8f4bf6e","at":"2026-09-20T19:06:01.941Z","text":"Preparation: Final readiness check...","level":"info","elapsedMs":4827,"deltaMs":2}
+{"type":"activity","runId":"1303020b-6069-41ca-b8b7-a4b5b8f4bf6e","at":"2026-09-20T19:06:01.944Z","text":"READY","level":"info","elapsedMs":4830,"deltaMs":3}
+{"type":"activity","runId":"1303020b-6069-41ca-b8b7-a4b5b8f4bf6e","at":"2026-09-20T19:06:01.958Z","text":"Process completed: resetPrepare · exit code 0","level":"info","elapsedMs":4844,"deltaMs":14}
+{"type":"activity","runId":"1303020b-6069-41ca-b8b7-a4b5b8f4bf6e","at":"2026-09-20T19:06:01.969Z","text":"Run finished: complete","level":"info","elapsedMs":4855,"deltaMs":11}
+{"type":"run-end","runId":"1303020b-6069-41ca-b8b7-a4b5b8f4bf6e","at":"2026-09-20T19:06:01.970Z","elapsedMs":4855,"outcome":"complete"}

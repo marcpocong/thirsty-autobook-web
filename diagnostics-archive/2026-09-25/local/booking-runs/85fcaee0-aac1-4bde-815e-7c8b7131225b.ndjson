@@ -1,0 +1,13 @@
+{"type":"run-start","runId":"85fcaee0-aac1-4bde-815e-7c8b7131225b","label":"prepare","at":"2026-09-20T19:06:35.251Z","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"85fcaee0-aac1-4bde-815e-7c8b7131225b","at":"2026-09-20T19:06:35.252Z","text":"Run started: prepare · Timing log: [REDACTED_LOCAL_PATH]\\Downloads\\Thirsty Bot API Test\\.local\\booking-runs\\85fcaee0-aac1-4bde-815e-7c8b7131225b.ndjson","level":"info","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"85fcaee0-aac1-4bde-815e-7c8b7131225b","at":"2026-09-20T19:06:35.253Z","text":"Process started: resetPrepare","level":"info","elapsedMs":1,"deltaMs":1}
+{"type":"activity","runId":"85fcaee0-aac1-4bde-815e-7c8b7131225b","at":"2026-09-20T19:06:35.796Z","text":"Preparation: Starting required browser(s)...","level":"info","elapsedMs":545,"deltaMs":544}
+{"type":"activity","runId":"85fcaee0-aac1-4bde-815e-7c8b7131225b","at":"2026-09-20T19:06:35.843Z","text":"Preparation: Checking previous session...","level":"info","elapsedMs":592,"deltaMs":47}
+{"type":"activity","runId":"85fcaee0-aac1-4bde-815e-7c8b7131225b","at":"2026-09-20T19:06:38.164Z","text":"Preparation: Preparing Onda...","level":"info","elapsedMs":2913,"deltaMs":2321}
+{"type":"activity","runId":"85fcaee0-aac1-4bde-815e-7c8b7131225b","at":"2026-09-20T19:06:39.524Z","text":"Preparation: Checking payment holds...","level":"info","elapsedMs":4272,"deltaMs":1360}
+{"type":"activity","runId":"85fcaee0-aac1-4bde-815e-7c8b7131225b","at":"2026-09-20T19:06:39.557Z","text":"Preparation blocked: Browser A · remaining time unknown\nWait for expiry, then press Reset & Prepare again.","level":"error","elapsedMs":4305,"deltaMs":33}
+{"type":"activity","runId":"85fcaee0-aac1-4bde-815e-7c8b7131225b","at":"2026-09-20T19:06:39.557Z","text":"PAYMENT HOLD MAY BE ACTIVE. Reset & Prepare checked every required browser but could not prove a clean schedule with zero selections and no hold.","level":"error","elapsedMs":4306,"deltaMs":0}
+{"type":"activity","runId":"85fcaee0-aac1-4bde-815e-7c8b7131225b","at":"2026-09-20T19:06:39.557Z","text":"PAYMENT_HOLD_MAY_BE_ACTIVE","level":"error","elapsedMs":4306,"deltaMs":0}
+{"type":"activity","runId":"85fcaee0-aac1-4bde-815e-7c8b7131225b","at":"2026-09-20T19:06:39.573Z","text":"COMMAND_FAILED","level":"error","elapsedMs":4322,"deltaMs":16}
+{"type":"activity","runId":"85fcaee0-aac1-4bde-815e-7c8b7131225b","at":"2026-09-20T19:06:39.574Z","text":"Run finished: failed","level":"error","elapsedMs":4322,"deltaMs":0}
+{"type":"run-end","runId":"85fcaee0-aac1-4bde-815e-7c8b7131225b","at":"2026-09-20T19:06:39.574Z","elapsedMs":4322,"outcome":"failed"}

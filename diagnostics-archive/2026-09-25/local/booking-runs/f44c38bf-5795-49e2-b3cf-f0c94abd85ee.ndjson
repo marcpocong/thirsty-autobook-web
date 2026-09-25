@@ -1,0 +1,9 @@
+{"type":"run-start","runId":"f44c38bf-5795-49e2-b3cf-f0c94abd85ee","label":"prepare","at":"2026-09-21T07:21:04.815Z","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"f44c38bf-5795-49e2-b3cf-f0c94abd85ee","at":"2026-09-21T07:21:04.815Z","text":"Run started: prepare · Timing log: <install>/.local\\booking-runs\\f44c38bf-5795-49e2-b3cf-f0c94abd85ee.ndjson","level":"info","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"f44c38bf-5795-49e2-b3cf-f0c94abd85ee","at":"2026-09-21T07:21:04.816Z","text":"Process started: apiRun · prepare","level":"info","elapsedMs":1,"deltaMs":1}
+{"type":"activity","runId":"f44c38bf-5795-49e2-b3cf-f0c94abd85ee","at":"2026-09-21T07:21:05.366Z","text":"API run started · Timing log: .local/api-booking/run-progress/e40c675b-0613-44c7-b1d3-6ea5bb728d5d.ndjson · 1 ms total · +1 ms since prior stage","level":"info","elapsedMs":552,"deltaMs":551}
+{"type":"activity","runId":"f44c38bf-5795-49e2-b3cf-f0c94abd85ee","at":"2026-09-21T07:21:05.372Z","text":"Preparing isolated Chrome · Progress recorded · 7 ms total · +6 ms since prior stage","level":"info","elapsedMs":557,"deltaMs":6}
+{"type":"activity","runId":"f44c38bf-5795-49e2-b3cf-f0c94abd85ee","at":"2026-09-21T07:21:09.629Z","text":"API browser ready · Progress recorded · 4263 ms total · +4256 ms since prior stage","level":"info","elapsedMs":4881,"deltaMs":4324}
+{"type":"activity","runId":"f44c38bf-5795-49e2-b3cf-f0c94abd85ee","at":"2026-09-21T07:21:09.717Z","text":"Process completed: apiRun · prepare · exit code 0","level":"info","elapsedMs":4901,"deltaMs":20}
+{"type":"activity","runId":"f44c38bf-5795-49e2-b3cf-f0c94abd85ee","at":"2026-09-21T07:21:09.717Z","text":"Run finished: complete","level":"info","elapsedMs":4902,"deltaMs":0}
+{"type":"run-end","runId":"f44c38bf-5795-49e2-b3cf-f0c94abd85ee","at":"2026-09-21T07:21:09.717Z","elapsedMs":4902,"outcome":"complete","label":"API PREPARE"}

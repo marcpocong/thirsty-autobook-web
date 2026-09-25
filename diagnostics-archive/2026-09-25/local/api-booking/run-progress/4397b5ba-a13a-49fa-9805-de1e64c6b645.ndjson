@@ -1,0 +1,3 @@
+{"runId":"4397b5ba-a13a-49fa-9805-de1e64c6b645","mode":"dry","targetDate":"2026-09-25","stage":"RUN_STARTED","at":"2026-09-23T00:44:45.803Z","elapsedMs":1,"sincePreviousMs":1}
+{"runId":"4397b5ba-a13a-49fa-9805-de1e64c6b645","mode":"dry","targetDate":"2026-09-25","stage":"FAILED","at":"2026-09-23T00:44:45.803Z","elapsedMs":2,"sincePreviousMs":1,"code":"API_INSTALLATION_REQUIRED"}
+{"runId":"4397b5ba-a13a-49fa-9805-de1e64c6b645","mode":"dry","targetDate":"2026-09-25","stage":"PROCESS_EXIT","at":"2026-09-23T00:44:45.803Z","elapsedMs":2,"sincePreviousMs":0,"exitCode":1}

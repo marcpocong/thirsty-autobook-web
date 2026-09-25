@@ -1,0 +1,9 @@
+{"runId":"1b9b4388-5591-48b0-96dc-24b21c75b2b8","mode":"prepare","targetDate":"2026-09-27","stage":"RUN_STARTED","at":"2026-09-24T23:21:53.132Z","elapsedMs":2,"sincePreviousMs":2}
+{"runId":"1b9b4388-5591-48b0-96dc-24b21c75b2b8","mode":"prepare","targetDate":"2026-09-27","stage":"RUN_CONFIGURATION","at":"2026-09-24T23:21:53.140Z","elapsedMs":10,"sincePreviousMs":8,"bookingMethod":"proofless","workerCount":7,"prewarmLeadMs":15000}
+{"runId":"1b9b4388-5591-48b0-96dc-24b21c75b2b8","mode":"prepare","targetDate":"2026-09-27","stage":"PREPARING_BROWSER","at":"2026-09-24T23:21:53.166Z","elapsedMs":35,"sincePreviousMs":25,"workerId":"A"}
+{"runId":"1b9b4388-5591-48b0-96dc-24b21c75b2b8","mode":"prepare","targetDate":"2026-09-27","stage":"PREPARING_BROWSER","at":"2026-09-24T23:21:53.221Z","elapsedMs":90,"sincePreviousMs":55,"workerId":"B"}
+{"runId":"1b9b4388-5591-48b0-96dc-24b21c75b2b8","mode":"prepare","targetDate":"2026-09-27","stage":"PREPARING_BROWSER","at":"2026-09-24T23:21:53.234Z","elapsedMs":103,"sincePreviousMs":13,"workerId":"C"}
+{"runId":"1b9b4388-5591-48b0-96dc-24b21c75b2b8","mode":"prepare","targetDate":"2026-09-27","stage":"PREPARING_BROWSER","at":"2026-09-24T23:21:53.246Z","elapsedMs":115,"sincePreviousMs":12,"workerId":"D"}
+{"runId":"1b9b4388-5591-48b0-96dc-24b21c75b2b8","mode":"prepare","targetDate":"2026-09-27","stage":"PREPARING_BROWSER","at":"2026-09-24T23:21:53.258Z","elapsedMs":127,"sincePreviousMs":12,"workerId":"E"}
+{"runId":"1b9b4388-5591-48b0-96dc-24b21c75b2b8","mode":"prepare","targetDate":"2026-09-27","stage":"PREPARING_BROWSER","at":"2026-09-24T23:21:53.269Z","elapsedMs":138,"sincePreviousMs":11,"workerId":"F"}
+{"runId":"1b9b4388-5591-48b0-96dc-24b21c75b2b8","mode":"prepare","targetDate":"2026-09-27","stage":"PREPARING_BROWSER","at":"2026-09-24T23:21:53.281Z","elapsedMs":150,"sincePreviousMs":12,"workerId":"G"}

@@ -1,0 +1,4 @@
+{"type":"run-start","runId":"18a7ccec-491c-4450-aaf6-a007d7d6ec18","label":"reviewing","at":"2026-09-21T19:02:53.486Z","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"18a7ccec-491c-4450-aaf6-a007d7d6ec18","at":"2026-09-21T19:02:53.487Z","text":"Run started: reviewing · Timing log: <install>/.local\\booking-runs\\18a7ccec-491c-4450-aaf6-a007d7d6ec18.ndjson","level":"info","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"18a7ccec-491c-4450-aaf6-a007d7d6ec18","at":"2026-09-21T19:02:53.488Z","text":"Run finished: complete","level":"info","elapsedMs":1,"deltaMs":1}
+{"type":"run-end","runId":"18a7ccec-491c-4450-aaf6-a007d7d6ec18","at":"2026-09-21T19:02:53.488Z","elapsedMs":2,"outcome":"complete","label":"reviewing"}

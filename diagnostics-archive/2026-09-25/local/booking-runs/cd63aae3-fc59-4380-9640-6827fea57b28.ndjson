@@ -1,0 +1,15 @@
+{"type":"run-start","runId":"cd63aae3-fc59-4380-9640-6827fea57b28","label":"prepare","at":"2026-09-20T19:05:19.879Z","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"cd63aae3-fc59-4380-9640-6827fea57b28","at":"2026-09-20T19:05:19.880Z","text":"Run started: prepare · Timing log: [REDACTED_LOCAL_PATH]\\Downloads\\Thirsty Bot API Test\\.local\\booking-runs\\cd63aae3-fc59-4380-9640-6827fea57b28.ndjson","level":"info","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"cd63aae3-fc59-4380-9640-6827fea57b28","at":"2026-09-20T19:05:19.881Z","text":"Process started: resetPrepare","level":"info","elapsedMs":1,"deltaMs":1}
+{"type":"activity","runId":"cd63aae3-fc59-4380-9640-6827fea57b28","at":"2026-09-20T19:05:20.404Z","text":"Preparation: Starting required browser(s)...","level":"info","elapsedMs":524,"deltaMs":523}
+{"type":"activity","runId":"cd63aae3-fc59-4380-9640-6827fea57b28","at":"2026-09-20T19:05:20.413Z","text":"Preparation: Checking previous session...","level":"info","elapsedMs":533,"deltaMs":9}
+{"type":"activity","runId":"cd63aae3-fc59-4380-9640-6827fea57b28","at":"2026-09-20T19:05:25.077Z","text":"Preparation: Preparing Onda...","level":"info","elapsedMs":5197,"deltaMs":4664}
+{"type":"activity","runId":"cd63aae3-fc59-4380-9640-6827fea57b28","at":"2026-09-20T19:05:27.713Z","text":"Preparation: Checking payment holds...","level":"info","elapsedMs":7833,"deltaMs":2636}
+{"type":"activity","runId":"cd63aae3-fc59-4380-9640-6827fea57b28","at":"2026-09-20T19:05:27.714Z","text":"Preparation: Verifying calendar...","level":"info","elapsedMs":7834,"deltaMs":0}
+{"type":"activity","runId":"cd63aae3-fc59-4380-9640-6827fea57b28","at":"2026-09-20T19:05:31.654Z","text":"Preparation: Verifying grids...","level":"info","elapsedMs":11774,"deltaMs":3941}
+{"type":"activity","runId":"cd63aae3-fc59-4380-9640-6827fea57b28","at":"2026-09-20T19:05:31.656Z","text":"Preparation: Checking booking availability...","level":"info","elapsedMs":11776,"deltaMs":2}
+{"type":"activity","runId":"cd63aae3-fc59-4380-9640-6827fea57b28","at":"2026-09-20T19:05:31.657Z","text":"BROWSER_COUNT_MISMATCH","level":"error","elapsedMs":11777,"deltaMs":1}
+{"type":"activity","runId":"cd63aae3-fc59-4380-9640-6827fea57b28","at":"2026-09-20T19:05:31.658Z","text":"BROWSER_COUNT_MISMATCH","level":"error","elapsedMs":11778,"deltaMs":1}
+{"type":"activity","runId":"cd63aae3-fc59-4380-9640-6827fea57b28","at":"2026-09-20T19:05:31.674Z","text":"COMMAND_FAILED","level":"error","elapsedMs":11794,"deltaMs":16}
+{"type":"activity","runId":"cd63aae3-fc59-4380-9640-6827fea57b28","at":"2026-09-20T19:05:31.674Z","text":"Run finished: failed","level":"error","elapsedMs":11794,"deltaMs":0}
+{"type":"run-end","runId":"cd63aae3-fc59-4380-9640-6827fea57b28","at":"2026-09-20T19:05:31.674Z","elapsedMs":11794,"outcome":"failed"}

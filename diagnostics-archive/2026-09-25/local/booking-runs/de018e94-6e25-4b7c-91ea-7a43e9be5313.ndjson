@@ -1,0 +1,10 @@
+{"type":"run-start","runId":"de018e94-6e25-4b7c-91ea-7a43e9be5313","label":"prepare","at":"2026-09-21T20:36:11.337Z","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"de018e94-6e25-4b7c-91ea-7a43e9be5313","at":"2026-09-21T20:36:11.337Z","text":"Run started: prepare · Timing log: <install>/.local\\booking-runs\\de018e94-6e25-4b7c-91ea-7a43e9be5313.ndjson","level":"info","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"de018e94-6e25-4b7c-91ea-7a43e9be5313","at":"2026-09-21T20:36:11.338Z","text":"Checking the old worker, Onda browser, selected slots, and payment hold before API preparation.","level":"info","elapsedMs":1,"deltaMs":1}
+{"type":"activity","runId":"de018e94-6e25-4b7c-91ea-7a43e9be5313","at":"2026-09-21T20:36:11.379Z","text":"Preparing a fresh schedule while retaining the previous verified hold record and QR tab.","level":"info","elapsedMs":42,"deltaMs":40}
+{"type":"activity","runId":"de018e94-6e25-4b7c-91ea-7a43e9be5313","at":"2026-09-21T20:36:11.379Z","text":"Process started: resetPrepare","level":"info","elapsedMs":42,"deltaMs":0}
+{"type":"activity","runId":"de018e94-6e25-4b7c-91ea-7a43e9be5313","at":"2026-09-21T20:36:11.859Z","text":"BOOKING_OPERATION_FAILED","level":"error","elapsedMs":522,"deltaMs":480}
+{"type":"activity","runId":"de018e94-6e25-4b7c-91ea-7a43e9be5313","at":"2026-09-21T20:36:11.859Z","text":"BOOKING_OPERATION_FAILED","level":"error","elapsedMs":522,"deltaMs":1}
+{"type":"activity","runId":"de018e94-6e25-4b7c-91ea-7a43e9be5313","at":"2026-09-21T20:36:11.878Z","text":"COMMAND_FAILED","level":"error","elapsedMs":541,"deltaMs":18}
+{"type":"activity","runId":"de018e94-6e25-4b7c-91ea-7a43e9be5313","at":"2026-09-21T20:36:11.878Z","text":"Run finished: failed","level":"error","elapsedMs":541,"deltaMs":0}
+{"type":"run-end","runId":"de018e94-6e25-4b7c-91ea-7a43e9be5313","at":"2026-09-21T20:36:11.878Z","elapsedMs":541,"outcome":"failed","label":"resetPrepare"}

@@ -1,0 +1,78 @@
+{
+  "checkpoint": "T-60S",
+  "capturedAt": "2026-09-24T23:59:00.190Z",
+  "method": "ntp-consensus-v1",
+  "offsetMs": 24.2537841796875,
+  "sampleCount": 10,
+  "keptCount": 10,
+  "rejectedCount": 0,
+  "minRoundTripMs": 44,
+  "medianRoundTripMs": 49,
+  "maxRoundTripMs": 67,
+  "spreadMs": 10.42529296875,
+  "uncertaintyMs": 22.3385009765625,
+  "quality": "GOOD",
+  "bestHost": "time1.google.com",
+  "samples": [
+    {
+      "host": "time.google.com",
+      "offsetMs": 22.4,
+      "roundTripMs": 49,
+      "kept": true
+    },
+    {
+      "host": "time1.google.com",
+      "offsetMs": 23.9,
+      "roundTripMs": 46,
+      "kept": true
+    },
+    {
+      "host": "time2.google.com",
+      "offsetMs": 30.6,
+      "roundTripMs": 65,
+      "kept": true
+    },
+    {
+      "host": "time3.google.com",
+      "offsetMs": 32.1,
+      "roundTripMs": 67,
+      "kept": true
+    },
+    {
+      "host": "time4.google.com",
+      "offsetMs": 30.1,
+      "roundTripMs": 65,
+      "kept": true
+    },
+    {
+      "host": "time.google.com",
+      "offsetMs": 23.9,
+      "roundTripMs": 45,
+      "kept": true
+    },
+    {
+      "host": "time1.google.com",
+      "offsetMs": 24.6,
+      "roundTripMs": 44,
+      "kept": true
+    },
+    {
+      "host": "time2.google.com",
+      "offsetMs": 21.7,
+      "roundTripMs": 49,
+      "kept": true
+    },
+    {
+      "host": "time3.google.com",
+      "offsetMs": 22.2,
+      "roundTripMs": 49,
+      "kept": true
+    },
+    {
+      "host": "time4.google.com",
+      "offsetMs": 24.8,
+      "roundTripMs": 45,
+      "kept": true
+    }
+  ]
+}
