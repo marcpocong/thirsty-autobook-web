@@ -800,6 +800,1143 @@
           "requestSpanMs": 7005
         }
       ]
+    },
+    "holdExpiry": {
+      "provenance": "FACT: cells taken then open in our own reads around +10 min. INFERENCE: pending holds reaching hold_expires_at (commit + 10 min); a cancellation looks the same.",
+      "reopenedCells": 38,
+      "commitNoLaterThanMs": {
+        "min": -179619.40000000002,
+        "max": 270213.6
+      },
+      "retakenCells": 22,
+      "cells": [
+        {
+          "court": 5,
+          "hour": "16:00",
+          "lastTakenRead": {
+            "seq": 110,
+            "requestOffsetMs": 390007.6,
+            "responseOffsetMs": 390382.6
+          },
+          "firstOpenRead": {
+            "seq": 111,
+            "requestOffsetMs": 420007.6,
+            "responseOffsetMs": 420380.6
+          },
+          "reopenWindowMs": [
+            390007.6,
+            420380.6
+          ],
+          "commitNoLaterThanMs": -179619.40000000002,
+          "commitWindowIfExactExpiryMs": [
+            -209992.40000000002,
+            -179619.40000000002
+          ],
+          "retakenBy": {
+            "seq": 112,
+            "requestOffsetMs": 450011.6,
+            "responseOffsetMs": 450194.6
+          }
+        },
+        {
+          "court": 5,
+          "hour": "17:00",
+          "lastTakenRead": {
+            "seq": 110,
+            "requestOffsetMs": 390007.6,
+            "responseOffsetMs": 390382.6
+          },
+          "firstOpenRead": {
+            "seq": 111,
+            "requestOffsetMs": 420007.6,
+            "responseOffsetMs": 420380.6
+          },
+          "reopenWindowMs": [
+            390007.6,
+            420380.6
+          ],
+          "commitNoLaterThanMs": -179619.40000000002,
+          "commitWindowIfExactExpiryMs": [
+            -209992.40000000002,
+            -179619.40000000002
+          ],
+          "retakenBy": {
+            "seq": 112,
+            "requestOffsetMs": 450011.6,
+            "responseOffsetMs": 450194.6
+          }
+        },
+        {
+          "court": 5,
+          "hour": "18:00",
+          "lastTakenRead": {
+            "seq": 110,
+            "requestOffsetMs": 390007.6,
+            "responseOffsetMs": 390382.6
+          },
+          "firstOpenRead": {
+            "seq": 111,
+            "requestOffsetMs": 420007.6,
+            "responseOffsetMs": 420380.6
+          },
+          "reopenWindowMs": [
+            390007.6,
+            420380.6
+          ],
+          "commitNoLaterThanMs": -179619.40000000002,
+          "commitWindowIfExactExpiryMs": [
+            -209992.40000000002,
+            -179619.40000000002
+          ],
+          "retakenBy": {
+            "seq": 112,
+            "requestOffsetMs": 450011.6,
+            "responseOffsetMs": 450194.6
+          }
+        },
+        {
+          "court": 6,
+          "hour": "16:00",
+          "lastTakenRead": {
+            "seq": 110,
+            "requestOffsetMs": 390007.6,
+            "responseOffsetMs": 390382.6
+          },
+          "firstOpenRead": {
+            "seq": 111,
+            "requestOffsetMs": 420007.6,
+            "responseOffsetMs": 420380.6
+          },
+          "reopenWindowMs": [
+            390007.6,
+            420380.6
+          ],
+          "commitNoLaterThanMs": -179619.40000000002,
+          "commitWindowIfExactExpiryMs": [
+            -209992.40000000002,
+            -179619.40000000002
+          ],
+          "retakenBy": {
+            "seq": 112,
+            "requestOffsetMs": 450011.6,
+            "responseOffsetMs": 450194.6
+          }
+        },
+        {
+          "court": 6,
+          "hour": "17:00",
+          "lastTakenRead": {
+            "seq": 110,
+            "requestOffsetMs": 390007.6,
+            "responseOffsetMs": 390382.6
+          },
+          "firstOpenRead": {
+            "seq": 111,
+            "requestOffsetMs": 420007.6,
+            "responseOffsetMs": 420380.6
+          },
+          "reopenWindowMs": [
+            390007.6,
+            420380.6
+          ],
+          "commitNoLaterThanMs": -179619.40000000002,
+          "commitWindowIfExactExpiryMs": [
+            -209992.40000000002,
+            -179619.40000000002
+          ],
+          "retakenBy": {
+            "seq": 112,
+            "requestOffsetMs": 450011.6,
+            "responseOffsetMs": 450194.6
+          }
+        },
+        {
+          "court": 6,
+          "hour": "18:00",
+          "lastTakenRead": {
+            "seq": 110,
+            "requestOffsetMs": 390007.6,
+            "responseOffsetMs": 390382.6
+          },
+          "firstOpenRead": {
+            "seq": 111,
+            "requestOffsetMs": 420007.6,
+            "responseOffsetMs": 420380.6
+          },
+          "reopenWindowMs": [
+            390007.6,
+            420380.6
+          ],
+          "commitNoLaterThanMs": -179619.40000000002,
+          "commitWindowIfExactExpiryMs": [
+            -209992.40000000002,
+            -179619.40000000002
+          ],
+          "retakenBy": {
+            "seq": 112,
+            "requestOffsetMs": 450011.6,
+            "responseOffsetMs": 450194.6
+          }
+        },
+        {
+          "court": 1,
+          "hour": "12:00",
+          "lastTakenRead": {
+            "seq": 117,
+            "requestOffsetMs": 600008.6,
+            "responseOffsetMs": 600452.6
+          },
+          "firstOpenRead": {
+            "seq": 118,
+            "requestOffsetMs": 630005.6,
+            "responseOffsetMs": 630408.6
+          },
+          "reopenWindowMs": [
+            600008.6,
+            630408.6
+          ],
+          "commitNoLaterThanMs": 30408.599999999977,
+          "commitWindowIfExactExpiryMs": [
+            8.599999999976717,
+            30408.599999999977
+          ],
+          "retakenBy": null
+        },
+        {
+          "court": 1,
+          "hour": "13:00",
+          "lastTakenRead": {
+            "seq": 117,
+            "requestOffsetMs": 600008.6,
+            "responseOffsetMs": 600452.6
+          },
+          "firstOpenRead": {
+            "seq": 118,
+            "requestOffsetMs": 630005.6,
+            "responseOffsetMs": 630408.6
+          },
+          "reopenWindowMs": [
+            600008.6,
+            630408.6
+          ],
+          "commitNoLaterThanMs": 30408.599999999977,
+          "commitWindowIfExactExpiryMs": [
+            8.599999999976717,
+            30408.599999999977
+          ],
+          "retakenBy": {
+            "seq": 120,
+            "requestOffsetMs": 690010.6,
+            "responseOffsetMs": 690203.6
+          }
+        },
+        {
+          "court": 1,
+          "hour": "14:00",
+          "lastTakenRead": {
+            "seq": 117,
+            "requestOffsetMs": 600008.6,
+            "responseOffsetMs": 600452.6
+          },
+          "firstOpenRead": {
+            "seq": 118,
+            "requestOffsetMs": 630005.6,
+            "responseOffsetMs": 630408.6
+          },
+          "reopenWindowMs": [
+            600008.6,
+            630408.6
+          ],
+          "commitNoLaterThanMs": 30408.599999999977,
+          "commitWindowIfExactExpiryMs": [
+            8.599999999976717,
+            30408.599999999977
+          ],
+          "retakenBy": {
+            "seq": 126,
+            "requestOffsetMs": 870004.6,
+            "responseOffsetMs": 870213.6
+          }
+        },
+        {
+          "court": 1,
+          "hour": "15:00",
+          "lastTakenRead": {
+            "seq": 117,
+            "requestOffsetMs": 600008.6,
+            "responseOffsetMs": 600452.6
+          },
+          "firstOpenRead": {
+            "seq": 118,
+            "requestOffsetMs": 630005.6,
+            "responseOffsetMs": 630408.6
+          },
+          "reopenWindowMs": [
+            600008.6,
+            630408.6
+          ],
+          "commitNoLaterThanMs": 30408.599999999977,
+          "commitWindowIfExactExpiryMs": [
+            8.599999999976717,
+            30408.599999999977
+          ],
+          "retakenBy": {
+            "seq": 119,
+            "requestOffsetMs": 660010.6,
+            "responseOffsetMs": 660194.6
+          }
+        },
+        {
+          "court": 1,
+          "hour": "16:00",
+          "lastTakenRead": {
+            "seq": 117,
+            "requestOffsetMs": 600008.6,
+            "responseOffsetMs": 600452.6
+          },
+          "firstOpenRead": {
+            "seq": 118,
+            "requestOffsetMs": 630005.6,
+            "responseOffsetMs": 630408.6
+          },
+          "reopenWindowMs": [
+            600008.6,
+            630408.6
+          ],
+          "commitNoLaterThanMs": 30408.599999999977,
+          "commitWindowIfExactExpiryMs": [
+            8.599999999976717,
+            30408.599999999977
+          ],
+          "retakenBy": {
+            "seq": 119,
+            "requestOffsetMs": 660010.6,
+            "responseOffsetMs": 660194.6
+          }
+        },
+        {
+          "court": 1,
+          "hour": "17:00",
+          "lastTakenRead": {
+            "seq": 117,
+            "requestOffsetMs": 600008.6,
+            "responseOffsetMs": 600452.6
+          },
+          "firstOpenRead": {
+            "seq": 118,
+            "requestOffsetMs": 630005.6,
+            "responseOffsetMs": 630408.6
+          },
+          "reopenWindowMs": [
+            600008.6,
+            630408.6
+          ],
+          "commitNoLaterThanMs": 30408.599999999977,
+          "commitWindowIfExactExpiryMs": [
+            8.599999999976717,
+            30408.599999999977
+          ],
+          "retakenBy": {
+            "seq": 119,
+            "requestOffsetMs": 660010.6,
+            "responseOffsetMs": 660194.6
+          }
+        },
+        {
+          "court": 1,
+          "hour": "21:00",
+          "lastTakenRead": {
+            "seq": 117,
+            "requestOffsetMs": 600008.6,
+            "responseOffsetMs": 600452.6
+          },
+          "firstOpenRead": {
+            "seq": 118,
+            "requestOffsetMs": 630005.6,
+            "responseOffsetMs": 630408.6
+          },
+          "reopenWindowMs": [
+            600008.6,
+            630408.6
+          ],
+          "commitNoLaterThanMs": 30408.599999999977,
+          "commitWindowIfExactExpiryMs": [
+            8.599999999976717,
+            30408.599999999977
+          ],
+          "retakenBy": {
+            "seq": 121,
+            "requestOffsetMs": 720009.6,
+            "responseOffsetMs": 720195.6
+          }
+        },
+        {
+          "court": 2,
+          "hour": "12:00",
+          "lastTakenRead": {
+            "seq": 117,
+            "requestOffsetMs": 600008.6,
+            "responseOffsetMs": 600452.6
+          },
+          "firstOpenRead": {
+            "seq": 118,
+            "requestOffsetMs": 630005.6,
+            "responseOffsetMs": 630408.6
+          },
+          "reopenWindowMs": [
+            600008.6,
+            630408.6
+          ],
+          "commitNoLaterThanMs": 30408.599999999977,
+          "commitWindowIfExactExpiryMs": [
+            8.599999999976717,
+            30408.599999999977
+          ],
+          "retakenBy": null
+        },
+        {
+          "court": 2,
+          "hour": "13:00",
+          "lastTakenRead": {
+            "seq": 117,
+            "requestOffsetMs": 600008.6,
+            "responseOffsetMs": 600452.6
+          },
+          "firstOpenRead": {
+            "seq": 118,
+            "requestOffsetMs": 630005.6,
+            "responseOffsetMs": 630408.6
+          },
+          "reopenWindowMs": [
+            600008.6,
+            630408.6
+          ],
+          "commitNoLaterThanMs": 30408.599999999977,
+          "commitWindowIfExactExpiryMs": [
+            8.599999999976717,
+            30408.599999999977
+          ],
+          "retakenBy": null
+        },
+        {
+          "court": 2,
+          "hour": "14:00",
+          "lastTakenRead": {
+            "seq": 117,
+            "requestOffsetMs": 600008.6,
+            "responseOffsetMs": 600452.6
+          },
+          "firstOpenRead": {
+            "seq": 118,
+            "requestOffsetMs": 630005.6,
+            "responseOffsetMs": 630408.6
+          },
+          "reopenWindowMs": [
+            600008.6,
+            630408.6
+          ],
+          "commitNoLaterThanMs": 30408.599999999977,
+          "commitWindowIfExactExpiryMs": [
+            8.599999999976717,
+            30408.599999999977
+          ],
+          "retakenBy": null
+        },
+        {
+          "court": 2,
+          "hour": "16:00",
+          "lastTakenRead": {
+            "seq": 117,
+            "requestOffsetMs": 600008.6,
+            "responseOffsetMs": 600452.6
+          },
+          "firstOpenRead": {
+            "seq": 118,
+            "requestOffsetMs": 630005.6,
+            "responseOffsetMs": 630408.6
+          },
+          "reopenWindowMs": [
+            600008.6,
+            630408.6
+          ],
+          "commitNoLaterThanMs": 30408.599999999977,
+          "commitWindowIfExactExpiryMs": [
+            8.599999999976717,
+            30408.599999999977
+          ],
+          "retakenBy": {
+            "seq": 121,
+            "requestOffsetMs": 720009.6,
+            "responseOffsetMs": 720195.6
+          }
+        },
+        {
+          "court": 2,
+          "hour": "17:00",
+          "lastTakenRead": {
+            "seq": 117,
+            "requestOffsetMs": 600008.6,
+            "responseOffsetMs": 600452.6
+          },
+          "firstOpenRead": {
+            "seq": 118,
+            "requestOffsetMs": 630005.6,
+            "responseOffsetMs": 630408.6
+          },
+          "reopenWindowMs": [
+            600008.6,
+            630408.6
+          ],
+          "commitNoLaterThanMs": 30408.599999999977,
+          "commitWindowIfExactExpiryMs": [
+            8.599999999976717,
+            30408.599999999977
+          ],
+          "retakenBy": {
+            "seq": 121,
+            "requestOffsetMs": 720009.6,
+            "responseOffsetMs": 720195.6
+          }
+        },
+        {
+          "court": 2,
+          "hour": "21:00",
+          "lastTakenRead": {
+            "seq": 117,
+            "requestOffsetMs": 600008.6,
+            "responseOffsetMs": 600452.6
+          },
+          "firstOpenRead": {
+            "seq": 118,
+            "requestOffsetMs": 630005.6,
+            "responseOffsetMs": 630408.6
+          },
+          "reopenWindowMs": [
+            600008.6,
+            630408.6
+          ],
+          "commitNoLaterThanMs": 30408.599999999977,
+          "commitWindowIfExactExpiryMs": [
+            8.599999999976717,
+            30408.599999999977
+          ],
+          "retakenBy": {
+            "seq": 121,
+            "requestOffsetMs": 720009.6,
+            "responseOffsetMs": 720195.6
+          }
+        },
+        {
+          "court": 2,
+          "hour": "22:00",
+          "lastTakenRead": {
+            "seq": 117,
+            "requestOffsetMs": 600008.6,
+            "responseOffsetMs": 600452.6
+          },
+          "firstOpenRead": {
+            "seq": 118,
+            "requestOffsetMs": 630005.6,
+            "responseOffsetMs": 630408.6
+          },
+          "reopenWindowMs": [
+            600008.6,
+            630408.6
+          ],
+          "commitNoLaterThanMs": 30408.599999999977,
+          "commitWindowIfExactExpiryMs": [
+            8.599999999976717,
+            30408.599999999977
+          ],
+          "retakenBy": null
+        },
+        {
+          "court": 3,
+          "hour": "12:00",
+          "lastTakenRead": {
+            "seq": 117,
+            "requestOffsetMs": 600008.6,
+            "responseOffsetMs": 600452.6
+          },
+          "firstOpenRead": {
+            "seq": 118,
+            "requestOffsetMs": 630005.6,
+            "responseOffsetMs": 630408.6
+          },
+          "reopenWindowMs": [
+            600008.6,
+            630408.6
+          ],
+          "commitNoLaterThanMs": 30408.599999999977,
+          "commitWindowIfExactExpiryMs": [
+            8.599999999976717,
+            30408.599999999977
+          ],
+          "retakenBy": null
+        },
+        {
+          "court": 3,
+          "hour": "14:00",
+          "lastTakenRead": {
+            "seq": 117,
+            "requestOffsetMs": 600008.6,
+            "responseOffsetMs": 600452.6
+          },
+          "firstOpenRead": {
+            "seq": 118,
+            "requestOffsetMs": 630005.6,
+            "responseOffsetMs": 630408.6
+          },
+          "reopenWindowMs": [
+            600008.6,
+            630408.6
+          ],
+          "commitNoLaterThanMs": 30408.599999999977,
+          "commitWindowIfExactExpiryMs": [
+            8.599999999976717,
+            30408.599999999977
+          ],
+          "retakenBy": null
+        },
+        {
+          "court": 3,
+          "hour": "20:00",
+          "lastTakenRead": {
+            "seq": 117,
+            "requestOffsetMs": 600008.6,
+            "responseOffsetMs": 600452.6
+          },
+          "firstOpenRead": {
+            "seq": 118,
+            "requestOffsetMs": 630005.6,
+            "responseOffsetMs": 630408.6
+          },
+          "reopenWindowMs": [
+            600008.6,
+            630408.6
+          ],
+          "commitNoLaterThanMs": 30408.599999999977,
+          "commitWindowIfExactExpiryMs": [
+            8.599999999976717,
+            30408.599999999977
+          ],
+          "retakenBy": {
+            "seq": 121,
+            "requestOffsetMs": 720009.6,
+            "responseOffsetMs": 720195.6
+          }
+        },
+        {
+          "court": 3,
+          "hour": "22:00",
+          "lastTakenRead": {
+            "seq": 117,
+            "requestOffsetMs": 600008.6,
+            "responseOffsetMs": 600452.6
+          },
+          "firstOpenRead": {
+            "seq": 118,
+            "requestOffsetMs": 630005.6,
+            "responseOffsetMs": 630408.6
+          },
+          "reopenWindowMs": [
+            600008.6,
+            630408.6
+          ],
+          "commitNoLaterThanMs": 30408.599999999977,
+          "commitWindowIfExactExpiryMs": [
+            8.599999999976717,
+            30408.599999999977
+          ],
+          "retakenBy": null
+        },
+        {
+          "court": 4,
+          "hour": "12:00",
+          "lastTakenRead": {
+            "seq": 117,
+            "requestOffsetMs": 600008.6,
+            "responseOffsetMs": 600452.6
+          },
+          "firstOpenRead": {
+            "seq": 118,
+            "requestOffsetMs": 630005.6,
+            "responseOffsetMs": 630408.6
+          },
+          "reopenWindowMs": [
+            600008.6,
+            630408.6
+          ],
+          "commitNoLaterThanMs": 30408.599999999977,
+          "commitWindowIfExactExpiryMs": [
+            8.599999999976717,
+            30408.599999999977
+          ],
+          "retakenBy": null
+        },
+        {
+          "court": 4,
+          "hour": "22:00",
+          "lastTakenRead": {
+            "seq": 117,
+            "requestOffsetMs": 600008.6,
+            "responseOffsetMs": 600452.6
+          },
+          "firstOpenRead": {
+            "seq": 118,
+            "requestOffsetMs": 630005.6,
+            "responseOffsetMs": 630408.6
+          },
+          "reopenWindowMs": [
+            600008.6,
+            630408.6
+          ],
+          "commitNoLaterThanMs": 30408.599999999977,
+          "commitWindowIfExactExpiryMs": [
+            8.599999999976717,
+            30408.599999999977
+          ],
+          "retakenBy": null
+        },
+        {
+          "court": 5,
+          "hour": "12:00",
+          "lastTakenRead": {
+            "seq": 117,
+            "requestOffsetMs": 600008.6,
+            "responseOffsetMs": 600452.6
+          },
+          "firstOpenRead": {
+            "seq": 118,
+            "requestOffsetMs": 630005.6,
+            "responseOffsetMs": 630408.6
+          },
+          "reopenWindowMs": [
+            600008.6,
+            630408.6
+          ],
+          "commitNoLaterThanMs": 30408.599999999977,
+          "commitWindowIfExactExpiryMs": [
+            8.599999999976717,
+            30408.599999999977
+          ],
+          "retakenBy": null
+        },
+        {
+          "court": 6,
+          "hour": "12:00",
+          "lastTakenRead": {
+            "seq": 117,
+            "requestOffsetMs": 600008.6,
+            "responseOffsetMs": 600452.6
+          },
+          "firstOpenRead": {
+            "seq": 118,
+            "requestOffsetMs": 630005.6,
+            "responseOffsetMs": 630408.6
+          },
+          "reopenWindowMs": [
+            600008.6,
+            630408.6
+          ],
+          "commitNoLaterThanMs": 30408.599999999977,
+          "commitWindowIfExactExpiryMs": [
+            8.599999999976717,
+            30408.599999999977
+          ],
+          "retakenBy": null
+        },
+        {
+          "court": 6,
+          "hour": "13:00",
+          "lastTakenRead": {
+            "seq": 117,
+            "requestOffsetMs": 600008.6,
+            "responseOffsetMs": 600452.6
+          },
+          "firstOpenRead": {
+            "seq": 118,
+            "requestOffsetMs": 630005.6,
+            "responseOffsetMs": 630408.6
+          },
+          "reopenWindowMs": [
+            600008.6,
+            630408.6
+          ],
+          "commitNoLaterThanMs": 30408.599999999977,
+          "commitWindowIfExactExpiryMs": [
+            8.599999999976717,
+            30408.599999999977
+          ],
+          "retakenBy": {
+            "seq": 119,
+            "requestOffsetMs": 660010.6,
+            "responseOffsetMs": 660194.6
+          }
+        },
+        {
+          "court": 6,
+          "hour": "14:00",
+          "lastTakenRead": {
+            "seq": 117,
+            "requestOffsetMs": 600008.6,
+            "responseOffsetMs": 600452.6
+          },
+          "firstOpenRead": {
+            "seq": 118,
+            "requestOffsetMs": 630005.6,
+            "responseOffsetMs": 630408.6
+          },
+          "reopenWindowMs": [
+            600008.6,
+            630408.6
+          ],
+          "commitNoLaterThanMs": 30408.599999999977,
+          "commitWindowIfExactExpiryMs": [
+            8.599999999976717,
+            30408.599999999977
+          ],
+          "retakenBy": {
+            "seq": 119,
+            "requestOffsetMs": 660010.6,
+            "responseOffsetMs": 660194.6
+          }
+        },
+        {
+          "court": 6,
+          "hour": "15:00",
+          "lastTakenRead": {
+            "seq": 117,
+            "requestOffsetMs": 600008.6,
+            "responseOffsetMs": 600452.6
+          },
+          "firstOpenRead": {
+            "seq": 118,
+            "requestOffsetMs": 630005.6,
+            "responseOffsetMs": 630408.6
+          },
+          "reopenWindowMs": [
+            600008.6,
+            630408.6
+          ],
+          "commitNoLaterThanMs": 30408.599999999977,
+          "commitWindowIfExactExpiryMs": [
+            8.599999999976717,
+            30408.599999999977
+          ],
+          "retakenBy": {
+            "seq": 119,
+            "requestOffsetMs": 660010.6,
+            "responseOffsetMs": 660194.6
+          }
+        },
+        {
+          "court": 6,
+          "hour": "19:00",
+          "lastTakenRead": {
+            "seq": 117,
+            "requestOffsetMs": 600008.6,
+            "responseOffsetMs": 600452.6
+          },
+          "firstOpenRead": {
+            "seq": 118,
+            "requestOffsetMs": 630005.6,
+            "responseOffsetMs": 630408.6
+          },
+          "reopenWindowMs": [
+            600008.6,
+            630408.6
+          ],
+          "commitNoLaterThanMs": 30408.599999999977,
+          "commitWindowIfExactExpiryMs": [
+            8.599999999976717,
+            30408.599999999977
+          ],
+          "retakenBy": {
+            "seq": 121,
+            "requestOffsetMs": 720009.6,
+            "responseOffsetMs": 720195.6
+          }
+        },
+        {
+          "court": 6,
+          "hour": "21:00",
+          "lastTakenRead": {
+            "seq": 117,
+            "requestOffsetMs": 600008.6,
+            "responseOffsetMs": 600452.6
+          },
+          "firstOpenRead": {
+            "seq": 118,
+            "requestOffsetMs": 630005.6,
+            "responseOffsetMs": 630408.6
+          },
+          "reopenWindowMs": [
+            600008.6,
+            630408.6
+          ],
+          "commitNoLaterThanMs": 30408.599999999977,
+          "commitWindowIfExactExpiryMs": [
+            8.599999999976717,
+            30408.599999999977
+          ],
+          "retakenBy": {
+            "seq": 120,
+            "requestOffsetMs": 690010.6,
+            "responseOffsetMs": 690203.6
+          }
+        },
+        {
+          "court": 7,
+          "hour": "12:00",
+          "lastTakenRead": {
+            "seq": 117,
+            "requestOffsetMs": 600008.6,
+            "responseOffsetMs": 600452.6
+          },
+          "firstOpenRead": {
+            "seq": 118,
+            "requestOffsetMs": 630005.6,
+            "responseOffsetMs": 630408.6
+          },
+          "reopenWindowMs": [
+            600008.6,
+            630408.6
+          ],
+          "commitNoLaterThanMs": 30408.599999999977,
+          "commitWindowIfExactExpiryMs": [
+            8.599999999976717,
+            30408.599999999977
+          ],
+          "retakenBy": null
+        },
+        {
+          "court": 7,
+          "hour": "13:00",
+          "lastTakenRead": {
+            "seq": 117,
+            "requestOffsetMs": 600008.6,
+            "responseOffsetMs": 600452.6
+          },
+          "firstOpenRead": {
+            "seq": 118,
+            "requestOffsetMs": 630005.6,
+            "responseOffsetMs": 630408.6
+          },
+          "reopenWindowMs": [
+            600008.6,
+            630408.6
+          ],
+          "commitNoLaterThanMs": 30408.599999999977,
+          "commitWindowIfExactExpiryMs": [
+            8.599999999976717,
+            30408.599999999977
+          ],
+          "retakenBy": null
+        },
+        {
+          "court": 7,
+          "hour": "15:00",
+          "lastTakenRead": {
+            "seq": 117,
+            "requestOffsetMs": 600008.6,
+            "responseOffsetMs": 600452.6
+          },
+          "firstOpenRead": {
+            "seq": 118,
+            "requestOffsetMs": 630005.6,
+            "responseOffsetMs": 630408.6
+          },
+          "reopenWindowMs": [
+            600008.6,
+            630408.6
+          ],
+          "commitNoLaterThanMs": 30408.599999999977,
+          "commitWindowIfExactExpiryMs": [
+            8.599999999976717,
+            30408.599999999977
+          ],
+          "retakenBy": null
+        },
+        {
+          "court": 7,
+          "hour": "18:00",
+          "lastTakenRead": {
+            "seq": 117,
+            "requestOffsetMs": 600008.6,
+            "responseOffsetMs": 600452.6
+          },
+          "firstOpenRead": {
+            "seq": 118,
+            "requestOffsetMs": 630005.6,
+            "responseOffsetMs": 630408.6
+          },
+          "reopenWindowMs": [
+            600008.6,
+            630408.6
+          ],
+          "commitNoLaterThanMs": 30408.599999999977,
+          "commitWindowIfExactExpiryMs": [
+            8.599999999976717,
+            30408.599999999977
+          ],
+          "retakenBy": {
+            "seq": 124,
+            "requestOffsetMs": 810007.6,
+            "responseOffsetMs": 810325.6
+          }
+        },
+        {
+          "court": 1,
+          "hour": "13:00",
+          "lastTakenRead": {
+            "seq": 125,
+            "requestOffsetMs": 840007.6,
+            "responseOffsetMs": 840216.6
+          },
+          "firstOpenRead": {
+            "seq": 126,
+            "requestOffsetMs": 870004.6,
+            "responseOffsetMs": 870213.6
+          },
+          "reopenWindowMs": [
+            840007.6,
+            870213.6
+          ],
+          "commitNoLaterThanMs": 270213.6,
+          "commitWindowIfExactExpiryMs": [
+            240007.59999999998,
+            270213.6
+          ],
+          "retakenBy": null
+        }
+      ]
+    },
+    "staleReads": {
+      "reads": 63,
+      "provablyStale": 10,
+      "byDuration": {
+        "fastUnder500ms": {
+          "reads": 43,
+          "stale": 10
+        },
+        "slowOver2s": {
+          "reads": 17,
+          "stale": 0
+        }
+      },
+      "examples": [
+        {
+          "requestOffsetMs": 22004.6,
+          "responseOffsetMs": 22087.6,
+          "durationMs": 83,
+          "taken": 10,
+          "alreadySeenTaken": 27,
+          "seenBy": {
+            "requestOffsetMs": 17006.6,
+            "responseOffsetMs": 17918.6
+          }
+        },
+        {
+          "requestOffsetMs": 33007.6,
+          "responseOffsetMs": 33113.6,
+          "durationMs": 106,
+          "taken": 70,
+          "alreadySeenTaken": 77,
+          "seenBy": {
+            "requestOffsetMs": 31005.6,
+            "responseOffsetMs": 32892.6
+          }
+        },
+        {
+          "requestOffsetMs": 34004.6,
+          "responseOffsetMs": 34089.6,
+          "durationMs": 85,
+          "taken": 70,
+          "alreadySeenTaken": 77,
+          "seenBy": {
+            "requestOffsetMs": 31005.6,
+            "responseOffsetMs": 32892.6
+          }
+        },
+        {
+          "requestOffsetMs": 35003.6,
+          "responseOffsetMs": 35099.6,
+          "durationMs": 96,
+          "taken": 66,
+          "alreadySeenTaken": 77,
+          "seenBy": {
+            "requestOffsetMs": 31005.6,
+            "responseOffsetMs": 32892.6
+          }
+        },
+        {
+          "requestOffsetMs": 36003.6,
+          "responseOffsetMs": 36077.6,
+          "durationMs": 74,
+          "taken": 76,
+          "alreadySeenTaken": 77,
+          "seenBy": {
+            "requestOffsetMs": 31005.6,
+            "responseOffsetMs": 32892.6
+          }
+        },
+        {
+          "requestOffsetMs": 37001.6,
+          "responseOffsetMs": 37094.6,
+          "durationMs": 93,
+          "taken": 66,
+          "alreadySeenTaken": 77,
+          "seenBy": {
+            "requestOffsetMs": 31005.6,
+            "responseOffsetMs": 32892.6
+          }
+        },
+        {
+          "requestOffsetMs": 38014.6,
+          "responseOffsetMs": 38104.6,
+          "durationMs": 90,
+          "taken": 76,
+          "alreadySeenTaken": 77,
+          "seenBy": {
+            "requestOffsetMs": 31005.6,
+            "responseOffsetMs": 32892.6
+          }
+        },
+        {
+          "requestOffsetMs": 48014.6,
+          "responseOffsetMs": 48095.6,
+          "durationMs": 81,
+          "taken": 77,
+          "alreadySeenTaken": 80,
+          "seenBy": {
+            "requestOffsetMs": 47011.6,
+            "responseOffsetMs": 47324.6
+          }
+        },
+        {
+          "requestOffsetMs": 59002.6,
+          "responseOffsetMs": 59088.6,
+          "durationMs": 86,
+          "taken": 80,
+          "alreadySeenTaken": 86,
+          "seenBy": {
+            "requestOffsetMs": 54013.6,
+            "responseOffsetMs": 54324.6
+          }
+        },
+        {
+          "requestOffsetMs": 60002.6,
+          "responseOffsetMs": 60110.6,
+          "durationMs": 108,
+          "taken": 80,
+          "alreadySeenTaken": 86,
+          "seenBy": {
+            "requestOffsetMs": 54013.6,
+            "responseOffsetMs": 54324.6
+          }
+        }
+      ]
     }
   },
   "sep24": {
@@ -1225,6 +2362,394 @@
         "durationMs": 87
       },
       "flushes": []
+    },
+    "holdExpiry": {
+      "provenance": "FACT: cells taken then open in our own reads around +10 min. INFERENCE: pending holds reaching hold_expires_at (commit + 10 min); a cancellation looks the same.",
+      "reopenedCells": 13,
+      "commitNoLaterThanMs": {
+        "min": 30479,
+        "max": 90418
+      },
+      "retakenCells": 4,
+      "cells": [
+        {
+          "court": 1,
+          "hour": "21:00",
+          "lastTakenRead": {
+            "seq": 105,
+            "requestOffsetMs": 600011,
+            "responseOffsetMs": 600422
+          },
+          "firstOpenRead": {
+            "seq": 106,
+            "requestOffsetMs": 630007,
+            "responseOffsetMs": 630479
+          },
+          "reopenWindowMs": [
+            600011,
+            630479
+          ],
+          "commitNoLaterThanMs": 30479,
+          "commitWindowIfExactExpiryMs": [
+            11,
+            30479
+          ],
+          "retakenBy": null
+        },
+        {
+          "court": 1,
+          "hour": "23:00",
+          "lastTakenRead": {
+            "seq": 105,
+            "requestOffsetMs": 600011,
+            "responseOffsetMs": 600422
+          },
+          "firstOpenRead": {
+            "seq": 106,
+            "requestOffsetMs": 630007,
+            "responseOffsetMs": 630479
+          },
+          "reopenWindowMs": [
+            600011,
+            630479
+          ],
+          "commitNoLaterThanMs": 30479,
+          "commitWindowIfExactExpiryMs": [
+            11,
+            30479
+          ],
+          "retakenBy": null
+        },
+        {
+          "court": 2,
+          "hour": "14:00",
+          "lastTakenRead": {
+            "seq": 105,
+            "requestOffsetMs": 600011,
+            "responseOffsetMs": 600422
+          },
+          "firstOpenRead": {
+            "seq": 106,
+            "requestOffsetMs": 630007,
+            "responseOffsetMs": 630479
+          },
+          "reopenWindowMs": [
+            600011,
+            630479
+          ],
+          "commitNoLaterThanMs": 30479,
+          "commitWindowIfExactExpiryMs": [
+            11,
+            30479
+          ],
+          "retakenBy": null
+        },
+        {
+          "court": 3,
+          "hour": "20:00",
+          "lastTakenRead": {
+            "seq": 105,
+            "requestOffsetMs": 600011,
+            "responseOffsetMs": 600422
+          },
+          "firstOpenRead": {
+            "seq": 106,
+            "requestOffsetMs": 630007,
+            "responseOffsetMs": 630479
+          },
+          "reopenWindowMs": [
+            600011,
+            630479
+          ],
+          "commitNoLaterThanMs": 30479,
+          "commitWindowIfExactExpiryMs": [
+            11,
+            30479
+          ],
+          "retakenBy": null
+        },
+        {
+          "court": 4,
+          "hour": "20:00",
+          "lastTakenRead": {
+            "seq": 105,
+            "requestOffsetMs": 600011,
+            "responseOffsetMs": 600422
+          },
+          "firstOpenRead": {
+            "seq": 106,
+            "requestOffsetMs": 630007,
+            "responseOffsetMs": 630479
+          },
+          "reopenWindowMs": [
+            600011,
+            630479
+          ],
+          "commitNoLaterThanMs": 30479,
+          "commitWindowIfExactExpiryMs": [
+            11,
+            30479
+          ],
+          "retakenBy": null
+        },
+        {
+          "court": 4,
+          "hour": "21:00",
+          "lastTakenRead": {
+            "seq": 105,
+            "requestOffsetMs": 600011,
+            "responseOffsetMs": 600422
+          },
+          "firstOpenRead": {
+            "seq": 106,
+            "requestOffsetMs": 630007,
+            "responseOffsetMs": 630479
+          },
+          "reopenWindowMs": [
+            600011,
+            630479
+          ],
+          "commitNoLaterThanMs": 30479,
+          "commitWindowIfExactExpiryMs": [
+            11,
+            30479
+          ],
+          "retakenBy": null
+        },
+        {
+          "court": 6,
+          "hour": "13:00",
+          "lastTakenRead": {
+            "seq": 105,
+            "requestOffsetMs": 600011,
+            "responseOffsetMs": 600422
+          },
+          "firstOpenRead": {
+            "seq": 106,
+            "requestOffsetMs": 630007,
+            "responseOffsetMs": 630479
+          },
+          "reopenWindowMs": [
+            600011,
+            630479
+          ],
+          "commitNoLaterThanMs": 30479,
+          "commitWindowIfExactExpiryMs": [
+            11,
+            30479
+          ],
+          "retakenBy": {
+            "seq": 109,
+            "requestOffsetMs": 720014,
+            "responseOffsetMs": 720497
+          }
+        },
+        {
+          "court": 6,
+          "hour": "23:00",
+          "lastTakenRead": {
+            "seq": 105,
+            "requestOffsetMs": 600011,
+            "responseOffsetMs": 600422
+          },
+          "firstOpenRead": {
+            "seq": 106,
+            "requestOffsetMs": 630007,
+            "responseOffsetMs": 630479
+          },
+          "reopenWindowMs": [
+            600011,
+            630479
+          ],
+          "commitNoLaterThanMs": 30479,
+          "commitWindowIfExactExpiryMs": [
+            11,
+            30479
+          ],
+          "retakenBy": null
+        },
+        {
+          "court": 7,
+          "hour": "14:00",
+          "lastTakenRead": {
+            "seq": 105,
+            "requestOffsetMs": 600011,
+            "responseOffsetMs": 600422
+          },
+          "firstOpenRead": {
+            "seq": 106,
+            "requestOffsetMs": 630007,
+            "responseOffsetMs": 630479
+          },
+          "reopenWindowMs": [
+            600011,
+            630479
+          ],
+          "commitNoLaterThanMs": 30479,
+          "commitWindowIfExactExpiryMs": [
+            11,
+            30479
+          ],
+          "retakenBy": null
+        },
+        {
+          "court": 7,
+          "hour": "17:00",
+          "lastTakenRead": {
+            "seq": 105,
+            "requestOffsetMs": 600011,
+            "responseOffsetMs": 600422
+          },
+          "firstOpenRead": {
+            "seq": 106,
+            "requestOffsetMs": 630007,
+            "responseOffsetMs": 630479
+          },
+          "reopenWindowMs": [
+            600011,
+            630479
+          ],
+          "commitNoLaterThanMs": 30479,
+          "commitWindowIfExactExpiryMs": [
+            11,
+            30479
+          ],
+          "retakenBy": null
+        },
+        {
+          "court": 7,
+          "hour": "09:00",
+          "lastTakenRead": {
+            "seq": 107,
+            "requestOffsetMs": 660005,
+            "responseOffsetMs": 660624
+          },
+          "firstOpenRead": {
+            "seq": 108,
+            "requestOffsetMs": 690012,
+            "responseOffsetMs": 690418
+          },
+          "reopenWindowMs": [
+            660005,
+            690418
+          ],
+          "commitNoLaterThanMs": 90418,
+          "commitWindowIfExactExpiryMs": [
+            60005,
+            90418
+          ],
+          "retakenBy": {
+            "seq": 113,
+            "requestOffsetMs": 840009,
+            "responseOffsetMs": 840179
+          }
+        },
+        {
+          "court": 7,
+          "hour": "10:00",
+          "lastTakenRead": {
+            "seq": 107,
+            "requestOffsetMs": 660005,
+            "responseOffsetMs": 660624
+          },
+          "firstOpenRead": {
+            "seq": 108,
+            "requestOffsetMs": 690012,
+            "responseOffsetMs": 690418
+          },
+          "reopenWindowMs": [
+            660005,
+            690418
+          ],
+          "commitNoLaterThanMs": 90418,
+          "commitWindowIfExactExpiryMs": [
+            60005,
+            90418
+          ],
+          "retakenBy": {
+            "seq": 113,
+            "requestOffsetMs": 840009,
+            "responseOffsetMs": 840179
+          }
+        },
+        {
+          "court": 7,
+          "hour": "11:00",
+          "lastTakenRead": {
+            "seq": 107,
+            "requestOffsetMs": 660005,
+            "responseOffsetMs": 660624
+          },
+          "firstOpenRead": {
+            "seq": 108,
+            "requestOffsetMs": 690012,
+            "responseOffsetMs": 690418
+          },
+          "reopenWindowMs": [
+            660005,
+            690418
+          ],
+          "commitNoLaterThanMs": 90418,
+          "commitWindowIfExactExpiryMs": [
+            60005,
+            90418
+          ],
+          "retakenBy": {
+            "seq": 113,
+            "requestOffsetMs": 840009,
+            "responseOffsetMs": 840179
+          }
+        }
+      ]
+    },
+    "staleReads": {
+      "reads": 45,
+      "provablyStale": 3,
+      "byDuration": {
+        "fastUnder500ms": {
+          "reads": 38,
+          "stale": 2
+        },
+        "slowOver2s": {
+          "reads": 2,
+          "stale": 0
+        }
+      },
+      "examples": [
+        {
+          "requestOffsetMs": 30847,
+          "responseOffsetMs": 31776,
+          "durationMs": 929,
+          "taken": 89,
+          "alreadySeenTaken": 92,
+          "seenBy": {
+            "requestOffsetMs": 29520,
+            "responseOffsetMs": 30827
+          }
+        },
+        {
+          "requestOffsetMs": 32450,
+          "responseOffsetMs": 32537,
+          "durationMs": 87,
+          "taken": 91,
+          "alreadySeenTaken": 92,
+          "seenBy": {
+            "requestOffsetMs": 29520,
+            "responseOffsetMs": 30827
+          }
+        },
+        {
+          "requestOffsetMs": 36008,
+          "responseOffsetMs": 36096,
+          "durationMs": 88,
+          "taken": 91,
+          "alreadySeenTaken": 92,
+          "seenBy": {
+            "requestOffsetMs": 29520,
+            "responseOffsetMs": 30827
+          }
+        }
+      ]
     }
   },
   "sep23": {

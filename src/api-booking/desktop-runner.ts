@@ -30,8 +30,8 @@ import { officialCheckoutUrl } from './checkout-restoration.js';
 import type { AvailabilitySnapshot, BookingPlan, BookingPreferences } from './types.js';
 import { OndaBrowserSessionTransport, type BrowserTransportObservation, type CheckoutHttpResponse } from './browser-session-transport.js';
 import { ProviderTraceSet, type CdpSessionLike } from './checkout-provider-trace.js';
-import { CriticalPathRecorder, type CriticalPathRow } from './critical-path.js';
-import { calibrateRendererClock, sampleRendererClock } from './renderer-clock.js';
+import { CriticalPathRecorder, warmUpCriticalPath, type CriticalPathRow } from './critical-path.js';
+import { calibrateRendererClock, calibrateRendererClockAdaptive, sampleRendererClock } from './renderer-clock.js';
 import { rendererDispatchEnabled } from './renderer-dispatch.js';
 import { calendarFreeSecurityContext } from './calendar-free-security-context.js';
 import { firstUnjournaledAvailableCandidate } from './candidate-journal.js';
@@ -144,6 +144,7 @@ let providerTraces:ProviderTraceSet|undefined,providerTracesSaved=false;
 let criticalPath:CriticalPathRecorder|undefined,criticalPathPages=new Map<string,Page>(),criticalPathSaved=false;
 const startCriticalPath=(clock:TrustedReleaseClock,releaseMs:number,pages:ReadonlyMap<string,Page>)=>{
   criticalPathPages=new Map(pages);criticalPathSaved=false;
+  try{warmUpCriticalPath();}catch{/* telemetry only */}
   criticalPath=new CriticalPathRecorder(releaseMs,clock.monotonicDeadline(releaseMs),clock.offsetMs-clock.wallDisagreementMs(),[...pages.keys()]);
   return criticalPath;
 };
@@ -170,7 +171,7 @@ const persistCriticalPath=async()=>{
 const experimentalRendererDispatch=(pageFor:(worker:WorkerId)=>Page|undefined,transportFor:(worker:WorkerId)=>OndaBrowserSessionTransport|undefined)=>
   rendererDispatchEnabled()?{rendererDispatch:{pageUrl:ONDA_URL,transportFor,
     calibrate:async(attempt:{target:{workerId:WorkerId}})=>{const page=pageFor(attempt.target.workerId);if(!page)throw Error('RENDERER_PAGE_MISSING');
-      return calibrateRendererClock(await sampleRendererClock(page,8));},
+      return calibrateRendererClockAdaptive(page,{targetUncertaintyMs:1.5,maxSamples:32});},
     // Called inside the arm pass: in-memory now, logging on a later macrotask.
     onPlan:(event:{workerId:WorkerId;mode:'renderer'|'node-fallback';code?:string;calibration?:import('./renderer-clock.js').RendererClockCalibration})=>{
       if(event.mode==='renderer'){criticalPath?.mode(event.workerId,'renderer-experimental');criticalPath?.calibration(event.workerId,event.calibration);}

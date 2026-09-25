@@ -82,4 +82,5 @@ The repository contains an older tracked sanitized diagnostics corpus and `diagn
 - `RELEASE_CRITICAL_PATH_TELEMETRY_REPORT.md` and `TELEMETRY_SPEC.md`: event and timing interpretation.
 - `PHASE7_BOOKING_REPORT.md`, `PHASE7_1_REPORT.md`, and `PHASE7_2_REPORT.md`: older Standard/Extended rollout evidence.
 - `NEXT_RELEASE_READINESS.md`, `RELEASE_RUN_REPORT_2026-09-12.md` and `RELEASE_RUN_REPORT_2026-09-23.md`: dated operational evidence, not a guarantee of current live readiness.
+- `SERVER_ARBITRATION_INVESTIGATION.md`: provider-side arbitration after the 2026-09-25 release (why release-time checkouts waited ~30 s and got 409), the evidence-derived timeline and replay under `diagnostics-archive/2026-09-25/arbitration/`, the sanitized 409 capture, critical-path telemetry, and the experimental renderer-resident dispatch (off unless `ONDA_EXPERIMENTAL_RENDERER_DISPATCH=RENDERER_RESIDENT_V1`).
 - `archive/special-friday/`: the retired Special Friday A–H session — its report, standalone modules and tests, kept for reference only.

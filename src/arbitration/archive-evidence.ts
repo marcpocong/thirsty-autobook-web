@@ -203,6 +203,81 @@ export function parseSlotWatch(lines: Line[]): SlotWatchLog | null {
   return { version: num(header.version) ?? 1, releaseMs, observerOffsetMs, reads };
 }
 
+/**
+ * Cells that were taken and then reopened around +10 min, from complete availability reads in request order.
+ * Onda's pending hold expires 10 min after the checkout that created it (hold_expires_at − 10 min = commit, FACT
+ * from verified holds). A reopening therefore bounds the creation of the hold that blocked the cell:
+ *   reopen ≥ hold_expires_at  ⇒  commit ≤ reopen − 10 min  ≤ (first open read's response) − 10 min.
+ * If holds reopen exactly at hold_expires_at (lazy expiry) the commit also lies after (last taken read's request) − 10 min.
+ * A cancellation would look the same (INFERENCE, not FACT).
+ */
+export interface HoldReopening {
+  court: number; hour: string;
+  lastTakenRead: { seq: number; requestOffsetMs: number; responseOffsetMs: number };
+  firstOpenRead: { seq: number; requestOffsetMs: number; responseOffsetMs: number };
+  reopenWindowMs: [number, number];
+  commitNoLaterThanMs: number;
+  commitWindowIfExactExpiryMs: [number, number];
+  retakenBy: { seq: number; requestOffsetMs: number; responseOffsetMs: number } | null;
+}
+type MatrixRead = { seq: number; requestOffsetMs: number; responseOffsetMs: number | null; matrix?: string | null };
+const cellCodes = (matrix: string) => {
+  const codes = new Map<string, string>();
+  for (const row of matrix.split(',')) {
+    const [court, states] = row.split(':');
+    if (!court || !states) continue;
+    [...states].forEach((code, index) => codes.set(`${court}/${String(8 + index).padStart(2, '0')}:00`, code));
+  }
+  return codes;
+};
+export function holdReopenings(reads: readonly MatrixRead[], windowMs: [number, number] = [HOLD_DURATION_MS - 300_000, HOLD_DURATION_MS + 300_000]): HoldReopening[] {
+  const complete = reads.filter(read => read.matrix && !/[?U]/.test(read.matrix) && read.responseOffsetMs !== null && Number.isFinite(read.responseOffsetMs)
+    && read.requestOffsetMs >= windowMs[0] && read.requestOffsetMs <= windowMs[1]).sort((a, b) => a.requestOffsetMs - b.requestOffsetMs || a.seq - b.seq);
+  const brief = (read: MatrixRead) => ({ seq: read.seq, requestOffsetMs: read.requestOffsetMs, responseOffsetMs: read.responseOffsetMs! });
+  const result: HoldReopening[] = [];
+  const decoded = complete.map(read => cellCodes(read.matrix!));
+  for (let index = 1; index < complete.length; index++) {
+    for (const [cell, code] of decoded[index]!) {
+      if (code !== 'O' || decoded[index - 1]!.get(cell) !== 'X') continue;
+      const before = complete[index - 1]!, after = complete[index]!;
+      const retaken = complete.slice(index + 1).find((_, offset) => decoded[index + 1 + offset]!.get(cell) === 'X');
+      const [court, hour] = cell.split('/');
+      result.push({ court: Number(court), hour: hour!, lastTakenRead: brief(before), firstOpenRead: brief(after),
+        reopenWindowMs: [before.requestOffsetMs, after.responseOffsetMs!], commitNoLaterThanMs: after.responseOffsetMs! - HOLD_DURATION_MS,
+        commitWindowIfExactExpiryMs: [before.requestOffsetMs - HOLD_DURATION_MS, after.responseOffsetMs! - HOLD_DURATION_MS], retakenBy: retaken ? brief(retaken) : null });
+    }
+  }
+  return result;
+}
+
+/**
+ * Reads that were PROVABLY STALE: they reported fewer taken cells than a read that had already COMPLETED before
+ * they were even sent. Taken cells only return through cancellation or hold expiry (10 min), so in the first
+ * minutes a lower count means the read was served from an older view of the data (e.g. a lagging replica or a
+ * cache). FACT: the counts and times; INFERENCE: "older view" (a burst of cancellations would also lower counts).
+ */
+export interface StaleReadEvidence {
+  reads: number; provablyStale: number;
+  byDuration: { fastUnder500ms: { reads: number; stale: number }; slowOver2s: { reads: number; stale: number } };
+  examples: Array<{ requestOffsetMs: number; responseOffsetMs: number; durationMs: number; taken: number; alreadySeenTaken: number; seenBy: { requestOffsetMs: number; responseOffsetMs: number } }>;
+}
+export function staleReadEvidence(log: SlotWatchLog, windowMs: [number, number] = [0, 120_000]): StaleReadEvidence {
+  const reads = log.reads.filter(read => read.kind === 'availability' && read.outcome === 'ok' && read.published && read.taken !== null && read.responseOffsetMs !== null
+    && read.requestOffsetMs >= windowMs[0] && read.requestOffsetMs < windowMs[1]);
+  const examples: StaleReadEvidence['examples'] = [];
+  let fast = 0, fastStale = 0, slow = 0, slowStale = 0;
+  for (const read of reads) {
+    const duration = read.responseOffsetMs! - read.requestOffsetMs;
+    const earlier = reads.filter(other => other.responseOffsetMs! <= read.requestOffsetMs).sort((a, b) => b.taken! - a.taken! || a.responseOffsetMs! - b.responseOffsetMs!)[0];
+    const stale = earlier !== undefined && read.taken! < earlier.taken!;
+    if (duration < 500) { fast++; if (stale) fastStale++; }
+    if (duration >= 2_000) { slow++; if (stale) slowStale++; }
+    if (stale) examples.push({ requestOffsetMs: read.requestOffsetMs, responseOffsetMs: read.responseOffsetMs!, durationMs: duration, taken: read.taken!,
+      alreadySeenTaken: earlier.taken!, seenBy: { requestOffsetMs: earlier.requestOffsetMs, responseOffsetMs: earlier.responseOffsetMs! } });
+  }
+  return { reads: reads.length, provablyStale: examples.length, byDuration: { fastUnder500ms: { reads: fast, stale: fastStale }, slowOver2s: { reads: slow, stale: slowStale } }, examples };
+}
+
 export interface CongestionEvidence {
   releaseMs: number; source: string;
   /** Reads requested in [0, 120 s) after release: request offset, duration, outcome. */

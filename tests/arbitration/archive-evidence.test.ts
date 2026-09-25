@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { checkoutSamples, commitEvidence, compareLanes, congestionEvidence, orderingEvidence, parseNdjson, parseSlotWatch, providerEvidence,
+import { checkoutSamples, commitEvidence, compareLanes, congestionEvidence, orderingEvidence, parseNdjson, parseSlotWatch, providerEvidence, staleReadEvidence,
   releaseAttempts, runTrace, vercelIdConsistency } from '../../src/arbitration/archive-evidence.js';
 import { buildReleaseTimeline } from '../../src/arbitration/release-timeline.js';
 import { clusters, kendallTau, mannWhitney, percentile, seededRandom, summarize } from '../../src/arbitration/stats.js';
@@ -97,6 +97,15 @@ describe.runIf(existsSync(archive))('2026-09-25 archive (regression guard for th
     expect(congestion.lastSlowReadResponseMs).toBeCloseTo(32846.6, 1);
   });
 
+  it('finds reads that were provably stale during the release window', () => {
+    const log = parseSlotWatch(watch)!;
+    const stale = staleReadEvidence(log);
+    // e.g. the +22.0 s read answered in ~90 ms with 10 taken cells after reads that had already completed showed 27.
+    expect(stale.examples.some(example => Math.round(example.requestOffsetMs / 1000) === 22 && example.taken === 10 && example.alreadySeenTaken === 27)).toBe(true);
+    expect(stale.byDuration.fastUnder500ms.stale).toBeGreaterThan(0);
+    expect(stale.provablyStale).toBeLessThan(stale.reads);
+  });
+
   it('builds a deterministic timeline covering every requested category', () => {
     const build = () => buildReleaseTimeline({ runnerLines: runner, runnerFile: 'runner', slotWatchLines: watch, slotWatchFile: 'watch', providerLines: provider, providerFile: 'provider' });
     const timeline = build();
@@ -111,5 +120,18 @@ describe.runIf(existsSync(archive))('2026-09-25 archive (regression guard for th
     const disappearance = timeline.events.filter(event => event.category === 'inventory-disappearance');
     expect(disappearance.map(event => event.subject.split(':')[1]).sort()).toEqual(['A', 'B', 'C', 'D', 'E', 'F', 'G']);
     expect(Math.min(...disappearance.map(event => event.tEndMs!))).toBeLessThan(17_100);
+    // Taken cells that reopened: 31 between the +10:00 and +10:30 reads (first-wave holds reaching hold_expires_at; G's whole
+    // target among them), plus 6 at +6.5–7 min and 1 at +14 min that cannot all be expiries (the +6.5 min cells were open at publication).
+    const expiry = timeline.events.filter(event => event.category === 'hold-expiry');
+    expect(expiry).toHaveLength(38);
+    const cluster = expiry.filter(event => event.tMs! >= 599_000 && event.tEndMs! <= 631_000);
+    expect(cluster).toHaveLength(31);
+    const forG = cluster.filter(event => (event.data.targetOf as string[]).includes('G'));
+    expect(forG.map(event => event.data.hour)).toEqual(['15:00', '16:00', '17:00']);
+    for (const event of forG) {
+      expect(event.data.commitNoLaterThanMs as number).toBeGreaterThan(29_000);
+      expect(event.data.commitNoLaterThanMs as number).toBeLessThan(31_000);
+      expect(event.data.retakenBy).not.toBeNull();
+    }
   });
 });

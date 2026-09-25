@@ -61,6 +61,29 @@ export interface Bounded { ms: number; lowMs: number; highMs: number }
 
 const round = (value: number) => Math.round(value * 100) / 100;
 
+/**
+ * Exercises every recorder method once on a throwaway instance. The first call of a method in a fresh process
+ * pays for V8's lazy compilation (≈0.2 ms for a 7-worker release, measured by
+ * scripts/benchmark-critical-path-overhead.ts); calling this before release moves that cost off the T-0 path.
+ */
+export function warmUpCriticalPath(iterations = 300): void {
+  // Enough repetitions for V8 to tier the hot methods up from the interpreter; ~1 ms, well before release.
+  for (let round = 0; round < iterations; round++) warmUpOnce();
+}
+function warmUpOnce(): void {
+  const recorder = new CriticalPathRecorder(0, 0, 0, ['A', 'B']);
+  for (const worker of ['A', 'B']) {
+    recorder.mark('*', 'schedulerFired'); recorder.mark(worker, 'workerInvoked'); recorder.mark(worker, 'rendererArmSent');
+    recorder.observeTransport(worker, { event: 'CHECKOUT_FUNCTION_ENTERED', preparedContextAgeMs: 0, securitySource: 'PREPARED_CONTEXT' });
+    recorder.observeTransport(worker, { event: 'CHECKOUT_PRE_POST', preparedContextAgeMs: 0, securitySource: 'PREPARED_CONTEXT' });
+    recorder.observeTransport(worker, { event: 'RENDERER_DISPATCH_ARMED', preparedContextAgeMs: 0, calibrationUncertaintyMs: 0 });
+    recorder.observeTransport(worker, { event: 'CHECKOUT_HTTP_POST_INITIATED', initiationEvidence: 'PLAYWRIGHT_REQUEST_EVENT' });
+    recorder.observeTransport(worker, { event: 'CHECKOUT_RESPONSE_COMPLETED', networkDurationMs: 0, statusCode: 409, dispatchState: 'RESPONSE_CAPTURED',
+      renderer: { timeOrigin: 0, enteredAt: 0, fetchAt: 0, headersAt: 0, completedAt: 0 }, browserRequestWallMs: 1 });
+  }
+  recorder.rows();
+}
+
 export class CriticalPathRecorder {
   private readonly workers = new Map<string, WorkerRecord>();
   private schedulerFired: number | undefined;

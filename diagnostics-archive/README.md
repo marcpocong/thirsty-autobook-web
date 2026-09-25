@@ -34,3 +34,9 @@ checked against all private worker identity values and the original booking
 references with zero matches. `manifest.json` lists every file with its
 source path, size and SHA-256. The analysis of this release is
 `RELEASE_RUN_REPORT_2026-09-25.md`.
+
+`2026-09-25/arbitration/` holds derived, regenerable analysis of that snapshot (no new runtime data): the
+release timeline (`release-2026-09-25.timeline.jsonl`), the arbitration evidence summary
+(`arbitration-evidence.json`), and the contention-simulator replay (`replay-arbitration.json`). They are rebuilt
+deterministically by `scripts/analyze-release-arbitration.ts` and `scripts/replay-release-arbitration.ts`; see
+`SERVER_ARBITRATION_INVESTIGATION.md`.

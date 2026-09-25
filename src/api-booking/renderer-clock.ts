@@ -88,6 +88,23 @@ export async function sampleRendererClock(page: Pick<Page, 'evaluate'>, count = 
   return samples;
 }
 
+/**
+ * Samples until the calibration is at least as tight as `targetUncertaintyMs` or `maxSamples` round trips were
+ * taken. Every extra sample can only narrow the intersection, never move it; an inconsistent result stops at once
+ * (fail closed). Under load (several pages, busy CDP) single round trips are slow, so a fixed small count can
+ * leave the interval too wide to use.
+ */
+export async function calibrateRendererClockAdaptive(page: Pick<Page, 'evaluate'>, options: { targetUncertaintyMs: number; initialSamples?: number; maxSamples?: number },
+  perf: () => number = () => performance.now()): Promise<RendererClockCalibration> {
+  const samples = await sampleRendererClock(page, options.initialSamples ?? 8, perf);
+  let calibration = calibrateRendererClock(samples);
+  while (calibration.consistent && calibration.uncertaintyMs > options.targetUncertaintyMs && samples.length < (options.maxSamples ?? 32)) {
+    samples.push(...await sampleRendererClock(page, 4, perf));
+    calibration = calibrateRendererClock(samples);
+  }
+  return calibration;
+}
+
 /** Keeps the tightest samples (smallest round trips); stale or slow samples only widen the interval. */
 export function tightestSamples(samples: readonly RendererClockSample[], keep = 4): RendererClockSample[] {
   return [...samples].sort((a, b) => (a.nodeAfter - a.nodeBefore) - (b.nodeAfter - b.nodeBefore)).slice(0, Math.max(1, keep));

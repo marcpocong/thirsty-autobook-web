@@ -10,7 +10,7 @@
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
-import { checkoutSamples, commitEvidence, compareLanes, congestionEvidence, orderingEvidence, parseNdjson, parseSlotWatch, providerEvidence,
+import { checkoutSamples, commitEvidence, compareLanes, congestionEvidence, holdReopenings, orderingEvidence, parseNdjson, parseSlotWatch, providerEvidence, staleReadEvidence,
   readRunTraces, releaseAttempts, vercelIdConsistency, type Line } from '../src/arbitration/archive-evidence.js';
 import { buildReleaseTimeline } from '../src/arbitration/release-timeline.js';
 import { summarize } from '../src/arbitration/stats.js';
@@ -58,6 +58,14 @@ const sep23Trace = traces.find(trace => trace.runId.startsWith('88473147'));
 const watch25 = parseSlotWatch(read(watchPath))!;
 const watch24Path = join(archive, 'slot-watch', '2026-09-26_d4cc58f6-2624-48fa-a60e-40736380511d.ndjson');
 const watch24 = existsSync(watch24Path) ? parseSlotWatch(read(watch24Path)) : null;
+/** Reopened cells around +10 min (observer clock; ±tens of ms against the dispatch clock is irrelevant at this scale). */
+function holdExpirySummary(log: NonNullable<ReturnType<typeof parseSlotWatch>>) {
+  const reopenings = holdReopenings(log.reads.filter(read => read.kind === 'availability' && read.outcome === 'ok'));
+  const bounds = reopenings.map(value => value.commitNoLaterThanMs);
+  return { provenance: 'FACT: cells taken then open in our own reads around +10 min. INFERENCE: pending holds reaching hold_expires_at (commit + 10 min); a cancellation looks the same.',
+    reopenedCells: reopenings.length, commitNoLaterThanMs: bounds.length ? { min: Math.min(...bounds), max: Math.max(...bounds) } : null,
+    retakenCells: reopenings.filter(value => value.retakenBy).length, cells: reopenings };
+}
 const sep23Release = Date.parse('2026-09-23T00:00:00.000Z');
 const sep23Reads = (sep23Trace?.lines ?? []).filter(line => line.stage === 'SPECIAL_AVAILABILITY_SAMPLE').map(line => {
   const at = Date.parse(String(line.at)), duration = Number(line.durationMs);
@@ -86,9 +94,11 @@ const evidence = {
     responseSizeClasses: Object.entries(provider.reduce<Record<string, string[]>>((groups, item) => { (groups[item.sizeClass ?? 'UNKNOWN'] ??= []).push(item.workerId); return groups; }, {}))
       .map(([sizeClass, workers]) => ({ sizeClass, workers, bytes: provider.filter(item => workers.includes(item.workerId)).map(item => item.encodedBytes) })),
     congestion: congestionEvidence(watch25, rel(watchPath)),
+    holdExpiry: holdExpirySummary(watch25),
+    staleReads: staleReadEvidence(watch25),
   },
   sep24: sep24Trace ? { attempts: releaseAttempts(sep24Trace), ordering: orderingEvidence(releaseAttempts(sep24Trace)),
-    congestion: watch24 ? congestionEvidence(watch24, rel(watch24Path)) : null } : null,
+    congestion: watch24 ? congestionEvidence(watch24, rel(watch24Path)) : null, holdExpiry: watch24 ? holdExpirySummary(watch24) : null, staleReads: watch24 ? staleReadEvidence(watch24) : null } : null,
   sep23: { attempts: sep23Attempts, reads: sep23Reads.map(read => ({ ...read, requestOffsetMs: round1(read.requestOffsetMs), responseOffsetMs: round1(read.responseOffsetMs) })),
     note: 'Sept 23 reads are runner SPECIAL_AVAILABILITY_SAMPLE events (PC wall clock; the PC offset that morning was not recorded, typically tens of ms).' },
   offPeak: {

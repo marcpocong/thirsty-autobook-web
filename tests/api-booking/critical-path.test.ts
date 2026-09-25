@@ -1,7 +1,7 @@
 import { chromium, type Browser } from 'playwright';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CriticalPathRecorder } from '../../src/api-booking/critical-path.js';
-import { assertCalibrationUsable, calibrateRendererClock, earliestSafeRendererTime, rendererToNode, RendererClockError, sampleRendererClock,
+import { assertCalibrationUsable, calibrateRendererClock, calibrateRendererClockAdaptive, earliestSafeRendererTime, rendererToNode, RendererClockError, sampleRendererClock,
   type RendererClockSample } from '../../src/api-booking/renderer-clock.js';
 import { seededRandom } from '../../src/arbitration/stats.js';
 
@@ -94,5 +94,27 @@ describe('real renderer clock (test-owned Chromium, no network)', () => {
     expect(mapped.highMs).toBeGreaterThanOrEqual(before);
     expect(mapped.lowMs).toBeLessThanOrEqual(after);
     await page.close();
+  });
+});
+
+describe('adaptive renderer clock calibration', () => {
+  it('keeps sampling until the interval is tight enough, and stops at once on an inconsistent clock', async () => {
+    const random = seededRandom(5);
+    let node = 1_000;
+    const trueOffset = 250;
+    // A page whose round trips are slow and noisy (busy CDP): each answer lands 0.5–8.5 ms into a 1–17 ms round trip,
+    // so 8 round trips alone rarely bound the offset to ±0.9 ms (this seed needs more).
+    const page = { evaluate: async () => { const there = 0.5 + random() * 8, back = 0.5 + random() * 8; node += there; const renderer = node - trueOffset; node += back; return renderer; } };
+    const calibration = await calibrateRendererClockAdaptive(page, { targetUncertaintyMs: 0.9, maxSamples: 64 }, () => node);
+    expect(calibration.consistent).toBe(true);
+    expect(calibration.offsetLowMs).toBeLessThanOrEqual(trueOffset);
+    expect(calibration.offsetHighMs).toBeGreaterThanOrEqual(trueOffset);
+    expect(calibration.samples).toBeGreaterThan(8);
+    expect(calibration.uncertaintyMs).toBeLessThanOrEqual(0.9);
+    let calls = 0;
+    const jumping = { evaluate: async () => { calls++; node += 1; return calls === 3 ? node + 500 : node - trueOffset; } };
+    const broken = await calibrateRendererClockAdaptive(jumping, { targetUncertaintyMs: 0.01, maxSamples: 64 }, () => node);
+    expect(broken.consistent).toBe(false);
+    expect(calls).toBe(8);
   });
 });
