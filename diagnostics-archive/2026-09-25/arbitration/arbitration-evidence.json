@@ -1,0 +1,2082 @@
+{
+  "schema": "arbitration-evidence/v1",
+  "sources": {
+    "archive": "diagnostics-archive/2026-09-25/local",
+    "runner": "diagnostics-archive/2026-09-25/local/api-booking/run-progress/fc62669a-bfe5-4726-998a-fa0616bd1e19.ndjson",
+    "slotWatch": "diagnostics-archive/2026-09-25/local/slot-watch/2026-09-27_60d68777-0022-471a-99aa-3a47543858f4.ndjson",
+    "providerTrace": "diagnostics-archive/2026-09-25/local/release-forensics/fc62669a-bfe5-4726-998a-fa0616bd1e19/provider-trace.ndjson",
+    "runTracesAnalyzed": 175
+  },
+  "clocks": {
+    "releaseMs": 1790294400000,
+    "dispatchOffsetMs": 23.3,
+    "observerOffsetMs": 19.6,
+    "dispatchUncertaintyMs": 24.2,
+    "note": "All Sept 25 offsets are on the dispatch clock. Observer (Slot Watch) offsets were shifted by dispatch − observer offset."
+  },
+  "sep25": {
+    "attempts": [
+      {
+        "workerId": "A",
+        "court": 7,
+        "startTime": "19:00",
+        "sendOffsetMs": 9.8,
+        "sendProvenance": "FACT",
+        "responseOffsetMs": 34618.4,
+        "networkDurationMs": 34618,
+        "statusCode": 409,
+        "errorHint": "availability"
+      },
+      {
+        "workerId": "B",
+        "court": 6,
+        "startTime": "19:00",
+        "sendOffsetMs": 10.5,
+        "sendProvenance": "FACT",
+        "responseOffsetMs": 29558.1,
+        "networkDurationMs": 29557,
+        "statusCode": 409,
+        "errorHint": "availability"
+      },
+      {
+        "workerId": "C",
+        "court": 5,
+        "startTime": "19:00",
+        "sendOffsetMs": 10.6,
+        "sendProvenance": "FACT",
+        "responseOffsetMs": 29823.5,
+        "networkDurationMs": 29822,
+        "statusCode": 409,
+        "errorHint": "availability"
+      },
+      {
+        "workerId": "D",
+        "court": 4,
+        "startTime": "19:00",
+        "sendOffsetMs": 10.6,
+        "sendProvenance": "FACT",
+        "responseOffsetMs": 29108.8,
+        "networkDurationMs": 29107,
+        "statusCode": 409,
+        "errorHint": "availability"
+      },
+      {
+        "workerId": "F",
+        "court": 2,
+        "startTime": "15:00",
+        "sendOffsetMs": 10.7,
+        "sendProvenance": "FACT",
+        "responseOffsetMs": 33857.7,
+        "networkDurationMs": 33855,
+        "statusCode": 409,
+        "errorHint": "availability"
+      },
+      {
+        "workerId": "E",
+        "court": 3,
+        "startTime": "19:00",
+        "sendOffsetMs": 11.6,
+        "sendProvenance": "FACT",
+        "responseOffsetMs": 32175,
+        "networkDurationMs": 32173,
+        "statusCode": 409,
+        "errorHint": "availability"
+      },
+      {
+        "workerId": "G",
+        "court": 1,
+        "startTime": "15:00",
+        "sendOffsetMs": 11.7,
+        "sendProvenance": "FACT",
+        "responseOffsetMs": 32975.9,
+        "networkDurationMs": 32973,
+        "statusCode": 409,
+        "errorHint": "availability"
+      }
+    ],
+    "ordering": {
+      "sendOrder": [
+        "A",
+        "B",
+        "C",
+        "D",
+        "F",
+        "E",
+        "G"
+      ],
+      "responseOrder": [
+        "D",
+        "B",
+        "C",
+        "E",
+        "G",
+        "F",
+        "A"
+      ],
+      "sendVsResponseTau": 0.0952,
+      "responseGapsMs": [
+        449.3,
+        265.4,
+        2351.5,
+        800.9,
+        881.8,
+        760.7
+      ],
+      "firstResponseMs": 29108.8,
+      "lastResponseMs": 34618.4
+    },
+    "provider": [
+      {
+        "workerId": "A",
+        "status": 409,
+        "encodedBytes": 397,
+        "sizeClass": "LARGE_~400B",
+        "vercelId": "sin1::sin1::p8z7w-1790294400030-a73f748bcd1f",
+        "edgeRegion": "sin1",
+        "functionRegion": "sin1",
+        "embeddedOffsetMs": 30,
+        "browserRequestStartUpperBoundMs": 8,
+        "sendMs": 0.3,
+        "waitMs": 34609.3,
+        "headersNodeMs": 34618.2,
+        "protocol": "h2",
+        "reused": true
+      },
+      {
+        "workerId": "B",
+        "status": 409,
+        "encodedBytes": 405,
+        "sizeClass": "LARGE_~400B",
+        "vercelId": "sin1::sin1::9tkzx-1790294400031-dd767626ebff",
+        "edgeRegion": "sin1",
+        "functionRegion": "sin1",
+        "embeddedOffsetMs": 31,
+        "browserRequestStartUpperBoundMs": 9.1,
+        "sendMs": 0.2,
+        "waitMs": 29547.7,
+        "headersNodeMs": 29557.5,
+        "protocol": "h2",
+        "reused": true
+      },
+      {
+        "workerId": "C",
+        "status": 409,
+        "encodedBytes": 220,
+        "sizeClass": "SMALL_~220B",
+        "vercelId": "sin1::sin1::rlfmg-1790294400032-46c4b8097878",
+        "edgeRegion": "sin1",
+        "functionRegion": "sin1",
+        "embeddedOffsetMs": 32,
+        "browserRequestStartUpperBoundMs": 10.6,
+        "sendMs": 0.2,
+        "waitMs": 29809.9,
+        "headersNodeMs": 29822.4,
+        "protocol": "h2",
+        "reused": true
+      },
+      {
+        "workerId": "D",
+        "status": 409,
+        "encodedBytes": 219,
+        "sizeClass": "SMALL_~220B",
+        "vercelId": "sin1::sin1::rss2s-1790294400031-ad67912a9919",
+        "edgeRegion": "sin1",
+        "functionRegion": "sin1",
+        "embeddedOffsetMs": 31,
+        "browserRequestStartUpperBoundMs": 8.5,
+        "sendMs": 0.2,
+        "waitMs": 29098.2,
+        "headersNodeMs": 29107.4,
+        "protocol": "h2",
+        "reused": true
+      },
+      {
+        "workerId": "E",
+        "status": 409,
+        "encodedBytes": 407,
+        "sizeClass": "LARGE_~400B",
+        "vercelId": "sin1::sin1::gqthg-1790294400032-bcbd8236050a",
+        "edgeRegion": "sin1",
+        "functionRegion": "sin1",
+        "embeddedOffsetMs": 32,
+        "browserRequestStartUpperBoundMs": 9.7,
+        "sendMs": 0.2,
+        "waitMs": 32164.9,
+        "headersNodeMs": 32174.9,
+        "protocol": "h2",
+        "reused": true
+      },
+      {
+        "workerId": "F",
+        "status": 409,
+        "encodedBytes": 399,
+        "sizeClass": "LARGE_~400B",
+        "vercelId": "sin1::sin1::m5p5p-1790294400038-eda31da31ebb",
+        "edgeRegion": "sin1",
+        "functionRegion": "sin1",
+        "embeddedOffsetMs": 38,
+        "browserRequestStartUpperBoundMs": 8.9,
+        "sendMs": 0.2,
+        "waitMs": 33847.1,
+        "headersNodeMs": 33856.6,
+        "protocol": "h2",
+        "reused": true
+      },
+      {
+        "workerId": "G",
+        "status": 409,
+        "encodedBytes": 399,
+        "sizeClass": "LARGE_~400B",
+        "vercelId": "sin1::sin1::lp9st-1790294400034-2e1077ff7233",
+        "edgeRegion": "sin1",
+        "functionRegion": "sin1",
+        "embeddedOffsetMs": 34,
+        "browserRequestStartUpperBoundMs": 9.4,
+        "sendMs": 0.1,
+        "waitMs": 32965.8,
+        "headersNodeMs": 32975.6,
+        "protocol": "h2",
+        "reused": true
+      }
+    ],
+    "vercelId": {
+      "rows": [
+        {
+          "workerId": "A",
+          "requestEventMs": 9.8,
+          "embeddedOffsetMs": 30,
+          "embeddedMinusRequestEventMs": 20.2,
+          "embeddedMinusResponseMs": -34588.2
+        },
+        {
+          "workerId": "B",
+          "requestEventMs": 10.5,
+          "embeddedOffsetMs": 31,
+          "embeddedMinusRequestEventMs": 20.5,
+          "embeddedMinusResponseMs": -29526.5
+        },
+        {
+          "workerId": "C",
+          "requestEventMs": 10.6,
+          "embeddedOffsetMs": 32,
+          "embeddedMinusRequestEventMs": 21.4,
+          "embeddedMinusResponseMs": -29790.4
+        },
+        {
+          "workerId": "D",
+          "requestEventMs": 10.6,
+          "embeddedOffsetMs": 31,
+          "embeddedMinusRequestEventMs": 20.4,
+          "embeddedMinusResponseMs": -29076.4
+        },
+        {
+          "workerId": "E",
+          "requestEventMs": 11.6,
+          "embeddedOffsetMs": 32,
+          "embeddedMinusRequestEventMs": 20.4,
+          "embeddedMinusResponseMs": -32142.9
+        },
+        {
+          "workerId": "F",
+          "requestEventMs": 10.7,
+          "embeddedOffsetMs": 38,
+          "embeddedMinusRequestEventMs": 27.3,
+          "embeddedMinusResponseMs": -33818.6
+        },
+        {
+          "workerId": "G",
+          "requestEventMs": 11.7,
+          "embeddedOffsetMs": 34,
+          "embeddedMinusRequestEventMs": 22.3,
+          "embeddedMinusResponseMs": -32941.6
+        }
+      ],
+      "lagSummary": {
+        "n": 7,
+        "min": 20.2,
+        "p50": 20.5,
+        "p95": 27.3,
+        "p99": 27.3,
+        "max": 27.3,
+        "mean": 21.8
+      },
+      "embeddedSpreadMs": 8,
+      "requestEventSpreadMs": 1.9,
+      "orderTau": 0.6667,
+      "closerToSendThanResponse": true
+    },
+    "responseSizeClasses": [
+      {
+        "sizeClass": "LARGE_~400B",
+        "workers": [
+          "A",
+          "B",
+          "E",
+          "F",
+          "G"
+        ],
+        "bytes": [
+          397,
+          405,
+          407,
+          399,
+          399
+        ]
+      },
+      {
+        "sizeClass": "SMALL_~220B",
+        "workers": [
+          "C",
+          "D"
+        ],
+        "bytes": [
+          220,
+          219
+        ]
+      }
+    ],
+    "congestion": {
+      "releaseMs": 1790294400000,
+      "source": "diagnostics-archive/2026-09-25/local/slot-watch/2026-09-27_60d68777-0022-471a-99aa-3a47543858f4.ndjson",
+      "reads": [
+        {
+          "requestOffsetMs": 15.6,
+          "responseOffsetMs": 4141.6,
+          "durationMs": 4126,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 265.6,
+          "responseOffsetMs": 11607.6,
+          "durationMs": 11342,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 503.6,
+          "responseOffsetMs": 9058.6,
+          "durationMs": 8555,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 1007.6,
+          "responseOffsetMs": 9048.6,
+          "durationMs": 8041,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 2011.6,
+          "responseOffsetMs": 16999.6,
+          "durationMs": 14988,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 5002.6,
+          "responseOffsetMs": 17761.6,
+          "durationMs": 12759,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 6001.6,
+          "responseOffsetMs": 17778.6,
+          "durationMs": 11777,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 10013.6,
+          "responseOffsetMs": 18919.6,
+          "durationMs": 8906,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 11011.6,
+          "responseOffsetMs": 17769.6,
+          "durationMs": 6758,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 12013.6,
+          "responseOffsetMs": 17928.6,
+          "durationMs": 5915,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 17006.6,
+          "responseOffsetMs": 17918.6,
+          "durationMs": 912,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 18001.6,
+          "responseOffsetMs": 18071.6,
+          "durationMs": 70,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 19004.6,
+          "responseOffsetMs": 28867.6,
+          "durationMs": 9863,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 20000.6,
+          "responseOffsetMs": 28922.6,
+          "durationMs": 8922,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 21004.6,
+          "responseOffsetMs": 21104.6,
+          "durationMs": 100,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 22004.6,
+          "responseOffsetMs": 22087.6,
+          "durationMs": 83,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 23014.6,
+          "responseOffsetMs": 28878.6,
+          "durationMs": 5864,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 24010.6,
+          "responseOffsetMs": 28973.6,
+          "durationMs": 4963,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 25009.6,
+          "responseOffsetMs": 28984.6,
+          "durationMs": 3975,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 26009.6,
+          "responseOffsetMs": 28994.6,
+          "durationMs": 2985,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 29002.6,
+          "responseOffsetMs": 29157.6,
+          "durationMs": 155,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 30006.6,
+          "responseOffsetMs": 32846.6,
+          "durationMs": 2840,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 31005.6,
+          "responseOffsetMs": 32892.6,
+          "durationMs": 1887,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 32002.6,
+          "responseOffsetMs": 32168.6,
+          "durationMs": 166,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 33007.6,
+          "responseOffsetMs": 33113.6,
+          "durationMs": 106,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 34004.6,
+          "responseOffsetMs": 34089.6,
+          "durationMs": 85,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 35003.6,
+          "responseOffsetMs": 35099.6,
+          "durationMs": 96,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 36003.6,
+          "responseOffsetMs": 36077.6,
+          "durationMs": 74,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 37001.6,
+          "responseOffsetMs": 37094.6,
+          "durationMs": 93,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 38014.6,
+          "responseOffsetMs": 38104.6,
+          "durationMs": 90,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 39011.6,
+          "responseOffsetMs": 39295.6,
+          "durationMs": 284,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 40011.6,
+          "responseOffsetMs": 40313.6,
+          "durationMs": 302,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 41010.6,
+          "responseOffsetMs": 41251.6,
+          "durationMs": 241,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 42009.6,
+          "responseOffsetMs": 42077.6,
+          "durationMs": 68,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 43004.6,
+          "responseOffsetMs": 43074.6,
+          "durationMs": 70,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 44006.6,
+          "responseOffsetMs": 44094.6,
+          "durationMs": 88,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 45015.6,
+          "responseOffsetMs": 45160.6,
+          "durationMs": 145,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 46015.6,
+          "responseOffsetMs": 46085.6,
+          "durationMs": 70,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 47011.6,
+          "responseOffsetMs": 47324.6,
+          "durationMs": 313,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 48014.6,
+          "responseOffsetMs": 48095.6,
+          "durationMs": 81,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 49012.6,
+          "responseOffsetMs": 49358.6,
+          "durationMs": 346,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 50012.6,
+          "responseOffsetMs": 50464.6,
+          "durationMs": 452,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 51010.6,
+          "responseOffsetMs": 51098.6,
+          "durationMs": 88,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 52014.6,
+          "responseOffsetMs": 52103.6,
+          "durationMs": 89,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 53000.6,
+          "responseOffsetMs": 53091.6,
+          "durationMs": 91,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 54013.6,
+          "responseOffsetMs": 54324.6,
+          "durationMs": 311,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 55000.6,
+          "responseOffsetMs": 55292.6,
+          "durationMs": 292,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 56002.6,
+          "responseOffsetMs": 56090.6,
+          "durationMs": 88,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 57005.6,
+          "responseOffsetMs": 57090.6,
+          "durationMs": 85,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 58003.6,
+          "responseOffsetMs": 58078.6,
+          "durationMs": 75,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 59002.6,
+          "responseOffsetMs": 59088.6,
+          "durationMs": 86,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 60002.6,
+          "responseOffsetMs": 60110.6,
+          "durationMs": 108,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 65013.6,
+          "responseOffsetMs": 65431.6,
+          "durationMs": 418,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 70002.6,
+          "responseOffsetMs": 70230.6,
+          "durationMs": 228,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 75008.6,
+          "responseOffsetMs": 75211.6,
+          "durationMs": 203,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 80009.6,
+          "responseOffsetMs": 80292.6,
+          "durationMs": 283,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 85011.6,
+          "responseOffsetMs": 85241.6,
+          "durationMs": 230,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 90013.6,
+          "responseOffsetMs": 90323.6,
+          "durationMs": 310,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 95010.6,
+          "responseOffsetMs": 95195.6,
+          "durationMs": 185,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 100007.6,
+          "responseOffsetMs": 100392.6,
+          "durationMs": 385,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 105007.6,
+          "responseOffsetMs": 105179.6,
+          "durationMs": 172,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 110010.6,
+          "responseOffsetMs": 110226.6,
+          "durationMs": 216,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 115014.6,
+          "responseOffsetMs": 116222.6,
+          "durationMs": 1208,
+          "outcome": "ok",
+          "published": true
+        }
+      ],
+      "lastSlowReadResponseMs": 32846.6,
+      "firstFastPublishedRead": {
+        "requestOffsetMs": 18001.6,
+        "durationMs": 70
+      },
+      "flushes": [
+        {
+          "startMs": 17761.6,
+          "endMs": 18071.6,
+          "reads": 6,
+          "requestSpanMs": 12999
+        },
+        {
+          "startMs": 28867.6,
+          "endMs": 28994.6,
+          "reads": 6,
+          "requestSpanMs": 7005
+        }
+      ]
+    }
+  },
+  "sep24": {
+    "attempts": [
+      {
+        "workerId": "D",
+        "court": 6,
+        "startTime": "15:00",
+        "sendOffsetMs": 100.0859375,
+        "sendProvenance": "FACT",
+        "responseOffsetMs": 28411.1,
+        "networkDurationMs": 28331,
+        "statusCode": 409,
+        "errorHint": null
+      },
+      {
+        "workerId": "C",
+        "court": 5,
+        "startTime": "15:00",
+        "sendOffsetMs": 101.0859375,
+        "sendProvenance": "FACT",
+        "responseOffsetMs": 23077.1,
+        "networkDurationMs": 22988,
+        "statusCode": 409,
+        "errorHint": null
+      },
+      {
+        "workerId": "A",
+        "court": 3,
+        "startTime": "15:00",
+        "sendOffsetMs": 104.0859375,
+        "sendProvenance": "FACT",
+        "responseOffsetMs": 17635.1,
+        "networkDurationMs": 17541,
+        "statusCode": 409,
+        "errorHint": null
+      }
+    ],
+    "ordering": {
+      "sendOrder": [
+        "D",
+        "C",
+        "A"
+      ],
+      "responseOrder": [
+        "A",
+        "C",
+        "D"
+      ],
+      "sendVsResponseTau": -1,
+      "responseGapsMs": [
+        5442,
+        5334
+      ],
+      "firstResponseMs": 17635.1,
+      "lastResponseMs": 28411.1
+    },
+    "congestion": {
+      "releaseMs": 1790208000000,
+      "source": "diagnostics-archive/2026-09-25/local/slot-watch/2026-09-26_d4cc58f6-2624-48fa-a60e-40736380511d.ndjson",
+      "reads": [
+        {
+          "requestOffsetMs": 260,
+          "responseOffsetMs": 355,
+          "durationMs": 95,
+          "outcome": "ok",
+          "published": false
+        },
+        {
+          "requestOffsetMs": 759,
+          "responseOffsetMs": 897,
+          "durationMs": 138,
+          "outcome": "ok",
+          "published": false
+        },
+        {
+          "requestOffsetMs": 1262,
+          "responseOffsetMs": 6265,
+          "durationMs": 5003,
+          "outcome": "failed",
+          "published": null
+        },
+        {
+          "requestOffsetMs": 6272,
+          "responseOffsetMs": 11287,
+          "durationMs": 5015,
+          "outcome": "failed",
+          "published": null
+        },
+        {
+          "requestOffsetMs": 11293,
+          "responseOffsetMs": 15744,
+          "durationMs": 4451,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 15758,
+          "responseOffsetMs": 20758,
+          "durationMs": 5000,
+          "outcome": "failed",
+          "published": null
+        },
+        {
+          "requestOffsetMs": 20769,
+          "responseOffsetMs": 25770,
+          "durationMs": 5001,
+          "outcome": "failed",
+          "published": null
+        },
+        {
+          "requestOffsetMs": 25779,
+          "responseOffsetMs": 29489,
+          "durationMs": 3710,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 29520,
+          "responseOffsetMs": 30827,
+          "durationMs": 1307,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 30847,
+          "responseOffsetMs": 31776,
+          "durationMs": 929,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 31826,
+          "responseOffsetMs": 32427,
+          "durationMs": 601,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 32450,
+          "responseOffsetMs": 32537,
+          "durationMs": 87,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 33013,
+          "responseOffsetMs": 33108,
+          "durationMs": 95,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 34006,
+          "responseOffsetMs": 34104,
+          "durationMs": 98,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 35007,
+          "responseOffsetMs": 35101,
+          "durationMs": 94,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 36008,
+          "responseOffsetMs": 36096,
+          "durationMs": 88,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 37013,
+          "responseOffsetMs": 37116,
+          "durationMs": 103,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 38001,
+          "responseOffsetMs": 38121,
+          "durationMs": 120,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 39014,
+          "responseOffsetMs": 39121,
+          "durationMs": 107,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 40005,
+          "responseOffsetMs": 40078,
+          "durationMs": 73,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 41014,
+          "responseOffsetMs": 41345,
+          "durationMs": 331,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 42003,
+          "responseOffsetMs": 42100,
+          "durationMs": 97,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 43011,
+          "responseOffsetMs": 43332,
+          "durationMs": 321,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 44006,
+          "responseOffsetMs": 44093,
+          "durationMs": 87,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 45007,
+          "responseOffsetMs": 45240,
+          "durationMs": 233,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 46012,
+          "responseOffsetMs": 46115,
+          "durationMs": 103,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 47012,
+          "responseOffsetMs": 47204,
+          "durationMs": 192,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 48005,
+          "responseOffsetMs": 48095,
+          "durationMs": 90,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 49013,
+          "responseOffsetMs": 49114,
+          "durationMs": 101,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 50003,
+          "responseOffsetMs": 50090,
+          "durationMs": 87,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 51004,
+          "responseOffsetMs": 51100,
+          "durationMs": 96,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 52003,
+          "responseOffsetMs": 52094,
+          "durationMs": 91,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 53009,
+          "responseOffsetMs": 53094,
+          "durationMs": 85,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 54013,
+          "responseOffsetMs": 54123,
+          "durationMs": 110,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 55000,
+          "responseOffsetMs": 55090,
+          "durationMs": 90,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 56002,
+          "responseOffsetMs": 56470,
+          "durationMs": 468,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 57002,
+          "responseOffsetMs": 57495,
+          "durationMs": 493,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 58006,
+          "responseOffsetMs": 58636,
+          "durationMs": 630,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 59012,
+          "responseOffsetMs": 59379,
+          "durationMs": 367,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 60002,
+          "responseOffsetMs": 60370,
+          "durationMs": 368,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 65003,
+          "responseOffsetMs": 65187,
+          "durationMs": 184,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 70010,
+          "responseOffsetMs": 70430,
+          "durationMs": 420,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 75011,
+          "responseOffsetMs": 75212,
+          "durationMs": 201,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 80005,
+          "responseOffsetMs": 80185,
+          "durationMs": 180,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 85009,
+          "responseOffsetMs": 85204,
+          "durationMs": 195,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 90000,
+          "responseOffsetMs": 90452,
+          "durationMs": 452,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 95004,
+          "responseOffsetMs": 95205,
+          "durationMs": 201,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 100002,
+          "responseOffsetMs": 100212,
+          "durationMs": 210,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 105032,
+          "responseOffsetMs": 105881,
+          "durationMs": 849,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 110015,
+          "responseOffsetMs": 110373,
+          "durationMs": 358,
+          "outcome": "ok",
+          "published": true
+        },
+        {
+          "requestOffsetMs": 115008,
+          "responseOffsetMs": 115248,
+          "durationMs": 240,
+          "outcome": "ok",
+          "published": true
+        }
+      ],
+      "lastSlowReadResponseMs": 29489,
+      "firstFastPublishedRead": {
+        "requestOffsetMs": 32450,
+        "durationMs": 87
+      },
+      "flushes": []
+    }
+  },
+  "sep23": {
+    "attempts": [
+      {
+        "courtIds": [
+          5
+        ],
+        "hours": [
+          "20:00",
+          "21:00"
+        ],
+        "sendOffsetMs": 48,
+        "responseOffsetMs": 13336,
+        "diagnostic": {
+          "status": 409,
+          "category": "http-rejection",
+          "contentKind": "json",
+          "responseSource": "application",
+          "errorHint": "availability"
+        },
+        "provenance": "FACT: journal createdAt/updatedAt on the runner network-corrected clock (1 ms); createdAt precedes the POST by < 1 ms of in-memory work"
+      },
+      {
+        "courtIds": [
+          5
+        ],
+        "hours": [
+          "17:00",
+          "18:00",
+          "19:00"
+        ],
+        "sendOffsetMs": 47,
+        "responseOffsetMs": 11543,
+        "diagnostic": {
+          "status": 409,
+          "category": "http-rejection",
+          "contentKind": "json",
+          "responseSource": "application",
+          "errorHint": "availability"
+        },
+        "provenance": "FACT: journal createdAt/updatedAt on the runner network-corrected clock (1 ms); createdAt precedes the POST by < 1 ms of in-memory work"
+      }
+    ],
+    "reads": [
+      {
+        "requestOffsetMs": 13,
+        "responseOffsetMs": 6017,
+        "durationMs": 6004,
+        "published": true
+      },
+      {
+        "requestOffsetMs": 6279,
+        "responseOffsetMs": 9380,
+        "durationMs": 3101,
+        "published": true
+      },
+      {
+        "requestOffsetMs": 9894,
+        "responseOffsetMs": 11869,
+        "durationMs": 1975,
+        "published": true
+      },
+      {
+        "requestOffsetMs": 12875,
+        "responseOffsetMs": 12955,
+        "durationMs": 80,
+        "published": true
+      },
+      {
+        "requestOffsetMs": 14969,
+        "responseOffsetMs": 15051,
+        "durationMs": 82,
+        "published": true
+      }
+    ],
+    "note": "Sept 23 reads are runner SPECIAL_AVAILABILITY_SAMPLE events (PC wall clock; the PC offset that morning was not recorded, typically tens of ms)."
+  },
+  "offPeak": {
+    "lanes": {
+      "provenance": "FACT",
+      "note": "Successful off-peak checkouts only. Proofless: Playwright request event → response (runner network duration). Proof-based: slot proofs ready → response logged (includes a few ms of local work before the POST).",
+      "proofless": {
+        "n": 11,
+        "min": 1025,
+        "p50": 1213,
+        "p95": 2584,
+        "p99": 2584,
+        "max": 2584,
+        "mean": 1524
+      },
+      "proofBased": {
+        "n": 49,
+        "min": 806,
+        "p50": 1208,
+        "p95": 1918,
+        "p99": 2079,
+        "max": 2079,
+        "mean": 1299.8
+      },
+      "mannWhitney": {
+        "u": 328,
+        "z": 1.118,
+        "pTwoSided": 0.2637,
+        "probabilityAGreater": 0.6085
+      },
+      "prooflessMs": [
+        1025,
+        1213,
+        1086,
+        1134,
+        1154,
+        1227,
+        2190,
+        2584,
+        2050,
+        1908,
+        1193
+      ],
+      "proofBasedMs": [
+        1271,
+        1277,
+        1122,
+        1918,
+        2079,
+        1699,
+        1196,
+        1454,
+        1274,
+        1179,
+        1546,
+        1633,
+        1380,
+        957,
+        965,
+        806,
+        1402,
+        1610,
+        1648,
+        1566,
+        1958,
+        968,
+        1057,
+        877,
+        1191,
+        921,
+        989,
+        1903,
+        1768,
+        1144,
+        1000,
+        1026,
+        1793,
+        1030,
+        1059,
+        1785,
+        1312,
+        1293,
+        1222,
+        1208,
+        1126,
+        1244,
+        957,
+        1096,
+        959,
+        1425,
+        1059,
+        1180,
+        1160
+      ]
+    },
+    "commitPosition": [
+      {
+        "runId": "18f36d19-9173-400b-a9ea-b2d52ac5cdab",
+        "method": "proof-based",
+        "holds": 6,
+        "simultaneous": false,
+        "sendSpreadMs": 2261,
+        "commitSpreadMs": 2562,
+        "responseSpreadMs": 2689,
+        "commitVsResponseTau": 1,
+        "perHold": [
+          {
+            "workerId": "D",
+            "durationMs": 1271,
+            "commitMinusSendPcMs": 1166,
+            "responseMinusCommitPcMs": 105
+          },
+          {
+            "workerId": "C",
+            "durationMs": 1277,
+            "commitMinusSendPcMs": 1087,
+            "responseMinusCommitPcMs": 190
+          },
+          {
+            "workerId": "F",
+            "durationMs": 1122,
+            "commitMinusSendPcMs": 1033,
+            "responseMinusCommitPcMs": 89
+          },
+          {
+            "workerId": "E",
+            "durationMs": 1918,
+            "commitMinusSendPcMs": 1604,
+            "responseMinusCommitPcMs": 314
+          },
+          {
+            "workerId": "B",
+            "durationMs": 2079,
+            "commitMinusSendPcMs": 1266,
+            "responseMinusCommitPcMs": 813
+          },
+          {
+            "workerId": "A",
+            "durationMs": 1699,
+            "commitMinusSendPcMs": 1467,
+            "responseMinusCommitPcMs": 232
+          }
+        ],
+        "pcOffsetFeasibleMs": {
+          "min": -89,
+          "max": 1033
+        }
+      },
+      {
+        "runId": "204c1e4c-da1e-4eb3-81d7-b3985c430935",
+        "method": "proof-based",
+        "holds": 6,
+        "simultaneous": false,
+        "sendSpreadMs": 895,
+        "commitSpreadMs": 1188,
+        "responseSpreadMs": 1332,
+        "commitVsResponseTau": 0.8667,
+        "perHold": [
+          {
+            "workerId": "F",
+            "durationMs": 1196,
+            "commitMinusSendPcMs": 1036,
+            "responseMinusCommitPcMs": 160
+          },
+          {
+            "workerId": "E",
+            "durationMs": 1454,
+            "commitMinusSendPcMs": 1325,
+            "responseMinusCommitPcMs": 129
+          },
+          {
+            "workerId": "C",
+            "durationMs": 1274,
+            "commitMinusSendPcMs": 1112,
+            "responseMinusCommitPcMs": 162
+          },
+          {
+            "workerId": "D",
+            "durationMs": 1179,
+            "commitMinusSendPcMs": 1041,
+            "responseMinusCommitPcMs": 138
+          },
+          {
+            "workerId": "B",
+            "durationMs": 1546,
+            "commitMinusSendPcMs": 1362,
+            "responseMinusCommitPcMs": 184
+          },
+          {
+            "workerId": "A",
+            "durationMs": 1633,
+            "commitMinusSendPcMs": 1329,
+            "responseMinusCommitPcMs": 304
+          }
+        ],
+        "pcOffsetFeasibleMs": {
+          "min": -129,
+          "max": 1036
+        }
+      },
+      {
+        "runId": "2537ab8f-e322-421f-bead-2f2798be3c82",
+        "method": "proof-based",
+        "holds": 4,
+        "simultaneous": false,
+        "sendSpreadMs": 301,
+        "commitSpreadMs": 88,
+        "responseSpreadMs": 273,
+        "commitVsResponseTau": 1,
+        "perHold": [
+          {
+            "workerId": "A",
+            "durationMs": 1380,
+            "commitMinusSendPcMs": 1141,
+            "responseMinusCommitPcMs": 239
+          },
+          {
+            "workerId": "B",
+            "durationMs": 957,
+            "commitMinusSendPcMs": 891,
+            "responseMinusCommitPcMs": 66
+          },
+          {
+            "workerId": "C",
+            "durationMs": 965,
+            "commitMinusSendPcMs": 899,
+            "responseMinusCommitPcMs": 66
+          },
+          {
+            "workerId": "D",
+            "durationMs": 806,
+            "commitMinusSendPcMs": 752,
+            "responseMinusCommitPcMs": 54
+          }
+        ],
+        "pcOffsetFeasibleMs": {
+          "min": -54,
+          "max": 752
+        }
+      },
+      {
+        "runId": "2b95e6c9-541d-4b43-a457-a6ae869cdab0",
+        "method": "proof-based",
+        "holds": 4,
+        "simultaneous": false,
+        "sendSpreadMs": 711,
+        "commitSpreadMs": 780,
+        "responseSpreadMs": 876,
+        "commitVsResponseTau": 0.6667,
+        "perHold": [
+          {
+            "workerId": "C",
+            "durationMs": 1402,
+            "commitMinusSendPcMs": 1479,
+            "responseMinusCommitPcMs": -77
+          },
+          {
+            "workerId": "D",
+            "durationMs": 1610,
+            "commitMinusSendPcMs": 1454,
+            "responseMinusCommitPcMs": 156
+          },
+          {
+            "workerId": "B",
+            "durationMs": 1648,
+            "commitMinusSendPcMs": 1529,
+            "responseMinusCommitPcMs": 119
+          },
+          {
+            "workerId": "A",
+            "durationMs": 1566,
+            "commitMinusSendPcMs": 1548,
+            "responseMinusCommitPcMs": 18
+          }
+        ],
+        "pcOffsetFeasibleMs": {
+          "min": 77,
+          "max": 1454
+        }
+      },
+      {
+        "runId": "33842079-df05-4d85-afe2-a899547b7084",
+        "method": "proof-based",
+        "holds": 2,
+        "simultaneous": false,
+        "sendSpreadMs": 2133,
+        "commitSpreadMs": 1224,
+        "responseSpreadMs": 1143,
+        "commitVsResponseTau": 1,
+        "perHold": [
+          {
+            "workerId": "B",
+            "durationMs": 1958,
+            "commitMinusSendPcMs": 2002,
+            "responseMinusCommitPcMs": -44
+          },
+          {
+            "workerId": "A",
+            "durationMs": 968,
+            "commitMinusSendPcMs": 1093,
+            "responseMinusCommitPcMs": -125
+          }
+        ],
+        "pcOffsetFeasibleMs": {
+          "min": 125,
+          "max": 1093
+        }
+      },
+      {
+        "runId": "381c4dc8-11e8-4620-b208-669890d0d033",
+        "method": "proofless",
+        "holds": 6,
+        "simultaneous": true,
+        "sendSpreadMs": 9,
+        "commitSpreadMs": 174,
+        "responseSpreadMs": 220,
+        "commitVsResponseTau": 0.6,
+        "perHold": [
+          {
+            "workerId": "C",
+            "durationMs": 1007,
+            "commitMinusSendPcMs": 993,
+            "responseMinusCommitPcMs": 14
+          },
+          {
+            "workerId": "A",
+            "durationMs": 1206,
+            "commitMinusSendPcMs": 1164,
+            "responseMinusCommitPcMs": 42
+          },
+          {
+            "workerId": "D",
+            "durationMs": 1072,
+            "commitMinusSendPcMs": 1040,
+            "responseMinusCommitPcMs": 32
+          },
+          {
+            "workerId": "B",
+            "durationMs": 1116,
+            "commitMinusSendPcMs": 1011,
+            "responseMinusCommitPcMs": 105
+          },
+          {
+            "workerId": "F",
+            "durationMs": 1142,
+            "commitMinusSendPcMs": 1111,
+            "responseMinusCommitPcMs": 31
+          },
+          {
+            "workerId": "E",
+            "durationMs": 1218,
+            "commitMinusSendPcMs": 1042,
+            "responseMinusCommitPcMs": 176
+          }
+        ],
+        "pcOffsetFeasibleMs": {
+          "min": -14,
+          "max": 993
+        }
+      },
+      {
+        "runId": "3b4eadb5-cd18-42ef-8d36-c619828809bc",
+        "method": "proof-based",
+        "holds": 4,
+        "simultaneous": false,
+        "sendSpreadMs": 859,
+        "commitSpreadMs": 894,
+        "responseSpreadMs": 906,
+        "commitVsResponseTau": 1,
+        "perHold": [
+          {
+            "workerId": "B",
+            "durationMs": 1057,
+            "commitMinusSendPcMs": 952,
+            "responseMinusCommitPcMs": 105
+          },
+          {
+            "workerId": "D",
+            "durationMs": 877,
+            "commitMinusSendPcMs": 853,
+            "responseMinusCommitPcMs": 24
+          },
+          {
+            "workerId": "A",
+            "durationMs": 1191,
+            "commitMinusSendPcMs": 1074,
+            "responseMinusCommitPcMs": 117
+          },
+          {
+            "workerId": "C",
+            "durationMs": 921,
+            "commitMinusSendPcMs": 794,
+            "responseMinusCommitPcMs": 127
+          }
+        ],
+        "pcOffsetFeasibleMs": {
+          "min": -24,
+          "max": 794
+        }
+      },
+      {
+        "runId": "43cff49a-4c7b-4cb2-8c4a-8bc6f2d121fa",
+        "method": "proof-based",
+        "holds": 1,
+        "simultaneous": true,
+        "sendSpreadMs": 0,
+        "commitSpreadMs": 0,
+        "responseSpreadMs": 0,
+        "commitVsResponseTau": null,
+        "perHold": [
+          {
+            "workerId": "A",
+            "durationMs": 989,
+            "commitMinusSendPcMs": 1108,
+            "responseMinusCommitPcMs": -119
+          }
+        ],
+        "pcOffsetFeasibleMs": {
+          "min": 119,
+          "max": 1108
+        }
+      },
+      {
+        "runId": "641a01e5-072e-443e-a998-0637f7324160",
+        "method": "proof-based",
+        "holds": 2,
+        "simultaneous": false,
+        "sendSpreadMs": 71,
+        "commitSpreadMs": 104,
+        "responseSpreadMs": 64,
+        "commitVsResponseTau": 1,
+        "perHold": [
+          {
+            "workerId": "B",
+            "durationMs": 1903,
+            "commitMinusSendPcMs": 2147,
+            "responseMinusCommitPcMs": -244
+          },
+          {
+            "workerId": "A",
+            "durationMs": 1768,
+            "commitMinusSendPcMs": 1972,
+            "responseMinusCommitPcMs": -204
+          }
+        ],
+        "pcOffsetFeasibleMs": {
+          "min": 244,
+          "max": 1972
+        }
+      },
+      {
+        "runId": "734d7ed2-b4f5-4f79-9ca7-169cc6709f28",
+        "method": "proofless",
+        "holds": 4,
+        "simultaneous": false,
+        "sendSpreadMs": 1299,
+        "commitSpreadMs": 972,
+        "responseSpreadMs": 1021,
+        "commitVsResponseTau": 1,
+        "perHold": [
+          {
+            "workerId": "A",
+            "durationMs": 2179,
+            "commitMinusSendPcMs": 2064,
+            "responseMinusCommitPcMs": 115
+          },
+          {
+            "workerId": "D",
+            "durationMs": 2575,
+            "commitMinusSendPcMs": 2476,
+            "responseMinusCommitPcMs": 99
+          },
+          {
+            "workerId": "C",
+            "durationMs": 2040,
+            "commitMinusSendPcMs": 1958,
+            "responseMinusCommitPcMs": 82
+          },
+          {
+            "workerId": "B",
+            "durationMs": 1901,
+            "commitMinusSendPcMs": 1737,
+            "responseMinusCommitPcMs": 164
+          }
+        ],
+        "pcOffsetFeasibleMs": {
+          "min": -82,
+          "max": 1737
+        }
+      },
+      {
+        "runId": "73e09eef-3c5b-4f71-ae4f-71c3e3e38494",
+        "method": "proof-based",
+        "holds": 4,
+        "simultaneous": false,
+        "sendSpreadMs": 1074,
+        "commitSpreadMs": 1580,
+        "responseSpreadMs": 1770,
+        "commitVsResponseTau": 1,
+        "perHold": [
+          {
+            "workerId": "D",
+            "durationMs": 1144,
+            "commitMinusSendPcMs": 1291,
+            "responseMinusCommitPcMs": -147
+          },
+          {
+            "workerId": "B",
+            "durationMs": 1000,
+            "commitMinusSendPcMs": 1174,
+            "responseMinusCommitPcMs": -174
+          },
+          {
+            "workerId": "C",
+            "durationMs": 1026,
+            "commitMinusSendPcMs": 1222,
+            "responseMinusCommitPcMs": -196
+          },
+          {
+            "workerId": "A",
+            "durationMs": 1793,
+            "commitMinusSendPcMs": 1777,
+            "responseMinusCommitPcMs": 16
+          }
+        ],
+        "pcOffsetFeasibleMs": {
+          "min": 196,
+          "max": 1174
+        }
+      },
+      {
+        "runId": "9acd2821-8197-4b57-af96-eb5f21e49b24",
+        "method": "proof-based",
+        "holds": 4,
+        "simultaneous": false,
+        "sendSpreadMs": 544,
+        "commitSpreadMs": 1114,
+        "responseSpreadMs": 1148,
+        "commitVsResponseTau": 1,
+        "perHold": [
+          {
+            "workerId": "D",
+            "durationMs": 1030,
+            "commitMinusSendPcMs": 1184,
+            "responseMinusCommitPcMs": -154
+          },
+          {
+            "workerId": "B",
+            "durationMs": 1059,
+            "commitMinusSendPcMs": 1233,
+            "responseMinusCommitPcMs": -174
+          },
+          {
+            "workerId": "C",
+            "durationMs": 1785,
+            "commitMinusSendPcMs": 1905,
+            "responseMinusCommitPcMs": -120
+          },
+          {
+            "workerId": "A",
+            "durationMs": 1312,
+            "commitMinusSendPcMs": 1440,
+            "responseMinusCommitPcMs": -128
+          }
+        ],
+        "pcOffsetFeasibleMs": {
+          "min": 174,
+          "max": 1184
+        }
+      },
+      {
+        "runId": "aad5f8e0-b897-4a50-946d-b18e66397121",
+        "method": "proofless",
+        "holds": 1,
+        "simultaneous": true,
+        "sendSpreadMs": 0,
+        "commitSpreadMs": 0,
+        "responseSpreadMs": 0,
+        "commitVsResponseTau": null,
+        "perHold": [
+          {
+            "workerId": "A",
+            "durationMs": 1186,
+            "commitMinusSendPcMs": 1162,
+            "responseMinusCommitPcMs": 24
+          }
+        ],
+        "pcOffsetFeasibleMs": {
+          "min": -24,
+          "max": 1162
+        }
+      },
+      {
+        "runId": "b78006cc-a092-48b1-95a2-81c8bcadc737",
+        "method": "proof-based",
+        "holds": 4,
+        "simultaneous": false,
+        "sendSpreadMs": 4224,
+        "commitSpreadMs": 4193,
+        "responseSpreadMs": 4057,
+        "commitVsResponseTau": 1,
+        "perHold": [
+          {
+            "workerId": "C",
+            "durationMs": 1293,
+            "commitMinusSendPcMs": 1279,
+            "responseMinusCommitPcMs": 14
+          },
+          {
+            "workerId": "A",
+            "durationMs": 1222,
+            "commitMinusSendPcMs": 1178,
+            "responseMinusCommitPcMs": 44
+          },
+          {
+            "workerId": "B",
+            "durationMs": 1208,
+            "commitMinusSendPcMs": 1199,
+            "responseMinusCommitPcMs": 9
+          },
+          {
+            "workerId": "D",
+            "durationMs": 1126,
+            "commitMinusSendPcMs": 1248,
+            "responseMinusCommitPcMs": -122
+          }
+        ],
+        "pcOffsetFeasibleMs": {
+          "min": 122,
+          "max": 1178
+        }
+      },
+      {
+        "runId": "bba49846-a696-4e7e-8a3d-a70fe7eb6715",
+        "method": "proof-based",
+        "holds": 4,
+        "simultaneous": false,
+        "sendSpreadMs": 605,
+        "commitSpreadMs": 568,
+        "responseSpreadMs": 542,
+        "commitVsResponseTau": 1,
+        "perHold": [
+          {
+            "workerId": "A",
+            "durationMs": 1244,
+            "commitMinusSendPcMs": 1151,
+            "responseMinusCommitPcMs": 93
+          },
+          {
+            "workerId": "B",
+            "durationMs": 957,
+            "commitMinusSendPcMs": 909,
+            "responseMinusCommitPcMs": 48
+          },
+          {
+            "workerId": "C",
+            "durationMs": 1096,
+            "commitMinusSendPcMs": 1028,
+            "responseMinusCommitPcMs": 68
+          },
+          {
+            "workerId": "D",
+            "durationMs": 959,
+            "commitMinusSendPcMs": 937,
+            "responseMinusCommitPcMs": 22
+          }
+        ],
+        "pcOffsetFeasibleMs": {
+          "min": -22,
+          "max": 909
+        }
+      },
+      {
+        "runId": "e481a852-7d95-4702-9552-d7865df1f0d0",
+        "method": "proof-based",
+        "holds": 4,
+        "simultaneous": false,
+        "sendSpreadMs": 827,
+        "commitSpreadMs": 926,
+        "responseSpreadMs": 797,
+        "commitVsResponseTau": 1,
+        "perHold": [
+          {
+            "workerId": "D",
+            "durationMs": 1425,
+            "commitMinusSendPcMs": 1267,
+            "responseMinusCommitPcMs": 158
+          },
+          {
+            "workerId": "C",
+            "durationMs": 1059,
+            "commitMinusSendPcMs": 1105,
+            "responseMinusCommitPcMs": -46
+          },
+          {
+            "workerId": "A",
+            "durationMs": 1180,
+            "commitMinusSendPcMs": 1337,
+            "responseMinusCommitPcMs": -157
+          },
+          {
+            "workerId": "B",
+            "durationMs": 1160,
+            "commitMinusSendPcMs": 1335,
+            "responseMinusCommitPcMs": -175
+          }
+        ],
+        "pcOffsetFeasibleMs": {
+          "min": 175,
+          "max": 1105
+        }
+      }
+    ],
+    "commitSummary": {
+      "simultaneousRuns": [
+        {
+          "runId": "381c4dc8-11e8-4620-b208-669890d0d033",
+          "holds": 6,
+          "sendSpreadMs": 9,
+          "commitSpreadMs": 174,
+          "commitVsResponseTau": 0.6
+        },
+        {
+          "runId": "43cff49a-4c7b-4cb2-8c4a-8bc6f2d121fa",
+          "holds": 1,
+          "sendSpreadMs": 0,
+          "commitSpreadMs": 0,
+          "commitVsResponseTau": null
+        },
+        {
+          "runId": "aad5f8e0-b897-4a50-946d-b18e66397121",
+          "holds": 1,
+          "sendSpreadMs": 0,
+          "commitSpreadMs": 0,
+          "commitVsResponseTau": null
+        }
+      ],
+      "commitMinusSendPcMs": {
+        "n": 60,
+        "min": 752,
+        "p50": 1178,
+        "p95": 2002,
+        "p99": 2476,
+        "max": 2476,
+        "mean": 1291
+      },
+      "responseMinusCommitPcMs": {
+        "n": 60,
+        "min": -244,
+        "p50": 48,
+        "p95": 239,
+        "p99": 813,
+        "max": 813,
+        "mean": 48
+      },
+      "note": "hold_expires_at − 10 min is the provider-side hold creation time. PC-clock positions shift by the unknown PC offset of each test day (recorded offsets ranged from ~5 ms to ~1 s); spreads and orders within a run are offset free."
+    },
+    "releaseCheckoutMs": {
+      "sep23": [
+        13288,
+        11496
+      ],
+      "sep24": [
+        28331,
+        22988,
+        17541
+      ],
+      "sep25": [
+        34618,
+        29557,
+        29822,
+        29107,
+        33855,
+        32173,
+        32973
+      ]
+    }
+  }
+}
