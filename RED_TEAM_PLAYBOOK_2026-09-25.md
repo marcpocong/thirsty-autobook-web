@@ -24,6 +24,8 @@ We have been treating 08:00 as a speed contest over a full board. The evidence s
 | 8 | **The bot goes blind the day a new court appears.** `availability-parser.ts:104` throws `AVAILABILITY_UNKNOWN_COURT` for any unknown space ID; `TimeSchema` rejects hours outside 08:00–23:00 | PROVEN (code) | Slot Watch, Wave 2, Rescue and the block audit all fail on exactly the day the supply grows |
 | 9 | **Wave 2 burns itself without sending.** `select()` sets `wave2Selected=true` before `dispatchAdaptive` spends 6–7 s refreshing security. It then returns silently when a newer read has arrived (reads run every 1 s). The one wave is gone | PROVEN (code path); live effect UNKNOWN | Wave 2, the tool for the richest window (T+6–10 s), will very likely fire zero times |
 
+> **Status on `main` (2026-09-26).** Finding 9's silent return no longer exists: after security preparation, a Wave 2 or Rescue attempt re-checks the newest actionable read and continues while the same range is still fully open (`97452c3`), and every attempt abandoned before its POST is logged with a reason (`PHASE3_ADAPTIVE_SKIPPED`). An attempt proven never sent no longer spends Rescue or total send budget (`488552a`). Still true: `select()` marks the single Wave 2 as used when it selects, so a Wave 2 abandoned for a genuine reason (range taken, stale or unpriced evidence) still spends the wave. Of the P4 fixes, "accept the newest read" is now done in code.
+
 ## 3. Ranked plays
 
 ### Tier 0: win without racing (largest expected gain)
