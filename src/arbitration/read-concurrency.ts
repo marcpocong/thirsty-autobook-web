@@ -22,7 +22,7 @@ export interface HarnessLimits { maxRequests: number; minRoundGapMs: number; slo
 export const DEFAULT_HARNESS_LIMITS: HarnessLimits = Object.freeze({ maxRequests: 120, minRoundGapMs: 5_000, slowReadStopMs: 10_000,
   blackout: { fromMinute: 7 * 60 + 45, toMinute: 8 * 60 + 45 } });
 
-export class HarnessStop extends Error { constructor(readonly code: string) { super(code); this.name = 'HarnessStop'; } }
+export class HarnessStop extends Error { constructor(readonly code: string, readonly samples: ReadSample[] = []) { super(code); this.name = 'HarnessStop'; } }
 
 /** Manila is UTC+8 with no daylight saving. */
 export function manilaMinuteOfDay(epochMs: number): number { return Math.floor(((epochMs + 8 * 3_600_000) % 86_400_000) / 60_000); }
@@ -43,6 +43,8 @@ export function roundPlan(levels: readonly number[], rounds: number, seed: numbe
 
 export interface ReadSample {
   level: number; round: number; index: number; date: string;
+  /** Local wall-clock milliseconds immediately before the GET; subject to host clock offset. */
+  startEpochMs: number;
   /** Local monotonic ms. */
   startMs: number; headersMs: number | null; endMs: number | null;
   status: number | null; bytes: number | null; contentType: string | null;
@@ -58,7 +60,7 @@ export async function runRound(level: number, round: number, options: RoundOptio
   const perf = options.perf ?? (() => performance.now());
   const launches = Array.from({ length: level }, (_, index) => {
     const date = options.dates[(round + index) % options.dates.length]!;
-    const sample: ReadSample = { level, round, index, date, startMs: perf(), headersMs: null, endMs: null, status: null, bytes: null, contentType: null,
+    const sample: ReadSample = { level, round, index, date, startEpochMs: Date.now(), startMs: perf(), headersMs: null, endMs: null, status: null, bytes: null, contentType: null,
       cache: null, ageS: null, edgeRegion: null, functionRegion: null, embeddedMs: null, headers: {}, mitigated: false, error: null };
     const done = (async () => {
       try {
@@ -83,11 +85,11 @@ export async function runRound(level: number, round: number, options: RoundOptio
   await Promise.all(launches.map(launch => launch.done));
   const samples = launches.map(launch => launch.sample);
   for (const sample of samples) {
-    if (sample.error) throw new HarnessStop('HARNESS_STOP_TRANSPORT_ERROR');
-    if (sample.status === 403 || sample.status === 429 || (sample.status ?? 0) >= 500) throw new HarnessStop(`HARNESS_STOP_HTTP_${sample.status}`);
-    if (sample.mitigated) throw new HarnessStop('HARNESS_STOP_MITIGATED');
-    if (!(sample.contentType ?? '').toLowerCase().includes('application/json')) throw new HarnessStop('HARNESS_STOP_NOT_JSON');
-    if (sample.endMs! - sample.startMs > limits.slowReadStopMs) throw new HarnessStop('HARNESS_STOP_SLOW_READ');
+    if (sample.error) throw new HarnessStop('HARNESS_STOP_TRANSPORT_ERROR', samples);
+    if (sample.status === 403 || sample.status === 429 || (sample.status ?? 0) >= 500) throw new HarnessStop(`HARNESS_STOP_HTTP_${sample.status}`, samples);
+    if (sample.mitigated) throw new HarnessStop('HARNESS_STOP_MITIGATED', samples);
+    if (!(sample.contentType ?? '').toLowerCase().includes('application/json')) throw new HarnessStop('HARNESS_STOP_NOT_JSON', samples);
+    if (sample.endMs! - sample.startMs > limits.slowReadStopMs) throw new HarnessStop('HARNESS_STOP_SLOW_READ', samples);
   }
   return samples;
 }

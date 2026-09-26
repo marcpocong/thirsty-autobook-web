@@ -25,7 +25,8 @@ describe('read concurrency harness safety', () => {
 
   it('stops at the first protective signal and keeps only allowlisted headers', async () => {
     const options = (fetcher: Fetcher) => ({ urlFor: (date: string) => `http://offline.invalid/${date}`, dates: ['2026-10-01'], fetcher });
-    await expect(runRound(2, 0, options(async () => json({}, 429)))).rejects.toMatchObject({ code: 'HARNESS_STOP_HTTP_429' });
+    await expect(runRound(2, 0, options(async () => json({}, 429)))).rejects.toMatchObject({ code: 'HARNESS_STOP_HTTP_429', samples: [
+      { status: 429, startEpochMs: expect.any(Number) }, { status: 429, startEpochMs: expect.any(Number) }] });
     await expect(runRound(1, 0, options(async () => json({}, 403)))).rejects.toMatchObject({ code: 'HARNESS_STOP_HTTP_403' });
     await expect(runRound(1, 0, options(async () => json({}, 503)))).rejects.toMatchObject({ code: 'HARNESS_STOP_HTTP_503' });
     await expect(runRound(1, 0, options(async () => new Response('<html>challenge</html>', { headers: { 'content-type': 'text/html' } }))))
@@ -39,6 +40,7 @@ describe('read concurrency harness safety', () => {
       'x-vercel-id': 'sin1::sin1::abcde-1790294400030-a73f748bcd1f' })));
     expect(sample!.headers).toEqual({ 'content-type': 'application/json', 'x-vercel-cache': 'MISS', 'x-vercel-id': 'sin1::sin1::abcde-1790294400030-a73f748bcd1f' });
     expect(sample!).toMatchObject({ cache: 'MISS', edgeRegion: 'sin1', functionRegion: 'sin1', embeddedMs: 1_790_294_400_030 });
+    expect(Math.abs(sample!.startEpochMs - Date.now())).toBeLessThan(1_000);
   });
 });
 
