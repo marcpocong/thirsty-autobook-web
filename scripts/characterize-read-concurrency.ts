@@ -34,7 +34,7 @@ async function session(urlFor: (date: string) => string, dates: string[], gapMs:
   for (const [round, level] of plan.entries()) {
     if (live) assertOutsideBlackout(Date.now());
     try { samples.push(...await runRound(level, round, { urlFor, dates, fetcher: fetch })); }
-    catch (error) { stopped = error instanceof HarnessStop ? error.code : 'HARNESS_STOP_UNEXPECTED'; break; }
+    catch (error) { if (error instanceof HarnessStop) samples.push(...error.samples); stopped = error instanceof HarnessStop ? error.code : 'HARNESS_STOP_UNEXPECTED'; break; }
     if (round < plan.length - 1) await sleep(gapMs);
   }
   return { plan, samples, stopped, analysis: analyzeRounds(samples) };
@@ -59,12 +59,13 @@ if (args.get('live') !== undefined) {
   assertOutsideBlackout(Date.now());
   const urlFor = (date: string) => `https://app.onda.fit/api/public/facilities/${THIRSTY_PICKLE_FACILITY_ID}/date-availability?${new URLSearchParams(
     { startDate: date, endDate: date, duration: '60', includeSchedule: 'true' })}`;
+  const startedAt = new Date().toISOString();
   const result = await session(urlFor, dates, DEFAULT_HARNESS_LIMITS.minRoundGapMs, true);
   const directory = resolve('.local/arbitration');
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const file = join(directory, `read-concurrency-${args.get('label') ?? 'host'}-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
   // Timing, status, cache, region and allowlisted headers only: no bodies, no cookies, no identities.
-  await writeFile(file, `${JSON.stringify({ schema: 'read-concurrency/v1', label: args.get('label') ?? 'host', startedAt: new Date().toISOString(), levels, rounds,
+  await writeFile(file, `${JSON.stringify({ schema: 'read-concurrency/v2', label: args.get('label') ?? 'host', startedAt, completedAt: new Date().toISOString(), dates, levels, rounds,
     stopped: result.stopped, analysis: result.analysis, samples: result.samples }, null, 1)}\n`, { mode: 0o600, flag: 'wx' });
   process.stdout.write(`${JSON.stringify({ stopped: result.stopped, analysis: result.analysis.map(value => ({ level: value.level, latencyP50: value.latencyMs.p50,
     spanP50: value.completionSpanMs.p50, serializationIndex: value.serializationIndex, cache: value.cache, regions: value.regions })) }, null, 1)}\n${file}\n`);
