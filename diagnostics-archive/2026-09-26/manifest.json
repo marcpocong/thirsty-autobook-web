@@ -1,0 +1,70 @@
+{
+  "schema": "release-evidence-archive/v1",
+  "runId": "e69098a8-b8b2-444e-b0ea-2b1170f1420f",
+  "targetDate": "2026-09-28",
+  "exportedAt": "2026-09-26T00:29:22.901Z",
+  "fileCount": 12,
+  "redactionCount": 7,
+  "files": [
+    {
+      "path": "claude/SERVER_ARBITRATION_INVESTIGATION.md",
+      "bytes": 71300,
+      "sha256": "b71b8f2487d04ed8309c7007bb07999425a56ed2ebbf6c3cd299e0efafb57254"
+    },
+    {
+      "path": "codex/analysis.json",
+      "bytes": 30373,
+      "sha256": "6ee7d362765e6f96d770f232f33b9edbae6b829ebb809d82937be390d7cd5be8"
+    },
+    {
+      "path": "codex/engine-report.txt",
+      "bytes": 13460,
+      "sha256": "18449aa0a9ad450a3e2f210a119720c638d0f223c4e3eb7fbb068a7ce6b97b53"
+    },
+    {
+      "path": "codex/engine-summary.json",
+      "bytes": 37943,
+      "sha256": "0917599b42b175a55cbae17e18718c9692b2013c48e5e7fc6008b35ca4d924e7"
+    },
+    {
+      "path": "codex/PRELIMINARY_REPORT_0806.md",
+      "bytes": 9504,
+      "sha256": "0cf3247aa8ad1a54f12f16aa25fcffc82978aba8cae55a3a4265b629def343c7"
+    },
+    {
+      "path": "codex/REPORT.md",
+      "bytes": 16536,
+      "sha256": "14b80820fe31767f1083b7c34a3eb8cd556fdfaf3dccf6e4fc0d184cfcfb6f7b"
+    },
+    {
+      "path": "logs/critical-path.ndjson",
+      "bytes": 4791,
+      "sha256": "346f1fb409fe308b2ba6bc29d3f6f8c20e8ce08bb97762756b8cd1d8b65e5c28"
+    },
+    {
+      "path": "logs/phase3-freeze.json",
+      "bytes": 8384,
+      "sha256": "d927ab0919c3edb02c1d42378c72b330d14194ee0de30221b60f53f06b692158"
+    },
+    {
+      "path": "logs/provider-trace.ndjson",
+      "bytes": 13540,
+      "sha256": "fb41d3648acd30ac2f93c0a7b45fee335c50c8ead9119c875d97c781e8c7dff5"
+    },
+    {
+      "path": "logs/run-progress.ndjson",
+      "bytes": 98099,
+      "sha256": "9ef1d8eb84bf6013ed023c77e6db1b0de99d50204ae50ad96d3c19f43f0736f4"
+    },
+    {
+      "path": "logs/slot-watch.ndjson",
+      "bytes": 247614,
+      "sha256": "ce28e609e822f49af4725170e71a3ba82f647986c13189b0819bbcaee83149af"
+    },
+    {
+      "path": "README.md",
+      "bytes": 712,
+      "sha256": "5bec45941e5deea04ebc83a998f53c9f0738a336e1acaaafc85f053b17caa3e3"
+    }
+  ]
+}

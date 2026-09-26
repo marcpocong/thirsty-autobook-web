@@ -1,0 +1,293 @@
+{
+  "runId": "e69098a8-b8b2-444e-b0ea-2b1170f1420f",
+  "frozenAt": "2026-09-25T23:58:00.055Z",
+  "authorization": {
+    "date": "2026-09-28",
+    "releaseMs": 1790380800000,
+    "candidates": [
+      {
+        "court": 4,
+        "start": "19:00",
+        "durationHours": 3,
+        "priority": 1,
+        "permissions": {
+          "wave1": true,
+          "wave2": false,
+          "rescue": true
+        },
+        "rateEvidence": {
+          "source": "current venue schedule",
+          "capturedAt": "2026-09-25T19:44:44.409Z",
+          "status": "VENUE_SCHEDULE",
+          "date": "2026-09-28",
+          "perHour": [
+            700,
+            700,
+            700
+          ],
+          "actionable": true
+        },
+        "id": "a765c5c40d559838fea7d38e7d3fa18894c803339ea4eb9c6f9f28f7f526c870",
+        "logicalKey": "3bdfd94f13f8182c4b1378ae54f3a2b5788ee5f7092e92ac9c6dc2e8ca7a195d",
+        "end": "22:00",
+        "expectedAmount": 2100
+      },
+      {
+        "court": 5,
+        "start": "19:00",
+        "durationHours": 3,
+        "priority": 2,
+        "permissions": {
+          "wave1": true,
+          "wave2": false,
+          "rescue": true
+        },
+        "rateEvidence": {
+          "source": "current venue schedule",
+          "capturedAt": "2026-09-25T19:44:44.409Z",
+          "status": "VENUE_SCHEDULE",
+          "date": "2026-09-28",
+          "perHour": [
+            700,
+            700,
+            700
+          ],
+          "actionable": true
+        },
+        "id": "702e956363ffee9057db4a9f7e2de125e12e22ed911937a9665a27c75b59f946",
+        "logicalKey": "acb3d5e05b3f352534bcac9bd874b6d510ba6dd673a42009c32d251a042049da",
+        "end": "22:00",
+        "expectedAmount": 2100
+      },
+      {
+        "court": 1,
+        "start": "19:00",
+        "durationHours": 3,
+        "priority": 3,
+        "permissions": {
+          "wave1": true,
+          "wave2": false,
+          "rescue": true
+        },
+        "rateEvidence": {
+          "source": "current venue schedule",
+          "capturedAt": "2026-09-25T19:44:44.409Z",
+          "status": "VENUE_SCHEDULE",
+          "date": "2026-09-28",
+          "perHour": [
+            700,
+            700,
+            700
+          ],
+          "actionable": true
+        },
+        "id": "2298e49119165cd0343cf368c67447ddafdce00f6d6937bb6ece596342c81415",
+        "logicalKey": "8fe7dd4c799d5149d4d7735c1c2d129eff15521aac1c0c03dc292fe7e5e966d7",
+        "end": "22:00",
+        "expectedAmount": 2100
+      },
+      {
+        "court": 2,
+        "start": "17:00",
+        "durationHours": 3,
+        "priority": 4,
+        "permissions": {
+          "wave1": true,
+          "wave2": false,
+          "rescue": true
+        },
+        "rateEvidence": {
+          "source": "current venue schedule",
+          "capturedAt": "2026-09-25T19:44:44.409Z",
+          "status": "VENUE_SCHEDULE",
+          "date": "2026-09-28",
+          "perHour": [
+            700,
+            700,
+            700
+          ],
+          "actionable": true
+        },
+        "id": "f24de28c5f59ba2fd229cf498fd129f9d5e813e5cf050cc98e05bc43ea4ef920",
+        "logicalKey": "537091d24854011b0b013784896b8876fd3f1ce46636db4b850d7fa373da68de",
+        "end": "20:00",
+        "expectedAmount": 2100
+      },
+      {
+        "court": 2,
+        "start": "20:00",
+        "durationHours": 3,
+        "priority": 5,
+        "permissions": {
+          "wave1": true,
+          "wave2": false,
+          "rescue": true
+        },
+        "rateEvidence": {
+          "source": "current venue schedule",
+          "capturedAt": "2026-09-25T19:44:44.409Z",
+          "status": "VENUE_SCHEDULE",
+          "date": "2026-09-28",
+          "perHour": [
+            700,
+            700,
+            700
+          ],
+          "actionable": true
+        },
+        "id": "c1c4970a9fcf31790c44a0354900008cf1a636eb457d39fba7be731dad8a863f",
+        "logicalKey": "bcd026ea16c72b39d80e85c876399abb1c33aad100e27505502149cfce99fa0f",
+        "end": "23:00",
+        "expectedAmount": 2100
+      },
+      {
+        "court": 3,
+        "start": "17:00",
+        "durationHours": 3,
+        "priority": 6,
+        "permissions": {
+          "wave1": true,
+          "wave2": false,
+          "rescue": true
+        },
+        "rateEvidence": {
+          "source": "current venue schedule",
+          "capturedAt": "2026-09-25T19:44:44.409Z",
+          "status": "VENUE_SCHEDULE",
+          "date": "2026-09-28",
+          "perHour": [
+            700,
+            700,
+            700
+          ],
+          "actionable": true
+        },
+        "id": "b9f001a6ca36620d58810e9eb5b618b9ccb8500969db18bdf710e1561909efa6",
+        "logicalKey": "470dee9ddd315d7327b9290755b9592cbf6aa5ba4136d07edb58dd8341ce50b1",
+        "end": "20:00",
+        "expectedAmount": 2100
+      },
+      {
+        "court": 3,
+        "start": "20:00",
+        "durationHours": 3,
+        "priority": 7,
+        "permissions": {
+          "wave1": false,
+          "wave2": true,
+          "rescue": true
+        },
+        "rateEvidence": {
+          "source": "current venue schedule",
+          "capturedAt": "2026-09-25T19:44:44.409Z",
+          "status": "VENUE_SCHEDULE",
+          "date": "2026-09-28",
+          "perHour": [
+            700,
+            700,
+            700
+          ],
+          "actionable": true
+        },
+        "id": "b775abe4dd63088e58716f74e1d73c87bc5bf65d7133a4968133145b83f0b17f",
+        "logicalKey": "cecc96746c37d81eaffc10f0d0a8eb9ce096fd2bb82e681d3b744d298f49f1ef",
+        "end": "23:00",
+        "expectedAmount": 2100
+      },
+      {
+        "court": 6,
+        "start": "17:00",
+        "durationHours": 3,
+        "priority": 8,
+        "permissions": {
+          "wave1": false,
+          "wave2": true,
+          "rescue": true
+        },
+        "rateEvidence": {
+          "source": "current venue schedule",
+          "capturedAt": "2026-09-25T19:44:44.409Z",
+          "status": "VENUE_SCHEDULE",
+          "date": "2026-09-28",
+          "perHour": [
+            700,
+            700,
+            700
+          ],
+          "actionable": true
+        },
+        "id": "823c3d4686ca21cf7b322fa84c982056ac894bfc4c33b6deaaac74c0f3ed1ba1",
+        "logicalKey": "7008afaf386e038c0053685541fc451cb9d00bc3a22ae5984a6763d2891ea15f",
+        "end": "20:00",
+        "expectedAmount": 2100
+      },
+      {
+        "court": 6,
+        "start": "20:00",
+        "durationHours": 3,
+        "priority": 9,
+        "permissions": {
+          "wave1": false,
+          "wave2": true,
+          "rescue": true
+        },
+        "rateEvidence": {
+          "source": "current venue schedule",
+          "capturedAt": "2026-09-25T19:44:44.409Z",
+          "status": "VENUE_SCHEDULE",
+          "date": "2026-09-28",
+          "perHour": [
+            700,
+            700,
+            700
+          ],
+          "actionable": true
+        },
+        "id": "fa502f738e5adc6da85979d520a4d87096d0b6a4e7c4ed7548a91ece7f9399c6",
+        "logicalKey": "2abcdb112e39bcbc5656554cf8bd995d9ebd88fe2209f034ef8401504f15994a",
+        "end": "23:00",
+        "expectedAmount": 2100
+      }
+    ],
+    "wave1": [
+      {
+        "workerId": "A",
+        "candidateId": "a765c5c40d559838fea7d38e7d3fa18894c803339ea4eb9c6f9f28f7f526c870"
+      },
+      {
+        "workerId": "B",
+        "candidateId": "702e956363ffee9057db4a9f7e2de125e12e22ed911937a9665a27c75b59f946"
+      },
+      {
+        "workerId": "C",
+        "candidateId": "2298e49119165cd0343cf368c67447ddafdce00f6d6937bb6ece596342c81415"
+      },
+      {
+        "workerId": "D",
+        "candidateId": "f24de28c5f59ba2fd229cf498fd129f9d5e813e5cf050cc98e05bc43ea4ef920"
+      },
+      {
+        "workerId": "E",
+        "candidateId": "c1c4970a9fcf31790c44a0354900008cf1a636eb457d39fba7be731dad8a863f"
+      },
+      {
+        "workerId": "F",
+        "candidateId": "b9f001a6ca36620d58810e9eb5b618b9ccb8500969db18bdf710e1561909efa6"
+      }
+    ],
+    "standby": [
+      "G"
+    ],
+    "budgets": {
+      "wave2": 1,
+      "rescue": 1,
+      "total": 8
+    },
+    "concurrentWave2": true,
+    "rescueEnabled": true,
+    "authorizedAt": "2026-09-25T23:30:26.783Z",
+    "warning": null,
+    "fingerprint": "aa73196bdae886edfb35c5b93344063468d8d73b138f134cdbfd7bacaa09f52a"
+  },
+  "wave1Freeze": "35a0fbe8d45f7dc240d8cda9d1705a66993c04386021c7edf3a45fb3d42ea161"
+}
