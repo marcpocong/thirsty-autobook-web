@@ -225,16 +225,18 @@ export function pricedPrecisionPlan(candidate: AuthorizedCandidate, date: string
 }
 
 /** `evidenceSeq` is the observation that last authorized the request (the effective evidence);
- * `selectedEvidenceSeq` is the one the candidate was first selected from, when they differ. */
+ * `selectedEvidenceSeq` is the one the candidate was first selected from, when they differ.
+ * NOT_DISPATCHED is a reservation proven never to have sent its request (a SubmissionDispatchError with
+ * dispatched=false, the evidence under which the durable journal also records it as unsent). It stays in
+ * the history but consumes no budget and no Rescue reopen epoch. */
 export interface RaceAttempt { id: string; candidateId: string; workerId: WorkerId; wave: PrecisionWave;
-  state: 'IN_FLIGHT' | 'REJECTED' | 'UNKNOWN' | 'VERIFIED'; evidenceSeq?: number; selectedEvidenceSeq?: number; reopenEpoch?: number }
+  state: 'IN_FLIGHT' | 'REJECTED' | 'UNKNOWN' | 'VERIFIED' | 'NOT_DISPATCHED'; evidenceSeq?: number; selectedEvidenceSeq?: number; reopenEpoch?: number }
 export class PrecisionSession {
   readonly attempts: RaceAttempt[] = [];
   latest?: ActionableObservation;
   private wave2Selected = false;
   private readonly unavailableAt = new Map<string, {seq:number;responseOffsetMs:number}>();
   private readonly rangeWasUnavailable = new Map<string, boolean>();
-  private readonly rescuedEpochs = new Set<string>();
   constructor(readonly authorization: FrozenPrecisionAuthorization) {}
   get status(): 'OBJECTIVE_ACHIEVED' | 'OBJECTIVE_ACHIEVED_EXTRA_HOLD' | 'MANUAL_RECONCILIATION_REQUIRED' |
     'ALL_REJECTED_WAITING_FOR_REOPEN' | 'NOTHING_DISPATCHED' {
@@ -243,8 +245,11 @@ export class PrecisionSession {
     if (verified > 1) return 'OBJECTIVE_ACHIEVED_EXTRA_HOLD';
     if (verified) return 'OBJECTIVE_ACHIEVED';
     if (this.attempts.some(value => value.state === 'IN_FLIGHT')) return 'MANUAL_RECONCILIATION_REQUIRED';
-    return this.attempts.length ? 'ALL_REJECTED_WAITING_FOR_REOPEN' : 'NOTHING_DISPATCHED';
+    return this.consuming().length ? 'ALL_REJECTED_WAITING_FOR_REOPEN' : 'NOTHING_DISPATCHED';
   }
+  /** Attempts that count against budgets and Rescue reopen epochs: every attempt except one proven never sent.
+   * A reservation consumes from the moment it is recorded (IN_FLIGHT), so a pending final gate still blocks. */
+  private consuming(): RaceAttempt[] { return this.attempts.filter(value => value.state !== 'NOT_DISPATCHED'); }
   observe(evidence: ActionableObservation): void {
     if (this.latest && evidence.observation.seq <= this.latest.observation.seq) return;
     this.latest = evidence;
@@ -271,8 +276,9 @@ export class PrecisionSession {
     const evidence = this.latest;
     if (!evidence || classifyActionableObservation(evidence.observation, evidence.observation.seq,
       this.authorization.releaseMs, nowMs, maxAgeMs).fitness !== 'ACTIONABLE_FRESH') return [];
-    const budget = Math.min(this.authorization.budgets.total - this.attempts.length,
-      this.authorization.budgets[wave === 'WAVE_2' ? 'wave2' : 'rescue'] - this.attempts.filter(value => value.wave === wave).length);
+    const consuming = this.consuming();
+    const budget = Math.min(this.authorization.budgets.total - consuming.length,
+      this.authorization.budgets[wave === 'WAVE_2' ? 'wave2' : 'rescue'] - consuming.filter(value => value.wave === wave).length);
     if (budget <= 0) return [];
     const byId = new Map(this.authorization.candidates.map(value => [value.id, value]));
     const active = this.attempts.filter(value => value.state === 'IN_FLIGHT' || value.state === 'VERIFIED').map(value => byId.get(value.candidateId)!);
@@ -289,7 +295,7 @@ export class PrecisionSession {
       const unavailable=this.unavailableAt.get(candidate.id);
       if (wave === 'RESCUE' && (!unavailable || unavailable.seq >= evidence.observation.seq ||
         unavailable.responseOffsetMs > evidence.observation.requestOffsetMs ||
-        this.rescuedEpochs.has(`${candidate.id}/${unavailable.seq}`))) continue;
+        consuming.some(value => value.wave === 'RESCUE' && value.candidateId === candidate.id && value.reopenEpoch === unavailable.seq))) continue;
       if ([...active, ...selected.map(value => value.candidate)].some(value => candidatesConflict(value, candidate))) continue;
       const prices = candidatePriceFromObservation(candidate, evidence);
       if (!prices) continue;
@@ -312,6 +318,5 @@ export class PrecisionSession {
   record(attempt: RaceAttempt): void {
     if (this.attempts.some(value => value.id === attempt.id)) throw Error('PRECISION_ATTEMPT_DUPLICATE');
     this.attempts.push(attempt);
-    if (attempt.wave === 'RESCUE' && attempt.reopenEpoch !== undefined) this.rescuedEpochs.add(`${attempt.candidateId}/${attempt.reopenEpoch}`);
   }
 }

@@ -129,4 +129,18 @@ describe('September 26 replay: Rescue sequence churn', () => {
       checkpoint: 'AFTER_SECURITY', reason: 'CANDIDATE_NO_LONGER_OPEN', seq: 136 })]);
     expect(harness.posts).toEqual([]);
   });
+
+  it('an injected pre-fetch refusal of the first attempt does not burn the only Rescue: #130 → #131 is still sent once', async () => {
+    const { harness, session } = await september26();
+    let reservations = 0;
+    // Fault injection on the real timeline (no observation is altered): the transport refuses the first reservation before fetch.
+    harness.afterReserve = () => { harness.refuseBeforeFetch = reservations++ === 0 ? 'CURRENT_CHECKOUT_HEADERS_STALE' : undefined; };
+    await harness.runLoop(choice => harness.run(choice, 'RESCUE', date), { wave2: true });
+    expect(harness.security.map(value => [value.startedAt, value.newestSeqAtCompletion])).toEqual([[597_365, 129], [599_117, 131]]);
+    expect(harness.stages('PHASE3_SETTLED').map(value => [value.state, value.budgetReleased]))
+      .toEqual([['NOT_DISPATCHED', true], ['REJECTED', false]]);
+    expect(harness.posts).toEqual([expect.objectContaining({ workerId: 'G', candidateId: C2_1700, evidenceSeq: 131, at: 600_313 })]);
+    expect(session.attempts.filter(value => value.wave === 'RESCUE').map(value => [value.state, value.selectedEvidenceSeq, value.evidenceSeq]))
+      .toEqual([['NOT_DISPATCHED', 128, 129], ['REJECTED', 130, 131]]);
+  });
 });

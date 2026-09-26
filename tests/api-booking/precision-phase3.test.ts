@@ -68,6 +68,27 @@ describe('Phase 3 authorization and evidence', () => {
     session.observe(classifyActionableObservation(observation(2, 'O', 'MISS', 2500), 2, releaseMs, releaseMs + 3000, 5000));
     expect(session.select('WAVE_2', releaseMs + 3000, 5000).map(value => value.candidate.court)).toEqual([2]);
   });
+  it('counts budgets and Rescue reopen epochs only for attempts that may have been sent', () => {
+    const draft = input([candidate(1, '15:00')]);
+    const auth = authorizePrecision({ ...draft, wave1: [{ workerId: 'A', candidateId: id(draft, 0) }] });
+    const reopenedSession = () => {
+      const session = new PrecisionSession(auth);
+      session.record({ id: 'wave1', candidateId: auth.candidates[0]!.id, workerId: 'A', wave: 'WAVE_1', state: 'REJECTED' });
+      session.observe(classifyActionableObservation(observation(1, 'X'), 1, releaseMs, releaseMs + 2000, 5000));
+      session.observe(classifyActionableObservation(observation(2, 'O', 'MISS', 2500), 2, releaseMs, releaseMs + 3000, 5000));
+      return session;
+    };
+    // Rescue budget 1: after one Rescue attempt settles, only a provably unsent one leaves the reopening selectable.
+    for (const [state, reselectable] of [['NOT_DISPATCHED', 1], ['REJECTED', 0], ['UNKNOWN', 0], ['VERIFIED', 0], ['IN_FLIGHT', 0]] as const) {
+      const session = reopenedSession(), [choice] = session.select('RESCUE', releaseMs + 3000, 5000);
+      expect(choice).toMatchObject({ reopenEpoch: 1 });
+      session.record({ id: 'rescue', candidateId: choice!.candidate.id, workerId: choice!.workerId, wave: 'RESCUE', state, reopenEpoch: 1 });
+      expect(session.select('RESCUE', releaseMs + 3000, 5000), state).toHaveLength(reselectable);
+    }
+    const onlyUnsent = new PrecisionSession(auth);
+    onlyUnsent.record({ id: 'unsent', candidateId: auth.candidates[0]!.id, workerId: 'B', wave: 'WAVE_2', state: 'NOT_DISPATCHED' });
+    expect(onlyUnsent.status).toBe('NOTHING_DISPATCHED');
+  });
   it('captures a sanitized normal-response fallback without any CDP trace', () => {
     const trace = new ProviderTraceSet('synthetic', 'release', releaseMs, () => 2000);
     trace.captureFallback({ workerId: 'A', attemptId: 'attempt', candidateId: 'candidate', wave: 'WAVE_1' },

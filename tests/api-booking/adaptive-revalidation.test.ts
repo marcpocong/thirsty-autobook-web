@@ -151,11 +151,12 @@ describe('Test 3: the candidate becomes unavailable', () => {
     harness.beforeFinalGate = () => harness.advanceTo(599_200);
     const result = await harness.run(selection, 'RESCUE', date);
     await settleTelemetry();
-    expect(result).toMatchObject({ outcome: 'SETTLED', state: 'REJECTED', guardClosed: 'CANDIDATE_NO_LONGER_OPEN' });
+    expect(result).toMatchObject({ outcome: 'SETTLED', state: 'NOT_DISPATCHED', guardClosed: 'CANDIDATE_NO_LONGER_OPEN' });
     expect(harness.posts).toEqual([]);
     expect(harness.stages('PHASE3_ADAPTIVE_SKIPPED')).toEqual([expect.objectContaining({ checkpoint: 'BEFORE_POST', reason: 'CANDIDATE_NO_LONGER_OPEN' })]);
-    expect(harness.stages('PHASE3_SETTLED')).toEqual([expect.objectContaining({ state: 'NOT_DISPATCHED', code: 'PHASE3_DISPATCH_GUARD_CLOSED' })]);
-    expect(rescueAttempts(session)).toEqual([expect.objectContaining({ state: 'REJECTED' })]);
+    expect(harness.stages('PHASE3_SETTLED')).toEqual([expect.objectContaining({ state: 'NOT_DISPATCHED', code: 'PHASE3_DISPATCH_GUARD_CLOSED',
+      budgetReleased: true })]);
+    expect(rescueAttempts(session)).toEqual([expect.objectContaining({ state: 'NOT_DISPATCHED' })]);
     expect(await journalState(root, selection)).toBe('rejected');
   });
 });
@@ -221,7 +222,7 @@ describe('Test 6: price changes', () => {
     const { harness, selection } = await reopened();
     harness.schedule(599_150, grid(129, 599_000, { prices: { '2/17': 750 } }));
     harness.beforeFinalGate = () => harness.advanceTo(599_200);
-    expect(await harness.run(selection, 'RESCUE', date)).toMatchObject({ outcome: 'SETTLED', state: 'REJECTED', guardClosed: 'PRICE_CHANGED' });
+    expect(await harness.run(selection, 'RESCUE', date)).toMatchObject({ outcome: 'SETTLED', state: 'NOT_DISPATCHED', guardClosed: 'PRICE_CHANGED' });
     expect(harness.posts).toEqual([]);
   });
 });
@@ -241,8 +242,12 @@ describe('Tests 7–9: UNKNOWN, VERIFIED and concurrency blocks stay effective',
     it(`${state} arriving between reservation and fetch: the final gate stops the POST`, async () => {
       const { harness, session, selection } = await reopened();
       harness.beforeFinalGate = () => session.record(other(state));
-      expect(await harness.run(selection, 'RESCUE', date)).toMatchObject({ outcome: 'SETTLED', guardClosed: reason });
+      expect(await harness.run(selection, 'RESCUE', date)).toMatchObject({ outcome: 'SETTLED', state: 'NOT_DISPATCHED', guardClosed: reason });
       expect(harness.posts).toEqual([]);
+      // Releasing the unsent reservation does not lift the other attempt's block.
+      harness.advanceTo(harness.now + 150);
+      harness.deliver(grid(129, harness.now - 100));
+      expect(session.select('RESCUE', releaseMs + harness.now, 6_000)).toEqual([]);
     });
   }
   it('the runner-level verified hold flag blocks the Rescue', async () => {
@@ -287,6 +292,158 @@ describe('Test 10: one reopening dispatches one Rescue', () => {
     await harness.runLoop(choice => harness.run(choice, 'RESCUE', date));
     expect(harness.posts).toHaveLength(1);
     expect(rescueAttempts(session)).toHaveLength(1);
+  });
+});
+
+describe('a provably unsent reservation consumes no Rescue budget or reopen epoch', () => {
+  /** The next fresh Slot Watch read one second on, delivered as the adaptive loop would; returns Rescue's selection on it. */
+  const nextRead = (harness: AdaptiveHarness, session: PrecisionSession, seq: number, options: GridOptions = {}) => {
+    const requestedAt = harness.now + 1_000;
+    harness.advanceTo(requestedAt + 150);
+    harness.deliver(grid(seq, requestedAt, options));
+    return session.select('RESCUE', releaseMs + harness.now, 6_000);
+  };
+  const busyJournal = { planFingerprint: 'a'.repeat(64), targetDate: date, courtIds: [2], hourlyBoundaries: [{ startTime: '17:00', endTime: '18:00' }],
+    expectedBookingCount: 3, maximumAmount: 2100, stage: 'dispatching' as const };
+
+  it('1. final price change: PRICE_CHANGED, no POST, NOT_DISPATCHED; the same reopening stays eligible and is sent once at the new price', async () => {
+    const { harness, session, selection, root } = await reopened();
+    harness.schedule(599_150, grid(129, 599_000, { prices: { '2/17': 750 } }));
+    harness.beforeFinalGate = () => harness.advanceTo(599_200);
+    expect(await harness.run(selection, 'RESCUE', date)).toMatchObject({ outcome: 'SETTLED', state: 'NOT_DISPATCHED', guardClosed: 'PRICE_CHANGED' });
+    await settleTelemetry();
+    expect(harness.posts).toEqual([]);
+    expect(harness.stages('PHASE3_ADAPTIVE_SKIPPED')).toEqual([expect.objectContaining({ checkpoint: 'BEFORE_POST', reason: 'PRICE_CHANGED' })]);
+    expect(harness.stages('PHASE3_SETTLED')).toEqual([expect.objectContaining({ state: 'NOT_DISPATCHED', code: 'PHASE3_DISPATCH_GUARD_CLOSED',
+      budgetReleased: true })]);
+    // The unsent reservation stays in the history and in the durable journal.
+    expect(rescueAttempts(session)).toEqual([expect.objectContaining({ state: 'NOT_DISPATCHED', reopenEpoch: 127 })]);
+    expect(await journalState(root, selection)).toBe('rejected');
+    // Rescue budget (1) and reopen epoch #127 are still available: the next fresh OPEN read selects the same reopening.
+    harness.beforeFinalGate = undefined;
+    const again = nextRead(harness, session, 130, { prices: { '2/17': 750 } });
+    expect(again).toEqual([expect.objectContaining({ workerId: 'G', reopenEpoch: 127, prices: [750, 700, 700] })]);
+    await harness.run(again[0]!, 'RESCUE', date);
+    expect(harness.posts).toEqual([expect.objectContaining({ evidenceSeq: 130, rates: [750, 700, 700] })]);
+    // The unsent journal was archived as rejected, not deleted; the sent attempt consumes the budget and the epoch.
+    expect((await harness.archivedRecords('rejected-attempts', selection.candidate.logicalKey)).map(value => [value.state, value.failureCode]))
+      .toEqual([['rejected', 'PHASE3_DISPATCH_GUARD_CLOSED']]);
+    expect(rescueAttempts(session).map(value => value.state)).toEqual(['NOT_DISPATCHED', 'REJECTED']);
+    expect(nextRead(harness, session, 131, { prices: { '2/17': 750 } })).toEqual([]);
+  });
+
+  it('2. candidate closes immediately before POST: CANDIDATE_NO_LONGER_OPEN, no POST, budget kept; a genuine reopening is rescued', async () => {
+    const { harness, session, selection } = await reopened();
+    harness.schedule(599_150, grid(129, 599_000, { closed: ['2/17'] }));
+    harness.beforeFinalGate = () => harness.advanceTo(599_200);
+    expect(await harness.run(selection, 'RESCUE', date)).toMatchObject({ state: 'NOT_DISPATCHED', guardClosed: 'CANDIDATE_NO_LONGER_OPEN' });
+    await settleTelemetry();
+    expect(harness.posts).toEqual([]);
+    expect(harness.stages('PHASE3_SETTLED')).toEqual([expect.objectContaining({ state: 'NOT_DISPATCHED', budgetReleased: true })]);
+    harness.beforeFinalGate = undefined;
+    expect(nextRead(harness, session, 130, { closed: ['2/17'] })).toEqual([]);
+    const genuine = nextRead(harness, session, 131);
+    expect(genuine).toEqual([expect.objectContaining({ workerId: 'G', reopenEpoch: 129 })]);
+    await harness.run(genuine[0]!, 'RESCUE', date);
+    expect(harness.posts).toEqual([expect.objectContaining({ evidenceSeq: 131 })]);
+  });
+
+  it('3. evidence goes stale before POST: LATEST_NOT_ACTIONABLE, no POST, budget kept', async () => {
+    const { harness, session, selection } = await reopened();
+    // No newer read arrives; by the transport's final gate #128 is older than the freshness window.
+    harness.beforeFinalGate = () => harness.advanceTo(harness.now + 6_500);
+    expect(await harness.run(selection, 'RESCUE', date)).toMatchObject({ state: 'NOT_DISPATCHED', guardClosed: 'LATEST_NOT_ACTIONABLE' });
+    await settleTelemetry();
+    expect(harness.posts).toEqual([]);
+    expect(harness.stages('PHASE3_ADAPTIVE_SKIPPED')).toEqual([expect.objectContaining({ checkpoint: 'BEFORE_POST',
+      reason: 'LATEST_NOT_ACTIONABLE', seq: 128, fitness: 'FORENSIC_ONLY_STALE' })]);
+    expect(harness.stages('PHASE3_SETTLED')).toEqual([expect.objectContaining({ state: 'NOT_DISPATCHED', budgetReleased: true })]);
+    harness.beforeFinalGate = undefined;
+    expect(nextRead(harness, session, 129)).toEqual([expect.objectContaining({ workerId: 'G', reopenEpoch: 127 })]);
+  });
+
+  it('4. a real HTTP 409 after the POST left: REJECTED, budget and reopen epoch consumed', async () => {
+    {
+      // Rescue budget 1: even a later, genuine reopening is not rescued again.
+      const { harness, session, selection } = await reopened();
+      harness.schedule(598_150, grid(129, 598_000));
+      expect(await harness.run(selection, 'RESCUE', date)).toMatchObject({ state: 'REJECTED' });
+      expect(harness.posts).toHaveLength(1);
+      expect(harness.stages('PHASE3_SETTLED')).toEqual([expect.objectContaining({ state: 'REJECTED', code: 'ONDA_HTTP_STATUS_INVALID',
+        budgetReleased: false })]);
+      expect(nextRead(harness, session, 130, { closed: TARGET_CELLS })).toEqual([]);
+      expect(nextRead(harness, session, 131)).toEqual([]);
+    }
+    {
+      // Rescue budget 2: the same reopening (epoch #127) is still never rescued twice.
+      const { harness, session, selection } = await reopened({ wave2: 1, rescue: 2, total: 4 });
+      harness.schedule(598_150, grid(129, 598_000));
+      await harness.run(selection, 'RESCUE', date);
+      expect(harness.posts).toHaveLength(1);
+      expect(nextRead(harness, session, 130)).toEqual([]);
+    }
+  });
+
+  it('5. an UNKNOWN dispatched outcome keeps the budget consumed and nothing is retried', async () => {
+    const { harness, session, selection, root } = await reopened({ wave2: 1, rescue: 2, total: 4 });
+    harness.respond = 'UNKNOWN';
+    harness.schedule(598_150, grid(129, 598_000));
+    expect(await harness.run(selection, 'RESCUE', date)).toMatchObject({ state: 'UNKNOWN' });
+    expect(harness.posts).toHaveLength(1);
+    expect(harness.stages('PHASE3_SETTLED')).toEqual([expect.objectContaining({ state: 'UNKNOWN', budgetReleased: false })]);
+    expect(await journalState(root, selection)).toBe('unknown');
+    expect(session.status).toBe('MANUAL_RECONCILIATION_REQUIRED');
+    // A later, genuine reopening: no selection, and the loop stops without preparing or sending anything.
+    expect(nextRead(harness, session, 130, { closed: TARGET_CELLS })).toEqual([]);
+    expect(nextRead(harness, session, 131)).toEqual([]);
+    harness.schedule(harness.now + 1_150, grid(132, harness.now + 1_000));
+    await harness.runLoop(choice => harness.run(choice, 'RESCUE', date));
+    expect(harness.security).toHaveLength(1);
+    expect(harness.posts).toHaveLength(1);
+    expect(await journalFor(root, selection).recycleReusable(selection.candidate.logicalKey)).toBe('blocked');
+  });
+
+  it('6. a verified hold consumes the budget and Rescue stops normally', async () => {
+    const { harness, session, selection, root } = await reopened({ wave2: 1, rescue: 2, total: 4 });
+    harness.respond = 'VERIFIED';
+    harness.schedule(598_150, grid(129, 598_000));
+    expect(await harness.run(selection, 'RESCUE', date)).toMatchObject({ state: 'VERIFIED' });
+    expect(harness.posts).toHaveLength(1);
+    expect(await journalState(root, selection)).toBe('verified');
+    expect(session.status).toBe('OBJECTIVE_ACHIEVED');
+    expect(nextRead(harness, session, 130, { closed: TARGET_CELLS })).toEqual([]);
+    expect(nextRead(harness, session, 131)).toEqual([]);
+    harness.schedule(harness.now + 1_150, grid(132, harness.now + 1_000));
+    await harness.runLoop(choice => harness.run(choice, 'RESCUE', date));
+    expect(harness.security).toHaveLength(1);
+    expect(harness.posts).toHaveLength(1);
+  });
+
+  it('only positive evidence releases: a pre-fetch transport refusal does; a journal conflict inferred before begin does not', async () => {
+    {
+      // The transport refuses before its final gate and before fetch (dispatched=false): provably unsent.
+      const { harness, session, selection, root } = await reopened();
+      harness.refuseBeforeFetch = 'CURRENT_CHECKOUT_HEADERS_STALE';
+      expect(await harness.run(selection, 'RESCUE', date)).toMatchObject({ state: 'NOT_DISPATCHED' });
+      expect(harness.posts).toEqual([]);
+      expect(harness.stages('PHASE3_SETTLED')).toEqual([expect.objectContaining({ state: 'NOT_DISPATCHED',
+        code: 'CURRENT_CHECKOUT_HEADERS_STALE', budgetReleased: true })]);
+      expect(await journalState(root, selection)).toBe('rejected');
+      harness.refuseBeforeFetch = undefined;
+      expect(nextRead(harness, session, 129)).toEqual([expect.objectContaining({ reopenEpoch: 127 })]);
+    }
+    {
+      // Another writer holds this block's journal: NOT_DISPATCHED is inferred from the journal, not proven by the
+      // dispatch path, so the reservation keeps consuming exactly as before this change.
+      const { harness, session, selection, root } = await reopened();
+      harness.afterReserve = () => journalFor(root, selection).begin(selection.candidate.logicalKey, new Date(),
+        { attemptId: selection.candidate.logicalKey, ...busyJournal });
+      expect(await harness.run(selection, 'RESCUE', date)).toMatchObject({ state: 'REJECTED' });
+      expect(harness.posts).toEqual([]);
+      expect(harness.stages('PHASE3_SETTLED')).toEqual([expect.objectContaining({ state: 'NOT_DISPATCHED',
+        code: 'DUPLICATE_LOGICAL_BOOKING_BLOCKED', budgetReleased: false })]);
+      expect(nextRead(harness, session, 129)).toEqual([]);
+    }
   });
 });
 
