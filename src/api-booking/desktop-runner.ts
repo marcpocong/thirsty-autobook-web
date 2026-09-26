@@ -972,7 +972,8 @@ try {
         await persistLatestVerifiedHold();
         await persistProviderTraces().catch(()=>undefined);
         stage('PHASE3_OUTCOME',{outcome:session.status,verifiedCount:session.attempts.filter(value=>value.state==='VERIFIED').length,
-          unknownCount:session.attempts.filter(value=>value.state==='UNKNOWN').length,attemptCount:session.attempts.length});
+          unknownCount:session.attempts.filter(value=>value.state==='UNKNOWN').length,attemptCount:session.attempts.length,
+          unsentCount:session.attempts.filter(value=>value.state==='NOT_DISPATCHED').length});
         if(session.status==='ALL_REJECTED_WAITING_FOR_REOPEN'||session.status==='NOTHING_DISPATCHED'){
           retainLiveLock=false;await liveLock?.release();liveLock=undefined;
         }

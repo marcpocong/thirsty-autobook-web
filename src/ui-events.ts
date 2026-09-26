@@ -41,7 +41,7 @@ export const UiEventSchema = z.discriminatedUnion('type', [
     maxWave2:z.number().int().nonnegative().optional(),maxRescue:z.number().int().nonnegative().optional(),maxTotal:z.number().int().nonnegative().optional(),
     attemptCount:z.number().int().nonnegative().optional(),seq:z.number().int().positive().optional(),evidenceSeq:z.number().int().positive().optional(),
     selectedEvidenceSeq:z.number().int().positive().optional(),fromSeq:z.number().int().positive().optional(),toSeq:z.number().int().positive().optional(),
-    reason:z.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/).optional(),priceChanged:z.boolean().optional(),
+    reason:z.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/).optional(),priceChanged:z.boolean().optional(),budgetReleased:z.boolean().optional(),
     amount:z.number().finite().optional(),wave:z.enum(['WAVE_1','WAVE_2','RESCUE']).optional(),
     fitness:z.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/).optional(),cache:z.string().regex(/^[A-Z_]{2,16}$/).optional(),
     rateStatus:z.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/).optional(),source:z.string().max(100).optional(),capturedAt:z.iso.datetime().optional(),

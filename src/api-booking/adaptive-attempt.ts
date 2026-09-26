@@ -108,9 +108,15 @@ export async function runAdaptiveAttempt(selection: AdaptiveSelection, wave: 'WA
       reserved.state = 'VERIFIED';
     } catch (error) {
       const settled = await deps.classifyFailure(error);
-      reserved.state = settled.state === 'REJECTED' || settled.state === 'NOT_DISPATCHED' ? 'REJECTED' :
+      // Budget and reopen epoch are released only on positive evidence the request never left: the
+      // SubmissionDispatchError(dispatched=false) raised before fetch(), under which the durable journal also
+      // records the attempt as conclusively unsent. Every other outcome, including NOT_DISPATCHED inferred
+      // from journal state alone, keeps consuming exactly as before.
+      const unsent = settled.state === 'NOT_DISPATCHED' && error instanceof SubmissionDispatchError && !error.dispatched;
+      reserved.state = unsent ? 'NOT_DISPATCHED' : settled.state === 'REJECTED' || settled.state === 'NOT_DISPATCHED' ? 'REJECTED' :
         settled.state === 'QR_READY' || settled.state === 'HOLD_VERIFIED_QR_ATTENTION' ? 'VERIFIED' : 'UNKNOWN';
-      deps.event('PHASE3_SETTLED', { ...context, attemptId: reserved.id, state: settled.state, code: settled.code ?? 'COMPLETED' });
+      deps.event('PHASE3_SETTLED', { ...context, attemptId: reserved.id, state: settled.state, code: settled.code ?? 'COMPLETED',
+        budgetReleased: unsent });
     }
     return { outcome: 'SETTLED', attemptId: reserved.id, state: reserved.state, selectedEvidenceSeq, evidenceSeq: effectiveSeq,
       ...(guardClosed ? { guardClosed } : {}) };

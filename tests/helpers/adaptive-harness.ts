@@ -1,12 +1,13 @@
+import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { runAdaptiveAttempt, type AdaptiveAttemptDeps, type AdaptiveAttemptResult, type AdaptiveSelection } from '../../src/api-booking/adaptive-attempt.js';
-import type { OndaBrowserSessionTransport } from '../../src/api-booking/browser-session-transport.js';
-import { DurableSubmissionJournal } from '../../src/api-booking/durable-submission-journal.js';
+import { BrowserSessionTransportError, type OndaBrowserSessionTransport } from '../../src/api-booking/browser-session-transport.js';
+import { DurableSubmissionJournal, type SubmissionRecord } from '../../src/api-booking/durable-submission-journal.js';
 import { adaptiveFitness, adaptiveMaxAgeMs, classifyActionableObservation, type ActionableObservation,
   type PrecisionSession } from '../../src/api-booking/precision-phase3.js';
 import { classifyPrecisionDispatchError } from '../../src/api-booking/precision-race.js';
 import { submitDirectCheckout, type ProoflessCheckoutRequest } from '../../src/api-booking/proofless-checkout.js';
-import { SubmissionDispatchError } from '../../src/api-booking/submission-errors.js';
+import type { BookingPlan } from '../../src/api-booking/types.js';
 import type { AvailabilityObservation } from '../../src/slot-evidence.js';
 
 /**
@@ -18,7 +19,13 @@ import type { AvailabilityObservation } from '../../src/slot-evidence.js';
  */
 export const SYNTHETIC_CUSTOMER = { clientId: 'client', customerId: 'customer', customerEmail: 'synthetic@example.invalid',
   customerPhone: '09123456789', customerFirstName: 'Synthetic', customerLastName: 'Player' };
-export type PostResponse = 'REJECTED' | 'UNKNOWN';
+/**
+ * Onda's answer to a POST that left the browser, raised exactly as the real transport's post() raises it:
+ * REJECTED — HTTP 409 with a confirmed application conflict (journal: rejected);
+ * UNKNOWN — fetch failed after dispatch (journal: unknown);
+ * VERIFIED — a valid pending hold for exactly this request (journal: verified).
+ */
+export type PostResponse = 'REJECTED' | 'UNKNOWN' | 'VERIFIED';
 export interface HarnessPost { attemptId: string; workerId: string; at: number; evidenceSeq: number | undefined; rates: number[]; candidateId: string }
 export interface HarnessEvent { stage: string; at: number; [key: string]: string | number | boolean }
 export interface HarnessSecurity { workerId: string; startedAt: number; completedAt: number; newestSeqAtCompletion: number | undefined }
@@ -35,6 +42,10 @@ export class AdaptiveHarness {
   /** Security preparation durations, consumed in order (the last one repeats). */
   securityMs: number[] = [1_500];
   respond: PostResponse = 'REJECTED';
+  /** A refusal the transport raises before its final gate and before fetch (dispatched=false), e.g. CURRENT_CHECKOUT_HEADERS_STALE. */
+  refuseBeforeFetch?: string;
+  /** Runs after reservation, before the durable journal entry is begun. */
+  afterReserve?: () => Promise<void> | void;
   /** Runs inside the transport, after reservation and immediately before the final pre-POST gate. */
   beforeFinalGate?: () => void;
   /** Called after each delivered arrival (the adaptive loop uses it). */
@@ -117,15 +128,21 @@ export class AdaptiveHarness {
         const attemptId = `harness-${workerId}-${++this.attempts}`;
         this.reservations.push({ attemptId, evidenceSeq, selectedEvidenceSeq, prices });
         const transport = { publicCheckoutProofless: async (request: ProoflessCheckoutRequest, _permit: unknown, options: { beforePost?: () => void }) => {
+          if (this.refuseBeforeFetch) throw new BrowserSessionTransportError(this.refuseBeforeFetch);
           this.beforeFinalGate?.();
           options.beforePost?.();
           this.posts.push({ attemptId, workerId, at: this.now, candidateId: candidate.id, rates: request.items.map(item => item.rate),
             evidenceSeq: this.session.attempts.find(value => value.id === attemptId)?.evidenceSeq });
-          if (this.respond === 'REJECTED') throw new SubmissionDispatchError('DATE_NOT_AVAILABLE', true, undefined, true);
-          throw new SubmissionDispatchError('ONDA_TRANSPORT_FAILED', true);
+          if (this.respond === 'VERIFIED') return this.pendingHold(request, plan);
+          if (this.respond === 'REJECTED') throw new BrowserSessionTransportError('ONDA_HTTP_STATUS_INVALID', true, undefined, true);
+          throw new BrowserSessionTransportError('ONDA_TRANSPORT_FAILED', true);
         } } as unknown as OndaBrowserSessionTransport;
-        return { attemptId, dispatch: async beforePost => { await submitDirectCheckout(plan, SYNTHETIC_CUSTOMER, transport, journal,
-          undefined, [], clock, { requirePreparedContext: true, beforePost }); } };
+        return { attemptId, dispatch: async beforePost => {
+          await this.afterReserve?.();
+          await submitDirectCheckout(plan, SYNTHETIC_CUSTOMER, transport, journal, undefined, [], clock, { requirePreparedContext: true, beforePost });
+          // As the runner's completeVerifiedProoflessHold does once a hold verifies.
+          this.verifiedHold = true;
+        } };
       },
       classifyFailure: error => classifyPrecisionDispatchError(error, async () => {
         try { return (await journal.read(candidate.logicalKey)).state; } catch { return undefined; } }),
@@ -175,6 +192,27 @@ export class AdaptiveHarness {
   readonly wave2Selections: Array<{ at: number; seq: number; candidateIds: string[] }> = [];
 
   stages(name: string): HarnessEvent[] { return this.events.filter(value => value.stage === name); }
+
+  /** Durable records the journal archived for `key` (recycleReusable moves a whole attempt directory there). */
+  async archivedRecords(kind: 'rejected-attempts' | 'unsent-attempts' | 'expired-holds', key: string): Promise<SubmissionRecord[]> {
+    let entries: string[];
+    try { entries = (await readdir(join(this.root, kind))).filter(name => name.startsWith(key)).sort(); } catch { return []; }
+    return Promise.all(entries.map(name => new DurableSubmissionJournal(join(this.root, kind, name)).read(key)));
+  }
+
+  /** A pending hold that passes the production response validator for exactly this request. */
+  private pendingHold(request: ProoflessCheckoutRequest, plan: BookingPlan): unknown {
+    const ids = request.items.map((_, index) => `harness-booking-${index}`), first = request.items[0]!, last = request.items.at(-1)!;
+    const holdExpiresAt = new Date(this.releaseMs + this.now + 10 * 60_000).toISOString();
+    return { success: true,
+      bookings: request.items.map((item, index) => ({ id: ids[index], booking_no: `harness-${index}`, customer_id: SYNTHETIC_CUSTOMER.customerId,
+        space_id: item.spaceId, facility_id: item.facilityId, date: item.date, start_time: `${item.startTime}:00`, end_time: `${item.endTime}:00`,
+        duration: 60, rate: item.rate, guest_count: 1, booking_status: 'pending', payment_status: 'pending', booking_session_id: 'harness-session',
+        hold_expires_at: holdExpiresAt })),
+      bookingSessions: [{ requestSessionRef: 'session_1', bookingSessionId: 'harness-session', facilityId: request.facilityId, spaceId: first.spaceId,
+        date: first.date, startTime: `${first.startTime}:00`, endTime: `${last.endTime}:00`, durationHours: plan.durationHours, bookingIds: ids }],
+      transaction: { id: 'harness-transaction', reference: 'harness-0', amount: plan.totalPrice, status: 'pending' }, trustedTotalAmount: plan.totalPrice };
+  }
 
   private sorted(): Arrival[] { return [...this.queue].sort((a, b) => a.at - b.at || a.order - b.order); }
 }
