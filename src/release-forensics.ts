@@ -106,7 +106,7 @@ export interface ReleaseForensicsSummary {
   trace: { available: boolean; records: number; complete: number; unavailableWorkers: string[] };
   phase3?:{fingerprint:string|null;candidateCount:number;maxWave2:number;maxRescue:number;maxTotal:number;
     attempts:Array<{attemptId:string;candidateId:string;workerId:string;wave:string;court:number|null;startTime:string|null;endTime:string|null;
-      evidenceSeq:number|null;postOffsetMs:number|null;state:string|null;statusCode:number|null;providerTrace:boolean;
+      evidenceSeq:number|null;selectedEvidenceSeq:number|null;postOffsetMs:number|null;state:string|null;statusCode:number|null;providerTrace:boolean;
       fallback:ProviderResponseFallback|null}>};
   targets: ForensicTarget[];
   limitations: string[];
@@ -203,9 +203,12 @@ export function buildReleaseForensics(input: ForensicInputs): ReleaseForensicsSu
       const attemptId=str(line.attemptId),candidateId=str(line.candidateId),workerId=str(line.workerId),wave=str(line.wave);
       if(!attemptId||!candidateId||!workerId||!wave)return [];
       const candidate=p3Candidates.get(candidateId),posted=stages('CHECKOUT_HTTP_POST_INITIATED').find(value=>value.attemptId===attemptId),
-        settled=stages('PHASE3_SETTLED').find(value=>value.attemptId===attemptId),answered=stages('CHECKOUT_RESPONSE_COMPLETED').find(value=>value.attemptId===attemptId);
+        settled=stages('PHASE3_SETTLED').find(value=>value.attemptId===attemptId),answered=stages('CHECKOUT_RESPONSE_COMPLETED').find(value=>value.attemptId===attemptId),
+        dispatched=stages('PHASE3_DISPATCH').find(value=>value.attemptId===attemptId);
+      // The dispatch record carries the evidence that authorized the POST itself (it can be newer than the reservation's).
+      const evidenceSeq=num(dispatched?.evidenceSeq)??num(line.evidenceSeq)??null,selectedEvidenceSeq=num(line.selectedEvidenceSeq)??null;
       return [{attemptId,candidateId,workerId,wave,court:num(candidate?.court)??null,startTime:str(candidate?.startTime)??null,
-        endTime:str(candidate?.endTime)??null,evidenceSeq:num(line.evidenceSeq)??null,
+        endTime:str(candidate?.endTime)??null,evidenceSeq,selectedEvidenceSeq:selectedEvidenceSeq!==evidenceSeq?selectedEvidenceSeq:null,
         postOffsetMs:num(posted?.releaseLatenessMs)??null,state:str(settled?.state)??null,
         statusCode:num(answered?.statusCode)??null,providerTrace:traces.some(value=>value.attemptId===attemptId),
         fallback:fallbacks.find(value=>value.attemptId===attemptId)??null}];
@@ -304,7 +307,7 @@ export function releaseForensicsReport(summary: ReleaseForensicsSummary): string
     const p=summary.phase3;
     lines.push(`  Phase 3 race ${p.fingerprint??'unknown'} · ${p.candidateCount} authorized candidates · Wave 2 max ${p.maxWave2} · Rescue max ${p.maxRescue} · total max ${p.maxTotal}`);
     for(const attempt of p.attempts)lines.push(`  ${attempt.wave} · Worker ${attempt.workerId} · Court ${attempt.court??'?'} ${attempt.startTime??'?'}–${attempt.endTime??'?'} · candidate ${attempt.candidateId} · attempt ${attempt.attemptId}`,
-      `    Observation #${attempt.evidenceSeq??'pre-release assignment'} · POST ${ms(attempt.postOffsetMs)} · ${attempt.state??'unsettled'} · HTTP ${attempt.statusCode??'not recorded'}`,
+      `    Observation #${attempt.evidenceSeq??'pre-release assignment'}${attempt.selectedEvidenceSeq!==null?` (selected on #${attempt.selectedEvidenceSeq})`:''} · POST ${ms(attempt.postOffsetMs)} · ${attempt.state??'unsettled'} · HTTP ${attempt.statusCode??'not recorded'}`,
       `    Passive trace ${attempt.providerTrace?'available':'unavailable'} · response fallback ${attempt.fallback?`HTTP ${attempt.fallback.status}, server ${attempt.fallback.server??'—'}, request ${attempt.fallback.requestId??'—'}`:'unavailable'}`);
     lines.push('');
   }

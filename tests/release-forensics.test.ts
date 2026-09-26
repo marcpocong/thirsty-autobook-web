@@ -160,6 +160,27 @@ describe('post-run release forensics', () => {
     } finally { await cleanup(root); }
   });
 
+  it('names the evidence that authorized an adaptive POST, and the read it was selected from', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'forensics-rebase-'));
+    try {
+      const candidateId = 'c'.repeat(64), progress = join(root, 'run.ndjson');
+      await writeFile(progress, ndjson([
+        { ...base, stage: 'RUN_CONFIGURATION', bookingMethod: 'proofless', releaseMs },
+        { ...base, stage: 'PHASE3_AUTHORIZATION', fingerprint: 'f'.repeat(64), candidateCount: 1, maxWave2: 0, maxRescue: 1, maxTotal: 2 },
+        { ...base, stage: 'PHASE3_CANDIDATE', candidateId, court: 2, startTime: '17:00', endTime: '20:00' },
+        { ...base, stage: 'PHASE3_EVIDENCE_REBASED', workerId: 'G', candidateId, wave: 'RESCUE', checkpoint: 'AFTER_SECURITY', fromSeq: 128, toSeq: 129 },
+        { ...base, stage: 'PHASE3_ATTEMPT_RESERVED', workerId: 'G', candidateId, wave: 'RESCUE', attemptId: 'core-G-official-7', evidenceSeq: 129, selectedEvidenceSeq: 128 },
+        { ...base, stage: 'PHASE3_EVIDENCE_REBASED', workerId: 'G', candidateId, wave: 'RESCUE', checkpoint: 'BEFORE_POST', fromSeq: 129, toSeq: 130 },
+        { ...base, stage: 'CHECKOUT_HTTP_POST_INITIATED', workerId: 'G', attemptId: 'core-G-official-7', releaseLatenessMs: 598_900 },
+        { ...base, stage: 'PHASE3_DISPATCH', workerId: 'G', candidateId, wave: 'RESCUE', attemptId: 'core-G-official-7', evidenceSeq: 130 },
+        { ...base, stage: 'PHASE3_SETTLED', workerId: 'G', candidateId, wave: 'RESCUE', attemptId: 'core-G-official-7', state: 'REJECTED' },
+      ]));
+      const summary = buildReleaseForensics({ runProgressPath: progress, outputDirectory: join(root, 'out'), status: 'final' });
+      expect(summary.phase3?.attempts).toEqual([expect.objectContaining({ attemptId: 'core-G-official-7', evidenceSeq: 130, selectedEvidenceSeq: 128 })]);
+      expect(await readFile(summary.reportPath, 'utf8')).toContain('Observation #130 (selected on #128)');
+    } finally { await cleanup(root); }
+  });
+
   it('picks the watch with the most reads for the release and ignores other releases', async () => {
     const root = await installation();
     try {

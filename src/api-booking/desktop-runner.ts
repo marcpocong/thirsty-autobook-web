@@ -15,14 +15,14 @@ import { freezePrecisionRace, precisionTargetPlan, reducePrecisionOutcome,
   validatePrecisionTargets, VerifiedHoldQrError, classifyPrecisionDispatchError,
   type PrecisionAttempt, type PrecisionAttemptState, type PrecisionTarget } from './precision-race.js';
 import { authorizePrecision, precisionCandidateId, PrecisionSession, classifyActionableObservation, pricedPrecisionPlan, adaptiveMaxAgeMs,
-  type ActionableObservation, type AvailabilityObservation } from './precision-phase3.js';
+  adaptiveFitness, type AvailabilityObservation } from './precision-phase3.js';
+import { runAdaptiveAttempt, type AdaptiveSelection } from './adaptive-attempt.js';
 import { browserIdentity, verifyDedicatedChromeAsync } from '../browser.js';
 import { emitUiEvent } from '../ui-events.js';
 import { discoverApiAvailability } from './availability-engine.js';
 import { OndaLiveAvailabilityProvider, THIRSTY_PICKLE_FACILITY_ID } from './live-availability-provider.js';
 import { parseAvailability } from './availability-parser.js';
 import { DurableSubmissionJournal } from './durable-submission-journal.js';
-import { SubmissionDispatchError } from './submission-errors.js';
 import { loadLocalCheckoutCustomer } from './local-customer.js';
 import { assertActiveCustomersValid, resolveActiveCustomers } from './customer-identity.js';
 import { submitCalendarFreeTwoHourCheckout } from './calendar-free-checkout.js';
@@ -379,7 +379,7 @@ try {
       process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT='SUPERVISED_ONE_SHOT';
     }
     const responseCaptures=new Map<WorkerId,(response:CheckoutHttpResponse)=>Promise<void>>();
-    const activeWaveContexts=new Map<WorkerId,{candidateId:string;wave:'WAVE_1'|'WAVE_2'|'RESCUE'}>();
+    const activeWaveContexts=new Map<WorkerId,{candidateId:string;wave:'WAVE_1'|'WAVE_2'|'RESCUE';evidenceSeq?:()=>number|undefined}>();
     const releaseTransports=new Map<WorkerId,OndaBrowserSessionTransport>();
     const activeAttemptContexts=new Map<WorkerId,DiagnosticCorrelation>();
     const activeTransportOperations=new Map<string,Array<(stage:string,extra?:Record<string,unknown>)=>void>>();
@@ -420,8 +420,10 @@ try {
         // This worker's POST has left its page. Once every traced POST has, the passive traces enable Network (later macrotask).
         providerTraces?.postInitiated(workerId);
         const waveContext=activeWaveContexts.get(workerId);
+        // The effective evidence is read at the POST itself: the pre-POST gate may have rebased it.
+        const evidenceSeq=waveContext?.evidenceSeq?.();
         if(waveContext)setImmediate(()=>stage('PHASE3_DISPATCH',{workerId,candidateId:waveContext.candidateId,
-          wave:waveContext.wave,attemptId:context.attemptId??'unknown'}));
+          wave:waveContext.wave,attemptId:context.attemptId??'unknown',...(evidenceSeq!==undefined?{evidenceSeq}:{})}));
         beginTransport(`${workerId}:checkout`,'checkout',observation.event,context,observation);return;
       }
       if(observation.event==='CHECKOUT_RESPONSE_COMPLETED'){
@@ -871,57 +873,39 @@ try {
           catch(error){stage('PHASE3_STANDBY_FAILED',{workerId,code:safeApiFailureCode(error,'SECURITY_PREWARM_FAILED')});}
         }));})();
       let newestSeq=0,securityRefreshMs=2500,wave1Fired=false,wave1Settled=false;
-      const refreshFitness=(evidence:ActionableObservation,at=nowMs())=>{
-        const latency=Math.max(0,evidence.observation.responseOffsetMs-evidence.observation.requestOffsetMs);
-        const maxAgeMs=adaptiveMaxAgeMs(latency,securityRefreshMs);
-        return classifyActionableObservation(evidence.observation,newestSeq,releaseMs,at,maxAgeMs);
-      };
-      const pending=new Set<Promise<void>>();
-      const dispatchAdaptive=(selection:ReturnType<PrecisionSession['select']>[number],wave:'WAVE_2'|'RESCUE')=>{
-        let recordedAttemptId:string|undefined;
-        const task=(async()=>{
-          const {candidate,workerId,prices,evidenceSeq}=selection,transport=releaseTransports.get(workerId);
-          if(!transport||unavailableWorkers.has(workerId))return;
-          const started=performance.now();
-          try{await transport.prepareCheckoutContext(wave==='RESCUE');securityRefreshMs=Math.max(securityRefreshMs,performance.now()-started);}
-          catch(error){stage('PHASE3_SECURITY_FAILED',{workerId,candidateId:candidate.id,code:safeApiFailureCode(error,'SECURITY_PREWARM_FAILED')});return;}
-          const current=session.latest;
-          if(!current||current.observation.seq!==evidenceSeq||refreshFitness(current).fitness!=='ACTIONABLE_FRESH'||
-            verifiedHold||abort.signal.aborted||session.attempts.some(value=>value.state==='UNKNOWN'||value.state==='VERIFIED')||
-            (wave==='RESCUE'&&session.attempts.some(value=>value.state==='IN_FLIGHT')))return;
-          const journal=new DurableSubmissionJournal(resolve('.local/api-booking/api-first-journals',candidate.logicalKey));
-          if(await journal.recycleReusable(candidate.logicalKey).catch(()=>'blocked' as const)==='blocked'){
-            stage('PHASE3_JOURNAL_BLOCKED',{workerId,candidateId:candidate.id});return;}
-          if(!session.latest||session.latest.observation.seq!==evidenceSeq||refreshFitness(session.latest).fitness!=='ACTIONABLE_FRESH')return;
-          const plan=pricedPrecisionPlan(candidate,date,prices),attempt=makeProoflessAttempts([plan],[workerId])[0]!;
-          recordedAttemptId=attempt.attemptId;
-          activeWaveContexts.set(workerId,{candidateId:candidate.id,wave});
-          traces.updateContext(workerId,{workerId,attemptId:attempt.attemptId,court:candidate.court,startTime:candidate.start,endTime:candidate.end});
-          await saveOnce(resolve('.local/api-booking/precision-races'),`${progressLog.runId}-${attempt.attemptId}.json`,
-            {runId:progressLog.runId,authorizationFingerprint:authorization.fingerprint,candidateId:candidate.id,
-              workerId,wave,evidenceSeq,prices,evaluatedAt:new Date(nowMs()).toISOString()});
-          session.record({id:attempt.attemptId,candidateId:candidate.id,workerId,wave,state:'IN_FLIGHT',evidenceSeq,
-            ...(selection.reopenEpoch!==undefined?{reopenEpoch:selection.reopenEpoch}:{})});
-          stage('PHASE3_ATTEMPT_RESERVED',{workerId,candidateId:candidate.id,wave,evidenceSeq,attemptId:attempt.attemptId,amount:plan.totalPrice,
-            court:candidate.court,startTime:candidate.start,endTime:candidate.end});
-          try{
-            await executeProoflessAttempt(attempt,undefined,{requirePreparedContext:true,beforePost:()=>{
-              const fresh=session.latest;
-              if((releaseClock?.nowMs()??nowMs())<releaseMs||abort.signal.aborted||verifiedHold||!fresh||fresh.observation.seq!==evidenceSeq||
-                (wave==='RESCUE'&&session.attempts.some(value=>value.id!==attempt.attemptId&&value.state==='IN_FLIGHT'))||
-                refreshFitness(fresh).fitness!=='ACTIONABLE_FRESH'||session.attempts.some(value=>value.state==='UNKNOWN'||value.state==='VERIFIED'))
-                throw new SubmissionDispatchError('PHASE3_DISPATCH_GUARD_CLOSED',false);
-            }});
-            session.attempts.find(value=>value.id===attempt.attemptId)!.state='VERIFIED';
-          }catch(error){const state=await classifyPrecisionDispatchError(error,async()=>{
-            try{return (await journal.read(candidate.logicalKey)).state;}catch{return undefined;}});
-            session.attempts.find(value=>value.id===attempt.attemptId)!.state=state.state==='REJECTED'||state.state==='NOT_DISPATCHED'?'REJECTED':
-              state.state==='QR_READY'||state.state==='HOLD_VERIFIED_QR_ATTENTION'?'VERIFIED':'UNKNOWN';
-            stage('PHASE3_SETTLED',{workerId,candidateId:candidate.id,wave,attemptId:attempt.attemptId,state:state.state,code:state.code??'COMPLETED'});
-          }
-        })().catch(error=>{const value=session.attempts.find(value=>value.id===recordedAttemptId);
-          if(value)value.state='UNKNOWN';
-          stage('PHASE3_ADAPTIVE_FAILED',{code:safeApiFailureCode(error,'PHASE3_ADAPTIVE_FAILED')});});
+      const pending=new Set<Promise<unknown>>();
+      // A newer Slot Watch read no longer ends the attempt by itself: each checkpoint re-evaluates the
+      // newest read for the SAME candidate (adaptive-attempt.ts) and adopts it as the effective evidence.
+      const dispatchAdaptive=(selection:AdaptiveSelection,wave:'WAVE_2'|'RESCUE')=>{
+        const {candidate,workerId}=selection;
+        const journal=new DurableSubmissionJournal(resolve('.local/api-booking/api-first-journals',candidate.logicalKey));
+        const task=runAdaptiveAttempt(selection,wave,{session,date,now:nowMs,dispatchNow:()=>releaseClock?.nowMs()??nowMs(),
+          newestSeq:()=>newestSeq,securityRefreshMs:()=>securityRefreshMs,aborted:()=>abort.signal.aborted,verifiedHold:()=>verifiedHold,
+          workerReady:()=>releaseTransports.has(workerId)&&!unavailableWorkers.has(workerId),
+          prepareSecurity:async()=>{
+            const started=performance.now();
+            try{await releaseTransports.get(workerId)!.prepareCheckoutContext(wave==='RESCUE');securityRefreshMs=Math.max(securityRefreshMs,performance.now()-started);}
+            catch(error){stage('PHASE3_SECURITY_FAILED',{workerId,candidateId:candidate.id,code:safeApiFailureCode(error,'SECURITY_PREWARM_FAILED')});throw error;}
+          },
+          journalReusable:async()=>{
+            if(await journal.recycleReusable(candidate.logicalKey).catch(()=>'blocked' as const)!=='blocked')return true;
+            stage('PHASE3_JOURNAL_BLOCKED',{workerId,candidateId:candidate.id});return false;
+          },
+          reserve:async({plan,prices,evidenceSeq,selectedEvidenceSeq})=>{
+            const attempt=makeProoflessAttempts([plan],[workerId])[0]!;
+            activeWaveContexts.set(workerId,{candidateId:candidate.id,wave,
+              evidenceSeq:()=>session.attempts.find(value=>value.id===attempt.attemptId)?.evidenceSeq});
+            traces.updateContext(workerId,{workerId,attemptId:attempt.attemptId,court:candidate.court,startTime:candidate.start,endTime:candidate.end});
+            // evidenceSeq is the effective evidence at reservation; a later pre-POST rebase is logged as PHASE3_EVIDENCE_REBASED.
+            await saveOnce(resolve('.local/api-booking/precision-races'),`${progressLog.runId}-${attempt.attemptId}.json`,
+              {runId:progressLog.runId,authorizationFingerprint:authorization.fingerprint,candidateId:candidate.id,
+                workerId,wave,evidenceSeq,selectedEvidenceSeq,prices,evaluatedAt:new Date(nowMs()).toISOString()});
+            return {attemptId:attempt.attemptId,dispatch:beforePost=>executeProoflessAttempt(attempt,undefined,{requirePreparedContext:true,beforePost}).then(()=>undefined)};
+          },
+          classifyFailure:error=>classifyPrecisionDispatchError(error,async()=>{
+            try{return (await journal.read(candidate.logicalKey)).state;}catch{return undefined;}}),
+          failureCode:error=>safeApiFailureCode(error,'PHASE3_ADAPTIVE_FAILED'),
+          event:(name,extra)=>stage(name,extra)});
         pending.add(task);void task.finally(()=>pending.delete(task));
       };
       const adaptiveLoop=(async()=>{
@@ -934,7 +918,7 @@ try {
             session.observe(evidence);
             stage('PHASE3_EVIDENCE',{seq:observation.seq,fitness:evidence.fitness,cache:observation.cache?.status??'UNKNOWN'});
             if(evidence.fitness!=='ACTIONABLE_FRESH')continue;
-            const fresh=refreshFitness(evidence);
+            const fresh=adaptiveFitness(evidence.observation,newestSeq,releaseMs,nowMs(),securityRefreshMs);
             if(fresh.fitness!=='ACTIONABLE_FRESH')continue;
             if(authorization.rescueEnabled&&pending.size===0)
               for(const choice of session.select('RESCUE',nowMs(),maxAge))dispatchAdaptive(choice,'RESCUE');

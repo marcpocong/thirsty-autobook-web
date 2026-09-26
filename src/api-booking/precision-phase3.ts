@@ -134,18 +134,82 @@ export function adaptiveMaxAgeMs(readLatencyMs: number, securityRefreshMs: numbe
   return Math.min(15_000, Math.max(6_000, 2 * readLatencyMs + securityRefreshMs + 1000));
 }
 
+/** Adaptive evidence fitness at `nowMs`, with the freshness window derived from the observation's own read latency. */
+export function adaptiveFitness(observation: AvailabilityObservation, newestSeq: number, releaseMs: number, nowMs: number,
+  securityRefreshMs: number): ActionableObservation {
+  const latency = Math.max(0, observation.responseOffsetMs - observation.requestOffsetMs);
+  return classifyActionableObservation(observation, newestSeq, releaseMs, nowMs, adaptiveMaxAgeMs(latency, securityRefreshMs));
+}
+
+type CandidateRange = { state: 'OPEN'; prices: number[] } | { state: 'UNAVAILABLE' | 'UNKNOWN' | 'PRICE_INVALID' };
+/** Every required hourly cell of the range, and its price, from one observation. */
+function readCandidateRange(candidate: AuthorizedCandidate, observation: AvailabilityObservation): CandidateRange {
+  const cells = decodeMatrix(observation.matrix), hours = Number(candidate.start.slice(0, 2));
+  const range = Array.from({ length: candidate.durationHours }, (_, offset) => `${String(hours + offset).padStart(2, '0')}:00`);
+  const codes = range.map(hour => cells.get(`${candidate.court}/${hour}`));
+  if (codes.some(code => code === 'X')) return { state: 'UNAVAILABLE' };
+  if (codes.some(code => code !== 'O')) return { state: 'UNKNOWN' };
+  const prices = range.map(hour => observation.prices?.[candidate.court - 1]?.[MATRIX_HOURS.indexOf(hour)]);
+  if (prices.some(price => typeof price !== 'number' || !Number.isFinite(price) || price <= 0)) return { state: 'PRICE_INVALID' };
+  return { state: 'OPEN', prices: prices as number[] };
+}
+
 export function candidatePriceFromObservation(candidate: AuthorizedCandidate, evidence: ActionableObservation): number[] | null {
   if (evidence.fitness !== 'ACTIONABLE_FRESH') return null;
-  const cells = decodeMatrix(evidence.observation.matrix), hours = Number(candidate.start.slice(0, 2));
-  const prices: number[] = [];
-  for (let offset = 0; offset < candidate.durationHours; offset++) {
-    const hour = `${String(hours + offset).padStart(2, '0')}:00`;
-    if (cells.get(`${candidate.court}/${hour}`) !== 'O') return null;
-    const price = evidence.observation.prices?.[candidate.court - 1]?.[MATRIX_HOURS.indexOf(hour)];
-    if (typeof price !== 'number' || !Number.isFinite(price) || price <= 0) return null;
-    prices.push(price);
-  }
-  return prices;
+  const range = readCandidateRange(candidate, evidence.observation);
+  return range.state === 'OPEN' ? range.prices : null;
+}
+
+/** Why an adaptive (Wave 2 / Rescue) attempt was abandoned before its POST. */
+export type AdaptiveSkipReason = 'LATEST_NOT_ACTIONABLE' | 'CANDIDATE_NO_LONGER_OPEN' | 'CANDIDATE_STATE_UNKNOWN' |
+  'PRICE_INVALID' | 'PRICE_CHANGED' | 'ABORTED' | 'RELEASE_NOT_REACHED' | 'VERIFIED_HOLD_EXISTS' | 'UNKNOWN_ATTEMPT_EXISTS' |
+  'CONCURRENT_ATTEMPT_IN_FLIGHT' | 'JOURNAL_BLOCKED' | 'WORKER_UNAVAILABLE' | 'SECURITY_FAILED';
+export interface AdaptiveRevalidationInput {
+  session: PrecisionSession; candidate: AuthorizedCandidate; wave: 'WAVE_2' | 'RESCUE';
+  /** Observation the candidate was selected from; the candidate must have stayed open since. */
+  selectedEvidenceSeq: number;
+  newestSeq: number; nowMs: number; securityRefreshMs: number; aborted: boolean; verifiedHold: boolean;
+  /** Release-clock reading, checked only at the final pre-POST gate. */
+  dispatchClockMs?: number;
+  /** The caller's own reserved attempt, excluded from the concurrency check. */
+  ownAttemptId?: string;
+  /** Prices already bound into a reserved request: the newest evidence must still carry exactly these. */
+  lockedPrices?: readonly number[];
+}
+export type AdaptiveRevalidation =
+  | { valid: true; evidence: ActionableObservation; evidenceSeq: number; prices: number[] }
+  | { valid: false; reason: AdaptiveSkipReason; seq?: number; fitness?: EvidenceFitness };
+
+/**
+ * The one rule every adaptive checkpoint (after security preparation, before reservation, immediately
+ * before POST) applies. A newer Slot Watch sequence is not by itself a reason to stop: the newest
+ * observation must independently be ACTIONABLE_FRESH now, and the SAME candidate must still be fully
+ * OPEN in it with valid prices, in which case that observation becomes the effective evidence. The
+ * candidate is never swapped; an older observation is never used in place of a newer one.
+ */
+export function revalidateAdaptiveAttempt(input: AdaptiveRevalidationInput): AdaptiveRevalidation {
+  const { session, candidate } = input, releaseMs = session.authorization.releaseMs;
+  if (input.aborted) return { valid: false, reason: 'ABORTED' };
+  if (input.dispatchClockMs !== undefined && !(input.dispatchClockMs >= releaseMs)) return { valid: false, reason: 'RELEASE_NOT_REACHED' };
+  if (input.verifiedHold) return { valid: false, reason: 'VERIFIED_HOLD_EXISTS' };
+  const blocker = session.adaptiveBlocker(input.wave, input.ownAttemptId);
+  if (blocker) return { valid: false, reason: blocker };
+  const latest = session.latest;
+  if (!latest) return { valid: false, reason: 'LATEST_NOT_ACTIONABLE' };
+  const seq = latest.observation.seq;
+  const evidence = adaptiveFitness(latest.observation, input.newestSeq, releaseMs, input.nowMs, input.securityRefreshMs);
+  if (evidence.fitness !== 'ACTIONABLE_FRESH' || seq < input.selectedEvidenceSeq)
+    return { valid: false, reason: 'LATEST_NOT_ACTIONABLE', seq, fitness: evidence.fitness };
+  // Open again now is not enough: a fresh read that showed the range unavailable after selection
+  // ends this attempt (a later reopening is a new event for the adaptive loop to consider).
+  const closedAt = session.lastUnavailableSeq(candidate.id);
+  if (closedAt !== undefined && closedAt > input.selectedEvidenceSeq) return { valid: false, reason: 'CANDIDATE_NO_LONGER_OPEN', seq };
+  const range = readCandidateRange(candidate, latest.observation);
+  if (range.state !== 'OPEN') return { valid: false, seq, reason: range.state === 'UNAVAILABLE' ? 'CANDIDATE_NO_LONGER_OPEN' :
+    range.state === 'UNKNOWN' ? 'CANDIDATE_STATE_UNKNOWN' : 'PRICE_INVALID' };
+  if (input.lockedPrices && (input.lockedPrices.length !== range.prices.length ||
+    input.lockedPrices.some((price, index) => price !== range.prices[index]))) return { valid: false, reason: 'PRICE_CHANGED', seq };
+  return { valid: true, evidence, evidenceSeq: seq, prices: range.prices };
 }
 /** Replaces every request rate from one documented evidence set; no assumed-rate slot survives. */
 export function pricedPrecisionPlan(candidate: AuthorizedCandidate, date: string, prices: readonly number[]): BookingPlan {
@@ -160,8 +224,10 @@ export function pricedPrecisionPlan(candidate: AuthorizedCandidate, date: string
   return { ...base, courts: [court], chunks: [{ ...base.chunks[0]!, courts: [court], totalPrice: price }], totalPrice: price };
 }
 
+/** `evidenceSeq` is the observation that last authorized the request (the effective evidence);
+ * `selectedEvidenceSeq` is the one the candidate was first selected from, when they differ. */
 export interface RaceAttempt { id: string; candidateId: string; workerId: WorkerId; wave: PrecisionWave;
-  state: 'IN_FLIGHT' | 'REJECTED' | 'UNKNOWN' | 'VERIFIED'; evidenceSeq?: number; reopenEpoch?: number }
+  state: 'IN_FLIGHT' | 'REJECTED' | 'UNKNOWN' | 'VERIFIED'; evidenceSeq?: number; selectedEvidenceSeq?: number; reopenEpoch?: number }
 export class PrecisionSession {
   readonly attempts: RaceAttempt[] = [];
   latest?: ActionableObservation;
@@ -234,6 +300,15 @@ export class PrecisionSession {
     if (wave === 'WAVE_2' && selected.length) this.wave2Selected = true;
     return selected;
   }
+  /** Attempt-state gates shared by every adaptive checkpoint. `ownAttemptId` excludes the caller's reservation. */
+  adaptiveBlocker(wave: 'WAVE_2' | 'RESCUE', ownAttemptId?: string): 'UNKNOWN_ATTEMPT_EXISTS' | 'VERIFIED_HOLD_EXISTS' | 'CONCURRENT_ATTEMPT_IN_FLIGHT' | undefined {
+    if (this.attempts.some(value => value.state === 'UNKNOWN')) return 'UNKNOWN_ATTEMPT_EXISTS';
+    if (this.attempts.some(value => value.state === 'VERIFIED')) return 'VERIFIED_HOLD_EXISTS';
+    if (wave === 'RESCUE' && this.attempts.some(value => value.id !== ownAttemptId && value.state === 'IN_FLIGHT')) return 'CONCURRENT_ATTEMPT_IN_FLIGHT';
+    return undefined;
+  }
+  /** Sequence of the fresh read that last showed this candidate's range turning unavailable. */
+  lastUnavailableSeq(candidateId: string): number | undefined { return this.unavailableAt.get(candidateId)?.seq; }
   record(attempt: RaceAttempt): void {
     if (this.attempts.some(value => value.id === attempt.id)) throw Error('PRECISION_ATTEMPT_DUPLICATE');
     this.attempts.push(attempt);
