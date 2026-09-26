@@ -1,0 +1,1303 @@
+{
+  "runId": "e69098a8-b8b2-444e-b0ea-2b1170f1420f",
+  "outcome": {
+    "runId": "e69098a8-b8b2-444e-b0ea-2b1170f1420f",
+    "mode": "live",
+    "targetDate": "2026-09-28",
+    "stage": "PHASE3_OUTCOME",
+    "at": "2026-09-26T00:15:00.069Z",
+    "elapsedMs": 2675259,
+    "sincePreviousMs": 10,
+    "outcome": "ALL_REJECTED_WAITING_FOR_REOPEN",
+    "verifiedCount": 0,
+    "unknownCount": 0,
+    "attemptCount": 6
+  },
+  "exit": {
+    "runId": "e69098a8-b8b2-444e-b0ea-2b1170f1420f",
+    "mode": "live",
+    "targetDate": "2026-09-28",
+    "stage": "PROCESS_EXIT",
+    "at": "2026-09-26T00:15:00.120Z",
+    "elapsedMs": 2675309,
+    "sincePreviousMs": 49,
+    "exitCode": 1
+  },
+  "observer": {
+    "publication": {
+      "lastUnpublished": {
+        "seq": 7,
+        "requestOffsetMs": -1991.9,
+        "responseOffsetMs": -1570.9
+      },
+      "firstPublished": {
+        "seq": 8,
+        "requestOffsetMs": 17.1,
+        "responseOffsetMs": 1462.1,
+        "cache": {
+          "status": "MISS",
+          "ageS": 0
+        }
+      },
+      "firstPublishedResponse": {
+        "seq": 8,
+        "requestOffsetMs": 17.1,
+        "responseOffsetMs": 1462.1
+      }
+    },
+    "firstPublishedMatrix": "1:OOOOOOOOOXXXXXOO,2:OOOOOOOOOOOOXXXO,3:XXXXOOOOOOOOXXXO,4:XXXXOOOOOOOXXXOO,5:XXXXOOOOOOOXXXOO,6:OOOOOOOOOOXXXXOO,7:OOOOOOOOOOXXXXOO",
+    "firstPublishedCounts": {
+      "OPEN": 75,
+      "UNAVAILABLE": 37,
+      "UNKNOWN": 0
+    },
+    "reads": {
+      "launched": 204,
+      "answered": 204,
+      "failed": 0,
+      "notLaunched": 0,
+      "maxInFlight": 6,
+      "earlyOffsetsMs": [
+        0,
+        250,
+        500,
+        1000,
+        2000,
+        5000
+      ]
+    },
+    "bookingReads": {
+      "answered": 9,
+      "failed": 0,
+      "failedCourtQueries": 0,
+      "itemized": true
+    },
+    "openToUnavailable": 25,
+    "reopened": 24,
+    "unavailableWithoutRecordAtFirstPublication": 23
+  },
+  "critical": [
+    {
+      "schema": "critical-path/v1",
+      "type": "header",
+      "releaseMs": 1790380800000,
+      "wallToTrustedMs": 373.16,
+      "runId": "e69098a8-b8b2-444e-b0ea-2b1170f1420f",
+      "note": "All *Ms values are milliseconds after the release instant on the trusted clock. Renderer values are mapped through a round-trip calibration and carry [lowMs, highMs]."
+    },
+    {
+      "schema": "critical-path/v1",
+      "workerId": "A",
+      "dispatchMode": "node",
+      "schedulerFiredMs": 0.07,
+      "workerInvokedMs": 0.11,
+      "transportEnteredMs": 0.38,
+      "prePostMs": 0.47,
+      "rendererArmSentMs": null,
+      "rendererArmedMs": null,
+      "evaluateEnteredMs": {
+        "ms": 3.58,
+        "lowMs": 3.14,
+        "highMs": 4.01
+      },
+      "fetchInvokedMs": {
+        "ms": 3.58,
+        "lowMs": 3.14,
+        "highMs": 4.01
+      },
+      "browserRequestStartMs": 6.21,
+      "requestObservedMs": 8.6,
+      "responseHeadersMs": {
+        "ms": 10025.48,
+        "lowMs": 10025.04,
+        "highMs": 10025.91
+      },
+      "responseCompleteMs": {
+        "ms": 10025.68,
+        "lowMs": 10025.24,
+        "highMs": 10026.11
+      },
+      "responseObservedMs": 10027.7,
+      "segments": {
+        "nodeToRendererMs": 3.11,
+        "rendererToFetchMs": 0,
+        "fetchToRequestStartMs": 2.63,
+        "requestEventLagMs": 2.39
+      },
+      "calibration": {
+        "samples": 8,
+        "uncertaintyMs": 0.44,
+        "minRoundTripMs": 0.79,
+        "consistent": true
+      }
+    },
+    {
+      "schema": "critical-path/v1",
+      "workerId": "B",
+      "dispatchMode": "node",
+      "schedulerFiredMs": 0.07,
+      "workerInvokedMs": 1.21,
+      "transportEnteredMs": 1.24,
+      "prePostMs": 1.26,
+      "rendererArmSentMs": null,
+      "rendererArmedMs": null,
+      "evaluateEnteredMs": {
+        "ms": 4.03,
+        "lowMs": 3.65,
+        "highMs": 4.41
+      },
+      "fetchInvokedMs": {
+        "ms": 4.03,
+        "lowMs": 3.65,
+        "highMs": 4.41
+      },
+      "browserRequestStartMs": 6.46,
+      "requestObservedMs": 7.64,
+      "responseHeadersMs": {
+        "ms": 10890.73,
+        "lowMs": 10890.35,
+        "highMs": 10891.11
+      },
+      "responseCompleteMs": {
+        "ms": 10891.03,
+        "lowMs": 10890.65,
+        "highMs": 10891.41
+      },
+      "responseObservedMs": 10893.19,
+      "segments": {
+        "nodeToRendererMs": 2.77,
+        "rendererToFetchMs": 0,
+        "fetchToRequestStartMs": 2.43,
+        "requestEventLagMs": 1.18
+      },
+      "calibration": {
+        "samples": 8,
+        "uncertaintyMs": 0.38,
+        "minRoundTripMs": 0.64,
+        "consistent": true
+      }
+    },
+    {
+      "schema": "critical-path/v1",
+      "workerId": "C",
+      "dispatchMode": "node",
+      "schedulerFiredMs": 0.07,
+      "workerInvokedMs": 1.52,
+      "transportEnteredMs": 1.54,
+      "prePostMs": 1.55,
+      "rendererArmSentMs": null,
+      "rendererArmedMs": null,
+      "evaluateEnteredMs": {
+        "ms": 4.32,
+        "lowMs": 3.91,
+        "highMs": 4.72
+      },
+      "fetchInvokedMs": {
+        "ms": 4.32,
+        "lowMs": 3.91,
+        "highMs": 4.72
+      },
+      "browserRequestStartMs": 6.94,
+      "requestObservedMs": 7.92,
+      "responseHeadersMs": {
+        "ms": 6858.52,
+        "lowMs": 6858.11,
+        "highMs": 6858.92
+      },
+      "responseCompleteMs": {
+        "ms": 6858.92,
+        "lowMs": 6858.51,
+        "highMs": 6859.32
+      },
+      "responseObservedMs": 6920.37,
+      "segments": {
+        "nodeToRendererMs": 2.77,
+        "rendererToFetchMs": 0,
+        "fetchToRequestStartMs": 2.62,
+        "requestEventLagMs": 0.98
+      },
+      "calibration": {
+        "samples": 8,
+        "uncertaintyMs": 0.41,
+        "minRoundTripMs": 0.7,
+        "consistent": true
+      }
+    },
+    {
+      "schema": "critical-path/v1",
+      "workerId": "D",
+      "dispatchMode": "node",
+      "schedulerFiredMs": 0.07,
+      "workerInvokedMs": 1.75,
+      "transportEnteredMs": 1.76,
+      "prePostMs": 1.77,
+      "rendererArmSentMs": null,
+      "rendererArmedMs": null,
+      "evaluateEnteredMs": {
+        "ms": 4.69,
+        "lowMs": 4.27,
+        "highMs": 5.11
+      },
+      "fetchInvokedMs": {
+        "ms": 4.69,
+        "lowMs": 4.27,
+        "highMs": 5.11
+      },
+      "browserRequestStartMs": 7.5,
+      "requestObservedMs": 8.68,
+      "responseHeadersMs": {
+        "ms": 11931.29,
+        "lowMs": 11930.87,
+        "highMs": 11931.71
+      },
+      "responseCompleteMs": {
+        "ms": 11932.39,
+        "lowMs": 11931.97,
+        "highMs": 11932.81
+      },
+      "responseObservedMs": 11935.29,
+      "segments": {
+        "nodeToRendererMs": 2.92,
+        "rendererToFetchMs": 0,
+        "fetchToRequestStartMs": 2.81,
+        "requestEventLagMs": 1.18
+      },
+      "calibration": {
+        "samples": 8,
+        "uncertaintyMs": 0.42,
+        "minRoundTripMs": 0.64,
+        "consistent": true
+      }
+    },
+    {
+      "schema": "critical-path/v1",
+      "workerId": "E",
+      "dispatchMode": "node",
+      "schedulerFiredMs": 0.07,
+      "workerInvokedMs": 1.95,
+      "transportEnteredMs": 1.96,
+      "prePostMs": 1.97,
+      "rendererArmSentMs": null,
+      "rendererArmedMs": null,
+      "evaluateEnteredMs": {
+        "ms": 4.89,
+        "lowMs": 4.49,
+        "highMs": 5.3
+      },
+      "fetchInvokedMs": {
+        "ms": 4.89,
+        "lowMs": 4.49,
+        "highMs": 5.3
+      },
+      "browserRequestStartMs": 7.3,
+      "requestObservedMs": 9.61,
+      "responseHeadersMs": {
+        "ms": 13996.09,
+        "lowMs": 13995.69,
+        "highMs": 13996.5
+      },
+      "responseCompleteMs": {
+        "ms": 13996.29,
+        "lowMs": 13995.89,
+        "highMs": 13996.7
+      },
+      "responseObservedMs": 13998.61,
+      "segments": {
+        "nodeToRendererMs": 2.92,
+        "rendererToFetchMs": 0,
+        "fetchToRequestStartMs": 2.41,
+        "requestEventLagMs": 2.31
+      },
+      "calibration": {
+        "samples": 8,
+        "uncertaintyMs": 0.4,
+        "minRoundTripMs": 0.63,
+        "consistent": true
+      }
+    },
+    {
+      "schema": "critical-path/v1",
+      "workerId": "F",
+      "dispatchMode": "node",
+      "schedulerFiredMs": 0.07,
+      "workerInvokedMs": 2.14,
+      "transportEnteredMs": 2.15,
+      "prePostMs": 2.15,
+      "rendererArmSentMs": null,
+      "rendererArmedMs": null,
+      "evaluateEnteredMs": {
+        "ms": 4.94,
+        "lowMs": 4.54,
+        "highMs": 5.34
+      },
+      "fetchInvokedMs": {
+        "ms": 4.94,
+        "lowMs": 4.54,
+        "highMs": 5.34
+      },
+      "browserRequestStartMs": 7.74,
+      "requestObservedMs": 9.54,
+      "responseHeadersMs": {
+        "ms": 12297.74,
+        "lowMs": 12297.34,
+        "highMs": 12298.14
+      },
+      "responseCompleteMs": {
+        "ms": 12297.94,
+        "lowMs": 12297.54,
+        "highMs": 12298.34
+      },
+      "responseObservedMs": 12300,
+      "segments": {
+        "nodeToRendererMs": 2.79,
+        "rendererToFetchMs": 0,
+        "fetchToRequestStartMs": 2.8,
+        "requestEventLagMs": 1.8
+      },
+      "calibration": {
+        "samples": 8,
+        "uncertaintyMs": 0.4,
+        "minRoundTripMs": 0.64,
+        "consistent": true
+      }
+    }
+  ],
+  "targets": [
+    {
+      "workerId": "A",
+      "court": 4,
+      "startTime": "19:00",
+      "endTime": "22:00",
+      "attemptId": "core-A-official-1",
+      "finalState": null,
+      "finalCode": null,
+      "post": {
+        "offsetMs": 8.6,
+        "source": "run-trace"
+      },
+      "response": {
+        "statusCode": 409,
+        "errorHint": "availability",
+        "responseSource": "application",
+        "completedOffsetMs": 10027.6,
+        "networkDurationMs": 10026
+      },
+      "grid": {
+        "hours": [
+          "19:00",
+          "20:00",
+          "21:00"
+        ],
+        "firstPublished": {
+          "observation": {
+            "seq": 8,
+            "requestOffsetMs": 17.1,
+            "responseOffsetMs": 1462.1
+          },
+          "state": "FULLY_UNAVAILABLE",
+          "hours": [
+            {
+              "hour": "19:00",
+              "state": "UNAVAILABLE",
+              "price": 700
+            },
+            {
+              "hour": "20:00",
+              "state": "UNAVAILABLE",
+              "price": 700
+            },
+            {
+              "hour": "21:00",
+              "state": "UNAVAILABLE",
+              "price": 700
+            }
+          ]
+        },
+        "firstFullyOpen": null,
+        "firstUnavailable": {
+          "observation": {
+            "seq": 8,
+            "requestOffsetMs": 17.1,
+            "responseOffsetMs": 1462.1
+          },
+          "hours": [
+            "19:00",
+            "20:00",
+            "21:00"
+          ]
+        },
+        "firstRecord": null,
+        "reopen": null,
+        "latest": {
+          "observation": {
+            "seq": 204,
+            "requestOffsetMs": 900006.1,
+            "responseOffsetMs": 900520.1
+          },
+          "state": "FULLY_UNAVAILABLE"
+        }
+      },
+      "provider": {
+        "complete": true,
+        "protocol": "h2",
+        "reused": true,
+        "headersOffsetMs": 10027.9,
+        "bodyOffsetMs": 10028.5,
+        "timingSource": "browser",
+        "dnsMs": null,
+        "connectMs": null,
+        "tlsMs": null,
+        "sendMs": 0.2,
+        "waitMs": 10018.3,
+        "server": "Vercel",
+        "cfRay": null,
+        "cfMitigated": null,
+        "vercelId": "sin1::sin1::84v78-1790380800028-4689566155d4",
+        "requestId": null,
+        "vercelCache": "MISS",
+        "ageS": null,
+        "serverTiming": null,
+        "failure": null
+      }
+    },
+    {
+      "workerId": "B",
+      "court": 5,
+      "startTime": "19:00",
+      "endTime": "22:00",
+      "attemptId": "core-B-official-2",
+      "finalState": null,
+      "finalCode": null,
+      "post": {
+        "offsetMs": 7.7,
+        "source": "run-trace"
+      },
+      "response": {
+        "statusCode": 409,
+        "errorHint": "availability",
+        "responseSource": "application",
+        "completedOffsetMs": 10893.7,
+        "networkDurationMs": 10891
+      },
+      "grid": {
+        "hours": [
+          "19:00",
+          "20:00",
+          "21:00"
+        ],
+        "firstPublished": {
+          "observation": {
+            "seq": 8,
+            "requestOffsetMs": 17.1,
+            "responseOffsetMs": 1462.1
+          },
+          "state": "FULLY_UNAVAILABLE",
+          "hours": [
+            {
+              "hour": "19:00",
+              "state": "UNAVAILABLE",
+              "price": 700
+            },
+            {
+              "hour": "20:00",
+              "state": "UNAVAILABLE",
+              "price": 700
+            },
+            {
+              "hour": "21:00",
+              "state": "UNAVAILABLE",
+              "price": 700
+            }
+          ]
+        },
+        "firstFullyOpen": null,
+        "firstUnavailable": {
+          "observation": {
+            "seq": 8,
+            "requestOffsetMs": 17.1,
+            "responseOffsetMs": 1462.1
+          },
+          "hours": [
+            "19:00",
+            "20:00",
+            "21:00"
+          ]
+        },
+        "firstRecord": null,
+        "reopen": null,
+        "latest": {
+          "observation": {
+            "seq": 204,
+            "requestOffsetMs": 900006.1,
+            "responseOffsetMs": 900520.1
+          },
+          "state": "FULLY_UNAVAILABLE"
+        }
+      },
+      "provider": {
+        "complete": true,
+        "protocol": "h2",
+        "reused": true,
+        "headersOffsetMs": 10891.9,
+        "bodyOffsetMs": 10892.5,
+        "timingSource": "browser",
+        "dnsMs": null,
+        "connectMs": null,
+        "tlsMs": null,
+        "sendMs": 0.2,
+        "waitMs": 10883.5,
+        "server": "Vercel",
+        "cfRay": null,
+        "cfMitigated": null,
+        "vercelId": "sin1::sin1::mzbtl-1790380800029-20c2808df262",
+        "requestId": null,
+        "vercelCache": "MISS",
+        "ageS": null,
+        "serverTiming": null,
+        "failure": null
+      }
+    },
+    {
+      "workerId": "C",
+      "court": 1,
+      "startTime": "19:00",
+      "endTime": "22:00",
+      "attemptId": "core-C-official-3",
+      "finalState": null,
+      "finalCode": null,
+      "post": {
+        "offsetMs": 7.9,
+        "source": "run-trace"
+      },
+      "response": {
+        "statusCode": 409,
+        "errorHint": "availability",
+        "responseSource": "application",
+        "completedOffsetMs": 6919.9,
+        "networkDurationMs": 6862
+      },
+      "grid": {
+        "hours": [
+          "19:00",
+          "20:00",
+          "21:00"
+        ],
+        "firstPublished": {
+          "observation": {
+            "seq": 8,
+            "requestOffsetMs": 17.1,
+            "responseOffsetMs": 1462.1
+          },
+          "state": "FULLY_UNAVAILABLE",
+          "hours": [
+            {
+              "hour": "19:00",
+              "state": "UNAVAILABLE",
+              "price": 700
+            },
+            {
+              "hour": "20:00",
+              "state": "UNAVAILABLE",
+              "price": 700
+            },
+            {
+              "hour": "21:00",
+              "state": "UNAVAILABLE",
+              "price": 700
+            }
+          ]
+        },
+        "firstFullyOpen": null,
+        "firstUnavailable": {
+          "observation": {
+            "seq": 8,
+            "requestOffsetMs": 17.1,
+            "responseOffsetMs": 1462.1
+          },
+          "hours": [
+            "19:00",
+            "20:00",
+            "21:00"
+          ]
+        },
+        "firstRecord": null,
+        "reopen": null,
+        "latest": {
+          "observation": {
+            "seq": 204,
+            "requestOffsetMs": 900006.1,
+            "responseOffsetMs": 900520.1
+          },
+          "state": "FULLY_UNAVAILABLE"
+        }
+      },
+      "provider": {
+        "complete": true,
+        "protocol": "h2",
+        "reused": true,
+        "headersOffsetMs": 6857.3,
+        "bodyOffsetMs": 6858.6,
+        "timingSource": "browser",
+        "dnsMs": null,
+        "connectMs": null,
+        "tlsMs": null,
+        "sendMs": 0.2,
+        "waitMs": 6848.7,
+        "server": "Vercel",
+        "cfRay": null,
+        "cfMitigated": null,
+        "vercelId": "sin1::sin1::5lvvt-1790380800029-6a650f2b2586",
+        "requestId": null,
+        "vercelCache": "MISS",
+        "ageS": null,
+        "serverTiming": null,
+        "failure": null
+      }
+    },
+    {
+      "workerId": "D",
+      "court": 2,
+      "startTime": "17:00",
+      "endTime": "20:00",
+      "attemptId": "core-D-official-4",
+      "finalState": null,
+      "finalCode": null,
+      "post": {
+        "offsetMs": 8.7,
+        "source": "run-trace"
+      },
+      "response": {
+        "statusCode": 409,
+        "errorHint": "availability",
+        "responseSource": "application",
+        "completedOffsetMs": 11935.7,
+        "networkDurationMs": 11933
+      },
+      "grid": {
+        "hours": [
+          "17:00",
+          "18:00",
+          "19:00"
+        ],
+        "firstPublished": {
+          "observation": {
+            "seq": 8,
+            "requestOffsetMs": 17.1,
+            "responseOffsetMs": 1462.1
+          },
+          "state": "FULLY_OPEN",
+          "hours": [
+            {
+              "hour": "17:00",
+              "state": "OPEN",
+              "price": 700
+            },
+            {
+              "hour": "18:00",
+              "state": "OPEN",
+              "price": 700
+            },
+            {
+              "hour": "19:00",
+              "state": "OPEN",
+              "price": 700
+            }
+          ]
+        },
+        "firstFullyOpen": {
+          "seq": 8,
+          "requestOffsetMs": 17.1,
+          "responseOffsetMs": 1462.1
+        },
+        "firstUnavailable": {
+          "observation": {
+            "seq": 21,
+            "requestOffsetMs": 13000.1,
+            "responseOffsetMs": 13860.1
+          },
+          "hours": [
+            "18:00",
+            "19:00"
+          ]
+        },
+        "firstRecord": {
+          "observation": {
+            "seq": 3,
+            "requestOffsetMs": 10010.1,
+            "responseOffsetMs": 12149.1
+          },
+          "hours": [
+            "18:00",
+            "19:00"
+          ]
+        },
+        "reopen": {
+          "before": {
+            "seq": 127,
+            "requestOffsetMs": 596006.1,
+            "responseOffsetMs": 596119.1
+          },
+          "after": {
+            "seq": 128,
+            "requestOffsetMs": 597005.1,
+            "responseOffsetMs": 597342.1
+          },
+          "overlapping": false
+        },
+        "latest": {
+          "observation": {
+            "seq": 204,
+            "requestOffsetMs": 900006.1,
+            "responseOffsetMs": 900520.1
+          },
+          "state": "FULLY_UNAVAILABLE"
+        }
+      },
+      "provider": {
+        "complete": true,
+        "protocol": "h2",
+        "reused": true,
+        "headersOffsetMs": 11932.3,
+        "bodyOffsetMs": 11934.5,
+        "timingSource": "browser",
+        "dnsMs": null,
+        "connectMs": null,
+        "tlsMs": null,
+        "sendMs": 0.1,
+        "waitMs": 11923.1,
+        "server": "Vercel",
+        "cfRay": null,
+        "cfMitigated": null,
+        "vercelId": "sin1::sin1::9s7kg-1790380800034-7cb03a47ec66",
+        "requestId": null,
+        "vercelCache": "MISS",
+        "ageS": null,
+        "serverTiming": null,
+        "failure": null
+      }
+    },
+    {
+      "workerId": "E",
+      "court": 2,
+      "startTime": "20:00",
+      "endTime": "23:00",
+      "attemptId": "core-E-official-5",
+      "finalState": null,
+      "finalCode": null,
+      "post": {
+        "offsetMs": 9.6,
+        "source": "run-trace"
+      },
+      "response": {
+        "statusCode": 409,
+        "errorHint": "availability",
+        "responseSource": "application",
+        "completedOffsetMs": 13998.6,
+        "networkDurationMs": 13996
+      },
+      "grid": {
+        "hours": [
+          "20:00",
+          "21:00",
+          "22:00"
+        ],
+        "firstPublished": {
+          "observation": {
+            "seq": 8,
+            "requestOffsetMs": 17.1,
+            "responseOffsetMs": 1462.1
+          },
+          "state": "FULLY_UNAVAILABLE",
+          "hours": [
+            {
+              "hour": "20:00",
+              "state": "UNAVAILABLE",
+              "price": 700
+            },
+            {
+              "hour": "21:00",
+              "state": "UNAVAILABLE",
+              "price": 700
+            },
+            {
+              "hour": "22:00",
+              "state": "UNAVAILABLE",
+              "price": 700
+            }
+          ]
+        },
+        "firstFullyOpen": null,
+        "firstUnavailable": {
+          "observation": {
+            "seq": 8,
+            "requestOffsetMs": 17.1,
+            "responseOffsetMs": 1462.1
+          },
+          "hours": [
+            "20:00",
+            "21:00",
+            "22:00"
+          ]
+        },
+        "firstRecord": {
+          "observation": {
+            "seq": 1,
+            "requestOffsetMs": -59989.9,
+            "responseOffsetMs": -59724.9
+          },
+          "hours": [
+            "20:00",
+            "21:00",
+            "22:00"
+          ]
+        },
+        "reopen": null,
+        "latest": {
+          "observation": {
+            "seq": 204,
+            "requestOffsetMs": 900006.1,
+            "responseOffsetMs": 900520.1
+          },
+          "state": "FULLY_UNAVAILABLE"
+        }
+      },
+      "provider": {
+        "complete": true,
+        "protocol": "h2",
+        "reused": true,
+        "headersOffsetMs": 13998.6,
+        "bodyOffsetMs": 13999.2,
+        "timingSource": "browser",
+        "dnsMs": null,
+        "connectMs": null,
+        "tlsMs": null,
+        "sendMs": 0.1,
+        "waitMs": 13988.6,
+        "server": "Vercel",
+        "cfRay": null,
+        "cfMitigated": null,
+        "vercelId": "sin1::sin1::4gnwj-1790380800029-5710976d19e7",
+        "requestId": null,
+        "vercelCache": "MISS",
+        "ageS": null,
+        "serverTiming": null,
+        "failure": null
+      }
+    },
+    {
+      "workerId": "F",
+      "court": 3,
+      "startTime": "17:00",
+      "endTime": "20:00",
+      "attemptId": "core-F-official-6",
+      "finalState": null,
+      "finalCode": null,
+      "post": {
+        "offsetMs": 9.5,
+        "source": "run-trace"
+      },
+      "response": {
+        "statusCode": 409,
+        "errorHint": "availability",
+        "responseSource": "application",
+        "completedOffsetMs": 12300.5,
+        "networkDurationMs": 12297
+      },
+      "grid": {
+        "hours": [
+          "17:00",
+          "18:00",
+          "19:00"
+        ],
+        "firstPublished": {
+          "observation": {
+            "seq": 8,
+            "requestOffsetMs": 17.1,
+            "responseOffsetMs": 1462.1
+          },
+          "state": "FULLY_OPEN",
+          "hours": [
+            {
+              "hour": "17:00",
+              "state": "OPEN",
+              "price": 700
+            },
+            {
+              "hour": "18:00",
+              "state": "OPEN",
+              "price": 700
+            },
+            {
+              "hour": "19:00",
+              "state": "OPEN",
+              "price": 700
+            }
+          ]
+        },
+        "firstFullyOpen": {
+          "seq": 8,
+          "requestOffsetMs": 17.1,
+          "responseOffsetMs": 1462.1
+        },
+        "firstUnavailable": {
+          "observation": {
+            "seq": 21,
+            "requestOffsetMs": 13000.1,
+            "responseOffsetMs": 13860.1
+          },
+          "hours": [
+            "18:00",
+            "19:00"
+          ]
+        },
+        "firstRecord": {
+          "observation": {
+            "seq": 4,
+            "requestOffsetMs": 30007.1,
+            "responseOffsetMs": 30375.1
+          },
+          "hours": [
+            "18:00",
+            "19:00"
+          ]
+        },
+        "reopen": {
+          "before": {
+            "seq": 127,
+            "requestOffsetMs": 596006.1,
+            "responseOffsetMs": 596119.1
+          },
+          "after": {
+            "seq": 128,
+            "requestOffsetMs": 597005.1,
+            "responseOffsetMs": 597342.1
+          },
+          "overlapping": false
+        },
+        "latest": {
+          "observation": {
+            "seq": 204,
+            "requestOffsetMs": 900006.1,
+            "responseOffsetMs": 900520.1
+          },
+          "state": "FULLY_UNAVAILABLE"
+        }
+      },
+      "provider": {
+        "complete": true,
+        "protocol": "h2",
+        "reused": true,
+        "headersOffsetMs": 12299.2,
+        "bodyOffsetMs": 12300,
+        "timingSource": "browser",
+        "dnsMs": null,
+        "connectMs": null,
+        "tlsMs": null,
+        "sendMs": 0.2,
+        "waitMs": 12289,
+        "server": "Vercel",
+        "cfRay": null,
+        "cfMitigated": null,
+        "vercelId": "sin1::sin1::cxzbc-1790380800041-41b5ab2f430a",
+        "requestId": null,
+        "vercelCache": "MISS",
+        "ageS": null,
+        "serverTiming": null,
+        "failure": null
+      }
+    }
+  ],
+  "refreshes": [
+    {
+      "selectedSeq": 128,
+      "latestSeqAtCompletion": 129,
+      "durationMs": 1481,
+      "selectedAt": "2026-09-26T00:09:57.365Z",
+      "completedCorrected": "2026-09-26T00:09:58.847Z",
+      "sameSequenceGuardPass": false
+    },
+    {
+      "selectedSeq": 130,
+      "latestSeqAtCompletion": 131,
+      "durationMs": 1196,
+      "selectedAt": "2026-09-26T00:09:59.117Z",
+      "completedCorrected": "2026-09-26T00:10:00.313Z",
+      "sameSequenceGuardPass": false
+    },
+    {
+      "selectedSeq": 132,
+      "latestSeqAtCompletion": 133,
+      "durationMs": 1238,
+      "selectedAt": "2026-09-26T00:10:01.162Z",
+      "completedCorrected": "2026-09-26T00:10:02.401Z",
+      "sameSequenceGuardPass": false
+    },
+    {
+      "selectedSeq": 134,
+      "latestSeqAtCompletion": 135,
+      "durationMs": 1558,
+      "selectedAt": "2026-09-26T00:10:03.140Z",
+      "completedCorrected": "2026-09-26T00:10:04.698Z",
+      "sameSequenceGuardPass": false
+    }
+  ],
+  "offlineEligibleRescueReads": [
+    {
+      "seq": 128,
+      "responseOffsetMs": 597342.1,
+      "choices": [
+        {
+          "court": 2,
+          "start": "17:00",
+          "worker": "G",
+          "evidenceSeq": 128
+        }
+      ]
+    },
+    {
+      "seq": 129,
+      "responseOffsetMs": 598138.1,
+      "choices": [
+        {
+          "court": 2,
+          "start": "17:00",
+          "worker": "G",
+          "evidenceSeq": 129
+        }
+      ]
+    },
+    {
+      "seq": 130,
+      "responseOffsetMs": 599092.1,
+      "choices": [
+        {
+          "court": 2,
+          "start": "17:00",
+          "worker": "G",
+          "evidenceSeq": 130
+        }
+      ]
+    },
+    {
+      "seq": 131,
+      "responseOffsetMs": 600086.1,
+      "choices": [
+        {
+          "court": 2,
+          "start": "17:00",
+          "worker": "G",
+          "evidenceSeq": 131
+        }
+      ]
+    },
+    {
+      "seq": 132,
+      "responseOffsetMs": 601138.1,
+      "choices": [
+        {
+          "court": 2,
+          "start": "17:00",
+          "worker": "G",
+          "evidenceSeq": 132
+        }
+      ]
+    },
+    {
+      "seq": 133,
+      "responseOffsetMs": 602106.1,
+      "choices": [
+        {
+          "court": 2,
+          "start": "17:00",
+          "worker": "G",
+          "evidenceSeq": 133
+        }
+      ]
+    },
+    {
+      "seq": 134,
+      "responseOffsetMs": 603108.1,
+      "choices": [
+        {
+          "court": 2,
+          "start": "17:00",
+          "worker": "G",
+          "evidenceSeq": 134
+        }
+      ]
+    },
+    {
+      "seq": 135,
+      "responseOffsetMs": 604099.1,
+      "choices": [
+        {
+          "court": 2,
+          "start": "17:00",
+          "worker": "G",
+          "evidenceSeq": 135
+        }
+      ]
+    }
+  ],
+  "latestObservation": {
+    "type": "availability",
+    "seq": 204,
+    "scheduledOffsetMs": 900000,
+    "requestOffsetMs": 900006.1,
+    "responseOffsetMs": 900520.1,
+    "outcome": "ok",
+    "targetDatePresent": true,
+    "matrix": "1:OOOOOOOOOXXXXXOO,2:OOOOOOOOOXXXXXXO,3:XXXXOOOOOXXXXXXO,4:XXXXOOOOXXXXXXOO,5:XXXXOOXXXXXXXXOO,6:OOOOOOOXXXXXXXOO,7:OOOOOOOXXXXXXXOO",
+    "prices": [
+      [
+        600,
+        600,
+        600,
+        600,
+        600,
+        600,
+        600,
+        600,
+        700,
+        700,
+        700,
+        700,
+        700,
+        700,
+        700,
+        700
+      ],
+      [
+        600,
+        600,
+        600,
+        600,
+        600,
+        600,
+        600,
+        600,
+        700,
+        700,
+        700,
+        700,
+        700,
+        700,
+        700,
+        700
+      ],
+      [
+        600,
+        600,
+        600,
+        600,
+        600,
+        600,
+        600,
+        600,
+        700,
+        700,
+        700,
+        700,
+        700,
+        700,
+        700,
+        700
+      ],
+      [
+        600,
+        600,
+        600,
+        600,
+        600,
+        600,
+        600,
+        600,
+        700,
+        700,
+        700,
+        700,
+        700,
+        700,
+        700,
+        700
+      ],
+      [
+        600,
+        600,
+        600,
+        600,
+        600,
+        600,
+        600,
+        600,
+        700,
+        700,
+        700,
+        700,
+        700,
+        700,
+        700,
+        700
+      ],
+      [
+        600,
+        600,
+        600,
+        600,
+        600,
+        600,
+        600,
+        600,
+        700,
+        700,
+        700,
+        700,
+        700,
+        700,
+        700,
+        700
+      ],
+      [
+        600,
+        600,
+        600,
+        600,
+        600,
+        600,
+        600,
+        600,
+        700,
+        700,
+        700,
+        700,
+        700,
+        700,
+        700,
+        700
+      ]
+    ],
+    "cache": {
+      "status": "MISS",
+      "ageS": 0
+    },
+    "durationMs": 514,
+    "inFlightAtLaunch": 1,
+    "requestedAt": "2026-09-26T00:15:00.006Z",
+    "respondedAt": "2026-09-26T00:15:00.520Z",
+    "requestedManila": "2026-09-26 08:15:00.006",
+    "respondedManila": "2026-09-26 08:15:00.520",
+    "dateFlag": "published",
+    "responseComplete": true,
+    "counts": {
+      "OPEN": 55,
+      "TAKEN": 57,
+      "UNRELEASED": 0,
+      "UNKNOWN": 0
+    }
+  },
+  "fitness": {
+    "UNRELEASED": 7,
+    "ACTIONABLE_FRESH": 193,
+    "FORENSIC_ONLY_OUTDATED_REQUEST": 3
+  }
+}
