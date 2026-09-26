@@ -1,0 +1,12 @@
+{
+  "source": "time.google.com",
+  "offsetMs": 368.1456298828125,
+  "roundTripMs": 46,
+  "synchronizedAt": "2026-09-25T23:50:00.314Z",
+  "method": "ntp-consensus-v1",
+  "sampleCount": 10,
+  "keptCount": 10,
+  "spreadMs": 14.634765625,
+  "uncertaintyMs": 23.7261962890625,
+  "quality": "GOOD"
+}

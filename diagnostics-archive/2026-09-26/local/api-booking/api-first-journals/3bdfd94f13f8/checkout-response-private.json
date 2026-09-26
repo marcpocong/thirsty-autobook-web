@@ -1,0 +1,72 @@
+{
+  "capturedAt": "2026-09-26T00:00:10.029Z",
+  "status": 409,
+  "contentType": "application/json",
+  "diagnostic": {
+    "status": 409,
+    "category": "http-rejection",
+    "contentKind": "json",
+    "responseSource": "application",
+    "errorHint": "availability"
+  },
+  "observed": {
+    "success": false,
+    "bookingIds": [],
+    "bookingNumbers": [],
+    "bookingSessionIds": "[REDACTED]",
+    "holdExpiresAt": [],
+    "validationCode": "RESPONSE_CAPTURED"
+  },
+  "evidence": {
+    "version": 1,
+    "status": 409,
+    "headers": {
+      "content-type": "application/json",
+      "server": "Vercel",
+      "date": "Sat, 26 Sep 2026 00:00:09 GMT",
+      "cache-control": "public, max-age=0, must-revalidate",
+      "x-vercel-id": "sin1::sin1::84v78-1790380800028-4689566155d4",
+      "x-vercel-cache": "MISS",
+      "x-matched-path": "/api/bookings/public-checkout"
+    },
+    "vercel": {
+      "regions": [
+        "sin1",
+        "sin1"
+      ],
+      "edgeRegion": "sin1",
+      "functionRegion": "sin1",
+      "embeddedMs": 1790380800028,
+      "embeddedInterpretation": "UNDOCUMENTED"
+    },
+    "serverDateMs": 1790380809000,
+    "serverTiming": null,
+    "body": {
+      "version": 1,
+      "byteLength": 125,
+      "contentKind": "json",
+      "jsonType": "object",
+      "shape": [
+        {
+          "path": "$",
+          "type": "object"
+        },
+        {
+          "path": "error",
+          "type": "string",
+          "length": 97
+        },
+        {
+          "path": "success",
+          "type": "boolean"
+        }
+      ],
+      "fields": {
+        "success": false,
+        "error": "This booking slot is temporarily unavailable because an event is already scheduled in this space."
+      },
+      "shapeFingerprint": "80651c57074d8da62d53902ee9c1808143093faa13e02e6a5bb5c88a58d727fa",
+      "sanitizedFingerprint": "cfc065c77f68b4baf13d2773b9e0c14e25a8a0bfab804318e1f3063d959fbf44"
+    }
+  }
+}

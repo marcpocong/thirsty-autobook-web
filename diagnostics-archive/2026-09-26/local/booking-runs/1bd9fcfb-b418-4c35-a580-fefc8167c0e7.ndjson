@@ -1,0 +1,7 @@
+{"type":"run-start","runId":"1bd9fcfb-b418-4c35-a580-fefc8167c0e7","label":"blockAudit","at":"2026-09-25T22:36:10.409Z","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"1bd9fcfb-b418-4c35-a580-fefc8167c0e7","at":"2026-09-25T22:36:10.412Z","text":"Run started: blockAudit · Timing log: [REDACTED_LOCAL_PATH]\\Downloads\\Thirsty Pickle Bot\\.local\\booking-runs\\1bd9fcfb-b418-4c35-a580-fefc8167c0e7.ndjson","level":"info","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"1bd9fcfb-b418-4c35-a580-fefc8167c0e7","at":"2026-09-25T22:36:10.429Z","text":"Process started: blockAudit","level":"info","elapsedMs":17,"deltaMs":17}
+{"type":"activity","runId":"1bd9fcfb-b418-4c35-a580-fefc8167c0e7","at":"2026-09-25T22:36:12.599Z","text":"2026-09-28 · Open 0 · Blocked 14 · Unreleased 98 · Unknown 0. No hold or booking was created.","level":"info","elapsedMs":2187,"deltaMs":2170}
+{"type":"activity","runId":"1bd9fcfb-b418-4c35-a580-fefc8167c0e7","at":"2026-09-25T22:36:12.646Z","text":"Process completed: blockAudit · exit code 0","level":"info","elapsedMs":2234,"deltaMs":47}
+{"type":"activity","runId":"1bd9fcfb-b418-4c35-a580-fefc8167c0e7","at":"2026-09-25T22:36:12.653Z","text":"Run finished: complete","level":"info","elapsedMs":2242,"deltaMs":7}
+{"type":"run-end","runId":"1bd9fcfb-b418-4c35-a580-fefc8167c0e7","at":"2026-09-25T22:36:12.661Z","elapsedMs":2249,"outcome":"complete","label":"blockAudit"}

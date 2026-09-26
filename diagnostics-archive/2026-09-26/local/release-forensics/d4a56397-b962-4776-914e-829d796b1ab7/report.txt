@@ -1,0 +1,46 @@
+RELEASE FORENSICS — run d4a56397-b962-4776-914e-829d796b1ab7 · target 2026-09-28 · mode live
+Status: FINAL · generated 2026-09-25T22:38:24.019Z
+All offsets are relative to the release instant (2026-09-26T00:00:00.000Z).
+
+1. RELEASE CLOCK
+  No clock rounds recorded in the run trace.
+  Observer (Slot Watch) offset at release: -42.1 ms
+
+2. POST INITIATION (browser request event)
+  No checkout POST was initiated.
+
+3. FIRST PUBLISHED GRID (Slot Watch)
+  Reads: 0 scheduled · 0 answered · 0 failed · 0 not launched · max in flight 6 · early launches +0.000 s, +0.250 s, +0.500 s, +1.000 s, +2.000 s, +5.000 s
+  The target date was not seen in any answered read.
+
+4. TARGETS
+  Phase 3 race b5a3c90c426779cb6458caebd6f79e79da3b00912307d67576b03b87a47192a1 · 9 authorized candidates · Wave 2 max 1 · Rescue max 1 · total max 8
+
+  No targets in the run trace.
+5. AVAILABILITY TRANSITIONS
+  OPEN → unavailable (cells): 0 · unavailable → OPEN (cells): 0. Per-cell read pairs are in the Slot Watch report and summary.
+
+6. PUBLIC BOOKING EVIDENCE
+  0 public booking reads answered · 0 failed · 0 failed court queries
+  Unavailable in the first published grid without any matching public booking record during the watch: 0 cells (cause unknown).
+
+7. PROVIDER / NETWORK TRACE
+  Not available.
+
+8. CHECKOUT OUTCOME
+  USER_ABORT
+
+9. LIMITATIONS
+  - An availability read shows Onda's state at an unknown moment between its request start and its response. No source here gives the provider-side moment of a change.
+  - Unavailable without a matching public booking record: the cause is not visible in Onda's public data.
+  - A public booking record shows that a booking record exists. It does not show who made it, whether it belongs to this bot, or why.
+  - POST initiation is the Playwright request event in the runner (trusted release clock). Header and body times are that instant plus Chrome intervals from its network request start (under 1 ms after the request event); they carry the few-ms delivery lag of that event.
+  - The provider trace enables DevTools Network only after each POST has left, so it never adds work at the release instant; a response that arrives before it is enabled (tens of ms) is not traced.
+  - Response timing and headers describe what arrived at this PC. They do not establish how Onda queued or ordered requests, or why a request was accepted or rejected.
+  - The observer clock offset at release is not recorded; grid-read offsets and POST offsets may differ by the change between the T-10 min and final clock rounds.
+  - No provider trace was captured for this run (none attached, attach failed, or the run predates Phase 2): response header and body timing are not separated.
+
+SOURCES
+  Runner trace:   [REDACTED_LOCAL_PATH]\Downloads\Thirsty Pickle Bot\.local\api-booking\run-progress\d4a56397-b962-4776-914e-829d796b1ab7.ndjson
+  Slot Watch log: [REDACTED_LOCAL_PATH]\Downloads\Thirsty Pickle Bot\.local\slot-watch\2026-09-28_bcba2d86-f2b3-4db6-b822-5ece7cf7fe3c.ndjson
+  Provider trace: —
