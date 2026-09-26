@@ -1,0 +1,20 @@
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { resolve, join } from 'node:path';
+import { buildReleaseForensics } from '../Source/src/release-forensics.ts';
+const root = resolve(import.meta.dirname, '..');
+const id = 'e69098a8-b8b2-444e-b0ea-2b1170f1420f';
+const out = join(root, 'DiagnosticsLocal', 'ongoing-forensics-2026-09-26');
+mkdirSync(out, {recursive:true});
+const files = {run:'api-booking/run-progress/'+id+'.ndjson', watch:'slot-watch/2026-09-28_3ca6d99a-c914-4d25-ac93-7ccd75bda270.ndjson',freeze:'api-booking/precision-races/'+id+'-phase3-freeze.json'};
+for (const [key,path] of Object.entries(files)) writeFileSync(join(out,key+(key==='freeze'?'.json':'.ndjson')),readFileSync(join(root,'.local',path)));
+const lines = key => readFileSync(join(out,key+'.ndjson'),'utf8').trim().split('\n').flatMap(l=>{try{return [JSON.parse(l)]}catch{return []}});
+const run=lines('run'),watch=lines('watch'), freeze=JSON.parse(readFileSync(join(out,'freeze.json'),'utf8'));
+const summary=buildReleaseForensics({runProgressPath:join(out,'run.ndjson'),observerLogPath:join(out,'watch.ndjson'),outputDirectory:out,status:'preliminary'});
+const availability=watch.filter(x=>x.type==='availability'), bookings=watch.filter(x=>x.type==='bookings');
+const cells=(o,c)=>{const row=o.matrix?.split(',').find(x=>x.startsWith(c.court+':'))?.split(':')[1];const start=Number(c.start.slice(0,2))-8;return row?.slice(start,start+c.durationHours)??'?';};
+const candidates=freeze.authorization.candidates.map(c=>{const reads=availability.filter(o=>o.targetDatePresent);const transitions=[];let prev;for(const o of reads){const state=cells(o,c);if(state!==prev){transitions.push({seq:o.seq,requestOffsetMs:o.requestOffsetMs,responseOffsetMs:o.responseOffsetMs,state});prev=state;}}
+return {court:c.court,start:c.start,end:c.end,permissions:c.permissions,firstOpen:reads.find(o=>/^O+$/.test(cells(o,c)))?.seq??null,transitions};});
+const privateResponses=freeze.authorization.wave1.map(w=>{const c=freeze.authorization.candidates.find(c=>c.id===w.candidateId);const dir=join(root,'.local/api-booking/api-first-journals',c.logicalKey);const j=JSON.parse(readFileSync(join(dir,c.logicalKey+'.json'),'utf8'));const r=JSON.parse(readFileSync(join(dir,'checkout-response-private.json'),'utf8'));return {worker:w.workerId,state:j.state,failureCode:j.failureCode,status:r.status,diagnostic:r.diagnostic};});
+const result={generatedAt:new Date().toISOString(),cutoff:run.at(-1)?.at,observerCutoff:availability.at(-1)?.respondedManila,stages:Object.fromEntries([...new Set(run.map(x=>x.stage))].map(s=>[s,run.filter(x=>x.stage===s).length])),fitness:Object.fromEntries([...new Set(run.filter(x=>x.stage==='PHASE3_EVIDENCE').map(x=>x.fitness))].map(s=>[s,run.filter(x=>x.stage==='PHASE3_EVIDENCE'&&x.fitness===s).length])),candidates,privateResponses,latestMatrix:availability.at(-1)?.matrix,bookingReads:bookings.map(x=>({seq:x.seq,requestOffsetMs:x.requestOffsetMs,responseOffsetMs:x.responseOffsetMs,count:x.cells?.length,failedCourts:x.failedCourts})),pendingArtifacts:['provider-trace.ndjson','critical-path.ndjson'].map(name=>({name,present:existsSync(join(root,'.local/release-forensics',id,name))}))};
+writeFileSync(join(out,'analysis.json'),JSON.stringify(result,null,2)+'\n');
+console.log(JSON.stringify({out,analysis:result,dispatch:summary.dispatch,observer:summary.observer,limitations:summary.limitations},null,2));

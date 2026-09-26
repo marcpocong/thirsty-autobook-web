@@ -1,0 +1,103 @@
+RELEASE SLOT WATCH — target 2026-09-28
+Release: 2026-09-26 08:00:00.000 Manila · observer network clock synchronized (offset 368.1 ms)
+Watch finished: window complete
+Availability reads: 204 launched · 204 answered · 0 failed · 0 cancelled · 0 not launched (cap or late) · max 4 in flight (cap 6) · median 178 ms
+Early launches (release-relative): +0.000 s, +0.250 s, +0.500 s, +1.000 s, +2.000 s, +5.000 s; overlapping reads allowed
+Public booking reads: 9 launched · 9 answered · 0 failed · 0 failed court queries · 0 not launched
+
+Each read shows Onda's state at an unknown moment between its request and its response. Changes are listed between two reads in request order.
+
+FIRST PUBLISHED GRID
+  Last read without the date:   #7 request −1.992 s → response −1.571 s
+  First read with the date:     #8 request +0.017 s → response +1.462 s · edge cache MISS, age 0 s
+  Open 75 · unavailable 37 · unknown 0
+  (O open, X unavailable, U not published, ? unknown)
+       08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+  C1    O  O  O  O  O  O  O  O  O  X  X  X  X  X  O  O
+  C2    O  O  O  O  O  O  O  O  O  O  O  O  X  X  X  O
+  C3    X  X  X  X  O  O  O  O  O  O  O  O  X  X  X  O
+  C4    X  X  X  X  O  O  O  O  O  O  O  X  X  X  O  O
+  C5    X  X  X  X  O  O  O  O  O  O  O  X  X  X  O  O
+  C6    O  O  O  O  O  O  O  O  O  O  X  X  X  X  O  O
+  C7    O  O  O  O  O  O  O  O  O  O  X  X  X  X  O  O
+
+OPEN → UNAVAILABLE (first change per cell)
+  Court 1 10 PM open in #20 request +12.003 s → response +12.099 s; unavailable in #21 request +13.000 s → response +13.860 s · public booking record first seen #b3 request +10.010 s → response +12.149 s
+  Court 2 6 PM  open in #20 request +12.003 s → response +12.099 s; unavailable in #21 request +13.000 s → response +13.860 s · public booking record first seen #b3 request +10.010 s → response +12.149 s
+  Court 2 7 PM  open in #20 request +12.003 s → response +12.099 s; unavailable in #21 request +13.000 s → response +13.860 s · public booking record first seen #b3 request +10.010 s → response +12.149 s
+  Court 3 6 PM  open in #20 request +12.003 s → response +12.099 s; unavailable in #21 request +13.000 s → response +13.860 s · public booking record first seen #b4 request +30.007 s → response +30.375 s
+  Court 3 7 PM  open in #20 request +12.003 s → response +12.099 s; unavailable in #21 request +13.000 s → response +13.860 s · public booking record first seen #b4 request +30.007 s → response +30.375 s
+  Court 4 6 PM  open in #20 request +12.003 s → response +12.099 s; unavailable in #21 request +13.000 s → response +13.860 s · public booking record first seen #b3 request +10.010 s → response +12.149 s
+  Court 4 10 PM open in #20 request +12.003 s → response +12.099 s; unavailable in #21 request +13.000 s → response +13.860 s · public booking record first seen #b3 request +10.010 s → response +12.149 s
+  Court 5 6 PM  open in #20 request +12.003 s → response +12.099 s; unavailable in #21 request +13.000 s → response +13.860 s · public booking record first seen #b3 request +10.010 s → response +12.149 s
+  Court 5 10 PM open in #20 request +12.003 s → response +12.099 s; unavailable in #21 request +13.000 s → response +13.860 s · public booking record first seen #b3 request +10.010 s → response +12.149 s
+  Court 6 10 PM open in #20 request +12.003 s → response +12.099 s; unavailable in #21 request +13.000 s → response +13.860 s · public booking record first seen #b3 request +10.010 s → response +12.149 s
+  Court 7 10 PM open in #20 request +12.003 s → response +12.099 s; unavailable in #21 request +13.000 s → response +13.860 s · public booking record first seen #b3 request +10.010 s → response +12.149 s
+  Court 5 2 PM  open in #59 request +51.003 s → response +51.092 s; unavailable in #60 request +52.001 s → response +53.120 s · public booking record first seen #b5 request +60.005 s → response +60.253 s
+  Court 5 3 PM  open in #59 request +51.003 s → response +51.092 s; unavailable in #60 request +52.001 s → response +53.120 s · public booking record first seen #b5 request +60.005 s → response +60.253 s
+  Court 5 4 PM  open in #59 request +51.003 s → response +51.092 s; unavailable in #60 request +52.001 s → response +53.120 s · public booking record first seen #b5 request +60.005 s → response +60.253 s
+  Court 3 5 PM  open in #68 request +60.004 s → response +60.084 s; unavailable in #69 request +65.014 s → response +65.327 s · public booking record first seen #b6 request +120.014 s → response +120.263 s
+  Court 2 5 PM  open in #71 request +75.011 s → response +75.207 s; unavailable in #72 request +80.005 s → response +80.636 s · public booking record first seen #b6 request +120.014 s → response +120.263 s
+  Court 6 3 PM  open in #72 request +80.005 s → response +80.636 s; unavailable in #73 request +85.001 s → response +85.327 s · public booking record first seen #b6 request +120.014 s → response +120.263 s
+  Court 6 4 PM  open in #72 request +80.005 s → response +80.636 s; unavailable in #73 request +85.001 s → response +85.327 s · public booking record first seen #b6 request +120.014 s → response +120.263 s
+  Court 6 5 PM  open in #72 request +80.005 s → response +80.636 s; unavailable in #73 request +85.001 s → response +85.327 s · public booking record first seen #b6 request +120.014 s → response +120.263 s
+  Court 7 3 PM  open in #72 request +80.005 s → response +80.636 s; unavailable in #73 request +85.001 s → response +85.327 s · public booking record first seen #b6 request +120.014 s → response +120.263 s
+  Court 7 4 PM  open in #72 request +80.005 s → response +80.636 s; unavailable in #73 request +85.001 s → response +85.327 s · public booking record first seen #b6 request +120.014 s → response +120.263 s
+  Court 7 5 PM  open in #72 request +80.005 s → response +80.636 s; unavailable in #73 request +85.001 s → response +85.327 s · public booking record first seen #b6 request +120.014 s → response +120.263 s
+  Court 4 5 PM  open in #78 request +110.004 s → response +110.168 s; unavailable in #79 request +115.004 s → response +115.192 s · public booking record first seen #b6 request +120.014 s → response +120.263 s
+  Court 5 5 PM  open in #78 request +110.004 s → response +110.168 s; unavailable in #79 request +115.004 s → response +115.192 s · public booking record first seen #b6 request +120.014 s → response +120.263 s
+  Court 4 4 PM  open in #201 request +810.009 s → response +810.401 s; unavailable in #202 request +840.016 s → response +840.188 s · public booking record first seen #b9 request +900.007 s → response +900.421 s
+
+UNAVAILABLE IN THE FIRST PUBLISHED GRID
+  Court 1: 5 PM (no matching public booking record · cause unknown), 6 PM (no matching public booking record · cause unknown), 7 PM (no matching public booking record · cause unknown), 8 PM (no matching public booking record · cause unknown), 9 PM (no matching public booking record · cause unknown)
+  Court 2: 8 PM (public booking record, first seen −59.725 s), 9 PM (public booking record, first seen −59.725 s), 10 PM (public booking record, first seen −59.725 s)
+  Court 3: 8 AM (no matching public booking record · cause unknown), 9 AM (no matching public booking record · cause unknown), 10 AM (no matching public booking record · cause unknown), 11 AM (no matching public booking record · cause unknown), 8 PM (public booking record, first seen −59.725 s), 9 PM (public booking record, first seen −59.725 s), 10 PM (public booking record, first seen −59.725 s)
+  Court 4: 8 AM (no matching public booking record · cause unknown), 9 AM (no matching public booking record · cause unknown), 10 AM (no matching public booking record · cause unknown), 11 AM (no matching public booking record · cause unknown), 7 PM (no matching public booking record · cause unknown), 8 PM (no matching public booking record · cause unknown), 9 PM (no matching public booking record · cause unknown)
+  Court 5: 8 AM (no matching public booking record · cause unknown), 9 AM (no matching public booking record · cause unknown), 10 AM (no matching public booking record · cause unknown), 11 AM (no matching public booking record · cause unknown), 7 PM (no matching public booking record · cause unknown), 8 PM (no matching public booking record · cause unknown), 9 PM (no matching public booking record · cause unknown)
+  Court 6: 6 PM (public booking record, first seen −59.725 s), 7 PM (public booking record, first seen −59.725 s), 8 PM (public booking record, first seen −59.725 s), 9 PM (public booking record, first seen −59.725 s)
+  Court 7: 6 PM (public booking record, first seen −59.725 s), 7 PM (public booking record, first seen −59.725 s), 8 PM (public booking record, first seen −59.725 s), 9 PM (public booking record, first seen −59.725 s)
+
+UNAVAILABLE → OPEN (reopened; cause unknown)
+  Court 5 2 PM  unavailable in #60 request +52.001 s → response +53.120 s; open in #61 request +53.014 s → response +53.270 s (reads overlapped)
+  Court 5 3 PM  unavailable in #60 request +52.001 s → response +53.120 s; open in #61 request +53.014 s → response +53.270 s (reads overlapped)
+  Court 5 4 PM  unavailable in #60 request +52.001 s → response +53.120 s; open in #61 request +53.014 s → response +53.270 s (reads overlapped)
+  Court 2 5 PM  unavailable in #127 request +596.006 s → response +596.119 s; open in #128 request +597.005 s → response +597.342 s
+  Court 2 6 PM  unavailable in #127 request +596.006 s → response +596.119 s; open in #128 request +597.005 s → response +597.342 s
+  Court 2 7 PM  unavailable in #127 request +596.006 s → response +596.119 s; open in #128 request +597.005 s → response +597.342 s
+  Court 3 5 PM  unavailable in #127 request +596.006 s → response +596.119 s; open in #128 request +597.005 s → response +597.342 s
+  Court 3 6 PM  unavailable in #127 request +596.006 s → response +596.119 s; open in #128 request +597.005 s → response +597.342 s
+  Court 3 7 PM  unavailable in #127 request +596.006 s → response +596.119 s; open in #128 request +597.005 s → response +597.342 s
+  Court 1 10 PM unavailable in #135 request +604.013 s → response +604.099 s; open in #136 request +605.000 s → response +605.326 s
+  Court 4 6 PM  unavailable in #135 request +604.013 s → response +604.099 s; open in #136 request +605.000 s → response +605.326 s
+  Court 4 10 PM unavailable in #135 request +604.013 s → response +604.099 s; open in #136 request +605.000 s → response +605.326 s
+  Court 5 6 PM  unavailable in #135 request +604.013 s → response +604.099 s; open in #136 request +605.000 s → response +605.326 s
+  Court 7 10 PM unavailable in #135 request +604.013 s → response +604.099 s; open in #136 request +605.000 s → response +605.326 s
+  Court 6 10 PM unavailable in #136 request +605.000 s → response +605.326 s; open in #137 request +606.002 s → response +606.295 s
+  Court 5 10 PM unavailable in #137 request +606.002 s → response +606.295 s; open in #138 request +607.001 s → response +607.292 s
+  Court 6 3 PM  unavailable in #196 request +665.007 s → response +665.093 s; open in #197 request +690.000 s → response +690.450 s
+  Court 6 4 PM  unavailable in #196 request +665.007 s → response +665.093 s; open in #197 request +690.000 s → response +690.450 s
+  Court 6 5 PM  unavailable in #196 request +665.007 s → response +665.093 s; open in #197 request +690.000 s → response +690.450 s
+  Court 7 3 PM  unavailable in #196 request +665.007 s → response +665.093 s; open in #197 request +690.000 s → response +690.450 s
+  Court 7 4 PM  unavailable in #196 request +665.007 s → response +665.093 s; open in #197 request +690.000 s → response +690.450 s
+  Court 7 5 PM  unavailable in #196 request +665.007 s → response +665.093 s; open in #197 request +690.000 s → response +690.450 s
+  Court 4 5 PM  unavailable in #197 request +690.000 s → response +690.450 s; open in #198 request +720.005 s → response +720.197 s
+  Court 5 5 PM  unavailable in #197 request +690.000 s → response +690.450 s; open in #198 request +720.005 s → response +720.197 s
+
+CURRENT MATRIX (newest answered request: #204 request +900.006 s → response +900.520 s; a late answer to an older request never replaces it)
+  (O open, X unavailable, U not published, ? unknown)
+       08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+  C1    O  O  O  O  O  O  O  O  O  X  X  X  X  X  O  O
+  C2    O  O  O  O  O  O  O  O  O  X  X  X  X  X  X  O
+  C3    X  X  X  X  O  O  O  O  O  X  X  X  X  X  X  O
+  C4    X  X  X  X  O  O  O  O  X  X  X  X  X  X  O  O
+  C5    X  X  X  X  O  O  X  X  X  X  X  X  X  X  O  O
+  C6    O  O  O  O  O  O  O  X  X  X  X  X  X  X  O  O
+  C7    O  O  O  O  O  O  O  X  X  X  X  X  X  X  O  O
+
+LIMITATIONS
+  - A read does not show the provider-side moment of a change; only the request/response interval of the reads around it.
+  - Unavailable without a matching public booking record: the cause is not visible in Onda's public data.
+  - A public booking record shows that a booking record exists. It does not show who made it or why.
+  - Responses served from Onda's edge cache (x-vercel-cache/age) may reflect an earlier state than the request time.
+
+Full read-by-read log (response order, with request order in seq): [REDACTED_LOCAL_PATH]\Downloads\Thirsty Pickle Bot\.local\slot-watch\2026-09-28_3ca6d99a-c914-4d25-ac93-7ccd75bda270.ndjson

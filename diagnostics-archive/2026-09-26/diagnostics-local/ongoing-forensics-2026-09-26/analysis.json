@@ -1,0 +1,386 @@
+{
+  "generatedAt": "2026-09-26T00:06:03.429Z",
+  "cutoff": "2026-09-26T00:06:00.535Z",
+  "observerCutoff": "2026-09-26 08:06:00.501",
+  "stages": {
+    "RUN_STARTED": 1,
+    "RUN_CONFIGURATION": 1,
+    "PREPARING_BROWSER": 7,
+    "BROWSER_READY": 7,
+    "BROWSER_PREPARATION_OUTCOME": 7,
+    "PHASE3_AUTHORIZATION": "[REDACTED]",
+    "PHASE3_CANDIDATE": 9,
+    "NETWORK_CLOCK_REFRESHED": 1,
+    "PHASE3_WAVE1_PRICE": 6,
+    "PHASE3_FROZEN": 1,
+    "DIAGNOSTIC_ATTEMPT_ARMED": 6,
+    "NETWORK_CLOCK_CONSENSUS": 2,
+    "PHASE3_EVIDENCE": 118,
+    "SECURITY_PREPARATION_STARTED": 7,
+    "PHASE3_STANDBY_READY": 1,
+    "SECURITY_PREPARATION_COMPLETED": 7,
+    "PHASE3_WAVE1_STARTED": 6,
+    "CHECKOUT_FUNCTION_ENTERED": 6,
+    "CHECKOUT_PRE_POST": 6,
+    "PHASE3_DISPATCH": 6,
+    "CHECKOUT_HTTP_POST_INITIATED": 6,
+    "CHECKOUT_RESPONSE_COMPLETED": 6,
+    "PHASE3_SETTLED": 6
+  },
+  "fitness": {
+    "UNRELEASED": 7,
+    "ACTIONABLE_FRESH": 108,
+    "FORENSIC_ONLY_OUTDATED_REQUEST": 3
+  },
+  "candidates": [
+    {
+      "court": 4,
+      "start": "19:00",
+      "end": "22:00",
+      "permissions": {
+        "wave1": true,
+        "wave2": false,
+        "rescue": true
+      },
+      "firstOpen": null,
+      "transitions": [
+        {
+          "seq": 8,
+          "requestOffsetMs": 17.1,
+          "responseOffsetMs": 1462.1,
+          "state": "XXX"
+        }
+      ]
+    },
+    {
+      "court": 5,
+      "start": "19:00",
+      "end": "22:00",
+      "permissions": {
+        "wave1": true,
+        "wave2": false,
+        "rescue": true
+      },
+      "firstOpen": null,
+      "transitions": [
+        {
+          "seq": 8,
+          "requestOffsetMs": 17.1,
+          "responseOffsetMs": 1462.1,
+          "state": "XXX"
+        }
+      ]
+    },
+    {
+      "court": 1,
+      "start": "19:00",
+      "end": "22:00",
+      "permissions": {
+        "wave1": true,
+        "wave2": false,
+        "rescue": true
+      },
+      "firstOpen": null,
+      "transitions": [
+        {
+          "seq": 8,
+          "requestOffsetMs": 17.1,
+          "responseOffsetMs": 1462.1,
+          "state": "XXX"
+        }
+      ]
+    },
+    {
+      "court": 2,
+      "start": "17:00",
+      "end": "20:00",
+      "permissions": {
+        "wave1": true,
+        "wave2": false,
+        "rescue": true
+      },
+      "firstOpen": 8,
+      "transitions": [
+        {
+          "seq": 8,
+          "requestOffsetMs": 17.1,
+          "responseOffsetMs": 1462.1,
+          "state": "OOO"
+        },
+        {
+          "seq": 21,
+          "requestOffsetMs": 13000.1,
+          "responseOffsetMs": 13860.1,
+          "state": "OXX"
+        },
+        {
+          "seq": 72,
+          "requestOffsetMs": 80005.1,
+          "responseOffsetMs": 80636.1,
+          "state": "XXX"
+        }
+      ]
+    },
+    {
+      "court": 2,
+      "start": "20:00",
+      "end": "23:00",
+      "permissions": {
+        "wave1": true,
+        "wave2": false,
+        "rescue": true
+      },
+      "firstOpen": null,
+      "transitions": [
+        {
+          "seq": 8,
+          "requestOffsetMs": 17.1,
+          "responseOffsetMs": 1462.1,
+          "state": "XXX"
+        }
+      ]
+    },
+    {
+      "court": 3,
+      "start": "17:00",
+      "end": "20:00",
+      "permissions": {
+        "wave1": true,
+        "wave2": false,
+        "rescue": true
+      },
+      "firstOpen": 8,
+      "transitions": [
+        {
+          "seq": 8,
+          "requestOffsetMs": 17.1,
+          "responseOffsetMs": 1462.1,
+          "state": "OOO"
+        },
+        {
+          "seq": 21,
+          "requestOffsetMs": 13000.1,
+          "responseOffsetMs": 13860.1,
+          "state": "OXX"
+        },
+        {
+          "seq": 69,
+          "requestOffsetMs": 65014.1,
+          "responseOffsetMs": 65327.1,
+          "state": "XXX"
+        }
+      ]
+    },
+    {
+      "court": 3,
+      "start": "20:00",
+      "end": "23:00",
+      "permissions": {
+        "wave1": false,
+        "wave2": true,
+        "rescue": true
+      },
+      "firstOpen": null,
+      "transitions": [
+        {
+          "seq": 8,
+          "requestOffsetMs": 17.1,
+          "responseOffsetMs": 1462.1,
+          "state": "XXX"
+        }
+      ]
+    },
+    {
+      "court": 6,
+      "start": "17:00",
+      "end": "20:00",
+      "permissions": {
+        "wave1": false,
+        "wave2": true,
+        "rescue": true
+      },
+      "firstOpen": null,
+      "transitions": [
+        {
+          "seq": 8,
+          "requestOffsetMs": 17.1,
+          "responseOffsetMs": 1462.1,
+          "state": "OXX"
+        },
+        {
+          "seq": 73,
+          "requestOffsetMs": 85001.1,
+          "responseOffsetMs": 85327.1,
+          "state": "XXX"
+        }
+      ]
+    },
+    {
+      "court": 6,
+      "start": "20:00",
+      "end": "23:00",
+      "permissions": {
+        "wave1": false,
+        "wave2": true,
+        "rescue": true
+      },
+      "firstOpen": null,
+      "transitions": [
+        {
+          "seq": 8,
+          "requestOffsetMs": 17.1,
+          "responseOffsetMs": 1462.1,
+          "state": "XXO"
+        },
+        {
+          "seq": 21,
+          "requestOffsetMs": 13000.1,
+          "responseOffsetMs": 13860.1,
+          "state": "XXX"
+        }
+      ]
+    }
+  ],
+  "privateResponses": [
+    {
+      "worker": "A",
+      "state": "rejected",
+      "failureCode": "ONDA_HTTP_STATUS_INVALID",
+      "status": 409,
+      "diagnostic": {
+        "status": 409,
+        "category": "http-rejection",
+        "contentKind": "json",
+        "responseSource": "application",
+        "errorHint": "availability"
+      }
+    },
+    {
+      "worker": "B",
+      "state": "rejected",
+      "failureCode": "ONDA_HTTP_STATUS_INVALID",
+      "status": 409,
+      "diagnostic": {
+        "status": 409,
+        "category": "http-rejection",
+        "contentKind": "json",
+        "responseSource": "application",
+        "errorHint": "availability"
+      }
+    },
+    {
+      "worker": "C",
+      "state": "rejected",
+      "failureCode": "ONDA_HTTP_STATUS_INVALID",
+      "status": 409,
+      "diagnostic": {
+        "status": 409,
+        "category": "http-rejection",
+        "contentKind": "json",
+        "responseSource": "application",
+        "errorHint": "availability"
+      }
+    },
+    {
+      "worker": "D",
+      "state": "rejected",
+      "failureCode": "ONDA_HTTP_STATUS_INVALID",
+      "status": 409,
+      "diagnostic": {
+        "status": 409,
+        "category": "http-rejection",
+        "contentKind": "json",
+        "responseSource": "application",
+        "errorHint": "availability"
+      }
+    },
+    {
+      "worker": "E",
+      "state": "rejected",
+      "failureCode": "ONDA_HTTP_STATUS_INVALID",
+      "status": 409,
+      "diagnostic": {
+        "status": 409,
+        "category": "http-rejection",
+        "contentKind": "json",
+        "responseSource": "application",
+        "errorHint": "availability"
+      }
+    },
+    {
+      "worker": "F",
+      "state": "rejected",
+      "failureCode": "ONDA_HTTP_STATUS_INVALID",
+      "status": 409,
+      "diagnostic": {
+        "status": 409,
+        "category": "http-rejection",
+        "contentKind": "json",
+        "responseSource": "application",
+        "errorHint": "availability"
+      }
+    }
+  ],
+  "latestMatrix": "1:OOOOOOOOOXXXXXXO,2:OOOOOOOOOXXXXXXO,3:XXXXOOOOOXXXXXXO,4:XXXXOOOOOXXXXXXO,5:XXXXOOXXXXXXXXXO,6:OOOOOOOXXXXXXXXO,7:OOOOOOOXXXXXXXXO",
+  "bookingReads": [
+    {
+      "seq": 1,
+      "requestOffsetMs": -59989.9,
+      "responseOffsetMs": -59724.9,
+      "count": 14,
+      "failedCourts": []
+    },
+    {
+      "seq": 2,
+      "requestOffsetMs": 2013.1,
+      "responseOffsetMs": 5916.1,
+      "count": 14,
+      "failedCourts": []
+    },
+    {
+      "seq": 3,
+      "requestOffsetMs": 10010.1,
+      "responseOffsetMs": 12149.1,
+      "count": 23,
+      "failedCourts": []
+    },
+    {
+      "seq": 4,
+      "requestOffsetMs": 30007.1,
+      "responseOffsetMs": 30375.1,
+      "count": 25,
+      "failedCourts": []
+    },
+    {
+      "seq": 5,
+      "requestOffsetMs": 60005.1,
+      "responseOffsetMs": 60253.1,
+      "count": 28,
+      "failedCourts": []
+    },
+    {
+      "seq": 6,
+      "requestOffsetMs": 120014.1,
+      "responseOffsetMs": 120263.1,
+      "count": 38,
+      "failedCourts": []
+    },
+    {
+      "seq": 7,
+      "requestOffsetMs": 300009.1,
+      "responseOffsetMs": 300269.1,
+      "count": 38,
+      "failedCourts": []
+    }
+  ],
+  "pendingArtifacts": [
+    {
+      "name": "provider-trace.ndjson",
+      "present": false
+    },
+    {
+      "name": "critical-path.ndjson",
+      "present": false
+    }
+  ]
+}

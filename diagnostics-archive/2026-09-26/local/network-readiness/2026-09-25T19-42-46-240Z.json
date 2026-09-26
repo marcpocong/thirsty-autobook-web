@@ -1,0 +1,99 @@
+{
+  "version": 1,
+  "measuredAt": "2026-09-25T19:42:46.240Z",
+  "target": "Onda public availability (read-only GET)",
+  "requests": 5,
+  "succeeded": 5,
+  "failed": 0,
+  "complete": 5,
+  "medianMs": 98.2,
+  "p90Ms": null,
+  "p95Ms": null,
+  "maxMs": 431.4,
+  "protocol": "HTTP/1.1 (Node fetch; the browser checkout may differ)",
+  "newConnections": 1,
+  "reusedRequests": 4,
+  "connectMs": [
+    101.3
+  ],
+  "dnsMs": 3.7,
+  "samples": [
+    {
+      "index": 0,
+      "ok": true,
+      "code": null,
+      "durationMs": 397.6,
+      "complete": true,
+      "cache": "MISS",
+      "newConnection": true,
+      "connectMs": 101.3
+    },
+    {
+      "index": 1,
+      "ok": true,
+      "code": null,
+      "durationMs": 431.4,
+      "complete": true,
+      "cache": "MISS",
+      "newConnection": false,
+      "connectMs": null
+    },
+    {
+      "index": 2,
+      "ok": true,
+      "code": null,
+      "durationMs": 95.5,
+      "complete": true,
+      "cache": "MISS",
+      "newConnection": false,
+      "connectMs": null
+    },
+    {
+      "index": 3,
+      "ok": true,
+      "code": null,
+      "durationMs": 98.2,
+      "complete": true,
+      "cache": "MISS",
+      "newConnection": false,
+      "connectMs": null
+    },
+    {
+      "index": 4,
+      "ok": true,
+      "code": null,
+      "durationMs": 89.2,
+      "complete": true,
+      "cache": "MISS",
+      "newConnection": false,
+      "connectMs": null
+    }
+  ],
+  "clock": {
+    "samples": 10,
+    "kept": 10,
+    "offsetMs": -429.7,
+    "minRoundTripMs": 43,
+    "medianRoundTripMs": 45,
+    "spreadMs": 4,
+    "quality": "GOOD"
+  },
+  "interfaces": [
+    {
+      "name": "vEthernet (WSL (Hyper-V firewall))",
+      "kind": "Ethernet"
+    },
+    {
+      "name": "Wi-Fi",
+      "kind": "Wi-Fi"
+    }
+  ],
+  "history": {
+    "previousRuns": 0,
+    "previousMedianMs": null
+  },
+  "verdict": "READY",
+  "reasons": [
+    "5 of 5 reads succeeded and were complete; median 98.2 ms; network clock GOOD from 10 samples."
+  ]
+}
