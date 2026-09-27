@@ -35,6 +35,39 @@ export interface ObservedRelease {
   provenance: string[];
 }
 
+interface V2AnalysisInput {
+  run: { releaseUtc?: string };
+  simulatorInput: {
+    label: string;
+    checkouts: Array<{ id: string; court: number; startTime: string; hours: number; sendMs: number | null; edgeMs: number | null; responseMs: number | null;
+      status: number | null; contestClass: string }>;
+    reads: Array<{ id: string; sendMs: number; responseMs: number }>;
+    signatures: { slowReadFlushCount?: number };
+  };
+}
+
+/** Adapts the generic v2 analyzer output to the existing simulator. Contestable attempts are primary. */
+export function observedReleaseFromV2(analysis: V2AnalysisInput): ObservedRelease {
+  const source = analysis.simulatorInput;
+  const usable = source.checkouts.filter(value => value.contestClass === 'CONFIRMED_CONTESTABLE_FROM_FIRST_PUBLISHED_STATE'
+    && value.sendMs !== null && value.edgeMs !== null && value.responseMs !== null);
+  const fallback = source.checkouts.filter(value => value.sendMs !== null && value.edgeMs !== null && value.responseMs !== null);
+  const chosen = usable.length ? usable : fallback;
+  const checkouts = chosen.map(value => ({ id: value.id, court: value.court, startTime: value.startTime, hours: value.hours,
+    sendMs: value.sendMs!, edgeMs: value.edgeMs!, responseMs: value.responseMs!, status: value.status ?? 409 }));
+  const responses = checkouts.map(value => value.responseMs), first = responses.length ? Math.min(...responses) : 0, last = responses.length ? Math.max(...responses) : 0;
+  const tau = kendallTau(checkouts.map(value => value.edgeMs), checkouts.map(value => value.responseMs));
+  return { label: source.label || analysis.run.releaseUtc?.slice(0, 10) || 'unknown', checkouts, reads: source.reads,
+    hotStartHours: [...new Set(checkouts.map(value => Number(value.startTime.slice(0, 2))))],
+    signatures: { latencyWindowMs: [Math.max(0, first - 500), last + 500], spreadWindowMs: responses.length >= 2 ? [Math.max(0, last - first - 500), last - first + 500] : null,
+      allConflict: checkouts.every(value => value.status === 409), arrivalOrderTau: tau === null || checkouts.length < 4 ? null : { observed: tau, tolerance: 0.3 },
+      readFlush: typeof source.signatures.slowReadFlushCount === 'number' ? source.signatures.slowReadFlushCount > 0 : null,
+      readOvertake: source.reads.length ? readOvertakes(source.reads) > 0 : null },
+    provenance: [`FACT/INFERENCE fields from wave1-arbitration-analysis/v2; ${usable.length ? 'contestable-only' : 'all-attempt fallback'} checkout subset.`,
+      'x-vercel-id-derived edgeMs remains INFERENCE with UNDOCUMENTED meaning.',
+      'State-regression, disappearance and rejection-class signatures remain in analysis.json when the simulator family cannot reproduce them.'] };
+}
+
 export interface Signals {
   latency: boolean; conflict: boolean; spread: boolean | null; order: boolean | null; readFlush: boolean | null; readOvertake: boolean | null;
   score: number; applicable: number; full: boolean;

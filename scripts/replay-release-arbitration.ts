@@ -17,20 +17,21 @@
  */
 import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { crowdVariants, evaluateCell, familyVerdicts, modelVariants, observedReleases, randomSearch, scoreOutcomes, type CellResult } from '../src/arbitration/release-replay.js';
+import { crowdVariants, evaluateCell, familyVerdicts, modelVariants, observedReleaseFromV2, observedReleases, randomSearch, scoreOutcomes, type CellResult } from '../src/arbitration/release-replay.js';
 import type { ModelFamily } from '../src/arbitration/contention-sim.js';
 
 const args = new Map<string, string>();
 for (let index = 2; index < process.argv.length; index += 2) args.set(process.argv[index]!.replace(/^--/, ''), process.argv[index + 1] ?? '');
 const root = resolve(import.meta.dirname, '..');
+const analysisPath = args.get('analysis') ? resolve(root, args.get('analysis')!) : null;
 const evidencePath = resolve(root, args.get('evidence') ?? 'diagnostics-archive/2026-09-25/arbitration/arbitration-evidence.json');
-const outPath = resolve(root, args.get('out') ?? 'diagnostics-archive/2026-09-25/arbitration/replay-arbitration.json');
+const outPath = resolve(root, args.get('out') ?? (analysisPath ? resolve(analysisPath, '..', 'replay.json') : 'diagnostics-archive/2026-09-25/arbitration/replay-arbitration.json'));
 const seedCount = Number(args.get('seeds') ?? 5);
 if (!(seedCount >= 1 && seedCount <= 100)) throw Error('REPLAY_ARGS_INVALID');
 const seeds = Array.from({ length: seedCount }, (_, index) => 1_000 + index);
 
-const evidence = JSON.parse(await readFile(evidencePath, 'utf8'));
-const days = observedReleases(evidence);
+const evidence = JSON.parse(await readFile(analysisPath ?? evidencePath, 'utf8'));
+const days = analysisPath ? [observedReleaseFromV2(evidence)] : observedReleases(evidence);
 const models = modelVariants(), crowds = crowdVariants();
 const report: Record<string, unknown> = {
   schema: 'release-replay/v1',
