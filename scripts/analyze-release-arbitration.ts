@@ -2,6 +2,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { parseNdjson } from '../src/arbitration/archive-evidence.js';
+import { installedLocalRoot } from '../src/arbitration/experiment-manifest.js';
 import { assertSanitizedOutput, buildWave1Analysis, discoverEvidence, renderReport, renderTimelineMarkdown, type EvidencePaths } from '../src/arbitration/wave1-analysis.js';
 
 const args = new Map<string, string>();
@@ -15,7 +16,7 @@ if (!runId) throw Error('ARBITRATION_RUN_REQUIRED: use --run <run-id>');
 const overrides = { ...(args.get('runner') ? { runner: args.get('runner')! } : {}), ...(args.get('watch') ? { watch: args.get('watch')! } : {}),
   ...(args.get('provider') ? { provider: args.get('provider')! } : {}), ...(args.get('critical') ? { critical: args.get('critical')! } : {}),
   ...(args.get('manifest') ? { manifest: args.get('manifest')! } : {}) };
-const roots = args.get('archive') ? [resolve(args.get('archive')!)] : [resolve(repo, '..', '.local'), resolve(repo, 'diagnostics-archive')];
+const roots = args.get('archive') ? [resolve(args.get('archive')!)] : [installedLocalRoot(repo), resolve(repo, 'diagnostics-archive')];
 let paths: EvidencePaths | null = null, lastError: unknown;
 for (const root of roots) {
   // Only a missing run moves on to the next root; an incompatible explicit file must fail as itself.

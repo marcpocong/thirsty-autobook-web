@@ -6,6 +6,7 @@ import { ConfigSchema, ObservationSchema } from '../src/config.js';
 import { clockStatus } from '../ui/status.js';
 import type { Runner } from '../ui/processes.js';
 import type { Command } from '../ui/types.js';
+import { preregistered } from './arbitration-manifest-stub.js';
 
 describe('API-first UI boundary', () => {
   it('starts extended API run timing only after both dedicated browsers are ready',async()=>{
@@ -169,7 +170,7 @@ describe('API-first UI boundary', () => {
       const view=bookingView(ConfigSchema.parse({...defaultSetup,BOOKING_METHOD:'api-first',PLAYER_FULL_NAME:'Fixture Player',PLAYER_PHONE:'09123456789',PLAYER_EMAIL:'fixture@example.invalid'}));
       const calls:Command[]=[];const runner:Runner=command=>{calls.push(command);return {pid:1,done:Promise.resolve(0),stop:async()=>undefined};};
       const started:number[]=[],stopped:number[]=[],releaseMs=Date.now()+3600000;
-      const controller=new Controller({runner,lock:async()=>false,cdp:async()=>true,browserHealth:async()=>({A:true,B:false}),playerStatus:()=>({primary:true,extended:false}),
+      const controller=new Controller({ensureArbitrationManifest:preregistered,runner,lock:async()=>false,cdp:async()=>true,browserHealth:async()=>({A:true,B:false}),playerStatus:()=>({primary:true,extended:false}),
         clock:()=>({...clockStatus(ObservationSchema.parse({}),DateTime.fromISO('2026-09-21T07:00:00+08:00')),releaseMs,targetDate:view.targetDate}),
         startSleepProtection:()=>{started.push(77);return 77;},stopSleepProtection:id=>{stopped.push(id);},
         confirm:async()=>true,publish:()=>undefined,booking:()=>view,saveBooking:()=>view});

@@ -665,8 +665,23 @@ function renderForensics(state:Dashboard){
   }));
 }
 function status(id: string, text: string, tone: string) { const el = byId(id); el.textContent = text; el.dataset.tone = tone; }
-function gateRows(gates:[string,boolean][]){return gates.map(([label,ok])=>{const row=document.createElement('div');row.className=`gate ${ok?'good':'warn'}`;
-  const mark=document.createElement('span');mark.className='gate-mark';mark.textContent=ok?'✓':'–';mark.setAttribute('aria-label',ok?'Done':'Pending');row.append(mark,document.createTextNode(label));return row;});}
+/** A gate is done (true), not yet done (false), automatic at arm time ('pending') or blocked with a reason. */
+type Gate=[string,boolean|'pending'|'blocked',string?];
+function gateRows(gates:Gate[]){return gates.map(([label,state,detail])=>{
+  const tone=state===true?'good':state==='pending'?'pending':state==='blocked'?'bad':'warn';
+  const row=document.createElement('div');row.className=`gate ${tone}`;
+  const mark=document.createElement('span');mark.className='gate-mark';mark.textContent={good:'✓',pending:'○',bad:'✕',warn:'–'}[tone];
+  mark.setAttribute('aria-label',{good:'Done',pending:'Automatic',bad:'Blocked',warn:'Pending'}[tone]);
+  const text=document.createElement('span');text.append(label);
+  if(detail){const note=document.createElement('small');note.className='gate-detail';note.textContent=detail;text.append(note);}
+  row.append(mark,text);return row;});}
+/** Wave 1 preregistration: created automatically when an API release is armed; only shown for the release it covers. */
+function manifestGate(state:Dashboard,releaseMs:number|undefined):Gate{
+  const manifest=state.arbitrationManifest;
+  if(!manifest||releaseMs===undefined||manifest.releaseMs!==releaseMs)return ['Investigation manifest · Automatic when you arm','pending'];
+  if(manifest.status==='blocked')return ['Investigation manifest · BLOCKED · could not preregister this release','blocked',manifest.reason];
+  return [`Investigation manifest · READY · ${manifest.verified?'existing preregistration verified':'preregistered before run'}`,true];
+}
 function render(state: Dashboard) {
   latest = state;
   renderPrecision(state);
@@ -871,10 +886,11 @@ function render(state: Dashboard) {
   const apiPrepared=!!state.apiFirstReady&&!!state.ready&&!!state.booking&&['api-first','proofless'].includes(state.booking.setup.BOOKING_METHOD)&&!state.lock;
   const prepared=apiPrepared||!!state.preparedContext&&state.preparedContext.workflow==='release'&&state.preparedContext.configFingerprint===state.booking?.fingerprint;
    const required=workflow==='release'?neededWorkers():requiredWorkers(strategy,count);
-  const verificationGates:[string,boolean][]=apiFirst
+  const verificationGates:Gate[]=apiFirst
     ? [['Onda venue verified',apiPrepared],[proofless?'Court/hour block audit complete':'Availability checked',proofless?state.assumedPrice!==undefined&&state.assumedPrice!==null:state.apiStage?.stage==='CANDIDATE_READY'||!!state.observedPrice]]
     : [['Onda verified',prepared],['All Courts verified',prepared],['Selected slots: 0',prepared],['Payment holds: none',prepared&&!state.lock]];
-  const gates:[string,boolean][]=[['Configuration valid',!draftProblem],['Google network clock synchronized',!!state.clock?.networkSynced],['Next release calculated',!!state.clock],['Booking target calculated',!!state.clock?.targetDate],...required.map(id=>[`${workerLabel(id)} configured`,!!playerReadyByWorker[id]] as [string,boolean]),...required.map(id=>[`Browser ${id} prepared`,apiFirst?apiPrepared&&!!state.browserHealth?.[id]:prepared&&!!state.preparedContext?.browsers.some(b=>b.id===id)] as [string,boolean]),...verificationGates,['Automation lock clear',!state.lock],['Prepared fingerprint matches',prepared],['Terms authorized for this run',state.termsAuthorized||armed],['Armed for next release',armed||state.apiStage?.stage==='WAITING_FOR_RELEASE']];
+  const gates:Gate[]=[['Configuration valid',!draftProblem],['Google network clock synchronized',!!state.clock?.networkSynced],['Next release calculated',!!state.clock],['Booking target calculated',!!state.clock?.targetDate],...required.map(id=>[`${workerLabel(id)} configured`,!!playerReadyByWorker[id]] as [string,boolean]),...required.map(id=>[`Browser ${id} prepared`,apiFirst?apiPrepared&&!!state.browserHealth?.[id]:prepared&&!!state.preparedContext?.browsers.some(b=>b.id===id)] as [string,boolean]),...verificationGates,['Automation lock clear',!state.lock],['Prepared fingerprint matches',prepared],['Terms authorized for this run',state.termsAuthorized||armed],
+    ...(apiFirst?[manifestGate(state,armed?state.scheduledRelease!.releaseMs:state.clock?.releaseMs)]:[]),['Armed for next release',armed||state.apiStage?.stage==='WAITING_FOR_RELEASE']];
   byId('release-readiness').replaceChildren(...gateRows(gates));
   byId('release-readiness-card').dataset.state=armed?'armed':prepared?'prepared':'draft';byId('sleep-warning').hidden=!armed;byId('sleep-warning').textContent=`Sleep protection: ${state.sleepProtection?'ACTIVE':'NOT AVAILABLE'} | Keep the PC powered on. Do not hibernate or close the laptop lid if Windows sleeps on lid close.`;
    const savedSetup=state.booking?.setup;

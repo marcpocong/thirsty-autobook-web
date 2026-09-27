@@ -4,9 +4,11 @@ import { congestionEvidence, holdReopenings, parseNdjson, parseSlotWatch, provid
   type Line, type ProviderEvidence, type ReadObservation, type ReleaseAttempt, type SlotWatchLog } from './archive-evidence.js';
 import { buildReleaseTimeline, type ReleaseTimeline } from './release-timeline.js';
 import { kendallTau, pairOrderCounts, spearman, summarize } from './stats.js';
-import { WAVE1_HYPOTHESES, WAVE1_HYPOTHESIS_SPEC_VERSION, type HypothesisId } from './hypothesis-spec.js';
+import { ARBITRATION_ANALYSIS_SCHEMA, WAVE1_HYPOTHESES, WAVE1_HYPOTHESIS_SPEC_VERSION, type HypothesisId } from './hypothesis-spec.js';
+import { EXPERIMENT_MANIFEST_FILE, experimentManifestProblem } from './experiment-manifest.js';
+import { assertSanitizedOutput } from './sanitize.js';
 
-export const ARBITRATION_ANALYSIS_SCHEMA = 'wave1-arbitration-analysis/v2.1.0';
+export { ARBITRATION_ANALYSIS_SCHEMA, assertSanitizedOutput };
 export type ContestClass = 'KNOWN_BLOCKED_PRE_RELEASE' | 'CONFIRMED_CONTESTABLE_FROM_FIRST_PUBLISHED_STATE' | 'NOT_CONTESTABLE' | 'UNKNOWN_AT_RELEASE';
 export type AnalysisQuality = 'CLEAN' | 'MIXED' | 'POOR';
 export type RejectionClass = 'EVENT_ALREADY_SCHEDULED' | 'OVERLAPS_EXISTING_BOOKING' | 'OTHER_REJECTION' | 'SUCCESS' | 'UNKNOWN';
@@ -240,17 +242,21 @@ export function discoverEvidence(rootInput: string, runId: string, overrides: Di
     const value = safeJson(path), attempt = (value?.attempt ?? {}) as Line;
     return releaseMs !== null && num(attempt.releaseMs) === releaseMs;
   }).sort();
-  const manifestCandidates = overrides.manifest ? [resolve(overrides.manifest)] : files.filter(path => basename(path) === 'experiment-manifest.json');
-  const compatibleManifests = manifestCandidates.filter(path => {
-    const value = safeJson(path), createdMs = timestamp(value?.createdAt);
-    return value?.schema === 'wave1-experiment-manifest/v2' && (value.runId === runId || value.runId === 'UNBOUND_PRE_RUN') && num(value.releaseMs) === releaseMs
-      && (targetDate === null || value.targetDate === targetDate) && createdMs !== null && Number.isFinite(startedMs) && createdMs <= startedMs;
-  });
+  const manifestCandidates = overrides.manifest ? [resolve(overrides.manifest)] : files.filter(path => basename(path) === EXPERIMENT_MANIFEST_FILE);
+  // The same validator the desktop app applies when arming, plus: created no later than this runner's start.
+  const manifestReason = (path: string): string | null => {
+    const value = safeJson(path), problem = experimentManifestProblem(value, { targetDate, releaseMs, runId });
+    if (problem) return problem.reason;
+    const createdMs = timestamp(value?.createdAt);
+    return createdMs !== null && Number.isFinite(startedMs) && createdMs <= startedMs ? null : 'it was not created before the runner started';
+  };
+  const manifestReasons = new Map(manifestCandidates.map(path => [path, manifestReason(path)]));
+  const compatibleManifests = manifestCandidates.filter(path => manifestReasons.get(path) === null);
   if (overrides.manifest && compatibleManifests.length !== 1) throw Error('MANIFEST_EVIDENCE_INCOMPATIBLE');
   const experimentManifest = compatibleManifests.length === 1 ? compatibleManifests[0]! : null;
   const manifestAmbiguous = compatibleManifests.length > 1 ? compatibleManifests.map(path => associationCandidate(path, 'matching run + release + target date', 'HIGH')) : [];
   const manifestRejected = manifestCandidates.filter(path => !compatibleManifests.includes(path))
-    .map(path => associationCandidate(path, 'manifest does not prove matching schema + run + release + target date + pre-run creation time', 'NONE'));
+    .map(path => associationCandidate(path, `not preregistration for this run: ${manifestReasons.get(path)}`, 'NONE'));
   const manifestRunBound = experimentManifest ? safeJson(experimentManifest)?.runId === runId : false;
   const manifestAssociation = experimentManifest
     ? association('MATCH', [associationCandidate(experimentManifest, manifestRunBound
@@ -624,13 +630,4 @@ export function renderReport(analysis: Wave1Analysis, crossRelease: readonly Lin
     ...analysis.limitations.map(value => `- ${value}`), '', '# What evidence would be needed next', '', '- Another clean release with at least four genuinely contestable Wave 1 attempts.',
     '- Recurrent ordering, read-flush and state-regression signatures under the same pre-registered rules.', '- A successful legitimate hold would add an approximate commit-position bound without extra traffic.', '');
   return lines.join('\n');
-}
-
-/** Output-only guard. This intentionally rejects both key names and common value shapes. */
-export function assertSanitizedOutput(value: unknown): void {
-  const text = JSON.stringify(value);
-  const forbidden = [/"(?:customer.?id|authorization|cookie|turnstile|fingerprint|payment(?:data)?|qr.?content|email|phone|full.?name)"\s*:/i,
-    /\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b/];
-  const match = forbidden.find(pattern => pattern.test(text));
-  if (match) throw Error(`UNSANITIZED_ANALYSIS_OUTPUT:${match.source}`);
 }

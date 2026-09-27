@@ -17,6 +17,8 @@ export interface HypothesisSpec {
  * Analyzer verdicts remain SUPPORTING / CONTRADICTING / NEUTRAL / INSUFFICIENT and never probabilities.
  */
 export const WAVE1_HYPOTHESIS_SPEC_VERSION = 'wave1-arbitration-hypotheses/v2.0.0';
+/** Output schema of the generic Wave 1 arbitration analysis; recorded in every preregistration manifest. */
+export const ARBITRATION_ANALYSIS_SCHEMA = 'wave1-arbitration-analysis/v2.1.0';
 
 export const WAVE1_HYPOTHESES: readonly HypothesisSpec[] = [
   {
