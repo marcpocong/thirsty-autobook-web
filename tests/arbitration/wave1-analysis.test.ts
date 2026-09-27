@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { parseVercelId } from '../../src/api-booking/response-evidence.js';
 import { WAVE1_HYPOTHESES, WAVE1_HYPOTHESIS_SPEC_VERSION } from '../../src/arbitration/hypothesis-spec.js';
+import { buildExperimentManifest, experimentManifestPath } from '../../src/arbitration/experiment-manifest.js';
 import { averageRanks, pairOrderCounts, spearman } from '../../src/arbitration/stats.js';
 import { analyzeOrder, assertSanitizedOutput, buildWave1Analysis, classifyContestSample, classifyStateTransitions, discoverEvidence,
   publicBookingWindow, rejectionClass, renderReport, slowReadFlushProximity, targetCells, targetDisappearanceWindow, type AvailabilityObservation,
@@ -300,8 +301,7 @@ describe('generic discovery and partial evidence', () => {
     const before = join(dir, 'before', 'experiment-manifest.json'), after = join(dir, 'after', 'experiment-manifest.json');
     for (const [path, createdAt] of [[before, '2026-12-31T23:00:00Z'], [after, '2026-12-31T23:31:00Z']] as const) {
       mkdirSync(resolve(path, '..'), { recursive: true });
-      writeFileSync(path, JSON.stringify({ schema: 'wave1-experiment-manifest/v2', runId: 'UNBOUND_PRE_RUN', releaseMs,
-        targetDate: '2027-01-03', createdAt }));
+      writeFileSync(path, JSON.stringify(buildExperimentManifest({ targetDate: '2027-01-03', releaseMs }, Date.parse(createdAt), 'CLI')));
     }
     expect(discoverEvidence(dir, runId, { manifest: before }).associations.experimentManifest).toMatchObject({ status: 'MATCH', confidence: 'MEDIUM' });
     expect(() => discoverEvidence(dir, runId, { manifest: after })).toThrow(/MANIFEST_EVIDENCE_INCOMPATIBLE/);
@@ -310,9 +310,9 @@ describe('generic discovery and partial evidence', () => {
   it('finds the default pre-arming manifest automatically but never a post-start one', () => {
     const dir = root(), runId = '92000000-2222-4333-8444-555555555555', releaseMs = Date.parse('2027-01-01T00:00:00Z');
     configuredRun(dir, runId, releaseMs);
-    const manifest = join(dir, 'arbitration-manifests', `2027-01-03_${releaseMs}`, 'experiment-manifest.json');
+    const manifest = experimentManifestPath(dir, { targetDate: '2027-01-03', releaseMs });
     const write = (createdAt: string) => { mkdirSync(resolve(manifest, '..'), { recursive: true });
-      writeFileSync(manifest, JSON.stringify({ schema: 'wave1-experiment-manifest/v2', runId: 'UNBOUND_PRE_RUN', releaseMs, targetDate: '2027-01-03', createdAt })); };
+      writeFileSync(manifest, JSON.stringify(buildExperimentManifest({ targetDate: '2027-01-03', releaseMs }, Date.parse(createdAt), 'CLI'))); };
     write('2026-12-31T23:31:00Z');
     expect(discoverEvidence(dir, runId).associations.experimentManifest).toMatchObject({ status: 'MISSING', code: 'NO_PREREGISTERED_MANIFEST' });
     write('2026-12-31T22:00:00Z');

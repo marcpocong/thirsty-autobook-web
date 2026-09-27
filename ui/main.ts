@@ -23,6 +23,7 @@ import {adviseFromHistory} from '../src/release-advisor.js';
 import {replayAll} from '../src/strategy-replay.js';
 import {readNetworkReadinessHistory,runNetworkReadiness,saveNetworkReadiness} from '../src/network-readiness.js';
 import {connectionWarmth} from '../src/checkout-path-research.js';
+import {ensureExperimentManifest} from '../src/arbitration/experiment-manifest.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 process.chdir(root);
@@ -70,6 +71,9 @@ const controller = new Controller({
     const watch=new SlotWatch({...input,directory:resolve(root,'.local/slot-watch'),now:()=>networkNowMs(clockPath),clockOffset:()=>readNetworkClock(clockPath)?.offsetMs??input.clockOffsetMs,onUpdate,onObservation});
     return {id:watch.id,done:watch.done,stop:reason=>watch.stop(reason)};},
   slotWatchHistory:()=>readSlotWatchHistory(resolve(root,'.local/slot-watch')),
+  // Same .local as the runner's evidence, so arbitration:analyze finds it; runs before the runner is spawned.
+  ensureArbitrationManifest:({targetDate,releaseMs,clockOffsetMs})=>ensureExperimentManifest({localRoot:resolve(root,'.local'),
+    release:{targetDate,releaseMs},createdBy:'DESKTOP_ARM',clockOffsetMs}),
   buildReleaseForensics:({runId,status})=>{const inputs=forensicInputsFor(root,runId);return inputs?forensicsDigest(buildReleaseForensics({...inputs,status})):undefined;},
   releaseForensicsHistory:()=>readReleaseForensicsHistory(resolve(root,'.local/release-forensics')),
   // Phase 4: derived, read-only analysis in this process. The release runner never imports these modules.
