@@ -6,10 +6,22 @@ import { buildReleaseTimeline, type ReleaseTimeline } from './release-timeline.j
 import { kendallTau, pairOrderCounts, spearman, summarize } from './stats.js';
 import { WAVE1_HYPOTHESES, WAVE1_HYPOTHESIS_SPEC_VERSION, type HypothesisId } from './hypothesis-spec.js';
 
-export const ARBITRATION_ANALYSIS_SCHEMA = 'wave1-arbitration-analysis/v2.0.0';
+export const ARBITRATION_ANALYSIS_SCHEMA = 'wave1-arbitration-analysis/v2.1.0';
 export type ContestClass = 'KNOWN_BLOCKED_PRE_RELEASE' | 'CONFIRMED_CONTESTABLE_FROM_FIRST_PUBLISHED_STATE' | 'NOT_CONTESTABLE' | 'UNKNOWN_AT_RELEASE';
 export type AnalysisQuality = 'CLEAN' | 'MIXED' | 'POOR';
 export type RejectionClass = 'EVENT_ALREADY_SCHEDULED' | 'OVERLAPS_EXISTING_BOOKING' | 'OTHER_REJECTION' | 'SUCCESS' | 'UNKNOWN';
+export type EvidenceAssociationStatus = 'MATCH' | 'AMBIGUOUS' | 'NO_MATCH' | 'MISSING';
+export type EvidenceAssociationConfidence = 'HIGH' | 'MEDIUM' | 'LOW' | 'NONE';
+
+export interface EvidenceAssociationCandidate { path: string; basis: string; confidence: EvidenceAssociationConfidence; limitation?: string }
+export interface EvidenceAssociation {
+  status: EvidenceAssociationStatus; selected: EvidenceAssociationCandidate[]; rejected: EvidenceAssociationCandidate[];
+  ambiguous: EvidenceAssociationCandidate[]; basis: string; confidence: EvidenceAssociationConfidence; limitations: string[]; code?: string;
+}
+export interface EvidenceAssociations {
+  runProgress: EvidenceAssociation; slotWatch: EvidenceAssociation; providerTrace: EvidenceAssociation; criticalPath: EvidenceAssociation;
+  clockEvidence: EvidenceAssociation; journals: EvidenceAssociation; releaseForensics: EvidenceAssociation; experimentManifest: EvidenceAssociation;
+}
 
 const num = (value: unknown): number | null => typeof value === 'number' && Number.isFinite(value) ? value : null;
 const str = (value: unknown): string | null => typeof value === 'string' ? value : null;
@@ -37,46 +49,239 @@ function walk(root: string): string[] {
 }
 export interface EvidencePaths {
   root: string; runId: string; runner: string; slotWatch: string | null; providerTrace: string | null; criticalPath: string | null;
-  releaseForensics: string | null; clockEvidence: string[]; journals: string[]; missing: string[];
+  releaseForensics: string | null; experimentManifest: string | null; clockEvidence: string[]; journals: string[]; missing: string[];
+  associations: EvidenceAssociations;
 }
 
-export interface DiscoveryOverrides { runner?: string; watch?: string; provider?: string; critical?: string }
+export interface DiscoveryOverrides { runner?: string; watch?: string; provider?: string; critical?: string; manifest?: string }
 
-/** Generic discovery. Explicit paths win; otherwise candidates are matched by run/release/date and scored. */
+const associationCandidate = (path: string, basis: string, confidence: EvidenceAssociationConfidence,
+  limitation?: string): EvidenceAssociationCandidate => ({ path, basis, confidence, ...(limitation ? { limitation } : {}) });
+const association = (status: EvidenceAssociationStatus, selected: EvidenceAssociationCandidate[], rejected: EvidenceAssociationCandidate[],
+  ambiguous: EvidenceAssociationCandidate[], basis: string, confidence: EvidenceAssociationConfidence, limitations: string[] = [], code?: string): EvidenceAssociation =>
+  ({ status, selected, rejected, ambiguous, basis, confidence, limitations, ...(code ? { code } : {}) });
+
+const timestamp = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value !== 'string') return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const releaseInstant = (value: Line): number | null => num(value.releaseMs) ?? timestamp(value.releaseAt);
+const checkpointOffset = (value: unknown): number | null => {
+  if (typeof value !== 'string') return null;
+  const match = /^T-(\d+(?:\.\d+)?)(MS|S|M)$/.exec(value.toUpperCase());
+  if (!match) return null;
+  const amount = Number(match[1]);
+  return Number.isFinite(amount) ? amount * (match[2] === 'M' ? 60_000 : match[2] === 'S' ? 1_000 : 1) : null;
+};
+
+function associateSlotWatch(paths: string[], targetDate: string | null, releaseMs: number | null, runnerStartedMs: number,
+  explicit: boolean): { path: string | null; evidence: EvidenceAssociation } {
+  const rejected: EvidenceAssociationCandidate[] = [];
+  const eligible: Array<EvidenceAssociationCandidate & { startedMs: number | null; watchId: string | null; lineCount: number; observations: number }> = [];
+  for (const path of paths) {
+    const lines = safeLines(path), header = lines.find(line => line.type === 'header');
+    if (!header) { rejected.push(associationCandidate(path, 'missing readable Slot Watch header', 'NONE')); continue; }
+    const watchReleaseMs = releaseInstant(header), watchDate = str(header.date);
+    if (targetDate === null || watchDate !== targetDate) {
+      rejected.push(associationCandidate(path, `target date ${watchDate ?? 'missing'} does not match ${targetDate ?? 'unknown'}`, 'NONE')); continue;
+    }
+    if (releaseMs === null || watchReleaseMs === null || watchReleaseMs !== releaseMs) {
+      rejected.push(associationCandidate(path, `release instant ${watchReleaseMs ?? 'missing'} does not match ${releaseMs ?? 'unknown'}`, 'NONE')); continue;
+    }
+    const startedMs = timestamp(header.startedAt), observations = lines.filter(line => line.type === 'availability' || line.type === 'bookings').length;
+    eligible.push({ ...associationCandidate(path, 'exact target date + release instant', 'HIGH',
+      observations ? undefined : 'Partial watch contains no availability or booking observations.'), startedMs, watchId: str(header.id), lineCount: lines.length, observations });
+  }
+  if (explicit) {
+    if (eligible.length !== 1) throw Error(`WATCH_EVIDENCE_INCOMPATIBLE:${rejected[0]?.basis ?? 'expected exactly one compatible file'}`);
+    const selected = [eligible[0]!];
+    return { path: selected[0]!.path, evidence: association('MATCH', selected, rejected, [],
+      'explicit override validated by exact target date + release instant', 'HIGH', selected[0]!.limitation ? [selected[0]!.limitation] : []) };
+  }
+  if (!eligible.length) return { path: null, evidence: association('NO_MATCH', [], rejected, [],
+    'no candidate satisfied exact target date + release instant', 'NONE', ['Older or incompatible watches are never substituted.']) };
+  // The runner's own watch starts with it. Otherwise only a watch that actually observed the release qualifies,
+  // e.g. an operator-started watch the controller kept; header-only leftovers from other launches never do.
+  const near = eligible.filter(value => value.startedMs !== null && Number.isFinite(runnerStartedMs)
+    && Math.abs(value.startedMs - runnerStartedMs) <= 10_000);
+  const byStart = near.length > 0, pool = byStart ? near : eligible.filter(value => value.observations > 0);
+  const notAssociated = byStart ? 'release-compatible but not started with the current runner'
+    : 'release-compatible but not started with the current runner and holds no release observations';
+  const ids = new Set(pool.map(value => value.watchId ?? value.path));
+  if (ids.size === 1) {
+    const chosen = [...pool].sort((a, b) => b.lineCount - a.lineCount
+      || Number(normalize(b.path).includes('/local/slot-watch/')) - Number(normalize(a.path).includes('/local/slot-watch/')) || a.path.localeCompare(b.path))[0]!;
+    const others = eligible.filter(value => value.path !== chosen.path).map(value => associationCandidate(value.path,
+      chosen.watchId !== null && value.watchId === chosen.watchId ? `duplicate copy of Slot Watch ${chosen.watchId}` : notAssociated, 'NONE'));
+    const deltaS = chosen.startedMs !== null && Number.isFinite(runnerStartedMs) ? round((chosen.startedMs - runnerStartedMs) / 1_000) : null;
+    const when = deltaS === null ? 'at an unknown time relative to the runner' : `${Math.abs(deltaS)} s ${deltaS < 0 ? 'before' : 'after'} the runner`;
+    const basis = byStart ? 'exact target date + release instant + started with this runner (within 10 s)'
+      : 'exact target date + release instant + only compatible watch with release observations';
+    const confidence: EvidenceAssociationConfidence = byStart ? 'HIGH' : 'MEDIUM';
+    const limitations = [...(chosen.limitation ? [chosen.limitation] : []), ...(byStart ? []
+      : [`Watch started ${when}; association rests on release identity and observation coverage (e.g. an operator-started watch kept for this release).`])];
+    return { path: chosen.path, evidence: association('MATCH', [associationCandidate(chosen.path, basis, confidence, chosen.limitation)],
+      [...rejected, ...others], [], basis, confidence, limitations) };
+  }
+  if (ids.size === 0) return { path: null, evidence: association('NO_MATCH', [],
+    [...rejected, ...eligible.map(value => associationCandidate(value.path, notAssociated, 'NONE'))], [],
+    'release-compatible watches exist, but none started with this runner or observed the release', 'NONE',
+    ['Header-only leftovers from other launches are never substituted.']) };
+  const ambiguousBasis = byStart ? 'started within 10 s of this runner' : 'observed the release but did not start with this runner';
+  return { path: null, evidence: association('AMBIGUOUS', [],
+    [...rejected, ...eligible.filter(value => !pool.includes(value)).map(value => associationCandidate(value.path, notAssociated, 'NONE'))],
+    pool.map(value => associationCandidate(value.path, ambiguousBasis, 'NONE')),
+    'multiple release-compatible Slot Watch files cannot be uniquely associated', 'NONE',
+    ['No Slot Watch is selected when association is ambiguous.'], 'SLOT_WATCH_EVIDENCE_AMBIGUOUS') };
+}
+
+const confidenceRank: Record<EvidenceAssociationConfidence, number> = { NONE: 0, LOW: 1, MEDIUM: 2, HIGH: 3 };
+/** The runner logs a NETWORK_CLOCK_* stage with the same checkpoint right after writing each clock file. */
+const isClockStage = (line: Line) => typeof line.stage === 'string' && line.stage.startsWith('NETWORK_CLOCK');
+
+function associateClockEvidence(paths: string[], runId: string, targetDate: string | null, releaseMs: number | null, runnerLines: Line[]):
+  { paths: string[]; evidence: EvidenceAssociation } {
+  const selected: EvidenceAssociationCandidate[] = [], rejected: EvidenceAssociationCandidate[] = [], ambiguous: EvidenceAssociationCandidate[] = [];
+  const groups = new Map<string, Array<{ path: string; linked: boolean }>>();
+  const clockStages = runnerLines.filter(isClockStage);
+  const runnerCheckpoints = new Set(clockStages.map(line => str(line.checkpoint)?.toUpperCase()));
+  const linkedToRun = (checkpoint: string | null, at: number, offsetMs: number | null) => checkpoint !== null && clockStages.some(line =>
+    str(line.checkpoint)?.toUpperCase() === checkpoint && Math.abs((timestamp(line.at) ?? Number.POSITIVE_INFINITY) - at) <= 5_000
+    && (num(line.offsetMs) === null || offsetMs === null || Math.abs(num(line.offsetMs)! - offsetMs) <= 1));
+  for (const path of paths) {
+    const value = safeJson(path);
+    if (!value) { rejected.push(associationCandidate(path, 'malformed JSON', 'NONE')); continue; }
+    const at = timestamp(value.capturedAt ?? value.queriedAt ?? value.at);
+    if (at === null) { rejected.push(associationCandidate(path, 'malformed or missing capturedAt/queriedAt/at timestamp', 'NONE')); continue; }
+    const candidateRunId = str(value.runId ?? value.releaseRunId), candidateReleaseMs = releaseInstant(value), candidateDate = str(value.targetDate);
+    if (candidateRunId && candidateRunId !== runId) { rejected.push(associationCandidate(path, `explicit run ${candidateRunId} does not match`, 'NONE')); continue; }
+    if (candidateReleaseMs !== null && (releaseMs === null || candidateReleaseMs !== releaseMs)) {
+      rejected.push(associationCandidate(path, `explicit release instant ${candidateReleaseMs} does not match`, 'NONE')); continue;
+    }
+    if (candidateDate && targetDate && candidateDate !== targetDate) {
+      rejected.push(associationCandidate(path, `target date ${candidateDate} does not match ${targetDate}`, 'NONE')); continue;
+    }
+    if (candidateRunId === runId || releaseMs !== null && candidateReleaseMs === releaseMs) {
+      selected.push(associationCandidate(path, candidateRunId === runId ? 'explicit run identifier' : 'explicit release instant', 'HIGH')); continue;
+    }
+    if (releaseMs === null) { rejected.push(associationCandidate(path, 'runner release instant is unavailable', 'NONE')); continue; }
+    const key = str(value.checkpoint)?.toUpperCase() ?? null, offset = checkpointOffset(key);
+    const linked = linkedToRun(key, at, num(value.offsetMs));
+    if (offset !== null) {
+      // A checkpoint is never recorded early, but is recorded late when the runner starts after it (e.g. T-10M at T-7 min).
+      if (at < releaseMs - offset - 30_000 || at >= releaseMs) {
+        rejected.push(associationCandidate(path, `${key} captured outside its current-release window (nominal checkpoint to release)`, 'NONE')); continue;
+      }
+    } else if (!linked && (at < releaseMs - 15 * 60_000 || at > releaseMs + 2 * 60_000)) {
+      rejected.push(associationCandidate(path, 'timestamp outside the bounded current-release window (-15 min to +2 min)', 'NONE')); continue;
+    }
+    const group = key ?? 'UNLABELLED', list = groups.get(group) ?? [];
+    list.push({ path, linked }); groups.set(group, list);
+  }
+  for (const [key, group] of groups) {
+    const linked = group.filter(item => item.linked), labelled = checkpointOffset(key) !== null;
+    if (linked.length === 1) {
+      selected.push(associationCandidate(linked[0]!.path, `${key} + matching clock event in this run's progress log`, 'HIGH'));
+      rejected.push(...group.filter(item => !item.linked).map(item => associationCandidate(item.path, `${key} file not recorded by this run`, 'NONE')));
+    } else if (linked.length > 1) {
+      ambiguous.push(...linked.map(item => associationCandidate(item.path, `${key} + matches a clock event in this run's progress log`, 'NONE')));
+      rejected.push(...group.filter(item => !item.linked).map(item => associationCandidate(item.path, `${key} file not recorded by this run`, 'NONE')));
+    } else if (runnerCheckpoints.has(key)) {
+      rejected.push(...group.map(item => associationCandidate(item.path, `this run logged its own ${key} clock event, which this file does not match`, 'NONE')));
+    } else if (group.length === 1) {
+      selected.push(associationCandidate(group[0]!.path, labelled ? `${key} captured inside its current-release window` : 'timestamp inside bounded current-release window (-15 min to +2 min)',
+        labelled ? 'MEDIUM' : 'LOW', `Not linked to this run: its progress log has no ${key} clock event.`));
+    } else {
+      ambiguous.push(...group.map(item => associationCandidate(item.path, labelled ? `${key} captured inside its current-release window` : 'timestamp inside bounded current-release window', 'NONE')));
+    }
+  }
+  selected.sort((a, b) => a.path.localeCompare(b.path));
+  const status: EvidenceAssociationStatus = ambiguous.length ? 'AMBIGUOUS' : selected.length ? 'MATCH' : 'MISSING';
+  const confidence = selected.reduce<EvidenceAssociationConfidence>((low, value) =>
+    confidenceRank[value.confidence] < confidenceRank[low] ? value.confidence : low, selected.length ? 'HIGH' : 'NONE');
+  const basis = ambiguous.length ? 'one or more checkpoints have multiple plausible current-release files'
+    : !selected.length ? 'no defensible current-release clock file'
+      : confidence === 'HIGH' ? "each file matches a clock event in this run's progress log" : 'current-release checkpoint window; not every file is linked to this run';
+  const limitations = [...selected.flatMap(value => value.limitation ? [value.limitation] : []),
+    ...(ambiguous.length ? ['Ambiguous candidates are excluded from analysis.'] : selected.length ? [] : ['Historical or malformed samples are never substituted.'])];
+  return { paths: selected.map(value => value.path), evidence: association(status, selected, rejected, ambiguous, basis,
+    confidence, limitations, ambiguous.length ? 'CLOCK_EVIDENCE_AMBIGUOUS' : undefined) };
+}
+
+/** Generic discovery. Explicit paths win only after compatibility validation; automatic discovery fails closed. */
 export function discoverEvidence(rootInput: string, runId: string, overrides: DiscoveryOverrides = {}): EvidencePaths {
   const root = resolve(rootInput), files = walk(root);
   const ndjson = files.filter(path => path.endsWith('.ndjson'));
   const runnerCandidates = overrides.runner ? [resolve(overrides.runner)] : ndjson.filter(path => basename(path) === `${runId}.ndjson` || /[/\\]logs[/\\]run-progress\.ndjson$/i.test(path));
   const runner = runnerCandidates.find(path => safeLines(path).some(line => line.runId === runId && line.stage === 'RUN_CONFIGURATION'));
   if (!runner) throw Error(`RUN_NOT_FOUND:${runId}`);
-  const runnerLines = safeLines(runner), config = runnerLines.find(line => line.stage === 'RUN_CONFIGURATION') ?? {};
+  const runnerLines = safeLines(runner).filter(line => line.runId === runId), config = runnerLines.find(line => line.stage === 'RUN_CONFIGURATION') ?? {};
   const releaseMs = num(config.releaseMs), targetDate = str(config.targetDate) ?? str(runnerLines[0]?.targetDate);
   const startedMs = Date.parse(String(runnerLines[0]?.at ?? ''));
   const watchCandidates = overrides.watch ? [resolve(overrides.watch)] : ndjson.filter(path => /slot-watch/i.test(normalize(path)));
-  const scoreWatch = (path: string) => {
-    const lines = safeLines(path), header = lines.find(line => line.type === 'header');
-    if (!header) return -Infinity;
-    const sameRelease = releaseMs !== null && (num(header.releaseMs) === releaseMs || Date.parse(String(header.releaseAt)) === releaseMs);
-    const sameDate = targetDate !== null && str(header.date) === targetDate;
-    const start = Date.parse(String(header.startedAt ?? ''));
-    const proximity = Number.isFinite(startedMs) && Number.isFinite(start) ? Math.max(0, 100_000 - Math.abs(start - startedMs)) / 100_000 : 0;
-    return (sameRelease ? 1_000_000 : 0) + (sameDate ? 100_000 : 0) + proximity * 10_000 + lines.length;
-  };
-  const slotWatch = [...watchCandidates].sort((a, b) => scoreWatch(b) - scoreWatch(a))[0];
-  const exactTrace = (kind: string) => ndjson.filter(path => normalize(path).includes(kind)).find(path => safeLines(path).some(line => line.runId === runId || (line.type === 'header' && line.runId === runId))) ?? null;
-  const providerTrace = overrides.provider ? resolve(overrides.provider) : exactTrace('provider-trace');
-  const criticalPath = overrides.critical ? resolve(overrides.critical) : exactTrace('critical-path');
-  const releaseForensics = files.find(path => normalize(path).includes(`/release-forensics/${runId}/summary.json`)) ?? null;
-  const clockEvidence = files.filter(path => /network-clock-evidence/i.test(path) && path.endsWith('.json')).filter(path => {
-    const value = safeJson(path), at = Date.parse(String(value?.queriedAt ?? value?.at ?? ''));
-    return releaseMs === null || !Number.isFinite(at) || Math.abs(at - releaseMs) <= 24 * 60 * 60_000;
-  }).sort();
-  const journals = files.filter(path => /api-first-journals/i.test(path) && path.endsWith('.json') && basename(dirname(path)) + '.json' === basename(path)).filter(path => {
+  const watch = associateSlotWatch(watchCandidates, targetDate, releaseMs, startedMs, Boolean(overrides.watch));
+  const slotWatch = watch.path;
+  const traceMatchesRun = (path: string) => safeLines(path).some(line => line.runId === runId || line.type === 'header' && line.runId === runId);
+  const exactTrace = (kind: string) => ndjson.filter(path => normalize(path).includes(kind)).find(traceMatchesRun) ?? null;
+  const explicitProvider = overrides.provider ? resolve(overrides.provider) : null, explicitCritical = overrides.critical ? resolve(overrides.critical) : null;
+  if (explicitProvider && !traceMatchesRun(explicitProvider)) throw Error('PROVIDER_EVIDENCE_INCOMPATIBLE');
+  if (explicitCritical && !traceMatchesRun(explicitCritical)) throw Error('CRITICAL_PATH_EVIDENCE_INCOMPATIBLE');
+  const providerTrace = explicitProvider ?? exactTrace('provider-trace');
+  const criticalPath = explicitCritical ?? exactTrace('critical-path');
+  const releaseForensics = files.find(path => normalize(path).includes(`/release-forensics/${runId}/summary.json`) && safeJson(path)?.runId === runId) ?? null;
+  const clockCandidates = files.filter(path => /network-clock-evidence/i.test(path) && path.endsWith('.json'));
+  const clock = associateClockEvidence(clockCandidates, runId, targetDate, releaseMs, runnerLines);
+  const clockEvidence = [...clock.paths].sort();
+  const journalCandidates = files.filter(path => /api-first-journals/i.test(path) && path.endsWith('.json') && basename(dirname(path)) + '.json' === basename(path));
+  const journals = journalCandidates.filter(path => {
     const value = safeJson(path), attempt = (value?.attempt ?? {}) as Line;
     return releaseMs !== null && num(attempt.releaseMs) === releaseMs;
   }).sort();
-  const missing = [['slot-watch', slotWatch], ['provider-trace', providerTrace], ['critical-path', criticalPath]].filter(([, path]) => !path).map(([name]) => name!);
-  return { root, runId, runner, slotWatch: slotWatch ?? null, providerTrace, criticalPath, releaseForensics, clockEvidence, journals, missing };
+  const manifestCandidates = overrides.manifest ? [resolve(overrides.manifest)] : files.filter(path => basename(path) === 'experiment-manifest.json');
+  const compatibleManifests = manifestCandidates.filter(path => {
+    const value = safeJson(path), createdMs = timestamp(value?.createdAt);
+    return value?.schema === 'wave1-experiment-manifest/v2' && (value.runId === runId || value.runId === 'UNBOUND_PRE_RUN') && num(value.releaseMs) === releaseMs
+      && (targetDate === null || value.targetDate === targetDate) && createdMs !== null && Number.isFinite(startedMs) && createdMs <= startedMs;
+  });
+  if (overrides.manifest && compatibleManifests.length !== 1) throw Error('MANIFEST_EVIDENCE_INCOMPATIBLE');
+  const experimentManifest = compatibleManifests.length === 1 ? compatibleManifests[0]! : null;
+  const manifestAmbiguous = compatibleManifests.length > 1 ? compatibleManifests.map(path => associationCandidate(path, 'matching run + release + target date', 'HIGH')) : [];
+  const manifestRejected = manifestCandidates.filter(path => !compatibleManifests.includes(path))
+    .map(path => associationCandidate(path, 'manifest does not prove matching schema + run + release + target date + pre-run creation time', 'NONE'));
+  const manifestRunBound = experimentManifest ? safeJson(experimentManifest)?.runId === runId : false;
+  const manifestAssociation = experimentManifest
+    ? association('MATCH', [associationCandidate(experimentManifest, manifestRunBound
+      ? 'matching schema + run + release + target date + created before runner start'
+      : 'pre-run unbound manifest + matching release + target date + created before runner start', manifestRunBound ? 'HIGH' : 'MEDIUM')], manifestRejected, [],
+      manifestRunBound ? 'matching schema + run + release + target date + created before runner start'
+        : 'pre-run unbound manifest + matching release + target date + created before runner start', manifestRunBound ? 'HIGH' : 'MEDIUM',
+      manifestRunBound ? [] : ['Manifest was created before the runner assigned its run ID; release instant and target date provide the association.'])
+    : manifestAmbiguous.length ? association('AMBIGUOUS', [], manifestRejected, manifestAmbiguous,
+      'multiple matching preregistration manifests', 'NONE', ['No manifest is selected when association is ambiguous.'], 'PREREGISTERED_MANIFEST_AMBIGUOUS')
+      : association('MISSING', [], manifestRejected, [], 'no matching preregistered manifest', 'NONE',
+        ['Post-run reconstruction is not preregistration.'], 'NO_PREREGISTERED_MANIFEST');
+  const simple = (path: string | null, matched: string, missing: string): EvidenceAssociation => path
+    ? association('MATCH', [associationCandidate(path, matched, 'HIGH')], [], [], matched, 'HIGH')
+    : association('MISSING', [], [], [], missing, 'NONE');
+  const journalSelected = journals.map(path => associationCandidate(path, 'journal attempt.releaseMs exactly matches runner release', 'HIGH'));
+  const journalRejected = journalCandidates.filter(path => !journals.includes(path))
+    .map(path => associationCandidate(path, 'journal is malformed or has a different releaseMs', 'NONE'));
+  const associations: EvidenceAssociations = {
+    runProgress: simple(runner, 'requested run ID + RUN_CONFIGURATION', 'run progress is required'), slotWatch: watch.evidence,
+    providerTrace: simple(providerTrace, 'embedded run ID', 'no provider trace with the requested run ID'),
+    criticalPath: simple(criticalPath, 'embedded run ID', 'no critical path with the requested run ID'), clockEvidence: clock.evidence,
+    journals: association(journals.length ? 'MATCH' : 'MISSING', journalSelected, journalRejected, [],
+      journals.length ? 'attempt.releaseMs exactly matches runner release' : 'no journal with the runner releaseMs', journals.length ? 'HIGH' : 'NONE'),
+    releaseForensics: simple(releaseForensics, 'release-forensics directory named by run ID', 'no release-forensics summary for requested run'),
+    experimentManifest: manifestAssociation,
+  };
+  const missing = [['slot-watch', slotWatch], ['provider-trace', providerTrace], ['critical-path', criticalPath],
+    ['clock-evidence', clockEvidence.length ? clockEvidence[0] : null]].filter(([, path]) => !path).map(([name]) => name!);
+  return { root, runId, runner, slotWatch, providerTrace, criticalPath, releaseForensics, experimentManifest,
+    clockEvidence, journals, missing, associations };
 }
 
 export interface Target { court: number; startTime: string; durationHours: number; cells: string[] }
@@ -224,6 +429,11 @@ function quality(contestable: number, total: number): AnalysisQuality {
   return 'POOR';
 }
 
+const relativeAssociation = (root: string, value: EvidenceAssociation): Line => {
+  const candidate = (item: EvidenceAssociationCandidate) => ({ ...item, path: normalize(relative(root, item.path)) });
+  return { ...value, selected: value.selected.map(candidate), rejected: value.rejected.map(candidate), ambiguous: value.ambiguous.map(candidate) };
+};
+
 function hypothesisAssessment(input: { contestOrder: OrderAnalysis; stateRegressions: number; flushes: number; contestable: number; sameCourtPairs: number }) {
   const result: Record<HypothesisId, { verdict: 'SUPPORTING' | 'CONTRADICTING' | 'NEUTRAL' | 'INSUFFICIENT'; observations: string[] }> = {} as never;
   for (const spec of WAVE1_HYPOTHESES) result[spec.id] = { verdict: 'INSUFFICIENT', observations: [`Evaluated against ${WAVE1_HYPOTHESIS_SPEC_VERSION}.`] };
@@ -247,7 +457,7 @@ export interface Wave1Analysis { schema: string; run: Line; sources: Line; exper
   readPath: Line; slowReadFlush: Line; holdCommit: Line[]; hypotheses: Line; simulatorInput: Line; timeline: ReleaseTimeline; limitations: string[] }
 
 export function buildWave1Analysis(paths: EvidencePaths): Wave1Analysis {
-  const runnerLines = safeLines(paths.runner), providerLines = safeLines(paths.providerTrace), criticalLines = safeLines(paths.criticalPath), watchLines = safeLines(paths.slotWatch);
+  const runnerLines = safeLines(paths.runner).filter(line => line.runId === paths.runId), providerLines = safeLines(paths.providerTrace), criticalLines = safeLines(paths.criticalPath), watchLines = safeLines(paths.slotWatch);
   const trace = runTrace(runnerLines), config = runnerLines.find(line => line.stage === 'RUN_CONFIGURATION') ?? {}, releaseMs = num(config.releaseMs);
   if (releaseMs === null) throw Error('ANALYSIS_RELEASE_UNKNOWN');
   const watch = normalizedWatch(watchLines), firstPublished = watch.availability.filter(read => read.outcome === 'ok' && read.published && read.matrix && !read.matrix.includes('?')).sort((a, b) => a.responseOffsetMs - b.responseOffsetMs)[0] ?? null;
@@ -328,7 +538,10 @@ export function buildWave1Analysis(paths: EvidencePaths): Wave1Analysis {
       mode: trace.mode, wave1Attempts: rows.length },
     sources: { runner: normalize(relative(paths.root, paths.runner)), slotWatch: paths.slotWatch ? normalize(relative(paths.root, paths.slotWatch)) : null,
       providerTrace: paths.providerTrace ? normalize(relative(paths.root, paths.providerTrace)) : null, criticalPath: paths.criticalPath ? normalize(relative(paths.root, paths.criticalPath)) : null,
-      releaseForensics: paths.releaseForensics ? normalize(relative(paths.root, paths.releaseForensics)) : null, journalCount: paths.journals.length, clockEvidenceCount: paths.clockEvidence.length, missing: paths.missing },
+      releaseForensics: paths.releaseForensics ? normalize(relative(paths.root, paths.releaseForensics)) : null,
+      experimentManifest: paths.experimentManifest ? normalize(relative(paths.root, paths.experimentManifest)) : null,
+      journalCount: paths.journals.length, clockEvidenceCount: paths.clockEvidence.length, missing: paths.missing,
+      association: Object.fromEntries(Object.entries(paths.associations).map(([key, value]) => [key, relativeAssociation(paths.root, value)])) },
     experimentQuality: { label: quality(contestable.length, rows.length), usefulContestSamples: contestable.length, totalWave1Attempts: rows.length,
       distribution: rows.reduce<Record<string, number>>((sum, row) => { sum[row.contest.classification] = (sum[row.contest.classification] ?? 0) + 1; return sum; }, {}) },
     attempts: rows, ordering, responseReasons: reasonGroups, readPath: { rawProviderState: watch.availability.map(read => ({ seq: read.seq, requestOffsetMs: read.requestOffsetMs, responseOffsetMs: read.responseOffsetMs, matrix: read.matrix })),
@@ -344,7 +557,11 @@ export function buildWave1Analysis(paths: EvidencePaths): Wave1Analysis {
         stateRegressionCount: regressions.length, inferredStateRegressionCount: inferredRegressions.length, slowReadFlushCount: flush.flushes.length } }, timeline,
     limitations: ['Provider queue entry, database lock acquisition, instance identity and internal commit time are not externally observable.',
       'Public booking first-seen time is a visibility bound, not internal commit time.', 'The Vercel embedded timestamp candidate remains UNDOCUMENTED.',
-      ...(chrome.length ? [] : ['Chrome network start is missing; Playwright request time is the available fallback.']), ...paths.missing.map(value => `Missing evidence source: ${value}.`)] };
+      ...(chrome.length ? [] : ['Chrome network start is missing; Playwright request time is the available fallback.']),
+      ...(paths.associations.experimentManifest.status === 'MATCH' ? [] : ['NO_PREREGISTERED_MANIFEST: post-run reconstruction must not be described as preregistration.']),
+      ...(paths.associations.clockEvidence.status === 'AMBIGUOUS' ? ['CLOCK_EVIDENCE_AMBIGUOUS: ambiguous clock files were excluded.'] : []),
+      ...(paths.associations.slotWatch.status === 'AMBIGUOUS' ? ['SLOT_WATCH_EVIDENCE_AMBIGUOUS: no watch was selected.'] : []),
+      ...paths.missing.map(value => `Missing evidence source: ${value}.`)] };
 }
 
 export function renderTimelineMarkdown(analysis: Wave1Analysis): string {
@@ -362,10 +579,25 @@ export function renderTimelineMarkdown(analysis: Wave1Analysis): string {
 
 export function renderReport(analysis: Wave1Analysis, crossRelease: readonly Line[] = [], replay: Line | null = null): string {
   const quality = analysis.experimentQuality, contest = (analysis.ordering.contestableWave1 as Line).vercelEmbeddedTimestampCandidate as Line;
+  const associations = (analysis.sources.association ?? {}) as Record<string, Line>;
+  const associationLine = (label: string, key: string) => {
+    const item = associations[key] ?? {}, selected = (item.selected ?? []) as Line[], rejected = (item.rejected ?? []) as Line[], ambiguous = (item.ambiguous ?? []) as Line[];
+    const sources = selected.map(value => String(value.path)).join(', ') || 'none';
+    const limitations = Array.isArray(item.limitations) && item.limitations.length ? `; limitations: ${item.limitations.join(' ')}` : '';
+    const rejectedDetail = key === 'clockEvidence' ? rejected.map(value => `${value.path} (${value.basis})`).join(', ')
+      : rejected.length ? `${rejected.length} candidate(s); see analysis.json` : '';
+    const candidateDetail = `${rejected.length ? `; rejected: ${rejectedDetail}` : ''}`
+      + `${ambiguous.length ? `; ambiguous: ${ambiguous.map(value => `${value.path} (${value.basis})`).join(', ')}` : ''}`;
+    return `- ${label}: ${item.status ?? 'MISSING'} — ${item.basis ?? 'association unavailable'}; selected: ${sources}; confidence: ${item.confidence ?? 'NONE'}${limitations}${candidateDetail}`;
+  };
   const lines = [`# Wave 1 arbitration report — ${analysis.run.runId}`, '', '# Executive result', '',
     `${quality.label}: ${quality.usefulContestSamples}/${quality.totalWave1Attempts} Wave 1 attempts are meaningful contest samples. `
       + `The report separates known/impossible attempts from contestable attempts and does not identify a single provider mechanism as proven.`, '',
     '# Experiment quality', '', `- Label: ${quality.label}`, `- Useful contest samples: ${quality.usefulContestSamples}`, `- Missing sources: ${((analysis.sources.missing as string[]) ?? []).join(', ') || 'none'}`, '',
+    '## Evidence Association', '', associationLine('Run progress', 'runProgress'), associationLine('Slot Watch', 'slotWatch'),
+    associationLine('Provider trace', 'providerTrace'), associationLine('Critical path', 'criticalPath'), associationLine('Clock evidence', 'clockEvidence'),
+    associationLine('Journals', 'journals'), associationLine('Release forensics', 'releaseForensics'), associationLine('Experiment manifest', 'experimentManifest'),
+    ...((associations.experimentManifest?.status === 'MATCH') ? [] : ['', 'NO_PREREGISTERED_MANIFEST — no compatible pre-run manifest was associated; post-run reconstruction is not preregistration.']), '',
     '# Wave 1 timing', '', `Chrome/network start summary: ${JSON.stringify(summarize((analysis.attempts as Array<any>).map(row => row.localPath.chromeNetworkStartMs).filter(Number.isFinite), 2))}.`, '',
     '# Target-by-target timeline', '', renderTimelineMarkdown(analysis), '# Contestable-only ordering', '',
     `n=${contest.n}; quality=${contest.sampleQuality}; Kendall tau=${contest.kendallTau ?? 'UNKNOWN'}; Spearman=${contest.spearman ?? 'UNKNOWN'}; inversions=${contest.inversions}; ties=${contest.ties}.`,

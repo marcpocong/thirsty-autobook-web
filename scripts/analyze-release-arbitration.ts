@@ -13,11 +13,16 @@ for (let index = 2; index < process.argv.length; index++) {
 const repo = resolve(import.meta.dirname, '..'), runId = args.get('run');
 if (!runId) throw Error('ARBITRATION_RUN_REQUIRED: use --run <run-id>');
 const overrides = { ...(args.get('runner') ? { runner: args.get('runner')! } : {}), ...(args.get('watch') ? { watch: args.get('watch')! } : {}),
-  ...(args.get('provider') ? { provider: args.get('provider')! } : {}), ...(args.get('critical') ? { critical: args.get('critical')! } : {}) };
+  ...(args.get('provider') ? { provider: args.get('provider')! } : {}), ...(args.get('critical') ? { critical: args.get('critical')! } : {}),
+  ...(args.get('manifest') ? { manifest: args.get('manifest')! } : {}) };
 const roots = args.get('archive') ? [resolve(args.get('archive')!)] : [resolve(repo, '..', '.local'), resolve(repo, 'diagnostics-archive')];
 let paths: EvidencePaths | null = null, lastError: unknown;
 for (const root of roots) {
-  try { paths = discoverEvidence(root, runId, overrides); break; } catch (error) { lastError = error; }
+  // Only a missing run moves on to the next root; an incompatible explicit file must fail as itself.
+  try { paths = discoverEvidence(root, runId, overrides); break; } catch (error) {
+    if (!String((error as Error)?.message).startsWith('RUN_NOT_FOUND')) throw error;
+    lastError = error;
+  }
 }
 if (!paths) throw lastError;
 const analysis = buildWave1Analysis(paths);
