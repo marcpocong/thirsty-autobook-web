@@ -29,6 +29,48 @@ export function kendallTau(a: readonly number[], b: readonly number[]): number |
   return round((concordant - discordant) / (a.length * (a.length - 1) / 2), 4);
 }
 
+/** Average ranks (1-based) with ties sharing the mean occupied rank. */
+export function averageRanks(values: readonly number[]): number[] {
+  const indexed = values.map((value, index) => ({ value, index })).sort((a, b) => a.value - b.value || a.index - b.index);
+  const ranks = new Array<number>(values.length);
+  for (let start = 0; start < indexed.length;) {
+    let end = start;
+    while (end + 1 < indexed.length && indexed[end + 1]!.value === indexed[start]!.value) end++;
+    const rank = (start + end) / 2 + 1;
+    for (let index = start; index <= end; index++) ranks[indexed[index]!.index] = rank;
+    start = end + 1;
+  }
+  return ranks;
+}
+
+/** Spearman correlation using average ranks. Returns null when n < 2 or either side is constant. */
+export function spearman(a: readonly number[], b: readonly number[]): number | null {
+  if (a.length !== b.length || a.length < 2) return null;
+  const x = averageRanks(a), y = averageRanks(b);
+  const meanX = x.reduce((sum, value) => sum + value, 0) / x.length;
+  const meanY = y.reduce((sum, value) => sum + value, 0) / y.length;
+  let numerator = 0, squareX = 0, squareY = 0;
+  for (let index = 0; index < x.length; index++) {
+    const dx = x[index]! - meanX, dy = y[index]! - meanY;
+    numerator += dx * dy; squareX += dx * dx; squareY += dy * dy;
+  }
+  if (squareX === 0 || squareY === 0) return null;
+  return round(numerator / Math.sqrt(squareX * squareY), 4);
+}
+
+/** Pair classification used by the Wave 1 order report. A tie on either axis is not an inversion. */
+export function pairOrderCounts(a: readonly number[], b: readonly number[]): { comparable: number; concordant: number; inversions: number; ties: number } {
+  if (a.length !== b.length) return { comparable: 0, concordant: 0, inversions: 0, ties: 0 };
+  let concordant = 0, inversions = 0, ties = 0;
+  for (let i = 0; i < a.length; i++) for (let j = i + 1; j < a.length; j++) {
+    const left = Math.sign(a[i]! - a[j]!), right = Math.sign(b[i]! - b[j]!);
+    if (left === 0 || right === 0) ties++;
+    else if (left === right) concordant++;
+    else inversions++;
+  }
+  return { comparable: concordant + inversions, concordant, inversions, ties };
+}
+
 /** Standard normal CDF (Abramowitz–Stegun 7.1.26, |error| < 1.5e-7). */
 export function normalCdf(z: number): number {
   const t = 1 / (1 + 0.3275911 * Math.abs(z) / Math.SQRT2);
