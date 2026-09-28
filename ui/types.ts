@@ -33,6 +33,9 @@ export interface PrecisionTargetView { workerId:WorkerId; court:number; startTim
   evidence?:string; eligible?:boolean; checkpoint?:string; state?:string; code?:string; duplicateOf?:WorkerId; security?:'ready'|'failed'; bookingNo?:string; holdExpiresAt?:string }
 /** Live Precision race view built from runner stage events; purely informational. */
 export interface PrecisionView { targets:PrecisionTargetView[]; frozen:boolean; frozenCount?:number; frozenAt?:string; checkpoint?:string; checkpointAt?:string; outcome?:string }
+/** Result of the last arm's Wave 1 preregistration for one release (absent until an arm reaches that step). */
+export interface ArbitrationManifestView { status:'ready'|'blocked'; targetDate:string; releaseMs:number;
+  /** true when an existing matching preregistration was verified and reused. */ verified?:boolean; createdAt?:string; code?:string; reason?:string }
 export interface Dashboard {
   phase3?:{fitness?:string;cache?:string;seq?:number;outcome?:string;frozen?:boolean;
     attempts:Array<{workerId:string;candidateId:string;wave:string;state:string}>};
@@ -77,6 +80,7 @@ export interface Dashboard {
   bookingAdjustment?:FallbackReconciliation|null;
   scheduledRelease?:ScheduledReleaseContext|null;
   sleepProtection?:boolean;
+  arbitrationManifest?:ArbitrationManifestView|null;
   scheduleStatus?:'WAITING'|'WAKE / RECONNECT'|'FINAL PREFLIGHT'|'RUNNING'|'MISSED'|null;
   capabilities: { selectionReady:boolean; checkoutReady:boolean; paymentBoundaryReady:boolean };
   selection: Extract<UiEvent, {type:'selection'}> | null;

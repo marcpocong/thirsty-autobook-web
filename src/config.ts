@@ -7,14 +7,20 @@ import { reconcileBookingSetupFallbacks, reconcileFallbackTimes, type FallbackRe
 import { PRECISION_MAX_ATTEMPTS, WORKER_IDS, type CourtCount, type WorkerId } from './workers.js';
 import {networkNowMs} from './network-clock.js';
 import { PRECISION_MAX_CANDIDATES } from './api-booking/precision-phase3.js';
+import { isReleaseOffsetMs } from './release-offset.js';
 
 export const ONDA_URL = 'https://app.onda.fit/book/thirsty-pickle';
 export const VENUE = 'Thirsty Pickle | SM Seaside';
 const hour = z.string().regex(/^(0[89]|1[0-9]|2[0-3]):00$/);
 const courts = z.array(z.number().int().min(1).max(7));
+/** Release Offset of one Precision attempt; absent means 0 ms (normal). */
+const attemptOffset = z.number().int().refine(isReleaseOffsetMs, 'Release offset must be from -2000 ms through 0 ms.').optional();
 /** One exact Precision target: one court, one start, 1-3 hours. Workers A-G follow row order. */
-export const PrecisionTargetSchema = z.object({ court: z.number().int().min(1).max(7), start: hour, durationHours: z.number().int().min(1).max(3) }).strict();
+export const PrecisionTargetSchema = z.object({ court: z.number().int().min(1).max(7), start: hour, durationHours: z.number().int().min(1).max(3),
+  releaseOffsetMs: attemptOffset }).strict();
 const releaseStrategy = z.enum(['general','precision']).default('general');
+// Saved plan only (never read from the environment); see release-offset.ts.
+const releaseOffset = z.number().int().refine(isReleaseOffsetMs, 'Release offset must be from -2000 ms through 0 ms.').default(0);
 const precisionTargets = z.array(PrecisionTargetSchema).max(PRECISION_MAX_ATTEMPTS).default([]);
 const precisionWorker=z.enum(['A','B','C','D','E','F','G']);
 const rateEvidence=z.object({source:z.string().min(1).max(100),capturedAt:z.iso.datetime(),status:z.enum(['TARGET_DATE_PUBLISHED','VENUE_SCHEDULE','OPERATOR_CONFIRMED','REFERENCE']),
@@ -22,10 +28,15 @@ const rateEvidence=z.object({source:z.string().min(1).max(100),capturedAt:z.iso.
 export const PrecisionPhase3Schema=z.object({
   candidates:z.array(z.object({court:z.number().int().min(1).max(7),start:hour,durationHours:z.number().int().min(1).max(3),
     priority:z.number().int().min(1),permissions:z.object({wave1:z.boolean(),wave2:z.boolean(),rescue:z.boolean()}).strict(),rateEvidence}).strict()).min(1).max(PRECISION_MAX_CANDIDATES),
-  wave1:z.array(z.object({workerId:precisionWorker,candidateIndex:z.number().int().min(0).max(PRECISION_MAX_CANDIDATES-1)}).strict()).min(1).max(7),
+  wave1:z.array(z.object({workerId:precisionWorker,candidateIndex:z.number().int().min(0).max(PRECISION_MAX_CANDIDATES-1),releaseOffsetMs:attemptOffset}).strict()).min(1).max(7),
   standby:z.array(precisionWorker).max(7),budgets:z.object({wave2:z.number().int().min(0).max(7),rescue:z.number().int().min(0).max(7),total:z.number().int().min(1).max(28)}).strict(),
   concurrentWave2:z.boolean(),rescueEnabled:z.boolean(),
 }).strict();
+function checkReleaseOffset(c:{RELEASE_OFFSET_MS:number;BOOKING_METHOD:string;RELEASE_STRATEGY:string},ctx:z.RefinementCtx){
+  if(c.RELEASE_OFFSET_MS!==0&&c.BOOKING_METHOD!=='proofless')ctx.addIssue({code:'custom',message:'Release Offset applies to Proofless Direct only.',path:['RELEASE_OFFSET_MS']});
+  // Precision chooses the offset on each attempt instead.
+  if(c.RELEASE_OFFSET_MS!==0&&c.RELEASE_STRATEGY==='precision')ctx.addIssue({code:'custom',message:'Precision Release sets the offset on each attempt.',path:['RELEASE_OFFSET_MS']});
+}
 function checkPrecision(c:{RELEASE_STRATEGY:'general'|'precision';BOOKING_METHOD:string;BOOKING_TYPE:string;PRECISION_TARGETS:{court:number;start:string;durationHours:number}[];PRECISION_PHASE3?:z.infer<typeof PrecisionPhase3Schema>},ctx:z.RefinementCtx){
   if(c.RELEASE_STRATEGY!=='precision')return;
   if(c.BOOKING_METHOD!=='proofless')ctx.addIssue({code:'custom',message:'Precision Release uses Proofless Direct only.',path:['BOOKING_METHOD']});
@@ -65,6 +76,7 @@ export const ConfigSchema = z.object({
   RELEASE_STRATEGY: releaseStrategy,
   PRECISION_TARGETS: precisionTargets,
   PRECISION_PHASE3: PrecisionPhase3Schema.optional(),
+  RELEASE_OFFSET_MS: releaseOffset,
   COURT_COUNT: z.union([z.literal(1),z.literal(2),z.literal(3),z.literal(4),z.literal(5),z.literal(6),z.literal(7)]).default(1),
   ONDA_URL: z.literal(ONDA_URL).default(ONDA_URL),
   TIMEZONE: z.string().refine(v => IANAZone.isValidZone(v), 'Invalid timezone').default('Asia/Manila'),
@@ -118,6 +130,7 @@ export const ConfigSchema = z.object({
   if (new Set(times).size !== times.length) ctx.addIssue({ code: 'custom', message: 'Duplicate time preference', path: ['FALLBACK_TIMES'] });
   if (times.some(t => Number(t.slice(0, 2)) + c.DURATION_HOURS > 24)) ctx.addIssue({ code: 'custom', message: 'Booking crosses midnight', path: ['DURATION_HOURS'] });
   checkPrecision(c, ctx);
+  checkReleaseOffset(c, ctx);
 });
 export type Config = z.infer<typeof ConfigSchema>;
 export const ObservationSchema = z.object({
@@ -148,7 +161,7 @@ function parseConfig(includeSaved:boolean,test?:TestRuntimeSetup):{config:Config
   const env = environment();
   let fallbackReconciliation:FallbackReconciliation={valid:[],removed:[]};
   const raw: Record<string, unknown> = { START_TIME:'08:00', DURATION_HOURS:2, PREFERRED_COURTS:[7,6,5,4,3,2,1], FALLBACK_COURTS:[], FALLBACK_TIMES:[] };
-  for (const key of Object.keys(ConfigSchema.shape)) if (key!=='MAX_PRICE'&&env[key] !== undefined) raw[key] = env[key];
+  for (const key of Object.keys(ConfigSchema.shape)) if (key!=='MAX_PRICE'&&key!=='RELEASE_OFFSET_MS'&&env[key] !== undefined) raw[key] = env[key];
   for (const key of ['PREFERRED_COURTS', 'FALLBACK_COURTS', 'FALLBACK_TIMES']) {
     if (typeof raw[key] === 'string') raw[key] = (raw[key] as string).split(',').map(s => s.trim()).filter(Boolean).map(s => key === 'FALLBACK_TIMES' ? s : Number(s));
   }
@@ -168,13 +181,15 @@ export function loadConfigWithReconciliation(){return parseConfig(true);}
 // Test Now uses environment/player/runtime settings without parsing or applying
 // the saved Release draft in config.local.json.
 export function loadTestRuntimeConfig(test:TestRuntimeSetup):Config{return parseConfig(false,test).config;}
-// Narrow, PII-free local settings; renderer cannot change URLs, release timing or player data.
+// Narrow, PII-free local settings; renderer cannot change URLs, release time or player data.
+// It can choose any whole-millisecond release offset in the guarded range (release-offset.ts).
 export const BookingSetupSchema = z.object({
   BOOKING_METHOD: ConfigSchema.shape.BOOKING_METHOD,
   BOOKING_TYPE: ConfigSchema.shape.BOOKING_TYPE,
   RELEASE_STRATEGY: releaseStrategy,
   PRECISION_TARGETS: precisionTargets,
   PRECISION_PHASE3: PrecisionPhase3Schema.optional(),
+  RELEASE_OFFSET_MS: releaseOffset,
   COURT_COUNT: ConfigSchema.shape.COURT_COUNT,
   START_TIME: hour, DURATION_HOURS: z.number().int().min(1).max(6),
   PREFERRED_COURTS: courts.length(7), FALLBACK_COURTS: z.array(z.never()).default([]),
@@ -186,6 +201,7 @@ export const BookingSetupSchema = z.object({
   if (new Set(c.PREFERRED_COURTS).size !== 7) ctx.addIssue({ code: 'custom', message: 'Court priority is invalid.', path:['PREFERRED_COURTS'] });
   if(Number(c.START_TIME.slice(0,2))+c.DURATION_HOURS>24)ctx.addIssue({code:'custom',message:'The main booking would end after midnight.',path:['START_TIME']});
   checkPrecision(c,ctx);
+  checkReleaseOffset(c,ctx);
   const fallback=reconcileFallbackTimes(c.START_TIME,c.DURATION_HOURS,c.FALLBACK_TIMES).removed[0];
   if(fallback)ctx.addIssue({code:'custom',message:fallback.reason==='DUPLICATES_PRIMARY_START'?'A fallback duplicates the main start.':fallback.reason==='DUPLICATE_FALLBACK'?'A fallback start appears more than once.':fallback.reason==='CROSSES_MIDNIGHT'?`Fallback ${fallback.time} is not valid for a ${c.DURATION_HOURS}-hour booking.`:'A fallback start has an invalid time format.',path:['FALLBACK_TIMES']});
 });
@@ -206,7 +222,9 @@ export function planFingerprint(c: Config) {
     method:c.BOOKING_METHOD, strategy:c.BOOKING_TYPE, courtCount:c.COURT_COUNT,
     schedule: ObservationSchema.parse(c), target: calculateTarget(c), attempts:c.MAX_SELECTION_ATTEMPTS,
     // Present only for Precision, so a General plan keeps exactly its previous fingerprint.
-    ...(c.RELEASE_STRATEGY==='precision'?{releaseStrategy:'precision',precisionTargets:c.PRECISION_TARGETS,precisionPhase3:c.PRECISION_PHASE3}:{}) })).digest('hex');
+    ...(c.RELEASE_STRATEGY==='precision'?{releaseStrategy:'precision',precisionTargets:c.PRECISION_TARGETS,precisionPhase3:c.PRECISION_PHASE3}:{}),
+    // Likewise present only when non-zero; a changed offset after arming is a changed plan.
+    ...(c.RELEASE_OFFSET_MS?{releaseOffsetMs:c.RELEASE_OFFSET_MS}:{}) })).digest('hex');
 }
 export function releaseCalendar(c: Pick<Config, 'TIMEZONE' | 'RELEASE_TIME' | 'BOOKING_HORIZON_DAYS'>, now: DateTime = DateTime.fromMillis(networkNowMs())) {
   const local = now.setZone(c.TIMEZONE);

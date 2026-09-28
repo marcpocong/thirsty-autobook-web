@@ -77,6 +77,11 @@
           <label class="general-only">Duration (hours)<input id="duration" type="number" min="1" max="3" value="2"></label>
           <label class="general-only">Maximum candidate attempts<input id="attempts" type="number" min="1" max="5" value="3"></label>
         </div>
+        <div id="release-offset" class="editor-block release-offset" hidden>
+          <h3 id="release-offset-title">Release Offset</h3>
+          <label class="release-offset-control">Send early by <span><input id="release-offset-ms" type="number" min="0" max="2000" step="1" value="0" inputmode="numeric"> ms</span></label>
+          <p class="small">Choose any whole millisecond from 0 (Normal) through 2000 (2 seconds early).</p>
+        </div>
         <div id="precision-setup" class="editor-block precision-setup" hidden>
           <h3>Precision Release · goal: 1 successful court</h3>
           <p class="small">Proofless Direct · Standard 1–3 hours · each attempt is exactly one court, one exact time and one dedicated player/browser. Release only.</p>

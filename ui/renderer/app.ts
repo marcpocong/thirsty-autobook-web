@@ -2,8 +2,9 @@ import type { Bridge, Dashboard, RunHistoryEntry } from '../types.js';
 import type { BookingSetup } from '../../src/config.js';
 import {bookingSetupProblem,reconcileFallbackTimes,type FallbackReconciliation} from '../../src/booking-setup.js';
 import type {ReleasePerformance} from '../../src/release-performance.js';
+import {formatReleaseOffset,isReleaseOffsetMs} from '../../src/release-offset.js';
 import {compileSmartPlan,confirmSmartRates,describeSmartPlan,emptySmartDraft,smartDraftFromPhase3,smartPeso,smartRange,smartSlotText,SMART_MAX_SLOTS,SMART_WORKERS,
-  type SmartDraft,type SmartSlot,type SmartWorker,type SmartPhase3} from '../../src/precision-simple.js';
+  type SmartDraft,type SmartSlot,type SmartWorker,type SmartPhase3,type SmartReleaseOffset} from '../../src/precision-simple.js';
 declare global { interface Window { thirsty: Bridge } }
 const byId = (id: string) => document.getElementById(id)!;
 let latest: Dashboard | undefined;
@@ -87,9 +88,9 @@ type CourtCount=1|2|3|4|5|6|7;type WorkerId='A'|'B'|'C'|'D'|'E'|'F'|'G'|'H';
 const requiredWorkers=(strategy:string,count:number):WorkerId[]=>['A','B','C','D','E','F','G','H'].slice(0,(strategy==='extended'?2:1)*Math.ceil(count/2)) as WorkerId[];
 const workerLabel=(worker:WorkerId)=>worker==='A'?'Primary player':`Player ${'ABCDEFGH'.indexOf(worker)+1}`;
 const ALL_WORKERS:WorkerId[]=['A','B','C','D','E','F','G','H'];
-type PrecisionRow={court:number;start:string;durationHours:number};
+type PrecisionRow={court:number;start:string;durationHours:number;releaseOffsetMs?:SmartReleaseOffset};
 type PrecisionMode='fixed'|'smart';
-interface FormDraft {releaseStrategy:'general'|'precision';precisionCount:number;precisionTargets:PrecisionRow[];precisionMode?:PrecisionMode;smart?:SmartDraft;method:'browser'|'hybrid'|'api-first'|'proofless';strategy:'standard'|'extended';date:string;courtCount:CourtCount;start:string;duration:number;attempts:number;courtOrder:number[];fallbackTimes:string[];exactA:string;exactB:string}
+interface FormDraft {releaseStrategy:'general'|'precision';precisionCount:number;precisionTargets:PrecisionRow[];precisionMode?:PrecisionMode;smart?:SmartDraft;releaseOffsetMs?:number;method:'browser'|'hybrid'|'api-first'|'proofless';strategy:'standard'|'extended';date:string;courtCount:CourtCount;start:string;duration:number;attempts:number;courtOrder:number[];fallbackTimes:string[];exactA:string;exactB:string}
 let testDraft:FormDraft|undefined,releaseDraft:FormDraft|undefined,testDirty=false,releaseDirty=false;
 let releaseAdjustment:FallbackReconciliation|undefined;
 // The layout is static in index.html; only these few controls move with the active view.
@@ -151,6 +152,10 @@ function smartField(id:string,label:string,value:string,placeholder:string,onCha
   const wrap=document.createElement('label'),field=document.createElement('input');field.id=id;field.type=type;field.value=value;field.placeholder=placeholder;
   field.addEventListener('change',()=>onChange(field.value.trim()));wrap.append(label,field);return wrap;
 }
+function smartOffsetField(id:string,releaseOffsetMs:number|undefined,onChange:(offset:number)=>void){
+  const wrap=document.createElement('label'),field=document.createElement('input');field.id=id;field.type='number';field.min='0';field.max='2000';field.step='1';field.inputMode='numeric';field.value=String(-(releaseOffsetMs??0));
+  field.addEventListener('change',()=>onChange(releaseOffsetFromEarlyInput(field.value)));wrap.append('Send early by (ms)',field);return wrap;
+}
 function smartButton(text:string,label:string,disabled:boolean,onClick:()=>void){
   const button=smartElement('button','secondary compact',text);button.type='button';button.setAttribute('aria-label',label);button.disabled=disabled;button.onclick=onClick;return button;
 }
@@ -172,6 +177,11 @@ function smartRow(kind:'immediate'|'backups',slot:SmartSlot,index:number,compile
   fields.append(smartSelect(`smart-${kind}-court-${index}`,'Court',Array.from({length:7},(_,c)=>[`Court ${c+1}`,String(c+1)] as [string,string]),String(slot.court),value=>set({court:Number(value)})),
     smartSelect(`smart-${kind}-start-${index}`,'Start',hours.map(h=>[friendly(h),h] as [string,string]),slot.start,value=>set({start:value})),
     smartSelect(`smart-${kind}-duration-${index}`,'Duration',[['1 hour','1'],['2 hours','2'],['3 hours','3']],String(slot.durationHours),value=>set({durationHours:Number(value)})));
+  if(kind==='immediate')fields.append(smartOffsetField(`smart-immediate-offset-${index}`,slot.releaseOffsetMs,offset=>smartEdit(draft=>{
+    const next={...draft.immediate[index]!};
+    if(offset===0)delete next.releaseOffsetMs;else next.releaseOffsetMs=offset as SmartSlot['releaseOffsetMs'];
+    draft.immediate[index]=next;
+  })));
   const facts=smartElement('div','smart-row-facts');
   if(kind==='immediate'){const worker=compiled.immediateWorkers[index]??null,chip=smartElement('span','smart-worker',worker?`Worker ${worker}`:'No worker free');
     chip.dataset.tone=!worker||unready.has(worker)?'warn':'good';facts.append(chip);}
@@ -296,13 +306,21 @@ byId('smart-rate-confirm').onclick=()=>{
 for(let i=0;i<PRECISION_WORKERS.length;i++){
   (byId(`precision-court-${i}`) as HTMLSelectElement).replaceChildren(...Array.from({length:7},(_,c)=>new Option(`Court ${c+1}`,String(c+1))));
   (byId(`precision-start-${i}`) as HTMLSelectElement).replaceChildren(...hours.map(h=>new Option(friendly(h),h)));
+  const offset=document.createElement('label'),field=document.createElement('input');field.id=`precision-offset-${i}`;field.type='number';field.min='0';field.max='2000';field.step='1';field.inputMode='numeric';field.value='0';offset.append('Send early by (ms)',field);byId(`precision-evidence-${i}`).before(offset);
   input(`precision-start-${i}`).value='17:00';input(`precision-duration-${i}`).value='3';input(`precision-court-${i}`).value=String([7,5,3,6,4,2,1][i]);
 }
 /** The exact targets the operator configured; nothing is inferred or added. */
 function precisionRows():PrecisionRow[]{
-  return Array.from({length:Number(input('precision-count').value)||1},(_,i)=>({court:Number(input(`precision-court-${i}`).value),start:input(`precision-start-${i}`).value,durationHours:Number(input(`precision-duration-${i}`).value)}));
+  return Array.from({length:Number(input('precision-count').value)||1},(_,i)=>{const releaseOffsetMs=releaseOffsetFromEarlyInput(input(`precision-offset-${i}`).value) as SmartReleaseOffset;
+    return {court:Number(input(`precision-court-${i}`).value),start:input(`precision-start-${i}`).value,durationHours:Number(input(`precision-duration-${i}`).value),
+      ...(releaseOffsetMs===0?{}:{releaseOffsetMs})};});
 }
 function precisionSelected(){return workflow==='release'&&input('precision-strategy').value==='precision';}
+/** Release Offset: the UI accepts a positive "send early by" value; saved timing is release-relative and therefore negative. */
+function releaseOffsetFromEarlyInput(raw:string){const early=raw.trim()===''?Number.NaN:Number(raw);const offset=-early;return isReleaseOffsetMs(offset)?offset:Number.NaN;}
+function releaseOffsetApplies(){return workflow==='release'&&!precisionSelected()&&input('booking-method').value==='proofless';}
+function releaseOffsetValue(){return releaseOffsetApplies()?releaseOffsetFromEarlyInput(input('release-offset-ms').value):0;}
+function setReleaseOffset(value:number){input('release-offset-ms').value=String(isReleaseOffsetMs(value)?-value:0);}
 function strategyFields():Pick<BookingSetup,'RELEASE_STRATEGY'|'PRECISION_TARGETS'|'PRECISION_PHASE3'>{
   if(!precisionSelected())return {RELEASE_STRATEGY:'general',PRECISION_TARGETS:releaseDraft?.precisionTargets??[]};
   if(precisionMode!=='smart')return {RELEASE_STRATEGY:'precision',PRECISION_TARGETS:precisionRows()};
@@ -319,11 +337,13 @@ function syncStrategy(){
   for(let i=0;i<PRECISION_WORKERS.length;i++)byId(`precision-row-${i}`).hidden=i>=count;
   if(precision){input('booking-method').value='proofless';input('booking-type').value='standard';if(Number(input('duration').value)>3)input('duration').value='3';}
   (byId('booking-method') as HTMLSelectElement).disabled=precision;(byId('booking-type') as HTMLSelectElement).disabled=precision;
+  byId('release-offset').hidden=!releaseOffsetApplies();
 }
-function formDraft():FormDraft{return {releaseStrategy:input('precision-strategy').value==='precision'?'precision':'general',precisionCount:Number(input('precision-count').value)||1,precisionTargets:precisionRows(),precisionMode,smart:cloneSmart(smartDraft),method:input('booking-method').value as 'browser'|'hybrid'|'api-first'|'proofless',strategy:input('booking-type').value as 'standard'|'extended',date:input('test-date').value,courtCount:Number(input('court-count').value) as CourtCount,start:input('start-time').value,duration:Number(input('duration').value),attempts:Number(input('attempts').value),courtOrder:[...courtOrder],fallbackTimes:[...fallbackTimes],exactA:input('exact-a').value,exactB:input('exact-b').value};}
+function formDraft():FormDraft{return {releaseStrategy:input('precision-strategy').value==='precision'?'precision':'general',precisionCount:Number(input('precision-count').value)||1,precisionTargets:precisionRows(),precisionMode,smart:cloneSmart(smartDraft),releaseOffsetMs:releaseOffsetValue(),method:input('booking-method').value as 'browser'|'hybrid'|'api-first'|'proofless',strategy:input('booking-type').value as 'standard'|'extended',date:input('test-date').value,courtCount:Number(input('court-count').value) as CourtCount,start:input('start-time').value,duration:Number(input('duration').value),attempts:Number(input('attempts').value),courtOrder:[...courtOrder],fallbackTimes:[...fallbackTimes],exactA:input('exact-a').value,exactB:input('exact-b').value};}
 function applyDraft(d:FormDraft){input('precision-strategy').value=d.releaseStrategy;input('precision-count').value=String(Math.min(PRECISION_WORKERS.length,Math.max(1,d.precisionCount)));
-  d.precisionTargets.slice(0,PRECISION_WORKERS.length).forEach((t,i)=>{input(`precision-court-${i}`).value=String(t.court);input(`precision-start-${i}`).value=t.start;input(`precision-duration-${i}`).value=String(t.durationHours);});
-  precisionMode=d.precisionMode??'fixed';smartDraft=cloneSmart(d.smart??emptySmartDraft());smartRatesOpen=false;
+  for(let i=0;i<PRECISION_WORKERS.length;i++)input(`precision-offset-${i}`).value='0';
+  d.precisionTargets.slice(0,PRECISION_WORKERS.length).forEach((t,i)=>{input(`precision-court-${i}`).value=String(t.court);input(`precision-start-${i}`).value=t.start;input(`precision-duration-${i}`).value=String(t.durationHours);input(`precision-offset-${i}`).value=String(-(t.releaseOffsetMs??0));});
+  precisionMode=d.precisionMode??'fixed';smartDraft=cloneSmart(d.smart??emptySmartDraft());smartRatesOpen=false;setReleaseOffset(d.releaseOffsetMs??0);
   input('booking-method').value=d.method;input('booking-type').value=d.strategy;input('test-date').value=d.date;input('court-count').value=String(d.courtCount);input('start-time').value=d.start;input('duration').value=String(d.duration);input('attempts').value=String(d.attempts);courtOrder=[...d.courtOrder];fallbackTimes=[...d.fallbackTimes];input('exact-a').value=d.exactA;input('exact-b').value=d.exactB;editors();syncStrategy();renderSmart(true);}
 function storeDraft(){const d=formDraft();if(workflow==='test')testDraft=d;else releaseDraft=d;}
 function reconcileReleaseDraft(){
@@ -665,8 +685,23 @@ function renderForensics(state:Dashboard){
   }));
 }
 function status(id: string, text: string, tone: string) { const el = byId(id); el.textContent = text; el.dataset.tone = tone; }
-function gateRows(gates:[string,boolean][]){return gates.map(([label,ok])=>{const row=document.createElement('div');row.className=`gate ${ok?'good':'warn'}`;
-  const mark=document.createElement('span');mark.className='gate-mark';mark.textContent=ok?'✓':'–';mark.setAttribute('aria-label',ok?'Done':'Pending');row.append(mark,document.createTextNode(label));return row;});}
+/** A gate is done (true), not yet done (false), automatic at arm time ('pending') or blocked with a reason. */
+type Gate=[string,boolean|'pending'|'blocked',string?];
+function gateRows(gates:Gate[]){return gates.map(([label,state,detail])=>{
+  const tone=state===true?'good':state==='pending'?'pending':state==='blocked'?'bad':'warn';
+  const row=document.createElement('div');row.className=`gate ${tone}`;
+  const mark=document.createElement('span');mark.className='gate-mark';mark.textContent={good:'✓',pending:'○',bad:'✕',warn:'–'}[tone];
+  mark.setAttribute('aria-label',{good:'Done',pending:'Automatic',bad:'Blocked',warn:'Pending'}[tone]);
+  const text=document.createElement('span');text.append(label);
+  if(detail){const note=document.createElement('small');note.className='gate-detail';note.textContent=detail;text.append(note);}
+  row.append(mark,text);return row;});}
+/** Wave 1 preregistration: created automatically when an API release is armed; only shown for the release it covers. */
+function manifestGate(state:Dashboard,releaseMs:number|undefined):Gate{
+  const manifest=state.arbitrationManifest;
+  if(!manifest||releaseMs===undefined||manifest.releaseMs!==releaseMs)return ['Investigation manifest · Automatic when you arm','pending'];
+  if(manifest.status==='blocked')return ['Investigation manifest · BLOCKED · could not preregister this release','blocked',manifest.reason];
+  return [`Investigation manifest · READY · ${manifest.verified?'existing preregistration verified':'preregistered before run'}`,true];
+}
 function render(state: Dashboard) {
   latest = state;
   renderPrecision(state);
@@ -734,7 +769,7 @@ function render(state: Dashboard) {
   byId('capability-status').textContent=`Selection ${state.capabilities.selectionReady?'ready':'unverified'} · checkout ${state.capabilities.checkoutReady?'verified':'unverified'} · payment handoff ${state.capabilities.paymentBoundaryReady?'verified':'unverified'}`;
   const b=state.booking;
   if(b){
-     if(!releaseDirty&&loadedPlan!==b.fingerprint){loadedPlan=b.fingerprint;releaseDraft={releaseStrategy:b.setup.RELEASE_STRATEGY??'general',precisionCount:Math.max(1,b.setup.PRECISION_TARGETS?.length??0),precisionTargets:[...(b.setup.PRECISION_TARGETS??[])],precisionMode:b.setup.PRECISION_PHASE3?'smart':'fixed',smart:b.setup.PRECISION_PHASE3?smartDraftFromPhase3(b.setup.PRECISION_PHASE3,{targetDate:b.targetDate,unavailable:unreadyWorkers()}):undefined,method:b.setup.BOOKING_METHOD??'browser',strategy:b.setup.BOOKING_TYPE??'standard',date:testDraft?.date??input('test-date').value,courtCount:b.setup.COURT_COUNT,start:b.setup.START_TIME,duration:b.setup.DURATION_HOURS,attempts:b.setup.MAX_SELECTION_ATTEMPTS,courtOrder:[...b.setup.PREFERRED_COURTS],fallbackTimes:[...b.setup.FALLBACK_TIMES],exactA:'',exactB:''};if(b.fallbackReconciliation.removed.length){releaseAdjustment=b.fallbackReconciliation;releaseDirty=true;}if(workflow==='release'){applyDraft(releaseDraft);dirty=releaseDirty;}}
+     if(!releaseDirty&&loadedPlan!==b.fingerprint){loadedPlan=b.fingerprint;releaseDraft={releaseStrategy:b.setup.RELEASE_STRATEGY??'general',precisionCount:Math.max(1,b.setup.PRECISION_TARGETS?.length??0),precisionTargets:[...(b.setup.PRECISION_TARGETS??[])],precisionMode:b.setup.PRECISION_PHASE3?'smart':'fixed',smart:b.setup.PRECISION_PHASE3?smartDraftFromPhase3(b.setup.PRECISION_PHASE3,{targetDate:b.targetDate,unavailable:unreadyWorkers()}):undefined,releaseOffsetMs:b.setup.RELEASE_OFFSET_MS??0,method:b.setup.BOOKING_METHOD??'browser',strategy:b.setup.BOOKING_TYPE??'standard',date:testDraft?.date??input('test-date').value,courtCount:b.setup.COURT_COUNT,start:b.setup.START_TIME,duration:b.setup.DURATION_HOURS,attempts:b.setup.MAX_SELECTION_ATTEMPTS,courtOrder:[...b.setup.PREFERRED_COURTS],fallbackTimes:[...b.setup.FALLBACK_TIMES],exactA:'',exactB:''};if(b.fallbackReconciliation.removed.length){releaseAdjustment=b.fallbackReconciliation;releaseDirty=true;}if(workflow==='release'){applyDraft(releaseDraft);dirty=releaseDirty;}}
      if(workflow==='release'&&precisionMode==='smart')renderSmart();
     byId('booking-preview').textContent=`${dual?'2 COURTS / SAME TIME BLOCK\n':''}TARGET  ${dateLabel(b.targetDate)}\nREQUIRED SLOTS  ${b.slots.join(' · ')}\nCOURT ORDER  ${b.setup.PREFERRED_COURTS.join(' → ')}\nFALLBACK STARTS  ${b.setup.FALLBACK_TIMES.map(friendly).join(' → ')||'None'}\n${b.setup.MAX_SELECTION_ATTEMPTS} candidate attempts · No price ceiling\nPLAYER  Configured ✓`;
   }
@@ -764,7 +799,8 @@ function render(state: Dashboard) {
   if (state.clock) {
     byId('clock').textContent = state.clock.manilaTime; byId('clock-date').textContent = state.clock.manilaDate;
     byId('clock-source').textContent=state.clock.networkSynced?`${state.clock.clockSource} · offset ${state.clock.clockOffsetMs.toFixed(1)} ms · RTT ${state.clock.clockRoundTripMs?.toFixed(1)??'?'} ms`:'NETWORK CLOCK REQUIRED BEFORE RELEASE';
-    byId('release-time').textContent = state.clock.releaseTime; byId('release-zone').textContent = state.clock.timezone;
+    const offset=state.booking?.setup.BOOKING_METHOD==='proofless'?state.booking.setup.RELEASE_OFFSET_MS??0:0;
+    byId('release-time').textContent = state.clock.releaseTime; byId('release-zone').textContent = state.clock.timezone+(offset?` · release offset ${formatReleaseOffset(offset)}`:'');
     const activePlan = state.operation === 'observe' ? state.plan : null;
     byId('target-date').textContent = dateLabel(['observe','dry','selection','full'].includes(state.operation) && state.plan ? state.plan.targetDate : state.clock.targetDate);
     byId('safe-config').textContent = `Horizon ${state.clock.horizon} days · lead ${state.clock.leadMs} ms · max ${state.clock.maxReloads} reloads`;
@@ -871,10 +907,11 @@ function render(state: Dashboard) {
   const apiPrepared=!!state.apiFirstReady&&!!state.ready&&!!state.booking&&['api-first','proofless'].includes(state.booking.setup.BOOKING_METHOD)&&!state.lock;
   const prepared=apiPrepared||!!state.preparedContext&&state.preparedContext.workflow==='release'&&state.preparedContext.configFingerprint===state.booking?.fingerprint;
    const required=workflow==='release'?neededWorkers():requiredWorkers(strategy,count);
-  const verificationGates:[string,boolean][]=apiFirst
+  const verificationGates:Gate[]=apiFirst
     ? [['Onda venue verified',apiPrepared],[proofless?'Court/hour block audit complete':'Availability checked',proofless?state.assumedPrice!==undefined&&state.assumedPrice!==null:state.apiStage?.stage==='CANDIDATE_READY'||!!state.observedPrice]]
     : [['Onda verified',prepared],['All Courts verified',prepared],['Selected slots: 0',prepared],['Payment holds: none',prepared&&!state.lock]];
-  const gates:[string,boolean][]=[['Configuration valid',!draftProblem],['Google network clock synchronized',!!state.clock?.networkSynced],['Next release calculated',!!state.clock],['Booking target calculated',!!state.clock?.targetDate],...required.map(id=>[`${workerLabel(id)} configured`,!!playerReadyByWorker[id]] as [string,boolean]),...required.map(id=>[`Browser ${id} prepared`,apiFirst?apiPrepared&&!!state.browserHealth?.[id]:prepared&&!!state.preparedContext?.browsers.some(b=>b.id===id)] as [string,boolean]),...verificationGates,['Automation lock clear',!state.lock],['Prepared fingerprint matches',prepared],['Terms authorized for this run',state.termsAuthorized||armed],['Armed for next release',armed||state.apiStage?.stage==='WAITING_FOR_RELEASE']];
+  const gates:Gate[]=[['Configuration valid',!draftProblem],['Google network clock synchronized',!!state.clock?.networkSynced],['Next release calculated',!!state.clock],['Booking target calculated',!!state.clock?.targetDate],...required.map(id=>[`${workerLabel(id)} configured`,!!playerReadyByWorker[id]] as [string,boolean]),...required.map(id=>[`Browser ${id} prepared`,apiFirst?apiPrepared&&!!state.browserHealth?.[id]:prepared&&!!state.preparedContext?.browsers.some(b=>b.id===id)] as [string,boolean]),...verificationGates,['Automation lock clear',!state.lock],['Prepared fingerprint matches',prepared],['Terms authorized for this run',state.termsAuthorized||armed],
+    ...(apiFirst?[manifestGate(state,armed?state.scheduledRelease!.releaseMs:state.clock?.releaseMs)]:[]),['Armed for next release',armed||state.apiStage?.stage==='WAITING_FOR_RELEASE']];
   byId('release-readiness').replaceChildren(...gateRows(gates));
   byId('release-readiness-card').dataset.state=armed?'armed':prepared?'prepared':'draft';byId('sleep-warning').hidden=!armed;byId('sleep-warning').textContent=`Sleep protection: ${state.sleepProtection?'ACTIVE':'NOT AVAILABLE'} | Keep the PC powered on. Do not hibernate or close the laptop lid if Windows sleeps on lid close.`;
    const savedSetup=state.booking?.setup;
@@ -979,7 +1016,9 @@ byId('mode-full').addEventListener('change',()=>{void window.thirsty.setMode('fu
 byId('mode-selection').addEventListener('change',()=>{void window.thirsty.setMode('selection').catch(()=>{});});
 byId('terms').addEventListener('change',()=>{void window.thirsty.authorizeTerms(input('terms').checked).catch(()=>{input('terms').checked=false;});});
  for(const id of ['booking-method','test-date','court-count','start-time','duration','attempts','exact-a','exact-b'])byId(id).addEventListener('change',changed);
-for(const id of ['precision-strategy','precision-count',...PRECISION_WORKERS.map((_,i)=>i).flatMap(i=>[`precision-court-${i}`,`precision-start-${i}`,`precision-duration-${i}`])])
+byId('booking-method').addEventListener('change',()=>{byId('release-offset').hidden=!releaseOffsetApplies();});
+byId('release-offset-ms').addEventListener('change',changed);
+for(const id of ['precision-strategy','precision-count',...PRECISION_WORKERS.map((_,i)=>i).flatMap(i=>[`precision-court-${i}`,`precision-start-${i}`,`precision-duration-${i}`,`precision-offset-${i}`])])
   byId(id).addEventListener('change',()=>{syncStrategy();changed();});
 for(const id of ['precision-mode-fixed','precision-mode-smart'])byId(id).addEventListener('change',()=>{
   precisionMode=input('precision-mode-smart').checked?'smart':'fixed';
@@ -990,7 +1029,7 @@ byId('booking-type').addEventListener('change',()=>{const extended=input('bookin
 byId('add-fallback').onclick=()=>{const h=input('fallback-time').value;if(h===input('start-time').value||fallbackTimes.includes(h)){byId('edit-status').textContent='Choose a different fallback start.';return;}if(workflow==='release'){const reconciliation=reconcileFallbackTimes(input('start-time').value,Number(input('duration').value),[...fallbackTimes,h]);if(reconciliation.removed.length){releaseAdjustment=reconciliation;byId('edit-status').textContent=bookingSetupProblem({...currentSetup(),FALLBACK_TIMES:[...fallbackTimes,h]})??'That fallback does not fit the current booking.';if(latest)render(latest);return;}}fallbackTimes.push(h);editors();changed();};
 byId('save-booking').onclick=()=>{void(async()=>{
   if(precisionSelected()&&precisionMode==='smart'){const compiled=smartCompiled();if(!compiled.phase3){byId('edit-status').textContent=compiled.problems[0]??'Resolve the Smart backups items first.';renderSmart(true);return;}}
-   const setup:BookingSetup={...strategyFields(),BOOKING_METHOD:input('booking-method').value as 'browser'|'hybrid'|'api-first'|'proofless',BOOKING_TYPE:input('booking-type').value as 'standard'|'extended',COURT_COUNT:Number(input('court-count').value) as CourtCount,START_TIME:input('start-time').value,DURATION_HOURS:Number(input('duration').value),PREFERRED_COURTS:courtOrder,FALLBACK_COURTS:[],FALLBACK_TIMES:fallbackTimes,MAX_SELECTION_ATTEMPTS:Number(input('attempts').value)};
+   const setup:BookingSetup={...strategyFields(),RELEASE_OFFSET_MS:releaseOffsetValue(),BOOKING_METHOD:input('booking-method').value as 'browser'|'hybrid'|'api-first'|'proofless',BOOKING_TYPE:input('booking-type').value as 'standard'|'extended',COURT_COUNT:Number(input('court-count').value) as CourtCount,START_TIME:input('start-time').value,DURATION_HOURS:Number(input('duration').value),PREFERRED_COURTS:courtOrder,FALLBACK_COURTS:[],FALLBACK_TIMES:fallbackTimes,MAX_SELECTION_ATTEMPTS:Number(input('attempts').value)};
   await window.thirsty.saveBooking(setup);const state=await window.thirsty.getStatus();
   if(state.headline==='Booking plan saved'){releaseDirty=false;if(workflow==='release')dirty=false;loadedPlan='';byId('edit-status').textContent='BOOKING PLAN SAVED';render(state);}else byId('edit-status').textContent='Plan rejected. Check duration and unique times.';
 })().catch(()=>{byId('edit-status').textContent='Could not save booking setup.';});};
@@ -1010,7 +1049,7 @@ function testRequest(){
   const exact=exactA||exactB?{exact:(setup.BOOKING_TYPE==='extended'?[exactA,exactB]:[exactA]).map(value=>value.split(',').map(court=>Number(court.trim())))}:{};
   return {method:setup.BOOKING_METHOD,request:{strategy:setup.BOOKING_TYPE,date:input('test-date').value,start:setup.START_TIME,duration:setup.DURATION_HOURS,courtCount:setup.COURT_COUNT,priority:[...setup.PREFERRED_COURTS],fallbackStarts:[...setup.FALLBACK_TIMES],...exact}};
 }
- function currentSetup():BookingSetup{return {...strategyFields(),BOOKING_METHOD:input('booking-method').value as 'browser'|'hybrid'|'api-first'|'proofless',BOOKING_TYPE:input('booking-type').value as 'standard'|'extended',COURT_COUNT:Number(input('court-count').value) as CourtCount,START_TIME:input('start-time').value,DURATION_HOURS:Number(input('duration').value),PREFERRED_COURTS:courtOrder,FALLBACK_COURTS:[],FALLBACK_TIMES:fallbackTimes,MAX_SELECTION_ATTEMPTS:Number(input('attempts').value)};}
+ function currentSetup():BookingSetup{return {...strategyFields(),RELEASE_OFFSET_MS:releaseOffsetValue(),BOOKING_METHOD:input('booking-method').value as 'browser'|'hybrid'|'api-first'|'proofless',BOOKING_TYPE:input('booking-type').value as 'standard'|'extended',COURT_COUNT:Number(input('court-count').value) as CourtCount,START_TIME:input('start-time').value,DURATION_HOURS:Number(input('duration').value),PREFERRED_COURTS:courtOrder,FALLBACK_COURTS:[],FALLBACK_TIMES:fallbackTimes,MAX_SELECTION_ATTEMPTS:Number(input('attempts').value)};}
 byId('test-booking').onclick=()=>{const authorized=input('terms').checked;input('terms').checked=false;void window.thirsty.testBooking({...testRequest(),authorizeTerms:authorized as true}).catch(()=>{byId('detail').textContent='Check booking fields and Terms authorization.';});};
 // Phase 4 views. Plain summaries first; technical metrics only under Details. Nothing here saves, prepares or arms.
 const QUALITY_LABEL:Record<string,string>={GOOD:'Good',FAIR:'Fair',POOR:'Poor · too late or too coarse for the 8:00 moment',NONE:'Not observed'};

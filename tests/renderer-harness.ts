@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { stripTypeScriptTypes } from 'node:module';
 
 /**
- * Loads the real renderer (index.html, styles.css, app.ts with its two pure imports inlined) into Chrome
+ * Loads the real renderer (index.html, styles.css, app.ts with its three pure imports inlined) into Chrome
  * with a recording fake bridge. `window.fixtureCalls` lists every bridge call; `window.fixtureSaved` is
  * the last saved setup. Phase 4 calls answer with `window.fixtureAdvice` / `window.fixtureReplay`.
  */
@@ -28,8 +28,9 @@ export async function openRenderer(browser: Browser, extra: Record<string, unkno
       replayPlan: async (input: unknown) => { w.fixtureCalls.push('replayPlan'); w.fixtureReplayInput = input; return w.fixtureReplay; },
       onConfirmRequest: () => () => {}, confirmResponse: async () => {} };
   }, state);
-  const source = (await readFile('src/booking-setup.ts', 'utf8')) + '\n' + (await readFile('src/precision-simple.ts', 'utf8')) + '\n' + (await readFile('ui/renderer/app.ts', 'utf8'))
-    .replace(/^import .*booking-setup\.js';\r?\n/m, '').replace(/^import \{[^}]*\} from '\.\.\/\.\.\/src\/precision-simple\.js';\r?\n/m, '');
+  const source = (await readFile('src/booking-setup.ts', 'utf8')) + '\n' + (await readFile('src/precision-simple.ts', 'utf8')) + '\n' + (await readFile('src/release-offset.ts', 'utf8')) + '\n' + (await readFile('ui/renderer/app.ts', 'utf8'))
+    .replace(/^import .*booking-setup\.js';\r?\n/m, '').replace(/^import \{[^}]*\} from '\.\.\/\.\.\/src\/precision-simple\.js';\r?\n/m, '')
+    .replace(/^import .*release-offset\.js';\r?\n/m, '');
   await page.addScriptTag({ type: 'module', content: stripTypeScriptTypes(source) });
   await page.waitForFunction(expected => document.getElementById('headline')?.textContent === expected, state.headline);
   await page.locator(`[data-view="${view}"]`).click();

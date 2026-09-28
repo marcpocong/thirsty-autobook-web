@@ -6,6 +6,7 @@ import { SubmissionDispatchError } from './submission-errors.js';
 import { THIRSTY_PICKLE_FACILITY_ID } from './live-availability-provider.js';
 import { DIRECT_ASSUMED_DAY_RATE, DIRECT_ASSUMED_EVENING_RATE, DIRECT_MAX_DISPATCH_LATENESS_MS, prooflessReleasePlan } from './proofless-checkout.js';
 import type { BookingPlan } from './types.js';
+import { isReleaseOffsetMs } from '../release-offset.js';
 
 /**
  * Precision Release v1: the operator wants ONE court and authorizes 1-7 exact,
@@ -15,7 +16,11 @@ import type { BookingPlan } from './types.js';
  */
 export const PRECISION_MAX_TARGETS = PRECISION_MAX_ATTEMPTS;
 export const PRECISION_DESIRED_HOLDS = 1;
-export interface PrecisionTargetInput { court: number; start: string; durationHours: number }
+export interface PrecisionTargetInput {
+  court: number; start: string; durationHours: number;
+  /** Operator Release Offset for this attempt only (release-offset.ts); absent means 0 ms (normal). */
+  releaseOffsetMs?: number;
+}
 export interface PrecisionTarget extends PrecisionTargetInput {
   workerId: WorkerId;
   end: string;
@@ -38,14 +43,16 @@ export function validatePrecisionTargets(inputs: readonly PrecisionTargetInput[]
     const start = Number(input.start?.slice?.(0, 2));
     if (!Number.isInteger(input.court) || !COURT_TO_SPACE_ID[input.court as keyof typeof COURT_TO_SPACE_ID] ||
       !/^(0[89]|1\d|2[0-3]):00$/.test(input.start) || !Number.isInteger(input.durationHours) ||
-      input.durationHours < 1 || input.durationHours > 3 || start + input.durationHours > 24) throw Error('PRECISION_TARGET_INVALID');
+      input.durationHours < 1 || input.durationHours > 3 || start + input.durationHours > 24 ||
+      !isReleaseOffsetMs(input.releaseOffsetMs ?? 0)) throw Error('PRECISION_TARGET_INVALID');
     const workerId = PRECISION_WORKER_IDS[index]!;
     const end = precisionTargetEnd(input);
     const spaceId = COURT_TO_SPACE_ID[input.court as keyof typeof COURT_TO_SPACE_ID];
     const assumedAmount = Array.from({ length: input.durationHours }, (_, offset) =>
       start + offset >= 16 ? DIRECT_ASSUMED_EVENING_RATE : DIRECT_ASSUMED_DAY_RATE).reduce((sum, value) => sum + value, 0);
     return { court: input.court, start: input.start, durationHours: input.durationHours, workerId, end, assumedAmount,
-      targetKey: DurableSubmissionJournal.key(THIRSTY_PICKLE_FACILITY_ID, spaceId, date, input.start, end) } satisfies PrecisionTarget;
+      targetKey: DurableSubmissionJournal.key(THIRSTY_PICKLE_FACILITY_ID, spaceId, date, input.start, end),
+      ...(input.releaseOffsetMs ? { releaseOffsetMs: input.releaseOffsetMs } : {}) } satisfies PrecisionTarget;
   });
   for (const [index, target] of targets.entries()) for (const other of targets.slice(index + 1)) {
     if (target.targetKey === other.targetKey) throw Error('PRECISION_TARGET_DUPLICATE');
@@ -62,8 +69,10 @@ export function precisionTargetPlan(target: PrecisionTarget, date: string): Book
 }
 
 export function precisionFingerprint(date: string, releaseMs: number, targets: readonly PrecisionTarget[]): string {
+  // A non-zero Release Offset is appended, so a set without offsets keeps its previous fingerprint.
   return createHash('sha256').update(JSON.stringify({ kind: 'precision-v1', date, releaseMs, desiredHolds: PRECISION_DESIRED_HOLDS,
-    targets: targets.map(target => [target.workerId, target.court, target.start, target.end, target.assumedAmount]) })).digest('hex');
+    targets: targets.map(target => [target.workerId, target.court, target.start, target.end, target.assumedAmount,
+      ...(target.releaseOffsetMs ? [target.releaseOffsetMs] : [])]) })).digest('hex');
 }
 
 /** Per-attempt lifecycle. Everything before DISPATCHING is provably unsent. */

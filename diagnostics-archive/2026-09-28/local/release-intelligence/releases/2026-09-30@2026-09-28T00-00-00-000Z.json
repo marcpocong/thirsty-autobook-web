@@ -1,0 +1,2276 @@
+{
+  "version": 1,
+  "key": "2026-09-30@2026-09-28T00-00-00-000Z",
+  "origin": "REAL_RELEASE",
+  "targetDate": "2026-09-30",
+  "dayOfWeek": "Wednesday",
+  "releaseMs": 1790553600000,
+  "releaseAt": "2026-09-28T00:00:00.000Z",
+  "sources": {
+    "slotWatch": [
+      "2026-09-30_ffe896ed-9c1f-43c7-9ce9-7767b6d12d49.ndjson"
+    ],
+    "runProgress": [
+      "e3f7de87-d1d5-4949-9ddc-4cc49529cfa7.ndjson"
+    ],
+    "stoppedBeforeRelease": [],
+    "forensics": [
+      "e3f7de87-d1d5-4949-9ddc-4cc49529cfa7"
+    ],
+    "bookingRuns": [
+      "21766397-9df8-4803-89dd-be6b6d964355",
+      "918e4f09-1945-4936-b80d-ee79efec275e",
+      "aa684e5c-fb28-4a7a-bdcf-3f84c2c2fd4f",
+      "cc84c34b-50a6-4da6-be51-7728ffc98262"
+    ],
+    "ignoredDuplicates": []
+  },
+  "quality": {
+    "label": "FAIR",
+    "reasons": [
+      "The first published read answered at +6.1 s (after +3 s).",
+      "Cache status HIT: the age of that answer is not bounded."
+    ],
+    "metrics": {
+      "source": "slot-watch",
+      "observerVersion": 2,
+      "earliestRequestOffsetMs": 9.8,
+      "earliestResponseOffsetMs": 261.8,
+      "firstPublishedRequestOffsetMs": 6013.8,
+      "firstPublishedResponseOffsetMs": 6093.8,
+      "firstPublishedComplete": true,
+      "firstPublishedCache": "HIT",
+      "cacheCertain": false,
+      "readsAnswered": 202,
+      "readsFailed": 2,
+      "readsNotLaunched": 0,
+      "bookingReadsAnswered": 9,
+      "bookingReadsFailed": 0,
+      "failedCourtQueries": 0,
+      "bookingsItemized": true,
+      "overlappingChanges": 0
+    }
+  },
+  "firstPublished": {
+    "requestOffsetMs": 6013.8,
+    "responseOffsetMs": 6093.8,
+    "open": 77,
+    "unavailable": 35,
+    "unknown": 0
+  },
+  "coarseSamples": [],
+  "cells": [
+    {
+      "court": 1,
+      "hour": "08:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 1,
+      "hour": "09:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 1,
+      "hour": "10:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 1,
+      "hour": "11:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 1,
+      "hour": "12:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 1,
+      "hour": "13:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 1,
+      "hour": "14:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 1,
+      "hour": "15:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 1,
+      "hour": "16:00",
+      "first": "O",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 1,
+      "hour": "17:00",
+      "first": "X",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "X",
+        "10000": "X"
+      },
+      "lost": null,
+      "reopen": {
+        "afterSeq": 123,
+        "afterRequestOffsetMs": 510013.8,
+        "overlapping": false,
+        "cacheUncertain": true
+      },
+      "record": true
+    },
+    {
+      "court": 1,
+      "hour": "18:00",
+      "first": "X",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "X",
+        "10000": "X"
+      },
+      "lost": null,
+      "reopen": {
+        "afterSeq": 123,
+        "afterRequestOffsetMs": 510013.8,
+        "overlapping": false,
+        "cacheUncertain": true
+      },
+      "record": true
+    },
+    {
+      "court": 1,
+      "hour": "19:00",
+      "first": "X",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "X",
+        "10000": "X"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": true
+    },
+    {
+      "court": 1,
+      "hour": "20:00",
+      "first": "O",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": {
+        "afterSeq": 24,
+        "afterRequestOffsetMs": 16009.8,
+        "overlapping": false
+      },
+      "reopen": null,
+      "record": true
+    },
+    {
+      "court": 1,
+      "hour": "21:00",
+      "first": "X",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "X",
+        "10000": "X"
+      },
+      "lost": {
+        "afterSeq": 126,
+        "afterRequestOffsetMs": 595007.8,
+        "overlapping": false
+      },
+      "reopen": {
+        "afterSeq": 118,
+        "afterRequestOffsetMs": 360006.8,
+        "overlapping": false,
+        "cacheUncertain": true
+      },
+      "record": true
+    },
+    {
+      "court": 1,
+      "hour": "22:00",
+      "first": "O",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": {
+        "afterSeq": 24,
+        "afterRequestOffsetMs": 16009.8,
+        "overlapping": false
+      },
+      "reopen": {
+        "afterSeq": 118,
+        "afterRequestOffsetMs": 360006.8,
+        "overlapping": false,
+        "cacheUncertain": true
+      },
+      "record": true
+    },
+    {
+      "court": 1,
+      "hour": "23:00",
+      "first": "O",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": {
+        "afterSeq": 126,
+        "afterRequestOffsetMs": 595007.8,
+        "overlapping": false
+      },
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 2,
+      "hour": "08:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 2,
+      "hour": "09:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 2,
+      "hour": "10:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 2,
+      "hour": "11:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 2,
+      "hour": "12:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 2,
+      "hour": "13:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 2,
+      "hour": "14:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 2,
+      "hour": "15:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 2,
+      "hour": "16:00",
+      "first": "O",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 2,
+      "hour": "17:00",
+      "first": "O",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": {
+        "afterSeq": 24,
+        "afterRequestOffsetMs": 16009.8,
+        "overlapping": false
+      },
+      "reopen": {
+        "afterSeq": 123,
+        "afterRequestOffsetMs": 510013.8,
+        "overlapping": false,
+        "cacheUncertain": true
+      },
+      "record": true
+    },
+    {
+      "court": 2,
+      "hour": "18:00",
+      "first": "X",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "X",
+        "10000": "X"
+      },
+      "lost": null,
+      "reopen": {
+        "afterSeq": 123,
+        "afterRequestOffsetMs": 510013.8,
+        "overlapping": false,
+        "cacheUncertain": true
+      },
+      "record": true
+    },
+    {
+      "court": 2,
+      "hour": "19:00",
+      "first": "O",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": {
+        "afterSeq": 24,
+        "afterRequestOffsetMs": 16009.8,
+        "overlapping": false
+      },
+      "reopen": {
+        "afterSeq": 137,
+        "afterRequestOffsetMs": 606014.8,
+        "overlapping": false,
+        "cacheUncertain": true
+      },
+      "record": true
+    },
+    {
+      "court": 2,
+      "hour": "20:00",
+      "first": "X",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "X",
+        "10000": "X"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": true
+    },
+    {
+      "court": 2,
+      "hour": "21:00",
+      "first": "X",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "X",
+        "10000": "X"
+      },
+      "lost": {
+        "afterSeq": 126,
+        "afterRequestOffsetMs": 595007.8,
+        "overlapping": false
+      },
+      "reopen": {
+        "afterSeq": 118,
+        "afterRequestOffsetMs": 360006.8,
+        "overlapping": false,
+        "cacheUncertain": true
+      },
+      "record": true
+    },
+    {
+      "court": 2,
+      "hour": "22:00",
+      "first": "O",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": {
+        "afterSeq": 24,
+        "afterRequestOffsetMs": 16009.8,
+        "overlapping": false
+      },
+      "reopen": {
+        "afterSeq": 118,
+        "afterRequestOffsetMs": 360006.8,
+        "overlapping": false,
+        "cacheUncertain": true
+      },
+      "record": true
+    },
+    {
+      "court": 2,
+      "hour": "23:00",
+      "first": "O",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": {
+        "afterSeq": 126,
+        "afterRequestOffsetMs": 595007.8,
+        "overlapping": false
+      },
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 3,
+      "hour": "08:00",
+      "first": "X",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "X",
+        "10000": "X"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 3,
+      "hour": "09:00",
+      "first": "X",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "X",
+        "10000": "X"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 3,
+      "hour": "10:00",
+      "first": "X",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "X",
+        "10000": "X"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 3,
+      "hour": "11:00",
+      "first": "X",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "X",
+        "10000": "X"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 3,
+      "hour": "12:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 3,
+      "hour": "13:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 3,
+      "hour": "14:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 3,
+      "hour": "15:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 3,
+      "hour": "16:00",
+      "first": "O",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 3,
+      "hour": "17:00",
+      "first": "X",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "X",
+        "10000": "X"
+      },
+      "lost": null,
+      "reopen": {
+        "afterSeq": 137,
+        "afterRequestOffsetMs": 606014.8,
+        "overlapping": false,
+        "cacheUncertain": true
+      },
+      "record": true
+    },
+    {
+      "court": 3,
+      "hour": "18:00",
+      "first": "X",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "X",
+        "10000": "X"
+      },
+      "lost": null,
+      "reopen": {
+        "afterSeq": 137,
+        "afterRequestOffsetMs": 606014.8,
+        "overlapping": false,
+        "cacheUncertain": true
+      },
+      "record": true
+    },
+    {
+      "court": 3,
+      "hour": "19:00",
+      "first": "X",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "X",
+        "10000": "X"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": true
+    },
+    {
+      "court": 3,
+      "hour": "20:00",
+      "first": "O",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": {
+        "afterSeq": 24,
+        "afterRequestOffsetMs": 16009.8,
+        "overlapping": false
+      },
+      "reopen": null,
+      "record": true
+    },
+    {
+      "court": 3,
+      "hour": "21:00",
+      "first": "X",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "X",
+        "10000": "X"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": true
+    },
+    {
+      "court": 3,
+      "hour": "22:00",
+      "first": "X",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "X",
+        "10000": "X"
+      },
+      "lost": null,
+      "reopen": {
+        "afterSeq": 137,
+        "afterRequestOffsetMs": 606014.8,
+        "overlapping": false,
+        "cacheUncertain": true
+      },
+      "record": true
+    },
+    {
+      "court": 3,
+      "hour": "23:00",
+      "first": "O",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 4,
+      "hour": "08:00",
+      "first": "X",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "X",
+        "10000": "X"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 4,
+      "hour": "09:00",
+      "first": "X",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "X",
+        "10000": "X"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 4,
+      "hour": "10:00",
+      "first": "X",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "X",
+        "10000": "X"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 4,
+      "hour": "11:00",
+      "first": "X",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "X",
+        "10000": "X"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 4,
+      "hour": "12:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 4,
+      "hour": "13:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 4,
+      "hour": "14:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 4,
+      "hour": "15:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 4,
+      "hour": "16:00",
+      "first": "O",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 4,
+      "hour": "17:00",
+      "first": "X",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "X",
+        "10000": "X"
+      },
+      "lost": null,
+      "reopen": {
+        "afterSeq": 137,
+        "afterRequestOffsetMs": 606014.8,
+        "overlapping": false,
+        "cacheUncertain": true
+      },
+      "record": true
+    },
+    {
+      "court": 4,
+      "hour": "18:00",
+      "first": "X",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "X",
+        "10000": "X"
+      },
+      "lost": null,
+      "reopen": {
+        "afterSeq": 137,
+        "afterRequestOffsetMs": 606014.8,
+        "overlapping": false,
+        "cacheUncertain": true
+      },
+      "record": true
+    },
+    {
+      "court": 4,
+      "hour": "19:00",
+      "first": "O",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": {
+        "afterSeq": 24,
+        "afterRequestOffsetMs": 16009.8,
+        "overlapping": false
+      },
+      "reopen": {
+        "afterSeq": 74,
+        "afterRequestOffsetMs": 90008.8,
+        "overlapping": false,
+        "cacheUncertain": true
+      },
+      "record": true
+    },
+    {
+      "court": 4,
+      "hour": "20:00",
+      "first": "X",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "X",
+        "10000": "X"
+      },
+      "lost": {
+        "afterSeq": 76,
+        "afterRequestOffsetMs": 100004.8,
+        "overlapping": false
+      },
+      "reopen": {
+        "afterSeq": 74,
+        "afterRequestOffsetMs": 90008.8,
+        "overlapping": false,
+        "cacheUncertain": true
+      },
+      "record": true
+    },
+    {
+      "court": 4,
+      "hour": "21:00",
+      "first": "O",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": {
+        "afterSeq": 24,
+        "afterRequestOffsetMs": 16009.8,
+        "overlapping": false
+      },
+      "reopen": {
+        "afterSeq": 74,
+        "afterRequestOffsetMs": 90008.8,
+        "overlapping": false,
+        "cacheUncertain": true
+      },
+      "record": true
+    },
+    {
+      "court": 4,
+      "hour": "22:00",
+      "first": "X",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "X",
+        "10000": "X"
+      },
+      "lost": null,
+      "reopen": {
+        "afterSeq": 137,
+        "afterRequestOffsetMs": 606014.8,
+        "overlapping": false,
+        "cacheUncertain": true
+      },
+      "record": true
+    },
+    {
+      "court": 4,
+      "hour": "23:00",
+      "first": "O",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 5,
+      "hour": "08:00",
+      "first": "X",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "X",
+        "10000": "X"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 5,
+      "hour": "09:00",
+      "first": "X",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "X",
+        "10000": "X"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 5,
+      "hour": "10:00",
+      "first": "X",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "X",
+        "10000": "X"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 5,
+      "hour": "11:00",
+      "first": "X",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "X",
+        "10000": "X"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 5,
+      "hour": "12:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 5,
+      "hour": "13:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 5,
+      "hour": "14:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 5,
+      "hour": "15:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 5,
+      "hour": "16:00",
+      "first": "O",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 5,
+      "hour": "17:00",
+      "first": "O",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": {
+        "afterSeq": 24,
+        "afterRequestOffsetMs": 16009.8,
+        "overlapping": false
+      },
+      "reopen": {
+        "afterSeq": 147,
+        "afterRequestOffsetMs": 616002.8,
+        "overlapping": false,
+        "cacheUncertain": true
+      },
+      "record": true
+    },
+    {
+      "court": 5,
+      "hour": "18:00",
+      "first": "O",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": {
+        "afterSeq": 24,
+        "afterRequestOffsetMs": 16009.8,
+        "overlapping": false
+      },
+      "reopen": {
+        "afterSeq": 147,
+        "afterRequestOffsetMs": 616002.8,
+        "overlapping": false,
+        "cacheUncertain": true
+      },
+      "record": true
+    },
+    {
+      "court": 5,
+      "hour": "19:00",
+      "first": "X",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "X",
+        "10000": "X"
+      },
+      "lost": {
+        "afterSeq": 76,
+        "afterRequestOffsetMs": 100004.8,
+        "overlapping": false
+      },
+      "reopen": {
+        "afterSeq": 74,
+        "afterRequestOffsetMs": 90008.8,
+        "overlapping": false,
+        "cacheUncertain": true
+      },
+      "record": true
+    },
+    {
+      "court": 5,
+      "hour": "20:00",
+      "first": "X",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "X",
+        "10000": "X"
+      },
+      "lost": {
+        "afterSeq": 76,
+        "afterRequestOffsetMs": 100004.8,
+        "overlapping": false
+      },
+      "reopen": {
+        "afterSeq": 74,
+        "afterRequestOffsetMs": 90008.8,
+        "overlapping": false,
+        "cacheUncertain": true
+      },
+      "record": true
+    },
+    {
+      "court": 5,
+      "hour": "21:00",
+      "first": "X",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "X",
+        "10000": "X"
+      },
+      "lost": {
+        "afterSeq": 76,
+        "afterRequestOffsetMs": 100004.8,
+        "overlapping": false
+      },
+      "reopen": {
+        "afterSeq": 74,
+        "afterRequestOffsetMs": 90008.8,
+        "overlapping": false,
+        "cacheUncertain": true
+      },
+      "record": true
+    },
+    {
+      "court": 5,
+      "hour": "22:00",
+      "first": "O",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": {
+        "afterSeq": 24,
+        "afterRequestOffsetMs": 16009.8,
+        "overlapping": false
+      },
+      "reopen": {
+        "afterSeq": 137,
+        "afterRequestOffsetMs": 606014.8,
+        "overlapping": false,
+        "cacheUncertain": true
+      },
+      "record": true
+    },
+    {
+      "court": 5,
+      "hour": "23:00",
+      "first": "O",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 6,
+      "hour": "08:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 6,
+      "hour": "09:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 6,
+      "hour": "10:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 6,
+      "hour": "11:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 6,
+      "hour": "12:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 6,
+      "hour": "13:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 6,
+      "hour": "14:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 6,
+      "hour": "15:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 6,
+      "hour": "16:00",
+      "first": "O",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 6,
+      "hour": "17:00",
+      "first": "O",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": {
+        "afterSeq": 24,
+        "afterRequestOffsetMs": 16009.8,
+        "overlapping": false
+      },
+      "reopen": {
+        "afterSeq": 137,
+        "afterRequestOffsetMs": 606014.8,
+        "overlapping": false,
+        "cacheUncertain": true
+      },
+      "record": true
+    },
+    {
+      "court": 6,
+      "hour": "18:00",
+      "first": "O",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": {
+        "afterSeq": 24,
+        "afterRequestOffsetMs": 16009.8,
+        "overlapping": false
+      },
+      "reopen": {
+        "afterSeq": 137,
+        "afterRequestOffsetMs": 606014.8,
+        "overlapping": false,
+        "cacheUncertain": true
+      },
+      "record": true
+    },
+    {
+      "court": 6,
+      "hour": "19:00",
+      "first": "X",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "X",
+        "10000": "X"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": true
+    },
+    {
+      "court": 6,
+      "hour": "20:00",
+      "first": "X",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "X",
+        "10000": "X"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": true
+    },
+    {
+      "court": 6,
+      "hour": "21:00",
+      "first": "O",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": {
+        "afterSeq": 24,
+        "afterRequestOffsetMs": 16009.8,
+        "overlapping": false
+      },
+      "reopen": {
+        "afterSeq": 118,
+        "afterRequestOffsetMs": 360006.8,
+        "overlapping": false,
+        "cacheUncertain": true
+      },
+      "record": true
+    },
+    {
+      "court": 6,
+      "hour": "22:00",
+      "first": "X",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "X",
+        "10000": "X"
+      },
+      "lost": null,
+      "reopen": {
+        "afterSeq": 118,
+        "afterRequestOffsetMs": 360006.8,
+        "overlapping": false,
+        "cacheUncertain": true
+      },
+      "record": true
+    },
+    {
+      "court": 6,
+      "hour": "23:00",
+      "first": "O",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 7,
+      "hour": "08:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 7,
+      "hour": "09:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 7,
+      "hour": "10:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 7,
+      "hour": "11:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 7,
+      "hour": "12:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 7,
+      "hour": "13:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 7,
+      "hour": "14:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 7,
+      "hour": "15:00",
+      "first": "O",
+      "price": 600,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 7,
+      "hour": "16:00",
+      "first": "O",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    },
+    {
+      "court": 7,
+      "hour": "17:00",
+      "first": "O",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": {
+        "afterSeq": 24,
+        "afterRequestOffsetMs": 16009.8,
+        "overlapping": false
+      },
+      "reopen": {
+        "afterSeq": 137,
+        "afterRequestOffsetMs": 606014.8,
+        "overlapping": false,
+        "cacheUncertain": true
+      },
+      "record": true
+    },
+    {
+      "court": 7,
+      "hour": "18:00",
+      "first": "X",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "X",
+        "10000": "X"
+      },
+      "lost": {
+        "afterSeq": 201,
+        "afterRequestOffsetMs": 810005.8,
+        "overlapping": false
+      },
+      "reopen": {
+        "afterSeq": 137,
+        "afterRequestOffsetMs": 606014.8,
+        "overlapping": false,
+        "cacheUncertain": true
+      },
+      "record": true
+    },
+    {
+      "court": 7,
+      "hour": "19:00",
+      "first": "O",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": {
+        "afterSeq": 24,
+        "afterRequestOffsetMs": 16009.8,
+        "overlapping": false
+      },
+      "reopen": {
+        "afterSeq": 137,
+        "afterRequestOffsetMs": 606014.8,
+        "overlapping": false,
+        "cacheUncertain": true
+      },
+      "record": true
+    },
+    {
+      "court": 7,
+      "hour": "20:00",
+      "first": "O",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": {
+        "afterSeq": 24,
+        "afterRequestOffsetMs": 16009.8,
+        "overlapping": false
+      },
+      "reopen": {
+        "afterSeq": 137,
+        "afterRequestOffsetMs": 606014.8,
+        "overlapping": false,
+        "cacheUncertain": true
+      },
+      "record": true
+    },
+    {
+      "court": 7,
+      "hour": "21:00",
+      "first": "O",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": {
+        "afterSeq": 24,
+        "afterRequestOffsetMs": 16009.8,
+        "overlapping": false
+      },
+      "reopen": {
+        "afterSeq": 137,
+        "afterRequestOffsetMs": 606014.8,
+        "overlapping": false,
+        "cacheUncertain": true
+      },
+      "record": true
+    },
+    {
+      "court": 7,
+      "hour": "22:00",
+      "first": "O",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": {
+        "afterSeq": 24,
+        "afterRequestOffsetMs": 16009.8,
+        "overlapping": false
+      },
+      "reopen": {
+        "afterSeq": 118,
+        "afterRequestOffsetMs": 360006.8,
+        "overlapping": false,
+        "cacheUncertain": true
+      },
+      "record": true
+    },
+    {
+      "court": 7,
+      "hour": "23:00",
+      "first": "O",
+      "price": 700,
+      "at": {
+        "500": null,
+        "1000": null,
+        "2000": null,
+        "5000": "O",
+        "10000": "O"
+      },
+      "lost": null,
+      "reopen": null,
+      "record": false
+    }
+  ],
+  "transitions": {
+    "openToUnavailable": 28,
+    "reopened": 34,
+    "reopenedCacheUncertain": 34,
+    "overlapping": 0
+  },
+  "publicRecords": {
+    "itemized": true,
+    "cellsWithRecord": 42,
+    "unavailableWithoutRecordAtFirst": 12
+  },
+  "attempts": [
+    {
+      "wave": "IMMEDIATE",
+      "workerId": "C",
+      "court": 5,
+      "startTime": "19:00",
+      "endTime": "22:00",
+      "postOffsetMs": -45.8,
+      "responseOffsetMs": 10289,
+      "networkDurationMs": 10377,
+      "statusCode": 409,
+      "result": "REJECTED",
+      "expectedAmount": 2100,
+      "rateStatus": "VENUE_SCHEDULE",
+      "protocol": "h2",
+      "reused": true
+    },
+    {
+      "wave": "IMMEDIATE",
+      "workerId": "B",
+      "court": 6,
+      "startTime": "19:00",
+      "endTime": "22:00",
+      "postOffsetMs": -21.2,
+      "responseOffsetMs": 8027,
+      "networkDurationMs": 8089,
+      "statusCode": 409,
+      "result": "REJECTED",
+      "expectedAmount": 2100,
+      "rateStatus": "VENUE_SCHEDULE",
+      "protocol": "h2",
+      "reused": true
+    },
+    {
+      "wave": "IMMEDIATE",
+      "workerId": "A",
+      "court": 7,
+      "startTime": "19:00",
+      "endTime": "22:00",
+      "postOffsetMs": -6.2,
+      "responseOffsetMs": 10540,
+      "networkDurationMs": 10588,
+      "statusCode": 409,
+      "result": "REJECTED",
+      "expectedAmount": 2100,
+      "rateStatus": "VENUE_SCHEDULE",
+      "protocol": "h2",
+      "reused": true
+    },
+    {
+      "wave": "IMMEDIATE",
+      "workerId": "D",
+      "court": 4,
+      "startTime": "19:00",
+      "endTime": "22:00",
+      "postOffsetMs": -1,
+      "responseOffsetMs": 12049,
+      "networkDurationMs": 12093,
+      "statusCode": 409,
+      "result": "REJECTED",
+      "expectedAmount": 2100,
+      "rateStatus": "VENUE_SCHEDULE",
+      "protocol": "h2",
+      "reused": true
+    },
+    {
+      "wave": "IMMEDIATE",
+      "workerId": "G",
+      "court": 1,
+      "startTime": "19:00",
+      "endTime": "22:00",
+      "postOffsetMs": 8,
+      "responseOffsetMs": 12070,
+      "networkDurationMs": 12108,
+      "statusCode": 409,
+      "result": "REJECTED",
+      "expectedAmount": 2100,
+      "rateStatus": "VENUE_SCHEDULE",
+      "protocol": "h2",
+      "reused": true
+    },
+    {
+      "wave": "IMMEDIATE",
+      "workerId": "E",
+      "court": 3,
+      "startTime": "19:00",
+      "endTime": "22:00",
+      "postOffsetMs": 8.5,
+      "responseOffsetMs": 9808,
+      "networkDurationMs": 9846,
+      "statusCode": 409,
+      "result": "REJECTED",
+      "expectedAmount": 2100,
+      "rateStatus": "VENUE_SCHEDULE",
+      "protocol": "h2",
+      "reused": true
+    },
+    {
+      "wave": "IMMEDIATE",
+      "workerId": "F",
+      "court": 2,
+      "startTime": "19:00",
+      "endTime": "22:00",
+      "postOffsetMs": 8.6,
+      "responseOffsetMs": 10387,
+      "networkDurationMs": 10425,
+      "statusCode": 409,
+      "result": "REJECTED",
+      "expectedAmount": 2100,
+      "rateStatus": "VENUE_SCHEDULE",
+      "protocol": "h2",
+      "reused": true
+    }
+  ],
+  "dispatch": {
+    "posts": 7,
+    "firstPostOffsetMs": -45.8,
+    "lastPostOffsetMs": 8.6,
+    "spreadMs": 54.4
+  },
+  "outcome": "ALL_REJECTED_WAITING_FOR_REOPEN",
+  "clock": {
+    "offsetMs": 35,
+    "roundTripMs": 43,
+    "rounds": 1
+  },
+  "notes": []
+}
