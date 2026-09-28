@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { ONDA_URL, VENUE, loadConfig, planFingerprint, releaseMsForTargetDate } from '../config.js';
 import { consensusState, NETWORK_CLOCK_MAX_AGE_MS, queryGoogleClockConsensus, readNetworkClock, recordClockEvidence, writeNetworkClockState } from '../network-clock.js';
 import { adoptConsensus, DEFAULT_SPIN_TAIL_MS, RELEASE_CLOCK_ROUNDS, TrustedReleaseClock } from '../release-clock.js';
+import { releaseTriggerMs } from '../release-offset.js';
 import { armedNothingFired, armPrecisionRace, disarmUnfired, dispatchArmedPrecisionRace, type ArmedPrecisionRace } from './armed-dispatch.js';
 import { classifyTargetEvidence, readPreReleaseEvidence } from './pre-release-evidence.js';
 import { freezePrecisionRace, precisionTargetPlan, reducePrecisionOutcome,
@@ -315,10 +316,16 @@ try {
     ?validatePrecisionTargets(config.PRECISION_TARGETS,command.date):undefined;
   if((precisionTargets||phase3)&&(config.BOOKING_METHOD!=='proofless'||command.checkoutMethod!=='proofless'||config.BOOKING_TYPE!=='standard'))
     throw Error('PRECISION_REQUIRES_PROOFLESS_STANDARD');
+  // Operator Release Offset (release-offset.ts): moves only the pre-armed Proofless Direct trigger of a scheduled release.
+  // General uses this plan-wide value; Precision sets one per attempt (frozen with the target).
+  const releaseOffsetMs=!requested&&command.mode==='live'&&command.checkoutMethod==='proofless'?config.RELEASE_OFFSET_MS:0;
   stage('RUN_CONFIGURATION',{bookingMethod:config.BOOKING_METHOD,
     workerCount:precisionTargets?.length??(phase3?phase3.wave1.length+phase3.standby.length:requiredWorkerIds(config.BOOKING_TYPE,config.COURT_COUNT).length),
     prewarmLeadMs:API_SECURITY_PREWARM_LEAD_MS,
-    ...(command.releaseMs?{releaseMs:command.releaseMs}:{})});
+    ...(command.releaseMs?{releaseMs:command.releaseMs}:{}),...(releaseOffsetMs?{releaseOffsetMs}:{})});
+  const scheduledTrigger=(releaseMs:number,triggerMs:number,workerId?:WorkerId)=>{
+    if(triggerMs!==releaseMs)stage('RELEASE_OFFSET_SCHEDULED',{releaseMs,triggerMs,releaseOffsetMs:triggerMs-releaseMs,...(workerId?{workerId}:{})});
+  };
   const strategy = requested?.strategy ?? config.BOOKING_TYPE;
   const duration = requested?.duration ?? config.DURATION_HOURS;
   const courtCount = requested?.courtCount ?? config.COURT_COUNT;
@@ -606,7 +613,7 @@ try {
       diagnostics.observe('DIAGNOSTIC_ATTEMPT_COMPLETED',correlation,{workerOutcome:'VERIFIED_HOLD'});
       return hold;
     };
-    const executeProoflessAttempt=async(attempt:ProoflessAttempt,releaseMs?:number,dispatch:{requirePreparedContext?:boolean;beforePost?:()=>void}={})=>{
+    const executeProoflessAttempt=async(attempt:ProoflessAttempt,releaseMs?:number,dispatch:{requirePreparedContext?:boolean;beforePost?:()=>void;triggerMs?:number}={})=>{
       const {plan,workerId,session,customer,transport,directories,journals,lane,attemptType,attemptId}=attempt;
       const binding=bindProoflessAttempt({plan,workerId,lane,attemptType,attemptId,directory:directories[0]!});
       try{
@@ -731,6 +738,7 @@ try {
         catch(error){for(const binding of bindings.values())unbindProoflessAttempt(binding);throw error;}
         retainLiveLock=true;
         stage('PRECISION_ARMED',{frozenCount:race.attempts.length,unsentCount:armed.unarmed.length,releaseMs});
+        for(const attempt of armed.attempts)scheduledTrigger(releaseMs,attempt.triggerMs,attempt.target.workerId);
         for(const value of armed.unarmed){setState(value.attempt.target,value.state,value.code);unbindProoflessAttempt(bindings.get(value.attempt.target.workerId)!);}
         // T-2 min: passive DevTools sessions attach in the background with no domain enabled (no per-request cost).
         // Each enables Network only after its own POST has left; nothing on the release path waits for them.
@@ -830,6 +838,8 @@ try {
           throw Error('PHASE3_PRIOR_JOURNAL_UNRESOLVED');
       }
       const wave1:PrecisionAttempt[]=[];
+      // Each immediate attempt's Release Offset comes from the saved plan (covered by the plan fingerprint).
+      const wave1Offsets=new Map<WorkerId,number>(draft.wave1.map(value=>[value.workerId,value.releaseOffsetMs??0]));
       for(const assignment of authorization.wave1){
         const candidate=byId.get(assignment.candidateId)!;
         if(unavailableWorkers.has(assignment.workerId)||!releaseTransports.has(assignment.workerId)){
@@ -839,8 +849,10 @@ try {
         if(await journal.recycleReusable(candidate.logicalKey).catch(()=>'blocked' as const)==='blocked'){
           stage('PHASE3_JOURNAL_BLOCKED',{workerId:assignment.workerId,candidateId:candidate.id});continue;
         }
+        const offset=wave1Offsets.get(assignment.workerId)??0;
         const target:PrecisionTarget={court:candidate.court,start:candidate.start,durationHours:candidate.durationHours,
-          end:candidate.end,workerId:assignment.workerId,targetKey:candidate.logicalKey,assumedAmount:candidate.expectedAmount};
+          end:candidate.end,workerId:assignment.workerId,targetKey:candidate.logicalKey,assumedAmount:candidate.expectedAmount,
+          ...(offset?{releaseOffsetMs:offset}:{})};
         wave1.push({target,plan:pricedPrecisionPlan(candidate,date,candidate.rateEvidence.perHour)});
         stage('PHASE3_WAVE1_PRICE',{workerId:assignment.workerId,candidateId:candidate.id,amount:candidate.expectedAmount,
           source:candidate.rateEvidence.source,rateStatus:candidate.rateEvidence.status,capturedAt:candidate.rateEvidence.capturedAt});
@@ -860,6 +872,7 @@ try {
       const armed=await armPrecisionRace(frozen,{lock:liveLock,customerFor:worker=>customers![worker]!,
         journalRoot:resolve('.local/api-booking/api-first-journals'),releaseMs,now:nowMs});
       retainLiveLock=true;
+      for(const attempt of armed.attempts)scheduledTrigger(releaseMs,attempt.triggerMs,attempt.target.workerId);
       const traces=providerTraces=new ProviderTraceSet(progressLog.runId,'release',releaseMs,()=>(releaseClock?.nowMs()??nowMs())-releaseMs);
       for(const workerId of workerIds){const workerSession=sessions.find(value=>value.workerId===workerId);
         if(workerSession)traces.start({workerId,attemptId:bindings.get(workerId)?.correlation.attemptId},openTraceSession(workerSession.page));}
@@ -1035,17 +1048,20 @@ try {
         ...(releasePlan.courts[1]?{courtB:releasePlan.courts[1].court}:{}),date:command.date,startTime:releasePlan.startTime,
         durationHours:releasePlan.durationHours,assumedPrice:releasePlan.totalPrice});
     }
+    // Only the pre-planned Proofless Direct dispatch can use a Release Offset; a path that reads availability waits for release.
+    const generalTriggerMs=command.mode==='live'?releaseTriggerMs(command.releaseMs!,primaryProoflessPlans?releaseOffsetMs:0):undefined;
     if (command.mode === 'live') {
-      const releaseMs = command.releaseMs!;
-      if (releaseMs <= nowMs()) throw Error('RELEASE_MISSED');
+      const releaseMs = command.releaseMs!, triggerMs = generalTriggerMs!;
+      if (triggerMs <= nowMs()) throw Error('RELEASE_MISSED');
       await refreshClockBeforeRelease(releaseMs);
-      if (releaseMs <= nowMs()) throw Error('RELEASE_MISSED');
+      if (triggerMs <= nowMs()) throw Error('RELEASE_MISSED');
       stage('WAITING_FOR_RELEASE', { releaseMs });
-      while (nowMs() < releaseMs) {
-        ensureActive();const remaining=releaseMs-nowMs();if(remaining<=API_SECURITY_PREWARM_LEAD_MS)startWarmup();
+      scheduledTrigger(releaseMs,triggerMs);
+      while (nowMs() < triggerMs) {
+        ensureActive();const remaining=triggerMs-nowMs();if(remaining<=API_SECURITY_PREWARM_LEAD_MS)startWarmup();
         await pause(Math.min(500,Math.max(1,remaining),warmup?500:Math.max(1,remaining-API_SECURITY_PREWARM_LEAD_MS)));
       }
-      assertApiReleaseFresh(releaseMs,nowMs());stage('RELEASE_TRIGGERED');await finishWarmup();
+      assertApiReleaseFresh(releaseMs,nowMs(),triggerMs);stage('RELEASE_TRIGGERED');await finishWarmup();
     }
     ensureActive();
     let discovery:Awaited<ReturnType<typeof discoverApiAvailability>>|undefined;
@@ -1098,7 +1114,8 @@ try {
       }
       await liveLock?.dispatching();retainLiveLock=true;
       stage('PRIMARY_PROOFLESS_DISPATCHING',{workerCount:attempts.length});
-      const outcomes=await Promise.allSettled(attempts.map(attempt=>executeProoflessAttempt(attempt,command.releaseMs,{requirePreparedContext:command.mode==='live'})));
+      const outcomes=await Promise.allSettled(attempts.map(attempt=>executeProoflessAttempt(attempt,command.releaseMs,{requirePreparedContext:command.mode==='live',
+        ...(generalTriggerMs!==undefined?{triggerMs:generalTriggerMs}:{})})));
       await persistProviderTraces().catch(()=>undefined);
       attempts.forEach((attempt,index)=>{const outcome=outcomes[index]!;
         const code=outcome.status==='rejected'&&outcome.reason instanceof Error&&/^[A-Z][A-Z0-9_]{0,79}$/.test(outcome.reason.message)

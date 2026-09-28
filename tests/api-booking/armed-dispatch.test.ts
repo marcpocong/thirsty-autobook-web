@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { armedNothingFired, armPrecisionRace, disarmAttempt, dispatchArmedPrecisionRace, fireArmedAttempt, settleArmedAttempt,
+import { armedNothingFired, armedWindow, armPrecisionRace, disarmAttempt, dispatchArmedPrecisionRace, fireArmedAttempt, settleArmedAttempt,
   type ArmedAttempt, type ArmedPrecisionRace } from '../../src/api-booking/armed-dispatch.js';
 import { BrowserSessionTransportError } from '../../src/api-booking/browser-session-transport.js';
 import { consumeSubmissionPermit, DurableSubmissionJournal, isSubmissionPermitUnspent } from '../../src/api-booking/durable-submission-journal.js';
@@ -20,8 +20,10 @@ let root: string;
 beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'armed-dispatch-')); });
 afterEach(async () => { if (!resolve(root).startsWith(resolve(tmpdir()) + sep)) throw Error('UNSAFE_TEST_PATH'); await rm(root, { recursive: true, force: true }); });
 
-function frozenRace(count: number, releaseMs: number): FrozenPrecisionRace {
-  const targets = validatePrecisionTargets([1, 2, 3, 4, 5, 6, 7].slice(0, count).map(court => ({ court, start: '17:00', durationHours: 3 })), date);
+/** `offsets[i]` is attempt i's operator Release Offset (absent or 0: normal). */
+function frozenRace(count: number, releaseMs: number, offsets: readonly number[] = []): FrozenPrecisionRace {
+  const targets = validatePrecisionTargets([1, 2, 3, 4, 5, 6, 7].slice(0, count).map((court, index) =>
+    ({ court, start: '17:00', durationHours: 3, ...(offsets[index] ? { releaseOffsetMs: offsets[index] } : {}) })), date);
   return freezePrecisionRace(date, releaseMs, targets.map(target => ({ target, plan: precisionTargetPlan(target, date) })));
 }
 function fakeLock() {
@@ -29,9 +31,9 @@ function fakeLock() {
   return { calls, armed: async (releaseMs: number, deadlineMs: number, count: number) => { calls.push(`armed:${deadlineMs - releaseMs}:${count}`); },
     dispatching: async () => { calls.push('dispatching'); } };
 }
-/** Arms `count` targets for a release `leadMs` from now on the real journal. */
-async function arm(count: number, leadMs = 400) {
-  const releaseMs = Date.now() + leadMs, race = frozenRace(count, releaseMs), lock = fakeLock();
+/** Arms `count` targets for a release `leadMs` from now on the real journal, optionally with per-attempt Release Offsets. */
+async function arm(count: number, leadMs = 400, offsets: readonly number[] = []) {
+  const releaseMs = Date.now() + leadMs, race = frozenRace(count, releaseMs, offsets), lock = fakeLock();
   const clock = TrustedReleaseClock.fromOffset(0, { method: 'test', sampleCount: 5 });
   const armed = await armPrecisionRace(race, { lock, customerFor: () => customer, journalRoot: root, releaseMs, now: () => clock.nowMs() });
   return { armed, race, lock, clock, releaseMs };
@@ -363,5 +365,89 @@ describe('release instant', () => {
     expect(holds).toEqual(['A']);
     expect(outcome.results.map(result => result.state)).toEqual(['QR_READY', 'REJECTED']);
     expect(outcome.afterFireError).toBe('LOCK_REPLACED');
+  });
+});
+
+describe('Release Offset (per attempt)', () => {
+  it('attempts without an offset keep the trigger on the release instant', async () => {
+    const { armed, releaseMs } = await arm(2);
+    expect(armed.attempts.map(attempt => attempt.triggerMs)).toEqual([releaseMs, releaseMs]);
+  });
+
+  it('each attempt arms for its own trigger; the lock, journals and lateness bound keep the official release', async () => {
+    const { armed, lock, releaseMs } = await arm(3, 2_500, [-1733, 0, -407]);
+    expect(armed.attempts.map(attempt => attempt.triggerMs)).toEqual([releaseMs - 1733, releaseMs, releaseMs - 407]);
+    expect(armed.dispatchDeadlineMs).toBe(releaseMs + 1000);
+    expect(lock.calls).toEqual(['armed:1000:3']);
+    for (const attempt of armed.attempts)
+      expect(await journalAt(attempt.key).read(attempt.key)).toMatchObject({ state: 'armed', attempt: { releaseMs, dispatchDeadlineMs: releaseMs + 1000 } });
+  });
+
+  it('an offset is part of the frozen set, and an out-of-range one is refused before anything is written', async () => {
+    const releaseMs = Date.now() + 60_000;
+    expect(frozenRace(2, releaseMs, [-50]).fingerprint).not.toBe(frozenRace(2, releaseMs).fingerprint);
+    expect(frozenRace(2, releaseMs, [0, 0]).fingerprint).toBe(frozenRace(2, releaseMs).fingerprint);
+    expect(() => frozenRace(1, releaseMs, [-2001])).toThrow('PRECISION_TARGET_INVALID');
+    const race = frozenRace(1, releaseMs), lock = fakeLock();
+    const forged = freezePrecisionRace(date, releaseMs, [{ ...race.attempts[0]!, target: { ...race.attempts[0]!.target, releaseOffsetMs: -2001 } }]);
+    await expect(armPrecisionRace(forged, { lock, customerFor: () => customer, journalRoot: root, releaseMs, now: Date.now })).rejects.toThrow('RELEASE_OFFSET_INVALID');
+    expect(lock.calls).toEqual([]);
+    expect(await readdir(root)).toEqual([]);
+  });
+
+  it('arming must precede the earliest trigger', async () => {
+    const race = frozenRace(2, Date.now() + 60_000, [0, -50]), lock = fakeLock();
+    await expect(armPrecisionRace(race, { lock, customerFor: () => customer, journalRoot: root, releaseMs: race.releaseMs,
+      now: () => race.releaseMs - 20 })).rejects.toThrow('PRECISION_ARM_TOO_LATE');
+    expect(lock.calls).toEqual([]);
+  });
+
+  it('an attempt fires from its own trigger, never before it, and never past release + window', async () => {
+    const { armed } = await arm(3, 60_000, [-50, -50, -50]);
+    const [early, onTime, late] = armed.attempts, { transport, calls } = fakeTransport(conflict);
+    const window = (attempt: ArmedAttempt) => armedWindow(armed, attempt);
+    const earlyError = await settleArmedAttempt(early!, fireArmedAttempt(early!, transport, clockAt(armed.releaseMs, -51), window(early!), () => false), Date.now).catch(value => value);
+    expect((earlyError as Error).message).toBe('DIRECT_RELEASE_NOT_REACHED');
+    expect(await classify(early!, earlyError)).toMatchObject({ state: 'NOT_DISPATCHED' });
+    expect(calls).toHaveLength(0);
+    await settleArmedAttempt(onTime!, fireArmedAttempt(onTime!, transport, clockAt(armed.releaseMs, -50), window(onTime!), () => false), Date.now).catch(() => undefined);
+    expect(calls).toHaveLength(1);
+    const lateError = await settleArmedAttempt(late!, fireArmedAttempt(late!, transport, clockAt(armed.releaseMs, 1001), window(late!), () => false), Date.now).catch(value => value);
+    expect(await classify(late!, lateError)).toMatchObject({ state: 'WINDOW_MISSED' });
+    expect(calls).toHaveLength(1);
+  });
+
+  it('mixed offsets: each attempt fires at its own trigger, earliest first, and normal ones at the release', async () => {
+    const { armed, clock, releaseMs } = await arm(4, 1_500, [-100, 0, -25, 0]);
+    const fired = new Map<string, number>();
+    const { transport } = fakeTransport(conflict);
+    const outcome = await dispatchArmedPrecisionRace(armed, { clock, prewarmLeadMs: 200, spinTailMs: 30, isAborted: () => false, prewarm: async () => undefined,
+      transportFor: worker => ({ publicCheckoutProofless: (request, permit, options) => { fired.set(worker, clock.nowMs()); return transport.publicCheckoutProofless(request, permit, options); } }) });
+    expect([...fired.keys()]).toEqual(['A', 'C', 'B', 'D']);
+    expect(fired.get('A')!).toBeGreaterThanOrEqual(releaseMs - 100);
+    expect(fired.get('A')!).toBeLessThan(releaseMs - 25);
+    expect(fired.get('C')!).toBeGreaterThanOrEqual(releaseMs - 25);
+    expect(fired.get('C')!).toBeLessThan(releaseMs);
+    expect(Math.min(fired.get('B')!, fired.get('D')!)).toBeGreaterThanOrEqual(releaseMs);
+    expect(outcome.results.map(result => result.state)).toEqual(['REJECTED', 'REJECTED', 'REJECTED', 'REJECTED']);
+  });
+
+  it('a Stop after an early attempt was sent never abandons it: later attempts refuse and every outcome is recorded', async () => {
+    const { armed, clock, releaseMs } = await arm(2, 1_500, [-100, 0]);
+    let stop = false;
+    const controller = new AbortController();
+    // The runner's abort-aware sleep rejects on Stop; the waits after a send must not use it.
+    const pause = (ms: number) => new Promise<void>((done, fail) => {
+      const timer = setTimeout(done, ms);
+      controller.signal.addEventListener('abort', () => { clearTimeout(timer); fail(Error('USER_ABORT')); }, { once: true });
+    });
+    const { transport, calls } = fakeTransport(async () => { stop = true; controller.abort(); return conflict(); });
+    const outcome = await dispatchArmedPrecisionRace(armed, { clock, prewarmLeadMs: 200, spinTailMs: 30, isAborted: () => stop, sleep: pause,
+      prewarm: async () => undefined, transportFor: () => transport });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.at).toBeLessThan(clock.monotonicDeadline(releaseMs));
+    expect(outcome.results.map(result => [result.attempt.target.workerId, result.state, result.code])).toEqual([['A', 'REJECTED', 'ONDA_HTTP_STATUS_INVALID'], ['B', 'NOT_DISPATCHED', 'USER_ABORT']]);
+    const b = armed.attempts[1]!;
+    expect(await journalAt(b.key).read(b.key)).toMatchObject({ state: 'rejected' });
   });
 });

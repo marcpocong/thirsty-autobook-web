@@ -19,6 +19,7 @@ import { capabilities,fullBookingReady } from '../src/capabilities.js';
 import {expectedPreparationFingerprint,makePreparedContext} from '../src/prepared-context.js';
 import type {PreparationInput,PreparationResult} from '../src/booking-plan.js';
 import {scheduledReleaseContext,type ScheduledReleaseContext} from '../src/scheduled-release.js';
+import {formatReleaseOffset} from '../src/release-offset.js';
 import {planWorkerIds,requiredWorkerIds,type CourtCount,type WorkerId} from '../src/workers.js';
 import type {SlotWatchDigest,SlotWatchSummary,SlotWatchView} from '../src/slot-watch.js';
 import type {AvailabilityObservation} from '../src/slot-evidence.js';
@@ -592,7 +593,8 @@ export class Controller {
         PRECISION_RACE_CONFIGURED:'Precision race configured',PRECISION_TARGET:'Precision target authorized',PRECISION_EVIDENCE_READ:'Precision evidence read',
         PRECISION_TARGET_EVIDENCE:'Precision target evidence',PRECISION_ATTEMPT_STATE:'Precision attempt updated',PRECISION_DRY_COMPLETE:'Precision targets checked',
         PRECISION_FROZEN:'Precision targets frozen',PRECISION_ARMED:'Precision attempts armed for release',PRECISION_DISPATCHING:'Dispatching Precision attempts',NETWORK_CLOCK_CONSENSUS:'Release clock consensus',NETWORK_CLOCK_CONSENSUS_REJECTED:'Release clock round not trusted',NETWORK_CLOCK_CONSENSUS_FAILED:'Release clock round failed',PRECISION_LOCK_DISPATCHING_FAILED:'Dispatch record update failed',SECURITY_PREWARM_FAILED:'Checkout security failed for one worker',
-        SECURITY_PREWARM_RETRY:'Retrying checkout security for one worker',PRECISION_OUTCOME:'Precision race settled',CUSTOMER_IDENTITY_INVALID:'Customer identity invalid'};
+        SECURITY_PREWARM_RETRY:'Retrying checkout security for one worker',PRECISION_OUTCOME:'Precision race settled',CUSTOMER_IDENTITY_INVALID:'Customer identity invalid',
+        RELEASE_OFFSET_SCHEDULED:'Release offset scheduled'};
       labels.HUMAN_VERIFICATION_REQUIRED='Human verification required in Chrome';
       labels.HUMAN_VERIFICATION_COMPLETE='Human verification complete';
       this.state.headline=labels[event.stage]??event.stage.replaceAll('_',' ');
@@ -612,6 +614,7 @@ export class Controller {
       if(event.stage==='CUSTOMER_IDENTITY_INVALID')this.state.detail=identityIssueText(event,this.state.booking?.setup.RELEASE_STRATEGY==='precision');
       if(event.stage==='NETWORK_CLOCK_REFRESHED')this.state.detail=`${event.checkpoint} · offset ${event.offsetMs} ms · round trip ${event.roundTripMs} ms · change ${event.deltaMs} ms`+(event.sampleCount!==undefined?` · ${event.sampleCount} samples · spread ${event.spreadMs} ms · ±${event.uncertaintyMs} ms`:'');
       if(event.stage==='NETWORK_CLOCK_CONSENSUS')this.state.detail=`${event.checkpoint} · offset ${event.offsetMs} ms · ${event.sampleCount} samples · fastest round trip ${event.roundTripMs} ms · spread ${event.spreadMs} ms · ±${event.uncertaintyMs} ms · change ${event.deltaMs} ms`+(event.code==='CLOCK_JUMP_REJECTED'?' · large earlier jump not adopted':'');
+      if(event.stage==='RELEASE_OFFSET_SCHEDULED'&&event.releaseOffsetMs!==undefined)this.state.detail=`${event.workerId?`Worker ${event.workerId} · `:''}Trigger ${formatReleaseOffset(event.releaseOffsetMs)}: checkout may be sent up to ${-event.releaseOffsetMs} ms before the official release time`;
       if(event.stage==='PRECISION_ARMED')this.state.detail=`${event.frozenCount} attempt(s) armed: requests, journals and one-shot permits are ready before release${event.unsentCount?` · ${event.unsentCount} could not be armed`:''}`;
       const timing=`${event.elapsedMs} ms total · +${event.sincePreviousMs??0} ms since prior stage`;
       this.state.detail+=` · ${timing}`;

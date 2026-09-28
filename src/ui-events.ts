@@ -19,6 +19,7 @@ export const UiEventSchema = z.discriminatedUnion('type', [
   z.object({type:z.literal('apiStage'),stage:z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/),elapsedMs:z.number().int().nonnegative(),
     at:z.iso.datetime().optional(),sincePreviousMs:z.number().int().nonnegative().optional(),runId:z.uuid().optional(),
     code:z.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/).optional(),workerId:WorkerIdSchema.optional(),workerElapsedMs:z.number().int().nonnegative().optional(),port:z.number().int().optional(),releaseMs:z.number().int().optional(),
+    releaseOffsetMs:z.number().int().max(0).optional(),triggerMs:z.number().int().optional(),
     bookingMethod:z.enum(['browser','hybrid','api-first','proofless']).optional(),
     prewarmLeadMs:z.number().int().positive().optional(),
     date:z.iso.date().optional(),court:z.number().int().min(1).max(7).optional(),courtB:z.number().int().min(1).max(7).optional(),startTime:z.string().optional(),
