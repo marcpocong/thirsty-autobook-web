@@ -41,7 +41,10 @@
     "phase3:simulate": "tsx scripts/simulate-precision-phase3.ts",
     "phase4:replay": "tsx scripts/replay-phase4-fixtures.ts",
     "phase4:research": "tsx scripts/phase4-research.ts",
-    "intelligence:rebuild": "tsx scripts/phase4-research.ts --rebuild"
+    "intelligence:rebuild": "tsx scripts/phase4-research.ts --rebuild",
+    "arbitration:analyze": "tsx scripts/analyze-release-arbitration.ts",
+    "arbitration:manifest": "tsx scripts/create-arbitration-manifest.ts",
+    "arbitration:replay": "tsx scripts/replay-release-arbitration.ts"
   },
   "dependencies": {
     "@fingerprintjs/fingerprintjs": "5.2.0",

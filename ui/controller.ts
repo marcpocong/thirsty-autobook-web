@@ -19,6 +19,7 @@ import { capabilities,fullBookingReady } from '../src/capabilities.js';
 import {expectedPreparationFingerprint,makePreparedContext} from '../src/prepared-context.js';
 import type {PreparationInput,PreparationResult} from '../src/booking-plan.js';
 import {scheduledReleaseContext,type ScheduledReleaseContext} from '../src/scheduled-release.js';
+import {formatReleaseOffset} from '../src/release-offset.js';
 import {planWorkerIds,requiredWorkerIds,type CourtCount,type WorkerId} from '../src/workers.js';
 import type {SlotWatchDigest,SlotWatchSummary,SlotWatchView} from '../src/slot-watch.js';
 import type {AvailabilityObservation} from '../src/slot-evidence.js';
@@ -31,6 +32,7 @@ import type {ReadinessResult} from '../src/network-readiness.js';
 import type {WarmthAssessment} from '../src/checkout-path-research.js';
 import {TARGET_EVIDENCE_LABEL,type TargetEvidence} from '../src/api-booking/pre-release-evidence.js';
 import type {PrecisionView} from './types.js';
+import type {EnsureManifestResult} from '../src/arbitration/experiment-manifest.js';
 
 /** Race-group headline: the operator's goal is one court, so any verified hold achieves it. */
 const PRECISION_OUTCOME_HEADLINE:Record<string,string>={
@@ -62,6 +64,12 @@ const errors: Record<string, string> = {
   NETWORK_CLOCK_STALE:'The Google network clock could not be refreshed and the last sync is too old. Nothing was sent.',
   PRECISION_NO_ELIGIBLE_TARGET:'No Precision target is currently eligible (public booking or unknown evidence on every target). Edit the targets.',
   PRECISION_TOO_LATE_TO_ARM:'Precision Release must be armed at least 3 minutes before release so the target set can be frozen at T-2 min.',
+  ARBITRATION_MANIFEST_STORAGE_FAILED:'Investigation setup could not be saved. Nothing was armed. Check that the app can write to its local data folder, then try again.',
+  ARBITRATION_MANIFEST_MISMATCH:'An investigation setup already exists for this release but does not match the current release. Nothing was armed.',
+  ARBITRATION_MANIFEST_MALFORMED:'The saved investigation setup for this release is damaged; it was kept, not replaced. Nothing was armed.',
+  ARBITRATION_MANIFEST_TOO_LATE:'The investigation setup must be created before the release. This release was not armed.',
+  ARBITRATION_RELEASE_CONTEXT_INVALID:'The release date or time could not be verified. Nothing was armed.',
+  ARBITRATION_MANIFEST_UNAVAILABLE:'This app build cannot create the investigation setup. Nothing was armed.',
   PRECISION_TOO_LATE_TO_FREEZE:'The Precision target set could not be frozen before release. Nothing was sent.',
   PRECISION_REQUIRES_PROOFLESS_STANDARD:'Precision Release uses Proofless Direct with Standard 1-3 hour targets.',
   OBJECTIVE_NOT_ACHIEVED_ALL_REJECTED:'Every dispatched Precision attempt was rejected by Onda. No hold was created.',
@@ -145,6 +153,8 @@ export interface Dependencies {
   confirmBooking?:(plan:BookingPlan,maximum?:number)=>Promise<boolean>;
   confirmApiTest?:(input:{method:'api-first'|'proofless';strategy:'standard'|'extended';date:string;start:string;duration:number;courtCount:CourtCount;maximum?:number;priority:number[]})=>Promise<boolean>;
   runner: Runner; lock(): Promise<boolean>; cdp(): Promise<boolean>; clock: typeof readClock; syncClock?():Promise<void>;
+  /** Creates or verifies the Wave 1 preregistration manifest in the app's .local (main process), before the runner starts. */
+  ensureArbitrationManifest?(input:{targetDate:string;releaseMs:number;clockOffsetMs:number}):EnsureManifestResult;
   retainedHold?():Promise<RetainedHoldStatus|null>;
   recentQrHandoffs?(expiresAt:string):Promise<QrHandoffSummary[]>;
   previousHolds?():Promise<Dashboard['previousHolds']>;
@@ -583,7 +593,8 @@ export class Controller {
         PRECISION_RACE_CONFIGURED:'Precision race configured',PRECISION_TARGET:'Precision target authorized',PRECISION_EVIDENCE_READ:'Precision evidence read',
         PRECISION_TARGET_EVIDENCE:'Precision target evidence',PRECISION_ATTEMPT_STATE:'Precision attempt updated',PRECISION_DRY_COMPLETE:'Precision targets checked',
         PRECISION_FROZEN:'Precision targets frozen',PRECISION_ARMED:'Precision attempts armed for release',PRECISION_DISPATCHING:'Dispatching Precision attempts',NETWORK_CLOCK_CONSENSUS:'Release clock consensus',NETWORK_CLOCK_CONSENSUS_REJECTED:'Release clock round not trusted',NETWORK_CLOCK_CONSENSUS_FAILED:'Release clock round failed',PRECISION_LOCK_DISPATCHING_FAILED:'Dispatch record update failed',SECURITY_PREWARM_FAILED:'Checkout security failed for one worker',
-        SECURITY_PREWARM_RETRY:'Retrying checkout security for one worker',PRECISION_OUTCOME:'Precision race settled',CUSTOMER_IDENTITY_INVALID:'Customer identity invalid'};
+        SECURITY_PREWARM_RETRY:'Retrying checkout security for one worker',PRECISION_OUTCOME:'Precision race settled',CUSTOMER_IDENTITY_INVALID:'Customer identity invalid',
+        RELEASE_OFFSET_SCHEDULED:'Release offset scheduled'};
       labels.HUMAN_VERIFICATION_REQUIRED='Human verification required in Chrome';
       labels.HUMAN_VERIFICATION_COMPLETE='Human verification complete';
       this.state.headline=labels[event.stage]??event.stage.replaceAll('_',' ');
@@ -603,6 +614,7 @@ export class Controller {
       if(event.stage==='CUSTOMER_IDENTITY_INVALID')this.state.detail=identityIssueText(event,this.state.booking?.setup.RELEASE_STRATEGY==='precision');
       if(event.stage==='NETWORK_CLOCK_REFRESHED')this.state.detail=`${event.checkpoint} · offset ${event.offsetMs} ms · round trip ${event.roundTripMs} ms · change ${event.deltaMs} ms`+(event.sampleCount!==undefined?` · ${event.sampleCount} samples · spread ${event.spreadMs} ms · ±${event.uncertaintyMs} ms`:'');
       if(event.stage==='NETWORK_CLOCK_CONSENSUS')this.state.detail=`${event.checkpoint} · offset ${event.offsetMs} ms · ${event.sampleCount} samples · fastest round trip ${event.roundTripMs} ms · spread ${event.spreadMs} ms · ±${event.uncertaintyMs} ms · change ${event.deltaMs} ms`+(event.code==='CLOCK_JUMP_REJECTED'?' · large earlier jump not adopted':'');
+      if(event.stage==='RELEASE_OFFSET_SCHEDULED'&&event.releaseOffsetMs!==undefined)this.state.detail=`${event.workerId?`Worker ${event.workerId} · `:''}Trigger ${formatReleaseOffset(event.releaseOffsetMs)}: checkout may be sent up to ${-event.releaseOffsetMs} ms before the official release time`;
       if(event.stage==='PRECISION_ARMED')this.state.detail=`${event.frozenCount} attempt(s) armed: requests, journals and one-shot permits are ready before release${event.unsentCount?` · ${event.unsentCount} could not be armed`:''}`;
       const timing=`${event.elapsedMs} ms total · +${event.sincePreviousMs??0} ms since prior stage`;
       this.state.detail+=` · ${timing}`;
@@ -919,13 +931,36 @@ export class Controller {
     const confirmed=await this.deps.confirm('full',plan);if(!confirmed)return;
     if(this.deps.booking().fingerprint!==plan.fingerprint||this.deps.clock().releaseMs!==clock.releaseMs)
       throw Error('SCHEDULE_CONTEXT_MISMATCH');
+    const proofless=plan.setup.BOOKING_METHOD==='proofless';
+    const command={kind:'apiRun',mode:'live',date:plan.targetDate,fingerprint:plan.fingerprint,checkoutMethod:proofless?'proofless':'proof-based',clockOffsetMs:clock.clockOffsetMs,releaseMs:clock.releaseMs} as const;
+    // Preregistration uses the runner's own date/release and completes before anything starts; a failure arms nothing.
+    const preregistered=this.preregister(command.date,command.releaseMs,command.clockOffsetMs);
     if(this.deps.startSleepProtection){this.sleepBlockerId=this.deps.startSleepProtection();this.state.sleepProtection=true;}
     this.beginSlotWatch(plan.targetDate,clock.releaseMs,'release');
     try{await this.operation('full',async gen=>{
-      const proofless=plan.setup.BOOKING_METHOD==='proofless';
+      this.log(preregistered);
       this.state.headline=proofless?'PROOFLESS DIRECT ARMED':'API FIRST ARMED';this.state.detail=proofless?'The saved plan will be block-audited at 7:30 and dispatched prooflessly at the network-clock release boundary.':'The isolated browser will wait for release and acquire fresh availability proofs.';this.publish();
-      await this.run({kind:'apiRun',mode:'live',date:plan.targetDate,fingerprint:plan.fingerprint,checkoutMethod:proofless?'proofless':'proof-based',clockOffsetMs:clock.clockOffsetMs,releaseMs:clock.releaseMs},gen);
+      await this.run(command,gen);
     });}finally{this.stopSleepProtection();this.publish();}
+  }
+  /**
+   * Wave 1 arbitration preregistration for exactly the release about to be armed. Returns the Activity line to
+   * journal with the run; throws the manifest code (nothing started) when it cannot be created or verified.
+   */
+  private preregister(targetDate:string,releaseMs:number,clockOffsetMs:number):string{
+    let result:EnsureManifestResult|{status:'BLOCKED';code:'ARBITRATION_MANIFEST_UNAVAILABLE';reason:string;path:null};
+    try{result=this.deps.ensureArbitrationManifest?.({targetDate,releaseMs,clockOffsetMs})
+      ??{status:'BLOCKED',code:'ARBITRATION_MANIFEST_UNAVAILABLE',reason:'no manifest service in this build',path:null};}
+    catch(error){result={status:'BLOCKED',code:'ARBITRATION_MANIFEST_STORAGE_FAILED',reason:error instanceof Error?error.message:'unknown error',path:null};}
+    const release=`target ${targetDate} · release ${Number.isFinite(releaseMs)?new Date(releaseMs).toISOString():'invalid'}`;
+    if(result.status==='BLOCKED'){
+      const details=result.code==='ARBITRATION_MANIFEST_MISMATCH'||result.code==='ARBITRATION_MANIFEST_MALFORMED'?` Details: ${result.reason}.`:'';
+      this.state.arbitrationManifest={status:'blocked',targetDate,releaseMs,code:result.code,reason:`${errors[result.code]??result.code}${details}`};
+      this.log(`ARBITRATION_MANIFEST_BLOCKED · ${release} · ${result.code} · ${result.reason}${result.path?` · existing file kept: ${result.path}`:''}`,true);
+      this.publish();throw Error(result.code);
+    }
+    this.state.arbitrationManifest={status:'ready',targetDate,releaseMs,verified:result.status==='VERIFIED',createdAt:result.manifest.createdAt};
+    return `ARBITRATION_MANIFEST_${result.status} · ${release} · preregistered ${result.manifest.createdAt}`;
   }
   private async armScheduledRelease(authorized:boolean){
     if(this.state.scheduledRelease){await this.cancelScheduledRelease();return;}

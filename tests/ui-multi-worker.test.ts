@@ -6,6 +6,7 @@ import { ConfigSchema, ObservationSchema } from '../src/config.js';
 import { clockStatus } from '../ui/status.js';
 import { requiredWorkerIds, type WorkerId } from '../src/workers.js';
 import type { Runner } from '../ui/processes.js';
+import { preregistered } from './arbitration-manifest-stub.js';
 
 // Seven courts over an Extended split need every browser/player A-H.
 const workers = requiredWorkerIds('extended', 7);
@@ -63,7 +64,7 @@ describe('Multi-worker API release: eight-browser readiness and QR summary', () 
         }
         return { pid: 1, done: Promise.resolve(0), stop: async () => undefined };
       };
-      const controller = new Controller({ runner, lock: async () => false, cdp: async () => true,
+      const controller = new Controller({ ensureArbitrationManifest: preregistered, runner, lock: async () => false, cdp: async () => true,
         browserHealth: async () => healthOf(),
         clock: () => ({ ...clockStatus(ObservationSchema.parse({}), DateTime.fromISO('2026-09-25T07:00:00+08:00')), releaseMs, targetDate: plan.targetDate }),
         confirm: async () => true, publish: () => undefined, booking: () => plan, saveBooking: () => plan });

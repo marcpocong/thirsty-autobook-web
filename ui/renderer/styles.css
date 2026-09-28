@@ -138,6 +138,9 @@ main { max-width: 1280px; margin: auto; padding: 16px 24px 96px; }
 .gate-mark { flex: 0 0 auto; width: 16px; height: 16px; font: 800 10px/14px Consolas, monospace; text-align: center; border: 1px solid currentColor; border-radius: 4px; }
 .gate.good { color: #b5f47f; }
 .gate.warn { color: #f0ce91; }
+.gate.pending { color: #b9c7bd; }
+.gate.bad { grid-column: 1 / -1; color: #ff9b8f; }
+.gate-detail { display: block; margin-top: 2px; font-size: 11px; line-height: 1.35; color: #f3c1b9; }
 #release-readiness-card[data-state="armed"] { border-color: var(--brand); box-shadow: inset 3px 0 0 var(--brand); }
 .observed-price { margin: 10px 0; padding: 12px; font-size: 12px; line-height: 1.5; white-space: pre-line; color: #e6ffcf; background: #1d3922; border: 1px solid #6fbe59; border-radius: var(--radius-sm); }
 #sleep-warning { margin-top: 10px; color: #f0ce91; }
@@ -452,6 +455,13 @@ footer > div { display: flex; align-items: center; gap: 8px; font-size: 11px; co
 /* Precision Release (minimal; reuses existing tokens) */
 #setup-fields.precision-mode .general-only { display: none; }
 .precision-setup { margin-top: 10px; }
+/* Release Offset: positive operator input is stored as a negative release-relative trigger. */
+.release-offset { margin: 0 0 12px; }
+.release-offset h3 { margin-bottom: 8px; }
+.release-offset-control { display: flex; align-items: center; gap: 10px; max-width: 290px; }
+.release-offset-control span { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); }
+.release-offset-control input { width: 110px; font-variant-numeric: tabular-nums; }
+.release-offset p { margin: 8px 0 0; }
 .precision-rows { display: grid; gap: 8px; margin: 8px 0; }
 .precision-row { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; }
 .precision-row strong { min-width: 72px; }

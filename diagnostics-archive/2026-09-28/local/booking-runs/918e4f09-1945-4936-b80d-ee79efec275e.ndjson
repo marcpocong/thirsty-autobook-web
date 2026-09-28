@@ -1,0 +1,4 @@
+{"type":"run-start","runId":"918e4f09-1945-4936-b80d-ee79efec275e","label":"saving","at":"2026-09-27T23:34:44.602Z","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"918e4f09-1945-4936-b80d-ee79efec275e","at":"2026-09-27T23:34:44.602Z","text":"Run started: saving · Timing log: [REDACTED_LOCAL_PATH]\\Downloads\\Thirsty Pickle Bot\\.local\\booking-runs\\918e4f09-1945-4936-b80d-ee79efec275e.ndjson","level":"info","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"918e4f09-1945-4936-b80d-ee79efec275e","at":"2026-09-27T23:34:44.620Z","text":"Run finished: complete","level":"info","elapsedMs":18,"deltaMs":18}
+{"type":"run-end","runId":"918e4f09-1945-4936-b80d-ee79efec275e","at":"2026-09-27T23:34:44.664Z","elapsedMs":61,"outcome":"complete","label":"saving"}

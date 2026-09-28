@@ -150,3 +150,31 @@ describe('Smart backups compiler', () => {
     expect(text).not.toContain('Wave 1 exact sends');
   });
 });
+
+describe('Smart immediate attempts: per-attempt Release Offset', () => {
+  it('compiles each offset onto its Wave 1 assignment, restores it, and states it in the plan', () => {
+    const immediate = [{ ...slot(7, '19:00'), releaseOffsetMs: -1733 }, slot(6, '19:00'), { ...slot(5, '18:00'), releaseOffsetMs: -875 }];
+    const compiled = compileSmartPlan(draft({ immediate }), { targetDate });
+    const phase3 = compiled.phase3!;
+    expect(phase3.wave1.map(value => value.releaseOffsetMs)).toEqual([-1733, undefined, -875]);
+    expect(phase3.wave1[1]).not.toHaveProperty('releaseOffsetMs');
+    backendAccepts(phase3);
+    expect(smartDraftFromPhase3(phase3, { targetDate }).immediate.map(value => value.releaseOffsetMs)).toEqual([-1733, undefined, -875]);
+    const lines = describeSmartPlan(phase3).sections[0]!.lines;
+    expect(lines[1]).toContain('Offset \u22121733 ms (sent before 8:00)');
+    expect(lines[2]).not.toContain('Offset');
+  });
+
+  it('backups never carry an offset: they are sent only after release', () => {
+    const phase3 = compileSmartPlan(draft({ immediate: [{ ...slot(7, '19:00'), releaseOffsetMs: -25 as const }] }), { targetDate }).phase3!;
+    expect(phase3.candidates.every(candidate => !('releaseOffsetMs' in candidate))).toBe(true);
+    expect(phase3.wave1).toHaveLength(1);
+  });
+
+  it('rejects offsets outside the guarded range and any offset on a post-release backup', () => {
+    expect(compileSmartPlan(draft({ immediate: [{ ...slot(7, '19:00'), releaseOffsetMs: -2001 }] }), { targetDate }).problems)
+      .toContain('Court 7 · 7:00 PM · 3 hours has an invalid release offset.');
+    expect(compileSmartPlan(draft({ backups: [{ ...slot(6, '19:00'), releaseOffsetMs: -500 }] }), { targetDate }).problems)
+      .toContain('Court 6 · 7:00 PM · 3 hours has an invalid release offset.');
+  });
+});

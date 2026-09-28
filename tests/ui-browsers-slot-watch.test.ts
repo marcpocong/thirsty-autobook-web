@@ -6,6 +6,7 @@ import { ConfigSchema, ObservationSchema } from '../src/config.js';
 import { clockStatus } from '../ui/status.js';
 import type { Runner } from '../ui/processes.js';
 import type { SlotWatchSummary, SlotWatchView } from '../src/slot-watch.js';
+import { preregistered } from './arbitration-manifest-stub.js';
 
 const plan = () => bookingView(ConfigSchema.parse({ ...defaultSetup, BOOKING_METHOD: 'api-first',
   PLAYER_FULL_NAME: 'Fixture Player', PLAYER_PHONE: '09123456789', PLAYER_EMAIL: 'fixture@example.invalid' }));
@@ -28,7 +29,7 @@ function fakeWatches() {
 }
 function controller(extra: Partial<Dependencies> = {}, runner: Runner = () => ({ pid: 1, done: Promise.resolve(0), stop: async () => undefined })) {
   const view = plan();
-  return new Controller({ runner, lock: async () => false, cdp: async () => true, clock, confirm: async () => true,
+  return new Controller({ ensureArbitrationManifest: preregistered, runner, lock: async () => false, cdp: async () => true, clock, confirm: async () => true,
     booking: () => view, saveBooking: () => view, publish: () => undefined, browserHealth: async () => ({ A: true }), ...extra });
 }
 

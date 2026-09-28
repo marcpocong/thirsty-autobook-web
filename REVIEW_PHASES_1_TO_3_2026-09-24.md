@@ -94,7 +94,7 @@ The installed Windows build was rebuilt from this worktree. `BUILD-INFO.txt` in 
 
 ## Review questions and limits
 
-1. Could any path send before the official release or send a target absent from the frozen authorization? Inspect the monotonic release clock, armed-dispatch gate, adaptive final guard, and fingerprint comparisons.
+1. Could any path send before its scheduled trigger or send a target absent from the frozen authorization? Inspect the monotonic release clock, armed-dispatch gate, adaptive final guard, and fingerprint comparisons. The trigger is the official release unless the operator saved a Release Offset (`src/release-offset.ts`, added 2026-09-28): a whole-millisecond value from -2000 through 0, Proofless Direct only, covered by the plan fingerprint. It moves only the pre-armed Proofless dispatch.
 2. Could overlapping same-court candidates or more than seven workers be active at once? Inspect `PrecisionSession.select`, worker resolution, and the timing between selection and durable reservation.
 3. Can a cached, incomplete, stale or out-of-order OPEN observation become actionable? Inspect the full evidence classifier and IPC routing, including evidence rechecks after security preparation.
 4. Can UNKNOWN, a verified hold, or a possibly dispatched journal be reclassified as rejected or recycled? Inspect the journal, error classifier, session reduction and retained lock.
