@@ -2,6 +2,31 @@
 
 This guide records the broader desktop application at the 2026-09-23 checkpoint. For the current 2026-09-24 Precision release architecture, start with [REVIEW_PHASES_1_TO_3_2026-09-24.md](REVIEW_PHASES_1_TO_3_2026-09-24.md), then read the Phase 1–3 reports and source. `README.md` describes operator use.
 
+## Read first: the one release win was uncontested
+
+The bot has won exactly one release: **12 September 2026** (target Monday 14 September, Court 7 18:00–21:00), through the normal website flow, which is the proof-backed lane. **No competing bot was contesting that release.** Don't cite it as evidence that the proof-backed lane wins contested releases. Reviews that conclude "based on history, the only possible win is proof-backed" misread the record.
+
+The evidence:
+
+- **The bot was slow that day and still won.** Its first slot click came at +1.6 s and its final Onda action at +9.5 s. The hold followed about 3.8 s later ([RELEASE_RUN_REPORT_2026-09-12.md](RELEASE_RUN_REPORT_2026-09-12.md)). An evening block on the first-priority court was still free 9.5 s after release.
+- **There was no queue.** A 3.8 s hold is close to the off-peak 1.1–2.6 s. Since then, release checkouts have waited 7–35 s for Onda's answer.
+- **Later releases were contested within seconds.** Every release with grid data shows it:
+  - 26 September (target Monday 28 September, the same weekday as the win). The only two winnable blocks went to someone else before Onda processed our requests, which were sent at about +7 ms. Courts 4 and 5 16:00–19:00 were gone by +13 s ([RELEASE_RUN_REPORT_2026-09-26.md](RELEASE_RUN_REPORT_2026-09-26.md)).
+  - 28 September (target Wednesday 30 September). 13 evening hours had records by +2.8 s, 37 by +10.8 s and all 42 by +30.3 s ([RELEASE_RUN_REPORT_2026-09-28.md](RELEASE_RUN_REPORT_2026-09-28.md)).
+  - A checkout at +9.5 s would have met a mostly taken board on either day.
+- **The lane made no difference off-peak.** Proofless and proof-backed checkouts are equally fast there (p = 0.26, [SERVER_ARBITRATION_INVESTIGATION.md](SERVER_ARBITRATION_INVESTIGATION.md) §2). On an uncontested release, a proofless checkout would very likely have won as well.
+
+What the record supports:
+
+| Lane | Release checkouts | Contested | Won |
+|---|---|---|---|
+| Proof-backed (normal website flow) | 1 (12 Sep) | 0 | 1, uncontested |
+| Proofless | every release checkout 23–28 Sep | all: targets blocked beforehand or taken within seconds | 0 |
+
+Neither lane has a win on a contested release. Proof-backed at a contested release is still an open experiment (SERVER_ARBITRATION_INVESTIGATION.md §13, experiment 6), not the proven path.
+
+Limit: Slot Watch did not exist on 12 September, and Onda's public data never shows who booked. "No competitor" rests on the timing evidence above, not on a record of who else was booking that morning.
+
 ## What changed in this snapshot
 
 - The desktop UI is divided into **Next Release**, **Edit Plan**, **Tests**, **Slots**, **Runs**, and **Tools**, with a persistent header for the network clock, bot browsers A–H, the automation lock and the slot watch. The layout is static HTML; `ui/renderer/app.ts` no longer re-parents panels at startup. Test and release drafts remain independent.

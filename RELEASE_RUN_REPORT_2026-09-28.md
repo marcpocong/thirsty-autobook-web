@@ -1084,7 +1084,7 @@ These are suggestions only. None has been implemented.
 3. **Add a readiness warning** when pre-release reads come back `HIT`/`STALE`. Today that was visible from −50 s.
 4. **Fix the app defects in section 14:** the dropped `CRITICAL_PATH_SAVED` event, Worker A's calibration, the wording of the cached-read status, and cache headers on booking-record reads.
 5. **Release Offset:** no measurable benefit so far. Keep it as an operator choice.
-6. **The proof-backed checkout lane remains the untested lever.** It is the only path with a release win on record (12 September).
+6. **The proof-backed checkout lane remains untested at a contested release.** Its one release checkout (12 September) won a release that no competing bot was contesting, so that win says nothing about which lane wins a contested release ([REVIEW_GUIDE.md](REVIEW_GUIDE.md#read-first-the-one-release-win-was-uncontested)).
 
 ## 20. Safety state now
 
