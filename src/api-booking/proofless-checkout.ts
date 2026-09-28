@@ -9,6 +9,7 @@ import type { OndaBrowserSessionTransport } from './browser-session-transport.js
 import { DurableSubmissionJournal } from './durable-submission-journal.js';
 import { SubmissionDispatchError } from './submission-errors.js';
 import { targetDateState, type ReleaseObservationContext } from './court-hour-matrix.js';
+import { isValidReleaseTrigger } from '../release-offset.js';
 
 export const DIRECT_ASSUMED_DAY_RATE=600;
 export const DIRECT_ASSUMED_EVENING_RATE=700;
@@ -121,8 +122,9 @@ export function resolveProoflessReleasePlan(preferences:BookingPreferences,snaps
   throw Error('DIRECT_NO_UNBLOCKED_CONFIGURATION');
 }
 
-export function assertDirectDispatchWindow(releaseMs:number,now=Date.now()):void{
-  if(!Number.isSafeInteger(releaseMs)||releaseMs<=0||!Number.isFinite(now)||now<releaseMs||
+/** Never before the scheduled trigger (the release instant unless an operator Release Offset is set), never past release + lateness. */
+export function assertDirectDispatchWindow(releaseMs:number,now=Date.now(),triggerMs=releaseMs):void{
+  if(!Number.isSafeInteger(releaseMs)||releaseMs<=0||!isValidReleaseTrigger(releaseMs,triggerMs)||!Number.isFinite(now)||now<triggerMs||
     now-releaseMs>DIRECT_MAX_DISPATCH_LATENESS_MS)throw Error('DIRECT_RELEASE_WINDOW_MISSED');
 }
 
@@ -144,6 +146,8 @@ export interface DirectDispatchOptions {
   requirePreparedContext?:boolean;
   /** Trusted final guard for a post-release adaptive attempt. */
   beforePost?:()=>void;
+  /** Scheduled trigger for the release window check (release-offset.ts); defaults to the release instant. */
+  triggerMs?:number;
 }
 export type DirectTransport=Pick<OndaBrowserSessionTransport,'publicCheckoutProofless'>;
 export function prooflessPlanFingerprint(plan:BookingPlan):string{
@@ -205,7 +209,7 @@ export async function submitDirectCheckout(plan:BookingPlan,customer:CheckoutCus
   let permit;
   try{permit=await journal.claimSupervisedOneShot(key);}
   catch(error){await Promise.all(begun.map(entry=>entry.journal.mark(entry.key,'rejected',new Date(now()))));throw error;}
-  const windowCheck=()=>{if(releaseMs!==undefined){try{assertDirectDispatchWindow(releaseMs,now());}catch{throw new SubmissionDispatchError('DIRECT_RELEASE_WINDOW_MISSED',false);}}
+  const windowCheck=()=>{if(releaseMs!==undefined){try{assertDirectDispatchWindow(releaseMs,now(),dispatch.triggerMs??releaseMs);}catch{throw new SubmissionDispatchError('DIRECT_RELEASE_WINDOW_MISSED',false);}}
     dispatch.beforePost?.();};
   return recordDirectCheckoutOutcome(async()=>{
     windowCheck();

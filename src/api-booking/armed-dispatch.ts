@@ -12,6 +12,7 @@ import { SubmissionDispatchError } from './submission-errors.js';
 import { standardPlanJournalKeys, type CheckoutCustomer } from './two-hour-reservation.js';
 import type { BookingPlan } from './types.js';
 import { DEFAULT_SPIN_TAIL_MS, waitForMonotonicDeadline, type TrustedReleaseClock } from '../release-clock.js';
+import { releaseTriggerMs } from '../release-offset.js';
 import type { WorkerId } from '../workers.js';
 import type { OndaBrowserSessionTransport } from './browser-session-transport.js';
 import type { RendererClockCalibration } from './renderer-clock.js';
@@ -25,8 +26,9 @@ import { DEFAULT_RENDERER_DISPATCH_OPTIONS, planRendererFire, type RendererDispa
  * fingerprint are computed; the global lock is rewritten to FINAL_ACTION_ARMED; each
  * target's journal is created as 'armed' and its write-once one-shot is claimed, which
  * yields an in-memory permit. At the release instant a worker only checks abort, flips
- * its in-memory one-shot, checks the trusted clock (never early, never past the window)
- * and calls the browser transport. No file is written, flushed, renamed or read, and
+ * its in-memory one-shot, checks the trusted clock (never before its scheduled trigger,
+ * never past the window) and calls the browser transport. Each attempt's trigger is the
+ * release instant unless the operator chose a Release Offset for it (release-offset.ts). No file is written, flushed, renamed or read, and
  * nothing is hashed or built, between T-0 and the POST.
  *
  * Crash semantics (see RELEASE_LATENCY_PHASE1.md and tests/api-booking/armed-dispatch.test.ts):
@@ -42,11 +44,14 @@ export interface ArmedAttempt {
   readonly request: ProoflessCheckoutRequest;
   readonly journal: DurableSubmissionJournal;
   readonly permit: SubmissionPermit;
+  /** Scheduled trigger: the release instant plus this attempt's Release Offset (a whole millisecond from -2000 through 0). */
+  readonly triggerMs: number;
   /** 'armed' until the one in-memory transition; 'fired' is set synchronously before the transport call. */
   state: ArmedAttemptState;
 }
 export interface ArmedPrecisionRace {
   readonly race: FrozenPrecisionRace;
+  /** The official release instant; the maximum-lateness window is measured from it. */
   readonly releaseMs: number;
   readonly dispatchDeadlineMs: number;
   readonly attempts: readonly ArmedAttempt[];
@@ -66,7 +71,7 @@ export interface ArmDeps {
   journalRoot: string;
   releaseMs: number;
   dispatchWindowMs?: number;
-  /** Trusted epoch milliseconds, used for record timestamps and the "arm strictly before release" check. */
+  /** Trusted epoch milliseconds, used for record timestamps and the "arm strictly before every trigger" check. */
   now: () => number;
   journalFor?: (key: string) => DurableSubmissionJournal;
 }
@@ -76,18 +81,20 @@ export async function armPrecisionRace(race: FrozenPrecisionRace, deps: ArmDeps)
   assertPrecisionFreezeIntact(race);
   if (race.releaseMs !== deps.releaseMs || !Number.isSafeInteger(deps.releaseMs)) throw Error('PRECISION_ARM_RELEASE_MISMATCH');
   if (!race.attempts.length) throw Error('PRECISION_NOTHING_TO_ARM');
-  if (!(deps.now() < deps.releaseMs)) throw Error('PRECISION_ARM_TOO_LATE');
+  // Validated before anything durable: an out-of-range offset refuses the whole arm.
+  const triggers = race.attempts.map(attempt => releaseTriggerMs(deps.releaseMs, attempt.target.releaseOffsetMs ?? 0));
+  if (!(deps.now() < Math.min(...triggers))) throw Error('PRECISION_ARM_TOO_LATE');
   const dispatchDeadlineMs = deps.releaseMs + (deps.dispatchWindowMs ?? DIRECT_MAX_DISPATCH_LATENESS_MS);
-  const prepared = race.attempts.map(attempt => {
+  const prepared = race.attempts.map((attempt, index) => {
     const request = deepFreeze(prooflessRequest(attempt.plan, deps.customerFor(attempt.target.workerId)));
     const keys = standardPlanJournalKeys(attempt.plan, THIRSTY_PICKLE_FACILITY_ID);
     if (keys.length !== 1 || keys[0] !== attempt.target.targetKey || armCheckoutRequest(request).key !== keys[0])
       throw Error('PRECISION_TARGET_KEY_MISMATCH');
-    return { attempt, request, key: keys[0]!, fingerprint: prooflessPlanFingerprint(attempt.plan) };
+    return { attempt, request, key: keys[0]!, fingerprint: prooflessPlanFingerprint(attempt.plan), triggerMs: triggers[index]! };
   });
   // The global lock is armed before any per-target record, so every armed journal is covered by it.
   await deps.lock?.armed(deps.releaseMs, dispatchDeadlineMs, prepared.length);
-  const settled = await Promise.allSettled(prepared.map(async ({ attempt, request, key, fingerprint }): Promise<ArmedAttempt> => {
+  const settled = await Promise.allSettled(prepared.map(async ({ attempt, request, key, fingerprint, triggerMs }): Promise<ArmedAttempt> => {
     const journal = deps.journalFor?.(key) ?? new DurableSubmissionJournal(resolve(deps.journalRoot, key));
     await journal.arm(key, new Date(deps.now()), { attemptId: key, planFingerprint: fingerprint, targetDate: attempt.plan.targetDate,
       courtIds: attempt.plan.courts.map(court => court.court),
@@ -101,7 +108,7 @@ export async function armPrecisionRace(race: FrozenPrecisionRace, deps: ArmDeps)
       await journal.mark(key, 'rejected', new Date(deps.now()), undefined, undefined, 'ARMED_NOT_DISPATCHED').catch(() => undefined);
       throw error;
     }
-    return { target: attempt.target, plan: attempt.plan, key, request, journal, permit, state: 'armed' };
+    return { target: attempt.target, plan: attempt.plan, key, request, journal, permit, triggerMs, state: 'armed' };
   }));
   const attempts: ArmedAttempt[] = [], unarmed: Array<{ attempt: PrecisionAttempt; state: PrecisionAttemptState; code: string }> = [];
   settled.forEach((result, index) => {
@@ -120,7 +127,8 @@ export async function armPrecisionRace(race: FrozenPrecisionRace, deps: ArmDeps)
  * transport is invoked, so they are provably unsent. Never throws synchronously.
  */
 export function fireArmedAttempt(attempt: ArmedAttempt, transport: DirectTransport, clock: Pick<TrustedReleaseClock, 'nowMs'>,
-  window: { releaseMs: number; dispatchDeadlineMs: number }, isAborted: () => boolean): Promise<unknown> {
+  window: { releaseMs: number; triggerMs?: number; dispatchDeadlineMs: number }, isAborted: () => boolean): Promise<unknown> {
+  const triggerMs = window.triggerMs ?? window.releaseMs;
   const refuse = (code: string) => {
     if (attempt.state === 'armed') { attempt.state = 'refused'; revokeSubmissionPermit(attempt.permit); }
     return Promise.reject(new SubmissionDispatchError(code, false));
@@ -130,12 +138,12 @@ export function fireArmedAttempt(attempt: ArmedAttempt, transport: DirectTranspo
     if (isAborted()) return refuse('USER_ABORT');
     const now = clock.nowMs();
     // Final trusted no-early / maximum-lateness gate (same anchored clock as the wait).
-    if (now < window.releaseMs) return refuse('DIRECT_RELEASE_NOT_REACHED');
+    if (now < triggerMs) return refuse('DIRECT_RELEASE_NOT_REACHED');
     if (now > window.dispatchDeadlineMs) return refuse('DIRECT_RELEASE_WINDOW_MISSED');
     attempt.state = 'fired';
     // Checked once more as the transport's last step before the network.
     const beforePost = () => {
-      try { assertDirectDispatchWindow(window.releaseMs, clock.nowMs()); }
+      try { assertDirectDispatchWindow(window.releaseMs, clock.nowMs(), triggerMs); }
       catch { throw new SubmissionDispatchError('DIRECT_RELEASE_WINDOW_MISSED', false); }
     };
     return transport.publicCheckoutProofless(attempt.request, attempt.permit, { requirePreparedContext: true, beforePost });
@@ -151,15 +159,16 @@ export type RendererTransport = Pick<OndaBrowserSessionTransport, 'publicCheckou
 /**
  * EXPERIMENTAL counterpart of fireArmedAttempt: hands the armed attempt to its page `armLeadMs` before
  * release (renderer-dispatch.ts). Refusals before the transport call are provably unsent. The trusted
- * clock must read BEFORE release and inside the arm lead, both here and as the transport's last step.
+ * clock must read BEFORE the trigger and inside the arm lead, both here and as the transport's last step.
  */
 export function fireArmedAttemptRenderer(attempt: ArmedAttempt, transport: RendererTransport, clock: Pick<TrustedReleaseClock, 'nowMs'>,
-  window: { releaseMs: number }, plan: RendererFirePlan, isAborted: () => boolean, armLeadMs: number): Promise<unknown> {
+  window: { releaseMs: number; triggerMs?: number }, plan: RendererFirePlan, isAborted: () => boolean, armLeadMs: number): Promise<unknown> {
+  const triggerMs = window.triggerMs ?? window.releaseMs;
   const refuse = (code: string) => {
     if (attempt.state === 'armed') { attempt.state = 'refused'; revokeSubmissionPermit(attempt.permit); }
     return Promise.reject(new SubmissionDispatchError(code, false));
   };
-  const inArmWindow = (at: number) => at < window.releaseMs && window.releaseMs - at <= armLeadMs + RENDERER_ARM_SLACK_MS;
+  const inArmWindow = (at: number) => at < triggerMs && triggerMs - at <= armLeadMs + RENDERER_ARM_SLACK_MS;
   try {
     if (attempt.state !== 'armed') return Promise.reject(new SubmissionDispatchError('SUPERVISED_ONE_SHOT_ALREADY_USED', false));
     if (isAborted()) return refuse('USER_ABORT');
@@ -194,6 +203,12 @@ export async function disarmUnfired(armed: ArmedPrecisionRace, code: string, now
 }
 /** True when no armed attempt ever reached the transport (every one refused or disarmed). */
 export const armedNothingFired = (armed: ArmedPrecisionRace) => armed.attempts.every(attempt => attempt.state !== 'fired');
+/** The dispatch window of one armed attempt: from its own trigger to the race's deadline. */
+export const armedWindow = (armed: ArmedPrecisionRace, attempt: ArmedAttempt) =>
+  ({ releaseMs: armed.releaseMs, triggerMs: attempt.triggerMs, dispatchDeadlineMs: armed.dispatchDeadlineMs });
+/** The earliest trigger of an armed race (the release instant when nothing was armed). */
+export const firstArmedTrigger = (armed: ArmedPrecisionRace) =>
+  armed.attempts.length ? Math.min(...armed.attempts.map(attempt => attempt.triggerMs)) : armed.releaseMs;
 
 export interface ArmedDispatchDeps {
   clock: TrustedReleaseClock;
@@ -246,19 +261,24 @@ export interface ArmedDispatchOutcome {
 
 /**
  * Per-attempt readiness and independent dispatch for an armed race. Prewarm runs
- * prewarmLeadMs before release; the final wait is on the monotonic deadline of the
- * trusted clock; at the deadline every ready attempt is fired in one synchronous pass.
- * An attempt that is not ready by the dispatch deadline is disarmed as unsent.
+ * prewarmLeadMs before the earliest trigger; each wait is on the monotonic deadline of the
+ * trusted clock. Attempts that share a trigger fire in one synchronous pass at it; attempts
+ * with different Release Offsets fire at their own triggers, earliest first. An attempt
+ * that is not ready by the dispatch deadline is disarmed as unsent. Without offsets every
+ * attempt shares the release instant, exactly as before.
  */
 export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps: ArmedDispatchDeps): Promise<ArmedDispatchOutcome> {
-  const { clock } = deps, { releaseMs, dispatchDeadlineMs } = armed;
+  const { clock } = deps, { dispatchDeadlineMs } = armed;
+  const firstTriggerMs = firstArmedTrigger(armed);
   const now = () => clock.nowMs();
-  const retryCutoff = releaseMs - (deps.prewarmRetryCutoffMs ?? 7_000);
+  const retryCutoff = firstTriggerMs - (deps.prewarmRetryCutoffMs ?? 7_000);
   const spinTailMs = deps.spinTailMs ?? DEFAULT_SPIN_TAIL_MS;
   // Observers must never change an outcome (a failed trace write is not a failed prewarm or an unknown POST).
   const emit = (event: Parameters<NonNullable<ArmedDispatchDeps['onEvent']>>[0]) => { try { deps.onEvent?.(event); } catch { /* observability only */ } };
   const waitFor = (epochMs: number, isAborted = deps.isAborted, sleep = deps.sleep) =>
     waitForMonotonicDeadline(() => clock.monotonicDeadline(epochMs), { spinTailMs, isAborted, ...(sleep ? { sleep } : {}) });
+  // A plain timer: after something was sent, a wait must never throw (the runner's abort-aware sleep does).
+  const timerSleep = (ms: number) => new Promise<void>(done => setTimeout(done, ms));
   type Readiness = { settled: boolean; ok: boolean; promise: Promise<boolean> };
   let readiness: Readiness[];
   const sends: Array<Promise<unknown> | undefined> = new Array(armed.attempts.length);
@@ -266,9 +286,62 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
   const rendererOptions = { ...DEFAULT_RENDERER_DISPATCH_OPTIONS, ...(renderer?.options ?? {}) };
   const rendererArmed: number[] = [];
   const emitPlan = (event: Parameters<NonNullable<NonNullable<ArmedDispatchDeps['rendererDispatch']>['onPlan']>>[0]) => { try { renderer?.onPlan?.(event); } catch { /* observability only */ } };
+  // One step per distinct trigger (plus its renderer arm step), in time order; at a tie a fire goes first.
+  // With nothing armed it still waits for the release instant, as before.
+  const triggers = [...new Set([firstTriggerMs, ...armed.attempts.map(attempt => attempt.triggerMs)])].sort((a, b) => a - b);
+  const steps = triggers.flatMap(triggerMs => [{ at: triggerMs, kind: 'fire' as const, triggerMs },
+    ...(renderer ? [{ at: triggerMs - rendererOptions.armLeadMs, kind: 'arm' as const, triggerMs }] : [])])
+    .sort((a, b) => a.at - b.at || (a.kind === b.kind ? 0 : a.kind === 'fire' ? -1 : 1));
+  const groupOf = (triggerMs: number) => armed.attempts.flatMap((attempt, index) => attempt.triggerMs === triggerMs ? [index] : []);
+  let calibrations = new Map<number, RendererClockCalibration>();
+  /** EXPERIMENTAL: one synchronous pass handing each calibrated, ready attempt of this trigger to its page. */
+  const armRendererGroup = (triggerMs: number) => {
+    for (const index of groupOf(triggerMs)) {
+      const attempt = armed.attempts[index]!, ready = readiness[index]!, calibration = calibrations.get(index);
+      if (!ready.settled || !ready.ok || !calibration) continue;
+      const transport = renderer!.transportFor(attempt.target.workerId);
+      if (!transport) { emitPlan({ workerId: attempt.target.workerId, mode: 'node-fallback', code: 'RENDERER_TRANSPORT_MISSING' }); continue; }
+      let plan: RendererFirePlan;
+      // The page fires at the trigger, so the trigger is the "release" it plans for.
+      try { plan = planRendererFire({ key: attempt.key, pageUrl: renderer!.pageUrl, calibration, clock, releaseMs: triggerMs, dispatchDeadlineMs, nodeNowMs: performance.now(), options: rendererOptions }); }
+      catch (error) { emitPlan({ workerId: attempt.target.workerId, mode: 'node-fallback', code: safeCode(error, 'RENDERER_PLAN_FAILED'), calibration }); continue; }
+      // Too close to (or past) the trigger to arm safely: leave it to the Node path at its trigger.
+      if (!(now() < triggerMs - 1)) { emitPlan({ workerId: attempt.target.workerId, mode: 'node-fallback', code: 'RENDERER_ARM_TOO_LATE', calibration }); continue; }
+      deps.onMark?.(attempt.target.workerId, 'rendererArm');
+      const sent = fireArmedAttemptRenderer(attempt, transport, clock, armedWindow(armed, attempt), plan, deps.isAborted, rendererOptions.armLeadMs);
+      sent.catch(() => undefined);
+      sends[index] = sent;
+      rendererArmed.push(index);
+      emitPlan({ workerId: attempt.target.workerId, mode: 'renderer', calibration, plan });
+    }
+  };
+  /** ---- Trigger: one synchronous, in-memory pass. No I/O, hashing or request building here. ---- */
+  const fireGroup = (triggerMs: number) => {
+    for (const index of groupOf(triggerMs)) {
+      const attempt = armed.attempts[index]!, ready = readiness[index]!;
+      if (sends[index] || !ready.settled || !ready.ok) continue;
+      const transport = deps.transportFor(attempt.target.workerId);
+      if (!transport) continue;
+      deps.onMark?.(attempt.target.workerId, 'transportCall');
+      const sent = fireArmedAttempt(attempt, transport, clock, armedWindow(armed, attempt), deps.isAborted);
+      sent.catch(() => undefined); // observed below; marked handled so a refusal is never an unhandled rejection meanwhile
+      sends[index] = sent;
+    }
+  };
+  // Once anything has been sent (or a page armed) a wait can no longer throw: a Stop disarms the armed pages (best
+  // effort) and every later Node-path attempt still refuses at its trigger through isAborted, so every outcome is
+  // settled and recorded below.
+  let disarmRequested = false;
+  const committedAbort = () => {
+    if (!disarmRequested && deps.isAborted()) {
+      disarmRequested = true;
+      for (const index of rendererArmed) void renderer!.transportFor(armed.attempts[index]!.target.workerId)?.disarmRendererCheckout(armed.attempts[index]!.key);
+    }
+    return false;
+  };
   try {
     assertPrecisionFreezeIntact(armed.race);
-    await waitFor(releaseMs - deps.prewarmLeadMs);
+    await waitFor(firstTriggerMs - deps.prewarmLeadMs);
     readiness = armed.attempts.map(attempt => {
       const entry: Readiness = { settled: false, ok: false, promise: Promise.resolve(false) };
       entry.promise = (async () => {
@@ -286,81 +359,44 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
       })().then(ok => { entry.settled = true; entry.ok = ok; return ok; });
       return entry;
     });
-    // Integrity of the frozen set is verified before the final wait, never after T-0.
+    // Integrity of the frozen set is verified before the final wait, never after the first trigger.
     assertPrecisionFreezeIntact(armed.race);
-    const calibrations = new Map<number, RendererClockCalibration>();
     if (renderer) {
       // EXPERIMENTAL: calibrate every page clock a few seconds out; an attempt that cannot calibrate uses the Node path.
       // Bounded: whatever has not finished by the final approach is abandoned, so a stuck page can never hold the
-      // Node path (or the other pages) past release.
-      await waitFor(releaseMs - RENDERER_CALIBRATION_LEAD_MS);
-      const finished = new Set<number>();
+      // Node path (or the other pages) past its trigger.
+      await waitFor(firstTriggerMs - RENDERER_CALIBRATION_LEAD_MS);
+      const finished = new Set<number>(), collected = new Map<number, RendererClockCalibration>();
       let open = true, timer: ReturnType<typeof setTimeout> | undefined;
       await Promise.race([
         Promise.all(armed.attempts.map(async (attempt, index) => {
-          try { const calibration = await renderer.calibrate(attempt); if (open) calibrations.set(index, calibration); }
+          try { const calibration = await renderer.calibrate(attempt); if (open) collected.set(index, calibration); }
           catch (error) { if (open) emitPlan({ workerId: attempt.target.workerId, mode: 'node-fallback', code: safeCode(error, 'RENDERER_CLOCK_SAMPLING_FAILED') }); }
           finally { if (open) finished.add(index); }
         })),
-        new Promise<void>(done => { timer = setTimeout(done, Math.max(0, clock.monotonicDeadline(releaseMs - FINAL_APPROACH_MS) - performance.now())); }),
+        new Promise<void>(done => { timer = setTimeout(done, Math.max(0, clock.monotonicDeadline(firstTriggerMs - FINAL_APPROACH_MS) - performance.now())); }),
       ]);
       open = false;
       clearTimeout(timer);
+      calibrations = collected;
       armed.attempts.forEach((attempt, index) => {
         if (!finished.has(index)) emitPlan({ workerId: attempt.target.workerId, mode: 'node-fallback', code: 'RENDERER_CALIBRATION_TIMEOUT' });
       });
     }
-    if (deps.onFinalApproach) { await waitFor(releaseMs - FINAL_APPROACH_MS); try { deps.onFinalApproach(); } catch { /* optional tuning */ } }
-    if (renderer) {
-      await waitFor(releaseMs - rendererOptions.armLeadMs);
-      // ---- T - armLead (EXPERIMENTAL): one synchronous pass handing each calibrated, ready attempt to its page. ----
-      for (let index = 0; index < armed.attempts.length; index++) {
-        const attempt = armed.attempts[index]!, ready = readiness[index]!, calibration = calibrations.get(index);
-        if (!ready.settled || !ready.ok || !calibration) continue;
-        const transport = renderer.transportFor(attempt.target.workerId);
-        if (!transport) { emitPlan({ workerId: attempt.target.workerId, mode: 'node-fallback', code: 'RENDERER_TRANSPORT_MISSING' }); continue; }
-        let plan: RendererFirePlan;
-        try { plan = planRendererFire({ key: attempt.key, pageUrl: renderer.pageUrl, calibration, clock, releaseMs, dispatchDeadlineMs, nodeNowMs: performance.now(), options: rendererOptions }); }
-        catch (error) { emitPlan({ workerId: attempt.target.workerId, mode: 'node-fallback', code: safeCode(error, 'RENDERER_PLAN_FAILED'), calibration }); continue; }
-        // Too close to (or past) release to arm safely: leave it to the Node path at T-0.
-        if (!(now() < releaseMs - 1)) { emitPlan({ workerId: attempt.target.workerId, mode: 'node-fallback', code: 'RENDERER_ARM_TOO_LATE', calibration }); continue; }
-        deps.onMark?.(attempt.target.workerId, 'rendererArm');
-        const sent = fireArmedAttemptRenderer(attempt, transport, clock, armed, plan, deps.isAborted, rendererOptions.armLeadMs);
-        sent.catch(() => undefined);
-        sends[index] = sent;
-        rendererArmed.push(index);
-        emitPlan({ workerId: attempt.target.workerId, mode: 'renderer', calibration, plan });
-      }
+    if (deps.onFinalApproach) { await waitFor(firstTriggerMs - FINAL_APPROACH_MS); try { deps.onFinalApproach(); } catch { /* optional tuning */ } }
+    for (const step of steps) {
+      if (sends.some(Boolean)) await waitFor(step.at, committedAbort, timerSleep);
+      else await waitFor(step.at);
+      if (step.kind === 'arm') armRendererGroup(step.triggerMs);
+      else { deps.onWake?.(); fireGroup(step.triggerMs); }
     }
-    // Once any page is armed the wait can no longer throw: a Stop disarms the armed pages (best effort) and the
-    // Node-path attempts still refuse at T-0 through isAborted, so every outcome is settled and recorded below.
-    let disarmRequested = false;
-    await waitFor(releaseMs, rendererArmed.length ? () => {
-      if (!disarmRequested && deps.isAborted()) {
-        disarmRequested = true;
-        for (const index of rendererArmed) void renderer!.transportFor(armed.attempts[index]!.target.workerId)?.disarmRendererCheckout(armed.attempts[index]!.key);
-      }
-      return false;
-    } : deps.isAborted);
   } catch (error) {
     try { deps.onReleaseWindowEnd?.(); } catch { /* optional tuning */ }
-    // Aborted (or failed) before release: nothing was fired; record every attempt as provably unsent.
+    // Aborted (or failed) before anything was sent: nothing was fired; record every attempt as provably unsent.
     await disarmUnfired(armed, safeCode(error, 'ARMED_NOT_DISPATCHED'), now);
     throw error;
   }
-  deps.onWake?.();
-  // ---- T-0: one synchronous, in-memory pass. No I/O, hashing or request building here. ----
-  for (let index = 0; index < armed.attempts.length; index++) {
-    const attempt = armed.attempts[index]!, ready = readiness[index]!;
-    if (sends[index] || !ready.settled || !ready.ok) continue;
-    const transport = deps.transportFor(attempt.target.workerId);
-    if (!transport) continue;
-    deps.onMark?.(attempt.target.workerId, 'transportCall');
-    const sent = fireArmedAttempt(attempt, transport, clock, armed, deps.isAborted);
-    sent.catch(() => undefined); // observed below; marked handled so a refusal is never an unhandled rejection meanwhile
-    sends[index] = sent;
-  }
-  // The CDP messages leave in the microtasks after this pass; run no bookkeeping on this thread until they have.
+  // The CDP messages leave in the microtasks after the last pass; run no bookkeeping on this thread until they have.
   await new Promise<void>(done => setImmediate(done));
   try { deps.onReleaseWindowEnd?.(); } catch { /* optional tuning */ }
   // ---- Everything below runs after every ready POST has been started. ----
@@ -372,7 +408,7 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
     let sent = sends[index];
     if (!sent) {
       if (!ready.settled) {
-        // Not ready at T-0: it may still dispatch inside the window, exactly like a late prewarm before.
+        // Not ready at its trigger: it may still dispatch inside the window, exactly like a late prewarm before.
         const timedOut = Symbol('timeout');
         // A late prewarm keeps its window even if Stop arrives now (fireArmedAttempt still refuses once aborted).
         const outcome = await Promise.race([ready.promise, waitFor(dispatchDeadlineMs, () => false, undefined).then(() => timedOut)]);
@@ -381,7 +417,7 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
       if (!ready.ok) { await disarmAttempt(attempt, 'SECURITY_PREWARM_FAILED', now).catch(() => undefined); return { state: 'PREWARM_FAILED', code: 'SECURITY_PREWARM_FAILED' }; }
       const transport = deps.transportFor(attempt.target.workerId);
       if (!transport) { await disarmAttempt(attempt, 'API_CHECKOUT_WORKER_MISSING', now).catch(() => undefined); return { state: 'NOT_DISPATCHED', code: 'API_CHECKOUT_WORKER_MISSING' }; }
-      sent = fireArmedAttempt(attempt, transport, clock, armed, deps.isAborted);
+      sent = fireArmedAttempt(attempt, transport, clock, armedWindow(armed, attempt), deps.isAborted);
     }
     emit({ kind: 'dispatch-start', workerId: attempt.target.workerId });
     try {
