@@ -251,6 +251,7 @@ Every sample: Appendix J.
 
 - Sept 12 and today were both Mondays. Sept 12 used the normal website flow, which checks the slot and gets a proof before checking out. That checkout, sent at +9.5 s, was held in about 3.8 s. Today's proofless checkouts, sent at +7 ms, took 6.8–14.0 s.
 - Different days and loads, so not a controlled comparison. It is the one untested lever that might change our place in Onda's order rather than our send time.
+- **Note (added 2026-09-28):** no competing bot was contesting the 12 September release. That win is not evidence that the proof-backed flow wins contested releases ([REVIEW_GUIDE.md](REVIEW_GUIDE.md#read-first-the-one-release-win-was-uncontested)).
 
 ## 15. What worked
 
