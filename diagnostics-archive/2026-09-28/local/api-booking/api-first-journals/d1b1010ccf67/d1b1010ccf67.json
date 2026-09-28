@@ -1,0 +1,41 @@
+{
+  "key": "d1b1010ccf67743e9460911b416e143b6e83d6acdf8ec87f6fac7a4f0dd558f8",
+  "state": "rejected",
+  "createdAt": "2026-09-27T23:58:00.066Z",
+  "updatedAt": "2026-09-28T00:00:08.068Z",
+  "attempt": {
+    "attemptId": "d1b1010ccf67743e9460911b416e143b6e83d6acdf8ec87f6fac7a4f0dd558f8",
+    "planFingerprint": "afad4dcd7d3620b5f7b4d7be62450a6c1bcc2c5d56a58b7ceb504d9819124668",
+    "targetDate": "2026-09-30",
+    "courtIds": [
+      6
+    ],
+    "hourlyBoundaries": [
+      {
+        "startTime": "19:00",
+        "endTime": "20:00"
+      },
+      {
+        "startTime": "20:00",
+        "endTime": "21:00"
+      },
+      {
+        "startTime": "21:00",
+        "endTime": "22:00"
+      }
+    ],
+    "expectedBookingCount": 3,
+    "maximumAmount": 2100,
+    "stage": "armed",
+    "releaseMs": 1790553600000,
+    "dispatchDeadlineMs": 1790553601000
+  },
+  "diagnostic": {
+    "status": 409,
+    "category": "http-rejection",
+    "contentKind": "json",
+    "responseSource": "application",
+    "errorHint": "availability"
+  },
+  "failureCode": "ONDA_HTTP_STATUS_INVALID"
+}

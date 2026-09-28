@@ -1,0 +1,324 @@
+{
+  "schema": "release-evidence-archive/v1",
+  "runId": "e3f7de87-d1d5-4949-9ddc-4cc49529cfa7",
+  "targetDate": "2026-09-30",
+  "releaseAt": "2026-09-28T00:00:00.000Z",
+  "modifiedSince": "2026-09-26T00:50:00.000Z",
+  "exportedAt": "2026-09-28T01:22:50.318Z",
+  "fileCount": 52,
+  "redactionCount": 25,
+  "files": [
+    {
+      "path": "install/BUILD-INFO.txt",
+      "source": "BUILD-INFO.txt",
+      "bytes": 350,
+      "sha256": "023515e402c99c4f92ae5eef53ecec66c0ac20cce2bc9f49eb7a8413f4878a0f"
+    },
+    {
+      "path": "local/api-booking/api-first-journals/19f00779166b/19f00779166b.json",
+      "source": ".local/api-booking/api-first-journals/19f00779166b47b4997bce71a6a03efd7a11e03b9d0781090322bfd83ff18488/19f00779166b47b4997bce71a6a03efd7a11e03b9d0781090322bfd83ff18488.json",
+      "bytes": 1073,
+      "sha256": "d225eaac5ba2c8b0f6b204193ed94ac8febdd398e588f2968beb00c4aba05926"
+    },
+    {
+      "path": "local/api-booking/api-first-journals/19f00779166b/checkout-response-private.json",
+      "source": ".local/api-booking/api-first-journals/19f00779166b47b4997bce71a6a03efd7a11e03b9d0781090322bfd83ff18488/checkout-response-private.json",
+      "bytes": 1901,
+      "sha256": "5d0d747dedee3cfdca027c29d983c234dc48598c7fb595dacecc269f56de8538"
+    },
+    {
+      "path": "local/api-booking/api-first-journals/19f00779166b/supervised-one-shot.json",
+      "source": ".local/api-booking/api-first-journals/19f00779166b47b4997bce71a6a03efd7a11e03b9d0781090322bfd83ff18488/supervised-one-shot.json",
+      "bytes": 65,
+      "sha256": "e7ecb88864dbba311c511da1ef8fc8959ad04f8d5065307b1718c5874c84d02e"
+    },
+    {
+      "path": "local/api-booking/api-first-journals/1fda8bc07fa6/1fda8bc07fa6.json",
+      "source": ".local/api-booking/api-first-journals/1fda8bc07fa62b1eb9eaca80b9ac7c132a0552f2b7aca0dd7df8def112be3a72/1fda8bc07fa62b1eb9eaca80b9ac7c132a0552f2b7aca0dd7df8def112be3a72.json",
+      "bytes": 1073,
+      "sha256": "c1a250d23c40ac2ab84682c8a487c3487ea17121472666f1d299ff080baf83a4"
+    },
+    {
+      "path": "local/api-booking/api-first-journals/1fda8bc07fa6/checkout-response-private.json",
+      "source": ".local/api-booking/api-first-journals/1fda8bc07fa62b1eb9eaca80b9ac7c132a0552f2b7aca0dd7df8def112be3a72/checkout-response-private.json",
+      "bytes": 1901,
+      "sha256": "5a88c5b8d58cebb78dbd6dbb27d67d122361cb6a0c340bd4c81eb56c5c3f1dcd"
+    },
+    {
+      "path": "local/api-booking/api-first-journals/1fda8bc07fa6/supervised-one-shot.json",
+      "source": ".local/api-booking/api-first-journals/1fda8bc07fa62b1eb9eaca80b9ac7c132a0552f2b7aca0dd7df8def112be3a72/supervised-one-shot.json",
+      "bytes": 65,
+      "sha256": "e7ecb88864dbba311c511da1ef8fc8959ad04f8d5065307b1718c5874c84d02e"
+    },
+    {
+      "path": "local/api-booking/api-first-journals/2743d5629aaf/2743d5629aaf.json",
+      "source": ".local/api-booking/api-first-journals/2743d5629aafc0e8f4ba2c5e0117bca90a1e47b06a7f560981b90eddce319b93/2743d5629aafc0e8f4ba2c5e0117bca90a1e47b06a7f560981b90eddce319b93.json",
+      "bytes": 1073,
+      "sha256": "1c8415d06451d193f7db83d7692bd15bf430dacd8915eb89dfaeb13702bd0f7a"
+    },
+    {
+      "path": "local/api-booking/api-first-journals/2743d5629aaf/checkout-response-private.json",
+      "source": ".local/api-booking/api-first-journals/2743d5629aafc0e8f4ba2c5e0117bca90a1e47b06a7f560981b90eddce319b93/checkout-response-private.json",
+      "bytes": 1901,
+      "sha256": "2a4ab44f6cdb3ffba53045960aa874e10d1d64f48a2de269515a8ae75303d1a7"
+    },
+    {
+      "path": "local/api-booking/api-first-journals/2743d5629aaf/supervised-one-shot.json",
+      "source": ".local/api-booking/api-first-journals/2743d5629aafc0e8f4ba2c5e0117bca90a1e47b06a7f560981b90eddce319b93/supervised-one-shot.json",
+      "bytes": 65,
+      "sha256": "16074b160942284aa2f188f23e668e996b08dbd7dc188f3d9b9ed3ae7372e3db"
+    },
+    {
+      "path": "local/api-booking/api-first-journals/46dbfff25881/46dbfff25881.json",
+      "source": ".local/api-booking/api-first-journals/46dbfff25881e6d4a55957d492ba73da6d2df719f5f5e695178cd6b84973ce45/46dbfff25881e6d4a55957d492ba73da6d2df719f5f5e695178cd6b84973ce45.json",
+      "bytes": 1073,
+      "sha256": "f7a4476e0eb6c0747c342187e5ee4a8fd2c86e2bec7e1c96764f3c9a3df5b27f"
+    },
+    {
+      "path": "local/api-booking/api-first-journals/46dbfff25881/checkout-response-private.json",
+      "source": ".local/api-booking/api-first-journals/46dbfff25881e6d4a55957d492ba73da6d2df719f5f5e695178cd6b84973ce45/checkout-response-private.json",
+      "bytes": 1901,
+      "sha256": "92444c71ba14763f57eeaa5872940f22d5a7a79a70a0f1b98086b856fa6aeb34"
+    },
+    {
+      "path": "local/api-booking/api-first-journals/46dbfff25881/supervised-one-shot.json",
+      "source": ".local/api-booking/api-first-journals/46dbfff25881e6d4a55957d492ba73da6d2df719f5f5e695178cd6b84973ce45/supervised-one-shot.json",
+      "bytes": 65,
+      "sha256": "cf4e789cecaaf324912ce3deda165225955f28e7bc2016ab457536da60e2f8c2"
+    },
+    {
+      "path": "local/api-booking/api-first-journals/6fe7e449f1c9/6fe7e449f1c9.json",
+      "source": ".local/api-booking/api-first-journals/6fe7e449f1c920513a1a9d6282a85b94b5c1ac5c3efff5244b87f9263a6fee10/6fe7e449f1c920513a1a9d6282a85b94b5c1ac5c3efff5244b87f9263a6fee10.json",
+      "bytes": 1073,
+      "sha256": "da287cf0b150bfa0d3c88f024390192d537b049346ca4018e1016406882c6950"
+    },
+    {
+      "path": "local/api-booking/api-first-journals/6fe7e449f1c9/checkout-response-private.json",
+      "source": ".local/api-booking/api-first-journals/6fe7e449f1c920513a1a9d6282a85b94b5c1ac5c3efff5244b87f9263a6fee10/checkout-response-private.json",
+      "bytes": 1901,
+      "sha256": "db3663282e5f9b832c83aca1d3a2e5a8509b646c44e1112091ae849cefddbfc7"
+    },
+    {
+      "path": "local/api-booking/api-first-journals/6fe7e449f1c9/supervised-one-shot.json",
+      "source": ".local/api-booking/api-first-journals/6fe7e449f1c920513a1a9d6282a85b94b5c1ac5c3efff5244b87f9263a6fee10/supervised-one-shot.json",
+      "bytes": 65,
+      "sha256": "16074b160942284aa2f188f23e668e996b08dbd7dc188f3d9b9ed3ae7372e3db"
+    },
+    {
+      "path": "local/api-booking/api-first-journals/9c2763657e2a/9c2763657e2a.json",
+      "source": ".local/api-booking/api-first-journals/9c2763657e2a5b7a02a9fa4fee4c3300439b0d5477fe991992aac8d7067762bb/9c2763657e2a5b7a02a9fa4fee4c3300439b0d5477fe991992aac8d7067762bb.json",
+      "bytes": 1073,
+      "sha256": "d103637b9f0c37cc8880ff12f9491704eba9614935a1c5fc46ae58fc47a13319"
+    },
+    {
+      "path": "local/api-booking/api-first-journals/9c2763657e2a/checkout-response-private.json",
+      "source": ".local/api-booking/api-first-journals/9c2763657e2a5b7a02a9fa4fee4c3300439b0d5477fe991992aac8d7067762bb/checkout-response-private.json",
+      "bytes": 1901,
+      "sha256": "21ede9a1106a95689bd1e0fc0690749559903f5f6b35d5f5d5fc4331a46b184a"
+    },
+    {
+      "path": "local/api-booking/api-first-journals/9c2763657e2a/supervised-one-shot.json",
+      "source": ".local/api-booking/api-first-journals/9c2763657e2a5b7a02a9fa4fee4c3300439b0d5477fe991992aac8d7067762bb/supervised-one-shot.json",
+      "bytes": 65,
+      "sha256": "16074b160942284aa2f188f23e668e996b08dbd7dc188f3d9b9ed3ae7372e3db"
+    },
+    {
+      "path": "local/api-booking/api-first-journals/d1b1010ccf67/checkout-response-private.json",
+      "source": ".local/api-booking/api-first-journals/d1b1010ccf67743e9460911b416e143b6e83d6acdf8ec87f6fac7a4f0dd558f8/checkout-response-private.json",
+      "bytes": 1901,
+      "sha256": "deb88098900c56af6666d2c13971459b6445684a60163617b135b576b42a1cf1"
+    },
+    {
+      "path": "local/api-booking/api-first-journals/d1b1010ccf67/d1b1010ccf67.json",
+      "source": ".local/api-booking/api-first-journals/d1b1010ccf67743e9460911b416e143b6e83d6acdf8ec87f6fac7a4f0dd558f8/d1b1010ccf67743e9460911b416e143b6e83d6acdf8ec87f6fac7a4f0dd558f8.json",
+      "bytes": 1073,
+      "sha256": "a60b19f63de32f4a7d06b5603dcf8ea0c5768d9a65274525c8f66064194499c2"
+    },
+    {
+      "path": "local/api-booking/api-first-journals/d1b1010ccf67/supervised-one-shot.json",
+      "source": ".local/api-booking/api-first-journals/d1b1010ccf67743e9460911b416e143b6e83d6acdf8ec87f6fac7a4f0dd558f8/supervised-one-shot.json",
+      "bytes": 65,
+      "sha256": "16074b160942284aa2f188f23e668e996b08dbd7dc188f3d9b9ed3ae7372e3db"
+    },
+    {
+      "path": "local/api-booking/precision-races/e3f7de87-d1d5-4949-9ddc-4cc49529cfa7-phase3-freeze.json",
+      "source": ".local/api-booking/precision-races/e3f7de87-d1d5-4949-9ddc-4cc49529cfa7-phase3-freeze.json",
+      "bytes": 9373,
+      "sha256": "7e6b774847a01ba4901d538ad09f8beb66f023080be6a5a7258ce55006df6211"
+    },
+    {
+      "path": "local/api-booking/run-progress/66830faa-f378-4e5d-bb82-03ed7024ab0b.ndjson",
+      "source": ".local/api-booking/run-progress/66830faa-f378-4e5d-bb82-03ed7024ab0b.ndjson",
+      "bytes": 5891,
+      "sha256": "39ec4a3796266c777e0771cef54f55e5ba06fa2fa5620587522374eeb44fe043"
+    },
+    {
+      "path": "local/api-booking/run-progress/8508e622-2219-4ed9-970c-6a2b791d73a0.ndjson",
+      "source": ".local/api-booking/run-progress/8508e622-2219-4ed9-970c-6a2b791d73a0.ndjson",
+      "bytes": 10900,
+      "sha256": "ae940a2b29aba32e5fd652d048fd0b36cb690f06be5ac638bf8cf256bc537f01"
+    },
+    {
+      "path": "local/api-booking/run-progress/e3f7de87-d1d5-4949-9ddc-4cc49529cfa7.ndjson",
+      "source": ".local/api-booking/run-progress/e3f7de87-d1d5-4949-9ddc-4cc49529cfa7.ndjson",
+      "bytes": 103116,
+      "sha256": "530667d7f1fbf0a16faf545bc02458e637874b2cf163fedc68dd059ba7a5daba"
+    },
+    {
+      "path": "local/arbitration-manifests/2026-09-30_1790553600000/experiment-manifest.json",
+      "source": ".local/arbitration-manifests/2026-09-30_1790553600000/experiment-manifest.json",
+      "bytes": 855,
+      "sha256": "5b7347f1ffea9e37b4edc43706a289c78a13069f799eaee758d88107e8ac34c1"
+    },
+    {
+      "path": "local/booking-runs/21766397-9df8-4803-89dd-be6b6d964355.ndjson",
+      "source": ".local/booking-runs/21766397-9df8-4803-89dd-be6b6d964355.ndjson",
+      "bytes": 1417,
+      "sha256": "45d73a5cf9f731d681ba9d77e9be15cb01d1997af20487d5ccb67cdcdd3c4fb7"
+    },
+    {
+      "path": "local/booking-runs/918e4f09-1945-4936-b80d-ee79efec275e.ndjson",
+      "source": ".local/booking-runs/918e4f09-1945-4936-b80d-ee79efec275e.ndjson",
+      "bytes": 772,
+      "sha256": "a5fc38079c99cac2ff08240c565906de85ff60e0a4964c70f2cee770be7d2721"
+    },
+    {
+      "path": "local/booking-runs/aa684e5c-fb28-4a7a-bdcf-3f84c2c2fd4f.ndjson",
+      "source": ".local/booking-runs/aa684e5c-fb28-4a7a-bdcf-3f84c2c2fd4f.ndjson",
+      "bytes": 15922,
+      "sha256": "202c88ccab55e62832b628c7cfcbfd78f725f39cd49e098ec02809d1c647eaed"
+    },
+    {
+      "path": "local/booking-runs/cc84c34b-50a6-4da6-be51-7728ffc98262.ndjson",
+      "source": ".local/booking-runs/cc84c34b-50a6-4da6-be51-7728ffc98262.ndjson",
+      "bytes": 69712,
+      "sha256": "294731abf5099148c3044e6f92b2a7fc971e9c1171f5112e1522cc20f5f10c14"
+    },
+    {
+      "path": "local/booking-runs/f486deaa-f8be-4a33-b40f-bb50fd194fb7.ndjson",
+      "source": ".local/booking-runs/f486deaa-f8be-4a33-b40f-bb50fd194fb7.ndjson",
+      "bytes": 1072,
+      "sha256": "4f506925aa9f8a28212954e516f0216bf72c78dc1465ae31bcf643da40ddd633"
+    },
+    {
+      "path": "local/network-clock-evidence/2026-09-27T23-50-00-278Z-T-10M.json",
+      "source": ".local/network-clock-evidence/2026-09-27T23-50-00-278Z-T-10M.json",
+      "bytes": 1554,
+      "sha256": "4fbc7f25a1b0f356b7caecd6445835f619cc6dc53636b93a22483f4bc04dc023"
+    },
+    {
+      "path": "local/network-clock-evidence/2026-09-27T23-59-00-191Z-T-60S.json",
+      "source": ".local/network-clock-evidence/2026-09-27T23-59-00-191Z-T-60S.json",
+      "bytes": 1556,
+      "sha256": "9258afd14923f284b694a90d9596b59a7cf6b0f34c027d4a7364ef3cc3e38d52"
+    },
+    {
+      "path": "local/network-clock-evidence/2026-09-27T23-59-30-188Z-T-30S.json",
+      "source": ".local/network-clock-evidence/2026-09-27T23-59-30-188Z-T-30S.json",
+      "bytes": 1560,
+      "sha256": "213916a4b226d1a8be34e862099ed9a61cb4a9032d127272e772d51c59abef52"
+    },
+    {
+      "path": "local/network-clock.json",
+      "source": ".local/network-clock.json",
+      "bytes": 292,
+      "sha256": "462719a0a0ae05aa02864caaea80a78920b357356cc5ef7ccff9e897010c4b19"
+    },
+    {
+      "path": "local/release-forensics/e3f7de87-d1d5-4949-9ddc-4cc49529cfa7/critical-path.ndjson",
+      "source": ".local/release-forensics/e3f7de87-d1d5-4949-9ddc-4cc49529cfa7/critical-path.ndjson",
+      "bytes": 5673,
+      "sha256": "276faa5d6fad1f6819bcfec5339a7a5d8b047784572f4d5e7f9b0aa23505e5f3"
+    },
+    {
+      "path": "local/release-forensics/e3f7de87-d1d5-4949-9ddc-4cc49529cfa7/provider-trace.ndjson",
+      "source": ".local/release-forensics/e3f7de87-d1d5-4949-9ddc-4cc49529cfa7/provider-trace.ndjson",
+      "bytes": 15593,
+      "sha256": "b49da8b4ee6bf342d326926d253a95b22cc563a6c925c595b5be008998af0bcd"
+    },
+    {
+      "path": "local/release-forensics/e3f7de87-d1d5-4949-9ddc-4cc49529cfa7/report.txt",
+      "source": ".local/release-forensics/e3f7de87-d1d5-4949-9ddc-4cc49529cfa7/report.txt",
+      "bytes": 15317,
+      "sha256": "78d6539ff4a2bf90ff59e9356b776893f2d2622aa561a1d78745fe03c61bc08b"
+    },
+    {
+      "path": "local/release-forensics/e3f7de87-d1d5-4949-9ddc-4cc49529cfa7/summary.json",
+      "source": ".local/release-forensics/e3f7de87-d1d5-4949-9ddc-4cc49529cfa7/summary.json",
+      "bytes": 44751,
+      "sha256": "bc8111b09e1be16012f104f17675077506019125f628693e19af61ded6c4ff6c"
+    },
+    {
+      "path": "local/release-intelligence/index.json",
+      "source": ".local/release-intelligence/index.json",
+      "bytes": 13705,
+      "sha256": "c298bdc96ff25f1d963151a8f70d9b2df2a34e3f13982c0768f85d0cd0f26d6b"
+    },
+    {
+      "path": "local/release-intelligence/metrics.json",
+      "source": ".local/release-intelligence/metrics.json",
+      "bytes": 2167645,
+      "sha256": "27d926cf2516476cc7058d35aecf57e5b9bedabcea4d686ca4a12db207ba32a3"
+    },
+    {
+      "path": "local/release-intelligence/releases/2026-09-24@2026-09-22T00-00-00-000Z.json",
+      "source": ".local/release-intelligence/releases/2026-09-24@2026-09-22T00-00-00-000Z.json",
+      "bytes": 34586,
+      "sha256": "3746cb5690035dbdaf3d2b68e5b1a4f0188df36422c818ae6a1a3c49de7c6b88"
+    },
+    {
+      "path": "local/release-intelligence/releases/2026-09-25@2026-09-23T00-00-00-000Z.json",
+      "source": ".local/release-intelligence/releases/2026-09-25@2026-09-23T00-00-00-000Z.json",
+      "bytes": 39557,
+      "sha256": "65babaefe7163b422ef8df500d883987e203ca1476e745a10b97aa5b02a027ce"
+    },
+    {
+      "path": "local/release-intelligence/releases/2026-09-26@2026-09-24T00-00-00-000Z.json",
+      "source": ".local/release-intelligence/releases/2026-09-26@2026-09-24T00-00-00-000Z.json",
+      "bytes": 44587,
+      "sha256": "c01e352f5d46d7df402c51f0e62e082c85013f47abb11f7821d81ff7642dbe41"
+    },
+    {
+      "path": "local/release-intelligence/releases/2026-09-27@2026-09-25T00-00-00-000Z.json",
+      "source": ".local/release-intelligence/releases/2026-09-27@2026-09-25T00-00-00-000Z.json",
+      "bytes": 57106,
+      "sha256": "1fd506723986ea9539e41b281bc6f11f60c3b17ff48fac18cee0c2a8ef45deaa"
+    },
+    {
+      "path": "local/release-intelligence/releases/2026-09-28@2026-09-26T00-00-00-000Z.json",
+      "source": ".local/release-intelligence/releases/2026-09-28@2026-09-26T00-00-00-000Z.json",
+      "bytes": 42241,
+      "sha256": "019cfceb446be603dc615e21117110eef3db771548d6f2eb07340d6d630b2dea"
+    },
+    {
+      "path": "local/release-intelligence/releases/2026-09-30@2026-09-28T00-00-00-000Z.json",
+      "source": ".local/release-intelligence/releases/2026-09-30@2026-09-28T00-00-00-000Z.json",
+      "bytes": 44533,
+      "sha256": "c7b174a6e8b7f0145d9d962b98f88f4c235bc058897868a34b1f3463c2b7d42f"
+    },
+    {
+      "path": "local/release-intelligence/summary.txt",
+      "source": ".local/release-intelligence/summary.txt",
+      "bytes": 6029,
+      "sha256": "7cb0a29dcae5a3db06e6e9304280c1c485eee801ff40ccc908a7216c79111e63"
+    },
+    {
+      "path": "local/slot-watch/2026-09-30_ffe896ed-9c1f-43c7-9ce9-7767b6d12d49.ndjson",
+      "source": ".local/slot-watch/2026-09-30_ffe896ed-9c1f-43c7-9ce9-7767b6d12d49.ndjson",
+      "bytes": 246523,
+      "sha256": "321d09be5bcad3e8dde349d29021cbf700f709769c3976cfda0ab62b4c7ab739"
+    },
+    {
+      "path": "local/slot-watch/2026-09-30_ffe896ed-9c1f-43c7-9ce9-7767b6d12d49.summary.json",
+      "source": ".local/slot-watch/2026-09-30_ffe896ed-9c1f-43c7-9ce9-7767b6d12d49.summary.json",
+      "bytes": 284239,
+      "sha256": "3bf35f6f77ad1a561ff20faa1dc26795c6f740cc5b6f2c45b178c7c52dcfd0a1"
+    },
+    {
+      "path": "local/slot-watch/2026-09-30_ffe896ed-9c1f-43c7-9ce9-7767b6d12d49.txt",
+      "source": ".local/slot-watch/2026-09-30_ffe896ed-9c1f-43c7-9ce9-7767b6d12d49.txt",
+      "bytes": 15266,
+      "sha256": "f8f9610fb1947e401098e64f7ef57ae303aecd61ca681114953f558f9d1d71ad"
+    }
+  ]
+}

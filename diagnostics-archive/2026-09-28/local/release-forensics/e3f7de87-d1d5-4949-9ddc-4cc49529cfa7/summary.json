@@ -1,0 +1,1513 @@
+{
+  "version": 1,
+  "runId": "e3f7de87-d1d5-4949-9ddc-4cc49529cfa7",
+  "mode": "live",
+  "date": "2026-09-30",
+  "reference": "release",
+  "referenceMs": 1790553600000,
+  "status": "final",
+  "generatedAt": "2026-09-28T00:15:00.561Z",
+  "sources": {
+    "runProgress": "[REDACTED_LOCAL_PATH]\\Downloads\\Thirsty Pickle Bot\\.local\\api-booking\\run-progress\\e3f7de87-d1d5-4949-9ddc-4cc49529cfa7.ndjson",
+    "observer": "[REDACTED_LOCAL_PATH]\\Downloads\\Thirsty Pickle Bot\\.local\\slot-watch\\2026-09-30_ffe896ed-9c1f-43c7-9ce9-7767b6d12d49.ndjson",
+    "observerVersion": 2,
+    "providerTrace": "[REDACTED_LOCAL_PATH]\\Downloads\\Thirsty Pickle Bot\\.local\\release-forensics\\e3f7de87-d1d5-4949-9ddc-4cc49529cfa7\\provider-trace.ndjson"
+  },
+  "clock": {
+    "rounds": [
+      {
+        "checkpoint": "T-10M",
+        "offsetMs": 35,
+        "roundTripMs": 43,
+        "sampleCount": 10,
+        "spreadMs": 17.3,
+        "uncertaintyMs": 21.9,
+        "deltaMs": 12,
+        "adopted": true
+      },
+      {
+        "checkpoint": "T-60S",
+        "offsetMs": 39.8,
+        "roundTripMs": 42,
+        "sampleCount": 10,
+        "spreadMs": 8.9,
+        "uncertaintyMs": 21.3,
+        "deltaMs": 5,
+        "adopted": true
+      },
+      {
+        "checkpoint": "T-30S",
+        "offsetMs": 39,
+        "roundTripMs": 43,
+        "sampleCount": 10,
+        "spreadMs": 3.5,
+        "uncertaintyMs": 21.9,
+        "deltaMs": -0.8,
+        "adopted": true
+      }
+    ],
+    "dispatchOffsetMs": 39,
+    "observerOffsetMs": 34.8,
+    "observerMinusDispatchMs": -4.2
+  },
+  "dispatch": {
+    "posts": 7,
+    "firstPostOffsetMs": -45.8,
+    "lastPostOffsetMs": 8.6,
+    "spreadMs": 54.4
+  },
+  "outcome": "ALL_REJECTED_WAITING_FOR_REOPEN",
+  "observer": {
+    "publication": {
+      "lastUnpublished": {
+        "seq": 13,
+        "requestOffsetMs": 5002.8,
+        "responseOffsetMs": 5082.8
+      },
+      "firstPublished": {
+        "seq": 14,
+        "requestOffsetMs": 6013.8,
+        "responseOffsetMs": 6093.8,
+        "cache": {
+          "status": "HIT",
+          "ageS": 1
+        }
+      },
+      "firstPublishedResponse": {
+        "seq": 14,
+        "requestOffsetMs": 6013.8,
+        "responseOffsetMs": 6093.8
+      }
+    },
+    "firstPublishedMatrix": "1:OOOOOOOOOXXXOXOO,2:OOOOOOOOOOXOXXOO,3:XXXXOOOOOXXXOXXO,4:XXXXOOOOOXXOXOXO,5:XXXXOOOOOOOXXXOO,6:OOOOOOOOOOOXXOXO,7:OOOOOOOOOOXOOOOO",
+    "firstPublishedCounts": {
+      "OPEN": 77,
+      "UNAVAILABLE": 35,
+      "UNKNOWN": 0
+    },
+    "reads": {
+      "launched": 204,
+      "answered": 202,
+      "failed": 2,
+      "notLaunched": 0,
+      "maxInFlight": 6,
+      "earlyOffsetsMs": [
+        0,
+        250,
+        500,
+        1000,
+        2000,
+        5000
+      ]
+    },
+    "bookingReads": {
+      "answered": 9,
+      "failed": 0,
+      "failedCourtQueries": 0,
+      "itemized": true
+    },
+    "openToUnavailable": 28,
+    "reopened": 34,
+    "unavailableWithoutRecordAtFirstPublication": 12
+  },
+  "trace": {
+    "available": true,
+    "records": 7,
+    "complete": 7,
+    "unavailableWorkers": []
+  },
+  "phase3": {
+    "fingerprint": "e8c15a9d69d902f7a2f65dcf15190c78049f8451d50d06af2bcf28db205b63db",
+    "candidateCount": 10,
+    "maxWave2": 0,
+    "maxRescue": 1,
+    "maxTotal": 8,
+    "attempts": [
+      {
+        "attemptId": "core-C-official-3",
+        "candidateId": "0aafa30e010464e6b8a17e61980df60fbbbfb769640964ed4af67b15f6b6a09d",
+        "workerId": "C",
+        "wave": "WAVE_1",
+        "court": 5,
+        "startTime": "19:00",
+        "endTime": "22:00",
+        "evidenceSeq": null,
+        "selectedEvidenceSeq": null,
+        "postOffsetMs": -45.8,
+        "state": "REJECTED",
+        "statusCode": 409,
+        "providerTrace": true,
+        "fallback": {
+          "type": "response-fallback",
+          "workerId": "C",
+          "attemptId": "core-C-official-3",
+          "candidateId": "0aafa30e010464e6b8a17e61980df60fbbbfb769640964ed4af67b15f6b6a09d",
+          "wave": "WAVE_1",
+          "status": 409,
+          "contentType": "application/json",
+          "server": "Vercel",
+          "cfRay": null,
+          "vercelId": "sin1::sin1::5hqz4-1790553599977-373e7e3a40f2",
+          "requestId": null,
+          "serverTiming": null,
+          "responseReceivedMs": 10373.5,
+          "responseCompletedMs": 10373.7,
+          "evidence": {
+            "version": 1,
+            "status": 409,
+            "headers": {
+              "content-type": "application/json",
+              "server": "Vercel",
+              "date": "Mon, 28 Sep 2026 00:00:10 GMT",
+              "cache-control": "public, max-age=0, must-revalidate",
+              "x-vercel-id": "sin1::sin1::5hqz4-1790553599977-373e7e3a40f2",
+              "x-vercel-cache": "MISS",
+              "x-matched-path": "/api/bookings/public-checkout"
+            },
+            "vercel": {
+              "regions": [
+                "sin1",
+                "sin1"
+              ],
+              "edgeRegion": "sin1",
+              "functionRegion": "sin1",
+              "embeddedMs": 1790553599977,
+              "embeddedInterpretation": "UNDOCUMENTED"
+            },
+            "serverDateMs": 1790553610000,
+            "serverTiming": null,
+            "body": {
+              "version": 1,
+              "byteLength": 100,
+              "contentKind": "json",
+              "jsonType": "object",
+              "shape": [
+                {
+                  "path": "$",
+                  "type": "object"
+                },
+                {
+                  "path": "error",
+                  "type": "string",
+                  "length": 72
+                },
+                {
+                  "path": "success",
+                  "type": "boolean"
+                }
+              ],
+              "fields": {
+                "success": false,
+                "error": "This booking slot is no longer available (overlaps an existing booking)."
+              },
+              "shapeFingerprint": "80651c57074d8da62d53902ee9c1808143093faa13e02e6a5bb5c88a58d727fa",
+              "sanitizedFingerprint": "4ec90bfc413d03c7501e96601acdb1474699a177c349cc534e7fd353d184ebc9"
+            }
+          }
+        }
+      },
+      {
+        "attemptId": "core-B-official-2",
+        "candidateId": "9cf2c3872f8c8c5e6867a9211f3fc9e91f9903a7451380bb72b0b187da0f0fcf",
+        "workerId": "B",
+        "wave": "WAVE_1",
+        "court": 6,
+        "startTime": "19:00",
+        "endTime": "22:00",
+        "evidenceSeq": null,
+        "selectedEvidenceSeq": null,
+        "postOffsetMs": -21.2,
+        "state": "REJECTED",
+        "statusCode": 409,
+        "providerTrace": true,
+        "fallback": {
+          "type": "response-fallback",
+          "workerId": "B",
+          "attemptId": "core-B-official-2",
+          "candidateId": "9cf2c3872f8c8c5e6867a9211f3fc9e91f9903a7451380bb72b0b187da0f0fcf",
+          "wave": "WAVE_1",
+          "status": 409,
+          "contentType": "application/json",
+          "server": "Vercel",
+          "cfRay": null,
+          "vercelId": "sin1::sin1::4vphp-1790553600005-eea3d5a81e4f",
+          "requestId": null,
+          "serverTiming": null,
+          "responseReceivedMs": 8083.3,
+          "responseCompletedMs": 8083.7,
+          "evidence": {
+            "version": 1,
+            "status": 409,
+            "headers": {
+              "content-type": "application/json",
+              "server": "Vercel",
+              "date": "Mon, 28 Sep 2026 00:00:08 GMT",
+              "cache-control": "public, max-age=0, must-revalidate",
+              "x-vercel-id": "sin1::sin1::4vphp-1790553600005-eea3d5a81e4f",
+              "x-vercel-cache": "MISS",
+              "x-matched-path": "/api/bookings/public-checkout"
+            },
+            "vercel": {
+              "regions": [
+                "sin1",
+                "sin1"
+              ],
+              "edgeRegion": "sin1",
+              "functionRegion": "sin1",
+              "embeddedMs": 1790553600005,
+              "embeddedInterpretation": "UNDOCUMENTED"
+            },
+            "serverDateMs": 1790553608000,
+            "serverTiming": null,
+            "body": {
+              "version": 1,
+              "byteLength": 100,
+              "contentKind": "json",
+              "jsonType": "object",
+              "shape": [
+                {
+                  "path": "$",
+                  "type": "object"
+                },
+                {
+                  "path": "error",
+                  "type": "string",
+                  "length": 72
+                },
+                {
+                  "path": "success",
+                  "type": "boolean"
+                }
+              ],
+              "fields": {
+                "success": false,
+                "error": "This booking slot is no longer available (overlaps an existing booking)."
+              },
+              "shapeFingerprint": "80651c57074d8da62d53902ee9c1808143093faa13e02e6a5bb5c88a58d727fa",
+              "sanitizedFingerprint": "4ec90bfc413d03c7501e96601acdb1474699a177c349cc534e7fd353d184ebc9"
+            }
+          }
+        }
+      },
+      {
+        "attemptId": "core-A-official-1",
+        "candidateId": "85746ed1a88a159960b11e0d2c8b10c708b9f33cd500ea5a2bb0850aa481b032",
+        "workerId": "A",
+        "wave": "WAVE_1",
+        "court": 7,
+        "startTime": "19:00",
+        "endTime": "22:00",
+        "evidenceSeq": null,
+        "selectedEvidenceSeq": null,
+        "postOffsetMs": -6.2,
+        "state": "REJECTED",
+        "statusCode": 409,
+        "providerTrace": true,
+        "fallback": {
+          "type": "response-fallback",
+          "workerId": "A",
+          "attemptId": "core-A-official-1",
+          "candidateId": "85746ed1a88a159960b11e0d2c8b10c708b9f33cd500ea5a2bb0850aa481b032",
+          "wave": "WAVE_1",
+          "status": 409,
+          "contentType": "application/json",
+          "server": "Vercel",
+          "cfRay": null,
+          "vercelId": "sin1::sin1::xmblb-1790553600017-a8cface69893",
+          "requestId": null,
+          "serverTiming": null,
+          "responseReceivedMs": 10585.1,
+          "responseCompletedMs": 10585.3,
+          "evidence": {
+            "version": 1,
+            "status": 409,
+            "headers": {
+              "content-type": "application/json",
+              "server": "Vercel",
+              "date": "Mon, 28 Sep 2026 00:00:10 GMT",
+              "cache-control": "public, max-age=0, must-revalidate",
+              "x-vercel-id": "sin1::sin1::xmblb-1790553600017-a8cface69893",
+              "x-vercel-cache": "MISS",
+              "x-matched-path": "/api/bookings/public-checkout"
+            },
+            "vercel": {
+              "regions": [
+                "sin1",
+                "sin1"
+              ],
+              "edgeRegion": "sin1",
+              "functionRegion": "sin1",
+              "embeddedMs": 1790553600017,
+              "embeddedInterpretation": "UNDOCUMENTED"
+            },
+            "serverDateMs": 1790553610000,
+            "serverTiming": null,
+            "body": {
+              "version": 1,
+              "byteLength": 100,
+              "contentKind": "json",
+              "jsonType": "object",
+              "shape": [
+                {
+                  "path": "$",
+                  "type": "object"
+                },
+                {
+                  "path": "error",
+                  "type": "string",
+                  "length": 72
+                },
+                {
+                  "path": "success",
+                  "type": "boolean"
+                }
+              ],
+              "fields": {
+                "success": false,
+                "error": "This booking slot is no longer available (overlaps an existing booking)."
+              },
+              "shapeFingerprint": "80651c57074d8da62d53902ee9c1808143093faa13e02e6a5bb5c88a58d727fa",
+              "sanitizedFingerprint": "4ec90bfc413d03c7501e96601acdb1474699a177c349cc534e7fd353d184ebc9"
+            }
+          }
+        }
+      },
+      {
+        "attemptId": "core-D-official-4",
+        "candidateId": "5dfb38082fe0d4977a10e38c4c9206b64a97e97ea8034aa93f6a7fd699d6b59a",
+        "workerId": "D",
+        "wave": "WAVE_1",
+        "court": 4,
+        "startTime": "19:00",
+        "endTime": "22:00",
+        "evidenceSeq": null,
+        "selectedEvidenceSeq": null,
+        "postOffsetMs": -1,
+        "state": "REJECTED",
+        "statusCode": 409,
+        "providerTrace": true,
+        "fallback": {
+          "type": "response-fallback",
+          "workerId": "D",
+          "attemptId": "core-D-official-4",
+          "candidateId": "5dfb38082fe0d4977a10e38c4c9206b64a97e97ea8034aa93f6a7fd699d6b59a",
+          "wave": "WAVE_1",
+          "status": 409,
+          "contentType": "application/json",
+          "server": "Vercel",
+          "cfRay": null,
+          "vercelId": "sin1::sin1::t7sc7-1790553600025-c8c3f7635381",
+          "requestId": null,
+          "serverTiming": null,
+          "responseReceivedMs": 12089.6,
+          "responseCompletedMs": 12089.8,
+          "evidence": {
+            "version": 1,
+            "status": 409,
+            "headers": {
+              "content-type": "application/json",
+              "server": "Vercel",
+              "date": "Mon, 28 Sep 2026 00:00:12 GMT",
+              "cache-control": "public, max-age=0, must-revalidate",
+              "x-vercel-id": "sin1::sin1::t7sc7-1790553600025-c8c3f7635381",
+              "x-vercel-cache": "MISS",
+              "x-matched-path": "/api/bookings/public-checkout"
+            },
+            "vercel": {
+              "regions": [
+                "sin1",
+                "sin1"
+              ],
+              "edgeRegion": "sin1",
+              "functionRegion": "sin1",
+              "embeddedMs": 1790553600025,
+              "embeddedInterpretation": "UNDOCUMENTED"
+            },
+            "serverDateMs": 1790553612000,
+            "serverTiming": null,
+            "body": {
+              "version": 1,
+              "byteLength": 100,
+              "contentKind": "json",
+              "jsonType": "object",
+              "shape": [
+                {
+                  "path": "$",
+                  "type": "object"
+                },
+                {
+                  "path": "error",
+                  "type": "string",
+                  "length": 72
+                },
+                {
+                  "path": "success",
+                  "type": "boolean"
+                }
+              ],
+              "fields": {
+                "success": false,
+                "error": "This booking slot is no longer available (overlaps an existing booking)."
+              },
+              "shapeFingerprint": "80651c57074d8da62d53902ee9c1808143093faa13e02e6a5bb5c88a58d727fa",
+              "sanitizedFingerprint": "4ec90bfc413d03c7501e96601acdb1474699a177c349cc534e7fd353d184ebc9"
+            }
+          }
+        }
+      },
+      {
+        "attemptId": "core-G-official-7",
+        "candidateId": "5caf181e63715dbd31129a673fe1b463ba7602d79cf8d96902831f4196b3baeb",
+        "workerId": "G",
+        "wave": "WAVE_1",
+        "court": 1,
+        "startTime": "19:00",
+        "endTime": "22:00",
+        "evidenceSeq": null,
+        "selectedEvidenceSeq": null,
+        "postOffsetMs": 8,
+        "state": "REJECTED",
+        "statusCode": 409,
+        "providerTrace": true,
+        "fallback": {
+          "type": "response-fallback",
+          "workerId": "G",
+          "attemptId": "core-G-official-7",
+          "candidateId": "5caf181e63715dbd31129a673fe1b463ba7602d79cf8d96902831f4196b3baeb",
+          "wave": "WAVE_1",
+          "status": 409,
+          "contentType": "application/json",
+          "server": "Vercel",
+          "cfRay": null,
+          "vercelId": "sin1::sin1::r6dd5-1790553600031-5bbbebb72c64",
+          "requestId": null,
+          "serverTiming": null,
+          "responseReceivedMs": 12103.7,
+          "responseCompletedMs": 12103.9,
+          "evidence": {
+            "version": 1,
+            "status": 409,
+            "headers": {
+              "content-type": "application/json",
+              "server": "Vercel",
+              "date": "Mon, 28 Sep 2026 00:00:12 GMT",
+              "cache-control": "public, max-age=0, must-revalidate",
+              "x-vercel-id": "sin1::sin1::r6dd5-1790553600031-5bbbebb72c64",
+              "x-vercel-cache": "MISS",
+              "x-matched-path": "/api/bookings/public-checkout"
+            },
+            "vercel": {
+              "regions": [
+                "sin1",
+                "sin1"
+              ],
+              "edgeRegion": "sin1",
+              "functionRegion": "sin1",
+              "embeddedMs": 1790553600031,
+              "embeddedInterpretation": "UNDOCUMENTED"
+            },
+            "serverDateMs": 1790553612000,
+            "serverTiming": null,
+            "body": {
+              "version": 1,
+              "byteLength": 100,
+              "contentKind": "json",
+              "jsonType": "object",
+              "shape": [
+                {
+                  "path": "$",
+                  "type": "object"
+                },
+                {
+                  "path": "error",
+                  "type": "string",
+                  "length": 72
+                },
+                {
+                  "path": "success",
+                  "type": "boolean"
+                }
+              ],
+              "fields": {
+                "success": false,
+                "error": "This booking slot is no longer available (overlaps an existing booking)."
+              },
+              "shapeFingerprint": "80651c57074d8da62d53902ee9c1808143093faa13e02e6a5bb5c88a58d727fa",
+              "sanitizedFingerprint": "4ec90bfc413d03c7501e96601acdb1474699a177c349cc534e7fd353d184ebc9"
+            }
+          }
+        }
+      },
+      {
+        "attemptId": "core-E-official-5",
+        "candidateId": "5589eb0cb6e51ddb891ffe17f5b7b8d0a3acbbd46ee68a9d8fe68832504154c3",
+        "workerId": "E",
+        "wave": "WAVE_1",
+        "court": 3,
+        "startTime": "19:00",
+        "endTime": "22:00",
+        "evidenceSeq": null,
+        "selectedEvidenceSeq": null,
+        "postOffsetMs": 8.5,
+        "state": "REJECTED",
+        "statusCode": 409,
+        "providerTrace": true,
+        "fallback": {
+          "type": "response-fallback",
+          "workerId": "E",
+          "attemptId": "core-E-official-5",
+          "candidateId": "5589eb0cb6e51ddb891ffe17f5b7b8d0a3acbbd46ee68a9d8fe68832504154c3",
+          "wave": "WAVE_1",
+          "status": 409,
+          "contentType": "application/json",
+          "server": "Vercel",
+          "cfRay": null,
+          "vercelId": "sin1::sin1::gsvmw-1790553600027-aa378ac9fbd4",
+          "requestId": null,
+          "serverTiming": null,
+          "responseReceivedMs": 9841.1,
+          "responseCompletedMs": 9841.5,
+          "evidence": {
+            "version": 1,
+            "status": 409,
+            "headers": {
+              "content-type": "application/json",
+              "server": "Vercel",
+              "date": "Mon, 28 Sep 2026 00:00:09 GMT",
+              "cache-control": "public, max-age=0, must-revalidate",
+              "x-vercel-id": "sin1::sin1::gsvmw-1790553600027-aa378ac9fbd4",
+              "x-vercel-cache": "MISS",
+              "x-matched-path": "/api/bookings/public-checkout"
+            },
+            "vercel": {
+              "regions": [
+                "sin1",
+                "sin1"
+              ],
+              "edgeRegion": "sin1",
+              "functionRegion": "sin1",
+              "embeddedMs": 1790553600027,
+              "embeddedInterpretation": "UNDOCUMENTED"
+            },
+            "serverDateMs": 1790553609000,
+            "serverTiming": null,
+            "body": {
+              "version": 1,
+              "byteLength": 100,
+              "contentKind": "json",
+              "jsonType": "object",
+              "shape": [
+                {
+                  "path": "$",
+                  "type": "object"
+                },
+                {
+                  "path": "error",
+                  "type": "string",
+                  "length": 72
+                },
+                {
+                  "path": "success",
+                  "type": "boolean"
+                }
+              ],
+              "fields": {
+                "success": false,
+                "error": "This booking slot is no longer available (overlaps an existing booking)."
+              },
+              "shapeFingerprint": "80651c57074d8da62d53902ee9c1808143093faa13e02e6a5bb5c88a58d727fa",
+              "sanitizedFingerprint": "4ec90bfc413d03c7501e96601acdb1474699a177c349cc534e7fd353d184ebc9"
+            }
+          }
+        }
+      },
+      {
+        "attemptId": "core-F-official-6",
+        "candidateId": "9a0e7b37cb7df37170afa84d5efeb1706016659f468b2baa5f237296291e991c",
+        "workerId": "F",
+        "wave": "WAVE_1",
+        "court": 2,
+        "startTime": "19:00",
+        "endTime": "22:00",
+        "evidenceSeq": null,
+        "selectedEvidenceSeq": null,
+        "postOffsetMs": 8.6,
+        "state": "REJECTED",
+        "statusCode": 409,
+        "providerTrace": true,
+        "fallback": {
+          "type": "response-fallback",
+          "workerId": "F",
+          "attemptId": "core-F-official-6",
+          "candidateId": "9a0e7b37cb7df37170afa84d5efeb1706016659f468b2baa5f237296291e991c",
+          "wave": "WAVE_1",
+          "status": 409,
+          "contentType": "application/json",
+          "server": "Vercel",
+          "cfRay": null,
+          "vercelId": "sin1::sin1::vwkmg-1790553600030-e06a61aa6615",
+          "requestId": null,
+          "serverTiming": null,
+          "responseReceivedMs": 10421.7,
+          "responseCompletedMs": 10421.8,
+          "evidence": {
+            "version": 1,
+            "status": 409,
+            "headers": {
+              "content-type": "application/json",
+              "server": "Vercel",
+              "date": "Mon, 28 Sep 2026 00:00:10 GMT",
+              "cache-control": "public, max-age=0, must-revalidate",
+              "x-vercel-id": "sin1::sin1::vwkmg-1790553600030-e06a61aa6615",
+              "x-vercel-cache": "MISS",
+              "x-matched-path": "/api/bookings/public-checkout"
+            },
+            "vercel": {
+              "regions": [
+                "sin1",
+                "sin1"
+              ],
+              "edgeRegion": "sin1",
+              "functionRegion": "sin1",
+              "embeddedMs": 1790553600030,
+              "embeddedInterpretation": "UNDOCUMENTED"
+            },
+            "serverDateMs": 1790553610000,
+            "serverTiming": null,
+            "body": {
+              "version": 1,
+              "byteLength": 100,
+              "contentKind": "json",
+              "jsonType": "object",
+              "shape": [
+                {
+                  "path": "$",
+                  "type": "object"
+                },
+                {
+                  "path": "error",
+                  "type": "string",
+                  "length": 72
+                },
+                {
+                  "path": "success",
+                  "type": "boolean"
+                }
+              ],
+              "fields": {
+                "success": false,
+                "error": "This booking slot is no longer available (overlaps an existing booking)."
+              },
+              "shapeFingerprint": "80651c57074d8da62d53902ee9c1808143093faa13e02e6a5bb5c88a58d727fa",
+              "sanitizedFingerprint": "4ec90bfc413d03c7501e96601acdb1474699a177c349cc534e7fd353d184ebc9"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "targets": [
+    {
+      "workerId": "A",
+      "court": 7,
+      "startTime": "19:00",
+      "endTime": "22:00",
+      "attemptId": "core-A-official-1",
+      "finalState": null,
+      "finalCode": null,
+      "post": {
+        "offsetMs": -6.2,
+        "source": "run-trace"
+      },
+      "response": {
+        "statusCode": 409,
+        "errorHint": "availability",
+        "responseSource": "application",
+        "completedOffsetMs": 10578.8,
+        "networkDurationMs": 10588
+      },
+      "grid": {
+        "hours": [
+          "19:00",
+          "20:00",
+          "21:00"
+        ],
+        "firstPublished": {
+          "observation": {
+            "seq": 14,
+            "requestOffsetMs": 6013.8,
+            "responseOffsetMs": 6093.8
+          },
+          "state": "FULLY_OPEN",
+          "hours": [
+            {
+              "hour": "19:00",
+              "state": "OPEN",
+              "price": 700
+            },
+            {
+              "hour": "20:00",
+              "state": "OPEN",
+              "price": 700
+            },
+            {
+              "hour": "21:00",
+              "state": "OPEN",
+              "price": 700
+            }
+          ]
+        },
+        "firstFullyOpen": {
+          "seq": 14,
+          "requestOffsetMs": 6013.8,
+          "responseOffsetMs": 6093.8
+        },
+        "firstUnavailable": {
+          "observation": {
+            "seq": 24,
+            "requestOffsetMs": 16009.8,
+            "responseOffsetMs": 16098.8
+          },
+          "hours": [
+            "19:00",
+            "20:00",
+            "21:00"
+          ]
+        },
+        "firstRecord": {
+          "observation": {
+            "seq": 4,
+            "requestOffsetMs": 30012.8,
+            "responseOffsetMs": 30296.8
+          },
+          "hours": [
+            "19:00",
+            "20:00",
+            "21:00"
+          ]
+        },
+        "reopen": {
+          "before": {
+            "seq": 136,
+            "requestOffsetMs": 605002.8,
+            "responseOffsetMs": 605089.8
+          },
+          "after": {
+            "seq": 137,
+            "requestOffsetMs": 606014.8,
+            "responseOffsetMs": 606090.8
+          },
+          "overlapping": false
+        },
+        "latest": {
+          "observation": {
+            "seq": 204,
+            "requestOffsetMs": 900003.8,
+            "responseOffsetMs": 900484.8
+          },
+          "state": "PARTIALLY_UNAVAILABLE"
+        }
+      },
+      "provider": {
+        "complete": true,
+        "protocol": "h2",
+        "reused": true,
+        "headersOffsetMs": 10576.5,
+        "bodyOffsetMs": 10576.9,
+        "timingSource": "browser",
+        "dnsMs": null,
+        "connectMs": null,
+        "tlsMs": null,
+        "sendMs": 0.2,
+        "waitMs": 10581.9,
+        "server": "Vercel",
+        "cfRay": null,
+        "cfMitigated": null,
+        "vercelId": "sin1::sin1::xmblb-1790553600017-a8cface69893",
+        "requestId": null,
+        "vercelCache": "MISS",
+        "ageS": null,
+        "serverTiming": null,
+        "failure": null
+      }
+    },
+    {
+      "workerId": "B",
+      "court": 6,
+      "startTime": "19:00",
+      "endTime": "22:00",
+      "attemptId": "core-B-official-2",
+      "finalState": null,
+      "finalCode": null,
+      "post": {
+        "offsetMs": -21.2,
+        "source": "run-trace"
+      },
+      "response": {
+        "statusCode": 409,
+        "errorHint": "availability",
+        "responseSource": "application",
+        "completedOffsetMs": 8065.8,
+        "networkDurationMs": 8089
+      },
+      "grid": {
+        "hours": [
+          "19:00",
+          "20:00",
+          "21:00"
+        ],
+        "firstPublished": {
+          "observation": {
+            "seq": 14,
+            "requestOffsetMs": 6013.8,
+            "responseOffsetMs": 6093.8
+          },
+          "state": "PARTIALLY_UNAVAILABLE",
+          "hours": [
+            {
+              "hour": "19:00",
+              "state": "UNAVAILABLE",
+              "price": 700
+            },
+            {
+              "hour": "20:00",
+              "state": "UNAVAILABLE",
+              "price": 700
+            },
+            {
+              "hour": "21:00",
+              "state": "OPEN",
+              "price": 700
+            }
+          ]
+        },
+        "firstFullyOpen": null,
+        "firstUnavailable": {
+          "observation": {
+            "seq": 14,
+            "requestOffsetMs": 6013.8,
+            "responseOffsetMs": 6093.8
+          },
+          "hours": [
+            "19:00",
+            "20:00"
+          ]
+        },
+        "firstRecord": {
+          "observation": {
+            "seq": 2,
+            "requestOffsetMs": 2013.8,
+            "responseOffsetMs": 2844.8
+          },
+          "hours": [
+            "19:00",
+            "20:00"
+          ]
+        },
+        "reopen": null,
+        "latest": {
+          "observation": {
+            "seq": 204,
+            "requestOffsetMs": 900003.8,
+            "responseOffsetMs": 900484.8
+          },
+          "state": "PARTIALLY_UNAVAILABLE"
+        }
+      },
+      "provider": {
+        "complete": true,
+        "protocol": "h2",
+        "reused": true,
+        "headersOffsetMs": 8057.7,
+        "bodyOffsetMs": 8059.1,
+        "timingSource": "browser",
+        "dnsMs": null,
+        "connectMs": null,
+        "tlsMs": null,
+        "sendMs": 0.2,
+        "waitMs": 8078.2,
+        "server": "Vercel",
+        "cfRay": null,
+        "cfMitigated": null,
+        "vercelId": "sin1::sin1::4vphp-1790553600005-eea3d5a81e4f",
+        "requestId": null,
+        "vercelCache": "MISS",
+        "ageS": null,
+        "serverTiming": null,
+        "failure": null
+      }
+    },
+    {
+      "workerId": "C",
+      "court": 5,
+      "startTime": "19:00",
+      "endTime": "22:00",
+      "attemptId": "core-C-official-3",
+      "finalState": null,
+      "finalCode": null,
+      "post": {
+        "offsetMs": -45.8,
+        "source": "run-trace"
+      },
+      "response": {
+        "statusCode": 409,
+        "errorHint": "availability",
+        "responseSource": "application",
+        "completedOffsetMs": 10328.2,
+        "networkDurationMs": 10377
+      },
+      "grid": {
+        "hours": [
+          "19:00",
+          "20:00",
+          "21:00"
+        ],
+        "firstPublished": {
+          "observation": {
+            "seq": 14,
+            "requestOffsetMs": 6013.8,
+            "responseOffsetMs": 6093.8
+          },
+          "state": "FULLY_UNAVAILABLE",
+          "hours": [
+            {
+              "hour": "19:00",
+              "state": "UNAVAILABLE",
+              "price": 700
+            },
+            {
+              "hour": "20:00",
+              "state": "UNAVAILABLE",
+              "price": 700
+            },
+            {
+              "hour": "21:00",
+              "state": "UNAVAILABLE",
+              "price": 700
+            }
+          ]
+        },
+        "firstFullyOpen": {
+          "seq": 74,
+          "requestOffsetMs": 90008.8,
+          "responseOffsetMs": 90169.8
+        },
+        "firstUnavailable": {
+          "observation": {
+            "seq": 14,
+            "requestOffsetMs": 6013.8,
+            "responseOffsetMs": 6093.8
+          },
+          "hours": [
+            "19:00",
+            "20:00",
+            "21:00"
+          ]
+        },
+        "firstRecord": {
+          "observation": {
+            "seq": 2,
+            "requestOffsetMs": 2013.8,
+            "responseOffsetMs": 2844.8
+          },
+          "hours": [
+            "20:00"
+          ]
+        },
+        "reopen": {
+          "before": {
+            "seq": 73,
+            "requestOffsetMs": 85016.8,
+            "responseOffsetMs": 85185.8
+          },
+          "after": {
+            "seq": 74,
+            "requestOffsetMs": 90008.8,
+            "responseOffsetMs": 90169.8
+          },
+          "overlapping": false
+        },
+        "latest": {
+          "observation": {
+            "seq": 204,
+            "requestOffsetMs": 900003.8,
+            "responseOffsetMs": 900484.8
+          },
+          "state": "FULLY_UNAVAILABLE"
+        }
+      },
+      "provider": {
+        "complete": true,
+        "protocol": "h2",
+        "reused": true,
+        "headersOffsetMs": 10325.6,
+        "bodyOffsetMs": 10326.1,
+        "timingSource": "browser",
+        "dnsMs": null,
+        "connectMs": null,
+        "tlsMs": null,
+        "sendMs": 0.2,
+        "waitMs": 10370.9,
+        "server": "Vercel",
+        "cfRay": null,
+        "cfMitigated": null,
+        "vercelId": "sin1::sin1::5hqz4-1790553599977-373e7e3a40f2",
+        "requestId": null,
+        "vercelCache": "MISS",
+        "ageS": null,
+        "serverTiming": null,
+        "failure": null
+      }
+    },
+    {
+      "workerId": "D",
+      "court": 4,
+      "startTime": "19:00",
+      "endTime": "22:00",
+      "attemptId": "core-D-official-4",
+      "finalState": null,
+      "finalCode": null,
+      "post": {
+        "offsetMs": -1,
+        "source": "run-trace"
+      },
+      "response": {
+        "statusCode": 409,
+        "errorHint": "availability",
+        "responseSource": "application",
+        "completedOffsetMs": 12088,
+        "networkDurationMs": 12093
+      },
+      "grid": {
+        "hours": [
+          "19:00",
+          "20:00",
+          "21:00"
+        ],
+        "firstPublished": {
+          "observation": {
+            "seq": 14,
+            "requestOffsetMs": 6013.8,
+            "responseOffsetMs": 6093.8
+          },
+          "state": "PARTIALLY_UNAVAILABLE",
+          "hours": [
+            {
+              "hour": "19:00",
+              "state": "OPEN",
+              "price": 700
+            },
+            {
+              "hour": "20:00",
+              "state": "UNAVAILABLE",
+              "price": 700
+            },
+            {
+              "hour": "21:00",
+              "state": "OPEN",
+              "price": 700
+            }
+          ]
+        },
+        "firstFullyOpen": {
+          "seq": 74,
+          "requestOffsetMs": 90008.8,
+          "responseOffsetMs": 90169.8
+        },
+        "firstUnavailable": {
+          "observation": {
+            "seq": 14,
+            "requestOffsetMs": 6013.8,
+            "responseOffsetMs": 6093.8
+          },
+          "hours": [
+            "20:00"
+          ]
+        },
+        "firstRecord": {
+          "observation": {
+            "seq": 3,
+            "requestOffsetMs": 10015.8,
+            "responseOffsetMs": 10752.8
+          },
+          "hours": [
+            "19:00",
+            "20:00",
+            "21:00"
+          ]
+        },
+        "reopen": {
+          "before": {
+            "seq": 73,
+            "requestOffsetMs": 85016.8,
+            "responseOffsetMs": 85185.8
+          },
+          "after": {
+            "seq": 74,
+            "requestOffsetMs": 90008.8,
+            "responseOffsetMs": 90169.8
+          },
+          "overlapping": false
+        },
+        "latest": {
+          "observation": {
+            "seq": 204,
+            "requestOffsetMs": 900003.8,
+            "responseOffsetMs": 900484.8
+          },
+          "state": "FULLY_UNAVAILABLE"
+        }
+      },
+      "provider": {
+        "complete": true,
+        "protocol": "h2",
+        "reused": true,
+        "headersOffsetMs": 12085.9,
+        "bodyOffsetMs": 12086.3,
+        "timingSource": "browser",
+        "dnsMs": null,
+        "connectMs": null,
+        "tlsMs": null,
+        "sendMs": 0.3,
+        "waitMs": 12086,
+        "server": "Vercel",
+        "cfRay": null,
+        "cfMitigated": null,
+        "vercelId": "sin1::sin1::t7sc7-1790553600025-c8c3f7635381",
+        "requestId": null,
+        "vercelCache": "MISS",
+        "ageS": null,
+        "serverTiming": null,
+        "failure": null
+      }
+    },
+    {
+      "workerId": "E",
+      "court": 3,
+      "startTime": "19:00",
+      "endTime": "22:00",
+      "attemptId": "core-E-official-5",
+      "finalState": null,
+      "finalCode": null,
+      "post": {
+        "offsetMs": 8.5,
+        "source": "run-trace"
+      },
+      "response": {
+        "statusCode": 409,
+        "errorHint": "availability",
+        "responseSource": "application",
+        "completedOffsetMs": 9846.5,
+        "networkDurationMs": 9846
+      },
+      "grid": {
+        "hours": [
+          "19:00",
+          "20:00",
+          "21:00"
+        ],
+        "firstPublished": {
+          "observation": {
+            "seq": 14,
+            "requestOffsetMs": 6013.8,
+            "responseOffsetMs": 6093.8
+          },
+          "state": "PARTIALLY_UNAVAILABLE",
+          "hours": [
+            {
+              "hour": "19:00",
+              "state": "UNAVAILABLE",
+              "price": 700
+            },
+            {
+              "hour": "20:00",
+              "state": "OPEN",
+              "price": 700
+            },
+            {
+              "hour": "21:00",
+              "state": "UNAVAILABLE",
+              "price": 700
+            }
+          ]
+        },
+        "firstFullyOpen": null,
+        "firstUnavailable": {
+          "observation": {
+            "seq": 14,
+            "requestOffsetMs": 6013.8,
+            "responseOffsetMs": 6093.8
+          },
+          "hours": [
+            "19:00",
+            "21:00"
+          ]
+        },
+        "firstRecord": {
+          "observation": {
+            "seq": 2,
+            "requestOffsetMs": 2013.8,
+            "responseOffsetMs": 2844.8
+          },
+          "hours": [
+            "19:00",
+            "21:00"
+          ]
+        },
+        "reopen": null,
+        "latest": {
+          "observation": {
+            "seq": 204,
+            "requestOffsetMs": 900003.8,
+            "responseOffsetMs": 900484.8
+          },
+          "state": "FULLY_UNAVAILABLE"
+        }
+      },
+      "provider": {
+        "complete": true,
+        "protocol": "h2",
+        "reused": true,
+        "headersOffsetMs": 9845.5,
+        "bodyOffsetMs": 9846.6,
+        "timingSource": "browser",
+        "dnsMs": null,
+        "connectMs": null,
+        "tlsMs": null,
+        "sendMs": 0.1,
+        "waitMs": 9836.4,
+        "server": "Vercel",
+        "cfRay": null,
+        "cfMitigated": null,
+        "vercelId": "sin1::sin1::gsvmw-1790553600027-aa378ac9fbd4",
+        "requestId": null,
+        "vercelCache": "MISS",
+        "ageS": null,
+        "serverTiming": null,
+        "failure": null
+      }
+    },
+    {
+      "workerId": "F",
+      "court": 2,
+      "startTime": "19:00",
+      "endTime": "22:00",
+      "attemptId": "core-F-official-6",
+      "finalState": null,
+      "finalCode": null,
+      "post": {
+        "offsetMs": 8.6,
+        "source": "run-trace"
+      },
+      "response": {
+        "statusCode": 409,
+        "errorHint": "availability",
+        "responseSource": "application",
+        "completedOffsetMs": 10425.6,
+        "networkDurationMs": 10425
+      },
+      "grid": {
+        "hours": [
+          "19:00",
+          "20:00",
+          "21:00"
+        ],
+        "firstPublished": {
+          "observation": {
+            "seq": 14,
+            "requestOffsetMs": 6013.8,
+            "responseOffsetMs": 6093.8
+          },
+          "state": "PARTIALLY_UNAVAILABLE",
+          "hours": [
+            {
+              "hour": "19:00",
+              "state": "OPEN",
+              "price": 700
+            },
+            {
+              "hour": "20:00",
+              "state": "UNAVAILABLE",
+              "price": 700
+            },
+            {
+              "hour": "21:00",
+              "state": "UNAVAILABLE",
+              "price": 700
+            }
+          ]
+        },
+        "firstFullyOpen": null,
+        "firstUnavailable": {
+          "observation": {
+            "seq": 14,
+            "requestOffsetMs": 6013.8,
+            "responseOffsetMs": 6093.8
+          },
+          "hours": [
+            "20:00",
+            "21:00"
+          ]
+        },
+        "firstRecord": {
+          "observation": {
+            "seq": 2,
+            "requestOffsetMs": 2013.8,
+            "responseOffsetMs": 2844.8
+          },
+          "hours": [
+            "20:00"
+          ]
+        },
+        "reopen": null,
+        "latest": {
+          "observation": {
+            "seq": 204,
+            "requestOffsetMs": 900003.8,
+            "responseOffsetMs": 900484.8
+          },
+          "state": "FULLY_UNAVAILABLE"
+        }
+      },
+      "provider": {
+        "complete": true,
+        "protocol": "h2",
+        "reused": true,
+        "headersOffsetMs": 10428.3,
+        "bodyOffsetMs": 10428.7,
+        "timingSource": "browser",
+        "dnsMs": null,
+        "connectMs": null,
+        "tlsMs": null,
+        "sendMs": 0.3,
+        "waitMs": 10419.2,
+        "server": "Vercel",
+        "cfRay": null,
+        "cfMitigated": null,
+        "vercelId": "sin1::sin1::vwkmg-1790553600030-e06a61aa6615",
+        "requestId": null,
+        "vercelCache": "MISS",
+        "ageS": null,
+        "serverTiming": null,
+        "failure": null
+      }
+    },
+    {
+      "workerId": "G",
+      "court": 1,
+      "startTime": "19:00",
+      "endTime": "22:00",
+      "attemptId": "core-G-official-7",
+      "finalState": null,
+      "finalCode": null,
+      "post": {
+        "offsetMs": 8,
+        "source": "run-trace"
+      },
+      "response": {
+        "statusCode": 409,
+        "errorHint": "availability",
+        "responseSource": "application",
+        "completedOffsetMs": 12109,
+        "networkDurationMs": 12108
+      },
+      "grid": {
+        "hours": [
+          "19:00",
+          "20:00",
+          "21:00"
+        ],
+        "firstPublished": {
+          "observation": {
+            "seq": 14,
+            "requestOffsetMs": 6013.8,
+            "responseOffsetMs": 6093.8
+          },
+          "state": "PARTIALLY_UNAVAILABLE",
+          "hours": [
+            {
+              "hour": "19:00",
+              "state": "UNAVAILABLE",
+              "price": 700
+            },
+            {
+              "hour": "20:00",
+              "state": "OPEN",
+              "price": 700
+            },
+            {
+              "hour": "21:00",
+              "state": "UNAVAILABLE",
+              "price": 700
+            }
+          ]
+        },
+        "firstFullyOpen": null,
+        "firstUnavailable": {
+          "observation": {
+            "seq": 14,
+            "requestOffsetMs": 6013.8,
+            "responseOffsetMs": 6093.8
+          },
+          "hours": [
+            "19:00",
+            "21:00"
+          ]
+        },
+        "firstRecord": {
+          "observation": {
+            "seq": 2,
+            "requestOffsetMs": 2013.8,
+            "responseOffsetMs": 2844.8
+          },
+          "hours": [
+            "19:00",
+            "21:00"
+          ]
+        },
+        "reopen": null,
+        "latest": {
+          "observation": {
+            "seq": 204,
+            "requestOffsetMs": 900003.8,
+            "responseOffsetMs": 900484.8
+          },
+          "state": "FULLY_UNAVAILABLE"
+        }
+      },
+      "provider": {
+        "complete": true,
+        "protocol": "h2",
+        "reused": true,
+        "headersOffsetMs": 12109.1,
+        "bodyOffsetMs": 12109.8,
+        "timingSource": "browser",
+        "dnsMs": null,
+        "connectMs": null,
+        "tlsMs": null,
+        "sendMs": 0.1,
+        "waitMs": 12100.7,
+        "server": "Vercel",
+        "cfRay": null,
+        "cfMitigated": null,
+        "vercelId": "sin1::sin1::r6dd5-1790553600031-5bbbebb72c64",
+        "requestId": null,
+        "vercelCache": "MISS",
+        "ageS": null,
+        "serverTiming": null,
+        "failure": null
+      }
+    }
+  ],
+  "limitations": [
+    "An availability read shows Onda's state at an unknown moment between its request start and its response. No source here gives the provider-side moment of a change.",
+    "Unavailable without a matching public booking record: the cause is not visible in Onda's public data.",
+    "A public booking record shows that a booking record exists. It does not show who made it, whether it belongs to this bot, or why.",
+    "POST initiation is the Playwright request event in the runner (trusted release clock). Header and body times are that instant plus Chrome intervals from its network request start (under 1 ms after the request event); they carry the few-ms delivery lag of that event.",
+    "The provider trace enables DevTools Network only after each POST has left, so it never adds work at the release instant; a response that arrives before it is enabled (tens of ms) is not traced.",
+    "Response timing and headers describe what arrived at this PC. They do not establish how Onda queued or ordered requests, or why a request was accepted or rejected.",
+    "The observer and the dispatch clocks differ by -4.2 ms (observer minus dispatch); comparisons between grid reads and POST times carry that difference."
+  ],
+  "reportPath": "[REDACTED_LOCAL_PATH]\\Downloads\\Thirsty Pickle Bot\\.local\\release-forensics\\e3f7de87-d1d5-4949-9ddc-4cc49529cfa7\\report.txt",
+  "summaryPath": "[REDACTED_LOCAL_PATH]\\Downloads\\Thirsty Pickle Bot\\.local\\release-forensics\\e3f7de87-d1d5-4949-9ddc-4cc49529cfa7\\summary.json"
+}
