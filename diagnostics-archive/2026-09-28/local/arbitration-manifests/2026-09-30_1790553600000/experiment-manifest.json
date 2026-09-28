@@ -1,0 +1,29 @@
+{
+  "schema": "wave1-experiment-manifest/v2",
+  "analysisSchema": "wave1-arbitration-analysis/v2.1.0",
+  "createdAt": "2026-09-27T23:35:25.305Z",
+  "createdBy": "DESKTOP_ARM",
+  "hypothesisSpecVersion": "wave1-arbitration-hypotheses/v2.0.0",
+  "runId": "UNBOUND_PRE_RUN",
+  "releaseMs": 1790553600000,
+  "targetDate": "2026-09-30",
+  "wave1Candidates": null,
+  "wave1CandidateSource": "RUNNER_PHASE3_FREEZE_WRITTEN_BEFORE_RELEASE",
+  "knownPreReleaseConflictSource": "UNKNOWN: no Slot Watch evidence supplied",
+  "clockQuality": null,
+  "expectedEvidenceSources": [
+    "run-progress",
+    "slot-watch",
+    "provider-trace",
+    "critical-path",
+    "journals",
+    "clock-evidence",
+    "release-forensics",
+    "response-evidence"
+  ],
+  "safety": {
+    "readOnlyManifest": true,
+    "changesBookingPlan": false,
+    "addsCheckoutTraffic": false
+  }
+}

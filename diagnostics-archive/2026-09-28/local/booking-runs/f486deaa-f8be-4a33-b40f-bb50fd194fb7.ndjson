@@ -1,0 +1,5 @@
+{"type":"run-start","runId":"f486deaa-f8be-4a33-b40f-bb50fd194fb7","label":"closingBrowsers","at":"2026-09-28T00:21:00.381Z","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"f486deaa-f8be-4a33-b40f-bb50fd194fb7","at":"2026-09-28T00:21:00.382Z","text":"Run started: closingBrowsers · Timing log: [REDACTED_LOCAL_PATH]\\Downloads\\Thirsty Pickle Bot\\.local\\booking-runs\\f486deaa-f8be-4a33-b40f-bb50fd194fb7.ndjson","level":"info","elapsedMs":0,"deltaMs":0}
+{"type":"activity","runId":"f486deaa-f8be-4a33-b40f-bb50fd194fb7","at":"2026-09-28T00:21:12.181Z","text":"Closed 7 bot Chrome browsers (7 force-closed after not responding). Your own Chrome windows were not touched.","level":"info","elapsedMs":11800,"deltaMs":11800}
+{"type":"activity","runId":"f486deaa-f8be-4a33-b40f-bb50fd194fb7","at":"2026-09-28T00:21:12.230Z","text":"Run finished: complete","level":"info","elapsedMs":11848,"deltaMs":49}
+{"type":"run-end","runId":"f486deaa-f8be-4a33-b40f-bb50fd194fb7","at":"2026-09-28T00:21:12.239Z","elapsedMs":11857,"outcome":"complete","label":"closingBrowsers"}
