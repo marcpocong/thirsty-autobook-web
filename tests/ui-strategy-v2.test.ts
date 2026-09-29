@@ -70,19 +70,82 @@ describe('Strategy view (Goal → Known schedule → Preset → Suggested plan �
     await page.locator('#strategy-suggestion button[data-action="force"][data-window="6/19:00/3"]').click();
     expect(await page.locator('#strategy-suggestion').innerText()).toContain('FORCE-INCLUDED (operator override)');
     await page.locator('#strategy-apply').click();
+    expect(await page.locator('#strategy-editable').isVisible()).toBe(true);
+    expect(await page.locator('#strategy-edit-provenance').innerText()).toBe('Source: Smart generated · Operator modifications: 0');
+    expect(await page.locator('#strategy-edit-immediate .strategy-edit-row').count()).toBe(4);
+    expect(await page.locator('#strategy-immediate-offset-0-0').inputValue()).toBe('5');
+    expect(await page.locator('#strategy-immediate-offset-0-1').inputValue()).toBe('0');
+    await page.locator('#strategy-immediate-start-1').selectOption('19:00');
+    expect(await page.locator('#strategy-edit-warnings').innerText()).toMatch(/reduces start-time diversification/);
+    await page.getByRole('button', { name: 'Reset editable target 2', exact: true }).click();
+    await page.locator('#strategy-immediate-offset-1-1').fill('5');
+    await page.locator('#strategy-immediate-offset-1-1').press('Tab');
+    expect(await page.locator('#strategy-immediate-offset-1-0').inputValue()).toBe('5');
+    expect(await page.locator('#strategy-review-body').innerText()).toContain('B1 5 ms early');
+    await page.locator('#strategy-reset-all').click();
+    expect(await page.locator('#strategy-immediate-offset-1-1').inputValue()).toBe('0');
+    expect(await page.locator('#strategy-edit-provenance').innerText()).toBe('Source: Smart generated · Operator modifications: 0');
+    await page.locator('#strategy-immediate-offset-1-1').fill('5');
+    await page.locator('#strategy-immediate-offset-1-1').press('Tab');
+    // Regenerating the preview does not silently replace the accepted, operator-edited draft.
+    await page.locator('#strategy-suggest').click();
+    expect(await page.locator('#strategy-immediate-offset-1-1').inputValue()).toBe('5');
+    await page.getByRole('button', { name: 'Reset editable target 2 timing' }).click();
+    expect(await page.locator('#strategy-immediate-offset-1-1').inputValue()).toBe('0');
+    await page.locator('#strategy-immediate-width-1').selectOption('3');
+    expect(await page.locator('#strategy-immediate-offset-1-0').inputValue()).toBe('5');
+    expect(await page.locator('#strategy-immediate-offset-1-1').inputValue()).toBe('0');
+    expect(await page.locator('#strategy-immediate-offset-1-2').inputValue()).toBe('0');
     expect(await page.locator('#strategy-review-warnings').innerText()).toMatch(/Court 6 · 7:00 PM–10:00 PM .*force-included despite a known public booking/);
     expect(await page.locator('#strategy-review-body').innerText()).toContain('independently tracked attempts (fan-out)');
     await page.locator('#strategy-save').click();
     await page.waitForFunction(() => !!(window as any).fixtureSaved);
     const setup = await saved(page);
     expect(setup.RELEASE_STRATEGY).toBe('precision');
-    expect(setup.STRATEGY_V2).toMatchObject({ version: 1, preset: 'BALANCED', fanOut: { width: 2, source: 'MACHINE_RECOMMENDED', recommendedWidth: 2 } });
+    expect(setup.STRATEGY_V2).toMatchObject({ version: 1, preset: 'BALANCED', fanOut: { source: 'OPERATOR_OVERRIDE', recommendedWidth: 2, timing: 'CUSTOM', basedOnTiming: 'BALANCED' },
+      provenance: { source: 'SMART_SUGGESTED', operatorModifications: 1 } });
+    expect(setup.STRATEGY_V2.acceptedPhase3.wave1[1].fanOutOffsetsMs).toEqual([-5, 0]);
     const phase3 = setup.PRECISION_PHASE3;
-    expect(phase3.wave1.every((value: { fanOutOffsetsMs?: number[] }) => value.fanOutOffsetsMs?.length === 2)).toBe(true);
+    expect(phase3.wave1[1].fanOutOffsetsMs).toEqual([-5, 0, 0]);
+    expect(phase3.wave1[1]).not.toHaveProperty('releaseOffsetMs');
     expect(phase3.candidates.find((value: { court: number; start: string }) => value.court === 6 && value.start === '19:00').publicEvidence)
       .toEqual({ evidence: 'KNOWN_PUBLIC_BOOKING_CONFLICT', override: 'OPERATOR_OVERRIDE_PUBLIC_CONFLICT' });
     expect(phase3.candidates).toHaveLength(21);
     await page.close();
+    const reloaded = await openRenderer(browser, { booking: bookingView(ConfigSchema.parse({ ...defaultSetup, ...setup, ...players })), blockAudit: blockAudit([[6, '20:00']]), fanOut: digest }, 'strategy');
+    expect(await reloaded.locator('#strategy-immediate-width-1').inputValue()).toBe('3');
+    expect(await reloaded.locator('#strategy-immediate-offset-1-0').inputValue()).toBe('5');
+    expect(await reloaded.locator('#strategy-immediate-offset-1-1').inputValue()).toBe('0');
+    expect(await reloaded.locator('#strategy-immediate-offset-1-2').inputValue()).toBe('0');
+    expect(await reloaded.locator('#strategy-review-body').innerText()).toContain('B0 5 ms early, B1 at release, B2 at release');
+    expect(await reloaded.locator('#strategy-edit-provenance').innerText()).toBe('Source: Smart generated · Operator modifications: 1');
+    await reloaded.getByRole('button', { name: 'Reset editable target 2 timing' }).click();
+    expect(await reloaded.locator('#strategy-immediate-width-1').inputValue()).toBe('2');
+    expect(await reloaded.locator('#strategy-immediate-offset-1-0').inputValue()).toBe('5');
+    expect(await reloaded.locator('#strategy-immediate-offset-1-1').inputValue()).toBe('0');
+    await reloaded.close();
+  }, 60_000);
+
+  it('faithfully edits existing single-child and fan-out saved plans using the authoritative representation', async () => {
+    const single = await openRenderer(browser, { booking: smartBooking({ immediate: [{ court: 7, start: '19:00', durationHours: 3, releaseOffsetMs: -25 }] }) }, 'strategy');
+    expect(await single.locator('#strategy-editable').isVisible()).toBe(true);
+    expect(await single.locator('#strategy-immediate-offset-0-0').inputValue()).toBe('25');
+    expect(await single.locator('[id^="strategy-immediate-offset-0-"]').count()).toBe(1);
+    await single.locator('#strategy-immediate-offset-0-0').fill('10'); await single.locator('#strategy-immediate-offset-0-0').press('Tab');
+    await single.locator('#strategy-save').click(); await single.waitForFunction(() => !!(window as any).fixtureSaved);
+    expect((await saved(single)).PRECISION_PHASE3.wave1[0]).toMatchObject({ releaseOffsetMs: -10 });
+    await single.close();
+
+    const fanOut = await openRenderer(browser, { booking: smartBooking({ immediate: [{ court: 7, start: '19:00', durationHours: 3, fanOutOffsetsMs: [-25, -10] }] }) }, 'strategy');
+    expect(await fanOut.locator('#strategy-immediate-offset-0-0').inputValue()).toBe('25');
+    expect(await fanOut.locator('#strategy-immediate-offset-0-1').inputValue()).toBe('10');
+    await fanOut.locator('#strategy-immediate-offset-0-1').fill('5'); await fanOut.locator('#strategy-immediate-offset-0-1').press('Tab');
+    await fanOut.locator('#strategy-save').click(); await fanOut.waitForFunction(() => !!(window as any).fixtureSaved);
+    const assignment = (await saved(fanOut)).PRECISION_PHASE3.wave1[0];
+    expect(assignment.fanOutOffsetsMs).toEqual([-25, -5]);
+    expect(assignment).not.toHaveProperty('releaseOffsetMs');
+    expect(await fanOut.locator('#strategy-review-body').innerText()).toContain('A0 25 ms early, A1 5 ms early');
+    await fanOut.close();
   });
 
   it('an explicit fan-out width is recorded as an operator override, and preset Custom suggests nothing', async () => {
