@@ -3,7 +3,7 @@ import type { BookingSetup } from '../../src/config.js';
 import {bookingSetupProblem,reconcileFallbackTimes,type FallbackReconciliation} from '../../src/booking-setup.js';
 import type {ReleasePerformance} from '../../src/release-performance.js';
 import {formatReleaseOffset,isReleaseOffsetMs} from '../../src/release-offset.js';
-import {applyDurationOffsetPreset,compileSmartPlan,confirmSmartRates,describeSmartPlan,emptySmartDraft,resizeSmartFanOut,setSmartChildOffset,smartDraftFromPhase3,smartPeso,smartRange,smartSlotOffsets,smartSlotText,SMART_MAX_SLOTS,SMART_WORKERS,
+import {applyDurationOffsetPreset,compileSmartPlan,confirmSmartRates,describeSmartPlan,emptySmartDraft,resizeSmartFanOut,setSmartChildOffset,smartDraftFromPhase3,smartPeso,smartRange,smartSlotOffsets,smartSlotText,SMART_EVENING_RATE,SMART_MAX_SLOTS,SMART_WORKERS,
   type SmartDraft,type SmartSlot,type SmartWorker,type SmartPhase3,type SmartReleaseOffset} from '../../src/precision-simple.js';
 import {fanOutTimingPlan} from '../../src/fanout-timing.js';
 import {initStrategy,reconstructLineage,renderStrategy,strategyModificationCount,suggestionLineage,type EditableSuggestionLineage,type StrategyV2Meta} from './strategy.js';
@@ -305,12 +305,13 @@ function renderSmart(force=false){
   input('smart-concurrent').checked=smartDraft.useBackupsImmediately;input('smart-rescue').checked=smartDraft.retryReopened;
   byId('smart-rescue-max-row').hidden=!smartDraft.retryReopened;input('smart-rescue-max').value=String(smartDraft.maxReopenedAttempts);
   const rates=smartDraft.rates,review=compiled.rates.filter(rate=>rate.needsReview).length;
-  const usesHour=(evening:boolean)=>[...smartDraft.immediate,...smartDraft.backups].some(slot=>!slot.rate&&Array.from({length:slot.durationHours},(_,offset)=>Number(slot.start.slice(0,2))+offset>=16).includes(evening));
+  const planned=[...smartDraft.immediate,...smartDraft.backups];
+  const usesHour=(evening:boolean)=>planned.some(slot=>Array.from({length:slot.durationHours},(_,offset)=>Number(slot.start.slice(0,2))+offset>=16).includes(evening));
   const rateText=(label:string,value:number|null,needed:boolean)=>value!==null?[`${label} ${smartPeso(value)}/hour`]:needed?[`${label} rate not set`]:[];
-  byId('smart-rate-summary').textContent=(rates.day!==null||rates.evening!==null)&&rates.date
-    ? [...rateText('Daytime',rates.day,usesHour(false)),...rateText('Evening',rates.evening,usesHour(true)),`${rates.status==='VENUE_SCHEDULE'?'from the venue schedule':'confirmed with the venue'} for ${dateLabel(rates.date)}`,
-      ...(review?[`${review} slot${review===1?' needs':'s need'} review`]:[])].join(' · ')
-    : 'No rates confirmed yet. Review rates before saving.';
+  const rateSummary=[...rateText('Daytime',rates.day,usesHour(false)),...(usesHour(true)?[`Evening ${smartPeso(SMART_EVENING_RATE)}/hour · fixed venue schedule from 4 PM`]:[]),
+    ...(usesHour(false)&&rates.date?[`${rates.status==='VENUE_SCHEDULE'?'daytime venue schedule':'daytime rate confirmed with the venue'} for ${dateLabel(rates.date)}`]:[]),
+    ...(review?[`${review} slot${review===1?' needs':'s need'} review`]:planned.length?['No rate review needed']:[])];
+  byId('smart-rate-summary').textContent=rateSummary.length?rateSummary.join(' · '):'Add a plan to see its expected rates.';
   byId('smart-review-rates').dataset.attention=String(review>0);
   byId('smart-rate-review').hidden=!smartRatesOpen;
   smartSummary(compiled,unready);smartAdvanced(compiled);
@@ -368,7 +369,7 @@ byId('smart-concurrent').addEventListener('change',()=>smartEdit(draft=>{draft.u
 byId('smart-rescue').addEventListener('change',()=>smartEdit(draft=>{draft.retryReopened=input('smart-rescue').checked;}));
 byId('smart-rescue-max').addEventListener('change',()=>smartEdit(draft=>{draft.maxReopenedAttempts=Math.min(7,Math.max(1,Math.floor(Number(input('smart-rescue-max').value))||1));}));
 byId('smart-review-rates').onclick=()=>{smartRatesOpen=!smartRatesOpen;
-  if(smartRatesOpen){input('smart-rate-day').value=smartDraft.rates.day===null?'':String(smartDraft.rates.day);input('smart-rate-evening').value=smartDraft.rates.evening===null?'':String(smartDraft.rates.evening);
+  if(smartRatesOpen){input('smart-rate-day').value=smartDraft.rates.day===null?'':String(smartDraft.rates.day);input('smart-rate-evening').value=String(SMART_EVENING_RATE);
     input('smart-rate-status').value=smartDraft.rates.status;}
   renderSmart(true);if(smartRatesOpen)input('smart-rate-day').focus();};
 byId('smart-rate-cancel').onclick=()=>{smartRatesOpen=false;renderSmart(true);};

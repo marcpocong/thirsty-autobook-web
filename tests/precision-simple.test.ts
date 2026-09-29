@@ -52,8 +52,8 @@ describe('Smart backups compiler', () => {
     expect(p.candidates.map(c => c.priority)).toEqual([1, 2, 3, 4, 5, 6, 7]);
     expect(p.candidates.slice(0, 4).every(c => c.permissions.wave1 && !c.permissions.wave2 && c.permissions.rescue)).toBe(true);
     expect(p.candidates.slice(4).every(c => !c.permissions.wave1 && c.permissions.wave2 && c.permissions.rescue)).toBe(true);
-    // 19:00-22:00 is evening only; 17:00 is 16:00+ too; the rate card never invents a price.
-    expect(p.candidates[0]!.rateEvidence).toMatchObject({ perHour: [700, 700, 700], status: 'OPERATOR_CONFIRMED', date: targetDate, actionable: true });
+    // The confirmed venue schedule makes every hour from 16:00 onward PHP 700 on every day.
+    expect(p.candidates[0]!.rateEvidence).toMatchObject({ perHour: [700, 700, 700], status: 'VENUE_SCHEDULE', date: targetDate, actionable: true });
     expect(backendAccepts(p).candidates).toHaveLength(7);
     const text = smartPlanText(describeSmartPlan(p));
     expect(text).toContain('4 immediate + up to 3 backups + up to 1 reopened-slot attempt');
@@ -78,14 +78,21 @@ describe('Smart backups compiler', () => {
     expect(warned.warnings.join(' ')).not.toMatch(/[0-9a-f]{8}-|@|\d{7,}/i);
   });
 
-  it('blocks saving until rates are confirmed for the next release date, and never guesses them', () => {
-    const missing = compileSmartPlan(draft({ rates: emptySmartDraft().rates }), { targetDate });
-    expect(missing.phase3).toBeNull(); expect(missing.problems.join(' ')).toContain('Review rates: 7 slots need a confirmed rate');
-    expect(missing.rates[0]).toMatchObject({ evidence: null, label: 'Rate needs review' });
-    const stale = compileSmartPlan(draft({ rates: confirmSmartRates(600, 700, 'VENUE_SCHEDULE', '2026-09-26', now) }), { targetDate });
-    expect(stale.phase3).toBeNull(); expect(stale.rates[0]!.label).toBe('Rate needs review · confirmed for Sat, Sep 26');
-    const dayOnly = compileSmartPlan(draft({ rates: confirmSmartRates(600, null, 'OPERATOR_CONFIRMED', targetDate, now) }), { targetDate });
-    expect(dayOnly.phase3).toBeNull();
+  it('uses the fixed PHP 700 venue rate from 4 PM on every day and reviews only pre-4 PM hours', () => {
+    const evening = compileSmartPlan(draft({ rates: emptySmartDraft().rates }), { targetDate });
+    expect(evening.problems).toEqual([]);
+    expect(evening.phase3!.candidates.every(candidate => candidate.rateEvidence.perHour.every(value => value === 700))).toBe(true);
+    expect(evening.rates[0]).toMatchObject({ needsReview: false, label: 'Expected: ₱2,100 · fixed venue rate from 4 PM' });
+
+    const nextDay = smartRateFor(slot(3, '16:00', 3), emptySmartDraft().rates, '2026-10-04', true);
+    expect(nextDay).toMatchObject({ needsReview: false, evidence: { date: '2026-10-04', perHour: [700, 700, 700], status: 'VENUE_SCHEDULE' } });
+
+    const mixedMissing = compileSmartPlan(draft({ immediate: [slot(3, '15:00', 3)], backups: [], rates: emptySmartDraft().rates }), { targetDate });
+    expect(mixedMissing.phase3).toBeNull(); expect(mixedMissing.problems.join(' ')).toContain('Review rates: 1 slot needs a confirmed rate');
+    expect(mixedMissing.rates[0]).toMatchObject({ evidence: null, label: 'Rate needs review' });
+
+    const mixed = smartRateFor(slot(3, '15:00', 3), confirmSmartRates(600, null, 'OPERATOR_CONFIRMED', targetDate, now), targetDate, true);
+    expect(mixed).toMatchObject({ needsReview: false, evidence: { perHour: [600, 700, 700], status: 'VENUE_SCHEDULE' } });
     expect(smartRateFor(slot(3, '08:00', 2), confirmSmartRates(600, null, 'OPERATOR_CONFIRMED', targetDate, now), targetDate, true).label).toBe('Expected: ₱1,200 · current configured rate');
   });
 
@@ -112,7 +119,7 @@ describe('Smart backups compiler', () => {
   it('keeps expert overrides from a saved plan exactly (Advanced settings round-trip)', () => {
     const base = draft({ retryReopened: true });
     base.immediate[0] = { ...base.immediate[0]!, worker: 'G', priority: 9 };
-    base.backups[1] = { ...base.backups[1]!, permissions: { wave1: false, wave2: false, rescue: true },
+    base.backups[1] = { ...base.backups[1]!, start: '15:00', permissions: { wave1: false, wave2: false, rescue: true },
       rate: { source: 'operator confirmed', capturedAt: '2026-09-24T01:02:03.000Z', status: 'VENUE_SCHEDULE', date: targetDate, perHour: [650, 700, 700], actionable: true } };
     base.advanced = { standby: ['E', 'F'], wave2: 1, rescue: 2, total: 6 };
     const saved = compileSmartPlan(base, { targetDate }).phase3!;

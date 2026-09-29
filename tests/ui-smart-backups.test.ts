@@ -48,7 +48,7 @@ describe('Smart backups editor (normal operator view)', () => {
     const summary = await page.locator('#smart-summary').innerText();
     expect(summary).toContain('4 immediate attempts will be sent.');
     expect(summary).toContain('4 immediate + up to 3 backups + up to 1 reopened-slot attempt. Maximum possible sends: 8.');
-    expect(await page.locator('#smart-immediate .smart-rate').first().innerText()).toBe('Expected: ₱2,100 · current configured rate');
+    expect(await page.locator('#smart-immediate .smart-rate').first().innerText()).toBe('Expected: ₱2,100 · fixed venue rate from 4 PM');
     expect(await page.locator('#smart-rescue').isChecked()).toBe(true);
     expect(await page.locator('#smart-rescue-max').inputValue()).toBe('1');
     await page.close();
@@ -117,19 +117,15 @@ describe('Smart backups editor (normal operator view)', () => {
     await page.close();
   });
 
-  it('requires a rate review before saving a new Smart plan, then saves confirmed rates for the next release', async () => {
+  it('saves an evening Smart plan without rate review using the fixed PHP 700 venue schedule', async () => {
     const page = await open({ booking: legacy() });
     await page.locator('#precision-mode-smart').check();
     expect(await rows(page, 'immediate').count()).toBe(2); // starts from the fixed attempts on screen
-    expect(await page.locator('#smart-immediate .smart-rate').first().innerText()).toBe('Rate needs review');
-    await page.locator('#save-booking').click();
-    expect(await page.locator('#edit-status').innerText()).toContain('Review rates');
-    expect(await page.evaluate(() => (window as any).fixtureSaved)).toBeUndefined();
+    expect(await page.locator('#smart-immediate .smart-rate').first().innerText()).toBe('Expected: ₱2,100 · fixed venue rate from 4 PM');
+    expect(await page.locator('#smart-rate-summary').innerText()).toContain('Evening ₱700/hour · fixed venue schedule from 4 PM · No rate review needed');
     await page.locator('#smart-review-rates').click();
-    await page.locator('#smart-rate-day').fill('600'); await page.locator('#smart-rate-evening').fill('700');
-    await page.locator('#smart-rate-status').selectOption('VENUE_SCHEDULE');
-    await page.locator('#smart-rate-confirm').click();
-    expect(await page.locator('#smart-immediate .smart-rate').first().innerText()).toBe('Expected: ₱2,100 · current configured rate');
+    expect(await page.locator('#smart-rate-evening').inputValue()).toBe('700');
+    expect(await page.locator('#smart-rate-evening').isDisabled()).toBe(true);
     await page.locator('#save-booking').click();
     await page.waitForFunction(() => !!(window as any).fixtureSaved);
     const p = (await saved(page)).PRECISION_PHASE3;

@@ -17,6 +17,10 @@ export const SMART_WORKERS: readonly SmartWorker[] = ['A', 'B', 'C', 'D', 'E', '
 export const SMART_MAX_SLOTS = 21;
 /** Hourly rates from this hour on use the evening rate (same boundary as the checkout request's night-rate flag). */
 export const SMART_EVENING_FROM = 16;
+/** Venue schedule confirmed by the operator: every whole hour from 4 PM onward is PHP 700 on every day. */
+export const SMART_EVENING_RATE = 700;
+export const SMART_EVENING_RATE_SOURCE = 'venue schedule from 4 PM';
+export const SMART_EVENING_RATE_CONFIRMED_AT = '2026-09-30T00:00:00.000Z';
 export const SMART_DEFAULT_REOPENED = 1;
 /** Mirrors PRECISION_MAX_FAN_OUT and PRECISION_MAX_SENDS (test-enforced). */
 export const SMART_MAX_FAN_OUT = 4;
@@ -156,20 +160,32 @@ export function confirmSmartRates(day: number | null, evening: number | null, st
     capturedAt: now.toISOString(), date: targetDate };
 }
 
-/** The evidence a slot will be authorized with, and a short operator-facing label. Never invents a price. */
+/** The evidence a slot will be authorized with, and a short operator-facing label. */
 export function smartRateFor(slot: SmartSlot, rates: SmartRateTable, targetDate: string, immediate: boolean): SmartRateView {
   const review = (label: string): SmartRateView => ({ evidence: null, label, needsReview: true });
+  const hours = Array.from({ length: slot.durationHours }, (_, offset) => smartHourOf(slot.start) + offset);
+  if (hours.every(hour => hour >= SMART_EVENING_FROM)) {
+    const evidence: SmartRateEvidence = { source: SMART_EVENING_RATE_SOURCE, capturedAt: SMART_EVENING_RATE_CONFIRMED_AT,
+      status: 'VENUE_SCHEDULE', date: targetDate, perHour: hours.map(() => SMART_EVENING_RATE), actionable: true };
+    return { evidence, label: `Expected: ${smartPeso(evidence.perHour.reduce((sum, value) => sum + value, 0))} · fixed venue rate from 4 PM`, needsReview: false };
+  }
   if (slot.rate) {
-    const rate = slot.rate, total = rate.perHour.reduce((sum, value) => sum + value, 0);
+    const rate = slot.rate;
     if (rate.perHour.length !== slot.durationHours || rate.perHour.some(value => !Number.isFinite(value) || value <= 0)) return review('Rate needs review');
     if (rate.date !== targetDate) return { evidence: rate, label: `Rate needs review · confirmed for ${smartDateText(rate.date)}`, needsReview: true };
     if (immediate && (!rate.actionable || rate.status === 'REFERENCE')) return { evidence: rate, label: 'Rate needs review · reference only', needsReview: true };
-    return { evidence: rate, label: `Expected: ${smartPeso(total)} · exact rate`, needsReview: false };
+    const perHour = rate.perHour.map((value, offset) => hours[offset]! >= SMART_EVENING_FROM ? SMART_EVENING_RATE : value);
+    const evidence: SmartRateEvidence = perHour.some((value, offset) => value !== rate.perHour[offset])
+      ? { ...rate, source: 'confirmed daytime and venue evening schedule', status: 'VENUE_SCHEDULE', perHour }
+      : rate;
+    return { evidence, label: `Expected: ${smartPeso(perHour.reduce((sum, value) => sum + value, 0))} · exact rate`, needsReview: false };
   }
-  const perHour = Array.from({ length: slot.durationHours }, (_, offset) => smartHourOf(slot.start) + offset >= SMART_EVENING_FROM ? rates.evening : rates.day);
+  const perHour = hours.map(hour => hour >= SMART_EVENING_FROM ? SMART_EVENING_RATE : rates.day);
   if (perHour.some(value => value === null) || !rates.capturedAt || !rates.date || !rates.source) return review('Rate needs review');
   if (rates.date !== targetDate) return review(`Rate needs review · confirmed for ${smartDateText(rates.date)}`);
-  const evidence: SmartRateEvidence = { source: rates.source, capturedAt: rates.capturedAt, status: rates.status, date: rates.date, perHour: perHour as number[], actionable: true };
+  const includesEvening = hours.some(hour => hour >= SMART_EVENING_FROM);
+  const evidence: SmartRateEvidence = { source: includesEvening ? 'confirmed daytime and venue evening schedule' : rates.source,
+    capturedAt: rates.capturedAt, status: includesEvening ? 'VENUE_SCHEDULE' : rates.status, date: rates.date, perHour: perHour as number[], actionable: true };
   return { evidence, label: `Expected: ${smartPeso(evidence.perHour.reduce((sum, value) => sum + value, 0))} · current configured rate`, needsReview: false };
 }
 
