@@ -34,6 +34,18 @@ export interface PrecisionTargetView { workerId:WorkerId; court:number; startTim
   evidence?:string; eligible?:boolean; checkpoint?:string; state?:string; code?:string; duplicateOf?:WorkerId; security?:'ready'|'failed'; bookingNo?:string; holdExpiresAt?:string }
 /** Live Precision race view built from runner stage events; purely informational. */
 export interface PrecisionView { targets:PrecisionTargetView[]; frozen:boolean; frozenCount?:number; frozenAt?:string; checkpoint?:string; checkpointAt?:string; outcome?:string }
+/** One independently tracked attempt (a fan-out child, or the single attempt of a target). */
+export interface LiveChildView { attemptId:string; label:string; fanOutIndex:number; fanOutCount:number; offsetMs?:number; state:string; code?:string }
+/** A logical target (the parent goal) and its attempts, for the Live view. */
+export interface LiveParentView { key:string; wave:'WAVE_1'|'WAVE_2'|'RESCUE'; workerId?:string; court?:number; startTime?:string; endTime?:string; candidateId?:string; children:LiveChildView[] }
+export interface LivePredictionView { candidateId:string; court?:number; startTime?:string; endTime?:string; predictedStartMs:number; predictedEndMs:number; confidence:string;
+  prewarm?:'PREPARING'|'READY'|'FAILED'; errorMs?:number }
+export interface LiveRunView { parents:LiveParentView[]; tiers?:string; prewarm?:{leadMs:number;width:number}; predictions:LivePredictionView[];
+  rescueEnabled?:boolean; rescueMax?:number; outcome?:string; notes:string[] }
+/** Machine Fan-out Capacity Profile digest (fanout-capacity.ts), with the full newest compatible profile for timing presets. */
+export interface FanOutWidthView { width:number; attempts:number; chromeP50:number|null; chromeP95:number|null; chromeP99:number|null; chromeMax:number|null; spreadP95:number|null; perChildP95:Array<number|null> }
+export interface FanOutProfileView { createdAt:string; dispatcher:string; compatible:boolean; stale:boolean; notes:string[]; recommendedWidth:number; reasons:string[]; widths:FanOutWidthView[] }
+export interface FanOutDigest { latest:(FanOutProfileView&{profile:import('../src/fanout-capacity.js').FanOutProfile})|null; history:FanOutProfileView[] }
 /** Result of the last arm's Wave 1 preregistration for one release (absent until an arm reaches that step). */
 export interface ArbitrationManifestView { status:'ready'|'blocked'; targetDate:string; releaseMs:number;
   /** true when an existing matching preregistration was verified and reused. */ verified?:boolean; createdAt?:string; code?:string; reason?:string }
@@ -41,6 +53,12 @@ export interface Dashboard {
   phase3?:{fitness?:string;cache?:string;seq?:number;outcome?:string;frozen?:boolean;
     attempts:Array<{workerId:string;candidateId:string;wave:string;state:string}>};
   precision?:PrecisionView|null;
+  /** Current run by logical target and fan-out child, prewarm tiers and Rescue predictions (Live view). */
+  live?:LiveRunView|null;
+  /** Fan-out Capacity Profile of this machine (Strategy recommendation, History & Insights). */
+  fanOut?:FanOutDigest|null;
+  /** Recent release dispatch telemetry (History & Insights). */
+  telemetry?:import('../src/release-telemetry.js').RunTelemetry[];
   /** Customer-identity problems found by the latest preparation or run (worker letters and codes only). */
   identityIssues?:string[];
   bookingResult?:Extract<UiEvent,{type:'bookingResult'}>;

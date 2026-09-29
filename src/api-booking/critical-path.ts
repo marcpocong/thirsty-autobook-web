@@ -25,7 +25,11 @@ interface WorkerRecord {
   browserRequestWallMs?: number;
   calibration?: RendererClockCalibration;
   dispatchMode: DispatchMode;
+  meta?: CriticalPathMeta;
 }
+/** Per-attempt identity and outcome (Phase 13): parent goal, worker, fan-out position, configured offset, wave and final state. Never private data. */
+export type CriticalPathMeta = Partial<{ parentGoalId: string; workerId: string; fanOutIndex: number; fanOutCount: number; configuredOffsetMs: number;
+  wave: string; finalState: string; finalCode: string; prewarmReadyMs: number }>;
 
 export interface CriticalPathRow {
   schema: 'critical-path/v1';
@@ -56,6 +60,7 @@ export interface CriticalPathRow {
     requestEventLagMs: number | null;
   };
   calibration: { samples: number; uncertaintyMs: number; minRoundTripMs: number; consistent: boolean } | null;
+  meta?: CriticalPathMeta;
 }
 export interface Bounded { ms: number; lowMs: number; highMs: number }
 
@@ -139,6 +144,8 @@ export class CriticalPathRecorder {
       }
     } catch { /* telemetry only */ }
   }
+  /** Adds identity/outcome metadata to a row (after dispatch, never on the hot path). */
+  describe(worker: string, meta: CriticalPathMeta): void { const entry = this.entry(worker); entry.meta = { ...(entry.meta ?? {}), ...meta }; }
   calibration(worker: string, calibration: RendererClockCalibration | undefined): void { if (calibration) this.entry(worker).calibration = calibration; }
   workerIds(): string[] { return [...new Set([...this.workers.keys(), ...this.adopted.keys()])].sort(); }
   /** Takes over a complete row measured in another process; it replaces this recorder's row for the same ID. */
@@ -166,7 +173,8 @@ export class CriticalPathRecorder {
         responseHeadersMs: mapped(record.renderer?.headersAt), responseCompleteMs: mapped(record.renderer?.completedAt), responseObservedMs: rel(node.responseObserved),
         segments: { nodeToRendererMs: record.dispatchMode === 'node' ? diff(prePost, evaluateEntered?.ms) : null, rendererToFetchMs: diff(evaluateEntered?.ms, fetchInvoked?.ms),
           fetchToRequestStartMs: diff(fetchInvoked?.ms, browserRequestStart), requestEventLagMs: diff(browserRequestStart, requestObserved) },
-        calibration: calibration ? { samples: calibration.samples, uncertaintyMs: round(calibration.uncertaintyMs), minRoundTripMs: round(calibration.minRoundTripMs), consistent: calibration.consistent } : null };
+        calibration: calibration ? { samples: calibration.samples, uncertaintyMs: round(calibration.uncertaintyMs), minRoundTripMs: round(calibration.minRoundTripMs), consistent: calibration.consistent } : null,
+        ...(record.meta ? { meta: { ...record.meta } } : {}) };
     });
   }
 

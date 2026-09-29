@@ -816,7 +816,9 @@ try {
           const recorder=startCriticalPath(releaseClock,releaseMs,new Map(armed.attempts.flatMap(attempt=>{
             const session=sessionFor(attempt.attempt);return session?[[attempt.attempt.id,session.page] as const]:[];})));
           // One critical-path row per child: the tab's transport observations are aliased onto its attempt ID.
-          for(const attempt of armed.attempts)recorder.alias(transportKeyFor(attempt.attempt),attempt.attempt.id);
+          for(const attempt of armed.attempts){recorder.alias(transportKeyFor(attempt.attempt),attempt.attempt.id);
+            recorder.describe(attempt.attempt.id,{parentGoalId:attempt.target.targetKey,workerId:attempt.target.workerId,fanOutIndex:attempt.attempt.fanOutIndex,
+              fanOutCount:attempt.attempt.fanOutCount,configuredOffsetMs:attempt.triggerMs-releaseMs,wave:'WAVE_1'});}
           const outcome=await dispatchArmedPrecisionRace(armed,{clock:releaseClock,spinTailMs:DEFAULT_SPIN_TAIL_MS,
             ...fanOutPrewarm(race.fanOut?PRECISION_FAN_OUT_ATTEMPTS:1,armed.attempts.filter(attempt=>attempt.attempt.fanOutIndex===0).length),
             isAborted:()=>abort.signal.aborted,sleep:pause,transportFor:(_worker,attempt)=>releaseTransports.get(transportKeyFor(attempt.attempt)),
@@ -838,7 +840,8 @@ try {
             onFinalApproach:()=>{try{previousPriority=getPriority();setPriority(osConstants.priority.PRIORITY_HIGH);}catch{previousPriority=undefined;}},
             onReleaseWindowEnd:()=>{if(previousPriority!==undefined){try{setPriority(previousPriority);}catch{}previousPriority=undefined;}},
             onEvent:event=>{
-              if(event.kind==='prewarm-ready')stage('SECURITY_PREWARM_READY',{workerId:event.workerId,attemptId:event.attemptId});
+              if(event.kind==='prewarm-ready'){stage('SECURITY_PREWARM_READY',{workerId:event.workerId,attemptId:event.attemptId});
+                recorder.describe(event.attemptId,{prewarmReadyMs:Math.round((releaseClock?.nowMs()??nowMs())-releaseMs)});}
               else if(event.kind==='prewarm-failed')stage('SECURITY_PREWARM_FAILED',{workerId:event.workerId,attemptId:event.attemptId,code:event.code??'SECURITY_PREWARM_FAILED'});
               else if(event.kind==='prewarm-retry')stage('SECURITY_PREWARM_RETRY',{workerId:event.workerId,attemptId:event.attemptId});
               else if(event.kind==='dispatch-start'){const binding=bindings.get(event.attemptId),plan=race.attempts.find(value=>value.id===event.attemptId)?.plan;
@@ -851,7 +854,8 @@ try {
                 unbindProoflessAttempt(binding);}}
             }});
           if(outcome.afterFireError)stage('PRECISION_LOCK_DISPATCHING_FAILED',{code:outcome.afterFireError});
-          for(const result of outcome.results)setState(result.attempt.target,result.state,result.code,undefined,result.attempt.id);
+          for(const result of outcome.results){setState(result.attempt.target,result.state,result.code,undefined,result.attempt.id);
+            recorder.describe(result.attempt.id,{finalState:result.state,...(result.code?{finalCode:result.code}:{})});}
           // Every attempt has settled: only now is the trace written.
           await persistProviderTraces().catch(()=>undefined);
         }catch(error){
@@ -1016,6 +1020,8 @@ try {
       const workerRank=(worker:WorkerId)=>{const age=contextAge(worker);return age!==undefined&&age>=0&&age<=RESCUE_CONTEXT_REUSE_MS?0:1;};
       const dispatchAdaptive=(selection:AdaptiveSelection,wave:'WAVE_2'|'RESCUE')=>{
         const {candidate,workerId}=selection;
+        // Selection instant (telemetry: detection -> dispatch for Wave 2 and Rescue).
+        stage('PHASE3_ADAPTIVE_SELECTED',{workerId,candidateId:candidate.id,wave,evidenceSeq:selection.evidenceSeq,contextReused:(contextAge(workerId)??Infinity)<=RESCUE_CONTEXT_REUSE_MS});
         const predicted=wave==='RESCUE'?predictions.get(candidate.id):undefined,observed=session.latest?.observation.responseOffsetMs;
         if(predicted&&observed!==undefined){const outcome=predictionError(predicted,observed);
           stage('RESCUE_PREDICTION_OUTCOME',{candidateId:candidate.id,workerId,errorMs:outcome.errorMs,ok:outcome.insideWindow,confidence:predicted.confidence,
@@ -1110,7 +1116,9 @@ try {
         // Critical-path rows are per child attempt; each tab's transport observations are aliased onto its attempt.
         const recorder=startCriticalPath(releaseClock,releaseMs,new Map(armed.attempts.flatMap(attempt=>{
           const page=pageOf(attempt.attempt);return page?[[attempt.attempt.id,page] as const]:[];})));
-        for(const attempt of armed.attempts)recorder.alias(transportKeyOf(attempt.target.workerId,attempt.attempt.fanOutIndex),attempt.attempt.id);
+        for(const attempt of armed.attempts){recorder.alias(transportKeyOf(attempt.target.workerId,attempt.attempt.fanOutIndex),attempt.attempt.id);
+          recorder.describe(attempt.attempt.id,{parentGoalId:candidateOf(attempt.attempt).id,workerId:attempt.target.workerId,fanOutIndex:attempt.attempt.fanOutIndex,
+            fanOutCount:attempt.attempt.fanOutCount,configuredOffsetMs:attempt.triggerMs-releaseMs,wave:'WAVE_1'});}
         const transportOf=(attempt:ArmedAttempt)=>releaseTransports.get(transportKeyOf(attempt.target.workerId,attempt.attempt.fanOutIndex));
         const outcome=await dispatchArmedPrecisionRace(armed,{clock:releaseClock,spinTailMs:DEFAULT_SPIN_TAIL_MS,isAborted:()=>abort.signal.aborted,sleep:pause,
           ...fanOutPrewarm(fanOutWidth,armed.attempts.filter(attempt=>attempt.attempt.fanOutIndex===0).length),
@@ -1126,6 +1134,7 @@ try {
           onFinalApproach:()=>{try{previousPriority=getPriority();setPriority(osConstants.priority.PRIORITY_HIGH);}catch{previousPriority=undefined;}},
           onReleaseWindowEnd:()=>{if(previousPriority!==undefined){try{setPriority(previousPriority);}catch{}previousPriority=undefined;}},
           onEvent:event=>{const binding=bindings.get(event.attemptId),child=frozen.attempts.find(value=>value.id===event.attemptId);
+            if(event.kind==='prewarm-ready')recorder.describe(event.attemptId,{prewarmReadyMs:Math.round((releaseClock?.nowMs()??nowMs())-releaseMs)});
             const fanOut:Record<string,number>=child&&child.fanOutCount>1?{fanOutIndex:child.fanOutIndex,fanOutCount:child.fanOutCount}:{};
             if(event.kind==='dispatch-start'&&binding&&child){wave1Fired=true;const candidate=candidateOf(child);
               session.record({id:binding.correlation.attemptId,candidateId:candidate.id,workerId:event.workerId,wave:'WAVE_1',state:'IN_FLIGHT',...fanOut});
@@ -1140,6 +1149,7 @@ try {
               unbindProoflessAttempt(binding);}
           }});
         wave1Settled=true;
+        for(const result of outcome.results)recorder.describe(result.attempt.id,{finalState:result.state,...(result.code?{finalCode:result.code}:{})});
         for(const result of outcome.results){const binding=bindings.get(result.attempt.id);
           if(!binding||!session.attempts.some(value=>value.id===binding.correlation.attemptId))
             stage('PHASE3_WAVE1_UNSENT',{workerId:result.attempt.target.workerId,state:result.state,...(result.code?{code:result.code}:{}),

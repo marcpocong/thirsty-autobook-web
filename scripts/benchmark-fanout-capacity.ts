@@ -17,7 +17,8 @@
  *   --pattern burst | offsets:-35,-30,-25,-10 | spaced:<ms>   child offsets (default burst: every child at the release instant)
  *   --dispatcher central | coordinator | renderer              (coordinator: experimental per-browser processes; renderer: experimental)
  *   --prewarm-lead <ms> (default 1500)  --prewarm-concurrency <n> (tiered policy, as production fan-out)  --synthetic-prewarm cpu:<ms>,wait:<ms>  --page-busy <ms per 10 ms>
- *   --headed (real windows; background tabs as in production)  --chrome <path>  --label <text>  --out <dir>
+ *   --headed (real windows; background tabs as in production)  --traces (passive CDP provider traces on every tab, as production)
+ *   --chrome <path>  --label <text>  --out <dir>
  */
 import { mkdir, writeFile } from 'node:fs/promises';
 import { cpus, platform, release as osRelease, totalmem } from 'node:os';
@@ -42,6 +43,7 @@ const syntheticPrewarm = args.get('synthetic-prewarm') ?? 'cpu:0,wait:0';
 const pageBusy = args.get('page-busy') ?? '0';
 const headed = args.get('headed') === 'true';
 const saveProfile = args.get('save-profile') === 'true';
+const tracesOn = args.get('traces') === 'true';
 const label = args.get('label') ?? `${dispatcher}-${pattern.replace(/[^a-z0-9-]/gi, '')}${headed ? '-headed' : ''}`;
 if (!(workerCount >= 1 && workerCount <= 7) || widths.some(width => !(width >= 1 && width <= 4)) || !(runs >= 1) || !['central', 'coordinator', 'renderer'].includes(dispatcher) ||
   !(prewarmLeadMs >= 200 && prewarmLeadMs <= 30_000) || (dispatcher === 'renderer' && prewarmLeadMs < 1300)) throw Error('BENCH_ARGS_INVALID');
@@ -77,6 +79,7 @@ const capacity = await import(moduleUrl('src/fanout-capacity.ts')) as typeof imp
 const coordinatorModule = dispatcher === 'coordinator'
   ? await import(moduleUrl('src/api-booking/dispatch-coordinator.ts')) as typeof import('../src/api-booking/dispatch-coordinator.js') : undefined;
 const { ONDA_URL } = await import(moduleUrl('src/config.ts')) as typeof import('../src/config.js');
+const traceModule = tracesOn ? await import(moduleUrl('src/api-booking/checkout-provider-trace.ts')) as typeof import('../src/api-booking/checkout-provider-trace.js') : undefined;
 type ChildSample = import('../src/fanout-capacity.js').ChildSample;
 type RunSample = import('../src/fanout-capacity.js').RunSample;
 
@@ -107,10 +110,16 @@ async function runOnce(width: number, runIndex: number): Promise<RunSample> {
   const recorder = new cp.CriticalPathRecorder(releaseMs, trusted.monotonicDeadline(releaseMs), trusted.offsetMs - trusted.wallDisagreementMs(),
     frozen.attempts.map(attempt => attempt.id));
   const prewarm = new Map<string, { started: number; ended?: number }>();
+  // Production attaches a passive DevTools session to every tab before release and enables Network only after that tab's POST.
+  const traces = traceModule ? new traceModule.ProviderTraceSet(`bench-${runIndex}`, 'release', releaseMs, () => trusted.nowMs() - releaseMs) : undefined;
+  if (traces) { for (const attempt of frozen.attempts) { const page = pageOf(attempt);
+    traces.start({ workerId: attempt.id, court: attempt.target.court, startTime: attempt.target.start, endTime: attempt.target.end },
+      () => page.context().newCDPSession(page) as unknown as Promise<import('../src/api-booking/checkout-provider-trace.js').CdpSessionLike>); }
+    await traces.ready(3_000); }
   const transports = new Map(frozen.attempts.map(attempt => {
     const page = pageOf(attempt);
     const transport = new OndaBrowserSessionTransport(page, syntheticSecurityPreparation(page, syntheticCpuMs, syntheticWaitMs), async () => undefined, {},
-      observation => recorder.observeTransport(attempt.id, observation));
+      observation => { recorder.observeTransport(attempt.id, observation); if (observation.event === 'CHECKOUT_HTTP_POST_INITIATED') traces?.postInitiated(attempt.id); });
     return [attempt.id, transport] as const;
   }));
   const armed = await armedModule.armPrecisionRace(frozen, { lock, customerFor: () => customer, journalRoot: resolve('.local/api-booking/api-first-journals'),
@@ -147,6 +156,7 @@ async function runOnce(width: number, runIndex: number): Promise<RunSample> {
     results = outcome.results;
   }
   const busy = cpuBefore ? busyPercent(cpuBefore, cpuSnapshot()) : null;
+  if (traces) { traces.enableAll(); await traces.persist(join(runDir, 'forensics')); }
   const nodeCpu = nodeCpuBefore ? process.cpuUsage(nodeCpuBefore) : undefined;
   // Independent post-run calibration of every page clock, after every POST settled.
   for (const attempt of frozen.attempts) {

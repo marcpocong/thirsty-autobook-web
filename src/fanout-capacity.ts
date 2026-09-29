@@ -214,19 +214,47 @@ export function profileCompatibility(profile: FanOutProfile, current: { machine:
   return { compatible: same && profile.config.dispatcher === (current.dispatcher ?? 'central'), stale, notes };
 }
 
-/** All readable profiles in the directory, newest first. Malformed files are skipped. */
-export function readFanOutProfiles(root: string): FanOutProfile[] {
-  const directory = join(root, FANOUT_PROFILE_DIRECTORY);
-  if (!existsSync(directory)) return [];
-  return readdirSync(directory).filter(name => /^profile-.*\.json$/.test(name)).flatMap(name => {
-    try { return [FanOutProfileSchema.parse(JSON.parse(readFileSync(join(directory, name), 'utf8')))]; } catch { return []; }
-  }).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+/** All readable profiles under one or more roots (e.g. the installation and its Source folder), newest first. Malformed files are skipped. */
+export function readFanOutProfiles(root: string | readonly string[]): FanOutProfile[] {
+  const seen = new Set<string>();
+  return (typeof root === 'string' ? [root] : root).flatMap(base => {
+    const directory = join(base, FANOUT_PROFILE_DIRECTORY);
+    if (!existsSync(directory)) return [];
+    return readdirSync(directory).filter(name => /^profile-.*\.json$/.test(name)).flatMap(name => {
+      try { return [FanOutProfileSchema.parse(JSON.parse(readFileSync(join(directory, name), 'utf8')))]; } catch { return []; }
+    });
+  }).filter(profile => { const key = `${profile.createdAt}/${profile.config.dispatcher}`; if (seen.has(key)) return false; seen.add(key); return true; })
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 /** The newest profile compatible with this machine and dispatcher, or null. */
-export function readLatestCompatibleFanOutProfile(root: string, current: Parameters<typeof profileCompatibility>[1]): { profile: FanOutProfile; compatibility: ProfileCompatibility } | null {
+export function readLatestCompatibleFanOutProfile(root: string | readonly string[], current: Parameters<typeof profileCompatibility>[1]): { profile: FanOutProfile; compatibility: ProfileCompatibility } | null {
   for (const profile of readFanOutProfiles(root)) {
     const compatibility = profileCompatibility(profile, current);
     if (compatibility.compatible) return { profile, compatibility };
   }
   return null;
+}
+
+/** This process's machine identity (Chrome version unknown here). */
+export function currentMachineIdentity(): MachineIdentity {
+  // Lazy import keeps this module's top level free of Node-only side effects for type-only consumers.
+  const os = process.getBuiltinModule('node:os') as typeof import('node:os');
+  return { cpuModel: os.cpus()[0]?.model ?? 'unknown', logicalCores: os.cpus().length, totalMemGb: Math.round(os.totalmem() / 2 ** 30), platform: os.platform(),
+    osRelease: os.release(), chromeVersion: null };
+}
+export interface FanOutProfileDigestEntry { createdAt: string; dispatcher: string; compatible: boolean; stale: boolean; notes: string[]; recommendedWidth: number; reasons: string[];
+  widths: Array<{ width: number; attempts: number; chromeP50: number | null; chromeP95: number | null; chromeP99: number | null; chromeMax: number | null; spreadP95: number | null; perChildP95: Array<number | null> }> }
+function digestEntry(profile: FanOutProfile, compatibility: ProfileCompatibility): FanOutProfileDigestEntry {
+  return { createdAt: profile.createdAt, dispatcher: profile.config.dispatcher, compatible: compatibility.compatible, stale: compatibility.stale, notes: compatibility.notes,
+    recommendedWidth: profile.recommendation.width, reasons: profile.recommendation.reasons,
+    widths: profile.widths.map(width => ({ width: width.width, attempts: width.attempts, chromeP50: width.triggerToChromeStart.p50, chromeP95: width.triggerToChromeStart.p95,
+      chromeP99: width.triggerToChromeStart.p99, chromeMax: width.triggerToChromeStart.max, spreadP95: width.spread.p95,
+      perChildP95: width.perChildIndex.map(value => value.triggerToChromeStart.p95) })) };
+}
+/** Newest compatible profile (in full, for timing presets) plus a short history of every readable profile on this machine. */
+export function fanOutDigest(root: string | readonly string[], current: Parameters<typeof profileCompatibility>[1]): { latest: (FanOutProfileDigestEntry & { profile: FanOutProfile }) | null; history: FanOutProfileDigestEntry[] } {
+  const profiles = readFanOutProfiles(root);
+  const history = profiles.slice(0, 12).map(profile => digestEntry(profile, profileCompatibility(profile, current)));
+  const latest = readLatestCompatibleFanOutProfile(root, current);
+  return { latest: latest ? { ...digestEntry(latest.profile, latest.compatibility), profile: latest.profile } : null, history };
 }

@@ -26,6 +26,8 @@ import {readNetworkReadinessHistory,runNetworkReadiness,saveNetworkReadiness} fr
 import {connectionWarmth} from '../src/checkout-path-research.js';
 import {ensureExperimentManifest} from '../src/arbitration/experiment-manifest.js';
 import {readBuildInfo} from '../src/build-info.js';
+import {currentMachineIdentity,fanOutDigest} from '../src/fanout-capacity.js';
+import {readReleaseTelemetry} from '../src/release-telemetry.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 process.chdir(root);
@@ -94,6 +96,9 @@ const controller = new Controller({
     detail: (plan ? describePlan(plan)+'\n\n' : '') + (kind==='full'?'Terms authorization: YES, for this booking only.\nFinal automation boundary: QR Checkout.\nThe bot will continue through Onda until the QR payment page is reached, then stop. Payment itself remains manual.':kind==='selection'?'At release this automation MAY SELECT available court slots.\nSelection Only stops before Proceed. Selection is not a reservation.':'This waits for release and performs read-only refresh/date navigation. No court slots will be selected.'),
     confirmLabel: kind==='full'?'Arm Full Booking':kind==='selection'?'Arm Selection':kind==='dry'?'Arm Dry Race':'Arm observation' }),
   buildInfo:()=>readBuildInfo(resolve(root,'dist/build-info.json')),
+  // Profiles are measured offline by scripts/benchmark-fanout-capacity.ts on this machine (source tree or installation).
+  releaseTelemetry:()=>readReleaseTelemetry(root),
+  fanOutDigest:()=>fanOutDigest([root,resolve(root,'Source')],{machine:currentMachineIdentity(),gitSha:readBuildInfo(resolve(root,'dist/build-info.json'))?.gitSha??'unknown',dispatcher:'central'}),
   publish: status => { if (window && !window.isDestroyed()) window.webContents.send('thirsty:status', status); },
 });
 if (!app.requestSingleInstanceLock()) app.quit();
