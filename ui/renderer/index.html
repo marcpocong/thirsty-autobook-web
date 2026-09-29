@@ -88,9 +88,14 @@
     <section id="strategy-suggested" class="panel strategy-step"><div class="section-title"><div><p class="eyebrow">Step 4 · a suggestion, not a command</p><h2>Suggested plan</h2></div><div class="button-row"><button id="strategy-suggest" class="secondary compact" type="button">Suggest plan</button><button id="strategy-apply" class="secondary compact" type="button" disabled>Use this plan</button></div></div>
       <p class="small">Scores rank your own preferences and the evidence quality; they do not predict who wins Onda's arbitration.</p>
       <div id="strategy-suggestion" class="strategy-suggestion"><p class="empty">Choose a goal and preset, then Suggest plan.</p></div></section>
-    <section id="strategy-review" class="panel strategy-step"><div class="section-title"><div><p class="eyebrow">Step 5</p><h2>Review &amp; save</h2></div><button id="strategy-save" class="primary-action compact" type="button">Save plan</button></div>
+    <section id="strategy-editable" class="panel strategy-step" hidden><div class="section-title"><div><p class="eyebrow">Step 5 · Smart proposes, you control</p><h2>Editable Smart plan</h2><p id="strategy-edit-provenance" class="small"></p></div><button id="strategy-reset-all" class="secondary compact" type="button">Reset all changes to Smart suggestion</button></div>
+      <h3>Immediate targets</h3><ol id="strategy-edit-immediate" class="strategy-edit-list"></ol>
+      <h3>Backups · priority order</h3><ol id="strategy-edit-backups" class="strategy-edit-list"></ol>
+      <ul id="strategy-edit-warnings" class="strategy-warnings"></ul>
+      <p class="small">Suggest plan above creates a new preview. Reset restores the exact Smart suggestion you accepted; it does not regenerate it.</p></section>
+    <section id="strategy-review" class="panel strategy-step"><div class="section-title"><div><p class="eyebrow">Step 6</p><h2>Review &amp; save</h2></div><button id="strategy-save" class="primary-action compact" type="button">Save plan</button></div>
       <ul id="strategy-review-warnings" class="strategy-warnings"></ul><div id="strategy-review-body" class="smart-summary-body"></div><p id="strategy-review-status" class="small" role="status"></p></section>
-    <details id="strategy-advanced" class="panel strategy-advanced"><summary>6. Advanced overrides <span class="small">every setting, Fixed (legacy) attempts, Release Lab experiment</span></summary>
+    <details id="strategy-advanced" class="panel strategy-advanced"><summary>7. Advanced overrides <span class="small">worker pinning, budgets, rates, Fixed (legacy) attempts, Release Lab</span></summary>
     <section class="panel setup">
       <div class="section-title"><div><p class="eyebrow">Saved plan · used by Next Release and Tests</p><h2>Booking setup</h2></div><span id="player-status" class="small">Player information · Checking</span></div>
       <fieldset id="setup-fields">

@@ -3,9 +3,10 @@ import type { BookingSetup } from '../../src/config.js';
 import {bookingSetupProblem,reconcileFallbackTimes,type FallbackReconciliation} from '../../src/booking-setup.js';
 import type {ReleasePerformance} from '../../src/release-performance.js';
 import {formatReleaseOffset,isReleaseOffsetMs} from '../../src/release-offset.js';
-import {applyDurationOffsetPreset,compileSmartPlan,confirmSmartRates,describeSmartPlan,emptySmartDraft,smartDraftFromPhase3,smartPeso,smartRange,smartSlotText,SMART_MAX_SLOTS,SMART_WORKERS,
+import {applyDurationOffsetPreset,compileSmartPlan,confirmSmartRates,describeSmartPlan,emptySmartDraft,resizeSmartFanOut,setSmartChildOffset,smartDraftFromPhase3,smartPeso,smartRange,smartSlotOffsets,smartSlotText,SMART_MAX_SLOTS,SMART_WORKERS,
   type SmartDraft,type SmartSlot,type SmartWorker,type SmartPhase3,type SmartReleaseOffset} from '../../src/precision-simple.js';
-import {initStrategy,renderStrategy,type StrategyV2Meta} from './strategy.js';
+import {fanOutTimingPlan} from '../../src/fanout-timing.js';
+import {initStrategy,renderStrategy,strategyModificationCount,type StrategyV2Meta} from './strategy.js';
 import {renderLive} from './live.js';
 import {renderInsights} from './insights.js';
 import {renderNextRelease} from './next-release.js';
@@ -135,7 +136,7 @@ input('dual-court-a').value='7';input('dual-court-b').value='6';
 const PRECISION_WORKERS=['A','B','C','D','E','F','G'] as const;
 // Smart backups editor. The draft lives here; the saved PRECISION_PHASE3 is always compileSmartPlan's output,
 // and "What will happen" is generated from that same compiled object.
-let precisionMode:PrecisionMode='fixed',smartDraft:SmartDraft=emptySmartDraft(),smartRenderKey='',smartRatesOpen=false;
+let precisionMode:PrecisionMode='fixed',smartDraft:SmartDraft=emptySmartDraft(),acceptedSmartDraft:SmartDraft|null=null,smartRenderKey='',smartRatesOpen=false;
 /** Goal/preset/fan-out choices that produced the Smart draft (saved as STRATEGY_V2; metadata only, never an authorization). */
 let strategyMeta:StrategyV2Meta|undefined;
 const cloneSmart=(value:SmartDraft):SmartDraft=>JSON.parse(JSON.stringify(value)) as SmartDraft;
@@ -154,7 +155,7 @@ function unreadyWorkers():Set<string>{
 }
 const smartContext=()=>({targetDate:latest?.booking?.targetDate??'',unavailable:unreadyWorkers()});
 const smartCompiled=()=>compileSmartPlan(smartDraft,smartContext());
-function smartEdit(mutate:(draft:SmartDraft)=>void){mutate(smartDraft);if(strategyMeta&&strategyMeta.preset!=='CUSTOM')strategyMeta={...strategyMeta,preset:'CUSTOM'};renderSmart(true);changed();}
+function smartEdit(mutate:(draft:SmartDraft)=>void){mutate(smartDraft);renderSmart(true);changed();}
 function smartElement<K extends keyof HTMLElementTagNameMap>(tag:K,className:string,text?:string){const element=document.createElement(tag);if(className)element.className=className;if(text!==undefined)element.textContent=text;return element;}
 function smartSelect(id:string,label:string,choices:Array<[string,string]>,value:string,onChange:(value:string)=>void){
   const wrap=document.createElement('label'),select=document.createElement('select');select.id=id;wrap.append(label,select);
@@ -164,9 +165,14 @@ function smartField(id:string,label:string,value:string,placeholder:string,onCha
   const wrap=document.createElement('label'),field=document.createElement('input');field.id=id;field.type=type;field.value=value;field.placeholder=placeholder;
   field.addEventListener('change',()=>onChange(field.value.trim()));wrap.append(label,field);return wrap;
 }
-function smartOffsetField(id:string,releaseOffsetMs:number|undefined,onChange:(offset:number)=>void){
+function smartOffsetField(id:string,releaseOffsetMs:number|undefined,onChange:(offset:number)=>void,label='Send early by (ms)'){
   const wrap=document.createElement('label'),field=document.createElement('input');field.id=id;field.type='number';field.min='0';field.max='2000';field.step='1';field.inputMode='numeric';field.value=String(-(releaseOffsetMs??0));
-  field.addEventListener('change',()=>onChange(releaseOffsetFromEarlyInput(field.value)));wrap.append('Send early by (ms)',field);return wrap;
+  field.addEventListener('change',()=>onChange(releaseOffsetFromEarlyInput(field.value)));wrap.append(label,field);return wrap;
+}
+function smartOffsetInput(slot:SmartSlot,child:number,offset:number){
+  if(isReleaseOffsetMs(offset))return setSmartChildOffset(slot,child,offset);
+  const offsets=smartSlotOffsets(slot);offsets[child]=offset;const next={...slot};delete next.releaseOffsetMs;delete next.fanOutOffsetsMs;
+  if(offsets.length===1)next.releaseOffsetMs=offsets[0];else next.fanOutOffsetsMs=offsets;return next;
 }
 function smartButton(text:string,label:string,disabled:boolean,onClick:()=>void){
   const button=smartElement('button','secondary compact',text);button.type='button';button.setAttribute('aria-label',label);button.disabled=disabled;button.onclick=onClick;return button;
@@ -189,11 +195,17 @@ function smartRow(kind:'immediate'|'backups',slot:SmartSlot,index:number,compile
   fields.append(smartSelect(`smart-${kind}-court-${index}`,'Court',Array.from({length:7},(_,c)=>[`Court ${c+1}`,String(c+1)] as [string,string]),String(slot.court),value=>set({court:Number(value)})),
     smartSelect(`smart-${kind}-start-${index}`,'Start',hours.map(h=>[friendly(h),h] as [string,string]),slot.start,value=>set({start:value})),
     smartSelect(`smart-${kind}-duration-${index}`,'Duration',[['1 hour','1'],['2 hours','2'],['3 hours','3']],String(slot.durationHours),value=>set({durationHours:Number(value)})));
-  if(kind==='immediate')fields.append(smartOffsetField(`smart-immediate-offset-${index}`,slot.releaseOffsetMs,offset=>smartEdit(draft=>{
-    const next={...draft.immediate[index]!};
-    if(offset===0)delete next.releaseOffsetMs;else next.releaseOffsetMs=offset as SmartSlot['releaseOffsetMs'];
-    draft.immediate[index]=next;
-  })));
+  if(kind==='immediate'){
+    const offsets=smartSlotOffsets(slot),timing=(strategyMeta?.fanOut.basedOnTiming??(strategyMeta?.fanOut.timing==='CUSTOM'?undefined:strategyMeta?.fanOut.timing)??'BALANCED') as 'TIGHT'|'BALANCED'|'WIDE';
+    fields.append(smartSelect(`smart-immediate-width-${index}`,'Fan-out',[1,2,3,4].map(width=>[`${width} child${width===1?'':'ren'}`,String(width)] as [string,string]),String(offsets.length),value=>smartEdit(draft=>{
+      const width=Number(value),profile=latest?.fanOut?.latest?.profile??null,defaults=fanOutTimingPlan(timing,width,profile).children.map(child=>child.configuredOffsetMs);
+      draft.immediate[index]=resizeSmartFanOut(draft.immediate[index]!,width,defaults);
+    })));
+    const worker=compiled.immediateWorkers[index]??String.fromCharCode(65+index);
+    offsets.forEach((offset,child)=>fields.append(smartOffsetField(offsets.length===1?`smart-immediate-offset-${index}`:`smart-immediate-offset-${index}-${child}`,offset,value=>smartEdit(draft=>{
+      draft.immediate[index]=smartOffsetInput(draft.immediate[index]!,child,value);
+    }),offsets.length===1?'Send early by (ms)':`${worker}${child} early by (ms)`)));
+  }
   const facts=smartElement('div','smart-row-facts');
   if(kind==='immediate'){const worker=compiled.immediateWorkers[index]??null,chip=smartElement('span','smart-worker',worker?`Worker ${worker}`:'No worker free');
     chip.dataset.tone=!worker||unready.has(worker)?'warn':'good';facts.append(chip);}
@@ -304,7 +316,8 @@ function renderReleaseLab(compiled=compileSmartPlan(smartDraft,{targetDate:lates
   const precision=precisionSelected(),smart=precision&&precisionMode==='smart',slots=!precision?[]:smart?smartDraft.immediate:precisionRows();
   byId('release-lab-matrix').replaceChildren(...slots.map((slot,index)=>{
     const tr=document.createElement('tr'),worker=smart?compiled.immediateWorkers[index]:PRECISION_WORKERS[index],rate=smart?compiled.rates[index]?.evidence:undefined;
-    const values=[worker??'—',`Court ${slot.court}`,slot.start,`${slot.durationHours}h`,`${slot.releaseOffsetMs??0} ms`,smart?(rate?smartPeso(rate.perHour.reduce((a,b)=>a+b,0)):'Needs rate review'):'Shown after applying preset'];
+    const timing=smartSlotOffsets(slot).map((offset,child)=>`${worker??String.fromCharCode(65+index)}${smartSlotOffsets(slot).length>1?child:''} ${offset} ms`).join(', ');
+    const values=[worker??'—',`Court ${slot.court}`,slot.start,`${slot.durationHours}h`,timing,smart?(rate?smartPeso(rate.perHour.reduce((a,b)=>a+b,0)):'Needs rate review'):'Shown after applying preset'];
     tr.replaceChildren(...values.map(value=>Object.assign(document.createElement('td'),{textContent:value})));return tr;
   }));
   byId('release-lab-status').textContent=!precision
@@ -325,8 +338,14 @@ function renderReleaseLab(compiled=compileSmartPlan(smartDraft,{targetDate:lates
     smartElement('p','small',`Reopen Rescue · ${lab.actionableReopenings} actionable reopening${lab.actionableReopenings===1?'':'s'} · ${lab.rescueAttempts} attempted · Detailed report: ${lab.reportPath}`));
 }
 initStrategy({state:()=>latest,draft:()=>smartDraft,unready:unreadyWorkers,
-  useSuggestion:(draft,meta)=>{input('precision-strategy').value='precision';precisionMode='smart';smartDraft=cloneSmart(draft);strategyMeta=meta;smartRatesOpen=false;
+  useSuggestion:(draft,meta)=>{input('precision-strategy').value='precision';precisionMode='smart';smartDraft=cloneSmart(draft);acceptedSmartDraft=cloneSmart(draft);
+    const accepted=compileSmartPlan(draft,smartContext()).phase3;strategyMeta={...meta,...(accepted?{acceptedPhase3:accepted}:{}),provenance:{source:'SMART_SUGGESTED',operatorModifications:0}};smartRatesOpen=false;
     syncStrategy();renderSmart(true);changed();},
+  accepted:()=>acceptedSmartDraft,
+  edit:mutate=>smartEdit(mutate),
+  resetAll:()=>{if(!acceptedSmartDraft)return;smartDraft=cloneSmart(acceptedSmartDraft);if(strategyMeta)strategyMeta={...strategyMeta,fanOut:{...strategyMeta.fanOut,
+    width:smartDraft.immediate[0]?smartSlotOffsets(smartDraft.immediate[0]).length:strategyMeta.fanOut.width,source:strategyMeta.fanOut.acceptedSource??strategyMeta.fanOut.source,
+    ...(strategyMeta.fanOut.basedOnTiming?{timing:strategyMeta.fanOut.basedOnTiming}: {})}};renderSmart(true);changed();},
   save:()=>byId('save-booking').click()});
 byId('smart-add-immediate').onclick=()=>smartEdit(draft=>{draft.immediate.push(smartNewSlot());});
 byId('smart-add-backup').onclick=()=>smartEdit(draft=>{draft.backups.push(smartNewSlot());});
@@ -385,8 +404,14 @@ function strategyFields():Pick<BookingSetup,'RELEASE_STRATEGY'|'PRECISION_TARGET
   if(!precisionSelected())return {RELEASE_STRATEGY:'general',PRECISION_TARGETS:releaseDraft?.precisionTargets??[],PRECISION_FAN_OUT:false};
   if(precisionMode!=='smart')return {RELEASE_STRATEGY:'precision',PRECISION_TARGETS:precisionRows(),PRECISION_FAN_OUT:precisionFanOut()};
   const compiled=smartCompiled();
+  const timingModified=!!acceptedSmartDraft&&smartDraft.immediate.some((slot,index)=>!acceptedSmartDraft!.immediate[index]||JSON.stringify(smartSlotOffsets(slot))!==JSON.stringify(smartSlotOffsets(acceptedSmartDraft!.immediate[index]!)));
+  const widthModified=!!acceptedSmartDraft&&smartDraft.immediate.some((slot,index)=>smartSlotOffsets(slot).length!==(acceptedSmartDraft!.immediate[index]?smartSlotOffsets(acceptedSmartDraft!.immediate[index]!).length:0));
+  const currentWidth=smartDraft.immediate[0]?smartSlotOffsets(smartDraft.immediate[0]).length:strategyMeta?.fanOut.width??1;
+  const meta=strategyMeta?{...strategyMeta,fanOut:{...strategyMeta.fanOut,width:currentWidth,source:widthModified?'OPERATOR_OVERRIDE' as const:strategyMeta.fanOut.acceptedSource??strategyMeta.fanOut.source,
+      timing:timingModified?'CUSTOM' as const:strategyMeta.fanOut.basedOnTiming??(strategyMeta.fanOut.timing==='CUSTOM'?'BALANCED':strategyMeta.fanOut.timing)},
+    provenance:{source:'SMART_SUGGESTED' as const,operatorModifications:strategyModificationCount(smartDraft,acceptedSmartDraft)}}:undefined;
   return {RELEASE_STRATEGY:'precision',PRECISION_TARGETS:[],PRECISION_FAN_OUT:false,...(compiled.phase3?{PRECISION_PHASE3:compiled.phase3}:{}),
-    ...(smartDraft.releaseLab?{RELEASE_LAB:smartDraft.releaseLab}:{}),...(compiled.phase3&&strategyMeta?{STRATEGY_V2:strategyMeta}:{})};
+    ...(smartDraft.releaseLab?{RELEASE_LAB:smartDraft.releaseLab}:{}),...(compiled.phase3&&meta?{STRATEGY_V2:meta}:{})};
 }
 /** Precision is Proofless Direct, Standard only: lock those two fields while it is selected. */
 function syncStrategy(){
@@ -722,7 +747,12 @@ function render(state: Dashboard) {
   byId('capability-status').textContent=`Selection ${state.capabilities.selectionReady?'ready':'unverified'} · checkout ${state.capabilities.checkoutReady?'verified':'unverified'} · payment handoff ${state.capabilities.paymentBoundaryReady?'verified':'unverified'}`;
   const b=state.booking;
   if(b){
-   if(!releaseDirty&&loadedPlan!==b.fingerprint){loadedPlan=b.fingerprint;strategyMeta=b.setup.STRATEGY_V2?structuredClone(b.setup.STRATEGY_V2):undefined;releaseDraft={releaseStrategy:b.setup.RELEASE_STRATEGY??'general',precisionCount:Math.max(1,b.setup.PRECISION_TARGETS?.length??0),precisionTargets:[...(b.setup.PRECISION_TARGETS??[])],precisionFanOut:b.setup.PRECISION_FAN_OUT,precisionMode:b.setup.PRECISION_PHASE3?'smart':'fixed',smart:b.setup.PRECISION_PHASE3?smartDraftFromSaved(b.setup,b.targetDate):undefined,releaseOffsetMs:b.setup.RELEASE_OFFSET_MS??0,method:b.setup.BOOKING_METHOD??'browser',strategy:b.setup.BOOKING_TYPE??'standard',date:testDraft?.date??input('test-date').value,courtCount:b.setup.COURT_COUNT,start:b.setup.START_TIME,duration:b.setup.DURATION_HOURS,attempts:b.setup.MAX_SELECTION_ATTEMPTS,courtOrder:[...b.setup.PREFERRED_COURTS],fallbackTimes:[...b.setup.FALLBACK_TIMES],exactA:'',exactB:''};if(b.fallbackReconciliation.removed.length){releaseAdjustment=b.fallbackReconciliation;releaseDirty=true;}if(workflow==='release'){applyDraft(releaseDraft);dirty=releaseDirty;}}
+   if(!releaseDirty&&loadedPlan!==b.fingerprint){
+    loadedPlan=b.fingerprint;strategyMeta=b.setup.STRATEGY_V2?structuredClone(b.setup.STRATEGY_V2):undefined;
+    const loadedSmart=b.setup.PRECISION_PHASE3?smartDraftFromSaved(b.setup,b.targetDate):undefined;
+    acceptedSmartDraft=strategyMeta?.acceptedPhase3?smartDraftFromPhase3(strategyMeta.acceptedPhase3,{targetDate:b.targetDate,unavailable:unreadyWorkers()}):loadedSmart?cloneSmart(loadedSmart):null;
+    releaseDraft={releaseStrategy:b.setup.RELEASE_STRATEGY??'general',precisionCount:Math.max(1,b.setup.PRECISION_TARGETS?.length??0),precisionTargets:[...(b.setup.PRECISION_TARGETS??[])],precisionFanOut:b.setup.PRECISION_FAN_OUT,precisionMode:b.setup.PRECISION_PHASE3?'smart':'fixed',smart:loadedSmart,releaseOffsetMs:b.setup.RELEASE_OFFSET_MS??0,method:b.setup.BOOKING_METHOD??'browser',strategy:b.setup.BOOKING_TYPE??'standard',date:testDraft?.date??input('test-date').value,courtCount:b.setup.COURT_COUNT,start:b.setup.START_TIME,duration:b.setup.DURATION_HOURS,attempts:b.setup.MAX_SELECTION_ATTEMPTS,courtOrder:[...b.setup.PREFERRED_COURTS],fallbackTimes:[...b.setup.FALLBACK_TIMES],exactA:'',exactB:''};
+    if(b.fallbackReconciliation.removed.length){releaseAdjustment=b.fallbackReconciliation;releaseDirty=true;}if(workflow==='release'){applyDraft(releaseDraft);dirty=releaseDirty;}}
      if(workflow==='release'&&precisionMode==='smart')renderSmart();
     byId('booking-preview').textContent=`${dual?'2 COURTS / SAME TIME BLOCK\n':''}TARGET  ${dateLabel(b.targetDate)}\nREQUIRED SLOTS  ${b.slots.join(' · ')}\nCOURT ORDER  ${b.setup.PREFERRED_COURTS.join(' → ')}\nFALLBACK STARTS  ${b.setup.FALLBACK_TIMES.map(friendly).join(' → ')||'None'}\n${b.setup.MAX_SELECTION_ATTEMPTS} candidate attempts · No price ceiling\nPLAYER  Configured ✓`;
   }

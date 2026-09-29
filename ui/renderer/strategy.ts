@@ -1,5 +1,6 @@
 import type { Dashboard } from '../types.js';
-import { compileSmartPlan, describeSmartPlan, smartRange, type SmartDraft } from '../../src/precision-simple.js';
+import { compileSmartPlan, describeSmartPlan, resizeSmartFanOut, setSmartChildOffset, smartRange, smartSlotOffsets,
+  type SmartDraft, type SmartSlot } from '../../src/precision-simple.js';
 import { DEFAULT_STRATEGY_GOAL, draftFromSuggestion, isConflict, knownScheduleFromCells, presetAllocation, suggestPlan, validateGoal, windowEvidence, WINDOW_EVIDENCE_LABEL,
   type KnownSchedule, type ScoredWindow, type StrategyGoal, type StrategyPreset, type SuggestedPlan, type Window } from '../../src/strategy-engine.js';
 import { describeChildTiming, fanOutTimingPlan } from '../../src/fanout-timing.js';
@@ -11,13 +12,19 @@ import { byId, el, empty, inputById, selectById } from './dom.js';
  * and the review text is generated from it.
  */
 export interface StrategyV2Meta { version: 1; preset: StrategyPreset; goal: StrategyGoal;
-  fanOut: { width: number; source: 'MACHINE_RECOMMENDED' | 'OPERATOR_OVERRIDE' | 'NO_PROFILE'; recommendedWidth: number | null; timing: 'TIGHT' | 'BALANCED' | 'WIDE' | 'CUSTOM'; profileCreatedAt: string | null } }
+  fanOut: { width: number; source: 'MACHINE_RECOMMENDED' | 'OPERATOR_OVERRIDE' | 'NO_PROFILE'; acceptedSource?: 'MACHINE_RECOMMENDED' | 'OPERATOR_OVERRIDE' | 'NO_PROFILE'; recommendedWidth: number | null; timing: 'TIGHT' | 'BALANCED' | 'WIDE' | 'CUSTOM';
+    basedOnTiming?: 'TIGHT' | 'BALANCED' | 'WIDE'; profileCreatedAt: string | null };
+  acceptedPhase3?: NonNullable<ReturnType<typeof compileSmartPlan>['phase3']>;
+  provenance?: { source: 'SMART_SUGGESTED'; operatorModifications: number } }
 export interface StrategyHost {
   state(): Dashboard | undefined;
   draft(): SmartDraft;
   unready(): Set<string>;
   /** Replaces the Smart draft with the suggestion (switching the plan to Smart Precision) and keeps `meta` to save with it. */
   useSuggestion(draft: SmartDraft, meta: StrategyV2Meta): void;
+  accepted(): SmartDraft | null;
+  edit(mutate: (draft: SmartDraft) => void): void;
+  resetAll(): void;
   save(): void;
 }
 
@@ -83,10 +90,12 @@ export function initStrategy(value: StrategyHost): void {
     const timing = childOffsets(state), width = chosenWidth(state), machine = recommendation(state);
     const offsets = timing.children.map(child => child.configuredOffsetMs);
     host.useSuggestion(draftFromSuggestion(suggestion, host.draft(), offsets), { version: 1, preset, goal: { ...goal },
-      fanOut: { width: width.width, source: width.source, recommendedWidth: machine.profile ? machine.width : null, timing: timing.preset, profileCreatedAt: machine.createdAt } });
+      fanOut: { width: width.width, source: width.source, acceptedSource: width.source, recommendedWidth: machine.profile ? machine.width : null, timing: timing.preset,
+        basedOnTiming: selectById('strategy-timing').value as 'TIGHT' | 'BALANCED' | 'WIDE', profileCreatedAt: machine.createdAt }, provenance: { source: 'SMART_SUGGESTED', operatorModifications: 0 } });
     byId('strategy-review-status').textContent = 'Suggested plan copied into the plan below. Review it, then Save plan.';
     render();
   });
+  byId('strategy-reset-all').addEventListener('click', () => host.resetAll());
   byId('strategy-save').addEventListener('click', () => host.save());
   byId('strategy-suggestion').addEventListener('click', event => {
     const button = (event.target as HTMLElement).closest<HTMLButtonElement>('button[data-window]'); if (!button) return;
@@ -171,6 +180,95 @@ function renderPreset(state: Dashboard | undefined) {
     ...timing.warnings.map(warning => el('li', 'warn-text', warning)), ...(timing.width > 1 ? [el('li', 'small', timing.basis)] : []));
 }
 
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+const targetFields = (slot: SmartSlot | undefined) => slot && ({ court: slot.court, start: slot.start, durationHours: slot.durationHours });
+export function strategyModificationCount(current: SmartDraft, accepted: SmartDraft | null): number {
+  if (!accepted) return 0;
+  let count = Math.abs(current.immediate.length - accepted.immediate.length) + Math.abs(current.backups.length - accepted.backups.length);
+  for (const kind of ['immediate', 'backups'] as const) for (let index = 0; index < Math.min(current[kind].length, accepted[kind].length); index++) {
+    if (!same(targetFields(current[kind][index]), targetFields(accepted[kind][index]))) count++;
+    if (kind === 'immediate' && !same(smartSlotOffsets(current[kind][index]!), smartSlotOffsets(accepted[kind][index]!))) count++;
+  }
+  if (current.useBackupsImmediately !== accepted.useBackupsImmediately) count++;
+  if (current.retryReopened !== accepted.retryReopened || current.maxReopenedAttempts !== accepted.maxReopenedAttempts) count++;
+  return count;
+}
+function editorSelect(id: string, label: string, choices: Array<[string, string]>, value: string, change: (value: string) => void) {
+  const wrap = el('label'), select = document.createElement('select'); select.id = id;
+  select.replaceChildren(...choices.map(([text, option]) => new Option(text, option))); select.value = value;
+  select.addEventListener('change', () => change(select.value)); wrap.append(label, select); return wrap;
+}
+function editorButton(text: string, label: string, disabled: boolean, click: () => void) {
+  const button = el('button', 'secondary compact', text); button.type = 'button'; button.disabled = disabled; button.setAttribute('aria-label', label); button.onclick = click; return button;
+}
+function acceptedTiming(slot: SmartSlot | undefined) { return slot ? smartSlotOffsets(slot) : null; }
+function inputTiming(slot: SmartSlot, child: number, offset: number) {
+  if (Number.isSafeInteger(offset) && offset >= -2000 && offset <= 0) return setSmartChildOffset(slot, child, offset);
+  const offsets = smartSlotOffsets(slot); offsets[child] = offset; const next = { ...slot }; delete next.releaseOffsetMs; delete next.fanOutOffsetsMs;
+  if (offsets.length === 1) next.releaseOffsetMs = offsets[0]; else next.fanOutOffsetsMs = offsets; return next;
+}
+function resizeDefaults(state: Dashboard | undefined, width: number) {
+  const selected = selectById('strategy-timing').value as 'TIGHT' | 'BALANCED' | 'WIDE';
+  return fanOutTimingPlan(selected, width, recommendation(state).profile).children.map(child => child.configuredOffsetMs);
+}
+function editableRow(kind: 'immediate' | 'backups', slot: SmartSlot, index: number, state: Dashboard | undefined,
+  compiled: ReturnType<typeof compileSmartPlan>, accepted: SmartDraft | null) {
+  const original = accepted?.[kind][index], immediate = kind === 'immediate', letter = compiled.immediateWorkers[index] ?? String.fromCharCode(65 + index);
+  const targetChanged = !original || !same(targetFields(slot), targetFields(original));
+  const timingChanged = immediate && (!original || !same(smartSlotOffsets(slot), acceptedTiming(original)));
+  const row = el('li', 'strategy-edit-row');
+  const heading = el('div', 'strategy-edit-heading'); heading.append(el('strong', '', immediate ? `Target ${String.fromCharCode(65 + index)}` : `Backup ${index + 1}`),
+    el('span', `strategy-source ${targetChanged || timingChanged ? 'modified' : ''}`, targetChanged || timingChanged ? 'Customized' : 'Suggested'));
+  const fields = el('div', 'strategy-edit-fields');
+  const patch = (value: Partial<SmartSlot>) => host.edit(draft => { draft[kind][index] = { ...draft[kind][index]!, ...value }; });
+  fields.append(editorSelect(`strategy-${kind}-court-${index}`, 'Court', Array.from({ length: 7 }, (_, value) => [`Court ${value + 1}`, String(value + 1)]), String(slot.court), value => patch({ court: Number(value) })),
+    editorSelect(`strategy-${kind}-start-${index}`, 'Start', Array.from({ length: 16 }, (_, value) => { const hour = value + 8, text = hourText(hour); return [hourLabel(hour), text]; }), slot.start, value => patch({ start: value })),
+    editorSelect(`strategy-${kind}-duration-${index}`, 'Duration', [['1 hour', '1'], ['2 hours', '2'], ['3 hours', '3']], String(slot.durationHours), value => patch({ durationHours: Number(value) })));
+  if (immediate) {
+    const offsets = smartSlotOffsets(slot);
+    fields.append(editorSelect(`strategy-immediate-width-${index}`, 'Fan-out', [1, 2, 3, 4].map(value => [`${value} child${value === 1 ? '' : 'ren'}`, String(value)]), String(offsets.length), value => {
+      const width = Number(value), defaults = resizeDefaults(state, width); host.edit(draft => { draft.immediate[index] = resizeSmartFanOut(draft.immediate[index]!, width, defaults); });
+    }));
+    const worker = el('span', 'strategy-worker', `Worker ${letter} · automatically assigned`); fields.append(worker);
+    const timing = el('div', 'strategy-child-timing'); timing.append(el('strong', '', 'Timing'));
+    offsets.forEach((offset, child) => {
+      const label = el('label'), input = document.createElement('input'); input.type = 'number'; input.min = '0'; input.max = '2000'; input.step = '1';
+      input.id = `strategy-immediate-offset-${index}-${child}`; input.value = String(-offset);
+      input.addEventListener('change', () => { const early = Number(input.value), next = Number.isSafeInteger(early) && early >= 0 && early <= 2000 ? -early : Number.NaN;
+        host.edit(draft => { draft.immediate[index] = inputTiming(draft.immediate[index]!, child, next); }); });
+      const childModified = !original || acceptedTiming(original)?.[child] !== offset;
+      label.append(offsets.length === 1 ? 'Send early by ' : `${letter}${child} `, input, ' ms early ', el('span', `strategy-source ${childModified ? 'modified' : ''}`, childModified ? 'Modified' : 'Suggested'));
+      timing.append(label);
+    });
+    fields.append(timing);
+  }
+  const items = host.draft()[kind], actions = el('div', 'strategy-edit-actions'), noun = immediate ? 'target' : 'backup';
+  const move = (step: number) => host.edit(draft => { const list = draft[kind], other = index + step; [list[index], list[other]] = [list[other]!, list[index]!]; });
+  actions.append(editorButton('↑', `Move editable ${noun} ${index + 1} up`, index === 0, () => move(-1)), editorButton('↓', `Move editable ${noun} ${index + 1} down`, index === items.length - 1, () => move(1)));
+  if (immediate) actions.append(editorButton('Reset timing', `Reset editable target ${index + 1} timing`, !original || !timingChanged, () => host.edit(draft => {
+    const next = { ...draft.immediate[index]! }; delete next.releaseOffsetMs; delete next.fanOutOffsetsMs;
+    const originalOffsets = smartSlotOffsets(original!);
+    if (originalOffsets.length > 1) next.fanOutOffsetsMs = [...originalOffsets]; else if (originalOffsets[0] !== 0) next.releaseOffsetMs = originalOffsets[0];
+    draft.immediate[index] = next;
+  })));
+  actions.append(editorButton('Reset target', `Reset editable ${noun} ${index + 1}`, !original || (!targetChanged && !timingChanged), () => host.edit(draft => { draft[kind][index] = structuredClone(original!); })),
+    editorButton('Remove', `Remove editable ${noun} ${index + 1}`, false, () => host.edit(draft => { draft[kind].splice(index, 1); })));
+  row.append(heading, fields, actions); return row;
+}
+function renderEditable(state: Dashboard | undefined) {
+  const section = byId('strategy-editable'), smart = state?.booking && (document.getElementById('precision-strategy') as HTMLSelectElement | null)?.value === 'precision'
+    && (document.getElementById('precision-mode-smart') as HTMLInputElement | null)?.checked;
+  section.hidden = !smart; if (!smart) return;
+  const draft = host.draft(), accepted = host.accepted(), compiled = compileSmartPlan(draft, { targetDate: state?.booking?.targetDate ?? '', unavailable: host.unready() });
+  const modifications = strategyModificationCount(draft, accepted);
+  byId('strategy-edit-provenance').textContent = accepted ? `Source: Smart generated · Operator modifications: ${modifications}` : 'Source: Smart plan';
+  (byId('strategy-reset-all') as HTMLButtonElement).disabled = !accepted || modifications === 0;
+  byId('strategy-edit-immediate').replaceChildren(...draft.immediate.map((slot, index) => editableRow('immediate', slot, index, state, compiled, accepted)));
+  byId('strategy-edit-backups').replaceChildren(...draft.backups.map((slot, index) => editableRow('backups', slot, index, state, compiled, accepted)));
+  const baselineStarts = accepted ? new Set(accepted.immediate.map(slot => slot.start)).size : 0, currentStarts = new Set(draft.immediate.map(slot => slot.start)).size;
+  byId('strategy-edit-warnings').replaceChildren(...(baselineStarts > currentStarts ? [el('li', '', `This change reduces start-time diversification from ${baselineStarts} unique starts to ${currentStarts}.`)] : []));
+}
+
 function renderReview(state: Dashboard | undefined) {
   const draft = host.draft(), compiled = compileSmartPlan(draft, { targetDate: state?.booking?.targetDate ?? '', unavailable: host.unready() });
   const smart = state?.booking && (document.getElementById('precision-strategy') as HTMLSelectElement | null)?.value === 'precision' && (document.getElementById('precision-mode-smart') as HTMLInputElement | null)?.checked;
@@ -192,7 +290,8 @@ export function renderStrategy(state: Dashboard | undefined): void {
   if (key !== loadedKey) {
     loadedKey = key;
     if (saved) { goal = { ...saved.goal }; preset = saved.preset; selectById('strategy-fanout').value = saved.fanOut.source === 'OPERATOR_OVERRIDE' ? String(saved.fanOut.width) : 'auto';
-      if (saved.fanOut.timing !== 'CUSTOM') selectById('strategy-timing').value = saved.fanOut.timing; }
+      if (saved.fanOut.timing !== 'CUSTOM') selectById('strategy-timing').value = saved.fanOut.timing;
+      else if (saved.fanOut.basedOnTiming) selectById('strategy-timing').value = saved.fanOut.basedOnTiming; }
     else if (state?.booking?.setup.PREFERRED_COURTS?.length) goal = { ...goal, courts: [...state.booking.setup.PREFERRED_COURTS] };
     writeGoal(goal);
     for (const radio of document.querySelectorAll<HTMLInputElement>('input[name="strategy-preset"]')) radio.checked = radio.value === preset;
@@ -205,7 +304,7 @@ export function renderStrategy(state: Dashboard | undefined): void {
 function render() {
   const state = host.state();
   (byId('strategy-suggest') as HTMLButtonElement).disabled = preset === 'CUSTOM' || validateGoal(goal).length > 0;
-  renderSchedule(state); renderPreset(state); renderSuggestion(state); renderReview(state);
+  renderSchedule(state); renderPreset(state); renderSuggestion(state); renderEditable(state); renderReview(state);
 }
 /** Exposed for tests and the Next Release summary. */
 export const strategySnapshot = () => ({ goal: { ...goal }, preset, forced: [...forced], suggestion });

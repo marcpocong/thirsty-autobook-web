@@ -11,7 +11,7 @@ USER GOAL / STRATEGY
         └── Reopen Rescue (fresh unavailable → open only; predictions prepare, never send)
 ```
 
-There is **one authority**: the saved `PRECISION_PHASE3` object, which `src/precision-simple.ts` compiles. The backend validates the same object with `authorizePrecision`, and "what will happen" is always generated from it. `STRATEGY_V2` saves the goal, preset and fan-out choice so the Strategy view can reopen them. It is metadata only: it is not part of the plan fingerprint and it never authorizes a send.
+There is **one authority**: the saved `PRECISION_PHASE3` object, which `src/precision-simple.ts` compiles. The backend validates the same object with `authorizePrecision`, and "what will happen" is always generated from it. `STRATEGY_V2` saves the goal, preset, fan-out provenance and accepted-suggestion reset baseline so the Strategy view can reopen them. It is metadata only: it is not part of the plan fingerprint and it never authorizes a send.
 
 Fixed Precision remains available as **legacy** (Strategy → Advanced overrides).
 
@@ -29,18 +29,25 @@ Fixed Precision remains available as **legacy** (Strategy → Advanced overrides
    | Balanced | about 4/7 of ready workers | machine recommendation | the rest | on |
    | Release focused | every ready worker | machine recommendation | none | on, afterwards |
    | Rescue focused | about 1/3 | ≤ 2 | the rest | on, larger budget |
-   | Custom | you edit everything under Advanced overrides | | | |
+   | Custom | fully hand-built plan | | | |
 
    Fan-out defaults to this machine's measured recommendation (see [FANOUT_CAPACITY_BENCHMARK.md](FANOUT_CAPACITY_BENCHMARK.md)). Choosing a width yourself is labelled **Operator override** and saved as `OPERATOR_OVERRIDE`. Child timing (Tight / Balanced / Wide) derives its spacing from the same profile. See [Timing presets](#timing-presets).
 4. **Suggested plan**: a suggestion, not a command. It avoids known public conflicts and leaves out unknown evidence (fail closed). Immediate targets use distinct courts and are **diversified across start times**, so one time-wide unavailable block cannot hit every attempt. For example: C7 19–22, C6 20–23, C5 18–21, C4 21–24. Remaining windows fill the Wave 2 / Rescue pool up to the 21-candidate authorization. **Force include** keeps a conflicting window deliberately. It is marked `OPERATOR_OVERRIDE_PUBLIC_CONFLICT` on the candidate and warned again at review. **Remove** drops a window.
-5. **Review & save**: the compiled authorization in plain language, override warnings repeated, then Save.
-6. **Advanced overrides**: every raw setting, the Smart attempt editor, rates, legacy Fixed attempts and the Release Lab experiment.
+5. **Editable Smart plan**: accepting the preview copies it into an editable draft without changing its preset to Custom. Court, start, duration, order, fan-out width and every actual child offset can be changed directly. Assigned workers remain read-only unless explicitly pinned in Advanced settings. Smart provenance remains visible; changed targets and timings are marked Customized/Modified. Operator edits are authoritative and never silently rearrange another target.
+6. **Review & save**: the current draft is compiled, and the review is generated from that exact about-to-be-saved `PRECISION_PHASE3` object. Every immediate child and configured timing is listed before Save.
+7. **Advanced overrides**: worker pinning, standby assignment, raw budgets and permissions, rates, legacy Fixed attempts and the Release Lab experiment.
+
+The workflow is therefore: **Smart suggestion → accept → editable Smart plan → optional operator customization → compiled review → save**.
+
+**Reset is not Regenerate.** Reset timing restores only that target's accepted child offsets; Reset target restores that accepted target; Reset all restores the exact suggestion originally accepted. Suggest plan generates a new preview from the latest goal, evidence and timing profile, but does not replace the accepted draft until the operator chooses Use this plan.
 
 Scores rank the operator's own preferences (duration order, prime fit, court order) and the evidence quality. They never predict who wins Onda's arbitration.
 
 ## Fan-out children
 
 An immediate target is the **parent goal**. With `fanOutOffsetsMs` (2–4 values), it is sent as that many **children**. Each child has its own tab and security context, attempt ID, `parentGoalId`, `fanOutIndex` / `fanOutCount`, configured trigger, journal directory, response capture, critical-path row and outcome.
+
+The editor reads and writes those actual `fanOutOffsetsMs` values. It never shows a competing single-parent offset for a fan-out target. UI values are positive **milliseconds early** (`25 ms early` saves as `-25`; `0` saves as the release instant). Increasing width preserves existing indices and derives only new children from the selected Tight/Balanced/Wide profile; decreasing width keeps the first N. Individual edits make timing Custom, based on the original profile, without making the whole strategy preset Custom.
 
 A crash-safe parent guard journal per target prevents a restart from blindly repeating the logical goal. Every child consumes send budget. The Live view summarizes by parent and expands children on demand.
 

@@ -601,6 +601,21 @@ footer > div { display: flex; align-items: center; gap: 8px; font-size: 11px; co
 .strategy-suggestion li { margin: 3px 0; }
 .strategy-suggestion .forced { color: var(--warning); }
 .strategy-suggestion button.compact { margin-left: 8px; padding: 2px 8px; font-size: 11px; }
+.strategy-edit-list { display: grid; gap: 8px; margin: 8px 0 14px; padding: 0; list-style: none; }
+.strategy-edit-row { padding: 10px 12px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.strategy-edit-heading, .strategy-edit-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.strategy-edit-heading { justify-content: space-between; margin-bottom: 8px; }
+.strategy-edit-fields { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; }
+.strategy-edit-fields > label, .strategy-child-timing label { display: grid; gap: 3px; font-size: 11px; color: var(--muted); }
+.strategy-edit-fields select, .strategy-child-timing input { padding: 5px 7px; }
+.strategy-worker { padding: 6px 8px; font-size: 11px; color: var(--text-2); }
+.strategy-child-timing { flex: 1 1 100%; display: flex; align-items: end; gap: 8px; flex-wrap: wrap; padding-top: 4px; }
+.strategy-child-timing > strong { align-self: center; font-size: 11px; }
+.strategy-child-timing label { display: flex; align-items: center; gap: 4px; }
+.strategy-child-timing input { width: 74px; }
+.strategy-source { display: inline-block; padding: 2px 6px; font-size: 9px; letter-spacing: .06em; text-transform: uppercase; color: var(--brand-bright); background: rgba(67,139,86,.16); border-radius: 999px; }
+.strategy-source.modified { color: #cfe3ff; background: rgba(72,111,160,.24); }
+.strategy-edit-actions { justify-content: flex-end; margin-top: 8px; }
 .legacy-tag { font-style: normal; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-left: 6px; }
 .strategy-badge { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; background: rgba(255,255,255,.06); }
 #view-release .next-strategy { grid-column: 1 / -1; }
