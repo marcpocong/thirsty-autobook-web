@@ -1,5 +1,6 @@
 import type { BookingPlan, PlannedCourt } from './types.js';
 import type { FreshSlotProof } from './slot-proofs.js';
+import { ondaWireBoundary } from '../time-range.js';
 
 export interface ResolvedGuestCustomer {
   clientId: string;
@@ -60,7 +61,7 @@ const nonempty = (value: unknown): value is string => typeof value === 'string' 
 const safeIdentifier = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(value);
 const seconds = (time: string) => `${time}:00`;
 /** Onda's checkout endpoint represents the end of the 23:00 hour as midnight, never as 24:00. */
-export const ondaCheckoutBoundary = (time: string): string => time === '24:00' ? '00:00' : time;
+export const ondaCheckoutBoundary = ondaWireBoundary;
 const cents = (value: number) => Math.round(value * 100);
 const sameAmount = (a: unknown, b: number) => typeof a === 'number' && Number.isFinite(a) && cents(a) === cents(b);
 const fail = (code: string): never => { throw new PublicCheckoutValidationError(code); };

@@ -7,6 +7,7 @@ import { SubmissionDispatchError } from './submission-errors.js';
 import { checkoutDiagnostic, type CheckoutDiagnostic } from './checkout-diagnostics.js';
 import { CalendarFreeSecurityError } from './calendar-free-security-context.js';
 import { responseEvidence, type ResponseEvidence } from './response-evidence.js';
+import { armedRequestFor, checkoutRequestKey } from './armed-request.js';
 import { RENDERER_ARMED_CHECKOUT, RENDERER_DISARM, type RendererArmedOutcome, type RendererFirePlan } from './renderer-dispatch.js';
 
 const ORIGIN = 'https://app.onda.fit';
@@ -74,32 +75,7 @@ export interface CheckoutDispatchOptions {
   beforePost?: () => void;
 }
 
-/**
- * Armed Precision requests: the journal key and the exact JSON body are computed
- * once, before release, for a deeply frozen request object. Because the object can
- * never change afterwards, the cached values stay exact and the release instant
- * needs no hashing or serialization. Unarmed requests are unaffected.
- */
-const armedRequests = new WeakMap<object, { key: string; body: string }>();
-function deeplyFrozen(value: unknown): boolean {
-  if (value === null || typeof value !== 'object') return true;
-  return Object.isFrozen(value) && Object.values(value).every(deeplyFrozen);
-}
-function requestKey(request: TwoHourCheckoutRequest | ProoflessCheckoutRequest): string {
-  const [first] = request.items;
-  const last = request.items.at(-1);
-  if (!first || !last || request.items.length > 6) throw new BrowserSessionTransportError('CHECKOUT_ITEMS_INVALID');
-  // The wire format ends the 23:00 hour at "00:00"; plan and journal keys keep "24:00", so the permit still matches.
-  return DurableSubmissionJournal.key(request.facilityId, first.spaceId, first.date, first.startTime,
-    last.endTime === '00:00' ? '24:00' : last.endTime);
-}
-export function armCheckoutRequest(request: ProoflessCheckoutRequest): { key: string; body: string } {
-  if (!deeplyFrozen(request)) throw new BrowserSessionTransportError('ARMED_REQUEST_NOT_FROZEN');
-  if (request.items.some(item => item.availabilityProof !== null)) throw new BrowserSessionTransportError('DIRECT_PROOFLESS_SHAPE_INVALID');
-  const armed = { key: requestKey(request), body: JSON.stringify(request) };
-  armedRequests.set(request, armed);
-  return armed;
-}
+export { armCheckoutRequest } from './armed-request.js';
 
 export class BrowserSessionTransportError extends SubmissionDispatchError {
   constructor(code: string, dispatched = false, diagnostic?: SubmissionDispatchError['diagnostic'], confirmedRejected = false) {
@@ -147,6 +123,28 @@ function confirmedApplicationConflict(result: CheckoutHttpResponse): boolean {
     const explicitRejection=result.status===409 || value.error==='This booking date is not available yet.';
     return explicitRejection && value.success === false && typeof value.error === 'string' && value.error.length > 0 &&
       !Object.hasOwn(value, 'bookings') && !Object.hasOwn(value, 'transaction');
+  } catch { return false; }
+}
+
+/**
+ * Onda error texts that deterministically reject the request's SHAPE before any booking work. Observed:
+ * 2026-09-29, 28 × HTTP 400, 56-byte JSON `{"success":false,"error":"Invalid booking session time"}` when the
+ * 23:00 hour was sent ending "24:00"; no booking, hold or transaction was created.
+ */
+export const PAYLOAD_REJECTION_ERRORS: ReadonlySet<string> = new Set(['Invalid booking session time']);
+/**
+ * A conclusive payload rejection: HTTP 400 JSON whose body is exactly a known payload error with success=false
+ * and no booking, session or transaction field. Anything else (other 400 texts, extra fields, HTML, a large
+ * body) stays generic and therefore UNKNOWN, as before.
+ */
+export function isPayloadRejection(result: Pick<CheckoutHttpResponse, 'status' | 'contentType' | 'body'>): boolean {
+  if (result.status !== 400 || !result.contentType.toLowerCase().includes('application/json') || Buffer.byteLength(result.body, 'utf8') > 1024) return false;
+  try {
+    const value = JSON.parse(result.body) as Record<string, unknown>;
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+    const error = typeof value.error === 'string' ? value.error.trim().replace(/\.$/, '') : '';
+    return value.success === false && PAYLOAD_REJECTION_ERRORS.has(error) &&
+      !['bookings', 'bookingSessions', 'transaction', 'booking', 'data'].some(key => Object.hasOwn(value, key));
   } catch { return false; }
 }
 
@@ -323,12 +321,13 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
     }
     const networkDurationMs = Math.max(0, Math.round(performance.now() - networkStarted));
     const diagnostic = result.status === 200 ? undefined : checkoutDiagnostic(result);
+    const payloadRejected = checkout && diagnostic !== undefined && isPayloadRejection(result);
     // A rejection keeps structure-first evidence (never text); private request values are redacted exactly.
     if (checkout && diagnostic) result.evidence = responseEvidence({ status: result.status, contentType: result.contentType, body: result.body,
       headers: { ...(result.headers ?? {}), server: result.server, 'x-vercel-id': result.vercelId, 'x-request-id': result.requestId,
         'server-timing': result.serverTiming, 'cf-ray': result.cloudflareRay, 'cf-mitigated': result.cfMitigated } }, privateRequestValues(body, extraHeaders));
     if (checkout) this.observe({ event: 'CHECKOUT_RESPONSE_COMPLETED', networkDurationMs, statusCode: result.status,
-      dispatchState: 'RESPONSE_CAPTURED', ...(diagnostic ? { failureCategory: 'ONDA_HTTP_STATUS_INVALID',
+      dispatchState: 'RESPONSE_CAPTURED', ...(diagnostic ? { failureCategory: payloadRejected ? 'ONDA_PAYLOAD_REJECTED' : 'ONDA_HTTP_STATUS_INVALID',
         errorHint: diagnostic.errorHint, responseSource: diagnostic.responseSource } : {}),
       ...(typeof result.body === 'string' ? { responseBytes: Buffer.byteLength(result.body, 'utf8') } : {}),
       ...(result.evidence?.body.shapeFingerprint ? { bodyShape: result.evidence.body.shapeFingerprint.slice(0, 12) } : {}),
@@ -339,8 +338,9 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
     }
     try { this.assertPage(); }
     catch { throw new BrowserSessionTransportError('ONDA_SESSION_DISCONNECTED_AFTER_DISPATCH', true); }
-    if (diagnostic) throw new BrowserSessionTransportError('ONDA_HTTP_STATUS_INVALID', true,
-      diagnostic, confirmedApplicationConflict(result));
+    // A known payload rejection is conclusive (nothing was created) but distinct from an availability conflict.
+    if (diagnostic) throw new BrowserSessionTransportError(payloadRejected ? 'ONDA_PAYLOAD_REJECTED' : 'ONDA_HTTP_STATUS_INVALID', true,
+      diagnostic, payloadRejected || confirmedApplicationConflict(result));
     if (!result.contentType.toLowerCase().includes('application/json')) throw new BrowserSessionTransportError('ONDA_CONTENT_TYPE_INVALID', true);
     if (Buffer.byteLength(result.body, 'utf8') > MAX_RESPONSE_BYTES) throw new BrowserSessionTransportError('ONDA_RESPONSE_TOO_LARGE', true);
     try { return JSON.parse(result.body) as unknown; }
@@ -386,7 +386,7 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
     if (request.items.some(item => item.availabilityProof !== null)) throw new BrowserSessionTransportError('DIRECT_PROOFLESS_SHAPE_INVALID');
     this.assertPage();
     if (process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT !== 'SUPERVISED_ONE_SHOT') throw new BrowserSessionTransportError('LIVE_SUBMISSION_DISABLED');
-    const armed = armedRequests.get(request);
+    const armed = armedRequestFor(request);
     if (!armed) throw new BrowserSessionTransportError('RENDERER_DISPATCH_REQUIRES_ARMED_REQUEST');
     const current = this.preparedHeaders, preparedAt = this.preparedAt;
     this.observe({ event: 'CHECKOUT_FUNCTION_ENTERED', preparedContextAgeMs: preparedAt === undefined ? -1 : Date.now() - preparedAt,
@@ -444,8 +444,8 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
       Date.now() - preparedAt > 120_000)
       throw new BrowserSessionTransportError('CURRENT_CHECKOUT_HEADERS_STALE');
     this.assertPage();
-    const armed = armedRequests.get(request);
-    consumeSubmissionPermit(permit, armed?.key ?? requestKey(request));
+    const armed = armedRequestFor(request);
+    consumeSubmissionPermit(permit, armed?.key ?? checkoutRequestKey(request));
     // Last gate before the network: a late dispatch stops here, still provably unsent.
     options.beforePost?.();
     this.observe({ event: 'CHECKOUT_PRE_POST', preparedContextAgeMs: Math.max(0, Date.now() - preparedAt), securitySource });

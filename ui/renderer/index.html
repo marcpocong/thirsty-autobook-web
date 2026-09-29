@@ -15,6 +15,7 @@
 <nav class="view-nav" aria-label="Main views">
   <div class="view-tabs"><button type="button" data-view="release" aria-current="page">Next Release</button><button type="button" data-view="plan">Edit Plan</button><button type="button" data-view="tests">Tests</button><button type="button" data-view="slots">Slots</button><button type="button" data-view="runs">Runs</button><button type="button" data-view="tools">Tools</button></div>
   <span class="mode" id="mode-label">CHOOSE BOOKING MODE</span>
+  <span id="build-label" class="build-label" title="Build provenance">Build: unknown</span>
 </nav>
 <main>
   <!-- NEXT RELEASE ─────────────────────────────────────────────── -->
@@ -219,6 +220,11 @@
 
   <!-- TOOLS ────────────────────────────────────────────────────── -->
   <div id="view-tools" class="view-grid" aria-label="Tools" hidden>
+    <section class="panel tool-card" id="build-card">
+      <div class="section-title"><div><p class="eyebrow">Provenance</p><h2>Build information</h2></div></div>
+      <p class="small">To check whether this installation contains a commit, run <code>git merge-base --is-ancestor &lt;commit&gt; &lt;Git SHA&gt;</code> in the source folder. <code>npm run verify:dist -- --dist "../dist"</code> compares the installed runtime with the current source.</p>
+      <dl id="build-details" class="build-details"></dl>
+    </section>
     <section class="panel browsers-card">
       <div class="section-title"><div><p class="eyebrow">Dedicated Chrome windows</p><h2>Bot browsers</h2></div><button id="close-browsers-tools" class="danger-button" type="button">Close all bot browsers</button></div>
       <p class="small">Each checkout uses its own Chrome window and profile (A–H). Closing only affects these windows — your normal Chrome is never touched. It is blocked while a run is active or a release is armed; Reset &amp; Prepare reopens what a run needs.</p>

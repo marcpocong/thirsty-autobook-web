@@ -187,7 +187,7 @@ export class DurableSubmissionJournal {
       !['http-rejection', 'invalid-response'].includes(diagnostic.category) ||
       !['json', 'html', 'text', 'empty', 'other'].includes(diagnostic.contentKind) ||
       !['cloudflare', 'application', 'unknown'].includes(diagnostic.responseSource) ||
-      !['verification', 'availability', 'customer', 'rate-limit', 'access', 'other', 'none'].includes(diagnostic.errorHint) ||
+      !['verification', 'availability', 'customer', 'rate-limit', 'access', 'payload', 'other', 'none'].includes(diagnostic.errorHint) ||
       (diagnostic.applicationCode !== undefined && !/^[A-Z][A-Z0-9_]{0,63}$/.test(diagnostic.applicationCode)) ||
       (diagnostic.cloudflareRay !== undefined && !/^[a-f0-9]{8,32}(?:-[A-Za-z0-9]{2,8})?$/.test(diagnostic.cloudflareRay))))
       throw Error('SUBMISSION_DIAGNOSTIC_INVALID');

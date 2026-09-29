@@ -22,7 +22,7 @@
     "test": "vitest run",
     "ui": "npm run ui:build && node scripts/run-ui.mjs",
     "exe:build": "node scripts/build-app.mjs",
-    "ui:build": "tsc -p tsconfig.ui.json && node scripts/build-ui.mjs",
+    "ui:build": "node scripts/build-ui.mjs",
     "availability:dry": "tsx src/index.ts availability:dry",
     "api:preview": "tsx src/api-booking/preview-config.ts",
     "api:prewarm": "tsx src/api-booking/prewarmed-runner.ts",
@@ -45,7 +45,9 @@
     "intelligence:rebuild": "tsx scripts/phase4-research.ts --rebuild",
     "arbitration:analyze": "tsx scripts/analyze-release-arbitration.ts",
     "arbitration:manifest": "tsx scripts/create-arbitration-manifest.ts",
-    "arbitration:replay": "tsx scripts/replay-release-arbitration.ts"
+    "arbitration:replay": "tsx scripts/replay-release-arbitration.ts",
+    "verify:dist": "node scripts/verify-dist.mjs",
+    "release:build": "node scripts/release-build.mjs"
   },
   "dependencies": {
     "@fingerprintjs/fingerprintjs": "5.2.0",

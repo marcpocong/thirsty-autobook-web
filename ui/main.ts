@@ -25,6 +25,7 @@ import {replayAll} from '../src/strategy-replay.js';
 import {readNetworkReadinessHistory,runNetworkReadiness,saveNetworkReadiness} from '../src/network-readiness.js';
 import {connectionWarmth} from '../src/checkout-path-research.js';
 import {ensureExperimentManifest} from '../src/arbitration/experiment-manifest.js';
+import {readBuildInfo} from '../src/build-info.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 process.chdir(root);
@@ -92,6 +93,7 @@ const controller = new Controller({
     message: kind==='full'?'ARM FULL BOOKING?':kind==='selection'?'ARM BOOKING SELECTION?':kind==='dry'?'ARM DRY RACE?':'Arm release observation?',
     detail: (plan ? describePlan(plan)+'\n\n' : '') + (kind==='full'?'Terms authorization: YES, for this booking only.\nFinal automation boundary: QR Checkout.\nThe bot will continue through Onda until the QR payment page is reached, then stop. Payment itself remains manual.':kind==='selection'?'At release this automation MAY SELECT available court slots.\nSelection Only stops before Proceed. Selection is not a reservation.':'This waits for release and performs read-only refresh/date navigation. No court slots will be selected.'),
     confirmLabel: kind==='full'?'Arm Full Booking':kind==='selection'?'Arm Selection':kind==='dry'?'Arm Dry Race':'Arm observation' }),
+  buildInfo:()=>readBuildInfo(resolve(root,'dist/build-info.json')),
   publish: status => { if (window && !window.isDestroyed()) window.webContents.send('thirsty:status', status); },
 });
 if (!app.requestSingleInstanceLock()) app.quit();

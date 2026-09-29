@@ -574,3 +574,9 @@ footer > div { display: flex; align-items: center; gap: 8px; font-size: 11px; co
 .table-scroll { overflow-x: auto; }
 .release-lab-matrix { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
 .release-lab-matrix th, .release-lab-matrix td { text-align: left; padding: 7px 9px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+
+.build-label{margin-left:auto;font-size:.72rem;opacity:.72;white-space:nowrap;font-variant-numeric:tabular-nums}
+.build-label[data-tone="warn"]{color:var(--warning);opacity:1}
+.build-details{display:grid;grid-template-columns:max-content 1fr;gap:.25rem .9rem;margin:.6rem 0 0;font-size:.82rem}
+.build-details dt{opacity:.7}
+.build-details dd{margin:0;word-break:break-all;font-variant-numeric:tabular-nums}
