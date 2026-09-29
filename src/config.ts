@@ -48,8 +48,12 @@ export const StrategyV2Schema=z.object({version:z.literal(1),preset:z.enum(['BAL
   goal:z.object({primeFrom:hour,primeUntil:z.string().regex(/^(09|1\d|2[0-3]):00$|^24:00$/),durations:z.array(z.number().int().min(1).max(3)).min(1).max(3),
     courts:z.array(z.number().int().min(1).max(7)).min(1).max(7),preferredStart:hour.optional()}).strict(),
   fanOut:z.object({width:z.number().int().min(1).max(PRECISION_MAX_FAN_OUT),source:z.enum(['MACHINE_RECOMMENDED','OPERATOR_OVERRIDE','NO_PROFILE']),
+    acceptedSource:z.enum(['MACHINE_RECOMMENDED','OPERATOR_OVERRIDE','NO_PROFILE']).optional(),
     recommendedWidth:z.number().int().min(1).max(PRECISION_MAX_FAN_OUT).nullable(),timing:z.enum(['TIGHT','BALANCED','WIDE','CUSTOM']),
-    profileCreatedAt:z.string().max(40).nullable()}).strict()}).strict();
+    basedOnTiming:z.enum(['TIGHT','BALANCED','WIDE']).optional(),profileCreatedAt:z.string().max(40).nullable()}).strict(),
+  // Reset baseline only. It never authorizes execution; the sibling PRECISION_PHASE3 remains the sole current authority.
+  acceptedPhase3:PrecisionPhase3Schema.optional(),
+  provenance:z.object({source:z.literal('SMART_SUGGESTED'),operatorModifications:z.number().int().min(0)}).strict().optional()}).strict();
 export const ReleaseLabSetupSchema=z.object({version:z.literal(1),kind:z.literal('DURATION_OFFSET_V1'),label:z.literal('Duration × Offset')}).strict();
 function checkReleaseOffset(c:{RELEASE_OFFSET_MS:number;BOOKING_METHOD:string;RELEASE_STRATEGY:string},ctx:z.RefinementCtx){
   if(c.RELEASE_OFFSET_MS!==0&&c.BOOKING_METHOD!=='proofless')ctx.addIssue({code:'custom',message:'Release Offset applies to Proofless Direct only.',path:['RELEASE_OFFSET_MS']});

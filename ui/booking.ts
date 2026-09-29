@@ -10,7 +10,8 @@ export const defaultSetup: BookingSetup = { BOOKING_METHOD:'browser', BOOKING_TY
 export function bookingView(c: Config, fallbackReconciliation:FallbackReconciliation={valid:c.FALLBACK_TIMES,removed:[]}) {
   const target = calculateTarget(c);
   const setup = BookingSetupSchema.parse({ BOOKING_METHOD:c.BOOKING_METHOD, BOOKING_TYPE:c.BOOKING_TYPE, RELEASE_STRATEGY:c.RELEASE_STRATEGY, PRECISION_TARGETS:c.PRECISION_TARGETS, PRECISION_FAN_OUT:c.PRECISION_FAN_OUT,
-    ...(c.PRECISION_PHASE3?{PRECISION_PHASE3:c.PRECISION_PHASE3}:{}),...(c.RELEASE_LAB?{RELEASE_LAB:c.RELEASE_LAB}:{}), RELEASE_OFFSET_MS:c.RELEASE_OFFSET_MS, COURT_COUNT:c.COURT_COUNT, START_TIME:c.START_TIME, DURATION_HOURS:c.DURATION_HOURS, PREFERRED_COURTS:[...c.PREFERRED_COURTS,...c.FALLBACK_COURTS], FALLBACK_COURTS:[], FALLBACK_TIMES:c.FALLBACK_TIMES, MAX_SELECTION_ATTEMPTS:c.MAX_SELECTION_ATTEMPTS });
+    ...(c.PRECISION_PHASE3?{PRECISION_PHASE3:c.PRECISION_PHASE3}:{}),...(c.RELEASE_LAB?{RELEASE_LAB:c.RELEASE_LAB}:{}),...(c.STRATEGY_V2?{STRATEGY_V2:c.STRATEGY_V2}:{}),
+    RELEASE_OFFSET_MS:c.RELEASE_OFFSET_MS, COURT_COUNT:c.COURT_COUNT, START_TIME:c.START_TIME, DURATION_HOURS:c.DURATION_HOURS, PREFERRED_COURTS:[...c.PREFERRED_COURTS,...c.FALLBACK_COURTS], FALLBACK_COURTS:[], FALLBACK_TIMES:c.FALLBACK_TIMES, MAX_SELECTION_ATTEMPTS:c.MAX_SELECTION_ATTEMPTS });
   const players=playerReadiness(c);
   return { setup, fallbackReconciliation, targetDate:target.targetDate, releaseMs:target.releaseMs, preferences:target.preferences, playerConfigured:players.primary, extendedPlayerConfigured:players.extended,thirdPlayerConfigured:players.third,fourthPlayerConfigured:players.fourth,fifthPlayerConfigured:players.fifth,sixthPlayerConfigured:players.sixth,seventhPlayerConfigured:players.seventh,eighthPlayerConfigured:players.eighth,fingerprint:planFingerprint(c),
     slots:target.preferences[0]!.hours.map(h => `${h}–${String(Number(h.slice(0,2))+1).padStart(2,'0')}:00`) };

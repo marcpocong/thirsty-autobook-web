@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compileSmartPlan, confirmSmartRates, describeSmartPlan, emptySmartDraft, smartDraftFromPhase3, smartImmediateSends, SMART_MAX_FAN_OUT, SMART_MAX_SENDS,
+import { compileSmartPlan, confirmSmartRates, describeSmartPlan, emptySmartDraft, resizeSmartFanOut, setSmartChildOffset, smartDraftFromPhase3, smartImmediateSends, SMART_MAX_FAN_OUT, SMART_MAX_SENDS,
   type SmartDraft } from '../src/precision-simple.js';
 import { authorizePrecision, precisionCandidateId, wave1SendCount } from '../src/api-booking/precision-phase3.js';
 import { PRECISION_MAX_FAN_OUT, PRECISION_MAX_SENDS } from '../src/workers.js';
@@ -50,10 +50,23 @@ describe('Smart immediate targets with fan-out children', () => {
     expect(wave1SendCount(authorization)).toBe(6);
     expect(authorization.wave1[0]!.fanOutOffsetsMs).toEqual([-20, -10, 0]);
   });
+  it('edits the authoritative child array without creating a competing parent offset', () => {
+    const edited = setSmartChildOffset({ court: 7, start: '19:00', durationHours: 3, fanOutOffsetsMs: [-25, -10] }, 1, -5);
+    expect(edited).toMatchObject({ fanOutOffsetsMs: [-25, -5] });
+    expect(edited).not.toHaveProperty('releaseOffsetMs');
+    expect(compileSmartPlan(draft({ immediate: [edited] }), { targetDate }).phase3!.wave1[0])
+      .toMatchObject({ fanOutOffsetsMs: [-25, -5] });
+  });
+  it('resizes fan-out deterministically while preserving existing child timings', () => {
+    const slot = { court: 7, start: '19:00', durationHours: 3, fanOutOffsetsMs: [-25, -10] };
+    expect(resizeSmartFanOut(slot, 3, [-30, -15, 0]).fanOutOffsetsMs).toEqual([-25, -10, 0]);
+    expect(resizeSmartFanOut({ ...slot, fanOutOffsetsMs: [-25, -10, 0] }, 2, [-20, 0]).fanOutOffsetsMs).toEqual([-25, -10]);
+    expect(resizeSmartFanOut(slot, 1, [0])).toMatchObject({ releaseOffsetMs: -25 });
+  });
   it('"what will happen" is generated from the saved object and lists every child', () => {
     const description = describeSmartPlan(compileSmartPlan(draft(), { targetDate }).phase3!);
     expect(description.sections[0]!.lines[0]).toBe('2 immediate targets will be sent as 6 independently tracked attempts (fan-out). They do not wait for the released schedule.');
-    expect(description.sections[0]!.lines[1]).toContain('3 fan-out children: A0 −20 ms, A1 −10 ms, A2 0 ms');
+    expect(description.sections[0]!.lines[1]).toContain('3 fan-out children: A0 20 ms early, A1 10 ms early, A2 at release');
     expect(description.summary).toContain('2 immediate (6 sends with fan-out)');
     expect(description.maxSends).toBe(9);
   });

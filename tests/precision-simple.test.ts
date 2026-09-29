@@ -172,8 +172,8 @@ describe('Smart immediate attempts: per-attempt Release Offset', () => {
     backendAccepts(phase3);
     expect(smartDraftFromPhase3(phase3, { targetDate }).immediate.map(value => value.releaseOffsetMs)).toEqual([-1733, undefined, -875]);
     const lines = describeSmartPlan(phase3).sections[0]!.lines;
-    expect(lines[1]).toContain('Offset \u22121733 ms (sent before 8:00)');
-    expect(lines[2]).not.toContain('Offset');
+    expect(lines[1]).toContain('1733 ms early');
+    expect(lines[2]).not.toContain('ms early');
   });
 
   it('backups never carry an offset: they are sent only after release', () => {
