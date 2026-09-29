@@ -2,6 +2,7 @@ import { MATRIX_HOURS } from './api-booking/court-hour-matrix.js';
 import { adequate, dayOfWeek, rangeHoursOf, sharedRisk, statisticalRecords, type RangeRef, type ReleaseRecord, type SharedRisk, type SurvivalCount }
   from './release-intelligence.js';
 import { cellKey, rangeState } from './slot-evidence.js';
+import { historicalStrength, windowKey, type StrategyHistoricalEvidence, type Window } from './strategy-engine.js';
 
 /**
  * Historical Advisor: decision support for Smart backups. Pure: it reads derived intelligence records
@@ -34,6 +35,26 @@ export interface AdvisorResult {
 }
 export const ADVISOR_RULE = 'Order: fully open in the first well-observed snapshot, then still open at +1 s, then more well-observed releases, then fewer shared hours with earlier picks, then your court order and start time.';
 
+/** Small, sanitized DTO for Strategy V2.1. Synthetic/offline records are excluded by statisticalRecords(). */
+export function strategyHistoricalEvidence(targetDate: string, ranges: readonly Window[], allRecords: readonly ReleaseRecord[]): StrategyHistoricalEvidence {
+  const day = dayOfWeek(targetDate), records = statisticalRecords(allRecords).filter(record => record.dayOfWeek === day);
+  const wellObservedReleases = records.filter(record => adequate(record.quality.label)).length;
+  const unique = [...new Map(ranges.map(range => [windowKey(range), range] as const)).values()];
+  const evidence = unique.map(range => { const value = rangeEvidence(range, records); return { ...range, wellObserved: value.wellObserved,
+    fullyOpenFirst: value.fullyOpenFirst, stillOpenAt1s: value.stillOpenAt1s, stillOpenAt5s: value.stillOpenAt5s,
+    reopened: value.reopened, good: value.quality.good, fair: value.quality.fair }; });
+  const pairs = [] as StrategyHistoricalEvidence['sharedRisk'];
+  for (let left = 0; left < unique.length; left++) for (let right = left + 1; right < unique.length; right++) {
+    const a = unique[left]!, b = unique[right]!, risk = sharedRisk(a, b, records), keys = [windowKey(a), windowKey(b)].sort();
+    pairs.push({ a: keys[0]!, b: keys[1]!, sharedCells: risk.sharedCells, overlappingHours: risk.overlappingHours,
+      bothObserved: risk.bothObserved, coUnavailable: risk.coUnavailable, sameEarlyLoss: risk.sameEarlyLoss });
+  }
+  return { targetDate, dayOfWeek: day, releasesConsidered: records.length, wellObservedReleases,
+    realReleases: records.filter(record => record.origin === 'REAL_RELEASE').length,
+    historicalPrePhase3: records.filter(record => record.origin === 'HISTORICAL_PRE_PHASE3').length,
+    strength: historicalStrength(wellObservedReleases), ranges: evidence, sharedRisk: pairs };
+}
+
 const label = (hour: number) => hour === 24 ? '12:00 MN' : `${hour % 12 || 12}:00 ${hour < 12 ? 'AM' : 'PM'}`;
 const rangeTitle = (range: RangeRef) => `Court ${range.court} · ${label(Number(range.start.slice(0, 2)))}–${label(Number(range.start.slice(0, 2)) + range.durationHours)}`;
 const overlapsSameCourt = (a: RangeRef, b: RangeRef) => a.court === b.court &&
@@ -50,9 +71,9 @@ export function rangeEvidence(range: RangeRef, records: readonly ReleaseRecord[]
     if (parts.some(cell => !cell)) continue;
     const state = rangeState(parts.map(cell => cell!.first === 'O' ? 'OPEN' : cell!.first === 'X' ? 'UNAVAILABLE' : 'UNKNOWN'));
     if (state === 'UNKNOWN_INCOMPLETE') continue;
-    if (parts.some(cell => cell!.reopen && !cell!.reopen.cacheUncertain)) evidence.reopened++;
     if (!adequate(record.quality.label)) { evidence.lateOrPoor++; if (state === 'FULLY_OPEN') evidence.lateSnapshotFullyOpen++; continue; }
     evidence.wellObserved++; evidence.quality[record.quality.label === 'GOOD' ? 'good' : 'fair']++;
+    if (parts.some(cell => cell!.reopen && !cell!.reopen.cacheUncertain)) evidence.reopened++;
     if (parts.every(cell => cell!.price !== null)) evidence.prices.push(parts.reduce((sum, cell) => sum + cell!.price!, 0));
     if (state !== 'FULLY_OPEN') continue;
     evidence.fullyOpenFirst++;

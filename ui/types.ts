@@ -118,6 +118,7 @@ export interface Bridge {
   rebuildIntelligence():Promise<void>; clearIntelligence():Promise<void>; runNetworkCheck():Promise<void>;
   replayPlan(input:{source:'saved'}|{source:'draft';phase3:unknown}|{source:'draft';targets:unknown}):Promise<ReplaySummary>;
   adviseFromHistory(input:Record<string,unknown>):Promise<AdvisorResult|{blocked:string}>;
+  strategyEvidence(input:{targetDate:string;ranges:import('../src/strategy-engine.js').Window[]}):Promise<import('../src/strategy-engine.js').StrategyHistoricalEvidence>;
   resetPrepare(input:PreparationInput):Promise<void>;
   apiPreview(date:string):Promise<void>;
   checkReleaseBlocks(date:string):Promise<void>;

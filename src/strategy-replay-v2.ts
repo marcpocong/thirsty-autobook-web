@@ -4,7 +4,7 @@ import type { ObserverLog } from './release-forensics.js';
 import type { ReleaseRecord } from './release-intelligence.js';
 import { replayRelease, type ReplayPlan, type ReplayResult } from './strategy-replay.js';
 import { DEFAULT_STRATEGY_GOAL, draftFromSuggestion, presetAllocation, suggestPlan, type HourEvidence, type KnownSchedule, type StrategyGoal, type StrategyPreset,
-  type SuggestedPlan } from './strategy-engine.js';
+  type StrategyHistoricalEvidence, type SuggestedPlan, type SuggestionIntelligenceMode } from './strategy-engine.js';
 
 /**
  * Strategy V2 replay: COUNTERFACTUAL strategy analysis. It asks what a proposed Strategy V2 would have done with the
@@ -17,6 +17,7 @@ import { DEFAULT_STRATEGY_GOAL, draftFromSuggestion, presetAllocation, suggestPl
  */
 export const COUNTERFACTUAL_LABEL = 'Counterfactual strategy analysis: what the proposed plan would have been allowed to try on this recorded evidence. It does not show that any booking would have succeeded.';
 export interface StrategyReplayInput { goal?: StrategyGoal; preset?: Exclude<StrategyPreset, 'CUSTOM'>; readyWorkers?: number; fanOutWidth?: number;
+  intelligenceMode?:SuggestionIntelligenceMode; historicalEvidence?:StrategyHistoricalEvidence|null;
   /** Child offsets for the fan-out width (from fanout-timing.ts); default spaced 10 ms, last child at 0. */
   fanOutOffsetsMs?: number[]; securityRefreshMs?: number }
 export interface StrategyReplayV2 {
@@ -46,7 +47,7 @@ export function scheduleFromObserverLog(log: ObserverLog): { schedule: KnownSche
 export function replayStrategyV2(log: ObserverLog, record: Pick<ReleaseRecord, 'key' | 'origin' | 'quality' | 'attempts'>, input: StrategyReplayInput = {}): StrategyReplayV2 {
   const goal = input.goal ?? DEFAULT_STRATEGY_GOAL, known = scheduleFromObserverLog(log);
   const allocation = presetAllocation(input.preset ?? 'BALANCED', { readyWorkers: input.readyWorkers ?? 7, recommendedFanOutWidth: input.fanOutWidth ?? 1 });
-  const suggestion = suggestPlan({ goal, schedule: known.schedule, allocation });
+  const suggestion = suggestPlan({ goal, schedule: known.schedule, allocation, intelligenceMode:input.intelligenceMode, historicalEvidence:input.historicalEvidence });
   const width = allocation.fanOutWidth, offsets = input.fanOutOffsetsMs ?? Array.from({ length: width }, (_, index) => (index - width + 1) * 10 + 0);
   // Replay-only rates: grid prices drive every adaptive send; immediate prices never matter to what is observed.
   const draft = draftFromSuggestion(suggestion, { ...emptySmartDraft(), rates: confirmSmartRates(600, 700, 'VENUE_SCHEDULE', log.date, new Date(log.releaseMs - 3_600_000)) },

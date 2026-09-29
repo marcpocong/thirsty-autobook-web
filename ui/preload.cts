@@ -11,6 +11,7 @@ const bridge: Bridge = {
   runNetworkCheck:()=>ipcRenderer.invoke('thirsty:runNetworkCheck'),
   replayPlan:input=>ipcRenderer.invoke('thirsty:replayPlan',input),
   adviseFromHistory:input=>ipcRenderer.invoke('thirsty:adviseFromHistory',input),
+  strategyEvidence:input=>ipcRenderer.invoke('thirsty:strategyEvidence',input),
   resetPrepare:strategy=>ipcRenderer.invoke('thirsty:resetPrepare',strategy),
   testBooking:input=>ipcRenderer.invoke('thirsty:testBooking',input),
   apiPreview:date=>ipcRenderer.invoke('thirsty:apiPreview',date),

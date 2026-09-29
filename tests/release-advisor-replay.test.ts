@@ -1,7 +1,7 @@
 import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { adviseFromHistory, ADVISOR_RULE } from '../src/release-advisor.js';
+import { adviseFromHistory, ADVISOR_RULE, strategyHistoricalEvidence } from '../src/release-advisor.js';
 import { deriveReleaseIntelligence, type ReleaseRecord } from '../src/release-intelligence.js';
 import { readObserverLog } from '../src/release-forensics.js';
 import { replayRelease, replayPlanFromFixed, type ReplayPlan, type ReplayResult } from '../src/strategy-replay.js';
@@ -14,6 +14,19 @@ const saturdays = (): ReleaseRecord[] => { const base = root(); twoSaturdays(bas
 const deepFreeze = <T>(value: T): T => { if (value && typeof value === 'object') { Object.values(value).forEach(deepFreeze); Object.freeze(value); } return value; };
 
 describe('Historical Advisor', () => {
+  it('builds a sanitized same-weekday DTO and excludes synthetic/offline evidence from strength', () => {
+    const records=saturdays(),synthetic={...structuredClone(records[0]!),key:'synthetic',origin:'SYNTHETIC' as const};
+    const result=strategyHistoricalEvidence('2026-10-17',[{court:6,start:'19:00',durationHours:3},{court:7,start:'19:00',durationHours:3}],[...records,synthetic]);
+    expect(result).toMatchObject({dayOfWeek:'Saturday',releasesConsidered:2,wellObservedReleases:2,strength:'LIMITED',realReleases:2,historicalPrePhase3:0});
+    expect(result.ranges).toHaveLength(2);expect(result.sharedRisk).toHaveLength(1);
+    expect(JSON.stringify(result)).not.toMatch(/sources|path|customer|token|cookie/i);
+  });
+  it('does not let POOR history affect Auto strength', () => {
+    const poor=saturdays().map(record=>({...structuredClone(record),quality:{...record.quality,label:'POOR' as const}}));
+    const result=strategyHistoricalEvidence('2026-10-17',[{court:6,start:'19:00',durationHours:3}],poor);
+    expect(result).toMatchObject({wellObservedReleases:0,strength:'NONE'});
+    expect(result.ranges[0]).toMatchObject({wellObserved:0,fullyOpenFirst:0,reopened:0});
+  });
   it('stays inside the operator constraints and never invents a court or time', () => {
     const result = adviseFromHistory({ targetDate: '2026-10-17', courts: [6, 7], earliestStart: '18:00', latestStart: '19:00', durationHours: 3,
       immediate: 2, backups: 2, exclude: [{ court: 6, start: '18:00' }] }, saturdays());

@@ -53,7 +53,9 @@ export const StrategyV2Schema=z.object({version:z.literal(1),preset:z.enum(['BAL
     basedOnTiming:z.enum(['TIGHT','BALANCED','WIDE']).optional(),profileCreatedAt:z.string().max(40).nullable()}).strict(),
   // Reset baseline only. It never authorizes execution; the sibling PRECISION_PHASE3 remains the sole current authority.
   acceptedPhase3:PrecisionPhase3Schema.optional(),
-  provenance:z.object({source:z.literal('SMART_SUGGESTED'),operatorModifications:z.number().int().min(0)}).strict().optional()}).strict();
+  lineage:z.object({immediate:z.array(z.string().regex(/^I\d+$/).nullable()).max(7),backups:z.array(z.string().regex(/^B\d+$/).nullable()).max(21)}).strict().optional(),
+  intelligenceMode:z.enum(['AUTO','PREFERENCE_ONLY']).optional(),
+  provenance:z.object({source:z.enum(['SMART_SUGGESTED','EXISTING_SMART_PLAN','OPERATOR_BUILT']),operatorModifications:z.number().int().min(0)}).strict().optional()}).strict();
 export const ReleaseLabSetupSchema=z.object({version:z.literal(1),kind:z.literal('DURATION_OFFSET_V1'),label:z.literal('Duration × Offset')}).strict();
 function checkReleaseOffset(c:{RELEASE_OFFSET_MS:number;BOOKING_METHOD:string;RELEASE_STRATEGY:string},ctx:z.RefinementCtx){
   if(c.RELEASE_OFFSET_MS!==0&&c.BOOKING_METHOD!=='proofless')ctx.addIssue({code:'custom',message:'Release Offset applies to Proofless Direct only.',path:['RELEASE_OFFSET_MS']});

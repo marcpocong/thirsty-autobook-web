@@ -128,6 +128,7 @@ describe('Strategy view (Goal → Known schedule → Preset → Suggested plan �
 
   it('faithfully edits existing single-child and fan-out saved plans using the authoritative representation', async () => {
     const single = await openRenderer(browser, { booking: smartBooking({ immediate: [{ court: 7, start: '19:00', durationHours: 3, releaseOffsetMs: -25 }] }) }, 'strategy');
+    expect(await single.locator('#strategy-edit-provenance').innerText()).toBe('Source: Existing Smart plan');
     expect(await single.locator('#strategy-editable').isVisible()).toBe(true);
     expect(await single.locator('#strategy-immediate-offset-0-0').inputValue()).toBe('25');
     expect(await single.locator('[id^="strategy-immediate-offset-0-"]').count()).toBe(1);
@@ -148,6 +149,24 @@ describe('Strategy view (Goal → Known schedule → Preset → Suggested plan �
     await fanOut.close();
   });
 
+  it('labels a manual row as Operator added with no reset action, and saving an unchanged old Smart plan preserves authorization', async () => {
+    const booking=smartBooking(),before=structuredClone(booking.setup.PRECISION_PHASE3);
+    const page=await openRenderer(browser,{booking},'strategy');
+    expect(await page.locator('#strategy-edit-provenance').innerText()).toBe('Source: Existing Smart plan');
+    await page.locator('#smart-add-immediate').evaluate((button:HTMLButtonElement)=>button.click());
+    const added=page.locator('#strategy-edit-immediate .strategy-edit-row').last();
+    expect(await added.locator('.strategy-source').first().innerText()).toBe('OPERATOR ADDED');
+    expect(await added.getByRole('button',{name:'Reset editable target 2',exact:true}).isDisabled()).toBe(true);
+    await page.locator('#strategy-save').click();await page.waitForFunction(()=>!!(window as any).fixtureSaved);
+    const setup=await saved(page);expect(setup.STRATEGY_V2).toBeUndefined();
+    // Remove the manual edit and save the original old plan: opening alone never creates a Smart-generated baseline.
+    await added.getByRole('button',{name:/Remove editable target/}).click();
+    (await page.evaluate(()=>(window as any).fixtureSaved=null));
+    await page.locator('#strategy-save').click();await page.waitForFunction(()=>!!(window as any).fixtureSaved);
+    expect((await saved(page)).PRECISION_PHASE3).toEqual(before);
+    await page.close();
+  });
+
   it('an explicit fan-out width is recorded as an operator override, and preset Custom suggests nothing', async () => {
     const page = await openRenderer(browser, { booking: smartBooking(), blockAudit: blockAudit([]), fanOut: fanOutDigest() }, 'strategy');
     await page.locator('#strategy-fanout').selectOption('3');
@@ -162,6 +181,40 @@ describe('Strategy view (Goal → Known schedule → Preset → Suggested plan �
     expect(await page.locator('#strategy-suggestion').innerText()).toContain('Custom');
     await page.close();
   });
+
+  it('resets by stable origin after reorder, removal, backup reorder, save and reload', async () => {
+    const digest=fanOutDigest(),audit=blockAudit([]),page=await openRenderer(browser,{booking:smartBooking(),blockAudit:audit,fanOut:digest},'strategy');
+    await page.locator('#strategy-suggest').click();await page.locator('#strategy-apply').click();
+    const target=(index:number)=>page.locator('#strategy-edit-immediate .strategy-edit-row').nth(index);
+    const backup=(index:number)=>page.locator('#strategy-edit-backups .strategy-edit-row').nth(index);
+    const originalA={court:await target(0).locator('select[id*="-court-"]').inputValue(),start:await target(0).locator('select[id*="-start-"]').inputValue()};
+    const originalB={court:await target(1).locator('select[id*="-court-"]').inputValue(),start:await target(1).locator('select[id*="-start-"]').inputValue()};
+    await target(1).getByRole('button',{name:'Move editable target 2 up'}).click();
+    await target(0).locator('select[id*="-start-"]').selectOption('17:00');
+    await target(0).getByRole('button',{name:'Reset editable target 1',exact:true}).click();
+    expect({court:await target(0).locator('select[id*="-court-"]').inputValue(),start:await target(0).locator('select[id*="-start-"]').inputValue()}).toEqual(originalB);
+    expect({court:await target(1).locator('select[id*="-court-"]').inputValue(),start:await target(1).locator('select[id*="-start-"]').inputValue()}).toEqual(originalA);
+    await target(1).getByRole('button',{name:'Remove editable target 2'}).click();
+    await target(0).locator('select[id*="-court-"]').selectOption('1');
+    await target(0).getByRole('button',{name:'Reset editable target 1',exact:true}).click();
+    expect(await target(0).locator('select[id*="-court-"]').inputValue()).toBe(originalB.court);
+
+    const backup2={court:await backup(1).locator('select[id*="-court-"]').inputValue(),start:await backup(1).locator('select[id*="-start-"]').inputValue()};
+    await backup(1).getByRole('button',{name:'Move editable backup 2 up'}).click();
+    await backup(0).locator('select[id*="-court-"]').selectOption('1');
+    await backup(0).getByRole('button',{name:'Reset editable backup 1',exact:true}).click();
+    expect({court:await backup(0).locator('select[id*="-court-"]').inputValue(),start:await backup(0).locator('select[id*="-start-"]').inputValue()}).toEqual(backup2);
+
+    await page.locator('#strategy-reset-all').click();await target(1).getByRole('button',{name:'Move editable target 2 up'}).click();
+    await page.locator('#strategy-immediate-offset-0-0').fill('25');await page.locator('#strategy-immediate-offset-0-0').press('Tab');
+    await page.locator('#strategy-save').click();await page.waitForFunction(()=>!!(window as any).fixtureSaved);
+    const setup=await saved(page);expect(setup.STRATEGY_V2.lineage.immediate.slice(0,2)).toEqual(['I1','I0']);await page.close();
+    const reloaded=await openRenderer(browser,{booking:bookingView(ConfigSchema.parse({...defaultSetup,...setup,...players})),blockAudit:audit,fanOut:digest},'strategy');
+    const first=reloaded.locator('#strategy-edit-immediate .strategy-edit-row').first();
+    await first.getByRole('button',{name:'Reset editable target 1',exact:true}).click();
+    expect({court:await first.locator('select[id*="-court-"]').inputValue(),start:await first.locator('select[id*="-start-"]').inputValue()}).toEqual(originalB);
+    await reloaded.close();
+  },60_000);
 
   it('without a public-booking check nothing is suggested automatically (fail closed)', async () => {
     const page = await openRenderer(browser, { booking: smartBooking() }, 'strategy');
