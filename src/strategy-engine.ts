@@ -16,6 +16,11 @@ import type { SmartDraft, SmartSlot, SmartWorker } from './precision-simple.js';
 export const STRATEGY_MAX_CANDIDATES = 21;
 export const STRATEGY_WORKERS: readonly SmartWorker[] = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
 export const PUBLIC_CONFLICT_OVERRIDE = 'OPERATOR_OVERRIDE_PUBLIC_CONFLICT' as const;
+/**
+ * Largest enumeration accepted by validateGoal(): seven courts, every duration from one to three hours, and the
+ * full 08:00-midnight window. Keep the bounded IPC validator aligned with this Strategy-domain limit.
+ */
+export const STRATEGY_MAX_ENUMERATED_WINDOWS = 7 * ((24 - 8 - 3 + 1) + (24 - 8 - 2 + 1) + (24 - 8 - 1 + 1));
 
 export interface StrategyGoal {
   /** First hour a window may start, "HH:00" (default 17:00). */
