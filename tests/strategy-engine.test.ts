@@ -6,7 +6,8 @@ import { PRECISION_MAX_FAN_OUT, PRECISION_MAX_SENDS } from '../src/workers.js';
 import { ConfigSchema } from '../src/config.js';
 import { defaultSetup } from '../ui/booking.js';
 import { DEFAULT_STRATEGY_GOAL, draftFromSuggestion, enumeratePrimeWindows, knownScheduleFromCells, presetAllocation, PUBLIC_CONFLICT_OVERRIDE, scoreWindow,
-  suggestPlan, validateGoal, windowEvidence, STRATEGY_MAX_CANDIDATES, type BlockAuditCell, type KnownSchedule, type StrategyGoal } from '../src/strategy-engine.js';
+  suggestPlan, validateGoal, windowEvidence, STRATEGY_MAX_CANDIDATES, type BlockAuditCell, type HistoricalRangeEvidence, type KnownSchedule, type StrategyGoal,
+  type StrategyHistoricalEvidence } from '../src/strategy-engine.js';
 
 const targetDate = '2026-10-01', now = new Date('2026-09-29T12:00:00.000Z');
 const players = { PLAYER_FULL_NAME: 'Fixture Player', PLAYER_PHONE: '09123456789', PLAYER_EMAIL: 'fixture@example.invalid' };
@@ -200,3 +201,59 @@ describe('strategy presets', () => {
     }
   });
 });
+
+describe('Strategy V2.1 evidence-assisted role ranking', () => {
+  const allocation = presetAllocation('BALANCED', { readyWorkers: 3, recommendedFanOutWidth: 1 });
+  const range = (court:number,start:string,durationHours:number, patch:Partial<HistoricalRangeEvidence>={}):HistoricalRangeEvidence => ({ court,start,durationHours,
+    wellObserved:5,fullyOpenFirst:3,stillOpenAt1s:{observed:3,open:2},stillOpenAt5s:{observed:2,open:1},reopened:0,good:4,fair:1,...patch });
+  const history = (ranges:HistoricalRangeEvidence[], strength:'LIMITED'|'USABLE'|'STRONG'='STRONG', sharedRisk:StrategyHistoricalEvidence['sharedRisk']=[]):StrategyHistoricalEvidence => ({
+    targetDate,dayOfWeek:'Thursday',releasesConsidered:5,wellObservedReleases:strength==='LIMITED'?1:strength==='USABLE'?3:5,realReleases:5,historicalPrePhase3:0,strength,ranges,sharedRisk });
+
+  it('falls back exactly to preference ranking with no history or a limited sample', () => {
+    const preference=suggestPlan({goal:DEFAULT_STRATEGY_GOAL,schedule:schedule(),allocation,intelligenceMode:'PREFERENCE_ONLY'});
+    const none=suggestPlan({goal:DEFAULT_STRATEGY_GOAL,schedule:schedule(),allocation,intelligenceMode:'AUTO'});
+    const limited=suggestPlan({goal:DEFAULT_STRATEGY_GOAL,schedule:schedule(),allocation,intelligenceMode:'AUTO',historicalEvidence:history([range(7,'17:00',3,{fullyOpenFirst:1,wellObserved:1})],'LIMITED')});
+    expect(none.immediate.map(window=>windowKeyForTest(window))).toEqual(preference.immediate.map(window=>windowKeyForTest(window)));
+    expect(limited.immediate.map(window=>windowKeyForTest(window))).toEqual(preference.immediate.map(window=>windowKeyForTest(window)));
+    expect(limited.intelligence).toMatchObject({applied:'PREFERENCE_BASED',strength:'LIMITED'});
+  });
+
+  it('uses first-snapshot and +1 second evidence for immediate targets without overriding duration priority', () => {
+    const evidence=history([range(7,'17:00',3,{fullyOpenFirst:5,stillOpenAt1s:{observed:5,open:5}}),range(7,'19:00',3,{fullyOpenFirst:0,stillOpenAt1s:{observed:5,open:0}}),
+      range(7,'17:00',2,{fullyOpenFirst:5,stillOpenAt1s:{observed:5,open:5}})]);
+    const plan=suggestPlan({goal:{...DEFAULT_STRATEGY_GOAL,courts:[7]},schedule:schedule(),allocation:{...allocation,immediateTargets:1},historicalEvidence:evidence});
+    expect(plan.immediate[0]).toMatchObject({court:7,start:'17:00',durationHours:3});
+    expect(plan.immediate[0]!.rationale.join(' ')).toMatch(/Fully open in first usable snapshot in 5 of 5/);
+    expect(plan.intelligence.applied).toBe('HISTORY_ASSISTED');
+  });
+
+  it('ranks Wave 2 by +1/+5 survival and gives repeated reopenings Rescue affinity', () => {
+    const evidence=history([range(7,'19:00',3,{fullyOpenFirst:5}),range(6,'18:00',3,{stillOpenAt1s:{observed:5,open:5},stillOpenAt5s:{observed:5,open:5}}),
+      range(5,'17:00',3,{stillOpenAt1s:{observed:5,open:1},stillOpenAt5s:{observed:5,open:0},reopened:3})]);
+    const plan=suggestPlan({goal:DEFAULT_STRATEGY_GOAL,schedule:schedule(),allocation:{...allocation,immediateTargets:1},historicalEvidence:evidence});
+    expect(plan.backups.find(window=>window.court===6)?.roleAffinity).toBe('STRONG_WAVE_2');
+    expect(plan.backups.find(window=>window.court===5)?.roleAffinity).toBe('STRONG_RESCUE');
+    expect(plan.backups.find(window=>window.court===5)?.rationale.join(' ')).toMatch(/Observed cache-certain reopening in 3 of 5/);
+  });
+
+  it('uses shared-risk during greedy selection and remains deterministic', () => {
+    const ranges=[range(7,'19:00',3,{fullyOpenFirst:5}),range(6,'19:00',3,{fullyOpenFirst:5}),range(6,'21:00',3,{fullyOpenFirst:5})];
+    const risks=[{a:'6/19:00/3',b:'7/19:00/3',sharedCells:0,overlappingHours:3,bothObserved:5,coUnavailable:5,sameEarlyLoss:4},
+      {a:'6/21:00/3',b:'7/19:00/3',sharedCells:0,overlappingHours:1,bothObserved:5,coUnavailable:0,sameEarlyLoss:0}];
+    const input={goal:{...DEFAULT_STRATEGY_GOAL,courts:[7,6]},schedule:schedule(),allocation:{...allocation,immediateTargets:2},historicalEvidence:history(ranges,'STRONG',risks)};
+    const first=suggestPlan(input),second=suggestPlan(input);
+    expect(first.immediate.map(window=>windowKeyForTest(window))).toEqual(second.immediate.map(window=>windowKeyForTest(window)));
+    expect(first.immediate[1]!.start).toBe('21:00');
+  });
+
+  it('never lets history bypass a current conflict and Preference only ignores strong history', () => {
+    const evidence=history([range(7,'19:00',3,{fullyOpenFirst:5,stillOpenAt1s:{observed:5,open:5}})]);
+    const auto=suggestPlan({goal:DEFAULT_STRATEGY_GOAL,schedule:schedule([[7,'20:00']]),allocation,historicalEvidence:evidence});
+    expect([...auto.immediate,...auto.backups].some(window=>window.court===7&&window.start==='19:00'&&window.durationHours===3)).toBe(false);
+    const preference=suggestPlan({goal:DEFAULT_STRATEGY_GOAL,schedule:schedule(),allocation,historicalEvidence:evidence,intelligenceMode:'PREFERENCE_ONLY'});
+    expect(preference.intelligence).toMatchObject({applied:'PREFERENCE_BASED',requested:'PREFERENCE_ONLY'});
+    expect(JSON.stringify(preference)).not.toMatch(/chance|probability|winner/i);
+  });
+});
+
+const windowKeyForTest=(window:{court:number;start:string;durationHours:number})=>`${window.court}/${window.start}/${window.durationHours}`;

@@ -37,6 +37,9 @@ export function renderOffsetCalibration(state: Dashboard): void {
   const parts: HTMLElement[] = [];
   for (const run of runs.slice(0, 4)) {
     const summary = run.summary;
+    const width = Math.max(...run.children.map(child => child.fanOutCount)), benchmark = state.fanOut?.latest?.widths.find(value => value.width === width);
+    const staleCalibration = summary.configuredToChrome.n >= 5 && summary.configuredToChrome.p95 !== null && benchmark?.chromeP95 !== null && benchmark?.chromeP95 !== undefined
+      && summary.configuredToChrome.p95 > Math.max(benchmark.chromeP95 * 2, benchmark.chromeP95 + 10);
     parts.push(el('h3', '', `${run.date ?? 'Release'} · run ${run.runId.slice(0, 8)}`));
     parts.push(el('p', 'small', `Configured → Chrome request: p50 ${ms(summary.configuredToChrome.p50)}, p95 ${ms(summary.configuredToChrome.p95)}, max ${ms(summary.configuredToChrome.max)} · `
       + `spread ${ms(summary.spreadMs)}${summary.compression !== null ? ` · offsets preserved ${Math.round(summary.compression * 100)}%` : ''}`
@@ -45,6 +48,7 @@ export function renderOffsetCalibration(state: Dashboard): void {
     parts.push(table(['Child', 'Configured', 'Chrome request start', 'Error', 'Outcome'], run.children.map(child =>
       [child.label, ms(child.configuredOffsetMs), ms(child.chromeStartMs), ms(child.errorMs), (child.finalState ?? '—').replaceAll('_', ' ').toLowerCase()])));
     if (summary.perChildIndex.length > 1) parts.push(el('p', 'small', `Per fan-out position (p95 error): ${summary.perChildIndex.map(value => `#${value.fanOutIndex} ${ms(value.error.p95)}`).join(' · ')}`));
+    if (staleCalibration) parts.push(el('p', 'small warn-text', 'Timing calibration may be stale. Re-run the fan-out benchmark. Recorded Chrome-start lag strongly exceeds the compatible machine profile; offsets were not changed.'));
   }
   host.replaceChildren(...parts);
 }

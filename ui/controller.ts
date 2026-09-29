@@ -28,6 +28,7 @@ import type {ReleaseLabDigest} from '../src/release-lab-analysis.js';
 import {PrecisionPhase3Schema,PrecisionTargetSchema} from '../src/config.js';
 import type {IntelligenceDigest,IntelligenceSummary} from '../src/release-intelligence.js';
 import type {AdvisorInput,AdvisorResult} from '../src/release-advisor.js';
+import type {StrategyHistoricalEvidence,Window as StrategyWindow} from '../src/strategy-engine.js';
 import type {ReplayPlan,ReplayResult} from '../src/strategy-replay.js';
 import type {ReadinessResult} from '../src/network-readiness.js';
 import type {WarmthAssessment} from '../src/checkout-path-research.js';
@@ -194,6 +195,7 @@ export interface Dependencies {
   networkReadinessHistory?():ReadinessResult[];
   replayPlan?(plan:ReplayPlan):{results:ReplayResult[];skipped:Array<{releaseKey:string;reason:string}>};
   adviseFromHistory?(input:AdvisorInput):AdvisorResult;
+  strategyEvidence?(targetDate:string,ranges:StrategyWindow[]):StrategyHistoricalEvidence;
   /** This machine's Fan-out Capacity Profiles (newest compatible one in full, for the Strategy timing presets). */
   fanOutDigest?():import('./types.js').FanOutDigest|null;
   /** Recent release dispatch telemetry (per child: configured trigger vs Chrome request, compression, prewarm headroom). */
@@ -303,6 +305,13 @@ export class Controller {
     const request=AdvisorRequestSchema.parse(input);
     if(!this.state.intelligence?.generatedAt)await this.rebuildIntelligence('before suggestions');
     return this.deps.adviseFromHistory({...request,targetDate:this.deps.clock().targetDate});
+  }
+  async strategyEvidence(input:unknown):Promise<StrategyHistoricalEvidence>{
+    if(!this.deps.strategyEvidence)throw Error('STRATEGY_EVIDENCE_UNAVAILABLE');
+    const request=z.object({targetDate:z.iso.date(),ranges:z.array(z.object({court:z.number().int().min(1).max(7),start:z.string().regex(/^(0[89]|1\d|2[0-3]):00$/),durationHours:z.number().int().min(1).max(3)}).strict()).max(147)}).strict().parse(input);
+    const clock=this.deps.clock();
+    if(request.targetDate!==clock.targetDate)throw Error('STRATEGY_EVIDENCE_WRONG_TARGET_DATE');
+    return this.deps.strategyEvidence(request.targetDate,request.ranges);
   }
   private readSlotWatchHistory(){try{return this.deps.slotWatchHistory?.()??[];}catch{return [];}}
   private readForensicsHistory(){try{this.state.telemetry=this.deps.releaseTelemetry?.()??[];}catch{this.state.telemetry=[];}try{return this.deps.releaseForensicsHistory?.()??[];}catch{return [];}}

@@ -6,7 +6,7 @@ import {formatReleaseOffset,isReleaseOffsetMs} from '../../src/release-offset.js
 import {applyDurationOffsetPreset,compileSmartPlan,confirmSmartRates,describeSmartPlan,emptySmartDraft,resizeSmartFanOut,setSmartChildOffset,smartDraftFromPhase3,smartPeso,smartRange,smartSlotOffsets,smartSlotText,SMART_MAX_SLOTS,SMART_WORKERS,
   type SmartDraft,type SmartSlot,type SmartWorker,type SmartPhase3,type SmartReleaseOffset} from '../../src/precision-simple.js';
 import {fanOutTimingPlan} from '../../src/fanout-timing.js';
-import {initStrategy,renderStrategy,strategyModificationCount,type StrategyV2Meta} from './strategy.js';
+import {initStrategy,reconstructLineage,renderStrategy,strategyModificationCount,suggestionLineage,type EditableSuggestionLineage,type StrategyV2Meta} from './strategy.js';
 import {renderLive} from './live.js';
 import {renderInsights} from './insights.js';
 import {renderNextRelease} from './next-release.js';
@@ -140,7 +140,7 @@ input('dual-court-a').value='7';input('dual-court-b').value='6';
 const PRECISION_WORKERS=['A','B','C','D','E','F','G'] as const;
 // Smart backups editor. The draft lives here; the saved PRECISION_PHASE3 is always compileSmartPlan's output,
 // and "What will happen" is generated from that same compiled object.
-let precisionMode:PrecisionMode='fixed',smartDraft:SmartDraft=emptySmartDraft(),acceptedSmartDraft:SmartDraft|null=null,smartRenderKey='',smartRatesOpen=false;
+let precisionMode:PrecisionMode='fixed',smartDraft:SmartDraft=emptySmartDraft(),acceptedSmartDraft:SmartDraft|null=null,smartLineage:EditableSuggestionLineage={immediate:[],backups:[]},smartRenderKey='',smartRatesOpen=false;
 /** Goal/preset/fan-out choices that produced the Smart draft (saved as STRATEGY_V2; metadata only, never an authorization). */
 let strategyMeta:StrategyV2Meta|undefined;
 const cloneSmart=(value:SmartDraft):SmartDraft=>JSON.parse(JSON.stringify(value)) as SmartDraft;
@@ -159,7 +159,8 @@ function unreadyWorkers():Set<string>{
 }
 const smartContext=()=>({targetDate:latest?.booking?.targetDate??'',unavailable:unreadyWorkers()});
 const smartCompiled=()=>compileSmartPlan(smartDraft,smartContext());
-function smartEdit(mutate:(draft:SmartDraft)=>void){mutate(smartDraft);renderSmart(true);changed();}
+function normalizeLineage(){for(const kind of ['immediate','backups'] as const){smartLineage[kind].splice(smartDraft[kind].length);while(smartLineage[kind].length<smartDraft[kind].length)smartLineage[kind].push(null);}}
+function smartEdit(mutate:(draft:SmartDraft,lineage:EditableSuggestionLineage)=>void){mutate(smartDraft,smartLineage);normalizeLineage();if(strategyMeta)strategyMeta={...strategyMeta,lineage:structuredClone(smartLineage)};renderSmart(true);changed();}
 function smartElement<K extends keyof HTMLElementTagNameMap>(tag:K,className:string,text?:string){const element=document.createElement(tag);if(className)element.className=className;if(text!==undefined)element.textContent=text;return element;}
 function smartSelect(id:string,label:string,choices:Array<[string,string]>,value:string,onChange:(value:string)=>void){
   const wrap=document.createElement('label'),select=document.createElement('select');select.id=id;wrap.append(label,select);
@@ -214,10 +215,10 @@ function smartRow(kind:'immediate'|'backups',slot:SmartSlot,index:number,compile
   if(kind==='immediate'){const worker=compiled.immediateWorkers[index]??null,chip=smartElement('span','smart-worker',worker?`Worker ${worker}`:'No worker free');
     chip.dataset.tone=!worker||unready.has(worker)?'warn':'good';facts.append(chip);}
   const price=smartElement('span','smart-rate',rate?.label??'Rate needs review');price.dataset.tone=rate?.needsReview?'warn':'muted';facts.append(price);
-  const move=(step:number)=>smartEdit(draft=>{const items=draft[kind],other=index+step;[items[index],items[other]]=[items[other]!,items[index]!];});
+  const move=(step:number)=>smartEdit((draft,lineage)=>{const items=draft[kind],origins=lineage[kind],other=index+step;[items[index],items[other]]=[items[other]!,items[index]!];[origins[index],origins[other]]=[origins[other]!,origins[index]!];});
   const actions=smartElement('div','smart-row-actions');
   actions.append(smartButton('↑',`Move ${noun} ${index+1} up`,index===0,()=>move(-1)),smartButton('↓',`Move ${noun} ${index+1} down`,index===list.length-1,()=>move(1)),
-    smartButton('Remove',`Remove ${noun} ${index+1}`,false,()=>smartEdit(draft=>{draft[kind].splice(index,1);})));
+    smartButton('Remove',`Remove ${noun} ${index+1}`,false,()=>smartEdit((draft,lineage)=>{draft[kind].splice(index,1);lineage[kind].splice(index,1);})));
   li.append(smartElement('strong','smart-row-title',`${kind==='immediate'?'Attempt':'Backup'} ${index+1}`),fields,facts,actions);
   const worker=kind==='immediate'?compiled.immediateWorkers[index]:null;
   if(worker&&unready.has(worker))li.append(smartElement('p','smart-row-warn',`Worker ${worker} is not ready and will not be used.`));
@@ -343,11 +344,12 @@ function renderReleaseLab(compiled=compileSmartPlan(smartDraft,{targetDate:lates
 }
 initStrategy({state:()=>latest,draft:()=>smartDraft,unready:unreadyWorkers,
   useSuggestion:(draft,meta)=>{input('precision-strategy').value='precision';precisionMode='smart';smartDraft=cloneSmart(draft);acceptedSmartDraft=cloneSmart(draft);
-    const accepted=compileSmartPlan(draft,smartContext()).phase3;strategyMeta={...meta,...(accepted?{acceptedPhase3:accepted}:{}),provenance:{source:'SMART_SUGGESTED',operatorModifications:0}};smartRatesOpen=false;
+    smartLineage=suggestionLineage(draft);const accepted=compileSmartPlan(draft,smartContext()).phase3;strategyMeta={...meta,lineage:structuredClone(smartLineage),...(accepted?{acceptedPhase3:accepted}:{}),provenance:{source:'SMART_SUGGESTED',operatorModifications:0}};smartRatesOpen=false;
     syncStrategy();renderSmart(true);changed();},
   accepted:()=>acceptedSmartDraft,
+  lineage:()=>smartLineage,
   edit:mutate=>smartEdit(mutate),
-  resetAll:()=>{if(!acceptedSmartDraft)return;smartDraft=cloneSmart(acceptedSmartDraft);if(strategyMeta)strategyMeta={...strategyMeta,fanOut:{...strategyMeta.fanOut,
+  resetAll:()=>{if(!acceptedSmartDraft)return;smartDraft=cloneSmart(acceptedSmartDraft);smartLineage=suggestionLineage(acceptedSmartDraft);if(strategyMeta)strategyMeta={...strategyMeta,lineage:structuredClone(smartLineage),fanOut:{...strategyMeta.fanOut,
     width:smartDraft.immediate[0]?smartSlotOffsets(smartDraft.immediate[0]).length:strategyMeta.fanOut.width,source:strategyMeta.fanOut.acceptedSource??strategyMeta.fanOut.source,
     ...(strategyMeta.fanOut.basedOnTiming?{timing:strategyMeta.fanOut.basedOnTiming}: {})}};renderSmart(true);changed();},
   save:()=>byId('save-booking').click()});
@@ -408,12 +410,13 @@ function strategyFields():Pick<BookingSetup,'RELEASE_STRATEGY'|'PRECISION_TARGET
   if(!precisionSelected())return {RELEASE_STRATEGY:'general',PRECISION_TARGETS:releaseDraft?.precisionTargets??[],PRECISION_FAN_OUT:false};
   if(precisionMode!=='smart')return {RELEASE_STRATEGY:'precision',PRECISION_TARGETS:precisionRows(),PRECISION_FAN_OUT:precisionFanOut()};
   const compiled=smartCompiled();
-  const timingModified=!!acceptedSmartDraft&&smartDraft.immediate.some((slot,index)=>!acceptedSmartDraft!.immediate[index]||JSON.stringify(smartSlotOffsets(slot))!==JSON.stringify(smartSlotOffsets(acceptedSmartDraft!.immediate[index]!)));
-  const widthModified=!!acceptedSmartDraft&&smartDraft.immediate.some((slot,index)=>smartSlotOffsets(slot).length!==(acceptedSmartDraft!.immediate[index]?smartSlotOffsets(acceptedSmartDraft!.immediate[index]!).length:0));
+  const baseline=(index:number)=>{const origin=smartLineage.immediate[index],match=origin?/^I(\d+)$/.exec(origin):null;return match?acceptedSmartDraft?.immediate[Number(match[1])]:undefined;};
+  const timingModified=!!acceptedSmartDraft&&smartDraft.immediate.some((slot,index)=>!baseline(index)||JSON.stringify(smartSlotOffsets(slot))!==JSON.stringify(smartSlotOffsets(baseline(index)!)));
+  const widthModified=!!acceptedSmartDraft&&smartDraft.immediate.some((slot,index)=>smartSlotOffsets(slot).length!==(baseline(index)?smartSlotOffsets(baseline(index)!).length:0));
   const currentWidth=smartDraft.immediate[0]?smartSlotOffsets(smartDraft.immediate[0]).length:strategyMeta?.fanOut.width??1;
   const meta=strategyMeta?{...strategyMeta,fanOut:{...strategyMeta.fanOut,width:currentWidth,source:widthModified?'OPERATOR_OVERRIDE' as const:strategyMeta.fanOut.acceptedSource??strategyMeta.fanOut.source,
       timing:timingModified?'CUSTOM' as const:strategyMeta.fanOut.basedOnTiming??(strategyMeta.fanOut.timing==='CUSTOM'?'BALANCED':strategyMeta.fanOut.timing)},
-    provenance:{source:'SMART_SUGGESTED' as const,operatorModifications:strategyModificationCount(smartDraft,acceptedSmartDraft)}}:undefined;
+    lineage:structuredClone(smartLineage),provenance:{source:acceptedSmartDraft?'SMART_SUGGESTED' as const:'EXISTING_SMART_PLAN' as const,operatorModifications:strategyModificationCount(smartDraft,acceptedSmartDraft,smartLineage)}}:undefined;
   return {RELEASE_STRATEGY:'precision',PRECISION_TARGETS:[],PRECISION_FAN_OUT:false,...(compiled.phase3?{PRECISION_PHASE3:compiled.phase3}:{}),
     ...(smartDraft.releaseLab?{RELEASE_LAB:smartDraft.releaseLab}:{}),...(compiled.phase3&&meta?{STRATEGY_V2:meta}:{})};
 }
@@ -438,7 +441,7 @@ function applyDraft(d:FormDraft){input('precision-strategy').value=d.releaseStra
   for(let i=0;i<PRECISION_WORKERS.length;i++)for(let child=0;child<4;child++)input(child?`precision-offset-${i}-${child}`:`precision-offset-${i}`).value='0';
   d.precisionTargets.slice(0,PRECISION_WORKERS.length).forEach((t,i)=>{input(`precision-court-${i}`).value=String(t.court);input(`precision-start-${i}`).value=t.start;input(`precision-duration-${i}`).value=String(t.durationHours);
     const offsets=t.fanOutReleaseOffsetsMs??[t.releaseOffsetMs??0];offsets.slice(0,4).forEach((value,child)=>input(child?`precision-offset-${i}-${child}`:`precision-offset-${i}`).value=String(-value));});
-  precisionMode=d.precisionMode??'fixed';smartDraft=cloneSmart(d.smart??emptySmartDraft());smartRatesOpen=false;setReleaseOffset(d.releaseOffsetMs??0);
+  precisionMode=d.precisionMode??'fixed';smartDraft=cloneSmart(d.smart??emptySmartDraft());smartLineage=acceptedSmartDraft?reconstructLineage(smartDraft,acceptedSmartDraft,strategyMeta?.lineage):{immediate:smartDraft.immediate.map(()=>null),backups:smartDraft.backups.map(()=>null)};smartRatesOpen=false;setReleaseOffset(d.releaseOffsetMs??0);
   input('booking-method').value=d.method;input('booking-type').value=d.strategy;input('test-date').value=d.date;input('court-count').value=String(d.courtCount);input('start-time').value=d.start;input('duration').value=String(d.duration);input('attempts').value=String(d.attempts);courtOrder=[...d.courtOrder];fallbackTimes=[...d.fallbackTimes];input('exact-a').value=d.exactA;input('exact-b').value=d.exactB;editors();syncStrategy();renderSmart(true);}
 function storeDraft(){const d=formDraft();if(workflow==='test')testDraft=d;else releaseDraft=d;}
 function reconcileReleaseDraft(){
@@ -754,7 +757,8 @@ function render(state: Dashboard) {
    if(!releaseDirty&&loadedPlan!==b.fingerprint){
     loadedPlan=b.fingerprint;strategyMeta=b.setup.STRATEGY_V2?structuredClone(b.setup.STRATEGY_V2):undefined;
     const loadedSmart=b.setup.PRECISION_PHASE3?smartDraftFromSaved(b.setup,b.targetDate):undefined;
-    acceptedSmartDraft=strategyMeta?.acceptedPhase3?smartDraftFromPhase3(strategyMeta.acceptedPhase3,{targetDate:b.targetDate,unavailable:unreadyWorkers()}):loadedSmart?cloneSmart(loadedSmart):null;
+    // A reset baseline exists only when an accepted Smart suggestion was actually persisted. Never manufacture one from the current plan.
+    acceptedSmartDraft=strategyMeta?.acceptedPhase3?smartDraftFromPhase3(strategyMeta.acceptedPhase3,{targetDate:b.targetDate,unavailable:unreadyWorkers()}):null;
     releaseDraft={releaseStrategy:b.setup.RELEASE_STRATEGY??'general',precisionCount:Math.max(1,b.setup.PRECISION_TARGETS?.length??0),precisionTargets:[...(b.setup.PRECISION_TARGETS??[])],precisionFanOut:b.setup.PRECISION_FAN_OUT,precisionMode:b.setup.PRECISION_PHASE3?'smart':'fixed',smart:loadedSmart,releaseOffsetMs:b.setup.RELEASE_OFFSET_MS??0,method:b.setup.BOOKING_METHOD??'browser',strategy:b.setup.BOOKING_TYPE??'standard',date:testDraft?.date??input('test-date').value,courtCount:b.setup.COURT_COUNT,start:b.setup.START_TIME,duration:b.setup.DURATION_HOURS,attempts:b.setup.MAX_SELECTION_ATTEMPTS,courtOrder:[...b.setup.PREFERRED_COURTS],fallbackTimes:[...b.setup.FALLBACK_TIMES],exactA:'',exactB:''};
     if(b.fallbackReconciliation.removed.length){releaseAdjustment=b.fallbackReconciliation;releaseDirty=true;}if(workflow==='release'){applyDraft(releaseDraft);dirty=releaseDirty;}}
      if(workflow==='release'&&precisionMode==='smart')renderSmart();

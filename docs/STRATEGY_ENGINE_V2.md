@@ -1,4 +1,4 @@
-# Strategy Engine V2
+# Strategy Engine V2.1
 
 Strategy Engine V2 treats a release plan as one strategy: immediate targets, their fan-out children, Wave 2 backups and Reopen Rescue. Before V2 these were three separate booking modes.
 
@@ -32,8 +32,8 @@ Fixed Precision remains available as **legacy** (Strategy → Advanced overrides
    | Custom | fully hand-built plan | | | |
 
    Fan-out defaults to this machine's measured recommendation (see [FANOUT_CAPACITY_BENCHMARK.md](FANOUT_CAPACITY_BENCHMARK.md)). Choosing a width yourself is labelled **Operator override** and saved as `OPERATOR_OVERRIDE`. Child timing (Tight / Balanced / Wide) derives its spacing from the same profile. See [Timing presets](#timing-presets).
-4. **Suggested plan**: a suggestion, not a command. It avoids known public conflicts and leaves out unknown evidence (fail closed). Immediate targets use distinct courts and are **diversified across start times**, so one time-wide unavailable block cannot hit every attempt. For example: C7 19–22, C6 20–23, C5 18–21, C4 21–24. Remaining windows fill the Wave 2 / Rescue pool up to the 21-candidate authorization. **Force include** keeps a conflicting window deliberately. It is marked `OPERATOR_OVERRIDE_PUBLIC_CONFLICT` on the candidate and warned again at review. **Remove** drops a window.
-5. **Editable Smart plan**: accepting the preview copies it into an editable draft without changing its preset to Custom. Court, start, duration, order, fan-out width and every actual child offset can be changed directly. Assigned workers remain read-only unless explicitly pinned in Advanced settings. Smart provenance remains visible; changed targets and timings are marked Customized/Modified. Operator edits are authoritative and never silently rearrange another target.
+4. **Suggested plan**: a suggestion, not a command. `Auto` uses the same-weekday historical DTO only when at least three GOOD/FAIR real-release or clearly labelled pre-Phase-3 releases are well observed. `Preference only` runs the original V2 ordering. Both modes avoid known public conflicts and leave out unknown evidence (fail closed). Immediate targets and the backup pool are selected greedily, recomputing shared court-hour, clock-hour and observed co-unavailability risk after every pick. **Force include** remains the only way to retain a current conflict and is marked `OPERATOR_OVERRIDE_PUBLIC_CONFLICT`.
+5. **Editable Smart plan**: accepting the preview copies it into an editable draft without changing its preset to Custom. Each accepted row receives a deterministic origin (`I0…` or `B0…`) stored in `STRATEGY_V2.lineage`. The origin moves with the row, so reorder or removal can never make Reset target restore a different accepted row. New manual rows have `null` origin, display **Operator added**, and have no reset action. Old Smart plans without `acceptedPhase3` display **Existing Smart plan**; the app never invents Smart-generated provenance.
 6. **Review & save**: the current draft is compiled, and the review is generated from that exact about-to-be-saved `PRECISION_PHASE3` object. Every immediate child and configured timing is listed before Save.
 7. **Advanced overrides**: worker pinning, standby assignment, raw budgets and permissions, rates, legacy Fixed attempts and the Release Lab experiment.
 
@@ -41,7 +41,18 @@ The workflow is therefore: **Smart suggestion → accept → editable Smart plan
 
 **Reset is not Regenerate.** Reset timing restores only that target's accepted child offsets; Reset target restores that accepted target; Reset all restores the exact suggestion originally accepted. Suggest plan generates a new preview from the latest goal, evidence and timing profile, but does not replace the accepted draft until the operator chooses Use this plan.
 
-Scores rank the operator's own preferences (duration order, prime fit, court order) and the evidence quality. They never predict who wins Onda's arbitration.
+## Evidence-assisted ranking
+
+History strength is deterministic: `NONE` = 0 well-observed same-weekday releases, `LIMITED` = 1–2, `USABLE` = 3–4, and `STRONG` = 5 or more. These are practical quality gates, not statistical confidence claims. NONE and LIMITED are displayed but do not alter V2 ranking. Synthetic and offline benchmark data never enter the DTO.
+
+- Immediate targets keep duration priority strong, then use current evidence, first-usable-snapshot openness, +1 s survival and plan-aware shared risk.
+- Wave 2 emphasizes +1 s and +5 s survival before first-snapshot openness.
+- Rescue affinity uses factual cache-certain reopening counts. It does not claim a reopening probability.
+- Every selected row carries plain-language evidence and diversification reasons. No win score or win probability is produced.
+
+The desktop process derives the sanitized DTO from `release-intelligence.ts` / `release-advisor.ts`; the release runner never imports Phase 4 files. Historical evidence never overrides current conflicts, failed reads, the operator's goal, or the duration order.
+
+Timing offsets remain based on the local Fan-out Capacity Profile. Sparse provider outcomes never rewrite offsets; telemetry is calibration evidence only.
 
 ## Fan-out children
 

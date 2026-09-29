@@ -599,6 +599,8 @@ footer > div { display: flex; align-items: center; gap: 8px; font-size: 11px; co
 .strategy-suggestion h3 { margin: 12px 0 6px; font-size: 13px; }
 .strategy-suggestion ol, .strategy-suggestion ul { margin: 0; padding-left: 20px; font-size: 12px; }
 .strategy-suggestion li { margin: 3px 0; }
+.strategy-rationale { margin: 4px 0 6px 10px; color: var(--text-2); }
+.strategy-rationale p { margin: 1px 0; }
 .strategy-suggestion .forced { color: var(--warning); }
 .strategy-suggestion button.compact { margin-left: 8px; padding: 2px 8px; font-size: 11px; }
 .strategy-edit-list { display: grid; gap: 8px; margin: 8px 0 14px; padding: 0; list-style: none; }
