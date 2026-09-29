@@ -17,7 +17,7 @@ import type { WorkerId } from './workers.js';
  * assumptions, reported with every result. Output wording is limited to observed opportunities.
  */
 export interface ReplayPlan {
-  candidates: CandidateInput[]; wave1: Array<{ workerId: WorkerId; candidateIndex: number }>; standby: WorkerId[];
+  candidates: CandidateInput[]; wave1: Array<{ workerId: WorkerId; candidateIndex: number; fanOutOffsetsMs?: readonly number[] }>; standby: WorkerId[];
   budgets: { wave2: number; rescue: number; total: number }; concurrentWave2: boolean; rescueEnabled: boolean;
 }
 export interface ReplayOptions {
@@ -49,7 +49,8 @@ export function replayRelease(plan: ReplayPlan, log: ObserverLog, record: Pick<R
   // Replay only: the plan's rate evidence is re-dated to the replayed date; grid prices drive every adaptive send.
   const candidates = plan.candidates.map(candidate => ({ ...candidate, rateEvidence: { ...candidate.rateEvidence, date } }));
   const authorization = authorizePrecision({ date, releaseMs, candidates,
-    wave1: plan.wave1.map(value => ({ workerId: value.workerId, candidateId: precisionCandidateId(date, candidates[value.candidateIndex]!) })),
+    wave1: plan.wave1.map(value => ({ workerId: value.workerId, candidateId: precisionCandidateId(date, candidates[value.candidateIndex]!),
+      ...(value.fanOutOffsetsMs ? { fanOutOffsetsMs: value.fanOutOffsetsMs } : {}) })),
     standby: plan.standby, budgets: plan.budgets, concurrentWave2: plan.concurrentWave2, rescueEnabled: plan.rescueEnabled,
     authorizedAt: new Date(releaseMs - 120_000).toISOString() });
   const byId = new Map(authorization.candidates.map(value => [value.id, value] as const));
@@ -62,8 +63,10 @@ export function replayRelease(plan: ReplayPlan, log: ObserverLog, record: Pick<R
     'Each replayed backup or reopened-slot send is treated as rejected at once, so later opportunities stay visible. This is not a prediction of Onda\'s answer.',
     `Freshness window uses the production rule with ${(securityRefreshMs / 1000).toFixed(1)} s security preparation.`,
   ];
-  for (const assignment of authorization.wave1)
-    session.record({ id: `replay-wave1-${assignment.workerId}`, candidateId: assignment.candidateId, workerId: assignment.workerId, wave: 'WAVE_1', state: 'IN_FLIGHT' });
+  // Every fan-out child is its own tracked attempt (and consumes budget), exactly as in the runner.
+  for (const assignment of authorization.wave1) for (let child = 0; child < (assignment.fanOutOffsetsMs?.length ?? 1); child++)
+    session.record({ id: `replay-wave1-${assignment.workerId}${assignment.fanOutOffsetsMs ? child : ''}`, candidateId: assignment.candidateId, workerId: assignment.workerId, wave: 'WAVE_1', state: 'IN_FLIGHT',
+      ...(assignment.fanOutOffsetsMs ? { fanOutIndex: child, fanOutCount: assignment.fanOutOffsetsMs.length } : {}) });
 
   const fitness: ReplayResult['fitness'] = {};
   const result: Omit<ReplayResult, 'statement' | 'censored'> = { releaseKey: record.key, targetDate: date, releaseAt: new Date(releaseMs).toISOString(), origin: record.origin,

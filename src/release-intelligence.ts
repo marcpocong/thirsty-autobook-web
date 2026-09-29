@@ -36,7 +36,7 @@ const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Frida
 export type ReleaseOrigin = 'REAL_RELEASE' | 'HISTORICAL_PRE_PHASE3' | 'SYNTHETIC' | 'OFFLINE_BENCHMARK';
 export type ObservationQuality = 'GOOD' | 'FAIR' | 'POOR' | 'NONE';
 export interface QualityMetrics {
-  source: 'slot-watch' | 'runner-samples' | 'none'; observerVersion: 1 | 2 | null;
+  source: 'slot-watch' | 'runner-samples' | 'none'; observerVersion: 1 | 2 | 3 | null;
   earliestRequestOffsetMs: number | null; earliestResponseOffsetMs: number | null;
   firstPublishedRequestOffsetMs: number | null; firstPublishedResponseOffsetMs: number | null;
   firstPublishedComplete: boolean | null; firstPublishedCache: string | null; cacheCertain: boolean;
