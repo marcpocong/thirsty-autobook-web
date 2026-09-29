@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { stats, type Stats } from './fanout-capacity.js';
+import { liveTimingSamples, type LiveTimingOrigin } from './live-anchor-calibration.js';
 
 /**
  * Release dispatch telemetry for History & Insights (Phase 13), derived only from local files written after each run:
@@ -10,9 +11,11 @@ import { stats, type Stats } from './fanout-capacity.js';
  */
 export interface TelemetryChild { attemptId: string; label: string; workerId: string; parentGoalId: string | null; fanOutIndex: number; fanOutCount: number;
   configuredOffsetMs: number | null; workerInvokedMs: number | null; fetchInvokedMs: number | null; chromeStartMs: number | null; requestEventMs: number | null;
-  responseMs: number | null; errorMs: number | null; prewarmReadyMs: number | null; finalState: string | null }
+  responseMs: number | null; errorMs: number | null; prewarmReadyMs: number | null; finalState: string | null;
+  dispatchMode?: string; trustedClockValid?: boolean; dispatched?: boolean }
 export interface RunTelemetry {
-  runId: string; date: string | null; generatedAt: string;
+  runId: string; date: string | null; generatedAt: string; releaseMs?: number | null;
+  origin?: LiveTimingOrigin; mode?: string | null; machineKey?: string | null; runtimeKey?: string | null;
   children: TelemetryChild[];
   summary: {
     /** configured trigger → Chrome request start, over every child with both. */
@@ -37,14 +40,36 @@ const readLines = (path: string) => { try { return readFileSync(path, 'utf8').sp
 
 export function summarizeRun(runId: string, rows: Array<Record<string, unknown>>, progress: Array<Record<string, unknown>>): RunTelemetry {
   const header = rows.find(row => row.type === 'header');
+  const mode = str(progress.find(line => str(line.mode))?.mode) ?? str(header?.mode);
+  const origin: LiveTimingOrigin = mode === 'live' && !/synthetic|fixture|benchmark|offline/i.test(runId) ? 'REAL_RELEASE'
+    : /benchmark|offline/i.test(mode ?? '') ? 'OFFLINE_BENCHMARK' : 'SYNTHETIC';
+  const scheduled = new Map<string, number[]>();
+  for (const line of progress.filter(line => line.stage === 'RELEASE_OFFSET_SCHEDULED' && str(line.workerId) && num(line.releaseOffsetMs) !== null)) {
+    const worker = str(line.workerId)!; scheduled.set(worker, [...(scheduled.get(worker) ?? []), num(line.releaseOffsetMs)!]);
+  }
+  const dispatched = new Set(progress.filter(line => line.stage === 'PHASE3_DISPATCH' || line.stage === 'PHASE3_WAVE1_STARTED')
+    .flatMap(line => [str(line.attemptId), str(line.workerId)].filter((value): value is string => !!value)));
+  const fanOut = new Map(progress.filter(line => line.stage === 'PHASE3_FAN_OUT_CHILD' && str(line.attemptId)).map(line => [str(line.attemptId)!, {
+    index: num(line.fanOutIndex) ?? 0, count: num(line.fanOutCount) ?? 1 }] as const));
   const children: TelemetryChild[] = rows.filter(row => row.schema === 'critical-path/v1' && row.type !== 'header' && row.workerId !== '*').map(row => {
     const meta = (row.meta ?? {}) as Record<string, unknown>;
-    const configured = num(meta.configuredOffsetMs), chrome = num(row.browserRequestStartMs);
-    const workerId = str(meta.workerId) ?? String(row.workerId).slice(0, 1), index = num(meta.fanOutIndex) ?? 0, count = num(meta.fanOutCount) ?? 1;
+    const legacyChild = /^([A-G]):(\d+)$/.exec(String(row.workerId));
+    const workerId = str(meta.workerId) ?? legacyChild?.[1] ?? String(row.workerId).slice(0, 1), childTopology = fanOut.get(String(row.workerId));
+    // Pre-fan-out live rows did not copy the configured offset into critical-path metadata. In those rows an explicit
+    // RELEASE_OFFSET_SCHEDULED value wins; a dispatched single attempt without that event is the documented normal 0.
+    const legacyIndex = legacyChild ? Number(legacyChild[2]) : null, scheduledOffsets = scheduled.get(workerId);
+    const observedDispatch = num(row.browserRequestStartMs) !== null && (num(row.prePostMs) !== null || num(row.requestObservedMs) !== null || num(row.responseObservedMs) !== null);
+    const didDispatch = dispatched.has(String(row.workerId)) || dispatched.has(workerId) || observedDispatch;
+    const configured = num(meta.configuredOffsetMs) ?? (legacyIndex !== null ? scheduledOffsets?.[legacyIndex] ?? null : scheduledOffsets?.[0] ?? (didDispatch ? 0 : null));
+    const chrome = num(row.browserRequestStartMs), index = num(meta.fanOutIndex) ?? childTopology?.index ?? legacyIndex ?? 0;
+    const count = num(meta.fanOutCount) ?? childTopology?.count ?? (legacyIndex !== null ? scheduledOffsets?.length ?? 1 : 1);
+    const calibration = row.calibration as Record<string, unknown> | null | undefined;
     return { attemptId: String(row.workerId), label: `${workerId}${count > 1 ? index : ''}`, workerId, parentGoalId: str(meta.parentGoalId), fanOutIndex: index, fanOutCount: count,
       configuredOffsetMs: configured, workerInvokedMs: num(row.workerInvokedMs), fetchInvokedMs: num((row.fetchInvokedMs as { ms?: unknown } | null)?.ms),
       chromeStartMs: chrome, requestEventMs: num(row.requestObservedMs), responseMs: num(row.responseObservedMs),
-      errorMs: configured !== null && chrome !== null ? Math.round((chrome - configured) * 100) / 100 : null, prewarmReadyMs: num(meta.prewarmReadyMs), finalState: str(meta.finalState) };
+      errorMs: configured !== null && chrome !== null ? Math.round((chrome - configured) * 100) / 100 : null, prewarmReadyMs: num(meta.prewarmReadyMs), finalState: str(meta.finalState),
+      dispatchMode: str(row.dispatchMode) ?? 'unknown', trustedClockValid: num(header?.releaseMs) !== null && num(header?.wallToTrustedMs) !== null && calibration?.consistent !== false,
+      dispatched: didDispatch };
   }).sort((a, b) => a.workerId.localeCompare(b.workerId) || a.fanOutIndex - b.fanOutIndex);
   const starts = children.map(child => child.chromeStartMs).filter((value): value is number => value !== null);
   const configured = children.map(child => child.configuredOffsetMs).filter((value): value is number => value !== null);
@@ -60,7 +85,9 @@ export function summarizeRun(runId: string, rows: Array<Record<string, unknown>>
     if (line.stage === 'PHASE3_DISPATCH' && line.wave !== 'WAVE_1' && selected.has(key) && Number.isFinite(at)) { posts.push(at - selected.get(key)!); selected.delete(key); }
     if (line.stage === 'RESCUE_PREDICTION_OUTCOME' && num(line.errorMs) !== null) errors.push(num(line.errorMs)!);
   }
-  return { runId, date: str(header?.targetDate) ?? str(progress[0]?.targetDate), generatedAt: str(header?.generatedAt) ?? new Date(0).toISOString(), children,
+  return { runId, date: str(header?.targetDate) ?? str(progress[0]?.targetDate), generatedAt: str(header?.generatedAt) ?? str(progress[0]?.at) ?? new Date(0).toISOString(),
+    releaseMs: num(header?.releaseMs) ?? num(progress.find(line => num(line.releaseMs) !== null)?.releaseMs), origin, mode,
+    machineKey: str(header?.machineKey), runtimeKey: str(header?.runtimeKey), children,
     summary: { configuredToChrome: stats(children.map(child => child.errorMs)), perChildIndex: indices.map(fanOutIndex =>
       ({ fanOutIndex, error: stats(children.filter(child => child.fanOutIndex === fanOutIndex).map(child => child.errorMs)) })),
       perWorker: Object.fromEntries(workers.map(worker => [worker, stats(children.filter(child => child.workerId === worker).map(child => child.errorMs))])),
@@ -70,12 +97,16 @@ export function summarizeRun(runId: string, rows: Array<Record<string, unknown>>
       adaptiveSelectionToPost: stats(posts), reopenPredictionErrorMs: stats(errors) } };
 }
 
+export { liveTimingSamples };
+
 /** The newest runs with a critical-path file, newest first. */
-export function readReleaseTelemetry(root: string, limit = 8): RunTelemetry[] {
+export function readReleaseTelemetry(root: string, limit = 64): RunTelemetry[] {
   const directory = join(root, '.local/release-forensics');
   if (!existsSync(directory)) return [];
   const runs = readdirSync(directory).filter(name => /^[A-Za-z0-9-]{8,80}$/.test(name) && existsSync(join(directory, name, 'critical-path.ndjson')))
     .map(name => ({ name, mtime: statSync(join(directory, name, 'critical-path.ndjson')).mtimeMs })).sort((a, b) => b.mtime - a.mtime).slice(0, limit);
-  return runs.map(run => summarizeRun(run.name, readLines(join(directory, run.name, 'critical-path.ndjson')),
-    readLines(join(root, '.local/api-booking/run-progress', `${run.name}.ndjson`))));
+  return runs.map(run => { const value = summarizeRun(run.name, readLines(join(directory, run.name, 'critical-path.ndjson')),
+    readLines(join(root, '.local/api-booking/run-progress', `${run.name}.ndjson`)));
+    if (value.generatedAt === new Date(0).toISOString()) value.generatedAt = new Date(run.mtime).toISOString();
+    return value; });
 }
