@@ -171,13 +171,13 @@
               <label id="smart-rescue-max-row" class="smart-inline" hidden>Maximum reopened-slot attempts <input id="smart-rescue-max" type="number" min="1" max="7" value="1"></label>
             </section>
             <section class="smart-card">
-              <div class="smart-card-head"><div><h4>Rates</h4><p id="smart-rate-summary" class="small"></p></div><button id="smart-review-rates" class="secondary compact" type="button">Review rates</button></div>
+              <div class="smart-card-head"><div><h4>Rates</h4><p id="smart-rate-summary" class="small"></p></div><button id="smart-review-rates" class="secondary compact" type="button">Review daytime rate</button></div>
               <div id="smart-rate-review" class="smart-rate-review" hidden>
                 <label>Daytime rate, before 4 PM (₱ per hour)<input id="smart-rate-day" type="number" min="1" step="1" inputmode="numeric"></label>
-                <label>Evening rate, from 4 PM (₱ per hour)<input id="smart-rate-evening" type="number" min="1" step="1" inputmode="numeric"></label>
+                <label>Evening rate, from 4 PM (fixed for every day)<input id="smart-rate-evening" type="number" value="700" disabled></label>
                 <label>Confirmed from<select id="smart-rate-status"><option value="VENUE_SCHEDULE">The venue's current schedule</option><option value="OPERATOR_CONFIRMED">I confirmed with the venue</option></select></label>
                 <div class="button-row"><button id="smart-rate-confirm" class="secondary compact" type="button">Confirm rates for the next release</button><button id="smart-rate-cancel" class="secondary compact" type="button">Cancel</button></div>
-                <p class="small">Immediate attempts use these confirmed rates. Backups and reopened slots always use the prices in the fresh released schedule.</p>
+                <p class="small">Every hour from 4 PM onward automatically uses the venue's fixed ₱700 rate and needs no review. Confirm a daytime rate only when a plan includes an hour before 4 PM.</p>
               </div>
             </section>
             <section class="smart-card smart-summary" aria-live="polite">
