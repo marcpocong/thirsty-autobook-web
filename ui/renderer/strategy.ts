@@ -4,6 +4,7 @@ import { compileSmartPlan, describeSmartPlan, resizeSmartFanOut, setSmartChildOf
 import { DEFAULT_STRATEGY_GOAL, draftFromSuggestion, enumeratePrimeWindows, isConflict, knownScheduleFromCells, presetAllocation, suggestPlan, validateGoal, windowEvidence, WINDOW_EVIDENCE_LABEL,
   type KnownSchedule, type ScoredWindow, type StrategyGoal, type StrategyHistoricalEvidence, type StrategyPreset, type SuggestedPlan, type SuggestionIntelligenceMode, type Window } from '../../src/strategy-engine.js';
 import { describeChildTiming, fanOutTimingPlan } from '../../src/fanout-timing.js';
+import { applyLiveAnchor, calibrateLiveAnchor, liveTimingSamples, type AnchoredTimingPlan, type LiveAnchorSource } from '../../src/live-anchor-calibration.js';
 import { byId, el, empty, inputById, selectById } from './dom.js';
 
 /**
@@ -40,6 +41,8 @@ export function resetSuggestionRow(draft: SmartDraft, accepted: SmartDraft, line
 export interface StrategyV2Meta { version: 1; preset: StrategyPreset; goal: StrategyGoal;
   fanOut: { width: number; source: 'MACHINE_RECOMMENDED' | 'OPERATOR_OVERRIDE' | 'NO_PROFILE'; acceptedSource?: 'MACHINE_RECOMMENDED' | 'OPERATOR_OVERRIDE' | 'NO_PROFILE'; recommendedWidth: number | null; timing: 'TIGHT' | 'BALANCED' | 'WIDE' | 'CUSTOM';
     basedOnTiming?: 'TIGHT' | 'BALANCED' | 'WIDE'; profileCreatedAt: string | null };
+  timingCalibration?: { spacingSource: 'MACHINE_PROFILE' | 'FALLBACK'; anchorSource: LiveAnchorSource; groupShiftMs: number;
+    matchingReleases: number; matchingSamples: number; evidenceStrength: 'NONE' | 'LIMITED' | 'USABLE' | 'STRONG'; generatedAt?: string };
   acceptedPhase3?: NonNullable<ReturnType<typeof compileSmartPlan>['phase3']>;
   lineage?: EditableSuggestionLineage; intelligenceMode?: SuggestionIntelligenceMode;
   provenance?: { source: 'SMART_SUGGESTED' | 'EXISTING_SMART_PLAN' | 'OPERATOR_BUILT'; operatorModifications: number } }
@@ -82,7 +85,15 @@ function chosenWidth(state: Dashboard | undefined) {
 }
 function childOffsets(state: Dashboard | undefined) {
   const { width } = chosenWidth(state), timing = selectById('strategy-timing').value as 'TIGHT' | 'BALANCED' | 'WIDE';
-  return fanOutTimingPlan(timing, width, recommendation(state).profile);
+  const machine = recommendation(state).profile?.machine;
+  const machineKey = machine ? JSON.stringify({ cpuModel: machine.cpuModel, logicalCores: machine.logicalCores, totalMemGb: machine.totalMemGb,
+    platform: machine.platform, osRelease: machine.osRelease }) : null;
+  const calibration = calibrateLiveAnchor(liveTimingSamples(state?.telemetry ?? []), { dispatchMode: 'node', fanOutWidth: width, machineKey,
+    runtimeKey: machine?.chromeVersion ?? null });
+  const manual = selectById('strategy-anchor-mode').value === 'MANUAL';
+  const early = Number(inputById('strategy-anchor-shift').value), shift = manual && Number.isSafeInteger(early) && early >= 0 ? -early : undefined;
+  try { return applyLiveAnchor(fanOutTimingPlan(timing, width, recommendation(state).profile), calibration, shift); }
+  catch { return applyLiveAnchor(fanOutTimingPlan(timing, width, recommendation(state).profile), calibration); }
 }
 function schedule(state: Dashboard | undefined): KnownSchedule | null {
   const audit = state?.blockAudit, date = state?.booking?.targetDate;
@@ -110,6 +121,8 @@ export function initStrategy(value: StrategyHost): void {
     radio.addEventListener('change', () => { if (radio.checked) { preset = radio.value as StrategyPreset; invalidate(); } });
   byId('strategy-fanout').addEventListener('change', invalidate);
   byId('strategy-timing').addEventListener('change', invalidate);
+  byId('strategy-anchor-mode').addEventListener('change', () => { byId('strategy-anchor-shift-label').hidden = selectById('strategy-anchor-mode').value !== 'MANUAL'; invalidate(); });
+  byId('strategy-anchor-shift').addEventListener('change', invalidate);
   byId('strategy-check-schedule').addEventListener('click', () => {
     const date = host.state()?.booking?.targetDate; if (!date) return;
     byId('strategy-schedule-status').textContent = `Reading public bookings for ${date} (read only)…`;
@@ -124,7 +137,10 @@ export function initStrategy(value: StrategyHost): void {
     const draft = draftFromSuggestion(suggestion, host.draft(), offsets);
     host.useSuggestion(draft, { version: 1, preset, goal: { ...goal }, lineage: suggestionLineage(draft), intelligenceMode,
       fanOut: { width: width.width, source: width.source, acceptedSource: width.source, recommendedWidth: machine.profile ? machine.width : null, timing: timing.preset,
-        basedOnTiming: selectById('strategy-timing').value as 'TIGHT' | 'BALANCED' | 'WIDE', profileCreatedAt: machine.createdAt }, provenance: { source: 'SMART_SUGGESTED', operatorModifications: 0 } });
+        basedOnTiming: selectById('strategy-timing').value as 'TIGHT' | 'BALANCED' | 'WIDE', profileCreatedAt: machine.createdAt },
+      timingCalibration: { spacingSource: machine.profile ? 'MACHINE_PROFILE' : 'FALLBACK', anchorSource: timing.anchorSource, groupShiftMs: timing.groupShiftMs,
+        matchingReleases: timing.matchingReleases, matchingSamples: timing.matchingSamples, evidenceStrength: timing.calibration.evidenceStrength, generatedAt: timing.calibration.generatedAt },
+      provenance: { source: 'SMART_SUGGESTED', operatorModifications: 0 } });
     byId('strategy-review-status').textContent = 'Suggested plan copied into the plan below. Review it, then Save plan.';
     render();
   });
@@ -225,8 +241,16 @@ function renderPreset(state: Dashboard | undefined) {
     el('li', '', 'A local dispatch measurement, not a prediction that more attempts win a booking.'));
   note.replaceChildren(...parts, reasons);
   const timing = childOffsets(state);
+  const anchor = timing as AnchoredTimingPlan, calibration = anchor.calibration;
+  const latest = calibration.latestSampleAt ? ` · latest ${calibration.latestSampleAt.slice(0, 10)}${calibration.stale ? ' · STALE' : ''}` : '';
+  const shift = anchor.groupShiftMs < 0 ? `${-anchor.groupShiftMs} ms early` : anchor.groupShiftMs > 0 ? `${anchor.groupShiftMs} ms late` : 'no additional shift';
+  const context = calibration.sampleCount ? `${calibration.sampleCount} samples · ${calibration.releaseCount} matching real release${calibration.releaseCount === 1 ? '' : 's'} · ${calibration.evidenceStrength}${latest}`
+    : `No usable matching width-${timing.width} live calibration`;
+  const otherWidthOne = calibrateLiveAnchor(liveTimingSamples(state?.telemetry ?? []), { dispatchMode: 'node', fanOutWidth: 1 });
+  byId('strategy-anchor-note').replaceChildren(el('strong', '', 'Live anchor: '), document.createTextNode(`${shift} · ${anchor.anchorSource.replaceAll('_', ' ').toLowerCase()}`),
+    el('p', 'small', context), ...(timing.width > 1 && !calibration.sampleCount && otherWidthOne.sampleCount ? [el('p', 'small', `${otherWidthOne.sampleCount} single-attempt timing samples are available, but they are not width-${timing.width} matching evidence.`)] : []));
   byId('strategy-timing-children').replaceChildren(...(timing.width > 1 ? timing.children.map(child => el('li', '', `Child ${child.fanOutIndex}: ${describeChildTiming(child)}`)) : []),
-    ...timing.warnings.map(warning => el('li', 'warn-text', warning)), ...(timing.width > 1 ? [el('li', 'small', timing.basis)] : []));
+    ...timing.warnings.map(warning => el('li', 'warn-text', warning)), el('li', 'small', `Fan-out spacing ${timing.spacingMs} ms · ${timing.basis}`));
 }
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
@@ -268,7 +292,9 @@ function inputTiming(slot: SmartSlot, child: number, offset: number) {
 }
 function resizeDefaults(state: Dashboard | undefined, width: number) {
   const selected = selectById('strategy-timing').value as 'TIGHT' | 'BALANCED' | 'WIDE';
-  return fanOutTimingPlan(selected, width, recommendation(state).profile).children.map(child => child.configuredOffsetMs);
+  const current = selectById('strategy-fanout').value; selectById('strategy-fanout').value = String(width);
+  const offsets = childOffsets(state).children.map(child => child.configuredOffsetMs); selectById('strategy-fanout').value = current;
+  return offsets;
 }
 function editableRow(kind: 'immediate' | 'backups', slot: SmartSlot, index: number, state: Dashboard | undefined,
   compiled: ReturnType<typeof compileSmartPlan>, accepted: SmartDraft | null) {
@@ -353,7 +379,10 @@ export function renderStrategy(state: Dashboard | undefined): void {
     if (saved) { goal = { ...saved.goal }; preset = saved.preset; selectById('strategy-fanout').value = saved.fanOut.source === 'OPERATOR_OVERRIDE' ? String(saved.fanOut.width) : 'auto';
       intelligenceMode = saved.intelligenceMode ?? 'AUTO'; selectById('strategy-intelligence').value = intelligenceMode;
       if (saved.fanOut.timing !== 'CUSTOM') selectById('strategy-timing').value = saved.fanOut.timing;
-      else if (saved.fanOut.basedOnTiming) selectById('strategy-timing').value = saved.fanOut.basedOnTiming; }
+      else if (saved.fanOut.basedOnTiming) selectById('strategy-timing').value = saved.fanOut.basedOnTiming;
+      selectById('strategy-anchor-mode').value = saved.timingCalibration?.anchorSource === 'OPERATOR_OVERRIDE' ? 'MANUAL' : 'AUTO';
+      inputById('strategy-anchor-shift').value = String(Math.max(0, -(saved.timingCalibration?.groupShiftMs ?? 0)));
+      byId('strategy-anchor-shift-label').hidden = selectById('strategy-anchor-mode').value !== 'MANUAL'; }
     else if (state?.booking?.setup.PREFERRED_COURTS?.length) goal = { ...goal, courts: [...state.booking.setup.PREFERRED_COURTS] };
     writeGoal(goal);
     for (const radio of document.querySelectorAll<HTMLInputElement>('input[name="strategy-preset"]')) radio.checked = radio.value === preset;

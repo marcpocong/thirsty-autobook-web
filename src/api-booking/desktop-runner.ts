@@ -49,6 +49,7 @@ import { preflightProoflessWire, prooflessCourtHourStatuses, prooflessReleasePla
 import { WirePayloadError } from './wire-payload-check.js';
 import { adaptivePrewarmLeadMs, describeTierStatus, type TierStatus } from './prewarm-scheduler.js';
 import { securityPrepHistory } from '../security-prep-history.js';
+import { currentMachineIdentity } from '../fanout-capacity.js';
 import { predictionError, predictReopenings, RESCUE_CONTEXT_REUSE_MS, RESCUE_PREWARM_MAX_PER_RELEASE, rescuePrewarmDue, type ReopenPrediction } from './reopen-prediction.js';
 import { readPublicBookingRecords } from './public-bookings.js';
 import {API_SECURITY_PREWARM_LEAD_MS,safeApiFailureCode} from './run-observability.js';
@@ -163,7 +164,10 @@ const persistCriticalPath=async()=>{
   }
   try{
     const directory=resolve('.local/release-forensics',progressLog.runId);await mkdir(directory,{recursive:true,mode:0o700});
-    await writeFile(join(directory,'critical-path.ndjson'),recorder.toNdjson({runId:progressLog.runId}),{mode:0o600,flag:'wx'});
+    const machine=currentMachineIdentity(),machineKey=JSON.stringify({cpuModel:machine.cpuModel,logicalCores:machine.logicalCores,totalMemGb:machine.totalMemGb,platform:machine.platform,osRelease:machine.osRelease});
+    const browserVersion=[...criticalPathPages.values()].find(page=>!page.isClosed())?.context().browser()?.version(),runtimeKey=browserVersion?(browserVersion.startsWith('Chrome/')?browserVersion:`Chrome/${browserVersion}`):null;
+    await writeFile(join(directory,'critical-path.ndjson'),recorder.toNdjson({runId:progressLog.runId,targetDate:command.date,mode:command.mode,generatedAt:new Date().toISOString(),machineKey,
+      runtimeKey}),{mode:0o600,flag:'wx'});
     const rows=recorder.rows(),worst=(pick:(row:CriticalPathRow)=>number|null)=>{const values=rows.map(pick).filter((value):value is number=>value!==null);return values.length?Math.max(...values):-1;};
     stage('CRITICAL_PATH_SAVED',{workerCount:rows.length,maxPrePostMs:worst(row=>row.prePostMs),maxFetchInvokedMs:worst(row=>row.fetchInvokedMs?.ms??null),
       maxBrowserRequestStartMs:worst(row=>row.browserRequestStartMs),maxRequestObservedMs:worst(row=>row.requestObservedMs)});

@@ -1,5 +1,6 @@
 import type { Dashboard } from '../types.js';
 import { byId, el, empty, table } from './dom.js';
+import { calibrateLiveAnchor, liveTimingSamples } from '../../src/live-anchor-calibration.js';
 
 /** HISTORY & INSIGHTS analysis panels. Evidence only; none of this predicts or decides a booking. */
 const ms = (value: number | null | undefined) => value === null || value === undefined ? '—' : `${value < 0 ? '−' : ''}${Math.abs(value).toFixed(1)} ms`;
@@ -53,6 +54,26 @@ export function renderOffsetCalibration(state: Dashboard): void {
   host.replaceChildren(...parts);
 }
 
+export function renderLiveAnchorCalibration(state: Dashboard): void {
+  const host = byId('live-anchor-calibration'), samples = liveTimingSamples(state.telemetry ?? []);
+  const machine = state.fanOut?.latest?.profile.machine;
+  const machineKey = machine ? JSON.stringify({ cpuModel: machine.cpuModel, logicalCores: machine.logicalCores, totalMemGb: machine.totalMemGb,
+    platform: machine.platform, osRelease: machine.osRelease }) : null;
+  const rows = [1, 2, 3, 4].map(width => calibrateLiveAnchor(samples, { dispatchMode: 'node', fanOutWidth: width, machineKey, runtimeKey: machine?.chromeVersion ?? null }));
+  if (!rows.some(row => row.sampleCount)) { host.replaceChildren(empty('No valid real-release samples with configured offset, trusted-clock Chrome start, and confirmed dispatch.')); return; }
+  const parts: HTMLElement[] = [table(['Topology', 'Samples', 'Real releases', 'Median lag', 'p95', 'Range', 'Evidence', 'Freshness'], rows.map(row => [
+    `Node · width ${row.fanOutWidth}`, String(row.sampleCount), String(row.releaseCount), ms(row.medianLagMs), ms(row.p95LagMs),
+    row.minLagMs === null ? '—' : `${ms(row.minLagMs)}…${ms(row.maxLagMs)}`, row.evidenceStrength, row.latestSampleAt ? `${row.latestSampleAt.slice(0, 10)}${row.stale ? ' · STALE' : ''}` : '—']))];
+  const byRun = new Map<string, typeof samples>(); for (const sample of samples.filter(value => value.origin === 'REAL_RELEASE')) {
+    const list = byRun.get(sample.runId) ?? []; list.push(sample); byRun.set(sample.runId, list);
+  }
+  if (byRun.size) { const details = el('details', 'tool-details'); details.append(el('summary', '', `Run-by-run (${byRun.size})`), table(['Release', 'Width', 'Samples', 'Median lag'],
+    [...byRun.entries()].map(([runId, values]) => { const width = values[0]?.fanOutCount ?? 1, summary = calibrateLiveAnchor(values, { dispatchMode: values[0]?.dispatchMode ?? 'node', fanOutWidth: width });
+      return [values[0]?.recordedAt.slice(0, 10) ?? runId.slice(0, 8), String(width), String(values.length), ms(summary.medianLagMs)]; }))); parts.push(details); }
+  parts.push(el('p', 'small', 'Only REAL_RELEASE rows calibrate the anchor. Synthetic/offline data, HTTP response duration/order, outcomes, and undocumented provider timestamp candidates are excluded.'));
+  host.replaceChildren(...parts);
+}
+
 export function renderReopenAccuracy(state: Dashboard): void {
   const host = byId('reopen-accuracy');
   const watches = (state.slotWatchHistory ?? []).filter(watch => watch.quality?.expiryPredictions);
@@ -71,5 +92,6 @@ export function renderReopenAccuracy(state: Dashboard): void {
 export function renderInsights(state: Dashboard): void {
   renderFanOutBenchmark(state);
   renderOffsetCalibration(state);
+  renderLiveAnchorCalibration(state);
   renderReopenAccuracy(state);
 }

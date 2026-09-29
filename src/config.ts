@@ -51,6 +51,9 @@ export const StrategyV2Schema=z.object({version:z.literal(1),preset:z.enum(['BAL
     acceptedSource:z.enum(['MACHINE_RECOMMENDED','OPERATOR_OVERRIDE','NO_PROFILE']).optional(),
     recommendedWidth:z.number().int().min(1).max(PRECISION_MAX_FAN_OUT).nullable(),timing:z.enum(['TIGHT','BALANCED','WIDE','CUSTOM']),
     basedOnTiming:z.enum(['TIGHT','BALANCED','WIDE']).optional(),profileCreatedAt:z.string().max(40).nullable()}).strict(),
+  timingCalibration:z.object({spacingSource:z.enum(['MACHINE_PROFILE','FALLBACK']),anchorSource:z.enum(['LIVE_CALIBRATION','RELEASE_CENTERED_FALLBACK','OPERATOR_OVERRIDE']),
+    groupShiftMs:z.number().int().min(-2000).max(0),matchingReleases:z.number().int().min(0),matchingSamples:z.number().int().min(0),
+    evidenceStrength:z.enum(['NONE','LIMITED','USABLE','STRONG']),generatedAt:z.iso.datetime().optional()}).strict().optional(),
   // Reset baseline only. It never authorizes execution; the sibling PRECISION_PHASE3 remains the sole current authority.
   acceptedPhase3:PrecisionPhase3Schema.optional(),
   lineage:z.object({immediate:z.array(z.string().regex(/^I\d+$/).nullable()).max(7),backups:z.array(z.string().regex(/^B\d+$/).nullable()).max(21)}).strict().optional(),

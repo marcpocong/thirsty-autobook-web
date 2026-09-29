@@ -1,4 +1,4 @@
-# Strategy Engine V2.1
+# Strategy Engine V2.2
 
 Strategy Engine V2 treats a release plan as one strategy: immediate targets, their fan-out children, Wave 2 backups and Reopen Rescue. Before V2 these were three separate booking modes.
 
@@ -31,7 +31,7 @@ Fixed Precision remains available as **legacy** (Strategy → Advanced overrides
    | Rescue focused | about 1/3 | ≤ 2 | the rest | on, larger budget |
    | Custom | fully hand-built plan | | | |
 
-   Fan-out defaults to this machine's measured recommendation (see [FANOUT_CAPACITY_BENCHMARK.md](FANOUT_CAPACITY_BENCHMARK.md)). Choosing a width yourself is labelled **Operator override** and saved as `OPERATOR_OVERRIDE`. Child timing (Tight / Balanced / Wide) derives its spacing from the same profile. See [Timing presets](#timing-presets).
+   Fan-out defaults to this machine's measured recommendation (see [FANOUT_CAPACITY_BENCHMARK.md](FANOUT_CAPACITY_BENCHMARK.md)). Choosing a width yourself is labelled **Operator override** and saved as `OPERATOR_OVERRIDE`. Child timing (Tight / Balanced / Wide) derives its spacing from the same profile. Live anchor Auto or a manual whole-group shift is a separate control. See [Timing presets and live anchor](#timing-presets-and-live-anchor).
 4. **Suggested plan**: a suggestion, not a command. `Auto` uses the same-weekday historical DTO only when at least three GOOD/FAIR real-release or clearly labelled pre-Phase-3 releases are well observed. `Preference only` runs the original V2 ordering. Both modes avoid known public conflicts and leave out unknown evidence (fail closed). Immediate targets and the backup pool are selected greedily, recomputing shared court-hour, clock-hour and observed co-unavailability risk after every pick. **Force include** remains the only way to retain a current conflict and is marked `OPERATOR_OVERRIDE_PUBLIC_CONFLICT`.
 5. **Editable Smart plan**: accepting the preview copies it into an editable draft without changing its preset to Custom. Each accepted row receives a deterministic origin (`I0…` or `B0…`) stored in `STRATEGY_V2.lineage`. The origin moves with the row, so reorder or removal can never make Reset target restore a different accepted row. New manual rows have `null` origin, display **Operator added**, and have no reset action. Old Smart plans without `acceptedPhase3` display **Existing Smart plan**; the app never invents Smart-generated provenance.
 6. **Review & save**: the current draft is compiled, and the review is generated from that exact about-to-be-saved `PRECISION_PHASE3` object. Every immediate child and configured timing is listed before Save.
@@ -72,7 +72,7 @@ Fan-out children prepare security by tier: A0…G0 first, then A1…G1, and so o
 
 No preparation starts in the last 3 s. A lower-tier child not ready at its trigger is **omitted**: provably unsent, and never fired late. The lead grows with the number of tiers and this installation's measured p95 preparation time (`security-prep-history.ts`). It is capped at 75 s, well inside the 120 s prepared-context limit. Without fan-out the old behavior is unchanged: everything prepares 15 s before release.
 
-## Timing presets
+## Timing presets and live anchor
 
 Timing presets are **local dispatch profiles**, not claims about Onda. Spacing comes from the machine's loaded trigger→Chrome jitter, child-index step and spread, and is never smaller than the machine can keep apart. The UI keeps three times distinct:
 
@@ -81,6 +81,24 @@ Timing presets are **local dispatch profiles**, not claims about Onda. Spacing c
 - **observed Chrome start**: from critical-path telemetry.
 
 None of these is a network arrival time.
+
+V2.2 deliberately separates two timing questions:
+
+```text
+machine capacity profile -> child spacing
+real-release critical path -> whole-group anchor
+spacing + groupShiftMs     -> literal final child offsets
+```
+
+`groupShiftMs` is the signed release-relative shift applied equally to every configured child offset produced by the spacing generator. For example, base `[-10, 0]` plus `groupShiftMs = -7` becomes `[-17, -7]`; the 10 ms spacing is unchanged. The Review screen shows `-17` and `-7` as the actual compiled truth, so the operator never has to add the two components mentally.
+
+The live model measures only `triggerToChromeLagMs = observedChromeStartMs - configuredOffsetMs`. A sample is eligible only when it is from a real live release, the release/trusted-clock mapping and configured offset are valid, and dispatch actually occurred. It is grouped by dispatch mode and fan-out width; machine and Chrome/runtime identity are also matched when both the sample and current installation expose them. Synthetic fixtures and offline benchmarks never calibrate Auto. Provider outcome, response duration/order and the timestamp-like part of `x-vercel-id` are retained only for forensics. The latter remains **UNDOCUMENTED** and is not a confirmed edge-receipt timestamp.
+
+Evidence levels are operational gates, not statistical confidence: `NONE` = 0 matching releases, `LIMITED` = 1, `USABLE` = 2–3, and `STRONG` = 4+. Width 2–4 Auto requires USABLE/STRONG matching evidence; one width-1 release may directly calibrate a width-1 attempt. Evidence older than 30 days is labelled stale and Auto falls back to no group shift. Missing, inconsistent, impossible or `NOT_DISPATCHED` timing never becomes zero.
+
+Auto uses the robust median local lag and centers the predicted local Chrome-start group on the official release boundary, rounded to whole milliseconds and clamped to the existing `-2000..0` configured-offset range. It does not learn a provider "winning time." If the base spacing already straddles release, zero additional shift is valid. Manual lets the operator specify the group shift without changing the Strategy preset to Custom; provenance is saved as `OPERATOR_OVERRIDE`. The anchor is applied only when generating a suggestion. Once accepted, child-level edits remain authoritative and are never silently rewritten; Suggest/Regenerate may compute a new preview, while Reset restores the accepted suggestion.
+
+September 28 is the regression case: configured offsets `[-50, -25, -10, -5, 0, 0, 0]` mapped to Chrome starts `[-45.59, -20.92, -5.98, -0.78, 4.23, 4.29, 4.83]`, a median local lag of about `+4.23 ms` and range `+4.02..+4.83 ms`. That supports roughly `-4 ms` for a width-1 release-centered attempt. It does **not** justify `-25 ms` as a default: Worker B's HTTP 409 happened to return first, but response order did not follow send order. For a width-2 base `[-10, 0]`, the same lag already approximately straddles release and implies no material extra shift; in any event, width-1 history is not matching width-2 evidence, so current width-2 Auto uses the deterministic release-centered fallback until enough width-2 releases exist.
 
 **Signed offsets.** Stored offsets are already signed: negative means before the release instant, 0 means at it. Positive (after-release) triggers would fit the trusted-clock and 1 s dispatch-window model, but they are not enabled. There is no measured benefit yet and no UI to set them, and widening a validated range without evidence was out of scope. Existing configurations need no migration.
 
@@ -96,7 +114,7 @@ Every critical-path row (`.local/release-forensics/<run>/critical-path.ndjson`) 
 - timing: scheduler wake, worker invocation, transport entry, renderer entry, fetch(), Chrome request start, Playwright request event, response;
 - outcome: final state and prewarm-ready time.
 
-`release-telemetry.ts` summarizes recent runs:
+`release-telemetry.ts` summarizes recent runs and retains up to 64 for live calibration:
 
 - configured → Chrome error, per child index and per worker;
 - first-to-last spread;
@@ -104,6 +122,8 @@ Every critical-path row (`.local/release-forensics/<run>/critical-path.ndjson`) 
 - prewarm headroom;
 - Wave 2 / Rescue selection → POST;
 - predicted → observed reopen error.
+
+History & Insights shows a separate Live Timing Calibration table by width, with samples, distinct releases, median/p95/range, evidence level, freshness and a secondary run-by-run table. The warning that HTTP response order is not arrival order is part of that panel.
 
 No tokens, cookies or customer data are stored.
 
@@ -114,6 +134,8 @@ No tokens, cookies or customer data are stored.
 The replay answers which candidates would have been authorized, which immediate targets and fan-out would have been used, which Wave 2 and Rescue opportunities were actionable, what was visible only in stale evidence, and whether UNKNOWN blocked later sends.
 
 It is labelled counterfactual and never claims a booking would have succeeded.
+
+`npm run replay:live-anchor -- --root "<installation root>"` replays Smart Timing V2.2 against archived critical-path rows. For each historical topology it compares actual configured offsets/Chrome starts with the spacing, group shift and predicted local Chrome-start range that V2.2 would have produced using only earlier matching real releases. It reports measurable local timing only and never claims the counterfactual would have won.
 
 ## Safety invariants (unchanged)
 

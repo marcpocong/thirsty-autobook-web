@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { describeChildren, reduceLiveRun } from '../ui/live-run.js';
-import { summarizeRun } from '../src/release-telemetry.js';
+import { liveTimingSamples, summarizeRun } from '../src/release-telemetry.js';
 import type { UiEvent } from '../src/ui-events.js';
 import type { LiveRunView } from '../ui/types.js';
 
@@ -70,5 +70,28 @@ describe('release dispatch telemetry summary', () => {
     expect(summary.summary.adaptiveSelectionToPost.p50).toBe(400);
     expect(summary.summary.reopenPredictionErrorMs.p50).toBe(1500);
     expect(JSON.stringify(summary)).not.toMatch(/token|cookie|customer/i);
+  });
+  it('recovers legacy single-attempt offsets from live progress and does not turn undispatched missing data into zero', () => {
+    const row = (workerId: string, chrome: number) => ({ schema: 'critical-path/v1', workerId, dispatchMode: 'node', browserRequestStartMs: chrome,
+      calibration: { consistent: true }, meta: {} });
+    const progress = [
+      { mode: 'live', targetDate: '2026-09-30', at: '2026-09-27T23:30:00Z' },
+      { stage: 'RELEASE_OFFSET_SCHEDULED', workerId: 'A', releaseOffsetMs: -10 },
+      { stage: 'PHASE3_DISPATCH', workerId: 'A' }, { stage: 'PHASE3_DISPATCH', workerId: 'B' },
+    ];
+    const run = summarizeRun('real-run', [{ schema: 'critical-path/v1', type: 'header', releaseMs: 1_790_553_600_000, wallToTrustedMs: 39 }, row('A', -6), row('B', 4.3), row('C', 9)], progress);
+    expect(run.children.map(value => [value.workerId, value.configuredOffsetMs, value.errorMs])).toEqual([['A', -10, 4], ['B', 0, 4.3], ['C', null, null]]);
+    expect(liveTimingSamples([run]).map(value => [value.workerId, value.triggerToChromeLagMs])).toEqual([['A', 4], ['B', 4.3]]);
+  });
+  it('joins legacy worker:index fan-out rows to each child offset without collapsing the worker schedule', () => {
+    const progress = [{ mode: 'live', at: '2026-09-29T00:00:00Z' }, ...[-35, -30, -25, -10].map(releaseOffsetMs => ({ stage: 'RELEASE_OFFSET_SCHEDULED', workerId: 'A', releaseOffsetMs }))];
+    const rows = [{ schema: 'critical-path/v1', type: 'header', releaseMs: 1_790_640_000_000, wallToTrustedMs: -746 },
+      ...[-22.5, -18.6, -9.3, -3.6].map((browserRequestStartMs, index) => ({ schema: 'critical-path/v1', workerId: `A:${index}`, dispatchMode: 'node',
+        prePostMs: browserRequestStartMs - 5, browserRequestStartMs, responseObservedMs: 3_000, calibration: null }))];
+    const run = summarizeRun('fanout-live', rows, progress);
+    expect(run.children.map(value => [value.label, value.fanOutCount, value.configuredOffsetMs])).toEqual([
+      ['A0', 4, -35], ['A1', 4, -30], ['A2', 4, -25], ['A3', 4, -10],
+    ]);
+    expect(liveTimingSamples([run])).toHaveLength(4);
   });
 });

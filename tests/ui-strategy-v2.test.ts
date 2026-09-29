@@ -197,6 +197,43 @@ describe('Strategy view (Goal → Known schedule → Preset → Suggested plan �
     await page.close();
   });
 
+  it('applies and persists a manual live group shift without switching the Strategy preset to Custom', async () => {
+    const page = await openRenderer(browser, { booking: smartBooking(), blockAudit: blockAudit([]), fanOut: fanOutDigest() }, 'strategy');
+    await page.locator('#strategy-anchor-mode').selectOption('MANUAL');
+    await page.locator('#strategy-anchor-shift').fill('5');
+    await page.locator('#strategy-anchor-shift').press('Tab');
+    await page.locator('#strategy-suggest').click();
+    await page.locator('#strategy-apply').click();
+    expect(await page.locator('#strategy-immediate-offset-0-0').inputValue()).toBe('10');
+    expect(await page.locator('#strategy-immediate-offset-0-1').inputValue()).toBe('5');
+    expect(await page.locator('#strategy-review-body').innerText()).toContain('A0 10 ms early, A1 5 ms early');
+    await page.locator('#strategy-save').click(); await page.waitForFunction(() => !!(window as any).fixtureSaved);
+    const setup = await saved(page);
+    expect(setup.STRATEGY_V2.timingCalibration).toMatchObject({ anchorSource: 'OPERATOR_OVERRIDE', groupShiftMs: -5, spacingSource: 'MACHINE_PROFILE' });
+    expect(setup.PRECISION_PHASE3.wave1[0].fanOutOffsetsMs).toEqual([-10, -5]);
+    expect(setup.STRATEGY_V2.preset).toBe('BALANCED');
+    await page.close();
+  });
+
+  it('shows width-1 live history as context but not as width-2 matching calibration', async () => {
+    const children = [-50, -25, -10, -5, 0, 0, 0].map((configuredOffsetMs, index) => ({ attemptId: `a${index}`, label: String.fromCharCode(65 + index), workerId: String.fromCharCode(65 + index),
+      parentGoalId: null, fanOutIndex: 0, fanOutCount: 1, configuredOffsetMs, workerInvokedMs: configuredOffsetMs, fetchInvokedMs: null,
+      chromeStartMs: configuredOffsetMs + 4.2, requestEventMs: configuredOffsetMs + 4.4, responseMs: 8_000 + index, errorMs: 4.2,
+      prewarmReadyMs: -9_000, finalState: 'REJECTED', dispatchMode: 'node', trustedClockValid: true, dispatched: true }));
+    const lagStats = { n: 7, p50: 4.2, p95: 4.2, p99: 4.2, max: 4.2, min: 4.2, mean: 4.2 }, none = { n: 0, p50: null, p95: null, p99: null, max: null, min: null, mean: null };
+    const telemetry = [{ runId: 'sep-28', date: '2026-09-30', generatedAt: '2026-09-28T00:00:00Z', releaseMs: Date.parse('2026-09-28T00:00:00Z'),
+      origin: 'REAL_RELEASE', mode: 'live', machineKey: null, runtimeKey: null, children, summary: { configuredToChrome: lagStats,
+        perChildIndex: [{ fanOutIndex: 0, error: lagStats }], perWorker: {}, spreadMs: 50, compression: 1, prewarmHeadroomMs: none,
+        adaptiveSelectionToPost: none, reopenPredictionErrorMs: none } }];
+    const page = await openRenderer(browser, { booking: smartBooking(), fanOut: fanOutDigest(), telemetry }, 'strategy');
+    expect(await page.locator('#strategy-anchor-note').innerText()).toContain('No usable matching width-2 live calibration');
+    expect(await page.locator('#strategy-anchor-note').innerText()).toContain('7 single-attempt timing samples are available');
+    await page.locator('#strategy-fanout').selectOption('1');
+    expect(await page.locator('#strategy-anchor-note').innerText()).toContain('4 ms early');
+    expect(await page.locator('#strategy-anchor-note').innerText()).toContain('1 matching real release');
+    await page.close();
+  });
+
   it('resets by stable origin after reorder, removal, backup reorder, save and reload', async () => {
     const digest=fanOutDigest(),audit=blockAudit([]),page=await openRenderer(browser,{booking:smartBooking(),blockAudit:audit,fanOut:digest},'strategy');
     await page.locator('#strategy-suggest').click();await page.locator('#strategy-apply').click();
