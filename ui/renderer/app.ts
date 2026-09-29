@@ -5,6 +5,12 @@ import type {ReleasePerformance} from '../../src/release-performance.js';
 import {formatReleaseOffset,isReleaseOffsetMs} from '../../src/release-offset.js';
 import {applyDurationOffsetPreset,compileSmartPlan,confirmSmartRates,describeSmartPlan,emptySmartDraft,smartDraftFromPhase3,smartPeso,smartRange,smartSlotText,SMART_MAX_SLOTS,SMART_WORKERS,
   type SmartDraft,type SmartSlot,type SmartWorker,type SmartPhase3,type SmartReleaseOffset} from '../../src/precision-simple.js';
+import {initStrategy,renderStrategy,type StrategyV2Meta} from './strategy.js';
+import {renderLive} from './live.js';
+import {renderInsights} from './insights.js';
+import {renderNextRelease} from './next-release.js';
+import {initSlotWatchView,renderSlotWatch,selectWatch,setSlotMatrixMode} from './slot-watch-view.js';
+import {dateLabel,evidenceLabel,evidenceSlot,friendly,hourlySlots,hours,readText,relative,slotStateInfo} from './format.js';
 declare global { interface Window { thirsty: Bridge } }
 const byId = (id: string) => document.getElementById(id)!;
 let latest: Dashboard | undefined;
@@ -18,7 +24,8 @@ let dirty=false, loadedPlan='';
 let courtOrder=[7,6,5,4,3,2,1], fallbackTimes:string[]=[];
 const input=(id:string)=>byId(id) as HTMLInputElement;
 let workflow:'test'|'release'='release';
-type View = 'release'|'plan'|'tests'|'slots'|'runs'|'tools';
+/** The five operator concepts, plus the test booking tools opened from Tools. */
+type View = 'release'|'strategy'|'live'|'history'|'tools'|'tests';
 let currentView:View='release';
 const browserFocusMessages:Partial<Record<WorkerId,string>>={};
 const browserFocusPending:Partial<Record<WorkerId,boolean>>={};
@@ -98,13 +105,13 @@ const primary=byId('primary-actions');
 const releaseView=byId('view-release'),testsView=byId('view-tests');
 const testAction=testsView.querySelector('.test-action')!,testResults=byId('test-results');
 const releaseAction=releaseView.querySelector('.release-action')!;
-const VIEWS=['release','plan','tests','slots','runs','tools'] as const;
+const VIEWS=['release','strategy','live','history','tools','tests'] as const;
 // These views only observe; they stay reachable while a run is in progress.
-const OBSERVER_VIEWS:readonly View[]=['slots','runs','tools'];
+const OBSERVER_VIEWS:readonly View[]=['live','history','tools'];
 function showView(view:View){
   if(latest&&latest.operation!=='idle'&&latest.operation!=='scheduled'&&!OBSERVER_VIEWS.includes(view)&&!(view==='tests'&&workflow==='test'))return;
   currentView=view;
-  for(const id of VIEWS){byId(`view-${id}`).hidden=id!==view;document.querySelector(`[data-view="${id}"]`)!.setAttribute('aria-current',id===view?'page':'false');}
+  for(const id of VIEWS){byId(`view-${id}`).hidden=id!==view;for(const tab of document.querySelectorAll(`[data-view="${id}"]`))tab.setAttribute('aria-current',id===view||(id==='tools'&&view==='tests')?'page':'false');}
   const nextWorkflow=view==='tests'?'test':OBSERVER_VIEWS.includes(view)?workflow:'release';
   if(nextWorkflow!==workflow){storeDraft();workflow=nextWorkflow;if(workflow==='test'&&latest?.booking){const s=latest.booking.setup;applyDraft({releaseStrategy:'general',precisionCount:1,precisionTargets:[],method:s.BOOKING_METHOD,strategy:s.BOOKING_TYPE,date:testDraft?.date??input('test-date').value,courtCount:s.COURT_COUNT,start:s.START_TIME,duration:s.DURATION_HOURS,attempts:s.MAX_SELECTION_ATTEMPTS,courtOrder:[...s.PREFERRED_COURTS],fallbackTimes:[...s.FALLBACK_TIMES],exactA:'',exactB:''});testDirty=false;}if(workflow==='release'&&releaseDraft)applyDraft(releaseDraft);dirty=workflow==='test'?testDirty:releaseDirty;input('terms').checked=false;void window.thirsty.setWorkflow(workflow).then(()=>window.thirsty.getStatus()).then(render);}
   const terms=byId('terms').parentElement!;
@@ -116,9 +123,7 @@ function showView(view:View){
 for(const button of document.querySelectorAll<HTMLButtonElement>('[data-view]'))button.onclick=()=>showView(button.dataset.view as View);
 input('test-date').value=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Manila',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 
-const friendly=(h:string)=>`${Number(h.slice(0,2))%12||12}:00 ${Number(h.slice(0,2))<12?'AM':'PM'}`;
 const endFriendly=(start:string,duration:number)=>Number(start.slice(0,2))+duration===24?'12:00 MN':friendly(`${String(Number(start.slice(0,2))+duration).padStart(2,'0')}:00`);
-const hours=Array.from({length:16},(_,i)=>`${String(i+8).padStart(2,'0')}:00`);
 for(const id of ['start-time','fallback-time','practice-start','full-start','dual-start']) (byId(id) as HTMLSelectElement).replaceChildren(...hours.map(h=>new Option(friendly(h),h)));
 (byId('practice-court') as HTMLSelectElement).replaceChildren(...Array.from({length:7},(_,i)=>new Option(`Court ${i+1}`,String(i+1))));
 input('practice-date').value=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Manila',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
@@ -131,6 +136,8 @@ const PRECISION_WORKERS=['A','B','C','D','E','F','G'] as const;
 // Smart backups editor. The draft lives here; the saved PRECISION_PHASE3 is always compileSmartPlan's output,
 // and "What will happen" is generated from that same compiled object.
 let precisionMode:PrecisionMode='fixed',smartDraft:SmartDraft=emptySmartDraft(),smartRenderKey='',smartRatesOpen=false;
+/** Goal/preset/fan-out choices that produced the Smart draft (saved as STRATEGY_V2; metadata only, never an authorization). */
+let strategyMeta:StrategyV2Meta|undefined;
 const cloneSmart=(value:SmartDraft):SmartDraft=>JSON.parse(JSON.stringify(value)) as SmartDraft;
 const smartDraftFromSaved=(setup:BookingSetup,targetDate:string)=>{
   const draft=smartDraftFromPhase3(setup.PRECISION_PHASE3!,{targetDate,unavailable:unreadyWorkers()});
@@ -147,7 +154,7 @@ function unreadyWorkers():Set<string>{
 }
 const smartContext=()=>({targetDate:latest?.booking?.targetDate??'',unavailable:unreadyWorkers()});
 const smartCompiled=()=>compileSmartPlan(smartDraft,smartContext());
-function smartEdit(mutate:(draft:SmartDraft)=>void){mutate(smartDraft);renderSmart(true);changed();}
+function smartEdit(mutate:(draft:SmartDraft)=>void){mutate(smartDraft);if(strategyMeta&&strategyMeta.preset!=='CUSTOM')strategyMeta={...strategyMeta,preset:'CUSTOM'};renderSmart(true);changed();}
 function smartElement<K extends keyof HTMLElementTagNameMap>(tag:K,className:string,text?:string){const element=document.createElement(tag);if(className)element.className=className;if(text!==undefined)element.textContent=text;return element;}
 function smartSelect(id:string,label:string,choices:Array<[string,string]>,value:string,onChange:(value:string)=>void){
   const wrap=document.createElement('label'),select=document.createElement('select');select.id=id;wrap.append(label,select);
@@ -317,6 +324,10 @@ function renderReleaseLab(compiled=compileSmartPlan(smartDraft,{targetDate:lates
     smartElement('p','small',`Blanket · ${lab.blanket??'none detected'} · Movement clusters: 1h ${lab.distribution.oneHour}, 2h ${lab.distribution.twoHour}, 3h ${lab.distribution.threeHour}, 4+ ${lab.distribution.fourPlus}, ambiguous ${lab.distribution.ambiguous}`),
     smartElement('p','small',`Reopen Rescue · ${lab.actionableReopenings} actionable reopening${lab.actionableReopenings===1?'':'s'} · ${lab.rescueAttempts} attempted · Detailed report: ${lab.reportPath}`));
 }
+initStrategy({state:()=>latest,draft:()=>smartDraft,unready:unreadyWorkers,
+  useSuggestion:(draft,meta)=>{input('precision-strategy').value='precision';precisionMode='smart';smartDraft=cloneSmart(draft);strategyMeta=meta;smartRatesOpen=false;
+    syncStrategy();renderSmart(true);changed();},
+  save:()=>byId('save-booking').click()});
 byId('smart-add-immediate').onclick=()=>smartEdit(draft=>{draft.immediate.push(smartNewSlot());});
 byId('smart-add-backup').onclick=()=>smartEdit(draft=>{draft.backups.push(smartNewSlot());});
 byId('release-lab-preset').onclick=()=>{
@@ -370,12 +381,12 @@ function releaseOffsetFromEarlyInput(raw:string){const early=raw.trim()===''?Num
 function releaseOffsetApplies(){return workflow==='release'&&!precisionSelected()&&input('booking-method').value==='proofless';}
 function releaseOffsetValue(){return releaseOffsetApplies()?releaseOffsetFromEarlyInput(input('release-offset-ms').value):0;}
 function setReleaseOffset(value:number){input('release-offset-ms').value=String(isReleaseOffsetMs(value)?-value:0);}
-function strategyFields():Pick<BookingSetup,'RELEASE_STRATEGY'|'PRECISION_TARGETS'|'PRECISION_FAN_OUT'|'PRECISION_PHASE3'|'RELEASE_LAB'>{
+function strategyFields():Pick<BookingSetup,'RELEASE_STRATEGY'|'PRECISION_TARGETS'|'PRECISION_FAN_OUT'|'PRECISION_PHASE3'|'RELEASE_LAB'|'STRATEGY_V2'>{
   if(!precisionSelected())return {RELEASE_STRATEGY:'general',PRECISION_TARGETS:releaseDraft?.precisionTargets??[],PRECISION_FAN_OUT:false};
   if(precisionMode!=='smart')return {RELEASE_STRATEGY:'precision',PRECISION_TARGETS:precisionRows(),PRECISION_FAN_OUT:precisionFanOut()};
   const compiled=smartCompiled();
   return {RELEASE_STRATEGY:'precision',PRECISION_TARGETS:[],PRECISION_FAN_OUT:false,...(compiled.phase3?{PRECISION_PHASE3:compiled.phase3}:{}),
-    ...(smartDraft.releaseLab?{RELEASE_LAB:smartDraft.releaseLab}:{})};
+    ...(smartDraft.releaseLab?{RELEASE_LAB:smartDraft.releaseLab}:{}),...(compiled.phase3&&strategyMeta?{STRATEGY_V2:strategyMeta}:{})};
 }
 /** Precision is Proofless Direct, Standard only: lock those two fields while it is selected. */
 function syncStrategy(){
@@ -425,7 +436,6 @@ function editors(){
 }
 editors();
 testDraft=formDraft();
-const dateLabel = (date: string) => new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' }).format(new Date(`${date}T12:00:00Z`));
 function renderBlockAudit(target:HTMLElement,audit:Dashboard['blockAudit']|null,date:string){
   target.replaceChildren();
   if(!audit){
@@ -477,7 +487,6 @@ function renderBlockAudit(target:HTMLElement,audit:Dashboard['blockAudit']|null,
   table.append(tbody);scroll.append(table);matrixSection.append(matrixTitle,scroll);
   target.append(top,counts,warning,confirmed,legend,matrixSection);
 }
-function hourlySlots(start:string,end:string){const first=Number(start.slice(0,2)),last=Number(end.slice(0,2));return Array.from({length:Math.max(0,last-first)},(_,i)=>`${String(first+i).padStart(2,'0')}:00–${String(first+i+1).padStart(2,'0')}:00`);}
 const holdExpired=(hold:{holdExpiresAt?:string})=>!!hold.holdExpiresAt&&Date.parse(hold.holdExpiresAt)<=Date.now();
 function activeHandoffs(state:Dashboard){return (state.qrHandoffs??[]).filter(hold=>!holdExpired(hold));}
 type PlayerDetails={fullName:string;phone:string;email:string}|undefined;
@@ -583,142 +592,6 @@ function renderStatusBar(state:Dashboard){
   const label=!watch?'Idle':watch.status==='waiting'?`Waiting · ${dateLabel(watch.date).split(',')[0]}`:watch.status==='watching'?`Watching · ${watch.polls} reads`:watch.status==='finished'?'Finished':'Stopped';
   watchText.textContent=label;watchText.dataset.tone=!watch?'muted':watch.status==='watching'?'good':watch.status==='waiting'?'warn':'muted';
 }
-const slotStateInfo={OPEN:{label:'Open',symbol:'✓',css:'slot-open'},TAKEN:{label:'Unavailable',symbol:'×',css:'slot-taken'},UNRELEASED:{label:'Not published yet',symbol:'—',css:'slot-unreleased'},UNKNOWN:{label:'Unknown',symbol:'?',css:'slot-unknown'}} as const;
-const evidenceLabel={OPEN:'Open',UNAVAILABLE:'Unavailable',UNKNOWN:'Unknown'} as const;
-const evidenceSlot={OPEN:'OPEN',UNAVAILABLE:'TAKEN',UNKNOWN:'UNKNOWN'} as const;
-const relative=(ms:number)=>`${ms<0?'−':'+'}${(Math.abs(ms)/1000).toFixed(3)} s`;
-const manilaMs=(iso:string)=>new Date(iso).toLocaleTimeString('en-GB',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit',second:'2-digit',fractionalSecondDigits:3});
-type ReadRef={seq:number;requestOffsetMs:number;responseOffsetMs:number};
-/** A read is shown by its request start AND its response; the state it returned existed somewhere in between. */
-const readText=(read:ReadRef,prefix='#')=>`${prefix}${read.seq} req ${relative(read.requestOffsetMs)} → resp ${relative(read.responseOffsetMs)}`;
-let selectedWatchId:string|undefined,renderedSlotWatch='',slotMatrixMode:'current'|'first'='current';
-type SlotSummary=NonNullable<Dashboard['slotWatchHistory']>[number];
-type SlotView=NonNullable<Dashboard['slotWatch']>;
-function slotFact(label:string,value:string,extra=''){const fact=document.createElement('div');fact.className=`slot-fact ${extra}`;const name=document.createElement('span'),text=document.createElement('strong');name.textContent=label;text.textContent=value;fact.append(name,text);return fact;}
-function slotMatrix(cells:SlotView['cells'],ours:Set<string>,mode:'current'|'first',recentSince?:number){
-  const scroll=document.createElement('div');scroll.className='audit-matrix-scroll';scroll.tabIndex=0;
-  const table=document.createElement('table');table.className='audit-matrix';
-  const head=document.createElement('tr');head.append(Object.assign(document.createElement('th'),{textContent:'Court'}));
-  for(const hour of hours){const th=document.createElement('th');th.textContent=friendly(hour).replace(':00 ','');th.title=friendly(hour);head.append(th);}
-  const thead=document.createElement('thead');thead.append(head);const tbody=document.createElement('tbody');
-  for(const court of [1,2,3,4,5,6,7]){
-    const row=document.createElement('tr'),label=document.createElement('th');label.scope='row';label.textContent=`C${court}`;label.title=`Court ${court}`;row.append(label);
-    for(const hour of hours){
-      const cell=cells.find(value=>value.court===court&&value.hour===hour);
-      const state=mode==='first'?(cell?.first?evidenceSlot[cell.first]:'UNKNOWN'):cell?.state??'UNKNOWN',info=slotStateInfo[state],td=document.createElement('td');
-      const mine=ours.has(`${court}/${hour}`);
-      td.className=`slot-cell ${info.css}${mode==='current'&&cell?.record?' slot-record':''}${mine?' slot-ours':''}${mode==='current'&&recentSince!==undefined&&cell?.changedSinceReleaseMs!==undefined&&cell.changedSinceReleaseMs>=recentSince?' slot-recent':''}`;
-      td.textContent=info.symbol;
-      if(mode==='current'&&cell?.changedSinceReleaseMs!==undefined){const when=document.createElement('small');when.textContent=`${cell.changedSinceReleaseMs<0?'−':'+'}${Math.abs(cell.changedSinceReleaseMs/1000).toFixed(1)}s`;td.append(when);}
-      const first=cell?.first?` · first published: ${evidenceLabel[cell.first]}${typeof cell.firstPrice==='number'?` · PHP ${cell.firstPrice}`:''}`:' · not yet published';
-      td.title=`Court ${court} · ${friendly(hour)} · ${mode==='first'?'first published grid':'now'}: ${info.label}${mode==='current'&&cell?.record?' · public booking record':''}${mine?' · verified hold by this bot':''}${mode==='current'?first:''}${mode==='current'&&cell?.changedSinceReleaseMs!==undefined?` · last change seen in a read answered ${relative(cell.changedSinceReleaseMs)} after release`:''}`;
-      td.setAttribute('aria-label',td.title);row.append(td);
-    }
-    tbody.append(row);
-  }
-  table.append(thead,tbody);scroll.append(table);
-  const legend=document.createElement('div');legend.className='slot-legend';
-  for(const state of ['OPEN','TAKEN','UNRELEASED','UNKNOWN'] as const){const item=document.createElement('span'),mark=document.createElement('i');mark.className=`slot-cell ${slotStateInfo[state].css}`;item.append(mark,document.createTextNode(slotStateInfo[state].label));legend.append(item);}
-  const record=document.createElement('span'),recordMark=document.createElement('i');recordMark.className='slot-cell slot-unknown slot-record';record.append(recordMark,document.createTextNode('Public booking record'));
-  const mine=document.createElement('span'),mineMark=document.createElement('i');mineMark.className='slot-cell slot-taken slot-ours';mine.append(mineMark,document.createTextNode('Verified hold by this bot'));
-  legend.append(record,mine);
-  const wrap=document.createElement('div');wrap.append(scroll,legend);return wrap;
-}
-function slotTimeline(entries:SlotView['timeline']){
-  if(!entries.length)return [Object.assign(document.createElement('p'),{className:'empty',textContent:'No slot changes recorded yet.'})];
-  return entries.map(entry=>{
-    const row=document.createElement('div');
-    const kind=entry.kind==='published'?'published':entry.kind==='record'?'record':entry.to==='UNAVAILABLE'?'taken':entry.to==='OPEN'?'opened':'other';row.className=`slot-event ${kind}`;
-    const time=document.createElement('time');time.textContent=`req ${relative(entry.after.requestOffsetMs)}`;time.title='Request start of the first read that showed this';
-    const where=document.createElement('strong');where.textContent=entry.kind==='published'?'Schedule published':`Court ${entry.court} · ${friendly(entry.hour)}`;
-    const what=document.createElement('span');
-    what.textContent=entry.kind==='published'?`${entry.openCount??0} open · ${entry.unavailableCount??0} unavailable · ${entry.unknownCount??0} unknown in the first published grid`
-      :entry.kind==='record'?(entry.appeared?'Public booking record appeared':'Public booking record no longer listed'):`${evidenceLabel[entry.from??'UNKNOWN']} → ${evidenceLabel[entry.to??'UNKNOWN']}`;
-    const gap=document.createElement('span');gap.className='window';const prefix=entry.kind==='record'?'#b':'#';
-    gap.textContent=`${entry.before?`between ${readText(entry.before,prefix)}`:'first read'} and ${readText(entry.after,prefix)}${entry.overlapping?' · reads overlapped':''}`;
-    row.append(time,where,what,gap);return row;
-  });
-}
-function oursFor(state:Dashboard,date:string){
-  const ours=new Set<string>();
-  for(const hold of state.qrHandoffs??[])if(hold.date===date)for(const court of hold.courts)for(const slot of hourlySlots(hold.startTime,hold.endTime))ours.add(`${court}/${slot.slice(0,5)}`);
-  return ours;
-}
-function summaryCells(summary:SlotSummary,mode:'current'|'first'):SlotView['cells']{
-  const matrix=mode==='first'?summary.firstPublishedMatrix??'':summary.finalMatrix;
-  return matrix.split(',').filter(Boolean).flatMap(row=>{const [court,codes]=row.split(':');return [...(codes??'')].map((code,index)=>{
-    const state=(code==='O'?'OPEN':code==='X'?'TAKEN':code==='U'?'UNRELEASED':'UNKNOWN') as SlotView['cells'][number]['state'];
-    return {court:Number(court),hour:hours[index]!,state,record:false,...(mode==='first'?{first:state==='OPEN'?'OPEN' as const:state==='TAKEN'?'UNAVAILABLE' as const:'UNKNOWN' as const}:{})};});});
-}
-function renderSlotWatch(state:Dashboard){
-  const live=state.slotWatch??null,history=state.slotWatchHistory??[];
-  const selected=selectedWatchId?history.find(entry=>entry.id===selectedWatchId):undefined;
-  const signature=JSON.stringify({live,selected:selected?.id,history:history.map(entry=>entry.id),ours:state.qrHandoffs,slotMatrixMode});
-  const active=!!live&&(live.status==='waiting'||live.status==='watching');
-  input('watch-next-release').hidden=active;input('stop-slot-watch').hidden=!active;
-  if(signature===renderedSlotWatch)return;
-  renderedSlotWatch=signature;
-  const summary:SlotSummary|undefined=selected??live?.summary;
-  const date=selected?.date??live?.date,releaseMs=selected?.releaseMs??live?.releaseMs;
-  const meta=byId('slot-watch-meta');meta.replaceChildren();
-  for(const button of document.querySelectorAll<HTMLButtonElement>('#slot-matrix-mode button'))button.setAttribute('aria-pressed',String(button.dataset.mode===slotMatrixMode));
-  if(!date||releaseMs===undefined){
-    const empty=document.createElement('div');empty.className='audit-empty';
-    empty.append(Object.assign(document.createElement('strong'),{textContent:'No release watched yet'}),Object.assign(document.createElement('span'),{textContent:'Arm a release, or press Watch next release to observe one without booking.'}));
-    byId('slot-watch-matrix').replaceChildren(empty);
-    byId('slot-watch-summary').replaceChildren();byId('slot-watch-timeline').replaceChildren(...slotTimeline([]));
-  }else{
-    const status=selected?selected.status:live!.status;
-    const badge=document.createElement('span');badge.className=`slot-status-badge ${status}`;badge.textContent=selected?`SAVED · ${status.toUpperCase()}`:status.toUpperCase();
-    const statusFact=slotFact('Status','');statusFact.querySelector('strong')!.replaceChildren(badge);
-    const reads=selected?`${selected.availability.answered+selected.availability.failed} (${selected.availability.failed} failed)`:`${live!.polls} (${live!.failedPolls} failed)`;
-    meta.append(statusFact,slotFact('Target date',dateLabel(date)),slotFact('Release',`${manilaMs(new Date(releaseMs).toISOString())} Manila`),slotFact('Reads',reads),
-      ...(!selected&&live?[slotFact('In flight',`${live.inFlight} of ${live.maxInFlight}${live.notLaunched?` · ${live.notLaunched} not launched`:''}`)]:[]),
-      ...(!selected&&live?.lastLatencyMs!==undefined?[slotFact('Last read',`${live.lastLatencyMs} ms${live.lastError?` · ${live.lastError}`:''}`)]:[]),
-      (()=>{const path=selected?.reportPath??summary?.reportPath??live!.logPath,fact=slotFact(summary?'Report':'Log file',path.split(/[\\/]/).at(-1)??path,'path');fact.title=path;return fact;})());
-    const cells:SlotView['cells']=selected?summaryCells(selected,slotMatrixMode):live!.cells;
-    const recent=!selected&&live?.lastPollAt?Date.parse(live.lastPollAt)-releaseMs-1500:undefined;
-    byId('slot-watch-matrix').replaceChildren(slotMatrix(cells,oursFor(state,date),slotMatrixMode,recent));
-    const facts=byId('slot-watch-summary');facts.replaceChildren();
-    const publication=summary?.publication??live?.publication;
-    const box=document.createElement('div');box.className='slot-summary';
-    if(summary?.legacy)box.append(slotFact('Saved watch','Older format · details in its report'));
-    else{
-      box.append(slotFact('First published grid',publication?.firstPublished?readText(publication.firstPublished):'Not observed yet'),
-        ...(publication?.lastUnpublished?[slotFact('Last read without the date',readText(publication.lastUnpublished))]:[]));
-      if(summary){
-        const counts=summary.firstPublishedCounts;
-        box.append(slotFact('At first publication',counts?`${counts.OPEN} open · ${counts.UNAVAILABLE} unavailable${counts.UNKNOWN?` · ${counts.UNKNOWN} unknown`:''}`:'—'),
-          slotFact('Open → unavailable',String(summary.openToUnavailable.length)),
-          slotFact('Unavailable at first publication',`${summary.unavailableAtFirstPublication.length} (${summary.unavailableAtFirstPublication.filter(cell=>!cell.record).length} without public booking record · cause unknown)`),
-          slotFact('Unavailable → open',String(summary.reopened.length)),slotFact('Median read time',summary.availability.medianLatencyMs===null?'—':`${Math.round(summary.availability.medianLatencyMs)} ms`),
-          slotFact('Max in flight',`${summary.availability.maxInFlight} of ${summary.schedule?.maxInFlight??'?'}${summary.availability.notLaunched?` · ${summary.availability.notLaunched} not launched`:''}`),
-          ...(summary.quality?[slotFact('Cache quality',`MISS ${Math.round(summary.quality.cacheRates.MISS*100)}% · HIT ${Math.round(summary.quality.cacheRates.HIT*100)}% · STALE ${Math.round(summary.quality.cacheRates.STALE*100)}%`),
-            slotFact('Evidence quality',`${summary.quality.contradictions} contradictions · ${summary.quality.reopenings.confirmed} confirmed reopenings · ${summary.quality.bookingCoverage.successfulCourtQueries}/${summary.quality.bookingCoverage.totalCourtQueries} booking court reads`)]:[]));
-      }
-      const candidates=selected?.candidates??live?.candidates??[];
-      if(candidates.length){const list=smartElement('div','slot-candidates');list.append(smartElement('strong','',`Configured candidates · freshest evidence`));
-        for(const candidate of candidates)list.append(smartElement('div','precision-line',`${candidate.workerId?`Worker ${candidate.workerId} · `:''}${candidate.label??`C${candidate.court} ${candidate.start}–${candidate.end}`} · ${candidate.state.replaceAll('_',' ')} · evidence age ≤ ${candidate.evidenceAgeUpperBoundMs===null?'unknown':`${Math.ceil(candidate.evidenceAgeUpperBoundMs)} ms`}${candidate.reopening?` · reopening ${candidate.reopening.toLowerCase().replaceAll('_',' ')}`:''}`));
-        box.append(list);}
-    }
-    facts.append(box);
-    const timeline=byId('slot-watch-timeline'),atBottom=timeline.scrollTop+timeline.clientHeight>=timeline.scrollHeight-20;
-    timeline.replaceChildren(...slotTimeline(selected?selected.timeline:live!.timeline));
-    if(atBottom)timeline.scrollTop=timeline.scrollHeight;
-  }
-  const list=byId('slot-watch-history');
-  if(!history.length)list.replaceChildren(Object.assign(document.createElement('p'),{className:'empty',textContent:'No finished watches yet.'}));
-  else list.replaceChildren(...history.map(entry=>{
-    const button=document.createElement('button');button.type='button';button.className='slot-history-item';button.setAttribute('aria-pressed',String(entry.id===selectedWatchId));
-    const title=document.createElement('strong');title.textContent=`${dateLabel(entry.date)} · release ${new Date(entry.releaseMs).toLocaleString('en-GB',{timeZone:'Asia/Manila',dateStyle:'medium',timeStyle:'short'})}`;
-    const fast=document.createElement('span');fast.className='fast';fast.textContent=entry.legacy?'older format':entry.publication.firstPublished?`published req ${relative(entry.publication.firstPublished.requestOffsetMs)}`:'date not seen';
-    const meta=document.createElement('span');meta.className='meta';meta.textContent=entry.legacy?`${entry.availability.answered} reads · ${entry.status}${entry.id===selectedWatchId?' · showing':''}`
-      :`${entry.openToUnavailable.length} open → unavailable · ${entry.unavailableAtFirstPublication.length} unavailable at first publication · ${entry.availability.answered} reads · ${entry.status}${entry.id===selectedWatchId?' · showing':''}`;
-    button.append(title,fast,meta);
-    button.onclick=()=>{selectedWatchId=selectedWatchId===entry.id?undefined:entry.id;if(latest)render(latest);};
-    return button;
-  }));
-}
 const forensicState=(value:string|null)=>value??'not observed';
 let renderedForensics='';
 /** Runs view: one concise card per generated forensic report; the raw detail stays in the local report. */
@@ -780,6 +653,10 @@ function renderBuild(state: Dashboard) {
 function render(state: Dashboard) {
   latest = state;
   renderBuild(state);
+  renderNextRelease(state);
+  renderLive(state);
+  renderInsights(state);
+  renderStrategy(state);
   renderPrecision(state);
   renderQrSummary(state);
   renderStatusBar(state);
@@ -845,7 +722,7 @@ function render(state: Dashboard) {
   byId('capability-status').textContent=`Selection ${state.capabilities.selectionReady?'ready':'unverified'} · checkout ${state.capabilities.checkoutReady?'verified':'unverified'} · payment handoff ${state.capabilities.paymentBoundaryReady?'verified':'unverified'}`;
   const b=state.booking;
   if(b){
-   if(!releaseDirty&&loadedPlan!==b.fingerprint){loadedPlan=b.fingerprint;releaseDraft={releaseStrategy:b.setup.RELEASE_STRATEGY??'general',precisionCount:Math.max(1,b.setup.PRECISION_TARGETS?.length??0),precisionTargets:[...(b.setup.PRECISION_TARGETS??[])],precisionFanOut:b.setup.PRECISION_FAN_OUT,precisionMode:b.setup.PRECISION_PHASE3?'smart':'fixed',smart:b.setup.PRECISION_PHASE3?smartDraftFromSaved(b.setup,b.targetDate):undefined,releaseOffsetMs:b.setup.RELEASE_OFFSET_MS??0,method:b.setup.BOOKING_METHOD??'browser',strategy:b.setup.BOOKING_TYPE??'standard',date:testDraft?.date??input('test-date').value,courtCount:b.setup.COURT_COUNT,start:b.setup.START_TIME,duration:b.setup.DURATION_HOURS,attempts:b.setup.MAX_SELECTION_ATTEMPTS,courtOrder:[...b.setup.PREFERRED_COURTS],fallbackTimes:[...b.setup.FALLBACK_TIMES],exactA:'',exactB:''};if(b.fallbackReconciliation.removed.length){releaseAdjustment=b.fallbackReconciliation;releaseDirty=true;}if(workflow==='release'){applyDraft(releaseDraft);dirty=releaseDirty;}}
+   if(!releaseDirty&&loadedPlan!==b.fingerprint){loadedPlan=b.fingerprint;strategyMeta=b.setup.STRATEGY_V2?structuredClone(b.setup.STRATEGY_V2):undefined;releaseDraft={releaseStrategy:b.setup.RELEASE_STRATEGY??'general',precisionCount:Math.max(1,b.setup.PRECISION_TARGETS?.length??0),precisionTargets:[...(b.setup.PRECISION_TARGETS??[])],precisionFanOut:b.setup.PRECISION_FAN_OUT,precisionMode:b.setup.PRECISION_PHASE3?'smart':'fixed',smart:b.setup.PRECISION_PHASE3?smartDraftFromSaved(b.setup,b.targetDate):undefined,releaseOffsetMs:b.setup.RELEASE_OFFSET_MS??0,method:b.setup.BOOKING_METHOD??'browser',strategy:b.setup.BOOKING_TYPE??'standard',date:testDraft?.date??input('test-date').value,courtCount:b.setup.COURT_COUNT,start:b.setup.START_TIME,duration:b.setup.DURATION_HOURS,attempts:b.setup.MAX_SELECTION_ATTEMPTS,courtOrder:[...b.setup.PREFERRED_COURTS],fallbackTimes:[...b.setup.FALLBACK_TIMES],exactA:'',exactB:''};if(b.fallbackReconciliation.removed.length){releaseAdjustment=b.fallbackReconciliation;releaseDirty=true;}if(workflow==='release'){applyDraft(releaseDraft);dirty=releaseDirty;}}
      if(workflow==='release'&&precisionMode==='smart')renderSmart();
     byId('booking-preview').textContent=`${dual?'2 COURTS / SAME TIME BLOCK\n':''}TARGET  ${dateLabel(b.targetDate)}\nREQUIRED SLOTS  ${b.slots.join(' · ')}\nCOURT ORDER  ${b.setup.PREFERRED_COURTS.join(' → ')}\nFALLBACK STARTS  ${b.setup.FALLBACK_TIMES.map(friendly).join(' → ')||'None'}\n${b.setup.MAX_SELECTION_ATTEMPTS} candidate attempts · No price ceiling\nPLAYER  Configured ✓`;
   }
@@ -1081,10 +958,11 @@ function tick() {
  }
 byId('check-release-blocks').addEventListener('click',()=>{void window.thirsty.checkReleaseBlocks(input('block-audit-date').value).catch(async()=>{render(await window.thirsty.getStatus());});});
 for(const id of ['close-browsers','close-browsers-tools'])byId(id).addEventListener('click',()=>{void window.thirsty.closeBotBrowsers().catch(async()=>{render(await window.thirsty.getStatus());});});
-byId('watch-next-release').addEventListener('click',()=>{selectedWatchId=undefined;void window.thirsty.watchNextRelease().catch(async()=>{render(await window.thirsty.getStatus());});});
-for(const button of document.querySelectorAll<HTMLButtonElement>('#slot-matrix-mode button'))button.addEventListener('click',()=>{slotMatrixMode=button.dataset.mode==='first'?'first':'current';if(latest)render(latest);});
+byId('watch-next-release').addEventListener('click',()=>{selectWatch(undefined);void window.thirsty.watchNextRelease().catch(async()=>{render(await window.thirsty.getStatus());});});
+for(const button of document.querySelectorAll<HTMLButtonElement>('#slot-matrix-mode button'))button.addEventListener('click',()=>{setSlotMatrixMode(button.dataset.mode==='first'?'first':'current');if(latest)render(latest);});
 byId('stop-slot-watch').addEventListener('click',()=>{void window.thirsty.stopSlotWatch().catch(async()=>{render(await window.thirsty.getStatus());});});
-byId('status-watch').addEventListener('click',()=>{selectedWatchId=undefined;showView('slots');});
+byId('status-watch').addEventListener('click',()=>{selectWatch(undefined);showView('live');});
+initSlotWatchView({rerender:()=>{if(latest)render(latest);}});
 byId('block-audit-date').addEventListener('change',()=>{if(latest)render(latest);});
 byId('full-terms').addEventListener('change',()=>{if(latest)render(latest);});
 for(const id of ['full-date','full-court','full-start','full-duration'])byId(id).addEventListener('change',()=>{input('full-terms').checked=false;if(latest)render(latest);});
