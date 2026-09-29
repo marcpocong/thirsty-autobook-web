@@ -89,7 +89,9 @@ function requestKey(request: TwoHourCheckoutRequest | ProoflessCheckoutRequest):
   const [first] = request.items;
   const last = request.items.at(-1);
   if (!first || !last || request.items.length > 6) throw new BrowserSessionTransportError('CHECKOUT_ITEMS_INVALID');
-  return DurableSubmissionJournal.key(request.facilityId, first.spaceId, first.date, first.startTime, last.endTime);
+  // The wire format ends the 23:00 hour at "00:00"; plan and journal keys keep "24:00", so the permit still matches.
+  return DurableSubmissionJournal.key(request.facilityId, first.spaceId, first.date, first.startTime,
+    last.endTime === '00:00' ? '24:00' : last.endTime);
 }
 export function armCheckoutRequest(request: ProoflessCheckoutRequest): { key: string; body: string } {
   if (!deeplyFrozen(request)) throw new BrowserSessionTransportError('ARMED_REQUEST_NOT_FROZEN');

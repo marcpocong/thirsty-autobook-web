@@ -318,6 +318,9 @@ try {
   const phase3=!requested&&config.RELEASE_STRATEGY==='precision'&&command.mode!=='audit'?config.PRECISION_PHASE3:undefined;
   const precisionTargets=!phase3&&!requested&&config.RELEASE_STRATEGY==='precision'&&command.mode!=='audit'
     ?validatePrecisionTargets(config.PRECISION_TARGETS,command.date,config.PRECISION_FAN_OUT):undefined;
+  // A saved fan-out flag applies only to the Fixed Precision run itself. A Test or General run keeps
+  // one tab and one transport per worker, keyed by worker ID.
+  const precisionFanOut=!!precisionTargets&&config.PRECISION_FAN_OUT;
   if((precisionTargets||phase3)&&(config.BOOKING_METHOD!=='proofless'||command.checkoutMethod!=='proofless'||config.BOOKING_TYPE!=='standard'))
     throw Error('PRECISION_REQUIRES_PROOFLESS_STANDARD');
   // Operator Release Offset (release-offset.ts): moves only the pre-armed Proofless Direct trigger of a scheduled release.
@@ -374,7 +377,7 @@ try {
   }
   // The dedicated profiles are independent. Wait for both checks to settle so
   // a failure in one browser cannot leave an unobserved preparation running.
-  const prepared=await Promise.allSettled(workerIds.map(worker=>prepareWorker(worker,config.PRECISION_FAN_OUT?PRECISION_FAN_OUT_ATTEMPTS:1)));
+  const prepared=await Promise.allSettled(workerIds.map(worker=>prepareWorker(worker,precisionFanOut?PRECISION_FAN_OUT_ATTEMPTS:1)));
   prepared.forEach((result,index)=>stage('BROWSER_PREPARATION_OUTCOME',{workerId:workerIds[index]!,status:result.status,
     code:result.status==='fulfilled'?'COMPLETED':safeApiFailureCode(result.reason,'API_BROWSER_PREPARATION_FAILED')}));
   const failure=prepared.find((result):result is PromiseRejectedResult=>result.status==='rejected');
@@ -444,7 +447,7 @@ try {
     };
     if(command.mode==='live'||command.mode==='live-now'&&command.checkoutMethod==='proofless')for(const session of sessions){
       const workerId=session.workerId;
-      for(const [pageIndex,page] of session.pages.entries()){const transportKey=config.PRECISION_FAN_OUT?`${workerId}:${pageIndex}`:workerId;
+      for(const [pageIndex,page] of session.pages.entries()){const transportKey=precisionFanOut?`${workerId}:${pageIndex}`:workerId;
       releaseTransports.set(transportKey,new OndaBrowserSessionTransport(page,
         ()=>calendarFreeSecurityContext(page)(),
         response=>responseCaptures.get(transportKey)?.(response)??Promise.reject(Error('CHECKOUT_RESPONSE_CAPTURE_MISSING')),
@@ -669,7 +672,7 @@ try {
         stage('PRECISION_ATTEMPT_STATE',{workerId:target.workerId,court:target.court,startTime:target.start,endTime:target.end,
           durationHours:target.durationHours,attemptState:state,...(attemptId?{attemptId}:{}),...(code?{code}:{}),...(duplicateOf?{duplicateOf}:{})});
       };
-      const fanOut=config.PRECISION_FAN_OUT;
+      const fanOut=precisionFanOut;
       stage('PRECISION_RACE_CONFIGURED',{date,targetCount:targets.length,releaseMs,fanOut});
       for(const target of targets)stage('PRECISION_TARGET',{workerId:target.workerId,court:target.court,startTime:target.start,
         endTime:target.end,durationHours:target.durationHours,assumedPrice:target.assumedAmount});

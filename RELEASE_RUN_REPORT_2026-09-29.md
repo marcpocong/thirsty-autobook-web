@@ -2,11 +2,18 @@
 
 All times are Manila (UTC+8) on the trusted network clock. The release instant was 08:00:00.000. "+x s" means seconds after release. Sources are the local run logs listed in [Sources](#sources). Nothing here was taken from private request or response bodies, apart from Onda's one-line error text.
 
+## Update, 09:55 the same day: fix proven live, two follow-up bugs fixed
+
+- **Live proof.** An off-peak Proofless test booked **Wed 09-30, Court 5, 22:00–00:00** (worker A, 2 h). Onda returned HTTP 200 with a verified pending hold in 928 ms, and the official QRPH page opened. Onda's public bookings list shows the hold as `22:00:00–23:00:00` and `23:00:00–00:00:00`, both pending. It was left unpaid to expire at 10:05:13.
+- **The fix as first merged (87e8cdb) would still have failed tomorrow.** Journal and permit keys keep `24:00`, but the transport rebuilt the key from the payload's new `00:00` end. The transport then threw `SUBMISSION_PERMIT_INVALID_OR_USED` before sending; the first test attempt (Court 6) failed this way, provably unsent. `armed-dispatch.ts` would also have refused to arm any midnight-ending Precision target. Fixed in c3e0408: `requestKey()` maps a `00:00` end back to `24:00`. Regression tests fail without the fix and pass with it.
+- **Fan-out broke Test runs.** With `PRECISION_FAN_OUT` saved on, a Proofless Test run keyed its browser transports `A:0`… but looked up `A`, and stopped with `API_CHECKOUT_WORKER_MISSING` before dispatch. Fan-out now applies only to Fixed Precision runs (c3e0408).
+- **Installed app.** These fixes reach the exe only after `npm run exe:build`, which needs the app closed.
+
 ## Bottom line
 
 - **Result:** 0 holds. Onda answered **all 28 checkout POSTs** (7 workers × 4 fan-out attempts) with **HTTP 400 `Invalid booking session time`**.
 - **Root cause (our bug, not Onda):** every target was 21:00–24:00. The checkout request sent the end of the 23:00 hour as `"24:00"`. Onda's own availability feed writes that boundary as `"00:00"`. Earlier releases targeted 17:00–23:00, so this was the first live target that ended at midnight, and nothing had ever exercised it.
-- **Fix status:** fixed at 08:09, after the run, by `ondaCheckoutBoundary()` in `src/api-booking/public-checkout.ts` (both checkout builders). The fix has unit tests and was rebuilt into the installed exe at 08:12. **Onda has not yet accepted `"00:00"` live.**
+- **Fix status:** fixed at 08:09, after the run, by `ondaCheckoutBoundary()` in `src/api-booking/public-checkout.ts` (both checkout builders). It was rebuilt into the exe at 08:12. Its permit-key follow-up (c3e0408) and a live test at 09:55 are described in the update above.
 - **Why this one hurts:** the target was right. At first publication, 21:00–24:00 was **open on all seven courts**. Our POSTs reached Vercel between −1 ms and +31 ms. Onda answered them at +1.1 to +6.6 s, before any competing 21:00–23:00 record was visible on most courts (competing records first appeared between +4 and +10 s). This was the strongest position the bot has had at any release. A valid payload would probably have won at least one court. That is an inference, not proof (see [Was it winnable?](#was-it-winnable)).
 - **Follow-on effects:** the 400s were classified as UNKNOWN ("may have been sent; do not retry"), so the run ended at +6.9 s as `OBJECTIVE_NOT_CONFIRMED_MANUAL_RECONCILIATION`. This plan type (Fixed Precision + fan-out) has no Wave 2/Rescue lane anyway. At about +606 s, C3 and C7 21:00–24:00 reopened and **stayed open at least 141 s**, until Slot Watch was cut off at +747 s.
 
@@ -85,7 +92,7 @@ The pre-release block audit at 07:14 showed Open 0, Blocked 28 and Unreleased 84
 - The internal plan and journal keys keep `24:00`. Only the wire format changes.
 - New tests assert that the 21:00+3 h payload is `[21–22, 22–23, 23–00:00]` and contains no `"24:00"`. They also check that a pending-hold response with a 21:00:00–00:00:00 session still validates, and that the journal reaches `verified`.
 
-**Still unproven:** that Onda's checkout accepts `23:00–00:00`. The fix follows Onda's own availability format, but nobody has made an off-peak live booking of a 23:00 hour yet.
+**Proven live at 09:55:** Onda accepted `22:00–00:00` (see the update at the top). The permit-key follow-up in c3e0408 was also required.
 
 ## Was it winnable?
 
@@ -183,7 +190,7 @@ Request events and edge stamps are in ms. Edge stamps are Vercel's clock, and th
 
 ## Recommendations (in priority order)
 
-1. **Prove `23:00–00:00` live before relying on it at 08:00.** Do one off-peak Proofless booking of the 23:00 hour on an already released date (one court, payment manual, let the hold expire). Until that succeeds, a midnight-ending target is a single point of failure for the whole release.
+1. ~~Prove `23:00–00:00` live~~. Done at 09:55 (see the update above). **Rebuild the installed exe** (`npm run exe:build`, app closed) before the next release, so that it includes c3e0408.
 2. **Add an arm-time payload self-check.** At freeze, build each frozen request exactly as it will be sent and assert that every time is in Onda's wire format (no `24:00`, contiguous hours, `duration: 60`). A payload bug would then stop the arming instead of spending the release.
 3. **Name this failure.** Treat a 400 whose body is exactly `Invalid booking session time` as a definitive, non-retryable **payload rejection** with its own code and a loud UI message, not as "UNKNOWN — may have been sent".
 4. **Accept midnight in public booking records.** `readPublicBookingRecords()` drops records ending `00:00`. Map that end to 24:00 so 23:00 records become visible to Slot Watch, T−10 min evidence and the block audit.
