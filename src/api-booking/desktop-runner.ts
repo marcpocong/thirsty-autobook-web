@@ -49,6 +49,7 @@ import { preflightProoflessWire, prooflessCourtHourStatuses, prooflessReleasePla
 import { WirePayloadError } from './wire-payload-check.js';
 import { adaptivePrewarmLeadMs, describeTierStatus, type TierStatus } from './prewarm-scheduler.js';
 import { securityPrepHistory } from '../security-prep-history.js';
+import { predictionError, predictReopenings, RESCUE_CONTEXT_REUSE_MS, RESCUE_PREWARM_MAX_PER_RELEASE, rescuePrewarmDue, type ReopenPrediction } from './reopen-prediction.js';
 import { readPublicBookingRecords } from './public-bookings.js';
 import {API_SECURITY_PREWARM_LEAD_MS,safeApiFailureCode} from './run-observability.js';
 import { availabilityObservation, diagnosticLaneForWorker, RunDiagnostics, safeDiagnosticCode,
@@ -1004,15 +1005,30 @@ try {
       const pending=new Set<Promise<unknown>>();
       // A newer Slot Watch read no longer ends the attempt by itself: each checkpoint re-evaluates the
       // newest read for the SAME candidate (adaptive-attempt.ts) and adopts it as the effective evidence.
+      // Rescue V2: reopen predictions (reopen-prediction.ts) only PREPARE a Rescue worker before a likely reopening; a Rescue
+      // send still needs a fresh unavailable -> open observation, selection, revalidation, reservation and the pre-POST gate.
+      const rescueRanges=authorization.rescueEnabled?authorization.candidates.filter(value=>value.permissions.rescue)
+        .map(value=>({id:value.id,court:value.court,start:value.start,durationHours:value.durationHours})):[];
+      const predictions=new Map<string,ReopenPrediction>(),decodedReads=new Map<number,Map<string,string>>();
+      let rescuePrewarms=0,rescuePreparing:WorkerId|undefined;
+      const contextAge=(worker:WorkerId)=>releaseTransports.get(worker)?.preparedContextAgeMs();
+      /** Workers with a usable prepared context are preferred for Wave 2 and Rescue. */
+      const workerRank=(worker:WorkerId)=>{const age=contextAge(worker);return age!==undefined&&age>=0&&age<=RESCUE_CONTEXT_REUSE_MS?0:1;};
       const dispatchAdaptive=(selection:AdaptiveSelection,wave:'WAVE_2'|'RESCUE')=>{
         const {candidate,workerId}=selection;
+        const predicted=wave==='RESCUE'?predictions.get(candidate.id):undefined,observed=session.latest?.observation.responseOffsetMs;
+        if(predicted&&observed!==undefined){const outcome=predictionError(predicted,observed);
+          stage('RESCUE_PREDICTION_OUTCOME',{candidateId:candidate.id,workerId,errorMs:outcome.errorMs,ok:outcome.insideWindow,confidence:predicted.confidence,
+            contextReused:(contextAge(workerId)??Infinity)<=RESCUE_CONTEXT_REUSE_MS});}
         const journal=new DurableSubmissionJournal(resolve('.local/api-booking/api-first-journals',candidate.logicalKey));
         const task=runAdaptiveAttempt(selection,wave,{session,date,now:nowMs,dispatchNow:()=>releaseClock?.nowMs()??nowMs(),
           newestSeq:()=>newestSeq,securityRefreshMs:()=>securityRefreshMs,aborted:()=>abort.signal.aborted,verifiedHold:()=>verifiedHold,
           workerReady:()=>releaseTransports.has(workerId)&&!unavailableWorkers.has(workerId),
           prepareSecurity:async()=>{
             const started=performance.now();
-            try{await releaseTransports.get(workerId)!.prepareCheckoutContext(wave==='RESCUE');securityRefreshMs=Math.max(securityRefreshMs,performance.now()-started);}
+            // An unused context prepared within the last minute (standby at T-30 s, or a Rescue prewarm before a predicted
+            // reopening) is reused; the transport still refuses anything older than 120 s at the POST.
+            try{await releaseTransports.get(workerId)!.prepareCheckoutContext(false,RESCUE_CONTEXT_REUSE_MS);securityRefreshMs=Math.max(securityRefreshMs,performance.now()-started);}
             catch(error){stage('PHASE3_SECURITY_FAILED',{workerId,candidateId:candidate.id,code:safeApiFailureCode(error,'SECURITY_PREWARM_FAILED')});throw error;}
           },
           journalReusable:async()=>{
@@ -1050,15 +1066,38 @@ try {
             if(!operational)continue;
             const fresh=adaptiveFitness(operational,newestSeq,releaseMs,nowMs(),securityRefreshMs);
             session.observe(fresh);
+            // Predictions are recomputed from every fresh-enough read after the first minute (off the release window).
+            if(rescueRanges.length&&observation.responseOffsetMs>60_000)for(const prediction of predictReopenings(rescueRanges,receivedEvidence,{decoded:decodedReads})){
+              const known=predictions.get(prediction.candidateId);
+              if(known?.epochSeq===prediction.epochSeq&&known.windowEndMs===prediction.windowEndMs)continue;
+              predictions.set(prediction.candidateId,prediction);
+              stage('RESCUE_PREDICTION',{candidateId:prediction.candidateId,seq:prediction.epochSeq,predictedStartMs:prediction.windowStartMs,
+                predictedEndMs:prediction.windowEndMs,confidence:prediction.confidence});
+            }
             if(operational.seq!==observation.seq||!isActionableEvidenceFitness(fresh.fitness))continue;
             if(authorization.rescueEnabled&&pending.size===0)
-              for(const choice of session.select('RESCUE',nowMs(),maxAge))dispatchAdaptive(choice,'RESCUE');
+              for(const choice of session.select('RESCUE',nowMs(),maxAge,{workerRank}))dispatchAdaptive(choice,'RESCUE');
           }
           const current=session.latest;
           if(current&&wave1Fired&&(authorization.concurrentWave2||wave1Settled)){
             const latency=Math.max(0,current.observation.responseOffsetMs-current.observation.requestOffsetMs);
             const maxAge=adaptiveMaxAgeMs(latency,securityRefreshMs);
-            for(const choice of session.select('WAVE_2',nowMs(),maxAge))dispatchAdaptive(choice,'WAVE_2');
+            for(const choice of session.select('WAVE_2',nowMs(),maxAge,{workerRank}))dispatchAdaptive(choice,'WAVE_2');
+          }
+          // Rescue V2 prewarm: before a predicted window, prepare the worker Rescue would use first. Bounded per release; one
+          // preparation at a time; never while an adaptive attempt is in flight; never after an UNKNOWN or a verified hold.
+          if(predictions.size&&wave1Settled&&!rescuePreparing&&pending.size===0&&rescuePrewarms<RESCUE_PREWARM_MAX_PER_RELEASE&&!session.adaptiveBlocker('RESCUE')){
+            const offset=nowMs()-releaseMs,worker=session.adaptiveWorkers('RESCUE',workerRank)[0];
+            const next=worker?[...predictions.values()].find(value=>rescuePrewarmDue(value,offset,contextAge(worker))):undefined;
+            if(worker&&next&&releaseTransports.has(worker)&&!unavailableWorkers.has(worker)){
+              rescuePreparing=worker;rescuePrewarms++;
+              stage('RESCUE_PREWARM',{workerId:worker,candidateId:next.candidateId,predictedStartMs:next.windowStartMs,predictedEndMs:next.windowEndMs,attemptNo:rescuePrewarms});
+              const started=performance.now();
+              void releaseTransports.get(worker)!.prepareCheckoutContext(true).then(
+                ()=>stage('RESCUE_PREWARM_READY',{workerId:worker,candidateId:next.candidateId,durationMs:Math.round(performance.now()-started)}),
+                error=>stage('RESCUE_PREWARM_FAILED',{workerId:worker,candidateId:next.candidateId,code:safeApiFailureCode(error,'SECURITY_PREWARM_FAILED')}))
+                .finally(()=>{rescuePreparing=undefined;});
+            }
           }
           if(verifiedHold||session.attempts.some(value=>value.state==='UNKNOWN'))break;
           await pause(25).catch(()=>undefined);
