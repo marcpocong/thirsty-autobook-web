@@ -89,6 +89,40 @@ const smartSame = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringi
 export const smartImmediateSends = (immediate: ReadonlyArray<Pick<SmartSlot, 'fanOutOffsetsMs'>>) =>
   immediate.reduce((sum, slot) => sum + (slot.fanOutOffsetsMs?.length ?? 1), 0);
 
+/** The effective child timing shown by editors. A non-fan-out target is one child. */
+export const smartSlotOffsets = (slot: Pick<SmartSlot, 'releaseOffsetMs' | 'fanOutOffsetsMs'>): SmartReleaseOffset[] =>
+  slot.fanOutOffsetsMs ? [...slot.fanOutOffsetsMs] : [slot.releaseOffsetMs ?? 0];
+
+/**
+ * Changes one immediate target's width without touching any other target. Existing child timings keep their index;
+ * only newly added indices use the selected timing profile's deterministic defaults.
+ */
+export function resizeSmartFanOut(slot: SmartSlot, width: number, defaults: readonly number[]): SmartSlot {
+  if (!Number.isInteger(width) || width < 1 || width > SMART_MAX_FAN_OUT) throw Error('FANOUT_WIDTH_INVALID');
+  const previous = smartSlotOffsets(slot), offsets = Array.from({ length: width }, (_, index) => previous[index] ?? defaults[index] ?? 0);
+  const next: SmartSlot = { ...slot };
+  delete next.releaseOffsetMs;
+  delete next.fanOutOffsetsMs;
+  if (width === 1) {
+    if (offsets[0] !== 0) next.releaseOffsetMs = offsets[0];
+  } else next.fanOutOffsetsMs = offsets;
+  return next;
+}
+
+/** Updates the authoritative child representation; it never leaves a competing parent offset beside fan-out. */
+export function setSmartChildOffset(slot: SmartSlot, child: number, offset: number): SmartSlot {
+  if (!validSmartReleaseOffset(offset)) throw Error('FANOUT_OFFSET_INVALID');
+  const offsets = smartSlotOffsets(slot);
+  if (!Number.isInteger(child) || child < 0 || child >= offsets.length) throw Error('FANOUT_CHILD_INVALID');
+  offsets[child] = offset;
+  const next: SmartSlot = { ...slot };
+  delete next.releaseOffsetMs;
+  delete next.fanOutOffsetsMs;
+  if (offsets.length === 1) { if (offsets[0] !== 0) next.releaseOffsetMs = offsets[0]; }
+  else next.fanOutOffsetsMs = offsets;
+  return next;
+}
+
 export function emptySmartDraft(): SmartDraft {
   return { immediate: [], backups: [], useBackupsImmediately: false, retryReopened: false, maxReopenedAttempts: SMART_DEFAULT_REOPENED,
     rates: { day: null, evening: null, status: 'OPERATOR_CONFIRMED', source: '', capturedAt: '', date: '' }, advanced: {} };
@@ -299,8 +333,8 @@ export function describeSmartPlan(plan: SmartPhase3, context: Pick<SmartContext,
   const immediate = plan.wave1.map((value, position) => {
     const c = plan.candidates[value.candidateIndex]!;
     return `Attempt ${position + 1} · Court ${c.court} · ${smartRange(c.start, c.durationHours)} · Worker ${value.workerId} · Expected ${smartExpected(c.rateEvidence)}` +
-      (value.releaseOffsetMs ? ` · Offset \u2212${-value.releaseOffsetMs} ms (sent before 8:00)` : '') +
-      (value.fanOutOffsetsMs ? ` · ${value.fanOutOffsetsMs.length} fan-out children: ${value.fanOutOffsetsMs.map((offset, child) => `${value.workerId}${child} ${offset ? `\u2212${-offset} ms` : '0 ms'}`).join(', ')}` : '') +
+      (value.releaseOffsetMs ? ` · ${-value.releaseOffsetMs} ms early` : '') +
+      (value.fanOutOffsetsMs ? ` · ${value.fanOutOffsetsMs.length} fan-out children: ${value.fanOutOffsetsMs.map((offset, child) => `${value.workerId}${child} ${offset ? `${-offset} ms early` : 'at release'}`).join(', ')}` : '') +
       (unavailable.has(value.workerId) ? ' · NOT READY, will not be sent' : '');
   });
   const { wave2, rescue, total } = plan.budgets;
