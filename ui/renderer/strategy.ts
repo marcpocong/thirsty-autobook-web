@@ -61,6 +61,8 @@ let goal: StrategyGoal = { ...DEFAULT_STRATEGY_GOAL };
 let preset: StrategyPreset = 'BALANCED';
 let forced: Window[] = [], removed: Window[] = [];
 let suggestion: SuggestedPlan | null = null;
+let suggestionGeneration = 0;
+let pendingSuggestionGeneration: number | null = null;
 let intelligenceMode: SuggestionIntelligenceMode = 'AUTO';
 let loadedKey = '';
 const hourLabel = (hour: number) => hour === 24 ? '12:00 MN' : `${hour % 12 || 12}:00 ${hour < 12 ? 'AM' : 'PM'}`;
@@ -94,7 +96,7 @@ function writeGoal(value: StrategyGoal) {
   selectById('strategy-prime-from').value = value.primeFrom; selectById('strategy-prime-until').value = value.primeUntil;
   inputById('strategy-durations').value = value.durations.join(','); inputById('strategy-courts').value = value.courts.join(',');
 }
-function invalidate() { suggestion = null; byId('strategy-apply').toggleAttribute('disabled', true); render(); }
+function invalidate() { suggestionGeneration++; pendingSuggestionGeneration = null; suggestion = null; byId('strategy-apply').toggleAttribute('disabled', true); render(); }
 
 export function initStrategy(value: StrategyHost): void {
   host = value;
@@ -140,16 +142,25 @@ export function initStrategy(value: StrategyHost): void {
 
 async function suggest(): Promise<void> {
   const state = host.state();
-  if (preset === 'CUSTOM' || validateGoal(goal).length) { suggestion = null; return; }
+  const generation = ++suggestionGeneration;
+  suggestion = null; pendingSuggestionGeneration = generation;
+  byId('strategy-apply').toggleAttribute('disabled', true);
+  if (preset === 'CUSTOM' || validateGoal(goal).length) { pendingSuggestionGeneration = null; return; }
   const ready = 7 - [...host.unready()].filter(worker => 'ABCDEFG'.includes(worker)).length;
   const width = chosenWidth(state);
   const allocation = presetAllocation(preset, { readyWorkers: ready, recommendedFanOutWidth: recommendation(state).width,
     ...(width.source === 'OPERATOR_OVERRIDE' ? { fanOutWidthOverride: width.width } : {}) });
+  const snapshot = { goal: structuredClone(goal), schedule: schedule(state), allocation, forceInclude: structuredClone(forced), exclude: structuredClone(removed),
+    intelligenceMode, targetDate: state?.booking?.targetDate };
+  render();
   let historicalEvidence: StrategyHistoricalEvidence | null = null;
-  if (intelligenceMode === 'AUTO' && state?.booking?.targetDate) try {
-    historicalEvidence = await window.thirsty.strategyEvidence({ targetDate: state.booking.targetDate, ranges: enumeratePrimeWindows(goal) });
+  if (snapshot.intelligenceMode === 'AUTO' && snapshot.targetDate) try {
+    historicalEvidence = await window.thirsty.strategyEvidence({ targetDate: snapshot.targetDate, ranges: enumeratePrimeWindows(snapshot.goal) });
   } catch { historicalEvidence = null; }
-  suggestion = suggestPlan({ goal, schedule: schedule(state), allocation, forceInclude: forced, exclude: removed, intelligenceMode, historicalEvidence });
+  if (generation !== suggestionGeneration) return;
+  suggestion = suggestPlan({ goal: snapshot.goal, schedule: snapshot.schedule, allocation: snapshot.allocation, forceInclude: snapshot.forceInclude,
+    exclude: snapshot.exclude, intelligenceMode: snapshot.intelligenceMode, historicalEvidence });
+  pendingSuggestionGeneration = null;
   byId('strategy-apply').toggleAttribute('disabled', !suggestion.immediate.length);
 }
 
@@ -165,6 +176,7 @@ function windowItem(window: ScoredWindow, actions: Array<['force' | 'unforce' | 
 function renderSuggestion(state: Dashboard | undefined) {
   const target = byId('strategy-suggestion');
   if (preset === 'CUSTOM') { target.replaceChildren(empty('Custom: build every attempt yourself under 6. Advanced overrides.')); return; }
+  if (pendingSuggestionGeneration !== null) { target.replaceChildren(empty('Building suggestion…')); return; }
   if (!suggestion) { target.replaceChildren(empty(schedule(state) ? 'Choose a goal and preset, then Suggest plan.' : 'Tip: check public bookings first (step 2). Without it every window is unknown and nothing is suggested automatically (fail closed).')); return; }
   const timing = childOffsets(state), children = timing.children.map(child => `${child.configuredOffsetMs ? `−${-child.configuredOffsetMs}` : '0'} ms`).join(', ');
   const parts: HTMLElement[] = [];
@@ -336,6 +348,7 @@ export function renderStrategy(state: Dashboard | undefined): void {
   if (!host) return;
   const saved = state?.booking?.setup.STRATEGY_V2, key = `${state?.booking?.targetDate ?? ''}|${saved ? JSON.stringify(saved) : ''}`;
   if (key !== loadedKey) {
+    suggestionGeneration++; pendingSuggestionGeneration = null; suggestion = null; byId('strategy-apply').toggleAttribute('disabled', true);
     loadedKey = key;
     if (saved) { goal = { ...saved.goal }; preset = saved.preset; selectById('strategy-fanout').value = saved.fanOut.source === 'OPERATOR_OVERRIDE' ? String(saved.fanOut.width) : 'auto';
       intelligenceMode = saved.intelligenceMode ?? 'AUTO'; selectById('strategy-intelligence').value = intelligenceMode;
@@ -356,5 +369,5 @@ function render() {
   renderSchedule(state); renderPreset(state); renderSuggestion(state); renderEditable(state); renderReview(state);
 }
 /** Exposed for tests and the Next Release summary. */
-export const strategySnapshot = () => ({ goal: { ...goal }, preset, forced: [...forced], suggestion });
+export const strategySnapshot = () => ({ goal: { ...goal }, preset, forced: [...forced], suggestion, suggestionGeneration, pendingSuggestionGeneration });
 export const conflictsIn = (plan: SuggestedPlan) => plan.immediate.filter(window => isConflict(window.evidence));

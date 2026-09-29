@@ -9,6 +9,7 @@ import { ObservationSchema, ConfigSchema } from '../src/config.js';
 import { bookingView, defaultSetup } from '../ui/booking.js';
 import type { Command } from '../ui/types.js';
 import {expectedPreparationFingerprint} from '../src/prepared-context.js';
+import {DEFAULT_STRATEGY_GOAL,enumeratePrimeWindows,STRATEGY_MAX_ENUMERATED_WINDOWS,type StrategyHistoricalEvidence} from '../src/strategy-engine.js';
 
 const settings = ObservationSchema.parse({});
 const clock = () => clockStatus(settings, DateTime.fromISO('2026-09-10T07:00:00+08:00'));
@@ -28,6 +29,17 @@ function harness(confirmed = true) {
   return { controller, calls, confirm, stop, setLock: (value: boolean) => { lock = value; } };
 }
 describe('desktop orchestration', () => {
+  it('accepts default and maximum valid Strategy evidence ranges but rejects one beyond the bounded maximum',async()=>{
+    const evidence:StrategyHistoricalEvidence={targetDate:clock().targetDate,dayOfWeek:'Saturday',releasesConsidered:0,wellObservedReleases:0,realReleases:0,historicalPrePhase3:0,strength:'NONE',ranges:[],sharedRisk:[]};
+    const read=vi.fn(()=>evidence),controller=new Controller({runner:()=>{throw Error('NOT_USED');},lock:async()=>false,cdp:async()=>false,clock,confirm:async()=>false,
+      booking:()=>bookingView(ConfigSchema.parse(defaultSetup)),saveBooking:()=>bookingView(ConfigSchema.parse(defaultSetup)),publish:()=>{},strategyEvidence:read});
+    const widest=enumeratePrimeWindows({primeFrom:'08:00',primeUntil:'24:00',durations:[3,2,1],courts:[1,2,3,4,5,6,7]});
+    await expect(controller.strategyEvidence({targetDate:clock().targetDate,ranges:enumeratePrimeWindows(DEFAULT_STRATEGY_GOAL)})).resolves.toBe(evidence);
+    await expect(controller.strategyEvidence({targetDate:clock().targetDate,ranges:widest})).resolves.toBe(evidence);
+    expect(widest).toHaveLength(STRATEGY_MAX_ENUMERATED_WINDOWS);
+    await expect(controller.strategyEvidence({targetDate:clock().targetDate,ranges:[...widest,widest[0]]})).rejects.toThrow();
+    expect(read).toHaveBeenCalledTimes(2);
+  });
   it('Prepare only starts Chrome and inspects; never arms or books', async () => {
     const h = harness(); await h.controller.prepare();
     expect(h.calls).toEqual([{kind:'resetPrepare',input:{workflow:'release',strategy:'standard'}}]); expect(h.controller.state.ready).toBe(true); expect(h.confirm).not.toHaveBeenCalled();

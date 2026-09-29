@@ -49,6 +49,21 @@ function fanOutDigest() {
   return { latest: { ...entry, profile }, history: [entry] };
 }
 const saved = (page: Page) => page.evaluate(() => (window as any).fixtureSaved);
+async function controlStrategyEvidence(page: Page) {
+  await page.evaluate(() => {
+    const w = window as any; w.fixtureEvidenceRequests = [];
+    w.thirsty.strategyEvidence = (input: unknown) => new Promise((resolve, reject) => w.fixtureEvidenceRequests.push({ input, resolve, reject }));
+  });
+}
+const evidenceRequestCount = (page: Page) => page.evaluate(() => (window as any).fixtureEvidenceRequests.length as number);
+async function settleEvidence(page: Page, index: number, reject = false) {
+  await page.evaluate(({ index, reject, targetDate }) => {
+    const request = (window as any).fixtureEvidenceRequests[index];
+    if (reject) request.reject(new Error('fixture evidence failure'));
+    else request.resolve({ targetDate, dayOfWeek: 'Saturday', releasesConsidered: 0, wellObservedReleases: 0, realReleases: 0,
+      historicalPrePhase3: 0, strength: 'NONE', ranges: [], sharedRisk: [] });
+  }, { index, reject, targetDate });
+}
 
 describe('Strategy view (Goal → Known schedule → Preset → Suggested plan → Review)', () => {
   it('suggests a diversified plan avoiding a known public booking, keeps a force-include with a visible warning, and saves one authorization', async () => {
@@ -224,6 +239,63 @@ describe('Strategy view (Goal → Known schedule → Preset → Suggested plan �
     await page.locator('#strategy-check-schedule').click();
     expect(await page.evaluate(() => (window as any).fixtureCalls)).toContain('checkReleaseBlocks');
     await page.close();
+  });
+
+  it('discards a pending suggestion when the Goal changes and keeps Use this plan disabled', async () => {
+    const page=await openRenderer(browser,{booking:smartBooking(),blockAudit:blockAudit([])},'strategy');await controlStrategyEvidence(page);
+    await page.locator('#strategy-courts').fill('7');await page.locator('#strategy-courts').dispatchEvent('change');
+    await page.locator('#strategy-suggest').click();await expect.poll(()=>evidenceRequestCount(page)).toBe(1);
+    expect(await page.locator('#strategy-suggestion').innerText()).toContain('Building suggestion');
+    await page.locator('#strategy-courts').fill('6');await page.locator('#strategy-courts').dispatchEvent('change');
+    await settleEvidence(page,0);await page.waitForTimeout(0);
+    expect(await page.locator('#strategy-suggestion').innerText()).toContain('Choose a goal and preset');
+    expect(await page.locator('#strategy-apply').isDisabled()).toBe(true);await page.close();
+  });
+
+  it('keeps the newest suggestion authoritative when successful requests finish out of order', async () => {
+    const page=await openRenderer(browser,{booking:smartBooking(),blockAudit:blockAudit([])},'strategy');await controlStrategyEvidence(page);
+    await page.locator('#strategy-courts').fill('7');await page.locator('#strategy-courts').dispatchEvent('change');await page.locator('#strategy-suggest').click();
+    await expect.poll(()=>evidenceRequestCount(page)).toBe(1);
+    await page.locator('#strategy-courts').fill('6');await page.locator('#strategy-courts').dispatchEvent('change');await page.locator('#strategy-suggest').click();
+    await expect.poll(()=>evidenceRequestCount(page)).toBe(2);
+    const requestCourts=await page.evaluate(()=>(window as any).fixtureEvidenceRequests.map((request:any)=>[...new Set(request.input.ranges.map((range:any)=>range.court))]));
+    expect(requestCourts).toEqual([[7],[6]]);
+    await settleEvidence(page,1);await expect.poll(()=>page.locator('#strategy-suggestion').innerText()).toMatch(/Court 6/);
+    const authoritative=await page.locator('#strategy-suggestion').innerText();expect(authoritative).not.toMatch(/Court 7/);
+    await settleEvidence(page,0);await page.waitForTimeout(0);
+    expect(await page.locator('#strategy-suggestion').innerText()).toBe(authoritative);
+    expect(await page.locator('#strategy-apply').isDisabled()).toBe(false);await page.close();
+  });
+
+  it('does not let a stale evidence failure replace a newer successful suggestion', async () => {
+    const page=await openRenderer(browser,{booking:smartBooking(),blockAudit:blockAudit([])},'strategy');await controlStrategyEvidence(page);
+    await page.locator('#strategy-courts').fill('7');await page.locator('#strategy-courts').dispatchEvent('change');await page.locator('#strategy-suggest').click();
+    await expect.poll(()=>evidenceRequestCount(page)).toBe(1);
+    await page.locator('#strategy-courts').fill('6');await page.locator('#strategy-courts').dispatchEvent('change');await page.locator('#strategy-suggest').click();
+    await expect.poll(()=>evidenceRequestCount(page)).toBe(2);await settleEvidence(page,1);
+    await expect.poll(()=>page.locator('#strategy-suggestion').innerText()).toMatch(/Court 6/);const authoritative=await page.locator('#strategy-suggestion').innerText();
+    await settleEvidence(page,0,true);await page.waitForTimeout(0);expect(await page.locator('#strategy-suggestion').innerText()).toBe(authoritative);
+    expect(await page.locator('#strategy-apply').isDisabled()).toBe(false);await page.close();
+  });
+
+  it('invalidates pending work on preset, intelligence-mode, and fan-out timing changes', async () => {
+    const changes: Array<(page:Page)=>Promise<void>>=[
+      async page=>{await page.locator('input[name="strategy-preset"][value="RESCUE_FOCUSED"]').check();},
+      async page=>{await page.locator('#strategy-intelligence').selectOption('PREFERENCE_ONLY');},
+      async page=>{await page.locator('#strategy-fanout').selectOption('2');},
+      async page=>{await page.locator('#strategy-timing').selectOption('WIDE');},
+    ];
+    for(const change of changes){
+      const page=await openRenderer(browser,{booking:smartBooking(),blockAudit:blockAudit([])},'strategy');await controlStrategyEvidence(page);
+      await page.locator('#strategy-suggest').click();await expect.poll(()=>evidenceRequestCount(page)).toBe(1);await change(page);await settleEvidence(page,0);await page.waitForTimeout(0);
+      expect(await page.locator('#strategy-apply').isDisabled()).toBe(true);expect(await page.locator('#strategy-suggestion').innerText()).not.toMatch(/Immediate logical targets/);await page.close();
+    }
+  });
+
+  it('Preference only builds immediately without requesting historical evidence', async () => {
+    const page=await openRenderer(browser,{booking:smartBooking(),blockAudit:blockAudit([])},'strategy');await controlStrategyEvidence(page);
+    await page.locator('#strategy-intelligence').selectOption('PREFERENCE_ONLY');await page.locator('#strategy-suggest').click();
+    expect(await evidenceRequestCount(page)).toBe(0);expect(await page.locator('#strategy-suggestion').innerText()).toMatch(/Immediate logical targets/);await page.close();
   });
 });
 

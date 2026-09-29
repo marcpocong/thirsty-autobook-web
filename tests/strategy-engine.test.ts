@@ -6,7 +6,7 @@ import { PRECISION_MAX_FAN_OUT, PRECISION_MAX_SENDS } from '../src/workers.js';
 import { ConfigSchema } from '../src/config.js';
 import { defaultSetup } from '../ui/booking.js';
 import { DEFAULT_STRATEGY_GOAL, draftFromSuggestion, enumeratePrimeWindows, knownScheduleFromCells, presetAllocation, PUBLIC_CONFLICT_OVERRIDE, scoreWindow,
-  suggestPlan, validateGoal, windowEvidence, STRATEGY_MAX_CANDIDATES, type BlockAuditCell, type HistoricalRangeEvidence, type KnownSchedule, type StrategyGoal,
+  suggestPlan, validateGoal, windowEvidence, STRATEGY_MAX_CANDIDATES, STRATEGY_MAX_ENUMERATED_WINDOWS, type BlockAuditCell, type HistoricalRangeEvidence, type KnownSchedule, type StrategyGoal,
   type StrategyHistoricalEvidence } from '../src/strategy-engine.js';
 
 const targetDate = '2026-10-01', now = new Date('2026-09-29T12:00:00.000Z');
@@ -114,6 +114,12 @@ describe('Prime Strategy Generator', () => {
     expect(validateGoal({ ...DEFAULT_STRATEGY_GOAL, durations: [4] }).length).toBe(1);
     expect(validateGoal({ ...DEFAULT_STRATEGY_GOAL, courts: [7, 7] }).length).toBe(1);
     expect(validateGoal({ ...DEFAULT_STRATEGY_GOAL, primeUntil: '25:00' }).length).toBe(1);
+  });
+  it('defines the bounded evidence-request maximum from the widest valid goal', () => {
+    const widest: StrategyGoal = { primeFrom: '08:00', primeUntil: '24:00', durations: [3, 2, 1], courts: [1, 2, 3, 4, 5, 6, 7] };
+    expect(validateGoal(widest)).toEqual([]);
+    expect(enumeratePrimeWindows(widest)).toHaveLength(STRATEGY_MAX_ENUMERATED_WINDOWS);
+    expect(STRATEGY_MAX_ENUMERATED_WINDOWS).toBe(315);
   });
   it('classifies windows without ever calling an unreleased no-record hour "open"', () => {
     const known = schedule([[7, '23:00']], [3]);

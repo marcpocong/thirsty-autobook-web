@@ -28,7 +28,7 @@ import type {ReleaseLabDigest} from '../src/release-lab-analysis.js';
 import {PrecisionPhase3Schema,PrecisionTargetSchema} from '../src/config.js';
 import type {IntelligenceDigest,IntelligenceSummary} from '../src/release-intelligence.js';
 import type {AdvisorInput,AdvisorResult} from '../src/release-advisor.js';
-import type {StrategyHistoricalEvidence,Window as StrategyWindow} from '../src/strategy-engine.js';
+import {STRATEGY_MAX_ENUMERATED_WINDOWS,type StrategyHistoricalEvidence,type Window as StrategyWindow} from '../src/strategy-engine.js';
 import type {ReplayPlan,ReplayResult} from '../src/strategy-replay.js';
 import type {ReadinessResult} from '../src/network-readiness.js';
 import type {WarmthAssessment} from '../src/checkout-path-research.js';
@@ -308,7 +308,7 @@ export class Controller {
   }
   async strategyEvidence(input:unknown):Promise<StrategyHistoricalEvidence>{
     if(!this.deps.strategyEvidence)throw Error('STRATEGY_EVIDENCE_UNAVAILABLE');
-    const request=z.object({targetDate:z.iso.date(),ranges:z.array(z.object({court:z.number().int().min(1).max(7),start:z.string().regex(/^(0[89]|1\d|2[0-3]):00$/),durationHours:z.number().int().min(1).max(3)}).strict()).max(147)}).strict().parse(input);
+    const request=z.object({targetDate:z.iso.date(),ranges:z.array(z.object({court:z.number().int().min(1).max(7),start:z.string().regex(/^(0[89]|1\d|2[0-3]):00$/),durationHours:z.number().int().min(1).max(3)}).strict()).max(STRATEGY_MAX_ENUMERATED_WINDOWS)}).strict().parse(input);
     const clock=this.deps.clock();
     if(request.targetDate!==clock.targetDate)throw Error('STRATEGY_EVIDENCE_WRONG_TARGET_DATE');
     return this.deps.strategyEvidence(request.targetDate,request.ranges);
