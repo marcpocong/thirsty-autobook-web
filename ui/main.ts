@@ -18,6 +18,7 @@ import {networkNowMs,readNetworkClock,synchronizeNetworkClock} from '../src/netw
 import {closeBotBrowsers,countBotBrowsers} from './browser-cleanup.js';
 import {SlotWatch,readSlotWatchHistory} from '../src/slot-watch.js';
 import {buildReleaseForensics,forensicInputsFor,forensicsDigest,readReleaseForensicsHistory} from '../src/release-forensics.js';
+import {buildReleaseLabForRun,readReleaseLabHistory} from '../src/release-lab-analysis.js';
 import {clearReleaseIntelligence,intelligenceDigest,readReleaseIntelligence,rebuildReleaseIntelligence} from '../src/release-intelligence.js';
 import {adviseFromHistory} from '../src/release-advisor.js';
 import {replayAll} from '../src/strategy-replay.js';
@@ -74,8 +75,9 @@ const controller = new Controller({
   // Same .local as the runner's evidence, so arbitration:analyze finds it; runs before the runner is spawned.
   ensureArbitrationManifest:({targetDate,releaseMs,clockOffsetMs})=>ensureExperimentManifest({localRoot:resolve(root,'.local'),
     release:{targetDate,releaseMs},createdBy:'DESKTOP_ARM',clockOffsetMs}),
-  buildReleaseForensics:({runId,status})=>{const inputs=forensicInputsFor(root,runId);return inputs?forensicsDigest(buildReleaseForensics({...inputs,status})):undefined;},
+  buildReleaseForensics:({runId,status})=>{const inputs=forensicInputsFor(root,runId);if(!inputs)return undefined;const summary=buildReleaseForensics({...inputs,status});buildReleaseLabForRun(root,runId,summary);return forensicsDigest(summary);},
   releaseForensicsHistory:()=>readReleaseForensicsHistory(resolve(root,'.local/release-forensics')),
+  releaseLabHistory:()=>readReleaseLabHistory(resolve(root,'.local/release-lab')),
   // Phase 4: derived, read-only analysis in this process. The release runner never imports these modules.
   rebuildReleaseIntelligence:()=>rebuildReleaseIntelligence(root),
   clearReleaseIntelligence:()=>clearReleaseIntelligence(root),

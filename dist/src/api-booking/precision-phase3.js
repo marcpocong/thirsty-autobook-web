@@ -3,7 +3,8 @@ import { COURT_TO_SPACE_ID } from './availability-parser.js';
 import { DurableSubmissionJournal } from './durable-submission-journal.js';
 import { THIRSTY_PICKLE_FACILITY_ID } from './live-availability-provider.js';
 import { MATRIX_HOURS } from './court-hour-matrix.js';
-import { decodeMatrix } from '../slot-evidence.js';
+import { availabilityFreshness, compareAvailabilityFreshness, decodeMatrix } from '../slot-evidence.js';
+export { freshestAvailabilityObservation } from '../slot-evidence.js';
 import { PRECISION_WORKER_IDS } from '../workers.js';
 import { precisionTargetPlan } from './precision-race.js';
 /** Operator authorization is deliberately wider than the seven-worker dispatch fleet. */
@@ -79,10 +80,29 @@ export function authorizePrecision(input) {
         standby: Object.freeze([...frozen.standby]), budgets: Object.freeze({ ...frozen.budgets }),
         fingerprint: hash(frozen) });
 }
-/** MISS is the only currently documented cache status accepted for action. HIT, STALE,
- * absent metadata, and AGE alone cannot bound the represented state. */
+export function isActionableEvidenceFitness(fitness) {
+    return fitness === 'ACTIONABLE_FRESH' || fitness === 'ACTIONABLE_BOUNDED_CACHE';
+}
+/** Conservative upper bound on how old the represented state can be at evaluation time.
+ * HTTP Age is an integer number of seconds and can be rounded down, so one full second is
+ * added at the response boundary. Time elapsed since that response is then added. */
+export function effectiveRepresentedAgeUpperBoundMs(observation, releaseMs, evaluatedMs) {
+    const ageS = observation.cache?.ageS;
+    if (!Number.isSafeInteger(ageS) || ageS < 0)
+        return null;
+    const elapsedSinceResponseMs = evaluatedMs - (releaseMs + observation.responseOffsetMs);
+    if (!Number.isFinite(elapsedSinceResponseMs) || elapsedSinceResponseMs < 0)
+        return null;
+    return (ageS + 1) * 1000 + elapsedSinceResponseMs;
+}
+/** MISS/age 0 is genuinely current evidence. HIT or STALE can be actionable only when
+ * integer Age metadata gives a conservative upper bound inside the same freshness budget. */
 export function classifyActionableObservation(observation, newestAnsweredSeq, releaseMs, evaluatedMs, maxAgeMs) {
-    const ageMs = evaluatedMs - (releaseMs + observation.requestOffsetMs);
+    const evaluatedOffsetMs = evaluatedMs - releaseMs, requestAgeMs = evaluatedOffsetMs - observation.requestOffsetMs;
+    const cacheStatus = observation.cache?.status;
+    const freshness = availabilityFreshness(observation, evaluatedOffsetMs);
+    const boundedCacheAgeMs = cacheStatus === 'HIT' || cacheStatus === 'STALE' ? freshness.ageUpperBoundMs : null;
+    const ageMs = boundedCacheAgeMs ?? requestAgeMs;
     let fitness;
     if (observation.outcome !== 'ok')
         fitness = 'FAILED';
@@ -93,34 +113,90 @@ export function classifyActionableObservation(observation, newestAnsweredSeq, re
     else if (decodeMatrix(observation.matrix).size !== 112 || !observation.prices ||
         observation.prices.length !== 7 || observation.prices.some(row => row.length !== MATRIX_HOURS.length))
         fitness = 'FORENSIC_ONLY_INCOMPLETE';
-    else if (observation.cache?.status !== 'MISS' || (observation.cache.ageS ?? 0) > 0)
+    else if (cacheStatus === 'HIT' || cacheStatus === 'STALE') {
+        if (boundedCacheAgeMs === null)
+            fitness = 'FORENSIC_ONLY_CACHE_AGE_UNKNOWN';
+        else if (boundedCacheAgeMs > maxAgeMs)
+            fitness = 'FORENSIC_ONLY_STALE';
+        else
+            fitness = 'ACTIONABLE_BOUNDED_CACHE';
+    }
+    else if (cacheStatus !== 'MISS' || (observation.cache?.ageS ?? 0) > 0)
         fitness = 'FORENSIC_ONLY_CACHE_AGE_UNKNOWN';
-    else if (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > maxAgeMs)
+    else if (!Number.isFinite(requestAgeMs) || requestAgeMs < 0 || requestAgeMs > maxAgeMs)
         fitness = 'FORENSIC_ONLY_STALE';
     else
         fitness = 'ACTIONABLE_FRESH';
-    return { observation, fitness, ageMs };
+    return { observation, fitness, ageMs, representedAtLowerBoundOffsetMs: freshness.representedAtLowerBoundOffsetMs };
 }
 /** Freshness window for adaptive evidence: max(6 s, 2 × read latency + security refresh + 1 s), capped at 15 s.
  * Shared by the release runner and the offline replay so both apply the same rule. */
 export function adaptiveMaxAgeMs(readLatencyMs, securityRefreshMs) {
     return Math.min(15_000, Math.max(6_000, 2 * readLatencyMs + securityRefreshMs + 1000));
 }
+/** Adaptive evidence fitness at `nowMs`, with the freshness window derived from the observation's own read latency. */
+export function adaptiveFitness(observation, newestSeq, releaseMs, nowMs, securityRefreshMs) {
+    const latency = Math.max(0, observation.responseOffsetMs - observation.requestOffsetMs);
+    return classifyActionableObservation(observation, newestSeq, releaseMs, nowMs, adaptiveMaxAgeMs(latency, securityRefreshMs));
+}
+/** Every required hourly cell of the range, and its price, from one observation. */
+function readCandidateRange(candidate, observation) {
+    const cells = decodeMatrix(observation.matrix), hours = Number(candidate.start.slice(0, 2));
+    const range = Array.from({ length: candidate.durationHours }, (_, offset) => `${String(hours + offset).padStart(2, '0')}:00`);
+    const codes = range.map(hour => cells.get(`${candidate.court}/${hour}`));
+    if (codes.some(code => code === 'X'))
+        return { state: 'UNAVAILABLE' };
+    if (codes.some(code => code !== 'O'))
+        return { state: 'UNKNOWN' };
+    const prices = range.map(hour => observation.prices?.[candidate.court - 1]?.[MATRIX_HOURS.indexOf(hour)]);
+    if (prices.some(price => typeof price !== 'number' || !Number.isFinite(price) || price <= 0))
+        return { state: 'PRICE_INVALID' };
+    return { state: 'OPEN', prices: prices };
+}
 export function candidatePriceFromObservation(candidate, evidence) {
-    if (evidence.fitness !== 'ACTIONABLE_FRESH')
+    if (!isActionableEvidenceFitness(evidence.fitness))
         return null;
-    const cells = decodeMatrix(evidence.observation.matrix), hours = Number(candidate.start.slice(0, 2));
-    const prices = [];
-    for (let offset = 0; offset < candidate.durationHours; offset++) {
-        const hour = `${String(hours + offset).padStart(2, '0')}:00`;
-        if (cells.get(`${candidate.court}/${hour}`) !== 'O')
-            return null;
-        const price = evidence.observation.prices?.[candidate.court - 1]?.[MATRIX_HOURS.indexOf(hour)];
-        if (typeof price !== 'number' || !Number.isFinite(price) || price <= 0)
-            return null;
-        prices.push(price);
-    }
-    return prices;
+    const range = readCandidateRange(candidate, evidence.observation);
+    return range.state === 'OPEN' ? range.prices : null;
+}
+/**
+ * The one rule every adaptive checkpoint (after security preparation, before reservation, immediately
+ * before POST) applies. A newer Slot Watch sequence is not by itself a reason to stop: the newest
+ * observation must independently be actionable now, and the SAME candidate must still be fully
+ * OPEN in it with valid prices, in which case that observation becomes the effective evidence. The
+ * candidate is never swapped; an older observation is never used in place of a newer one.
+ */
+export function revalidateAdaptiveAttempt(input) {
+    const { session, candidate } = input, releaseMs = session.authorization.releaseMs;
+    if (input.aborted)
+        return { valid: false, reason: 'ABORTED' };
+    if (input.dispatchClockMs !== undefined && !(input.dispatchClockMs >= releaseMs))
+        return { valid: false, reason: 'RELEASE_NOT_REACHED' };
+    if (input.verifiedHold)
+        return { valid: false, reason: 'VERIFIED_HOLD_EXISTS' };
+    const blocker = session.adaptiveBlocker(input.wave, input.ownAttemptId);
+    if (blocker)
+        return { valid: false, reason: blocker };
+    const latest = session.latest;
+    if (!latest)
+        return { valid: false, reason: 'LATEST_NOT_ACTIONABLE' };
+    const seq = latest.observation.seq;
+    const evidence = adaptiveFitness(latest.observation, input.newestSeq, releaseMs, input.nowMs, input.securityRefreshMs);
+    if (!isActionableEvidenceFitness(evidence.fitness))
+        return { valid: false, reason: 'LATEST_NOT_ACTIONABLE', seq, fitness: evidence.fitness };
+    // Open again now is not enough: a fresh read that showed the range unavailable after selection
+    // ends this attempt (a later reopening is a new event for the adaptive loop to consider).
+    const closedAt = session.lastUnavailableFreshnessOffset(candidate.id), selectedAt = session.evidenceFreshnessOffset(input.selectedEvidenceSeq);
+    if (closedAt !== undefined && selectedAt !== undefined && closedAt > selectedAt)
+        return { valid: false, reason: 'CANDIDATE_NO_LONGER_OPEN', seq };
+    const range = readCandidateRange(candidate, latest.observation);
+    if (range.state !== 'OPEN')
+        return { valid: false, seq, reason: range.state === 'UNAVAILABLE' ? 'CANDIDATE_NO_LONGER_OPEN' :
+                range.state === 'UNKNOWN' ? 'CANDIDATE_STATE_UNKNOWN' : 'PRICE_INVALID' };
+    if (input.lockedPrices && (input.lockedPrices.length !== range.prices.length ||
+        input.lockedPrices.some((price, index) => price !== range.prices[index])))
+        return { valid: false, reason: 'PRICE_CHANGED', seq };
+    return { valid: true, evidence, evidenceSeq: seq, prices: range.prices };
 }
 /** Replaces every request rate from one documented evidence set; no assumed-rate slot survives. */
 export function pricedPrecisionPlan(candidate, date, prices) {
@@ -140,8 +216,8 @@ export class PrecisionSession {
     latest;
     wave2Selected = false;
     unavailableAt = new Map();
+    representedAtBySeq = new Map();
     rangeWasUnavailable = new Map();
-    rescuedEpochs = new Set();
     constructor(authorization) {
         this.authorization = authorization;
     }
@@ -155,14 +231,21 @@ export class PrecisionSession {
             return 'OBJECTIVE_ACHIEVED';
         if (this.attempts.some(value => value.state === 'IN_FLIGHT'))
             return 'MANUAL_RECONCILIATION_REQUIRED';
-        return this.attempts.length ? 'ALL_REJECTED_WAITING_FOR_REOPEN' : 'NOTHING_DISPATCHED';
+        return this.consuming().length ? 'ALL_REJECTED_WAITING_FOR_REOPEN' : 'NOTHING_DISPATCHED';
     }
+    /** Attempts that count against budgets and Rescue reopen epochs: every attempt except one proven never sent.
+     * A reservation consumes from the moment it is recorded (IN_FLIGHT), so a pending final gate still blocks. */
+    consuming() { return this.attempts.filter(value => value.state !== 'NOT_DISPATCHED'); }
     observe(evidence) {
-        if (this.latest && evidence.observation.seq <= this.latest.observation.seq)
+        if (!isActionableEvidenceFitness(evidence.fitness))
+            return;
+        const representedAt = evidence.representedAtLowerBoundOffsetMs;
+        if (representedAt === null)
+            return;
+        this.representedAtBySeq.set(evidence.observation.seq, representedAt);
+        if (this.latest && compareAvailabilityFreshness(evidence.observation, this.latest.observation) <= 0)
             return;
         this.latest = evidence;
-        if (evidence.fitness !== 'ACTIONABLE_FRESH')
-            return;
         for (const candidate of this.authorization.candidates) {
             const cells = decodeMatrix(evidence.observation.matrix);
             const hours = Number(candidate.start.slice(0, 2));
@@ -171,10 +254,12 @@ export class PrecisionSession {
                 continue;
             const unavailable = codes.some(value => value === 'X');
             if (unavailable && !this.rangeWasUnavailable.get(candidate.id))
-                this.unavailableAt.set(candidate.id, { seq: evidence.observation.seq, responseOffsetMs: evidence.observation.responseOffsetMs });
+                this.unavailableAt.set(candidate.id, { seq: evidence.observation.seq, responseOffsetMs: evidence.observation.responseOffsetMs, representedAtLowerBoundOffsetMs: representedAt });
             this.rangeWasUnavailable.set(candidate.id, unavailable);
         }
     }
+    evidenceFreshnessOffset(seq) { return this.representedAtBySeq.get(seq); }
+    lastUnavailableFreshnessOffset(candidateId) { return this.unavailableAt.get(candidateId)?.representedAtLowerBoundOffsetMs; }
     /** Pure selection; caller must durably reserve and recheck before each dispatch. */
     select(wave, nowMs, maxAgeMs) {
         if (wave === 'WAVE_2' && this.wave2Selected || wave === 'RESCUE' && !this.authorization.rescueEnabled)
@@ -188,9 +273,10 @@ export class PrecisionSession {
         if (wave === 'RESCUE' && !this.attempts.some(value => value.state === 'REJECTED'))
             return [];
         const evidence = this.latest;
-        if (!evidence || classifyActionableObservation(evidence.observation, evidence.observation.seq, this.authorization.releaseMs, nowMs, maxAgeMs).fitness !== 'ACTIONABLE_FRESH')
+        if (!evidence || !isActionableEvidenceFitness(classifyActionableObservation(evidence.observation, evidence.observation.seq, this.authorization.releaseMs, nowMs, maxAgeMs).fitness))
             return [];
-        const budget = Math.min(this.authorization.budgets.total - this.attempts.length, this.authorization.budgets[wave === 'WAVE_2' ? 'wave2' : 'rescue'] - this.attempts.filter(value => value.wave === wave).length);
+        const consuming = this.consuming();
+        const budget = Math.min(this.authorization.budgets.total - consuming.length, this.authorization.budgets[wave === 'WAVE_2' ? 'wave2' : 'rescue'] - consuming.filter(value => value.wave === wave).length);
         if (budget <= 0)
             return [];
         const byId = new Map(this.authorization.candidates.map(value => [value.id, value]));
@@ -209,9 +295,10 @@ export class PrecisionSession {
             if (wave === 'WAVE_2' && this.attempts.some(value => value.candidateId === candidate.id))
                 continue;
             const unavailable = this.unavailableAt.get(candidate.id);
-            if (wave === 'RESCUE' && (!unavailable || unavailable.seq >= evidence.observation.seq ||
+            const currentRepresentedAt = evidence.representedAtLowerBoundOffsetMs;
+            if (wave === 'RESCUE' && (!unavailable || currentRepresentedAt === null || unavailable.representedAtLowerBoundOffsetMs >= currentRepresentedAt ||
                 unavailable.responseOffsetMs > evidence.observation.requestOffsetMs ||
-                this.rescuedEpochs.has(`${candidate.id}/${unavailable.seq}`)))
+                consuming.some(value => value.wave === 'RESCUE' && value.candidateId === candidate.id && value.reopenEpoch === unavailable.seq)))
                 continue;
             if ([...active, ...selected.map(value => value.candidate)].some(value => candidatesConflict(value, candidate)))
                 continue;
@@ -226,12 +313,22 @@ export class PrecisionSession {
             this.wave2Selected = true;
         return selected;
     }
+    /** Attempt-state gates shared by every adaptive checkpoint. `ownAttemptId` excludes the caller's reservation. */
+    adaptiveBlocker(wave, ownAttemptId) {
+        if (this.attempts.some(value => value.state === 'UNKNOWN'))
+            return 'UNKNOWN_ATTEMPT_EXISTS';
+        if (this.attempts.some(value => value.state === 'VERIFIED'))
+            return 'VERIFIED_HOLD_EXISTS';
+        if (wave === 'RESCUE' && this.attempts.some(value => value.id !== ownAttemptId && value.state === 'IN_FLIGHT'))
+            return 'CONCURRENT_ATTEMPT_IN_FLIGHT';
+        return undefined;
+    }
+    /** Sequence of the fresh read that last showed this candidate's range turning unavailable. */
+    lastUnavailableSeq(candidateId) { return this.unavailableAt.get(candidateId)?.seq; }
     record(attempt) {
         if (this.attempts.some(value => value.id === attempt.id))
             throw Error('PRECISION_ATTEMPT_DUPLICATE');
         this.attempts.push(attempt);
-        if (attempt.wave === 'RESCUE' && attempt.reopenEpoch !== undefined)
-            this.rescuedEpochs.add(`${attempt.candidateId}/${attempt.reopenEpoch}`);
     }
 }
 //# sourceMappingURL=precision-phase3.js.map

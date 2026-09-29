@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compileSmartPlan, confirmSmartRates, describeSmartPlan, emptySmartDraft, smartDraftFromPhase3, smartPlanText, smartRateFor,
+import { applyDurationOffsetPreset, compileSmartPlan, confirmSmartRates, describeSmartPlan, emptySmartDraft, smartDraftFromPhase3, smartPlanText, smartRateFor,
   SMART_MAX_SLOTS, SMART_WORKERS, type SmartDraft, type SmartSlot } from '../src/precision-simple.js';
 import { PRECISION_MAX_CANDIDATES, authorizePrecision, precisionCandidateId } from '../src/api-booking/precision-phase3.js';
 import { PRECISION_WORKER_IDS } from '../src/workers.js';
@@ -13,6 +13,17 @@ function draft(extra: Partial<SmartDraft> = {}): SmartDraft {
   return { ...emptySmartDraft(), immediate: [slot(7, '19:00'), slot(6, '19:00'), slot(5, '18:00'), slot(4, '17:00')],
     backups: [slot(3, '19:00'), slot(2, '18:00'), slot(1, '17:00')], rates: confirmSmartRates(600, 700, 'OPERATOR_CONFIRMED', targetDate, now), ...extra };
 }
+it('Duration x Offset preset changes only duration/offset on existing immediate rows',()=>{
+  const source=draft({immediate:[{...slot(7,'19:00'),worker:'G',priority:9},{...slot(6,'18:00'),worker:'A'}]});
+  const result=applyDurationOffsetPreset(source);
+  expect(result.immediate).toEqual([
+    {court:7,start:'19:00',durationHours:3,worker:'G',priority:9,releaseOffsetMs:-25},
+    {court:6,start:'18:00',durationHours:3,worker:'A',releaseOffsetMs:-10},
+  ]);
+  expect(result.backups).toEqual(source.backups);
+  expect(result.releaseLab).toEqual({version:1,kind:'DURATION_OFFSET_V1',label:'Duration × Offset'});
+  expect(source.immediate[0]).not.toHaveProperty('releaseOffsetMs');
+});
 /** The backend accepts exactly what the compiler produced. */
 function backendAccepts(phase3: NonNullable<ReturnType<typeof compileSmartPlan>['phase3']>) {
   const config = ConfigSchema.parse({ ...defaultSetup, BOOKING_METHOD: 'proofless', DURATION_HOURS: 3, RELEASE_STRATEGY: 'precision', PRECISION_TARGETS: [], PRECISION_PHASE3: phase3, ...players });

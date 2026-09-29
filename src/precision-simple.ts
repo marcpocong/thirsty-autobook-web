@@ -40,6 +40,8 @@ export interface SmartDraft {
   rates: SmartRateTable;
   /** Advanced overrides. Absent means automatic. */
   advanced: { standby?: SmartWorker[]; wave2?: number; rescue?: number; total?: number };
+  /** Analysis-only marker. It never changes authorization; candidate and assignment data remain authoritative. */
+  releaseLab?: { version: 1; kind: 'DURATION_OFFSET_V1'; label: 'Duration × Offset' };
 }
 /** Structural copy of the config PrecisionPhase3Schema. */
 export interface SmartPhase3 {
@@ -76,6 +78,27 @@ const smartSame = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringi
 export function emptySmartDraft(): SmartDraft {
   return { immediate: [], backups: [], useBackupsImmediately: false, retryReopened: false, maxReopenedAttempts: SMART_DEFAULT_REOPENED,
     rates: { day: null, evening: null, status: 'OPERATOR_CONFIRMED', source: '', capturedAt: '', date: '' }, advanced: {} };
+}
+
+export const DURATION_OFFSET_PRESET = Object.freeze([
+  { durationHours: 3, releaseOffsetMs: -25 }, { durationHours: 3, releaseOffsetMs: -10 },
+  { durationHours: 2, releaseOffsetMs: -25 }, { durationHours: 2, releaseOffsetMs: -10 },
+  { durationHours: 1, releaseOffsetMs: -25 }, { durationHours: 1, releaseOffsetMs: -10 },
+  { durationHours: 1, releaseOffsetMs: 0 },
+] as const);
+
+/** Applies only duration and offset to rows the operator already configured. Courts, starts,
+ * explicit workers and every other authorization field are preserved; normal compilation
+ * remains responsible for rejecting overlaps or end-after-midnight rows. */
+export function applyDurationOffsetPreset(draft: SmartDraft): SmartDraft {
+  return { ...draft, immediate: draft.immediate.map((slot, index) => {
+    const preset = DURATION_OFFSET_PRESET[index];
+    if (!preset) return { ...slot };
+    const next: SmartSlot = { ...slot, durationHours: preset.durationHours };
+    if (preset.releaseOffsetMs === 0) delete next.releaseOffsetMs; else next.releaseOffsetMs = preset.releaseOffsetMs;
+    return next;
+  }), backups: draft.backups.map(slot => ({ ...slot })), advanced: { ...draft.advanced }, rates: { ...draft.rates },
+    releaseLab: { version: 1, kind: 'DURATION_OFFSET_V1', label: 'Duration × Offset' } };
 }
 
 /** Rate card from an operator confirmation. The source string satisfies the backend's source pattern. */

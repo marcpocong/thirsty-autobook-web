@@ -17,11 +17,13 @@ import { networkNowMs, readNetworkClock, synchronizeNetworkClock } from '../src/
 import { closeBotBrowsers, countBotBrowsers } from './browser-cleanup.js';
 import { SlotWatch, readSlotWatchHistory } from '../src/slot-watch.js';
 import { buildReleaseForensics, forensicInputsFor, forensicsDigest, readReleaseForensicsHistory } from '../src/release-forensics.js';
+import { buildReleaseLabForRun, readReleaseLabHistory } from '../src/release-lab-analysis.js';
 import { clearReleaseIntelligence, intelligenceDigest, readReleaseIntelligence, rebuildReleaseIntelligence } from '../src/release-intelligence.js';
 import { adviseFromHistory } from '../src/release-advisor.js';
 import { replayAll } from '../src/strategy-replay.js';
 import { readNetworkReadinessHistory, runNetworkReadiness, saveNetworkReadiness } from '../src/network-readiness.js';
 import { connectionWarmth } from '../src/checkout-path-research.js';
+import { ensureExperimentManifest } from '../src/arbitration/experiment-manifest.js';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 process.chdir(root);
 app.setName('Thirsty Pickle Bot');
@@ -72,8 +74,13 @@ const controller = new Controller({
         return { id: watch.id, done: watch.done, stop: reason => watch.stop(reason) };
     },
     slotWatchHistory: () => readSlotWatchHistory(resolve(root, '.local/slot-watch')),
-    buildReleaseForensics: ({ runId, status }) => { const inputs = forensicInputsFor(root, runId); return inputs ? forensicsDigest(buildReleaseForensics({ ...inputs, status })) : undefined; },
+    // Same .local as the runner's evidence, so arbitration:analyze finds it; runs before the runner is spawned.
+    ensureArbitrationManifest: ({ targetDate, releaseMs, clockOffsetMs }) => ensureExperimentManifest({ localRoot: resolve(root, '.local'),
+        release: { targetDate, releaseMs }, createdBy: 'DESKTOP_ARM', clockOffsetMs }),
+    buildReleaseForensics: ({ runId, status }) => { const inputs = forensicInputsFor(root, runId); if (!inputs)
+        return undefined; const summary = buildReleaseForensics({ ...inputs, status }); buildReleaseLabForRun(root, runId, summary); return forensicsDigest(summary); },
     releaseForensicsHistory: () => readReleaseForensicsHistory(resolve(root, '.local/release-forensics')),
+    releaseLabHistory: () => readReleaseLabHistory(resolve(root, '.local/release-lab')),
     // Phase 4: derived, read-only analysis in this process. The release runner never imports these modules.
     rebuildReleaseIntelligence: () => rebuildReleaseIntelligence(root),
     clearReleaseIntelligence: () => clearReleaseIntelligence(root),

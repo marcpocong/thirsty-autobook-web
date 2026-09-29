@@ -59,6 +59,8 @@ const object = (value: unknown): Record<string, unknown> | null =>
 const nonempty = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0;
 const safeIdentifier = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(value);
 const seconds = (time: string) => `${time}:00`;
+/** Onda's checkout endpoint represents the end of the 23:00 hour as midnight, never as 24:00. */
+export const ondaCheckoutBoundary = (time: string): string => time === '24:00' ? '00:00' : time;
 const cents = (value: number) => Math.round(value * 100);
 const sameAmount = (a: unknown, b: number) => typeof a === 'number' && Number.isFinite(a) && cents(a) === cents(b);
 const fail = (code: string): never => { throw new PublicCheckoutValidationError(code); };
@@ -113,7 +115,7 @@ export function buildStandardPublicCheckoutRequest(
     if (!proof || proof.spaceId !== slot.spaceId || proof.date !== slot.date || proof.startTime !== slot.startTime || proof.endTime !== slot.endTime || !nonempty(proof.availabilityProof))
       fail('AVAILABILITY_PROOF_SLOT_MISMATCH');
     const validProof = proof!;
-    return { spaceId: slot.spaceId, facilityId, date: slot.date, startTime: slot.startTime, endTime: slot.endTime,
+    return { spaceId: slot.spaceId, facilityId, date: slot.date, startTime: slot.startTime, endTime: ondaCheckoutBoundary(slot.endTime),
       duration: 60, rate: slot.price, chargedAmount: slot.price, guestCount: 1, promotionId: null,
       activityKey: null, activityLabel: null, sessionRef: `session_${courtIndex + 1}`, availabilityProof: validProof.availabilityProof };
   }));

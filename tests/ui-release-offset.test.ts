@@ -24,6 +24,10 @@ it('shows a free 0-2000 ms Release Offset input for a Proofless release and save
   expect(await field.getAttribute('min')).toBe('0');expect(await field.getAttribute('max')).toBe('2000');expect(await field.getAttribute('step')).toBe('1');
   expect(await block.locator('p').textContent()).toBe('Choose any whole millisecond from 0 (Normal) through 2000 (2 seconds early).');
   expect(await earlyBy(page)).toBe('0');
+  expect(await page.locator('#release-lab').isVisible()).toBe(true);
+  await page.locator('#release-lab summary').click();
+  expect(await page.locator('#release-lab-status').innerText()).toContain('Choose PRECISION RELEASE');
+  expect(await page.locator('#release-lab-preset').isDisabled()).toBe(true);
   await field.fill('1733');
   await page.locator('#save-booking').click();
   await page.waitForFunction(() => (window as any).fixtureSaved);
@@ -57,6 +61,55 @@ it('Precision hides the plan-wide box and gives each Fixed attempt its own Offse
   const setup = await saved(page);
   expect(setup.PRECISION_TARGETS).toEqual([a, { ...b, releaseOffsetMs: -1750 }]);
   expect(setup.RELEASE_OFFSET_MS).toBe(0);
+  await page.close();
+});
+
+it('lets each Fixed Precision worker keep a different goal and configure four independent tab offsets', async () => {
+  const page = await openRenderer(browser, { booking: booking({ RELEASE_STRATEGY: 'precision', PRECISION_TARGETS: [{ court: 7, start: '19:00', durationHours: 3 }] }) });
+  const toggle = page.locator('#precision-fan-out');
+  expect(await toggle.isChecked()).toBe(false);
+  await toggle.check();
+  expect(await page.locator('#precision-count').inputValue()).toBe('1');
+  expect(await page.locator('#precision-fan-out-note').isVisible()).toBe(true);
+  await page.locator('#precision-count').selectOption('2');
+  await page.locator('#precision-court-0').selectOption('4');
+  await page.locator('#precision-start-0').selectOption('18:00');
+  await page.locator('#precision-duration-0').selectOption('2');
+  await page.locator('#precision-court-1').selectOption('6');
+  await page.locator('#precision-start-1').selectOption('19:00');
+  await page.locator('#precision-duration-1').selectOption('3');
+  const earlyBy = [[25, 10, 0, 100], [20, 0, 250, 500]];
+  for (const [worker, values] of earlyBy.entries()) for (const [child, value] of values.entries())
+    await page.locator(child ? `#precision-offset-${worker}-${child}` : `#precision-offset-${worker}`).fill(String(value));
+  await page.locator('#save-booking').click();
+  await page.waitForFunction(() => (window as any).fixtureSaved);
+  const setup = await saved(page);
+  expect(setup.PRECISION_FAN_OUT).toBe(true);
+  expect(setup.PRECISION_TARGETS).toEqual([
+    { court: 4, start: '18:00', durationHours: 2, fanOutReleaseOffsetsMs: [-25, -10, 0, -100] },
+    { court: 6, start: '19:00', durationHours: 3, fanOutReleaseOffsetsMs: [-20, 0, -250, -500] },
+  ]);
+  await toggle.uncheck();
+  expect(await page.locator('#precision-court-1').isEnabled()).toBe(true);
+  await page.close();
+});
+
+it('keeps Release Lab discoverable in Fixed mode and applies its preset by switching the exact rows to Smart', async () => {
+  const rows = [{ court: 7, start: '19:00', durationHours: 3 }, { court: 6, start: '18:00', durationHours: 2 }];
+  const page = await openRenderer(browser, { booking: booking({ RELEASE_STRATEGY: 'precision', PRECISION_TARGETS: rows }) });
+  expect(await page.locator('#precision-mode-fixed').isChecked()).toBe(true);
+  expect(await page.locator('#release-lab').isVisible()).toBe(true);
+  expect(await page.locator('#release-lab summary').innerText()).toContain('Release Lab');
+  await page.locator('#release-lab summary').click();
+  expect(await page.locator('#release-lab-matrix tr').count()).toBe(2);
+  await page.locator('#release-lab-preset').click();
+  expect(await page.locator('#precision-mode-smart').isChecked()).toBe(true);
+  expect(await page.locator('#smart-editor').isVisible()).toBe(true);
+  expect(await page.locator('#smart-immediate .smart-row').count()).toBe(2);
+  expect(await page.locator('#smart-immediate [id^="smart-immediate-court-"]').evaluateAll(elements => elements.map(element => (element as HTMLSelectElement).value))).toEqual(['7', '6']);
+  expect(await page.locator('#smart-immediate [id^="smart-immediate-start-"]').evaluateAll(elements => elements.map(element => (element as HTMLSelectElement).value))).toEqual(['19:00', '18:00']);
+  expect(await page.locator('#smart-immediate [id^="smart-immediate-duration-"]').evaluateAll(elements => elements.map(element => (element as HTMLSelectElement).value))).toEqual(['3', '3']);
+  expect(await page.locator('#smart-immediate [id^="smart-immediate-offset"]').evaluateAll(elements => elements.map(element => (element as HTMLInputElement).value))).toEqual(['25', '10']);
   await page.close();
 });
 

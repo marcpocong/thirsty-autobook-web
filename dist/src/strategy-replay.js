@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { adaptiveMaxAgeMs, authorizePrecision, candidatePriceFromObservation, candidatesConflict, classifyActionableObservation, precisionCandidateId, PrecisionSession } from './api-booking/precision-phase3.js';
+import { adaptiveMaxAgeMs, authorizePrecision, candidatePriceFromObservation, candidatesConflict, classifyActionableObservation, isActionableEvidenceFitness, precisionCandidateId, PrecisionSession } from './api-booking/precision-phase3.js';
 import { readObserverLog } from './release-forensics.js';
 import { decodeMatrix, targetEvidence } from './slot-evidence.js';
 export const REPLAY_DEFAULT_SETTLE_MS = 20_000;
@@ -69,7 +69,7 @@ export function replayRelease(plan, log, record, options = {}) {
             if (observation.outcome === 'ok' && observation.targetDatePresent && observation.requestOffsetMs >= 0) {
                 const cells = decodeMatrix(observation.matrix);
                 for (const candidate of authorization.candidates) {
-                    const seen = `${candidate.id}/${evidence.fitness === 'ACTIONABLE_FRESH'}`;
+                    const seen = `${candidate.id}/${isActionableEvidenceFitness(evidence.fitness)}`;
                     if (openSeen.has(seen) || !(candidate.permissions.wave2 || candidate.permissions.rescue))
                         continue;
                     const open = Array.from({ length: candidate.durationHours }, (_, offset) => `${candidate.court}/${String(Number(candidate.start.slice(0, 2)) + offset).padStart(2, '0')}:00`)
@@ -81,7 +81,7 @@ export function replayRelease(plan, log, record, options = {}) {
                     }
                 }
             }
-            if (evidence.fitness === 'ACTIONABLE_FRESH') {
+            if (isActionableEvidenceFitness(evidence.fitness)) {
                 // Same order as the runner: Rescue on arrival (nothing in flight), then Wave 2 when allowed.
                 if (authorization.rescueEnabled && !session.attempts.some(value => value.state === 'IN_FLIGHT'))
                     dispatch('RESCUE', event.at, maxAge);
@@ -119,7 +119,7 @@ export function replayRelease(plan, log, record, options = {}) {
         censored.push(`${unusable} read${unusable === 1 ? '' : 's'} could not be used for adaptive sends (${Object.entries(fitness).filter(([key]) => key !== 'ACTIONABLE_FRESH' && key !== 'UNRELEASED')
             .map(([key, count]) => `${count} ${key.replace(/^FORENSIC_ONLY_/, '').replaceAll('_', ' ').toLowerCase()}`).join(', ')}).`);
     const actionable = !!result.backup || result.rescue.length > 0;
-    const freshOpening = result.forensicOpenings.some(value => value.fitness === 'ACTIONABLE_FRESH');
+    const freshOpening = result.forensicOpenings.some(value => isActionableEvidenceFitness(value.fitness));
     const statement = actionable ? 'This release contained an observed authorized opportunity.'
         : freshOpening && options.immediateResult === 'UNKNOWN' ? 'An authorized opening was observed, but nothing may be sent after an UNKNOWN result.'
             : freshOpening ? 'An authorized opening was observed in fresh evidence, but the plan\'s timing or limits did not allow a send.'

@@ -11,6 +11,8 @@ export function requiredWorkerIds(strategy:'standard'|'extended',courtCount:Cour
 
 /** Precision v1 uses one worker per exact target, A through G (seven courts). H is never a Precision worker. */
 export const PRECISION_MAX_ATTEMPTS = 7;
+/** Fixed Precision fan-out creates exactly four child attempts inside each configured worker browser. */
+export const PRECISION_FAN_OUT_ATTEMPTS = 4;
 export const PRECISION_WORKER_IDS = WORKER_IDS.slice(0, PRECISION_MAX_ATTEMPTS) as readonly WorkerId[];
 
 /** Workers a saved plan needs: one per Precision attempt (A-G in row order, no grouping), otherwise the General allocation. */

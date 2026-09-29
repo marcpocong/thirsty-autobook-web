@@ -138,6 +138,9 @@ main { max-width: 1280px; margin: auto; padding: 16px 24px 96px; }
 .gate-mark { flex: 0 0 auto; width: 16px; height: 16px; font: 800 10px/14px Consolas, monospace; text-align: center; border: 1px solid currentColor; border-radius: 4px; }
 .gate.good { color: #b5f47f; }
 .gate.warn { color: #f0ce91; }
+.gate.pending { color: #b9c7bd; }
+.gate.bad { grid-column: 1 / -1; color: #ff9b8f; }
+.gate-detail { display: block; margin-top: 2px; font-size: 11px; line-height: 1.35; color: #f3c1b9; }
 #release-readiness-card[data-state="armed"] { border-color: var(--brand); box-shadow: inset 3px 0 0 var(--brand); }
 .observed-price { margin: 10px 0; padding: 12px; font-size: 12px; line-height: 1.5; white-space: pre-line; color: #e6ffcf; background: #1d3922; border: 1px solid #6fbe59; border-radius: var(--radius-sm); }
 #sleep-warning { margin-top: 10px; color: #f0ce91; }
@@ -212,6 +215,7 @@ main { max-width: 1280px; margin: auto; padding: 16px 24px 96px; }
 .slot-fact span { display: block; font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
 .slot-fact strong { display: block; margin-top: 3px; font: 650 13px Consolas, monospace; overflow-wrap: anywhere; }
 .slot-fact.path strong { font-size: 10px; font-weight: 400; color: var(--text-2); }
+.slot-candidates { grid-column: 1 / -1; display: grid; gap: 6px; margin-top: 8px; }
 .slot-status-badge { padding: 3px 9px; font-size: 10px; font-weight: 750; letter-spacing: .08em; border: 1px solid currentColor; border-radius: 999px; }
 .slot-status-badge.watching { color: var(--brand-bright); }
 .slot-status-badge.waiting { color: var(--warning); }
@@ -452,12 +456,24 @@ footer > div { display: flex; align-items: center; gap: 8px; font-size: 11px; co
 /* Precision Release (minimal; reuses existing tokens) */
 #setup-fields.precision-mode .general-only { display: none; }
 .precision-setup { margin-top: 10px; }
+/* Release Offset: positive operator input is stored as a negative release-relative trigger. */
+.release-offset { margin: 0 0 12px; }
+.release-offset h3 { margin-bottom: 8px; }
+.release-offset-control { display: flex; align-items: center; gap: 10px; max-width: 290px; }
+.release-offset-control span { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); }
+.release-offset-control input { width: 110px; font-variant-numeric: tabular-nums; }
+.release-offset p { margin: 8px 0 0; }
 .precision-rows { display: grid; gap: 8px; margin: 8px 0; }
+.fan-out-toggle { display: flex; gap: 10px; align-items: flex-start; margin: 10px 0 6px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: rgba(62,91,124,.12); }
+.fan-out-toggle input { width: auto; margin-top: 3px; }
+.fan-out-toggle span, .fan-out-toggle small { display: block; }
 .precision-row { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; }
+.precision-offsets { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; }
+.precision-offsets label { min-width: 118px; }
 .precision-row strong { min-width: 72px; }
 .precision-row[hidden] { display: none; }
 .precision-evidence { flex-basis: 100%; }
-.precision-warning { color: var(--warning); background: var(--warning-bg); padding: 8px 10px; border-radius: 8px; }
+.precision-warning, .fan-out-warning { color: var(--warning); background: var(--warning-bg); padding: 8px 10px; border-radius: 8px; }
 .precision-table { display: grid; gap: 6px; }
 .precision-table .precision-line { display: flex; flex-wrap: wrap; gap: 6px 12px; padding: 6px 8px; border-radius: 8px; background: rgba(127,127,127,.08); }
 .precision-table .precision-line [data-tone] { font-weight: 600; }
@@ -554,3 +570,7 @@ footer > div { display: flex; align-items: center; gap: 8px; font-size: 11px; co
 .replay-card ul { margin: 6px 0 0; padding-left: 18px; line-height: 1.55; }
 .replay-statement { margin: 4px 0 0; font-weight: 650; color: var(--brand-bright); }
 .smart-replay { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.release-lab { margin-top: 12px; border-color: #557396; background: linear-gradient(180deg, rgba(62,91,124,.16), transparent); }
+.table-scroll { overflow-x: auto; }
+.release-lab-matrix { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+.release-lab-matrix th, .release-lab-matrix td { text-align: left; padding: 7px 9px; border-bottom: 1px solid var(--line); white-space: nowrap; }

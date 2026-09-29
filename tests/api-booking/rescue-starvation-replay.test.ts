@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AdaptiveSelection } from '../../src/api-booking/adaptive-attempt.js';
-import { adaptiveFitness, authorizePrecision, PrecisionSession, type CandidateInput } from '../../src/api-booking/precision-phase3.js';
+import { adaptiveFitness, authorizePrecision, isActionableEvidenceFitness, PrecisionSession, type CandidateInput } from '../../src/api-booking/precision-phase3.js';
 import type { AvailabilityObservation } from '../../src/slot-evidence.js';
 import type { WorkerId } from '../../src/workers.js';
 import { AdaptiveHarness } from '../helpers/adaptive-harness.js';
@@ -71,7 +71,7 @@ function legacyAttempt(harness: AdaptiveHarness, outcomes: Array<{ selectedSeq: 
     await deps.prepareSecurity();
     const current = harness.session.latest, attempts = harness.session.attempts;
     if (!current || current.observation.seq !== selection.evidenceSeq ||
-      adaptiveFitness(current.observation, harness.newestSeq, releaseMs, deps.now(), harness.securityRefreshMs).fitness !== 'ACTIONABLE_FRESH' ||
+      !isActionableEvidenceFitness(adaptiveFitness(current.observation, harness.newestSeq, releaseMs, deps.now(), harness.securityRefreshMs).fitness) ||
       harness.verifiedHold || harness.aborted || attempts.some(value => value.state === 'UNKNOWN' || value.state === 'VERIFIED') ||
       attempts.some(value => value.state === 'IN_FLIGHT')) { record('SILENT_RETURN'); return; }
     record('PASSED_SEQUENCE_GUARD');

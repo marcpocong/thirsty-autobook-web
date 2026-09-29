@@ -25,6 +25,8 @@ export interface AvailabilityObservation extends ObservationRef {
   prices?: Array<Array<number | null>>;
   /** Edge cache metadata of the response, when present. */
   cache?: { status?: string; ageS?: number };
+  /** Allowlisted response metadata only. Never includes cookies, request bodies, identities, or auth values. */
+  provider?: { vercelId?: string; date?: string; matchedPath?: string };
 }
 
 export interface BookingObservation extends ObservationRef {
@@ -34,9 +36,19 @@ export interface BookingObservation extends ObservationRef {
   failedCourts: number[];
   /** `court/HH:00` cells with a matching public booking record, for courts that answered. */
   cells: string[];
+  provider?:Array<{court:number;status:number;latencyMs:number;cacheStatus?:string;ageS?:number;vercelId?:string;date?:string;matchedPath?:string}>;
 }
 
 export type EvidenceState = 'OPEN' | 'UNAVAILABLE' | 'UNKNOWN';
+export type ReopeningConfidence = 'CONFIRMED' | 'PROBABLE' | 'OBSERVATION_INCONSISTENCY' | 'UNKNOWN';
+export type FreshnessClass = 'ORIGIN_FRESH' | 'BOUNDED_CACHE' | 'UNBOUNDED';
+export interface ObservationFreshness {
+  class: FreshnessClass;
+  /** Conservative maximum represented age at the shared evaluation point. */
+  ageUpperBoundMs: number | null;
+  /** Earliest time the represented state could have existed, release-relative. Higher is fresher. */
+  representedAtLowerBoundOffsetMs: number | null;
+}
 /** Two consecutive reads in request order that disagree; the change happened between them. */
 export interface ObservedChange {
   before: ObservationRef;
@@ -44,6 +56,7 @@ export interface ObservedChange {
   /** The two reads' request/response intervals overlap, so their provider-side order is not established. */
   overlapping: boolean;
 }
+export interface ReopeningChange extends ObservedChange { confidence: ReopeningConfidence }
 export interface CellEvidence {
   court: number; hour: string;
   firstPublished: { state: EvidenceState; price: number | null; observation: ObservationRef } | null;
@@ -51,7 +64,7 @@ export interface CellEvidence {
   firstUnavailable: ObservationRef | null;
   openToUnavailable: ObservedChange | null;
   /** First unavailable → OPEN change (a reopen); the cause is not visible in public data. */
-  unavailableToOpen: ObservedChange | null;
+  unavailableToOpen: ReopeningChange | null;
   /** OPEN ↔ unavailable changes in request order. */
   changes: number;
   firstRecord: { observation: ObservationRef; previous: ObservationRef | null } | null;
@@ -70,6 +83,7 @@ export interface SlotEvidence {
   publication: PublicationEvidence;
   /** UI rule: the newest REQUEST that has answered. A late answer to an older request never replaces it. */
   current: ObservationRef | null;
+  currentFreshness: ObservationFreshness | null;
   currentMatrix: string | null;
   firstPublishedMatrix: string | null;
   cells: CellEvidence[];
@@ -79,6 +93,62 @@ const ref = (value: ObservationRef): ObservationRef =>
   ({ seq: value.seq, requestOffsetMs: value.requestOffsetMs, responseOffsetMs: value.responseOffsetMs });
 export const cellKey = (court: number, hour: string) => `${court}/${hour}`;
 const overlapping = (before: ObservationRef, after: ObservationRef) => before.responseOffsetMs > after.requestOffsetMs;
+
+/**
+ * Conservative freshness model used by Slot Watch operational state.
+ * - MISS/age 0 can have been produced no earlier than request start.
+ * - HIT/STALE Age is integer seconds and may be rounded down, so add one full second.
+ * - Missing/unsupported cache provenance is unbounded and cannot supersede bounded evidence.
+ */
+export function availabilityFreshness(observation: AvailabilityObservation, evaluatedOffsetMs: number): ObservationFreshness {
+  if (observation.outcome !== 'ok' || !Number.isFinite(evaluatedOffsetMs))
+    return { class: 'UNBOUNDED', ageUpperBoundMs: null, representedAtLowerBoundOffsetMs: null };
+  const status = observation.cache?.status, ageS = observation.cache?.ageS;
+  if (status === 'MISS' && (ageS === undefined || ageS === 0)) {
+    const age = evaluatedOffsetMs - observation.requestOffsetMs;
+    return Number.isFinite(age) && age >= 0
+      ? { class: 'ORIGIN_FRESH', ageUpperBoundMs: age, representedAtLowerBoundOffsetMs: observation.requestOffsetMs }
+      : { class: 'UNBOUNDED', ageUpperBoundMs: null, representedAtLowerBoundOffsetMs: null };
+  }
+  if ((status === 'HIT' || status === 'STALE') && Number.isSafeInteger(ageS) && ageS! >= 0) {
+    const representedAt = observation.responseOffsetMs - (ageS! + 1) * 1000;
+    const age = evaluatedOffsetMs - representedAt;
+    return Number.isFinite(age) && age >= 0
+      ? { class: 'BOUNDED_CACHE', ageUpperBoundMs: age, representedAtLowerBoundOffsetMs: representedAt }
+      : { class: 'UNBOUNDED', ageUpperBoundMs: null, representedAtLowerBoundOffsetMs: null };
+  }
+  return { class: 'UNBOUNDED', ageUpperBoundMs: null, representedAtLowerBoundOffsetMs: null };
+}
+
+/** Positive means `candidate` is better operational evidence than `current`. */
+export function compareAvailabilityFreshness(candidate: AvailabilityObservation, current: AvailabilityObservation,
+  evaluatedOffsetMs = Math.max(candidate.responseOffsetMs, current.responseOffsetMs)): number {
+  const a = availabilityFreshness(candidate, evaluatedOffsetMs), b = availabilityFreshness(current, evaluatedOffsetMs);
+  if (a.representedAtLowerBoundOffsetMs !== null && b.representedAtLowerBoundOffsetMs === null) return 1;
+  if (a.representedAtLowerBoundOffsetMs === null && b.representedAtLowerBoundOffsetMs !== null) return -1;
+  if (a.representedAtLowerBoundOffsetMs !== null && b.representedAtLowerBoundOffsetMs !== null &&
+    a.representedAtLowerBoundOffsetMs !== b.representedAtLowerBoundOffsetMs)
+    return a.representedAtLowerBoundOffsetMs - b.representedAtLowerBoundOffsetMs;
+  // If neither response is bounded, retain the legacy request-order fallback for display only.
+  return candidate.seq - current.seq;
+}
+
+export function freshestAvailabilityObservation(values: readonly AvailabilityObservation[]): AvailabilityObservation | undefined {
+  const answered = values.filter(value => value.outcome === 'ok');
+  const evaluated = Math.max(0, ...answered.map(value => value.responseOffsetMs));
+  return answered.reduce<AvailabilityObservation | undefined>((best, value) =>
+    !best || compareAvailabilityFreshness(value, best, evaluated) > 0 ? value : best, undefined);
+}
+
+export function classifyReopening(before: AvailabilityObservation, after: AvailabilityObservation): ReopeningConfidence {
+  const evaluated = Math.max(before.responseOffsetMs, after.responseOffsetMs);
+  const a = availabilityFreshness(before, evaluated), b = availabilityFreshness(after, evaluated);
+  if (overlapping(before, after)) return 'OBSERVATION_INCONSISTENCY';
+  if (b.representedAtLowerBoundOffsetMs === null) return 'UNKNOWN';
+  if (a.representedAtLowerBoundOffsetMs !== null && b.representedAtLowerBoundOffsetMs <= a.representedAtLowerBoundOffsetMs)
+    return 'OBSERVATION_INCONSISTENCY';
+  return b.class === 'ORIGIN_FRESH' ? 'CONFIRMED' : 'PROBABLE';
+}
 
 /** Decodes one matrix string into code lookups by cell key; unknown or malformed rows stay absent. */
 export function decodeMatrix(matrix: string | undefined): Map<string, string> {
@@ -104,7 +174,7 @@ export function deriveSlotEvidence(availability: readonly AvailabilityObservatio
   const first = published[0];
   const firstResponse = [...published].sort((a, b) => a.responseOffsetMs - b.responseOffsetMs || a.seq - b.seq)[0];
   const lastUnpublished = first ? answered.filter(value => !value.targetDatePresent && value.seq < first.seq).at(-1) : answered.filter(value => !value.targetDatePresent).at(-1);
-  const current = answered.at(-1);
+  const current = freshestAvailabilityObservation(answered);
   const decoded = new Map(published.map(value => [value.seq, decodeMatrix(value.matrix)] as const));
   const answeredBookings = byRequest(bookings.filter(value => value.outcome === 'ok'));
   const bookingSets = new Map(answeredBookings.map(value => [value.seq, new Set(value.cells)] as const));
@@ -113,17 +183,24 @@ export function deriveSlotEvidence(availability: readonly AvailabilityObservatio
   const cells = MATRIX_COURTS.flatMap(court => MATRIX_HOURS.map((hour): CellEvidence => {
     const key = cellKey(court, hour);
     let firstPublished: CellEvidence['firstPublished'] = null, firstOpen: ObservationRef | null = null, firstUnavailable: ObservationRef | null = null;
-    let openToUnavailable: ObservedChange | null = null, unavailableToOpen: ObservedChange | null = null, changes = 0;
+    let openToUnavailable: ObservedChange | null = null, unavailableToOpen: ReopeningChange | null = null, changes = 0;
     let previous: { state: 'OPEN' | 'UNAVAILABLE'; observation: AvailabilityObservation } | undefined;
     if (first) firstPublished = { state: evidenceState(decoded.get(first.seq)!.get(key)), price: priceAt(first, court, hour), observation: ref(first) };
     for (const observation of published) {
       const state = evidenceState(decoded.get(observation.seq)!.get(key));
       if (state === 'UNKNOWN') continue; // a missing cell is not evidence either way
       if (state === 'OPEN') firstOpen ??= ref(observation); else firstUnavailable ??= ref(observation);
+      if(previous&&compareAvailabilityFreshness(observation,previous.observation)<=0){
+        if(previous.state!==state){changes++;const change={before:ref(previous.observation),after:ref(observation),overlapping:overlapping(previous.observation,observation)};
+          if(state==='OPEN'&&!unavailableToOpen)unavailableToOpen={...change,confidence:'OBSERVATION_INCONSISTENCY'};}
+        continue;
+      }
       if (previous && previous.state !== state) {
         changes++;
         const change = { before: ref(previous.observation), after: ref(observation), overlapping: overlapping(previous.observation, observation) };
-        if (state === 'UNAVAILABLE') openToUnavailable ??= change; else unavailableToOpen ??= change;
+        if (state === 'UNAVAILABLE') openToUnavailable ??= change;
+        else {const next={ ...change, confidence: classifyReopening(previous.observation, observation) };
+          if(!unavailableToOpen||unavailableToOpen.confidence==='OBSERVATION_INCONSISTENCY'||unavailableToOpen.confidence==='UNKNOWN')unavailableToOpen=next;}
       }
       previous = { state, observation };
     }
@@ -143,7 +220,9 @@ export function deriveSlotEvidence(availability: readonly AvailabilityObservatio
     publication: { lastUnpublished: lastUnpublished ? ref(lastUnpublished) : null,
       firstPublished: first ? { ...ref(first), ...(first.cache ? { cache: first.cache } : {}) } : null,
       firstPublishedResponse: firstResponse ? ref(firstResponse) : null },
-    current: current ? ref(current) : null, currentMatrix: current?.matrix ?? null,
+    current: current ? ref(current) : null,
+    currentFreshness: current ? availabilityFreshness(current, Math.max(0, ...answered.map(value => value.responseOffsetMs))) : null,
+    currentMatrix: current?.matrix ?? null,
     firstPublishedMatrix: first?.matrix ?? null, cells,
   };
 }
@@ -222,8 +301,8 @@ export interface TargetEvidence {
   firstUnavailable: { observation: ObservationRef; hours: string[] } | null;
   firstRecord: { observation: ObservationRef; hours: string[] } | null;
   /** First FULLY_OPEN read after an unavailable one (request order). */
-  reopen: ObservedChange | null;
-  latest: { observation: ObservationRef | null; state: RangeState };
+  reopen: ReopeningChange | null;
+  latest: { observation: ObservationRef | null; state: RangeState; freshness: ObservationFreshness | null };
 }
 
 /** Range-level evidence for one exact target. Forensic only: never used to choose or send a checkout. */
@@ -233,13 +312,21 @@ export function targetEvidence(availability: readonly AvailabilityObservation[],
   const answered = byRequest(availability.filter(value => value.outcome === 'ok'));
   const statesOf = (observation: AvailabilityObservation) => { const cells = decodeMatrix(observation.matrix); return hours.map(hour => evidenceState(cells.get(cellKey(target.court, hour)))); };
   const first = published[0];
-  let firstFullyOpen: ObservationRef | null = null, firstUnavailable: TargetEvidence['firstUnavailable'] = null, reopen: ObservedChange | null = null;
-  let lastUnavailable: AvailabilityObservation | undefined;
+  let firstFullyOpen: ObservationRef | null = null, firstUnavailable: TargetEvidence['firstUnavailable'] = null, reopen: ReopeningChange | null = null;
+  let lastUnavailable: AvailabilityObservation | undefined,operational:AvailabilityObservation|undefined;
   for (const observation of published) {
     const states = statesOf(observation), state = rangeState(states);
+    if(operational&&compareAvailabilityFreshness(observation,operational)<=0){
+      if(state==='FULLY_OPEN'&&lastUnavailable&&!reopen)reopen={before:ref(lastUnavailable),after:ref(observation),
+        overlapping:overlapping(lastUnavailable,observation),confidence:'OBSERVATION_INCONSISTENCY'};
+      continue;
+    }
+    operational=observation;
     if (state === 'FULLY_OPEN') {
       firstFullyOpen ??= ref(observation);
-      if (lastUnavailable && !reopen) reopen = { before: ref(lastUnavailable), after: ref(observation), overlapping: overlapping(lastUnavailable, observation) };
+      if (lastUnavailable) {const next={ before: ref(lastUnavailable), after: ref(observation), overlapping: overlapping(lastUnavailable, observation),
+        confidence: classifyReopening(lastUnavailable, observation) };
+        if(!reopen||reopen.confidence==='OBSERVATION_INCONSISTENCY'||reopen.confidence==='UNKNOWN')reopen=next;}
       lastUnavailable = undefined;
     } else if (states.includes('UNAVAILABLE')) {
       firstUnavailable ??= { observation: ref(observation), hours: hours.filter((_, index) => states[index] === 'UNAVAILABLE') };
@@ -252,12 +339,14 @@ export function targetEvidence(availability: readonly AvailabilityObservation[],
     const matched = hours.filter(hour => observation.cells.includes(cellKey(target.court, hour)));
     if (matched.length) { firstRecord = { observation: ref(observation), hours: matched }; break; }
   }
-  const current = answered.at(-1);
+  const current = freshestAvailabilityObservation(answered);
+  const evaluated = Math.max(0, ...answered.map(value => value.responseOffsetMs));
   return { hours,
     firstPublished: first ? { observation: ref(first), state: rangeState(statesOf(first)),
       hours: hours.map((hour, index) => ({ hour, state: statesOf(first)[index]!, price: priceAt(first, target.court, hour) })) } : null,
     firstFullyOpen, firstUnavailable, firstRecord, reopen,
-    latest: { observation: current ? ref(current) : null, state: current?.targetDatePresent ? rangeState(statesOf(current)) : 'UNKNOWN_INCOMPLETE' } };
+    latest: { observation: current ? ref(current) : null, state: current?.targetDatePresent ? rangeState(statesOf(current)) : 'UNKNOWN_INCOMPLETE',
+      freshness: current ? availabilityFreshness(current, evaluated) : null } };
 }
 
 export const RANGE_STATE_LABEL: Record<RangeState, string> = {

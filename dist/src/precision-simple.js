@@ -5,6 +5,7 @@ export const SMART_MAX_SLOTS = 21;
 /** Hourly rates from this hour on use the evening rate (same boundary as the checkout request's night-rate flag). */
 export const SMART_EVENING_FROM = 16;
 export const SMART_DEFAULT_REOPENED = 1;
+const validSmartReleaseOffset = (value) => Number.isSafeInteger(value) && value >= -2_000 && value <= 0;
 const smartHourOf = (start) => Number(start.slice(0, 2));
 const smartClock = (hour) => hour === 24 ? '12:00 MN' : `${hour % 12 || 12}:00 ${hour < 12 ? 'AM' : 'PM'}`;
 export const smartTime = (start) => smartClock(smartHourOf(start));
@@ -20,6 +21,29 @@ const smartSame = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 export function emptySmartDraft() {
     return { immediate: [], backups: [], useBackupsImmediately: false, retryReopened: false, maxReopenedAttempts: SMART_DEFAULT_REOPENED,
         rates: { day: null, evening: null, status: 'OPERATOR_CONFIRMED', source: '', capturedAt: '', date: '' }, advanced: {} };
+}
+export const DURATION_OFFSET_PRESET = Object.freeze([
+    { durationHours: 3, releaseOffsetMs: -25 }, { durationHours: 3, releaseOffsetMs: -10 },
+    { durationHours: 2, releaseOffsetMs: -25 }, { durationHours: 2, releaseOffsetMs: -10 },
+    { durationHours: 1, releaseOffsetMs: -25 }, { durationHours: 1, releaseOffsetMs: -10 },
+    { durationHours: 1, releaseOffsetMs: 0 },
+]);
+/** Applies only duration and offset to rows the operator already configured. Courts, starts,
+ * explicit workers and every other authorization field are preserved; normal compilation
+ * remains responsible for rejecting overlaps or end-after-midnight rows. */
+export function applyDurationOffsetPreset(draft) {
+    return { ...draft, immediate: draft.immediate.map((slot, index) => {
+            const preset = DURATION_OFFSET_PRESET[index];
+            if (!preset)
+                return { ...slot };
+            const next = { ...slot, durationHours: preset.durationHours };
+            if (preset.releaseOffsetMs === 0)
+                delete next.releaseOffsetMs;
+            else
+                next.releaseOffsetMs = preset.releaseOffsetMs;
+            return next;
+        }), backups: draft.backups.map(slot => ({ ...slot })), advanced: { ...draft.advanced }, rates: { ...draft.rates },
+        releaseLab: { version: 1, kind: 'DURATION_OFFSET_V1', label: 'Duration × Offset' } };
 }
 /** Rate card from an operator confirmation. The source string satisfies the backend's source pattern. */
 export function confirmSmartRates(day, evening, status, targetDate, now) {
@@ -60,7 +84,7 @@ export function compileSmartPlan(draft, context) {
     if (slots.length > SMART_MAX_SLOTS)
         problems.push(`At most ${SMART_MAX_SLOTS} slots in total.`);
     const seen = new Set();
-    for (const { slot } of slots) {
+    for (const { slot, immediate } of slots) {
         if (!Number.isInteger(slot.court) || slot.court < 1 || slot.court > 7 || !/^(0[89]|1\d|2[0-3]):00$/.test(slot.start) ||
             !Number.isInteger(slot.durationHours) || slot.durationHours < 1 || slot.durationHours > 3) {
             problems.push('A slot has an invalid court, start or duration.');
@@ -68,6 +92,8 @@ export function compileSmartPlan(draft, context) {
         }
         if (smartHourOf(slot.start) + slot.durationHours > 24)
             problems.push(`${smartSlotText(slot)} ends after midnight.`);
+        if (slot.releaseOffsetMs !== undefined && (!immediate || !validSmartReleaseOffset(slot.releaseOffsetMs)))
+            problems.push(`${smartSlotText(slot)} has an invalid release offset.`);
         if (seen.has(smartKey(slot)))
             problems.push(`${smartSlotText(slot)} is listed twice.`);
         seen.add(smartKey(slot));
@@ -140,7 +166,8 @@ export function compileSmartPlan(draft, context) {
     const phase3 = problems.length ? null : {
         candidates: slots.map(({ slot }, index) => ({ court: slot.court, start: slot.start, durationHours: slot.durationHours, priority: priorities[index],
             permissions: permissions[index], rateEvidence: { ...rates[index].evidence, perHour: [...rates[index].evidence.perHour] } })),
-        wave1: immediateWorkers.map((workerId, candidateIndex) => ({ workerId: workerId, candidateIndex })),
+        wave1: immediateWorkers.map((workerId, candidateIndex) => ({ workerId: workerId, candidateIndex,
+            ...(draft.immediate[candidateIndex].releaseOffsetMs ? { releaseOffsetMs: draft.immediate[candidateIndex].releaseOffsetMs } : {}) })),
         standby: [...standby], budgets, concurrentWave2: draft.useBackupsImmediately, rescueEnabled: retry,
     };
     return { phase3, problems: [...new Set(problems)], warnings: [...new Set(warnings)], immediateWorkers, standby, budgets, rates };
@@ -176,7 +203,8 @@ export function smartDraftFromPhase3(saved, context) {
             });
         }
     }
-    const draft = { immediate: immediateIndex.map(plain), backups: backupIndex.map(plain), useBackupsImmediately: saved.concurrentWave2,
+    const draft = { immediate: saved.wave1.map(value => ({ ...plain(value.candidateIndex), ...(value.releaseOffsetMs ? { releaseOffsetMs: value.releaseOffsetMs } : {}) })),
+        backups: backupIndex.map(plain), useBackupsImmediately: saved.concurrentWave2,
         retryReopened: rescueOn, maxReopenedAttempts: rescueOn && saved.budgets.rescue > 0 ? saved.budgets.rescue : SMART_DEFAULT_REOPENED, rates: table, advanced: {} };
     const canonical = [...immediateIndex, ...backupIndex];
     canonical.forEach((index, position) => {
@@ -219,7 +247,7 @@ export function describeSmartPlan(plan, context = {}) {
     const immediate = plan.wave1.map((value, position) => {
         const c = plan.candidates[value.candidateIndex];
         return `Attempt ${position + 1} · Court ${c.court} · ${smartRange(c.start, c.durationHours)} · Worker ${value.workerId} · Expected ${smartExpected(c.rateEvidence)}` +
-            (unavailable.has(value.workerId) ? ' · NOT READY, will not be sent' : '');
+            (value.releaseOffsetMs ? ` · Offset \u2212${-value.releaseOffsetMs} ms (sent before 8:00)` : '') + (unavailable.has(value.workerId) ? ' · NOT READY, will not be sent' : '');
     });
     const { wave2, rescue, total } = plan.budgets;
     const sections = [

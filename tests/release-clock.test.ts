@@ -149,6 +149,9 @@ describe('clock and arm stage events reach the operator UI', () => {
       deltaMs: 1.2, sampleCount: 10, spreadMs: 3.2, uncertaintyMs: 19.4 })).toMatchObject({ sampleCount: 10, uncertaintyMs: 19.4 });
     expect(UiEventSchema.parse({ type: 'apiStage', stage: 'PRECISION_ARMED', elapsedMs: 2, frozenCount: 7, unsentCount: 0, releaseMs: 1_790_208_000_000 }))
       .toMatchObject({ frozenCount: 7 });
+    expect(UiEventSchema.parse({type:'apiStage',stage:'CRITICAL_PATH_SAVED',elapsedMs:3,workerCount:7,maxPrePostMs:1.1,
+      maxFetchInvokedMs:2.2,maxBrowserRequestStartMs:3.3,maxRequestObservedMs:4.4})).toMatchObject({maxRequestObservedMs:4.4});
+    expect(UiEventSchema.safeParse({type:'apiStage',stage:'CRITICAL_PATH_SAVED',elapsedMs:3,maxUnknownTimingMs:1}).success).toBe(false);
     expect(UiEventSchema.safeParse({ type: 'apiStage', stage: 'NETWORK_CLOCK_CONSENSUS', elapsedMs: 1, spreadMs: -1 }).success).toBe(false);
   });
 });
