@@ -58,6 +58,18 @@ it('shows the five operator views with a wide grid and stacked narrow layout',as
   await page.close();
 });
 
+it('returns from Live to the main release page while a release run is active',async()=>{
+  const page=await renderer({operation:'full'});
+  await showRendererView(page,'live');
+  expect(await page.locator('#view-live').isVisible()).toBe(true);
+  await showRendererView(page,'release');
+  expect(await page.locator('#view-release').isVisible()).toBe(true);
+  expect(await page.locator('#main-action').isDisabled()).toBe(true);
+  await showRendererView(page,'strategy');
+  expect(await page.locator('#view-release').isVisible()).toBe(true);
+  await page.close();
+});
+
 it('tests the saved plan with only the selected date changed',async()=>{
   const page=await renderer();
   await page.evaluate(()=>{const w=window as any;w.thirsty.resetPrepare=async(value:unknown)=>{w.fixturePreparation=value;};});
