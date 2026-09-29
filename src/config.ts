@@ -4,7 +4,7 @@ import { parse as parseEnv } from 'dotenv';
 import { existsSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { reconcileBookingSetupFallbacks, reconcileFallbackTimes, type FallbackReconciliation } from './booking-setup.js';
-import { PRECISION_FAN_OUT_ATTEMPTS, PRECISION_MAX_ATTEMPTS, WORKER_IDS, type CourtCount, type WorkerId } from './workers.js';
+import { PRECISION_FAN_OUT_ATTEMPTS, PRECISION_MAX_ATTEMPTS, PRECISION_MAX_FAN_OUT, PRECISION_MAX_SENDS, WORKER_IDS, type CourtCount, type WorkerId } from './workers.js';
 import {networkNowMs} from './network-clock.js';
 import { PRECISION_MAX_CANDIDATES } from './api-booking/precision-phase3.js';
 import { isReleaseOffsetMs } from './release-offset.js';
@@ -29,9 +29,14 @@ const rateEvidence=z.object({source:z.string().min(1).max(100),capturedAt:z.iso.
   date:z.iso.date(),perHour:z.array(z.number().positive()).min(1).max(3),actionable:z.boolean()}).strict();
 export const PrecisionPhase3Schema=z.object({
   candidates:z.array(z.object({court:z.number().int().min(1).max(7),start:hour,durationHours:z.number().int().min(1).max(3),
-    priority:z.number().int().min(1),permissions:z.object({wave1:z.boolean(),wave2:z.boolean(),rescue:z.boolean()}).strict(),rateEvidence}).strict()).min(1).max(PRECISION_MAX_CANDIDATES),
-  wave1:z.array(z.object({workerId:precisionWorker,candidateIndex:z.number().int().min(0).max(PRECISION_MAX_CANDIDATES-1),releaseOffsetMs:attemptOffset}).strict()).min(1).max(7),
-  standby:z.array(precisionWorker).max(7),budgets:z.object({wave2:z.number().int().min(0).max(7),rescue:z.number().int().min(0).max(7),total:z.number().int().min(1).max(28)}).strict(),
+    priority:z.number().int().min(1),permissions:z.object({wave1:z.boolean(),wave2:z.boolean(),rescue:z.boolean()}).strict(),rateEvidence,
+    // Planning-time public evidence; the override marker keeps a deliberately force-included conflicting slot at freeze.
+    publicEvidence:z.object({evidence:z.enum(['NO_KNOWN_PUBLIC_CONFLICT','KNOWN_PUBLIC_BOOKING_CONFLICT','UNKNOWN_PUBLIC_QUERY_FAILED','PUBLISHED_OPEN','PUBLISHED_UNAVAILABLE']),
+      override:z.literal('OPERATOR_OVERRIDE_PUBLIC_CONFLICT').optional()}).strict().optional()}).strict()).min(1).max(PRECISION_MAX_CANDIDATES),
+  // fanOutOffsetsMs: 2-4 independently tracked children of this immediate target, one Release Offset each (index order).
+  wave1:z.array(z.object({workerId:precisionWorker,candidateIndex:z.number().int().min(0).max(PRECISION_MAX_CANDIDATES-1),releaseOffsetMs:attemptOffset,
+    fanOutOffsetsMs:z.array(offsetValue).min(2).max(PRECISION_MAX_FAN_OUT).optional()}).strict()).min(1).max(7),
+  standby:z.array(precisionWorker).max(7),budgets:z.object({wave2:z.number().int().min(0).max(7),rescue:z.number().int().min(0).max(7),total:z.number().int().min(1).max(PRECISION_MAX_SENDS)}).strict(),
   concurrentWave2:z.boolean(),rescueEnabled:z.boolean(),
 }).strict();
 export const ReleaseLabSetupSchema=z.object({version:z.literal(1),kind:z.literal('DURATION_OFFSET_V1'),label:z.literal('Duration × Offset')}).strict();
@@ -52,7 +57,10 @@ function checkPrecision(c:{RELEASE_STRATEGY:'general'|'precision';BOOKING_METHOD
     if(p.wave1.some(value=>!p.candidates[value.candidateIndex]?.permissions.wave1))ctx.addIssue({code:'custom',message:'Wave 1 assignment must name a Wave 1 eligible candidate.',path:['PRECISION_PHASE3']});
     if(p.wave1.some(value=>p.candidates[value.candidateIndex]?.rateEvidence.status==='REFERENCE'||
       !p.candidates[value.candidateIndex]?.rateEvidence.actionable))ctx.addIssue({code:'custom',message:'Wave 1 requires actionable, explicitly confirmed rate evidence.',path:['PRECISION_PHASE3']});
-    if(p.budgets.wave2>p.standby.length||p.budgets.total<p.wave1.length||p.budgets.total>p.wave1.length+p.budgets.wave2+p.budgets.rescue||
+    if(p.wave1.some(value=>value.fanOutOffsetsMs&&value.releaseOffsetMs!==undefined))ctx.addIssue({code:'custom',message:'A fan-out target sets one offset per child, not a single Release Offset.',path:['PRECISION_PHASE3']});
+    // Every fan-out child is a send and counts against the total budget.
+    const wave1Sends=p.wave1.reduce((sum,value)=>sum+(value.fanOutOffsetsMs?.length??1),0);
+    if(p.budgets.wave2>p.standby.length||p.budgets.total<wave1Sends||p.budgets.total>wave1Sends+p.budgets.wave2+p.budgets.rescue||
       (p.budgets.rescue>0&&!p.rescueEnabled))ctx.addIssue({code:'custom',message:'Precision dispatch budgets are inconsistent.',path:['PRECISION_PHASE3']});
     for(const candidate of p.candidates)if(Number(candidate.start.slice(0,2))+candidate.durationHours>24||candidate.rateEvidence.perHour.length!==candidate.durationHours)
       ctx.addIssue({code:'custom',message:'Candidate duration or hourly rate is invalid.',path:['PRECISION_PHASE3']});

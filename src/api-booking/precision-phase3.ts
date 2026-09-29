@@ -6,7 +6,8 @@ import { MATRIX_HOURS } from './court-hour-matrix.js';
 import { availabilityFreshness, compareAvailabilityFreshness, decodeMatrix, freshestAvailabilityObservation, type AvailabilityObservation } from '../slot-evidence.js';
 export type { AvailabilityObservation } from '../slot-evidence.js';
 export { freshestAvailabilityObservation } from '../slot-evidence.js';
-import { PRECISION_WORKER_IDS, type WorkerId } from '../workers.js';
+import { PRECISION_MAX_FAN_OUT, PRECISION_WORKER_IDS, type WorkerId } from '../workers.js';
+import { isReleaseOffsetMs } from '../release-offset.js';
 import { precisionTargetPlan, type PrecisionTarget } from './precision-race.js';
 import type { BookingPlan } from './types.js';
 
@@ -17,6 +18,8 @@ export interface CandidatePermissions { wave1: boolean; wave2: boolean; rescue: 
 export interface CandidateInput {
   court: number; start: string; durationHours: number; priority: number;
   permissions: CandidatePermissions; rateEvidence: RateEvidence;
+  /** Planning-time public evidence and the operator's deliberate override marker (strategy-engine.ts). */
+  publicEvidence?: { evidence: string; override?: 'OPERATOR_OVERRIDE_PUBLIC_CONFLICT' };
 }
 export interface RateEvidence {
   source: string; capturedAt: string; status: 'TARGET_DATE_PUBLISHED' | 'VENUE_SCHEDULE' | 'OPERATOR_CONFIRMED' | 'REFERENCE';
@@ -25,16 +28,18 @@ export interface RateEvidence {
 export interface AuthorizedCandidate extends CandidateInput {
   id: string; end: string; logicalKey: string; expectedAmount: number;
 }
+/** One immediate logical target. With fanOutOffsetsMs it is sent as 2–4 independently tracked children (one per offset). */
+export interface Wave1Assignment { workerId: WorkerId; candidateId: string; releaseOffsetMs?: number; fanOutOffsetsMs?: readonly number[] }
 export interface PrecisionAuthorizationInput {
   date: string; releaseMs: number; candidates: CandidateInput[];
-  wave1: Array<{ workerId: WorkerId; candidateId: string }>;
+  wave1: Wave1Assignment[];
   standby: WorkerId[];
   budgets: { wave2: number; rescue: number; total: number };
   concurrentWave2: boolean; rescueEnabled: boolean; authorizedAt: string;
 }
 export interface FrozenPrecisionAuthorization extends Omit<PrecisionAuthorizationInput, 'candidates' | 'wave1' | 'standby'> {
   candidates: readonly AuthorizedCandidate[]; fingerprint: string; warning: string | null;
-  wave1: readonly Readonly<{ workerId: WorkerId; candidateId: string }>[]; standby: readonly WorkerId[];
+  wave1: readonly Readonly<Wave1Assignment>[]; standby: readonly WorkerId[];
 }
 const endOf = (start: string, duration: number) => `${String(Number(start.slice(0, 2)) + duration).padStart(2, '0')}:00`;
 const validDate = (date: string) => /^\d{4}-\d{2}-\d{2}$/.test(date) && Number.isFinite(Date.parse(`${date}T00:00:00Z`));
@@ -68,6 +73,7 @@ export function authorizePrecision(input: PrecisionAuthorizationInput): FrozenPr
     const logicalKey = DurableSubmissionJournal.key(THIRSTY_PICKLE_FACILITY_ID,
       COURT_TO_SPACE_ID[value.court as keyof typeof COURT_TO_SPACE_ID], input.date, value.start, end);
     return { ...value, permissions: { ...value.permissions }, rateEvidence: { ...value.rateEvidence, perHour: [...value.rateEvidence.perHour] },
+      ...(value.publicEvidence ? { publicEvidence: { ...value.publicEvidence } } : {}),
       id: precisionCandidateId(input.date, value), logicalKey, end,
       expectedAmount: value.rateEvidence.perHour.reduce((sum, price) => sum + price, 0) };
   });
@@ -76,6 +82,10 @@ export function authorizePrecision(input: PrecisionAuthorizationInput): FrozenPr
   const usedWorkers = new Set<WorkerId>(), usedCandidates = new Set<string>();
   for (const assignment of input.wave1) {
     const candidate = byId.get(assignment.candidateId);
+    const offsets = assignment.fanOutOffsetsMs;
+    if ((assignment.releaseOffsetMs !== undefined && (!isReleaseOffsetMs(assignment.releaseOffsetMs) || offsets)) ||
+      (offsets && (!Array.isArray(offsets) || offsets.length < 2 || offsets.length > PRECISION_MAX_FAN_OUT || offsets.some(value => !isReleaseOffsetMs(value)))))
+      throw Error('PRECISION_WAVE1_ASSIGNMENT_INVALID');
     if (!isWorker(assignment.workerId) || usedWorkers.has(assignment.workerId) || !candidate?.permissions.wave1 ||
       usedCandidates.has(candidate.id) || !candidate.rateEvidence.actionable || candidate.rateEvidence.status === 'REFERENCE')
       throw Error('PRECISION_WAVE1_ASSIGNMENT_INVALID');
@@ -88,21 +98,24 @@ export function authorizePrecision(input: PrecisionAuthorizationInput): FrozenPr
   if (new Set(input.standby).size !== input.standby.length ||
     input.standby.some(worker => !isWorker(worker) || usedWorkers.has(worker))) throw Error('PRECISION_STANDBY_INVALID');
   const { wave2, rescue, total } = input.budgets;
+  // Every fan-out child is its own send. Without fan-out this is exactly the number of immediate targets, as before.
+  const wave1Sends = input.wave1.reduce((sum, value) => sum + (value.fanOutOffsetsMs?.length ?? 1), 0);
   if (![wave2, rescue, total].every(value => Number.isSafeInteger(value) && value >= 0) ||
-    wave2 > input.standby.length || rescue > PRECISION_WORKER_IDS.length || total < input.wave1.length ||
-    total > PRECISION_MAX_CANDIDATES + rescue || total > input.wave1.length + wave2 + rescue ||
+    wave2 > input.standby.length || rescue > PRECISION_WORKER_IDS.length || total < wave1Sends ||
+    total > Math.max(PRECISION_MAX_CANDIDATES, wave1Sends + wave2) + rescue || total > wave1Sends + wave2 + rescue ||
     (wave2 > 0 && !input.standby.length) || (rescue > 0 && !input.rescueEnabled)) throw Error('PRECISION_BUDGET_INVALID');
   const selected = input.wave1.map(value => byId.get(value.candidateId)!);
   const commonStart = selected.every(value => value.start === selected[0]!.start && value.end === selected[0]!.end);
   const warning = selected.length > 1 && commonStart
     ? `All ${selected.length} Wave 1 attempts share ${selected[0]!.start}–${selected[0]!.end}. A time-wide unavailable block would affect every attempt.`
     : null;
-  const frozen = { ...input, candidates, wave1: input.wave1.map(value => ({ ...value })), standby: [...input.standby], budgets: { ...input.budgets }, warning };
+  const frozen = { ...input, candidates, wave1: input.wave1.map(value => ({ ...value, ...(value.fanOutOffsetsMs ? { fanOutOffsetsMs: [...value.fanOutOffsetsMs] } : {}) })),
+    standby: [...input.standby], budgets: { ...input.budgets }, warning };
   return Object.freeze({ ...frozen,
     candidates: Object.freeze(candidates.map(value => Object.freeze({ ...value,
       permissions: Object.freeze(value.permissions), rateEvidence: Object.freeze({ ...value.rateEvidence,
         perHour: Object.freeze([...value.rateEvidence.perHour]) }) }))),
-    wave1: Object.freeze(frozen.wave1.map(value => Object.freeze(value))),
+    wave1: Object.freeze(frozen.wave1.map(value => Object.freeze({ ...value, ...(value.fanOutOffsetsMs ? { fanOutOffsetsMs: Object.freeze([...value.fanOutOffsetsMs]) } : {}) }))),
     standby: Object.freeze([...frozen.standby]), budgets: Object.freeze({ ...frozen.budgets }),
     fingerprint: hash(frozen) });
 }
@@ -263,7 +276,12 @@ export function candidateWirePlan(date: string, candidate: Pick<CandidateInput, 
  * dispatched=false, the evidence under which the durable journal also records it as unsent). It stays in
  * the history but consumes no budget and no Rescue reopen epoch. */
 export interface RaceAttempt { id: string; candidateId: string; workerId: WorkerId; wave: PrecisionWave;
-  state: 'IN_FLIGHT' | 'REJECTED' | 'UNKNOWN' | 'VERIFIED' | 'NOT_DISPATCHED'; evidenceSeq?: number; selectedEvidenceSeq?: number; reopenEpoch?: number }
+  state: 'IN_FLIGHT' | 'REJECTED' | 'UNKNOWN' | 'VERIFIED' | 'NOT_DISPATCHED'; evidenceSeq?: number; selectedEvidenceSeq?: number; reopenEpoch?: number;
+  /** Fan-out child of an immediate target (the logical parent goal is candidateId). */
+  fanOutIndex?: number; fanOutCount?: number }
+/** Sends Wave 1 makes: one per immediate target, or one per fan-out child. */
+export const wave1SendCount = (authorization: Pick<FrozenPrecisionAuthorization, 'wave1'>) =>
+  authorization.wave1.reduce((sum, value) => sum + (value.fanOutOffsetsMs?.length ?? 1), 0);
 export class PrecisionSession {
   readonly attempts: RaceAttempt[] = [];
   latest?: ActionableObservation;
