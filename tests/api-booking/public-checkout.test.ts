@@ -3,6 +3,7 @@ import { availabilityFixture } from '../availability-fixture.js';
 import { parseAvailability } from '../../src/api-booking/availability-parser.js';
 import { planBooking } from '../../src/api-booking/booking-planner.js';
 import { buildStandardPublicCheckoutRequest, PublicCheckoutValidationError, validatePublicCheckoutResponse } from '../../src/api-booking/public-checkout.js';
+import { prooflessReleasePlan } from '../../src/api-booking/proofless-checkout.js';
 import type { FreshSlotProof } from '../../src/api-booking/slot-proofs.js';
 
 const date = '2026-09-18';
@@ -20,6 +21,22 @@ function reply() {
 }
 
 describe('standard public-checkout builder and validator', () => {
+  it('serializes the end of the 23:00 hour as Onda midnight, never 24:00', () => {
+    const midnightPlan = prooflessReleasePlan({ mode: 'standard', targetDate: date, durationHours: 3,
+      preferredStartTimes: ['21:00'], fallbackStartTimes: [], courtPriority: [3], fallbackCourts: [],
+      courtCount: 1, maximumTotalPrice: Infinity, currency: 'PHP' });
+    const midnightProofs: FreshSlotProof[] = midnightPlan.courts[0]!.slots.map(slot => ({
+      spaceId: slot.spaceId, date: slot.date, startTime: slot.startTime, endTime: slot.endTime,
+      availabilityProof: `proof-${slot.startTime}`, requestedAt: now.toISOString(), receivedAt: now.toISOString() }));
+    const midnightRequest = buildStandardPublicCheckoutRequest(midnightPlan, customer, 'facility', midnightProofs);
+
+    expect(midnightPlan.endTime).toBe('24:00');
+    expect(midnightRequest.items.map(item => [item.startTime, item.endTime])).toEqual([
+      ['21:00', '22:00'], ['22:00', '23:00'], ['23:00', '00:00'],
+    ]);
+    expect(JSON.stringify(midnightRequest)).not.toContain('24:00');
+  });
+
   it('builds the observed null-name shape, customer identity, ordered hourly items, and current proofs', () => {
     expect(request).toMatchObject({ bookingType: 'online', customerFirstName: null, customerLastName: null, facilityId: 'facility', usedCustomerMembershipId: null, userId: null });
     expect(request.items.map(item => [item.spaceId, item.startTime, item.endTime, item.duration, item.sessionRef, item.availabilityProof])).toEqual(court.slots.map((slot, index) => [slot.spaceId, slot.startTime, slot.endTime, 60, 'session_1', `proof-${slot.startTime}`]));
