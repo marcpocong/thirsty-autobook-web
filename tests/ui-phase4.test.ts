@@ -3,7 +3,7 @@ import { chromium, type Browser, type Page } from 'playwright';
 import { bookingView, defaultSetup } from '../ui/booking.js';
 import { ConfigSchema } from '../src/config.js';
 import { compileSmartPlan, confirmSmartRates, emptySmartDraft } from '../src/precision-simple.js';
-import { openRenderer } from './renderer-harness.js';
+import { openRenderer, showRendererView } from './renderer-harness.js';
 
 /** Phase 4 in the operator UI: plain summaries by default, details on request, and the advisor edits only the draft. */
 let browser: Browser;
@@ -43,12 +43,15 @@ describe('Phase 4 operator UI', () => {
     await page.close();
   });
 
-  it('Tools shows simple cards: a network verdict, rebuild/clear, history and replay', async () => {
+  it('Tools keeps the network verdict; History & Insights holds rebuild/clear, history and replay', async () => {
     const page = await openRenderer(browser, { booking: smartBooking(), intelligence, phase4: { busy: null, message: '', networkReadiness: network,
       warmth: { verdict: 'INSUFFICIENT EVIDENCE', traced: 0, reused: 0, fresh: 0, releases: 0, reasons: ['No traced checkout POST yet.'] } } }, 'tools');
     expect(await visible(page, '#network-result .tool-verdict')).toBe('Ready');
     expect(await visible(page, '#network-result')).not.toContain('Connections:');
-    await page.locator('#run-network-check').click(); await page.locator('#rebuild-intelligence').click(); await page.locator('#clear-intelligence').click();
+    await page.locator('#run-network-check').click();
+    // Analysis moved out of Tools (UI reorganization): intelligence and replay live under History & Insights.
+    await showRendererView(page, 'history');
+    await page.locator('#rebuild-intelligence').click(); await page.locator('#clear-intelligence').click();
     await page.locator('#intelligence-history > summary').click();
     expect(await visible(page, '#intelligence-list')).toContain('Connection warmth: INSUFFICIENT EVIDENCE.');
     await page.evaluate(() => { (window as any).fixtureReplay = { plan: 'saved', skipped: [{ releaseKey: '2026-09-25@x', reason: 'Only availability counts were recorded; no court/hour grid to replay.' }], results: [{
@@ -62,7 +65,7 @@ describe('Phase 4 operator UI', () => {
     expect(await visible(page, '#replay-results')).toContain('Not replayed (2026-09-25 target)');
     expect(await page.evaluate(() => (window as any).fixtureReplayInput)).toEqual({ source: 'saved' });
     expect(await page.evaluate(() => (window as any).fixtureCalls)).toEqual(['runNetworkCheck', 'rebuildIntelligence', 'clearIntelligence', 'replayPlan']);
-    expect(await visible(page, '#view-tools')).not.toMatch(/\{"|would have won/);
+    expect(await visible(page, '#view-history')).not.toMatch(/\{"|would have won/);
     await page.close();
   });
 

@@ -25,7 +25,11 @@ interface WorkerRecord {
   browserRequestWallMs?: number;
   calibration?: RendererClockCalibration;
   dispatchMode: DispatchMode;
+  meta?: CriticalPathMeta;
 }
+/** Per-attempt identity and outcome (Phase 13): parent goal, worker, fan-out position, configured offset, wave and final state. Never private data. */
+export type CriticalPathMeta = Partial<{ parentGoalId: string; workerId: string; fanOutIndex: number; fanOutCount: number; configuredOffsetMs: number;
+  wave: string; finalState: string; finalCode: string; prewarmReadyMs: number }>;
 
 export interface CriticalPathRow {
   schema: 'critical-path/v1';
@@ -56,6 +60,7 @@ export interface CriticalPathRow {
     requestEventLagMs: number | null;
   };
   calibration: { samples: number; uncertaintyMs: number; minRoundTripMs: number; consistent: boolean } | null;
+  meta?: CriticalPathMeta;
 }
 export interface Bounded { ms: number; lowMs: number; highMs: number }
 
@@ -86,6 +91,8 @@ function warmUpOnce(): void {
 
 export class CriticalPathRecorder {
   private readonly workers = new Map<string, WorkerRecord>();
+  /** Rows measured elsewhere (an experimental dispatch coordinator process), already release-relative on the trusted clock. */
+  private readonly adopted = new Map<string, CriticalPathRow>();
   private schedulerFired: number | undefined;
 
   /**
@@ -97,7 +104,11 @@ export class CriticalPathRecorder {
     for (const worker of workers) this.workers.set(worker, { node: {}, dispatchMode: defaultMode });
   }
 
-  private entry(worker: string): WorkerRecord {
+  /** Transport key (e.g. "A:2") → attempt ID, so one child's marks and transport observations land on one row. */
+  private readonly aliases = new Map<string, string>();
+  alias(from: string, to: string): void { if (from !== to) this.aliases.set(from, to); }
+  private entry(key: string): WorkerRecord {
+    const worker = this.aliases.get(key) ?? key;
     let value = this.workers.get(worker);
     if (!value) { value = { node: {}, dispatchMode: this.defaultMode }; this.workers.set(worker, value); }
     return value;
@@ -133,12 +144,18 @@ export class CriticalPathRecorder {
       }
     } catch { /* telemetry only */ }
   }
+  /** Adds identity/outcome metadata to a row (after dispatch, never on the hot path). */
+  describe(worker: string, meta: CriticalPathMeta): void { const entry = this.entry(worker); entry.meta = { ...(entry.meta ?? {}), ...meta }; }
   calibration(worker: string, calibration: RendererClockCalibration | undefined): void { if (calibration) this.entry(worker).calibration = calibration; }
-  workerIds(): string[] { return [...this.workers.keys()].sort(); }
+  workerIds(): string[] { return [...new Set([...this.workers.keys(), ...this.adopted.keys()])].sort(); }
+  /** Takes over a complete row measured in another process; it replaces this recorder's row for the same ID. */
+  adopt(row: CriticalPathRow): void { if (row && row.schema === 'critical-path/v1' && typeof row.workerId === 'string') this.adopted.set(row.workerId, row); }
 
   rows(): CriticalPathRow[] {
     const rel = (mono: number | undefined) => mono === undefined ? null : round(mono - this.releaseMono);
     return this.workerIds().map(workerId => {
+      const adopted = this.adopted.get(workerId);
+      if (adopted) return adopted;
       const record = this.workers.get(workerId)!, node = record.node, calibration = record.calibration;
       const mapped = (rendererMs: number | undefined): Bounded | null => {
         if (rendererMs === undefined || !calibration?.consistent || !Number.isFinite(rendererMs)) return null;
@@ -156,7 +173,8 @@ export class CriticalPathRecorder {
         responseHeadersMs: mapped(record.renderer?.headersAt), responseCompleteMs: mapped(record.renderer?.completedAt), responseObservedMs: rel(node.responseObserved),
         segments: { nodeToRendererMs: record.dispatchMode === 'node' ? diff(prePost, evaluateEntered?.ms) : null, rendererToFetchMs: diff(evaluateEntered?.ms, fetchInvoked?.ms),
           fetchToRequestStartMs: diff(fetchInvoked?.ms, browserRequestStart), requestEventLagMs: diff(browserRequestStart, requestObserved) },
-        calibration: calibration ? { samples: calibration.samples, uncertaintyMs: round(calibration.uncertaintyMs), minRoundTripMs: round(calibration.minRoundTripMs), consistent: calibration.consistent } : null };
+        calibration: calibration ? { samples: calibration.samples, uncertaintyMs: round(calibration.uncertaintyMs), minRoundTripMs: round(calibration.minRoundTripMs), consistent: calibration.consistent } : null,
+        ...(record.meta ? { meta: { ...record.meta } } : {}) };
     });
   }
 

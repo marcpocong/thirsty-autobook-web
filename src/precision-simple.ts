@@ -18,12 +18,18 @@ export const SMART_MAX_SLOTS = 21;
 /** Hourly rates from this hour on use the evening rate (same boundary as the checkout request's night-rate flag). */
 export const SMART_EVENING_FROM = 16;
 export const SMART_DEFAULT_REOPENED = 1;
+/** Mirrors PRECISION_MAX_FAN_OUT and PRECISION_MAX_SENDS (test-enforced). */
+export const SMART_MAX_FAN_OUT = 4;
+export const SMART_MAX_SENDS = 42;
 
 export type SmartRateStatus = 'TARGET_DATE_PUBLISHED' | 'VENUE_SCHEDULE' | 'OPERATOR_CONFIRMED' | 'REFERENCE';
 export interface SmartRateEvidence { source: string; capturedAt: string; status: SmartRateStatus; date: string; perHour: number[]; actionable: boolean }
 /** One operator-confirmed rate card for the next release: daytime and evening hourly rates. */
 export interface SmartRateTable { day: number | null; evening: number | null; status: 'OPERATOR_CONFIRMED' | 'VENUE_SCHEDULE'; source: string; capturedAt: string; date: string }
 export interface SmartPermissions { wave1: boolean; wave2: boolean; rescue: boolean }
+/** Public-booking evidence seen when the slot was planned; `override` records a deliberate force-include despite a conflict or failed read. */
+export interface SmartPublicEvidence { evidence: 'NO_KNOWN_PUBLIC_CONFLICT' | 'KNOWN_PUBLIC_BOOKING_CONFLICT' | 'UNKNOWN_PUBLIC_QUERY_FAILED' | 'PUBLISHED_OPEN' | 'PUBLISHED_UNAVAILABLE';
+  override?: 'OPERATOR_OVERRIDE_PUBLIC_CONFLICT' }
 /** Structural copy of release-offset.ts's guarded range (this module stays import-free for the renderer). */
 export type SmartReleaseOffset = number;
 const validSmartReleaseOffset = (value: unknown) => Number.isSafeInteger(value) && (value as number) >= -2_000 && (value as number) <= 0;
@@ -31,8 +37,11 @@ export interface SmartSlot {
   court: number; start: string; durationHours: number;
   /** Immediate attempts only: Release Offset in ms. Absent means normal (at the release time). */
   releaseOffsetMs?: SmartReleaseOffset;
+  /** Immediate attempts only: 2–4 fan-out children, one Release Offset each (index order). Replaces releaseOffsetMs. */
+  fanOutOffsetsMs?: SmartReleaseOffset[];
   /** Advanced overrides. Absent means automatic. */
   worker?: SmartWorker; priority?: number; permissions?: SmartPermissions; rate?: SmartRateEvidence;
+  publicEvidence?: SmartPublicEvidence;
 }
 export interface SmartDraft {
   immediate: SmartSlot[]; backups: SmartSlot[];
@@ -45,8 +54,9 @@ export interface SmartDraft {
 }
 /** Structural copy of the config PrecisionPhase3Schema. */
 export interface SmartPhase3 {
-  candidates: Array<{ court: number; start: string; durationHours: number; priority: number; permissions: SmartPermissions; rateEvidence: SmartRateEvidence }>;
-  wave1: Array<{ workerId: SmartWorker; candidateIndex: number; releaseOffsetMs?: SmartReleaseOffset }>;
+  candidates: Array<{ court: number; start: string; durationHours: number; priority: number; permissions: SmartPermissions; rateEvidence: SmartRateEvidence;
+    publicEvidence?: SmartPublicEvidence }>;
+  wave1: Array<{ workerId: SmartWorker; candidateIndex: number; releaseOffsetMs?: SmartReleaseOffset; fanOutOffsetsMs?: SmartReleaseOffset[] }>;
   standby: SmartWorker[];
   budgets: { wave2: number; rescue: number; total: number };
   concurrentWave2: boolean; rescueEnabled: boolean;
@@ -74,6 +84,10 @@ const smartDateText = (date: string) => /^\d{4}-\d{2}-\d{2}$/.test(date)
   ? new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(`${date}T12:00:00Z`)) : 'another date';
 const smartCount = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`;
 const smartSame = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+/** Sends the immediate attempts make: one each, or one per fan-out child. */
+export const smartImmediateSends = (immediate: ReadonlyArray<Pick<SmartSlot, 'fanOutOffsetsMs'>>) =>
+  immediate.reduce((sum, slot) => sum + (slot.fanOutOffsetsMs?.length ?? 1), 0);
 
 export function emptySmartDraft(): SmartDraft {
   return { immediate: [], backups: [], useBackupsImmediately: false, retryReopened: false, maxReopenedAttempts: SMART_DEFAULT_REOPENED,
@@ -141,6 +155,9 @@ export function compileSmartPlan(draft: SmartDraft, context: SmartContext): Smar
     if (smartHourOf(slot.start) + slot.durationHours > 24) problems.push(`${smartSlotText(slot)} ends after midnight.`);
     if (slot.releaseOffsetMs !== undefined && (!immediate || !validSmartReleaseOffset(slot.releaseOffsetMs)))
       problems.push(`${smartSlotText(slot)} has an invalid release offset.`);
+    if (slot.fanOutOffsetsMs !== undefined && (!immediate || slot.releaseOffsetMs !== undefined || !Array.isArray(slot.fanOutOffsetsMs) ||
+      slot.fanOutOffsetsMs.length < 2 || slot.fanOutOffsetsMs.length > SMART_MAX_FAN_OUT || slot.fanOutOffsetsMs.some(value => !validSmartReleaseOffset(value))))
+      problems.push(`${smartSlotText(slot)} has an invalid fan-out (2–${SMART_MAX_FAN_OUT} children, each with a release offset).`);
     if (seen.has(smartKey(slot))) problems.push(`${smartSlotText(slot)} is listed twice.`);
     seen.add(smartKey(slot));
   }
@@ -184,11 +201,13 @@ export function compileSmartPlan(draft: SmartDraft, context: SmartContext): Smar
   const reopened = Math.min(7, Math.max(1, Math.floor(draft.maxReopenedAttempts) || SMART_DEFAULT_REOPENED));
   const auto = { wave2: Math.min(backupChoices, standby.length), rescue: retry ? reopened : 0 };
   const wave2 = draft.advanced.wave2 ?? auto.wave2, rescue = draft.advanced.rescue ?? auto.rescue;
-  const total = draft.advanced.total ?? draft.immediate.length + wave2 + rescue;
+  // Every fan-out child is a send; without fan-out this equals the number of immediate attempts.
+  const immediateSends = smartImmediateSends(draft.immediate);
+  const total = draft.advanced.total ?? immediateSends + wave2 + rescue;
   const budgets = { wave2, rescue, total };
-  if (![wave2, rescue, total].every(value => Number.isSafeInteger(value) && value >= 0) || wave2 > 7 || rescue > 7 || total > 28 ||
-    wave2 > standby.length || total < draft.immediate.length || total > draft.immediate.length + wave2 + rescue ||
-    total > SMART_MAX_SLOTS + rescue || (rescue > 0 && !retry)) problems.push('Attempt limits are inconsistent. Check Advanced settings.');
+  if (![wave2, rescue, total].every(value => Number.isSafeInteger(value) && value >= 0) || wave2 > 7 || rescue > 7 || total > SMART_MAX_SENDS ||
+    wave2 > standby.length || total < immediateSends || total > immediateSends + wave2 + rescue ||
+    total > Math.max(SMART_MAX_SLOTS, immediateSends + wave2) + rescue || (rescue > 0 && !retry)) problems.push('Attempt limits are inconsistent. Check Advanced settings.');
 
   const rates = slots.map(({ slot, immediate }) => smartRateFor(slot, draft.rates, context.targetDate, immediate));
   const review = rates.filter(rate => rate.needsReview).length;
@@ -203,9 +222,11 @@ export function compileSmartPlan(draft: SmartDraft, context: SmartContext): Smar
 
   const phase3: SmartPhase3 | null = problems.length ? null : {
     candidates: slots.map(({ slot }, index) => ({ court: slot.court, start: slot.start, durationHours: slot.durationHours, priority: priorities[index]!,
-      permissions: permissions[index]!, rateEvidence: { ...rates[index]!.evidence!, perHour: [...rates[index]!.evidence!.perHour] } })),
+      permissions: permissions[index]!, rateEvidence: { ...rates[index]!.evidence!, perHour: [...rates[index]!.evidence!.perHour] },
+      ...(slot.publicEvidence ? { publicEvidence: { ...slot.publicEvidence } } : {}) })),
     wave1: immediateWorkers.map((workerId, candidateIndex) => ({ workerId: workerId!, candidateIndex,
-      ...(draft.immediate[candidateIndex]!.releaseOffsetMs ? { releaseOffsetMs: draft.immediate[candidateIndex]!.releaseOffsetMs } : {}) })),
+      ...(draft.immediate[candidateIndex]!.fanOutOffsetsMs ? { fanOutOffsetsMs: [...draft.immediate[candidateIndex]!.fanOutOffsetsMs!] }
+        : draft.immediate[candidateIndex]!.releaseOffsetMs ? { releaseOffsetMs: draft.immediate[candidateIndex]!.releaseOffsetMs } : {}) })),
     standby: [...standby], budgets, concurrentWave2: draft.useBackupsImmediately, rescueEnabled: retry,
   };
   return { phase3, problems: [...new Set(problems)], warnings: [...new Set(warnings)], immediateWorkers, standby, budgets, rates };
@@ -218,7 +239,8 @@ export function compileSmartPlan(draft: SmartDraft, context: SmartContext): Smar
  */
 export function smartDraftFromPhase3(saved: SmartPhase3, context: SmartContext): SmartDraft {
   const assigned = new Map(saved.wave1.map(value => [value.candidateIndex, value.workerId] as const));
-  const plain = (index: number): SmartSlot => { const c = saved.candidates[index]!; return { court: c.court, start: c.start, durationHours: c.durationHours }; };
+  const plain = (index: number): SmartSlot => { const c = saved.candidates[index]!;
+    return { court: c.court, start: c.start, durationHours: c.durationHours, ...(c.publicEvidence ? { publicEvidence: { ...c.publicEvidence } } : {}) }; };
   const order = (indices: number[]) => indices.sort((a, b) => saved.candidates[a]!.priority - saved.candidates[b]!.priority || a - b);
   const immediateIndex = saved.wave1.map(value => value.candidateIndex);
   const backupIndex = order(saved.candidates.map((_, index) => index).filter(index => !assigned.has(index)));
@@ -236,7 +258,8 @@ export function smartDraftFromPhase3(saved: SmartPhase3, context: SmartContext):
         if (evening) table.evening ??= price; else table.day ??= price; });
     }
   }
-  const draft: SmartDraft = { immediate: saved.wave1.map(value => ({ ...plain(value.candidateIndex), ...(value.releaseOffsetMs ? { releaseOffsetMs: value.releaseOffsetMs } : {}) })),
+  const draft: SmartDraft = { immediate: saved.wave1.map(value => ({ ...plain(value.candidateIndex), ...(value.fanOutOffsetsMs ? { fanOutOffsetsMs: [...value.fanOutOffsetsMs] }
+    : value.releaseOffsetMs ? { releaseOffsetMs: value.releaseOffsetMs } : {}) })),
     backups: backupIndex.map(plain), useBackupsImmediately: saved.concurrentWave2,
     retryReopened: rescueOn, maxReopenedAttempts: rescueOn && saved.budgets.rescue > 0 ? saved.budgets.rescue : SMART_DEFAULT_REOPENED, rates: table, advanced: {} };
   const canonical = [...immediateIndex, ...backupIndex];
@@ -257,7 +280,7 @@ export function smartDraftFromPhase3(saved: SmartPhase3, context: SmartContext):
   const limits = compileSmartPlan(draft, { ...context, targetDate: table.date || context.targetDate }).budgets;
   if (limits.wave2 !== saved.budgets.wave2) draft.advanced.wave2 = saved.budgets.wave2;
   if (limits.rescue !== saved.budgets.rescue) draft.advanced.rescue = saved.budgets.rescue;
-  const total = draft.immediate.length + (draft.advanced.wave2 ?? limits.wave2) + (draft.advanced.rescue ?? limits.rescue);
+  const total = smartImmediateSends(draft.immediate) + (draft.advanced.wave2 ?? limits.wave2) + (draft.advanced.rescue ?? limits.rescue);
   if (total !== saved.budgets.total) draft.advanced.total = saved.budgets.total;
   return draft;
 }
@@ -276,11 +299,15 @@ export function describeSmartPlan(plan: SmartPhase3, context: Pick<SmartContext,
   const immediate = plan.wave1.map((value, position) => {
     const c = plan.candidates[value.candidateIndex]!;
     return `Attempt ${position + 1} · Court ${c.court} · ${smartRange(c.start, c.durationHours)} · Worker ${value.workerId} · Expected ${smartExpected(c.rateEvidence)}` +
-      (value.releaseOffsetMs ? ` · Offset \u2212${-value.releaseOffsetMs} ms (sent before 8:00)` : '') + (unavailable.has(value.workerId) ? ' · NOT READY, will not be sent' : '');
+      (value.releaseOffsetMs ? ` · Offset \u2212${-value.releaseOffsetMs} ms (sent before 8:00)` : '') +
+      (value.fanOutOffsetsMs ? ` · ${value.fanOutOffsetsMs.length} fan-out children: ${value.fanOutOffsetsMs.map((offset, child) => `${value.workerId}${child} ${offset ? `\u2212${-offset} ms` : '0 ms'}`).join(', ')}` : '') +
+      (unavailable.has(value.workerId) ? ' · NOT READY, will not be sent' : '');
   });
   const { wave2, rescue, total } = plan.budgets;
   const sections: SmartPlanSection[] = [
-    { title: 'At 8:00', lines: [`${smartCount(plan.wave1.length, 'immediate attempt')} will be sent. They do not wait for the released schedule.`, ...immediate] },
+    { title: 'At 8:00', lines: [smartImmediateSends(plan.wave1) > plan.wave1.length
+      ? `${smartCount(plan.wave1.length, 'immediate target')} will be sent as ${smartImmediateSends(plan.wave1)} independently tracked attempts (fan-out). They do not wait for the released schedule.`
+      : `${smartCount(plan.wave1.length, 'immediate attempt')} will be sent. They do not wait for the released schedule.`, ...immediate] },
     { title: 'If a fresh approved backup is open', lines: wave2 > 0
       ? [`Up to ${smartCount(wave2, 'backup attempt')} may be sent by ${plan.standby.map(worker => `Worker ${worker}`).join(', ')}, from ${smartCount(backups.length, 'approved backup')} in the order listed.`,
         plan.concurrentWave2 ? 'Backups may be sent while immediate attempts are still waiting for Onda to respond.' : 'Backups wait until every immediate attempt has been answered.',
@@ -296,7 +323,8 @@ export function describeSmartPlan(plan: SmartPhase3, context: Pick<SmartContext,
         ? `More than one temporary hold is possible${wave2 > 0 && plan.concurrentWave2 ? ', including from backups sent immediately' : ''}.`
         : 'Normally at most one temporary hold; a backup or reopened-slot attempt is sent only after the earlier ones were rejected.'] },
   ];
-  const summary = `${plan.wave1.length} immediate + up to ${smartCount(wave2, 'backup')} + up to ${smartCount(rescue, 'reopened-slot attempt')}`;
+  const sends = smartImmediateSends(plan.wave1);
+  const summary = `${plan.wave1.length} immediate${sends > plan.wave1.length ? ` (${sends} sends with fan-out)` : ''} + up to ${smartCount(wave2, 'backup')} + up to ${smartCount(rescue, 'reopened-slot attempt')}`;
   const warnings = [...new Set([...plan.wave1.map(value => value.workerId), ...plan.standby].filter(worker => unavailable.has(worker)))]
     .map(worker => `Worker ${worker} is not ready and will not be used.`);
   return { sections, summary, maxSends: total, warnings };

@@ -12,10 +12,10 @@ import { adoptConsensus, DEFAULT_SPIN_TAIL_MS, RELEASE_CLOCK_ROUNDS, TrustedRele
 import { releaseTriggerMs } from '../release-offset.js';
 import { armedNothingFired, armPrecisionRace, disarmUnfired, dispatchArmedPrecisionRace, type ArmedAttempt, type ArmedPrecisionRace } from './armed-dispatch.js';
 import { classifyTargetEvidence, readPreReleaseEvidence } from './pre-release-evidence.js';
-import { freezePrecisionRace, precisionAttemptSet, precisionTargetPlan, reducePrecisionOutcome,
+import { freezePrecisionRace, precisionAttemptSet, precisionTargetPlan, reducePrecisionOutcome, PRECISION_UNSENT_STATES,
   validatePrecisionTargets, VerifiedHoldQrError, classifyPrecisionDispatchError,
   type PrecisionAttempt, type PrecisionAttemptState, type PrecisionTarget } from './precision-race.js';
-import { authorizePrecision, precisionCandidateId, PrecisionSession, classifyActionableObservation, pricedPrecisionPlan, adaptiveMaxAgeMs,
+import { authorizePrecision, candidateWirePlan, precisionCandidateId, PrecisionSession, classifyActionableObservation, pricedPrecisionPlan, adaptiveMaxAgeMs,
   adaptiveFitness, freshestAvailabilityObservation, isActionableEvidenceFitness, type AvailabilityObservation } from './precision-phase3.js';
 import { runAdaptiveAttempt, type AdaptiveSelection } from './adaptive-attempt.js';
 import { browserIdentity, verifyDedicatedChromeAsync } from '../browser.js';
@@ -45,7 +45,11 @@ import { assertApiReleaseFresh } from './api-release.js';
 import { canReleaseApiLockAfterParallelFailure } from './api-lock-outcome.js';
 import { PRECISION_FAN_OUT_ATTEMPTS, requiredWorkerIds, type WorkerId } from '../workers.js';
 import { showWorkerPage } from '../browser-window.js';
-import { prooflessCourtHourStatuses, prooflessReleasePlan, resolveProoflessReleasePlan, submitDirectCheckout } from './proofless-checkout.js';
+import { preflightProoflessWire, prooflessCourtHourStatuses, prooflessReleasePlan, resolveProoflessReleasePlan, submitDirectCheckout } from './proofless-checkout.js';
+import { WirePayloadError } from './wire-payload-check.js';
+import { adaptivePrewarmLeadMs, describeTierStatus, type TierStatus } from './prewarm-scheduler.js';
+import { securityPrepHistory } from '../security-prep-history.js';
+import { predictionError, predictReopenings, RESCUE_CONTEXT_REUSE_MS, RESCUE_PREWARM_MAX_PER_RELEASE, rescuePrewarmDue, type ReopenPrediction } from './reopen-prediction.js';
 import { readPublicBookingRecords } from './public-bookings.js';
 import {API_SECURITY_PREWARM_LEAD_MS,safeApiFailureCode} from './run-observability.js';
 import { availabilityObservation, diagnosticLaneForWorker, RunDiagnostics, safeDiagnosticCode,
@@ -179,6 +183,8 @@ const experimentalRendererDispatch=(pageFor:(attempt:ArmedAttempt)=>Page|undefin
       setImmediate(()=>stage('RENDERER_DISPATCH_PLAN',{workerId:event.workerId,attemptId:event.attemptId,outcome:event.mode==='renderer'?'RENDERER_ARMED':'NODE_FALLBACK',...(event.code?{code:event.code}:{}),
         ...(event.calibration?{uncertaintyMs:Math.round(event.calibration.uncertaintyMs*100)/100}:{})}));}}}:{};
 const openTraceSession=(page:Page)=>()=>page.context().newCDPSession(page) as unknown as Promise<CdpSessionLike>;
+/** One transport per browser tab: a worker's first tab is keyed by the worker ID, fan-out child i>0 by "W:i" (Fixed and Smart alike). */
+const transportKeyOf=(workerId:WorkerId,fanOutIndex:number)=>fanOutIndex===0?workerId:`${workerId}:${fanOutIndex}`;
 const persistProviderTraces=async()=>{
   await persistCriticalPath().catch(()=>undefined);
   if(!providerTraces||providerTracesSaved)return;
@@ -375,9 +381,27 @@ try {
     }else customers=assertActiveCustomersValid(identities);
     if(command.mode==='dry'&&!precisionTargets&&!phase3)customers=undefined;
   }
+  // Arm-time wire self-check (wire-payload-check.ts): every Precision request this run may send is built with its
+  // worker's real identity, serialized and validated now, long before release. A malformed request refuses the run
+  // here instead of failing at release (2026-09-29: 28 × 400 "Invalid booking session time").
+  if((precisionTargets||phase3)&&customers){
+    const fallbackCustomer=Object.values(customers).find(Boolean);
+    const wirePlans:Array<{plan:BookingPlan;workerId?:WorkerId}>=precisionTargets
+      ?precisionAttemptSet(precisionTargets,command.date,precisionFanOut).map(({target,plan})=>({plan,workerId:target.workerId}))
+      :phase3!.candidates.map((candidate,index)=>({plan:candidateWirePlan(command.date,candidate),workerId:phase3!.wave1.find(value=>value.candidateIndex===index)?.workerId}));
+    try{
+      for(const {plan,workerId} of wirePlans){const customer=(workerId&&customers[workerId])||fallbackCustomer;if(customer)preflightProoflessWire(plan,customer);}
+    }catch(error){
+      stage('WIRE_PAYLOAD_SELF_CHECK',{outcome:'FAILED',targetCount:wirePlans.length,code:safeApiFailureCode(error,'WIRE_PAYLOAD_SELF_CHECK_FAILED'),
+        ...(error instanceof WirePayloadError?{message:error.detail.slice(0,240)}:{})});
+      throw Error('WIRE_PAYLOAD_SELF_CHECK_FAILED');
+    }
+    stage('WIRE_PAYLOAD_SELF_CHECK',{outcome:'PASSED',targetCount:wirePlans.length});
+  }
   // The dedicated profiles are independent. Wait for both checks to settle so
   // a failure in one browser cannot leave an unobserved preparation running.
-  const prepared=await Promise.allSettled(workerIds.map(worker=>prepareWorker(worker,precisionFanOut?PRECISION_FAN_OUT_ATTEMPTS:1)));
+  const smartTabs=new Map<WorkerId,number>((phase3?.wave1??[]).map(value=>[value.workerId,value.fanOutOffsetsMs?.length??1]));
+  const prepared=await Promise.allSettled(workerIds.map(worker=>prepareWorker(worker,precisionFanOut?PRECISION_FAN_OUT_ATTEMPTS:smartTabs.get(worker)??1)));
   prepared.forEach((result,index)=>stage('BROWSER_PREPARATION_OUTCOME',{workerId:workerIds[index]!,status:result.status,
     code:result.status==='fulfilled'?'COMPLETED':safeApiFailureCode(result.reason,'API_BROWSER_PREPARATION_FAILED')}));
   const failure=prepared.find((result):result is PromiseRejectedResult=>result.status==='rejected');
@@ -447,7 +471,7 @@ try {
     };
     if(command.mode==='live'||command.mode==='live-now'&&command.checkoutMethod==='proofless')for(const session of sessions){
       const workerId=session.workerId;
-      for(const [pageIndex,page] of session.pages.entries()){const transportKey=precisionFanOut?`${workerId}:${pageIndex}`:workerId;
+      for(const [pageIndex,page] of session.pages.entries()){const transportKey=transportKeyOf(workerId,pageIndex);
       releaseTransports.set(transportKey,new OndaBrowserSessionTransport(page,
         ()=>calendarFreeSecurityContext(page)(),
         response=>responseCaptures.get(transportKey)?.(response)??Promise.reject(Error('CHECKOUT_RESPONSE_CAPTURE_MISSING')),
@@ -662,6 +686,23 @@ try {
       }
       if(failure)throw Error(safeApiFailureCode(failure.reason,'SECURITY_PREWARM_FAILED'));
     };
+    /**
+     * Security preparation for a release: without fan-out, every attempt prepares at once 15 s ahead (unchanged). With fan-out,
+     * children prepare tier by tier (A0…G0 first, prewarm-scheduler.ts) with one preparation per browser at a time, and the lead
+     * grows with the number of tiers at this installation's measured p95 preparation time (security-prep-history.ts).
+     */
+    const fanOutPrewarm=(width:number,tier1Count:number)=>{
+      if(width<=1)return {prewarmLeadMs:API_SECURITY_PREWARM_LEAD_MS};
+      const history=securityPrepHistory('.',tier1Count);
+      const prewarmLeadMs=adaptivePrewarmLeadMs({tiers:width,workers:tier1Count,concurrency:tier1Count,prepP95Ms:history.p95Ms});
+      stage('PREWARM_PLAN',{prewarmLeadMs,fanOutCount:width,workerCount:tier1Count,sampleCount:history.samples,
+        ...(history.p95Ms!==null?{durationMs:Math.round(history.p95Ms)}:{})});
+      let last='';
+      return {prewarmLeadMs,prewarmPolicy:{concurrency:Math.max(1,tier1Count),perGroupConcurrency:1,tierBarrierTimeoutMs:Math.max(4_000,Math.round((history.p95Ms??8_000)*1.5))},
+        onPrewarmStatus:(status:TierStatus[])=>{const text=describeTierStatus(status);if(text===last)return;last=text;
+          // Never write near the trigger; the release summary and per-child states are logged afterwards.
+          setImmediate(()=>{if(!command.releaseMs||command.releaseMs-nowMs()>1_500)stage('PREWARM_TIER_STATUS',{message:text.slice(0,240)});});}};
+    };
     /** Precision Release v1: sparse evidence checkpoints, a T-2 min freeze, then per-attempt independent dispatch. */
     const runPrecision=async(targets:ReturnType<typeof validatePrecisionTargets>)=>{
       const date=command.date,releaseMs=command.releaseMs??releaseMsForTargetDate(config,date);
@@ -679,7 +720,7 @@ try {
       for(const target of targets){
         const unavailable=unavailableWorkers.get(target.workerId);
         if(unavailable)setState(target,unavailable.state,unavailable.code,unavailable.duplicateOf);
-        else if(command.mode==='live'&&!releaseTransports.get(fanOut?`${target.workerId}:0`:target.workerId))
+        else if(command.mode==='live'&&!releaseTransports.get(transportKeyOf(target.workerId,0)))
           setState(target,'BROWSER_FAILED','API_CHECKOUT_WORKER_MISSING');
       }
       const eligible=new Map<WorkerId,boolean>();
@@ -743,7 +784,7 @@ try {
       stage('PRECISION_FROZEN',{targetCount:targets.length,frozenCount:race.attempts.length});
       if(race.attempts.length){
         // Pre-release: bind diagnostics/response capture, then durably arm the lock, every journal and every one-shot.
-        const transportKeyFor=(attempt:PrecisionAttempt)=>attempt.fanOutCount>1?`${attempt.target.workerId}:${attempt.fanOutIndex}`:attempt.target.workerId;
+        const transportKeyFor=(attempt:PrecisionAttempt)=>transportKeyOf(attempt.target.workerId,attempt.fanOutIndex);
         const sessionFor=(attempt:PrecisionAttempt)=>{const base=sessions.find(value=>value.workerId===attempt.target.workerId);if(!base)return undefined;
           return {...base,page:base.pages[attempt.fanOutIndex]??base.page};};
         const bindings=new Map(race.attempts.map(attempt=>{
@@ -774,7 +815,12 @@ try {
           releaseClock=await prepareReleaseClock(releaseMs);
           const recorder=startCriticalPath(releaseClock,releaseMs,new Map(armed.attempts.flatMap(attempt=>{
             const session=sessionFor(attempt.attempt);return session?[[attempt.attempt.id,session.page] as const]:[];})));
-          const outcome=await dispatchArmedPrecisionRace(armed,{clock:releaseClock,prewarmLeadMs:API_SECURITY_PREWARM_LEAD_MS,spinTailMs:DEFAULT_SPIN_TAIL_MS,
+          // One critical-path row per child: the tab's transport observations are aliased onto its attempt ID.
+          for(const attempt of armed.attempts){recorder.alias(transportKeyFor(attempt.attempt),attempt.attempt.id);
+            recorder.describe(attempt.attempt.id,{parentGoalId:attempt.target.targetKey,workerId:attempt.target.workerId,fanOutIndex:attempt.attempt.fanOutIndex,
+              fanOutCount:attempt.attempt.fanOutCount,configuredOffsetMs:attempt.triggerMs-releaseMs,wave:'WAVE_1'});}
+          const outcome=await dispatchArmedPrecisionRace(armed,{clock:releaseClock,spinTailMs:DEFAULT_SPIN_TAIL_MS,
+            ...fanOutPrewarm(race.fanOut?PRECISION_FAN_OUT_ATTEMPTS:1,armed.attempts.filter(attempt=>attempt.attempt.fanOutIndex===0).length),
             isAborted:()=>abort.signal.aborted,sleep:pause,transportFor:(_worker,attempt)=>releaseTransports.get(transportKeyFor(attempt.attempt)),
             onWake:()=>recorder.mark('*','schedulerFired'),onMark:(_worker,name,attempt)=>{if(name==='transportCall')recorder.mark(attempt.attempt.id,'workerInvoked');
               else if(name==='rendererArm')recorder.mark(attempt.attempt.id,'rendererArmSent');},
@@ -794,7 +840,8 @@ try {
             onFinalApproach:()=>{try{previousPriority=getPriority();setPriority(osConstants.priority.PRIORITY_HIGH);}catch{previousPriority=undefined;}},
             onReleaseWindowEnd:()=>{if(previousPriority!==undefined){try{setPriority(previousPriority);}catch{}previousPriority=undefined;}},
             onEvent:event=>{
-              if(event.kind==='prewarm-ready')stage('SECURITY_PREWARM_READY',{workerId:event.workerId,attemptId:event.attemptId});
+              if(event.kind==='prewarm-ready'){stage('SECURITY_PREWARM_READY',{workerId:event.workerId,attemptId:event.attemptId});
+                recorder.describe(event.attemptId,{prewarmReadyMs:Math.round((releaseClock?.nowMs()??nowMs())-releaseMs)});}
               else if(event.kind==='prewarm-failed')stage('SECURITY_PREWARM_FAILED',{workerId:event.workerId,attemptId:event.attemptId,code:event.code??'SECURITY_PREWARM_FAILED'});
               else if(event.kind==='prewarm-retry')stage('SECURITY_PREWARM_RETRY',{workerId:event.workerId,attemptId:event.attemptId});
               else if(event.kind==='dispatch-start'){const binding=bindings.get(event.attemptId),plan=race.attempts.find(value=>value.id===event.attemptId)?.plan;
@@ -807,7 +854,8 @@ try {
                 unbindProoflessAttempt(binding);}}
             }});
           if(outcome.afterFireError)stage('PRECISION_LOCK_DISPATCHING_FAILED',{code:outcome.afterFireError});
-          for(const result of outcome.results)setState(result.attempt.target,result.state,result.code,undefined,result.attempt.id);
+          for(const result of outcome.results){setState(result.attempt.target,result.state,result.code,undefined,result.attempt.id);
+            recorder.describe(result.attempt.id,{finalState:result.state,...(result.code?{finalCode:result.code}:{})});}
           // Every attempt has settled: only now is the trace written.
           await persistProviderTraces().catch(()=>undefined);
         }catch(error){
@@ -837,7 +885,8 @@ try {
     const runPhase3=async()=>{
       const draft=phase3!,releaseMs=command.releaseMs??releaseMsForTargetDate(config,command.date),date=command.date;
       const authorization=authorizePrecision({date,releaseMs,candidates:draft.candidates,
-        wave1:draft.wave1.map(value=>({workerId:value.workerId,candidateId:precisionCandidateId(date,draft.candidates[value.candidateIndex]!)})),
+        wave1:draft.wave1.map(value=>({workerId:value.workerId,candidateId:precisionCandidateId(date,draft.candidates[value.candidateIndex]!),
+          ...(value.fanOutOffsetsMs?{fanOutOffsetsMs:value.fanOutOffsetsMs}:value.releaseOffsetMs?{releaseOffsetMs:value.releaseOffsetMs}:{})})),
         standby:draft.standby,budgets:draft.budgets,concurrentWave2:draft.concurrentWave2,
         rescueEnabled:draft.rescueEnabled,authorizedAt:new Date(nowMs()).toISOString()});
       const session=new PrecisionSession(authorization),byId=new Map(authorization.candidates.map(value=>[value.id,value]));
@@ -860,27 +909,53 @@ try {
         if(await journal.peekDisposition(candidate.logicalKey).catch(()=>'blocked' as const)==='blocked')
           throw Error('PHASE3_PRIOR_JOURNAL_UNRESOLVED');
       }
+      // Freeze-time public evidence for immediate targets: a target that now shows a known public booking is left out
+      // (visibly), unless the operator deliberately force-included it (OPERATOR_OVERRIDE_PUBLIC_CONFLICT), in which case it
+      // is kept with a warning. A failed read is reported but never removes an operator-authorized target.
+      const freezeEvidence=await readEvidence(date,releaseMs,'FREEZE');
+      stage('PHASE3_EVIDENCE_READ',{checkpoint:'FREEZE',availabilityState:freezeEvidence.snapshot?freezeEvidence.dateState:'READ_FAILED',
+        ok:!!freezeEvidence.snapshot&&!freezeEvidence.failedCourts.length,...(freezeEvidence.failedCourts.length?{failedCourts:freezeEvidence.failedCourts.join(',')}:{})});
+      const conflictExcluded=new Set<string>();
+      for(const assignment of authorization.wave1){
+        const candidate=byId.get(assignment.candidateId)!,result=classifyTargetEvidence(candidate,freezeEvidence,date);
+        const conflict=result.evidence==='PUBLIC_BOOKING_PRESENT'||result.evidence==='UNAVAILABLE_WITH_PUBLIC_BOOKING';
+        if(conflict&&candidate.publicEvidence?.override==='OPERATOR_OVERRIDE_PUBLIC_CONFLICT')
+          stage('PHASE3_OVERRIDE_KEPT',{workerId:assignment.workerId,candidateId:candidate.id,evidence:result.evidence,code:'OPERATOR_OVERRIDE_PUBLIC_CONFLICT'});
+        else if(conflict){conflictExcluded.add(candidate.id);
+          stage('PHASE3_WAVE1_EXCLUDED',{workerId:assignment.workerId,candidateId:candidate.id,evidence:result.evidence,code:'PUBLIC_BOOKING_CONFLICT_AT_FREEZE'});}
+        else if(result.evidence==='UNKNOWN')stage('PHASE3_EVIDENCE_UNKNOWN',{workerId:assignment.workerId,candidateId:candidate.id,evidence:result.evidence});
+      }
       const wave1:Array<Pick<PrecisionAttempt,'target'|'plan'>>=[];
-      // Each immediate attempt's Release Offset comes from the saved plan (covered by the plan fingerprint).
-      const wave1Offsets=new Map<WorkerId,number>(draft.wave1.map(value=>[value.workerId,value.releaseOffsetMs??0]));
+      // Each immediate target's Release Offset(s) come from the saved plan (covered by the plan and authorization fingerprints).
+      // A fan-out target becomes one independently tracked child per offset (fan-out index = offset order), each on its own tab.
+      const wave1Offsets=new Map<WorkerId,number>(authorization.wave1.map(value=>[value.workerId,value.fanOutOffsetsMs?.[0]??value.releaseOffsetMs??0]));
       for(const assignment of authorization.wave1){
         const candidate=byId.get(assignment.candidateId)!;
-        if(unavailableWorkers.has(assignment.workerId)||!releaseTransports.has(assignment.workerId)){
+        if(conflictExcluded.has(candidate.id))continue;
+        if(unavailableWorkers.has(assignment.workerId)||!releaseTransports.has(transportKeyOf(assignment.workerId,0))){
           stage('PHASE3_WORKER_EXCLUDED',{workerId:assignment.workerId,candidateId:candidate.id});continue;
         }
         const journal=new DurableSubmissionJournal(resolve('.local/api-booking/api-first-journals',candidate.logicalKey));
         if(await journal.recycleReusable(candidate.logicalKey).catch(()=>'blocked' as const)==='blocked'){
           stage('PHASE3_JOURNAL_BLOCKED',{workerId:assignment.workerId,candidateId:candidate.id});continue;
         }
-        const offset=wave1Offsets.get(assignment.workerId)??0;
-        const target:PrecisionTarget={court:candidate.court,start:candidate.start,durationHours:candidate.durationHours,
-          end:candidate.end,workerId:assignment.workerId,targetKey:candidate.logicalKey,assumedAmount:candidate.expectedAmount,
-          ...(offset?{releaseOffsetMs:offset}:{})};
-        wave1.push({target,plan:pricedPrecisionPlan(candidate,date,candidate.rateEvidence.perHour)});
+        const plan=pricedPrecisionPlan(candidate,date,candidate.rateEvidence.perHour);
+        const offsets=assignment.fanOutOffsetsMs??[assignment.releaseOffsetMs??0];
+        for(const [child,offset] of offsets.entries()){
+          // A missing child tab removes only that child (provably unsent); the other children stay eligible.
+          if(!releaseTransports.has(transportKeyOf(assignment.workerId,child))){
+            stage('PHASE3_WORKER_EXCLUDED',{workerId:assignment.workerId,candidateId:candidate.id,fanOutIndex:child,code:'FAN_OUT_TAB_MISSING'});continue;
+          }
+          wave1.push({target:{court:candidate.court,start:candidate.start,durationHours:candidate.durationHours,
+            end:candidate.end,workerId:assignment.workerId,targetKey:candidate.logicalKey,assumedAmount:candidate.expectedAmount,
+            ...(offset?{releaseOffsetMs:offset}:{})},plan});
+        }
         stage('PHASE3_WAVE1_PRICE',{workerId:assignment.workerId,candidateId:candidate.id,amount:candidate.expectedAmount,
-          source:candidate.rateEvidence.source,rateStatus:candidate.rateEvidence.status,capturedAt:candidate.rateEvidence.capturedAt});
+          source:candidate.rateEvidence.source,rateStatus:candidate.rateEvidence.status,capturedAt:candidate.rateEvidence.capturedAt,
+          ...(offsets.length>1?{fanOutCount:offsets.length}:{})});
       }
       const frozen=freezePrecisionRace(date,releaseMs,wave1);
+      const fanOutWidth=Math.max(1,...frozen.attempts.map(attempt=>attempt.fanOutCount));
       await saveOnce(resolve('.local/api-booking/precision-races'),`${progressLog.runId}-phase3-freeze.json`,
         {runId:progressLog.runId,frozenAt:new Date(nowMs()).toISOString(),authorization,wave1Freeze:frozen.fingerprint});
       if(config.RELEASE_LAB){
@@ -897,20 +972,29 @@ try {
       }
       stage('PHASE3_FROZEN',{candidateCount:authorization.candidates.length,wave1Count:wave1.length,
         fingerprint:authorization.fingerprint});
-      const bindings=new Map(wave1.map(attempt=>{
-        const workerId=attempt.target.workerId,lane=diagnosticLaneForWorker(workerId),candidate=authorization.candidates.find(value=>value.logicalKey===attempt.target.targetKey)!;
+      // One binding per child attempt (keyed by the frozen attempt ID); each child captures its response in its own journal directory.
+      const childDirectory=(attempt:PrecisionAttempt)=>attempt.fanOutCount>1
+        ?resolve('.local/api-booking/api-first-journals',attempt.target.targetKey,'fan-out',frozen.fingerprint,attempt.id)
+        :resolve('.local/api-booking/api-first-journals',attempt.target.targetKey);
+      const candidateOf=(attempt:Pick<PrecisionAttempt,'target'>)=>authorization.candidates.find(value=>value.logicalKey===attempt.target.targetKey)!;
+      const pageOf=(attempt:PrecisionAttempt)=>{const base=sessions.find(value=>value.workerId===attempt.target.workerId);return base?.pages[attempt.fanOutIndex]??base?.page;};
+      const bindings=new Map(frozen.attempts.map(attempt=>{
+        const workerId=attempt.target.workerId,lane=diagnosticLaneForWorker(workerId),candidate=candidateOf(attempt);
         activeWaveContexts.set(workerId,{candidateId:candidate.id,wave:'WAVE_1'});
-        return [workerId,bindProoflessAttempt({plan:attempt.plan,workerId,lane,attemptType:'official',
-          attemptId:diagnostics.nextAttemptId(lane,workerId,'official'),
-          directory:resolve('.local/api-booking/api-first-journals',attempt.target.targetKey)},'DIAGNOSTIC_ATTEMPT_ARMED')] as const;
+        return [attempt.id,bindProoflessAttempt({plan:attempt.plan,workerId,lane,attemptType:'official',
+          attemptId:diagnostics.nextAttemptId(lane,workerId,'official'),transportKey:transportKeyOf(workerId,attempt.fanOutIndex),
+          directory:childDirectory(attempt)},'DIAGNOSTIC_ATTEMPT_ARMED')] as const;
       }));
+      if(fanOutWidth>1)for(const attempt of frozen.attempts)stage('PHASE3_FAN_OUT_CHILD',{workerId:attempt.target.workerId,candidateId:candidateOf(attempt).id,
+        attemptId:bindings.get(attempt.id)!.correlation.attemptId,fanOutIndex:attempt.fanOutIndex,fanOutCount:attempt.fanOutCount,releaseOffsetMs:attempt.target.releaseOffsetMs??0});
       const armed=await armPrecisionRace(frozen,{lock:liveLock,customerFor:worker=>customers![worker]!,
         journalRoot:resolve('.local/api-booking/api-first-journals'),releaseMs,now:nowMs});
       retainLiveLock=true;
       for(const attempt of armed.attempts)scheduledTrigger(releaseMs,attempt.triggerMs,attempt.target.workerId);
       const traces=providerTraces=new ProviderTraceSet(progressLog.runId,'release',releaseMs,()=>(releaseClock?.nowMs()??nowMs())-releaseMs);
-      for(const workerId of workerIds){const workerSession=sessions.find(value=>value.workerId===workerId);
-        if(workerSession)traces.start({workerId,attemptId:bindings.get(workerId)?.correlation.attemptId},openTraceSession(workerSession.page));}
+      for(const attempt of armed.attempts){const page=pageOf(attempt.attempt);
+        if(page)traces.start({workerId:transportKeyOf(attempt.target.workerId,attempt.attempt.fanOutIndex),attemptId:bindings.get(attempt.attempt.id)?.correlation.attemptId,
+          court:attempt.target.court,startTime:attempt.target.start,endTime:attempt.target.end},openTraceSession(page));}
       setTimeout(()=>traces.enableAll(),Math.max(0,armed.dispatchDeadlineMs+100-nowMs())).unref();
       // Standby security is genuine and refreshed separately. Its failure never blocks Wave 1.
       const standbyReady=(async()=>{await sleepUntil(releaseMs-30_000).catch(()=>undefined);
@@ -925,15 +1009,32 @@ try {
       const pending=new Set<Promise<unknown>>();
       // A newer Slot Watch read no longer ends the attempt by itself: each checkpoint re-evaluates the
       // newest read for the SAME candidate (adaptive-attempt.ts) and adopts it as the effective evidence.
+      // Rescue V2: reopen predictions (reopen-prediction.ts) only PREPARE a Rescue worker before a likely reopening; a Rescue
+      // send still needs a fresh unavailable -> open observation, selection, revalidation, reservation and the pre-POST gate.
+      const rescueRanges=authorization.rescueEnabled?authorization.candidates.filter(value=>value.permissions.rescue)
+        .map(value=>({id:value.id,court:value.court,start:value.start,durationHours:value.durationHours})):[];
+      const predictions=new Map<string,ReopenPrediction>(),decodedReads=new Map<number,Map<string,string>>();
+      let rescuePrewarms=0,rescuePreparing:WorkerId|undefined;
+      const contextAge=(worker:WorkerId)=>releaseTransports.get(worker)?.preparedContextAgeMs();
+      /** Workers with a usable prepared context are preferred for Wave 2 and Rescue. */
+      const workerRank=(worker:WorkerId)=>{const age=contextAge(worker);return age!==undefined&&age>=0&&age<=RESCUE_CONTEXT_REUSE_MS?0:1;};
       const dispatchAdaptive=(selection:AdaptiveSelection,wave:'WAVE_2'|'RESCUE')=>{
         const {candidate,workerId}=selection;
+        // Selection instant (telemetry: detection -> dispatch for Wave 2 and Rescue).
+        stage('PHASE3_ADAPTIVE_SELECTED',{workerId,candidateId:candidate.id,wave,evidenceSeq:selection.evidenceSeq,contextReused:(contextAge(workerId)??Infinity)<=RESCUE_CONTEXT_REUSE_MS});
+        const predicted=wave==='RESCUE'?predictions.get(candidate.id):undefined,observed=session.latest?.observation.responseOffsetMs;
+        if(predicted&&observed!==undefined){const outcome=predictionError(predicted,observed);
+          stage('RESCUE_PREDICTION_OUTCOME',{candidateId:candidate.id,workerId,errorMs:outcome.errorMs,ok:outcome.insideWindow,confidence:predicted.confidence,
+            contextReused:(contextAge(workerId)??Infinity)<=RESCUE_CONTEXT_REUSE_MS});}
         const journal=new DurableSubmissionJournal(resolve('.local/api-booking/api-first-journals',candidate.logicalKey));
         const task=runAdaptiveAttempt(selection,wave,{session,date,now:nowMs,dispatchNow:()=>releaseClock?.nowMs()??nowMs(),
           newestSeq:()=>newestSeq,securityRefreshMs:()=>securityRefreshMs,aborted:()=>abort.signal.aborted,verifiedHold:()=>verifiedHold,
           workerReady:()=>releaseTransports.has(workerId)&&!unavailableWorkers.has(workerId),
           prepareSecurity:async()=>{
             const started=performance.now();
-            try{await releaseTransports.get(workerId)!.prepareCheckoutContext(wave==='RESCUE');securityRefreshMs=Math.max(securityRefreshMs,performance.now()-started);}
+            // An unused context prepared within the last minute (standby at T-30 s, or a Rescue prewarm before a predicted
+            // reopening) is reused; the transport still refuses anything older than 120 s at the POST.
+            try{await releaseTransports.get(workerId)!.prepareCheckoutContext(false,RESCUE_CONTEXT_REUSE_MS);securityRefreshMs=Math.max(securityRefreshMs,performance.now()-started);}
             catch(error){stage('PHASE3_SECURITY_FAILED',{workerId,candidateId:candidate.id,code:safeApiFailureCode(error,'SECURITY_PREWARM_FAILED')});throw error;}
           },
           journalReusable:async()=>{
@@ -971,15 +1072,38 @@ try {
             if(!operational)continue;
             const fresh=adaptiveFitness(operational,newestSeq,releaseMs,nowMs(),securityRefreshMs);
             session.observe(fresh);
+            // Predictions are recomputed from every fresh-enough read after the first minute (off the release window).
+            if(rescueRanges.length&&observation.responseOffsetMs>60_000)for(const prediction of predictReopenings(rescueRanges,receivedEvidence,{decoded:decodedReads})){
+              const known=predictions.get(prediction.candidateId);
+              if(known?.epochSeq===prediction.epochSeq&&known.windowEndMs===prediction.windowEndMs)continue;
+              predictions.set(prediction.candidateId,prediction);
+              stage('RESCUE_PREDICTION',{candidateId:prediction.candidateId,seq:prediction.epochSeq,predictedStartMs:prediction.windowStartMs,
+                predictedEndMs:prediction.windowEndMs,confidence:prediction.confidence});
+            }
             if(operational.seq!==observation.seq||!isActionableEvidenceFitness(fresh.fitness))continue;
             if(authorization.rescueEnabled&&pending.size===0)
-              for(const choice of session.select('RESCUE',nowMs(),maxAge))dispatchAdaptive(choice,'RESCUE');
+              for(const choice of session.select('RESCUE',nowMs(),maxAge,{workerRank}))dispatchAdaptive(choice,'RESCUE');
           }
           const current=session.latest;
           if(current&&wave1Fired&&(authorization.concurrentWave2||wave1Settled)){
             const latency=Math.max(0,current.observation.responseOffsetMs-current.observation.requestOffsetMs);
             const maxAge=adaptiveMaxAgeMs(latency,securityRefreshMs);
-            for(const choice of session.select('WAVE_2',nowMs(),maxAge))dispatchAdaptive(choice,'WAVE_2');
+            for(const choice of session.select('WAVE_2',nowMs(),maxAge,{workerRank}))dispatchAdaptive(choice,'WAVE_2');
+          }
+          // Rescue V2 prewarm: before a predicted window, prepare the worker Rescue would use first. Bounded per release; one
+          // preparation at a time; never while an adaptive attempt is in flight; never after an UNKNOWN or a verified hold.
+          if(predictions.size&&wave1Settled&&!rescuePreparing&&pending.size===0&&rescuePrewarms<RESCUE_PREWARM_MAX_PER_RELEASE&&!session.adaptiveBlocker('RESCUE')){
+            const offset=nowMs()-releaseMs,worker=session.adaptiveWorkers('RESCUE',workerRank)[0];
+            const next=worker?[...predictions.values()].find(value=>rescuePrewarmDue(value,offset,contextAge(worker))):undefined;
+            if(worker&&next&&releaseTransports.has(worker)&&!unavailableWorkers.has(worker)){
+              rescuePreparing=worker;rescuePrewarms++;
+              stage('RESCUE_PREWARM',{workerId:worker,candidateId:next.candidateId,predictedStartMs:next.windowStartMs,predictedEndMs:next.windowEndMs,attemptNo:rescuePrewarms});
+              const started=performance.now();
+              void releaseTransports.get(worker)!.prepareCheckoutContext(true).then(
+                ()=>stage('RESCUE_PREWARM_READY',{workerId:worker,candidateId:next.candidateId,durationMs:Math.round(performance.now()-started)}),
+                error=>stage('RESCUE_PREWARM_FAILED',{workerId:worker,candidateId:next.candidateId,code:safeApiFailureCode(error,'SECURITY_PREWARM_FAILED')}))
+                .finally(()=>{rescuePreparing=undefined;});
+            }
           }
           if(verifiedHold||session.attempts.some(value=>value.state==='UNKNOWN'))break;
           await pause(25).catch(()=>undefined);
@@ -989,36 +1113,47 @@ try {
       try{
         releaseClock=await prepareReleaseClock(releaseMs);
         let previousPriority:number|undefined;
+        // Critical-path rows are per child attempt; each tab's transport observations are aliased onto its attempt.
         const recorder=startCriticalPath(releaseClock,releaseMs,new Map(armed.attempts.flatMap(attempt=>{
-          const workerSession=sessions.find(value=>value.workerId===attempt.target.workerId);return workerSession?[[attempt.target.workerId,workerSession.page] as const]:[];})));
-        const outcome=await dispatchArmedPrecisionRace(armed,{clock:releaseClock,prewarmLeadMs:API_SECURITY_PREWARM_LEAD_MS,
-          spinTailMs:DEFAULT_SPIN_TAIL_MS,isAborted:()=>abort.signal.aborted,sleep:pause,
-          onWake:()=>recorder.mark('*','schedulerFired'),onMark:(worker,name)=>{if(name==='transportCall')recorder.mark(worker,'workerInvoked');
-            else if(name==='rendererArm')recorder.mark(worker,'rendererArmSent');},
-          ...experimentalRendererDispatch(attempt=>sessions.find(value=>value.workerId===attempt.target.workerId)?.page,attempt=>releaseTransports.get(attempt.target.workerId)),
-          transportFor:worker=>releaseTransports.get(worker),prewarm:async attempt=>{
-            const transport=releaseTransports.get(attempt.target.workerId);if(!transport)throw Error('API_CHECKOUT_WORKER_MISSING');
+          const page=pageOf(attempt.attempt);return page?[[attempt.attempt.id,page] as const]:[];})));
+        for(const attempt of armed.attempts){recorder.alias(transportKeyOf(attempt.target.workerId,attempt.attempt.fanOutIndex),attempt.attempt.id);
+          recorder.describe(attempt.attempt.id,{parentGoalId:candidateOf(attempt.attempt).id,workerId:attempt.target.workerId,fanOutIndex:attempt.attempt.fanOutIndex,
+            fanOutCount:attempt.attempt.fanOutCount,configuredOffsetMs:attempt.triggerMs-releaseMs,wave:'WAVE_1'});}
+        const transportOf=(attempt:ArmedAttempt)=>releaseTransports.get(transportKeyOf(attempt.target.workerId,attempt.attempt.fanOutIndex));
+        const outcome=await dispatchArmedPrecisionRace(armed,{clock:releaseClock,spinTailMs:DEFAULT_SPIN_TAIL_MS,isAborted:()=>abort.signal.aborted,sleep:pause,
+          ...fanOutPrewarm(fanOutWidth,armed.attempts.filter(attempt=>attempt.attempt.fanOutIndex===0).length),
+          onWake:()=>recorder.mark('*','schedulerFired'),onMark:(_worker,name,attempt)=>{if(name==='transportCall')recorder.mark(attempt.attempt.id,'workerInvoked');
+            else if(name==='rendererArm')recorder.mark(attempt.attempt.id,'rendererArmSent');},
+          ...experimentalRendererDispatch(attempt=>pageOf(attempt.attempt),transportOf),
+          transportFor:(_worker,attempt)=>transportOf(attempt),prewarm:async attempt=>{
+            const transport=transportOf(attempt);if(!transport)throw Error('API_CHECKOUT_WORKER_MISSING');
             await transport.prepareCheckoutContext();},
-          onVerifiedHold:async(attempt,hold)=>{const workerSession=sessions.find(value=>value.workerId===attempt.target.workerId)!;
-            await completeVerifiedProoflessHold(bindings.get(attempt.target.workerId)!,workerSession,attempt.plan,hold);return {state:'QR_READY'};},
+          onVerifiedHold:async(attempt,hold)=>{const base=sessions.find(value=>value.workerId===attempt.target.workerId)!;
+            await completeVerifiedProoflessHold(bindings.get(attempt.attempt.id)!,{...base,page:pageOf(attempt.attempt)??base.page},attempt.plan,hold);return {state:'QR_READY'};},
           afterFire:async()=>{await liveLock?.dispatching();},
           onFinalApproach:()=>{try{previousPriority=getPriority();setPriority(osConstants.priority.PRIORITY_HIGH);}catch{previousPriority=undefined;}},
           onReleaseWindowEnd:()=>{if(previousPriority!==undefined){try{setPriority(previousPriority);}catch{}previousPriority=undefined;}},
-          onEvent:event=>{const binding=bindings.get(event.workerId);
-            if(event.kind==='dispatch-start'&&binding){wave1Fired=true;const candidate=authorization.candidates.find(value=>value.logicalKey===
-              wave1.find(attempt=>attempt.target.workerId===event.workerId)?.target.targetKey)!;
-              session.record({id:binding.correlation.attemptId,candidateId:candidate.id,workerId:event.workerId,wave:'WAVE_1',state:'IN_FLIGHT'});
+          onEvent:event=>{const binding=bindings.get(event.attemptId),child=frozen.attempts.find(value=>value.id===event.attemptId);
+            if(event.kind==='prewarm-ready')recorder.describe(event.attemptId,{prewarmReadyMs:Math.round((releaseClock?.nowMs()??nowMs())-releaseMs)});
+            const fanOut:Record<string,number>=child&&child.fanOutCount>1?{fanOutIndex:child.fanOutIndex,fanOutCount:child.fanOutCount}:{};
+            if(event.kind==='dispatch-start'&&binding&&child){wave1Fired=true;const candidate=candidateOf(child);
+              session.record({id:binding.correlation.attemptId,candidateId:candidate.id,workerId:event.workerId,wave:'WAVE_1',state:'IN_FLIGHT',...fanOut});
               stage('PHASE3_WAVE1_STARTED',{workerId:event.workerId,candidateId:candidate.id,wave:'WAVE_1',attemptId:binding.correlation.attemptId,
-                court:candidate.court,startTime:candidate.start,endTime:candidate.end,amount:candidate.expectedAmount});}
+                court:candidate.court,startTime:candidate.start,endTime:candidate.end,amount:candidate.expectedAmount,...fanOut});}
             if(event.kind==='settled'&&binding){const attempt=session.attempts.find(value=>value.id===binding.correlation.attemptId);
-              if(attempt)attempt.state=event.state==='REJECTED'?'REJECTED':event.state==='QR_READY'||event.state==='HOLD_VERIFIED_QR_ATTENTION'?'VERIFIED':'UNKNOWN';
-              stage('PHASE3_SETTLED',{workerId:event.workerId,candidateId:attempt?.candidateId??'',wave:'WAVE_1',
-                attemptId:binding.correlation.attemptId,state:event.state??'UNKNOWN'});
+              // A provably unsent child (refused before its transport sent anything) consumes no budget and never reads as UNKNOWN.
+              if(attempt)attempt.state=event.state==='REJECTED'?'REJECTED':event.state==='QR_READY'||event.state==='HOLD_VERIFIED_QR_ATTENTION'?'VERIFIED':
+                event.state&&PRECISION_UNSENT_STATES.has(event.state)?'NOT_DISPATCHED':'UNKNOWN';
+              stage('PHASE3_SETTLED',{workerId:event.workerId,candidateId:attempt?.candidateId??(child?candidateOf(child).id:''),wave:'WAVE_1',
+                attemptId:binding.correlation.attemptId,state:event.state??'UNKNOWN',...(event.code?{code:event.code}:{}),...fanOut});
               unbindProoflessAttempt(binding);}
           }});
         wave1Settled=true;
-        for(const result of outcome.results)if(!session.attempts.some(value=>value.workerId===result.attempt.target.workerId))
-          stage('PHASE3_WAVE1_UNSENT',{workerId:result.attempt.target.workerId,state:result.state});
+        for(const result of outcome.results)recorder.describe(result.attempt.id,{finalState:result.state,...(result.code?{finalCode:result.code}:{})});
+        for(const result of outcome.results){const binding=bindings.get(result.attempt.id);
+          if(!binding||!session.attempts.some(value=>value.id===binding.correlation.attemptId))
+            stage('PHASE3_WAVE1_UNSENT',{workerId:result.attempt.target.workerId,state:result.state,...(result.code?{code:result.code}:{}),
+              ...(result.attempt.fanOutCount>1?{fanOutIndex:result.attempt.fanOutIndex,fanOutCount:result.attempt.fanOutCount} as Record<string,number>:{})});}
         await standbyReady;
         await adaptiveLoop;
         await persistLatestVerifiedHold();
@@ -1077,6 +1212,11 @@ try {
       if(primaryProoflessPlans.length!==workerIds.length)throw Error('DIRECT_WORKER_PLAN_MISMATCH');
       if(command.mode!=='dry'){
         primaryProoflessAttempts=makeProoflessAttempts(primaryProoflessPlans,workerIds);
+        // Wire self-check before release (wire-payload-check.ts); submitDirectCheckout re-checks the exact bytes it sends.
+        try{for(const attempt of primaryProoflessAttempts)preflightProoflessWire(attempt.plan,attempt.customer);}
+        catch(error){stage('WIRE_PAYLOAD_SELF_CHECK',{outcome:'FAILED',targetCount:primaryProoflessAttempts.length,
+          ...(error instanceof WirePayloadError?{message:error.detail.slice(0,240)}:{})});throw Error('WIRE_PAYLOAD_SELF_CHECK_FAILED');}
+        stage('WIRE_PAYLOAD_SELF_CHECK',{outcome:'PASSED',targetCount:primaryProoflessAttempts.length});
         for(const attempt of primaryProoflessAttempts)for(const [index,journal] of attempt.journals.entries()){
           const disposition=await journal.recycleReusable(attempt.keys[index]!);
           if(disposition==='blocked')throw Error('DUPLICATE_LOGICAL_BOOKING_BLOCKED');

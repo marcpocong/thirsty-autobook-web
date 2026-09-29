@@ -74,6 +74,13 @@ describe('Release slot watch', () => {
       expect(window).toMatchObject({court:7,hour:'19:00',holdDurationMs:600_000});
       expect(log.filter(line=>line.type==='bookings').map(line=>line.scheduledOffsetMs)).toContain(606_000);
       expect(summary.candidates[0]).toMatchObject({id:'c7',state:'FULLY_OPEN',reopening:'CONFIRMED',freshness:'ORIGIN_FRESH'});
+      // Each predicted window is scored against the first observed reopening of its cell (tuning evidence).
+      const predictions=summary.quality!.expiryPredictions!;
+      expect(predictions).toMatchObject({predicted:3,reopenedInWindow:3,reopenedOutside:0,notReopened:0});
+      const row=predictions.rows.find(value=>value.hour==='19:00')!;
+      expect(row.observedReopenMs).toBeGreaterThanOrEqual(row.predictedStartMs);
+      expect(row.observedReopenMs).toBeLessThanOrEqual(row.predictedEndMs);
+      expect(Math.abs(row.errorMs!)).toBeLessThan(3_000);
     });
   }));
 

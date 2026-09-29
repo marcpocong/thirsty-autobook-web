@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import type { ApiAutomationLock } from './api-automation-lock.js';
-import { armCheckoutRequest } from './browser-session-transport.js';
+import { armCheckoutRequest } from './armed-request.js';
 import { DurableSubmissionJournal, revokeSubmissionPermit, type SubmissionPermit } from './durable-submission-journal.js';
 import { THIRSTY_PICKLE_FACILITY_ID } from './live-availability-provider.js';
 import { assertPrecisionFreezeIntact, classifyPrecisionDispatchError, type FrozenPrecisionRace, type PrecisionAttempt,
@@ -17,6 +17,7 @@ import type { WorkerId } from '../workers.js';
 import type { OndaBrowserSessionTransport } from './browser-session-transport.js';
 import type { RendererClockCalibration } from './renderer-clock.js';
 import { DEFAULT_RENDERER_DISPATCH_OPTIONS, planRendererFire, type RendererDispatchOptions, type RendererFirePlan } from './renderer-dispatch.js';
+import { schedulePrewarm, UNBOUNDED_PREWARM, type PrewarmPolicy, type PrewarmSchedule, type TierStatus } from './prewarm-scheduler.js';
 
 /**
  * Durable pre-armed Precision dispatch.
@@ -98,8 +99,9 @@ export async function armPrecisionRace(race: FrozenPrecisionRace, deps: ArmDeps)
   const prepared = race.attempts.map((attempt, index) => {
     const request = deepFreeze(prooflessRequest(attempt.plan, deps.customerFor(attempt.target.workerId)));
     const keys = standardPlanJournalKeys(attempt.plan, THIRSTY_PICKLE_FACILITY_ID);
-    if (keys.length !== 1 || keys[0] !== attempt.target.targetKey || armCheckoutRequest(request).key !== keys[0])
-      throw Error('PRECISION_TARGET_KEY_MISMATCH');
+    if (keys.length !== 1 || keys[0] !== attempt.target.targetKey) throw Error('PRECISION_TARGET_KEY_MISMATCH');
+    // Exact wire-body self-check before anything durable: a malformed request refuses the whole arm, never fails at release.
+    if (armCheckoutRequest(request, { plan: attempt.plan, key: keys[0]! }).key !== keys[0]) throw Error('PRECISION_TARGET_KEY_MISMATCH');
     return { attempt, request, key: keys[0]!, fingerprint: prooflessPlanFingerprint(attempt.plan), triggerMs: triggers[index]! };
   });
   // The global lock is armed before any per-target record, so every armed journal is covered by it.
@@ -264,6 +266,15 @@ export interface ArmedDispatchDeps {
   onVerifiedHold?: (attempt: ArmedAttempt, verified: VerifiedPublicCheckout) => Promise<PrecisionDispatchResult>;
   onEvent?: (event: { kind: 'prewarm-ready' | 'prewarm-failed' | 'prewarm-retry' | 'dispatch-start' | 'settled'; workerId: WorkerId; attemptId: string; state?: PrecisionAttemptState; code?: string }) => void;
   onWake?: () => void;
+  /**
+   * Priority-aware prewarm (prewarm-scheduler.ts): children are prepared tier by tier (fan-out index 0 first) with bounded
+   * concurrency. Absent means the previous behavior (every attempt prepares at once). With a policy, a lower-tier child
+   * (fan-out index > 0) that is not ready at its trigger is omitted as provably unsent instead of firing late, and no new
+   * preparation starts after `prewarmStopStartingLeadMs` before the first trigger.
+   */
+  prewarmPolicy?: PrewarmPolicy;
+  prewarmStopStartingLeadMs?: number;
+  onPrewarmStatus?: (status: TierStatus[]) => void;
   /** Benchmark instrumentation only. */
   onMark?: (worker: WorkerId, name: string, attempt: ArmedAttempt) => void;
   /** Runs after every ready attempt has been fired (never before a POST), e.g. the lock's FINAL_ACTION_DISPATCHING record. */
@@ -318,8 +329,10 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
     waitForMonotonicDeadline(() => clock.monotonicDeadline(epochMs), { spinTailMs, isAborted, ...(sleep ? { sleep } : {}) });
   // A plain timer: after something was sent, a wait must never throw (the runner's abort-aware sleep does).
   const timerSleep = (ms: number) => new Promise<void>(done => setTimeout(done, ms));
-  type Readiness = { settled: boolean; ok: boolean; promise: Promise<boolean> };
+  type Readiness = { settled: boolean; ok: boolean; omitted?: boolean; promise: Promise<boolean> };
   let readiness: Readiness[];
+  let prewarmSchedule: PrewarmSchedule | undefined;
+  const tiered = !!deps.prewarmPolicy;
   const sends: Array<Promise<unknown> | undefined> = new Array(armed.attempts.length);
   const renderer = deps.rendererDispatch;
   const rendererOptions = { ...DEFAULT_RENDERER_DISPATCH_OPTIONS, ...(renderer?.options ?? {}) };
@@ -381,23 +394,30 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
   try {
     assertPrecisionFreezeIntact(armed.race);
     await waitFor(firstTriggerMs - deps.prewarmLeadMs);
-    readiness = armed.attempts.map(attempt => {
-      const entry: Readiness = { settled: false, ok: false, promise: Promise.resolve(false) };
-      entry.promise = (async () => {
-        for (let round = 1; round <= 2; round++) {
-          try { await deps.prewarm(attempt); }
-          catch (error) {
-            emit({ kind: 'prewarm-failed', workerId: attempt.target.workerId, attemptId: attempt.attempt.id, code: safeCode(error, 'SECURITY_PREWARM_FAILED') });
-            if (round === 1 && now() < retryCutoff) { emit({ kind: 'prewarm-retry', workerId: attempt.target.workerId, attemptId: attempt.attempt.id }); continue; }
-            return false;
-          }
-          emit({ kind: 'prewarm-ready', workerId: attempt.target.workerId, attemptId: attempt.attempt.id });
-          return true;
+    const prepare = async (attempt: ArmedAttempt): Promise<boolean> => {
+      for (let round = 1; round <= 2; round++) {
+        try { await deps.prewarm(attempt); }
+        catch (error) {
+          emit({ kind: 'prewarm-failed', workerId: attempt.target.workerId, attemptId: attempt.attempt.id, code: safeCode(error, 'SECURITY_PREWARM_FAILED') });
+          if (round === 1 && now() < retryCutoff) { emit({ kind: 'prewarm-retry', workerId: attempt.target.workerId, attemptId: attempt.attempt.id }); continue; }
+          return false;
         }
-        return false;
-      })().then(ok => { entry.settled = true; entry.ok = ok; return ok; });
-      return entry;
-    });
+        emit({ kind: 'prewarm-ready', workerId: attempt.target.workerId, attemptId: attempt.attempt.id });
+        return true;
+      }
+      return false;
+    };
+    // Tier = fan-out index (A0…G0 first), order = strategy order of the frozen set, group = the worker's browser.
+    const byId = new Map(armed.attempts.map(attempt => [attempt.attempt.id, attempt] as const));
+    prewarmSchedule = schedulePrewarm(armed.attempts.map((attempt, index) => ({ id: attempt.attempt.id, tier: attempt.attempt.fanOutIndex, order: index,
+      group: attempt.target.workerId })), task => prepare(byId.get(task.id)!), deps.prewarmPolicy ?? UNBOUNDED_PREWARM, undefined,
+    status => { try { deps.onPrewarmStatus?.(status); } catch { /* observability only */ } });
+    readiness = armed.attempts.map(attempt => prewarmSchedule!.readiness.get(attempt.attempt.id)!);
+    if (tiered) {
+      // No new preparation starts late in the countdown; anything not started by then is omitted (never sent).
+      const stopAt = firstTriggerMs - Math.max(FINAL_APPROACH_MS, deps.prewarmStopStartingLeadMs ?? 3_000);
+      void waitFor(stopAt, () => false, timerSleep).then(() => prewarmSchedule?.stopStarting(), () => prewarmSchedule?.stopStarting());
+    }
     // Integrity of the frozen set is verified before the final wait, never after the first trigger.
     assertPrecisionFreezeIntact(armed.race);
     if (renderer) {
@@ -430,6 +450,7 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
       else { deps.onWake?.(); fireGroup(step.triggerMs); }
     }
   } catch (error) {
+    prewarmSchedule?.stopStarting();
     try { deps.onReleaseWindowEnd?.(); } catch { /* optional tuning */ }
     // Aborted (or failed) before anything was sent: nothing was fired; record every attempt as provably unsent.
     await disarmUnfired(armed, safeCode(error, 'ARMED_NOT_DISPATCHED'), now);
@@ -437,6 +458,8 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
   }
   // The CDP messages leave in the microtasks after the last pass; run no bookkeeping on this thread until they have.
   await new Promise<void>(done => setImmediate(done));
+  // Every trigger has passed: nothing else may start preparing.
+  prewarmSchedule?.stopStarting();
   try { deps.onReleaseWindowEnd?.(); } catch { /* optional tuning */ }
   // ---- Everything below runs after every ready POST has been started. ----
   const afterFire = deps.afterFire && sends.some(Boolean)
@@ -446,6 +469,11 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
     const attempt = armed.attempts[index]!, ready = readiness[index]!;
     let sent = sends[index];
     if (!sent) {
+      // A lower-tier fan-out child that was not ready (or never started) at its trigger is omitted, never sent late.
+      if (tiered && attempt.attempt.fanOutIndex > 0 && (!ready.settled || ready.omitted)) {
+        await disarmAttempt(attempt, 'PREWARM_TIER_OMITTED', now).catch(() => undefined); return { state: 'NOT_DISPATCHED', code: 'PREWARM_TIER_OMITTED' };
+      }
+      if (ready.omitted) { await disarmAttempt(attempt, 'PREWARM_TIER_OMITTED', now).catch(() => undefined); return { state: 'NOT_DISPATCHED', code: 'PREWARM_TIER_OMITTED' }; }
       if (!ready.settled) {
         // Not ready at its trigger: it may still dispatch inside the window, exactly like a late prewarm before.
         const timedOut = Symbol('timeout');

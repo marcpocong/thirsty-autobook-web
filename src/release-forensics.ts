@@ -28,7 +28,7 @@ function readLines(path: string): Line[] {
 const endOf = (startTime: string, hours: number) => `${String(Number(startTime.slice(0, 2)) + hours).padStart(2, '0')}:00`;
 
 export interface ObserverLog {
-  version: 1 | 2; path: string; releaseMs: number; date: string;
+  version: 1 | 2 | 3; path: string; releaseMs: number; date: string;
   availability: AvailabilityObservation[]; bookings: BookingObservation[];
   /** False for version-1 logs, which did not itemize public records per read. */
   bookingsItemized: boolean;
@@ -40,11 +40,12 @@ export interface ObserverLog {
 export function readObserverLog(path: string): ObserverLog | undefined {
   const lines = readLines(path), header = lines.find(line => line.type === 'header');
   if (!header || typeof header.date !== 'string') return undefined;
-  if (header.version === 2) {
+  // Version 3 (bounded-cache evidence, 2026-09-29) keeps the version-2 line shapes and only adds fields.
+  if (header.version === 2 || header.version === 3) {
     const releaseMs = num(header.releaseMs)!;
     const clock = lines.filter(line => line.type === 'clock' && Date.parse(String(line.at)) <= releaseMs).at(-1);
     const schedule = header.schedule as { availability?: number[]; maxInFlight?: number } | undefined;
-    return { version: 2, path, releaseMs, date: header.date,
+    return { version: header.version as 2 | 3, path, releaseMs, date: header.date,
       availability: lines.filter(line => line.type === 'availability').map(line => line as unknown as AvailabilityObservation),
       bookings: lines.filter(line => line.type === 'bookings').map(line => line as unknown as BookingObservation), bookingsItemized: true,
       clockOffsetAtReleaseMs: num(clock?.offsetMs) ?? num(header.clockOffsetMs) ?? null,
@@ -93,7 +94,7 @@ export interface ClockRound { checkpoint: string; offsetMs: number; roundTripMs?
 export interface ReleaseForensicsSummary {
   version: 1; runId: string; mode: string; date: string; reference: 'release' | 'first-post'; referenceMs: number | null;
   status: 'preliminary' | 'final'; generatedAt: string;
-  sources: { runProgress: string; observer: string | null; observerVersion: 1 | 2 | null; providerTrace: string | null };
+  sources: { runProgress: string; observer: string | null; observerVersion: 1 | 2 | 3 | null; providerTrace: string | null };
   clock: { rounds: ClockRound[]; dispatchOffsetMs: number | null; observerOffsetMs: number | null; observerMinusDispatchMs: number | null };
   dispatch: { posts: number; firstPostOffsetMs: number | null; lastPostOffsetMs: number | null; spreadMs: number | null };
   outcome: string | null;

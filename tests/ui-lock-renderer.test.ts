@@ -1,7 +1,7 @@
 import {afterAll,beforeAll,expect,it} from 'vitest';
 import {chromium,type Browser} from 'playwright';
-import {readFile,mkdir} from 'node:fs/promises';
-import {stripTypeScriptTypes} from 'node:module';
+import {mkdir} from 'node:fs/promises';
+import {openRenderer,showRendererView} from './renderer-harness.js';
 import {bookingView,defaultSetup} from '../ui/booking.js';
 import {ConfigSchema} from '../src/config.js';
 
@@ -14,47 +14,38 @@ const booking=(method:'browser'|'api-first'='browser',strategy:'standard'|'exten
   PLAYER_B_FULL_NAME:'Second Fixture',PLAYER_B_PHONE:'09987654321',PLAYER_B_EMAIL:'second@example.invalid',
 }));
 async function renderer(extra:Record<string,unknown>={}){
-  const page=await browser.newPage({viewport:{width:1060,height:760}});
-  const html=(await readFile('ui/renderer/index.html','utf8')).replace(/<meta http-equiv="Content-Security-Policy"[^>]*>/,'').replace(/<script[^>]*src="app.js"[^>]*><\/script>/,'');
-  await page.setContent(html);
-  await page.addStyleTag({content:await readFile('ui/renderer/styles.css','utf8')});
-  const state={operation:'idle',headline:'Fixture status',detail:'Ready for review',ready:false,workflow:'release',cdp:false,lock:false,
-    inspection:null,clock:null,plan:null,logs:[],liveRace:true,booking:booking(),termsAuthorized:false,apiFirstReady:false,
-    browserHealth:{A:false,B:false},capabilities:{selectionReady:true,checkoutReady:true,paymentBoundaryReady:true},
-    selection:null,mode:'full',handoff:null,preparedContext:null,playerStatus:{primary:true,extended:true},...extra};
-  await page.evaluate(value=>{const w=window as any;w.fixtureState=value;w.thirsty={getStatus:async()=>value,onStatus:(callback:any)=>{w.fixturePublish=callback;return ()=>{};},focusBrowser:async(request:unknown)=>{w.fixtureFocusedBrowser=request;return w.fixtureFocusResult??'focused';},
-    setWorkflow:async(workflow:string)=>{value.workflow=workflow;value.ready=false;},invalidatePreparation:async()=>{},
-    authorizeTerms:async(authorized:boolean)=>{value.termsAuthorized=authorized;w.fixturePublish(value);},
-    resetPrepare:async()=>{},armFullBooking:async()=>{},reviewLock:async()=>{},saveBooking:async()=>{},
-    onConfirmRequest:(callback:any)=>{w.fixtureConfirmRequest=callback;return ()=>{};},confirmResponse:async(id:string,confirmed:boolean)=>{w.fixtureConfirmResponse={id,confirmed};}};},state);
-  const source=(await readFile('src/booking-setup.ts','utf8'))+'\n'+(await readFile('src/precision-simple.ts','utf8'))+'\n'+(await readFile('src/release-offset.ts','utf8'))+'\n'+(await readFile('ui/renderer/app.ts','utf8'))
-    .replace(/^import .*booking-setup\.js';\r?\n/m,'').replace(/^import \{[^}]*\} from '\.\.\/\.\.\/src\/precision-simple\.js';\r?\n/m,'')
-    .replace(/^import .*release-offset\.js';\r?\n/m,'');
-  await page.addScriptTag({type:'module',content:stripTypeScriptTypes(source)});
-  await page.waitForFunction(expected=>document.getElementById('headline')?.textContent===expected,state.headline);
-  return page;
+  return openRenderer(browser,{booking:booking(),browserHealth:{A:false,B:false},...extra},'release',{width:1060,height:760});
 }
 
-it('shows six focused views with a wide grid and stacked narrow layout',async()=>{
+it('shows the five operator views with a wide grid and stacked narrow layout',async()=>{
   const page=await renderer();
-  expect(await page.locator('[data-view]').allTextContents()).toEqual(['Next Release','Edit Plan','Tests','Slots','Runs','Tools']);
+  expect(await page.locator('nav [data-view]').allTextContents()).toEqual(['Next Release','Strategy','Live','History & Insights','Tools']);
   expect(await page.locator('#release-schedule').isVisible()).toBe(true);
+  expect(await page.locator('#next-strategy').isVisible()).toBe(true);
   expect(await page.locator('#booking-method').isVisible()).toBe(false);
   await mkdir('.local',{recursive:true});await page.screenshot({path:'.local/ui-redesign-release.png'});
-  await page.locator('[data-view="plan"]').click();
+  await showRendererView(page,'strategy');
+  // Normal setup is Goal → Known schedule → Preset → Suggested plan → Review; raw fields sit under Advanced overrides.
+  for(const id of ['#strategy-goal','#strategy-schedule','#strategy-preset','#strategy-suggested','#strategy-review'])expect(await page.locator(id).isVisible()).toBe(true);
+  expect(await page.locator('#booking-method').isVisible()).toBe(false);
+  await page.locator('#strategy-advanced > summary').click();
   expect(await page.locator('#booking-method').isVisible()).toBe(true);
   expect(await page.locator('#court-order').isVisible()).toBe(true);
   expect(await page.locator('#fallback-time').isVisible()).toBe(true);
-  await page.locator('[data-view="tests"]').click();
+  await showRendererView(page,'tests');
   expect(await page.locator('.test-date-card').isVisible()).toBe(true);
   expect(await page.locator('#test-date').isVisible()).toBe(true);
   expect(await page.locator('#test-plan-summary').isVisible()).toBe(true);
   expect(await page.locator('#test-main-action').innerText()).toBe('Prepare');
   expect(await page.locator('#full-date,#practice-date,#dual-date').first().isVisible()).toBe(false);
   expect(await page.locator('#test-booking').isVisible()).toBe(false);
-  await page.locator('[data-view="runs"]').click();
+  await showRendererView(page,'live');
+  expect(await page.locator('#live-attempts-card').isVisible()).toBe(true);
+  expect(await page.locator('#slot-watch-card').isVisible()).toBe(true);
+  await showRendererView(page,'history');
   expect(await page.locator('.activity').isVisible()).toBe(true);
   expect(await page.locator('.run-history').isVisible()).toBe(true);
+  expect(await page.locator('#release-lab-card').isVisible()).toBe(true);
   expect(await page.locator('#activity-resize-handle').count()).toBe(0);
   const runsHeight=await page.locator('.run-history').evaluate(e=>e.getBoundingClientRect().height);
   const activityHeight=await page.locator('.activity').evaluate(e=>e.getBoundingClientRect().height);
@@ -63,14 +54,14 @@ it('shows six focused views with a wide grid and stacked narrow layout',async()=
   await page.screenshot({path:'.local/ui-redesign-runs.png'});
   expect(await page.locator('#advanced').getAttribute('open')).toBeNull();
   await page.setViewportSize({width:640,height:760});
-  expect(await page.locator('#view-runs').evaluate(e=>getComputedStyle(e).gridTemplateColumns.split(' ').length)).toBe(1);
+  expect(await page.locator('#view-history').evaluate(e=>getComputedStyle(e).gridTemplateColumns.split(' ').length)).toBe(1);
   await page.close();
 });
 
 it('tests the saved plan with only the selected date changed',async()=>{
   const page=await renderer();
   await page.evaluate(()=>{const w=window as any;w.thirsty.resetPrepare=async(value:unknown)=>{w.fixturePreparation=value;};});
-  await page.locator('[data-view="tests"]').click();
+  await showRendererView(page,'tests');
   await page.locator('#test-date').fill('2026-09-25');
   await page.locator('#test-main-action').click();
   await page.waitForFunction(()=>!!(window as any).fixturePreparation);
@@ -83,7 +74,7 @@ it('tests the saved plan with only the selected date changed',async()=>{
 it('runs a prepared test through the existing Terms and test booking action',async()=>{
   const page=await renderer();
   await page.evaluate(()=>{const w=window as any;w.thirsty.testBooking=async(value:unknown)=>{w.fixtureTestBooking=value;};});
-  await page.locator('[data-view="tests"]').click();
+  await showRendererView(page,'tests');
   await page.evaluate(()=>{const w=window as any;w.fixtureState.ready=true;w.fixtureState.browserHealth.A=true;w.fixtureState.preparedContext={workflow:'test',date:(document.getElementById('test-date') as HTMLInputElement).value};w.fixturePublish(w.fixtureState);});
   expect(await page.locator('#test-main-action').innerText()).toBe('Review & Test');
   await page.locator('#test-main-action').click();
@@ -113,7 +104,7 @@ it('keeps a retained hold visible while booking controls stay blocked',async()=>
   expect(await page.locator('#main-action').innerText()).toBe('Review Hold');
   expect(await page.locator('#lock-card').isVisible()).toBe(true);
   expect(await page.locator('#arm').isDisabled()).toBe(true);
-  await page.locator('[data-view="plan"]').click();
+  await showRendererView(page,'plan');
   expect(await page.locator('#duration').isEnabled()).toBe(true);
   expect(await page.locator('#save-booking').isEnabled()).toBe(true);
   await page.close();
@@ -123,7 +114,7 @@ it('offers Prepare New Run for a verified hold without dismissing the lock',asyn
   const page=await renderer({lock:true,canPrepareOverHold:true});
   await page.evaluate(()=>{const w=window as any;w.thirsty.resetPrepare=async(value:unknown)=>{w.fixturePreparation=value;};});
   expect(await page.locator('#main-action').innerText()).toBe('Prepare New Run');
-  await page.locator('[data-view="tests"]').click();
+  await showRendererView(page,'tests');
   expect(await page.locator('#test-main-action').innerText()).toBe('Prepare New Run');
   await page.locator('#test-main-action').click();
   await page.waitForFunction(()=>!!(window as any).fixturePreparation);
@@ -135,7 +126,7 @@ it('offers Prepare New Run for a verified hold without dismissing the lock',asyn
 it('offers Reset & Prepare for an unresolved final action instead of the non-recovering Review Hold action',async()=>{
   const page=await renderer({lock:true,canPrepareOverHold:true,retainedLockStage:'FINAL_ACTION_DISPATCHING',headline:'UNRESOLVED CHECKOUT LOCK'});
   await page.evaluate(()=>{const w=window as any;w.thirsty.resetPrepare=async(value:unknown)=>{w.fixturePreparation=value;};});
-  await page.locator('[data-view="tests"]').click();
+  await showRendererView(page,'tests');
   expect(await page.locator('#test-main-action').innerText()).toBe('Reset & Prepare');
   expect(await page.locator('#test-main-action-hint').innerText()).toContain('clears the retained safety lock only after clean-state verification');
   await page.locator('#test-main-action').click();
@@ -154,7 +145,7 @@ it('has no price ceiling control and shows the observed amount',async()=>{
 
 it('opens each previous run to its timing facts and detailed activity timeline',async()=>{
   const page=await renderer({runHistory:[{runId:'00000000-0000-4000-8000-000000000001',label:'API LIVE-NOW',startedAt:'2026-09-22T00:00:00.000Z',readyAt:'2026-09-22T00:00:01.000Z',endedAt:'2026-09-22T00:00:03.500Z',outcome:'complete',totalElapsedMs:3500,readyElapsedMs:2500,activities:[{at:'2026-09-22T00:00:02.000Z',text:'Official QRPH checkout open · Court 7 · 2026-09-24 · 10:00–12:00',level:'info',elapsedMs:2000,deltaMs:1000}]}]});
-  await page.locator('[data-view="runs"]').click();
+  await showRendererView(page,'history');
   const run=page.locator('.run-history-item');
   const toggle=run.locator('.run-history-toggle'),modal=page.locator('#run-detail-modal');
   expect(await modal.isVisible()).toBe(false);
@@ -175,7 +166,7 @@ it('opens each previous run to its timing facts and detailed activity timeline',
 it('keeps previous payment holds scrollable while running output republishes the state',async()=>{
   const hold=(n:number)=>({runID:`0000000${n}-0000-4000-8000-00000000000${n}`,archivedAt:`2026-09-22T0${n}:00:00.000Z`,expiresAt:`2026-09-22T0${n}:10:00.000Z`});
   const page=await renderer({previousHolds:[1,2,3,4,5,6,7,8].map(hold)});
-  await page.locator('[data-view="runs"]').click();
+  await showRendererView(page,'history');
   const list=page.locator('#previous-holds-list');
   expect(await list.locator('.previous-hold-item').count()).toBe(8);
 
@@ -213,7 +204,7 @@ it('keeps every previous run readable and scrollable instead of collapsing the r
     startedAt:'2026-09-22T00:00:00.000Z',readyAt:'2026-09-22T00:00:01.000Z',endedAt:'2026-09-22T00:00:03.500Z',
     outcome:'complete',totalElapsedMs:3500,readyElapsedMs:2500,activities:[]}));
   const page=await renderer({runHistory});
-  await page.locator('[data-view="runs"]').click();
+  await showRendererView(page,'history');
   expect(await page.locator('.run-history-item').count()).toBe(30);
   // The items clip their contents, so the grid rows must be sized to content;
   // otherwise every run collapses to its 2px border inside the fixed-height panel.
@@ -255,7 +246,7 @@ it('shows verified QR handoffs with the corresponding players in release and tes
   expect(await page.evaluate(()=>(window as any).fixtureFocusedBrowser)).toEqual({workerId:'B'});
   await page.locator('#qr-summary-release .show-browser-result').nth(1).filter({hasText:'Browser B is now in front'}).waitFor();
   expect(await page.locator('#qr-summary-release .show-browser-result').nth(1).innerText()).toContain('Browser B is now in front');
-  await page.locator('[data-view="tests"]').click();
+  await showRendererView(page,'tests');
   await page.evaluate(()=>{const w=window as any;w.fixtureState.workflow='test';w.fixturePublish(w.fixtureState);});
   expect(await page.locator('#qr-summary-test').innerText()).toContain('Browser B · Second Fixture');
   expect(await page.locator('#test-headline').innerText()).toBe('CONFIRM BOOKING DETAILS BEFORE PAYING');
@@ -273,7 +264,7 @@ it('shows every bot browser, brings one forward, and closes them all from the st
   await page.waitForFunction(()=>(window as any).fixtureFocusedBrowser?.workerId==='B');
   await page.locator('#close-browsers').click();
   await page.waitForFunction(()=>(window as any).fixtureClosed===1);
-  await page.locator('[data-view="tools"]').click();
+  await showRendererView(page,'tools');
   expect(await page.locator('#browser-list .browser-row').count()).toBe(8);
   expect(await page.locator('#browser-list .browser-row.open').count()).toBe(2);
   // An armed release cannot lose its browsers.
@@ -301,7 +292,7 @@ it('shows the live release slot watch with request/response windows, observer he
         headersOffsetMs:17483.4,bodyOffsetMs:17544,protocol:'h2',reused:true}],reportPath:'C:\\bot\\.local\\release-forensics\\run-1\\report.txt'}]});
   expect(await page.locator('#status-watch-text').innerText()).toContain('Watching · 3 reads');
   await page.locator('#status-watch').click();
-  expect(await page.locator('#view-slots').isVisible()).toBe(true);
+  expect(await page.locator('#view-live').isVisible()).toBe(true);
   const taken=page.locator('#slot-watch-matrix td.slot-taken');
   expect(await taken.count()).toBe(1);
   expect(await taken.getAttribute('title')).toBe('Court 7 · 6:00 PM · now: Unavailable · public booking record · first published: Open · PHP 700 · last change seen in a read answered +0.790 s after release');
@@ -314,7 +305,7 @@ it('shows the live release slot watch with request/response windows, observer he
   expect(rows[1]).toContain('req +0.500 s');
   expect(rows[1]).toContain('Open → Unavailable');
   expect(rows[1]).toContain('between #2 req +0.250 s → resp +0.290 s and #3 req +0.500 s → resp +0.790 s');
-  const text=await page.locator('#view-slots').innerText();
+  const text=await page.locator('#view-live').innerText();
   expect(text).not.toMatch(/venue block|bot hold|admin block|likely|how fast it was taken|Taken/);
   // The first published grid: court 7 at 6 PM was open then.
   await page.locator('#slot-matrix-mode button[data-mode="first"]').click();
@@ -323,7 +314,7 @@ it('shows the live release slot watch with request/response windows, observer he
   expect(await page.locator('#stop-slot-watch').isVisible()).toBe(true);
   expect(await page.locator('#watch-next-release').isVisible()).toBe(false);
   // Runs: concise forensic card; raw detail stays in the local report.
-  await page.locator('[data-view="runs"]').click();
+  await showRendererView(page,'history');
   const card=page.locator('#release-forensics-list .forensic-item');
   expect(await card.count()).toBe(1);
   const summary=await card.locator('summary').innerText();
@@ -342,7 +333,7 @@ it('hides an expired payment hold from the QR summary instead of showing it as a
   const playerStatus={primary:true,extended:false,third:false,fourth:false,
     primaryDetails:{fullName:'Primary Fixture',email:'primary@example.invalid',phone:'09123456789'}};
   const page=await renderer({headline:'PAYMENT HOLD ACTIVE',detail:'A previous payment hold is recorded.',qrHandoffs,playerStatus,workflow:'test'});
-  await page.locator('[data-view="tests"]').click();
+  await showRendererView(page,'tests');
   await page.evaluate(()=>{const w=window as any;w.fixturePublish(w.fixtureState);});
   expect(await page.locator('#qr-summary-test').isVisible()).toBe(false);
   expect(await page.locator('#test-headline').innerText()).not.toBe('CONFIRM BOOKING DETAILS BEFORE PAYING');
@@ -363,7 +354,7 @@ it('shows Precision targets, the independent-attempt warning and per-target race
   expect(table).toContain('HOLD VERIFIED · QR READY');
   expect(table).toContain('NOT DISPATCHED — PREWARM FAILED');
   expect(await page.locator('#saved-plan-summary').innerText()).toContain('PRECISION RELEASE');
-  await page.locator('[data-view="plan"]').click();
+  await showRendererView(page,'plan');
   expect(await page.locator('#precision-strategy').inputValue()).toBe('precision');
   expect(await page.locator('#precision-setup').isVisible()).toBe(true);
   expect(await page.locator('#precision-row-1').isVisible()).toBe(true);
@@ -388,7 +379,7 @@ it('shows up to seven Precision rows (A-G) and a seven-worker status panel',asyn
   expect(lines[2]).toContain('NOT DISPATCHED — PREWARM FAILED');
   expect(lines[5]).toContain('UNKNOWN');
   expect(await page.locator('#saved-plan-summary').innerText()).toContain('Worker G · Court 7');
-  await page.locator('[data-view="plan"]').click();
+  await showRendererView(page,'plan');
   expect(await page.locator('#precision-count').inputValue()).toBe('7');
   expect(await page.locator('#precision-count option').count()).toBe(7);
   for(let i=0;i<7;i++)expect(await page.locator('#precision-row-'+i).isVisible()).toBe(true);
