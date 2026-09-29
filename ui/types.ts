@@ -67,6 +67,8 @@ export interface Dashboard {
   /** Phase 4 derived release intelligence (read-only digest). */
   intelligence?:IntelligenceDigest|null;
   phase4?:{busy:'rebuild'|'network'|null;message:string;networkReadiness?:ReadinessResult|null;networkHistory?:Array<{measuredAt:string;verdict:string;medianMs:number|null}>;warmth?:WarmthAssessment|null};
+  /** Provenance of the running build (dist/build-info.json); null when started without a clean build. */
+  build?:import('../src/build-info.js').BuildInfo|null;
   headline: string; detail: string; ready: boolean; cdp: boolean; lock: boolean;
   canPrepareOverHold?:boolean;
   retainedLockStage?:'HOLD_VERIFIED'|'FINAL_ACTION_DISPATCHING'|null;

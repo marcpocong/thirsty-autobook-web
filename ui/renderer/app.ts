@@ -763,8 +763,23 @@ function manifestGate(state:Dashboard,releaseMs:number|undefined):Gate{
   if(manifest.status==='blocked')return ['Investigation manifest · BLOCKED · could not preregister this release','blocked',manifest.reason];
   return [`Investigation manifest · READY · ${manifest.verified?'existing preregistration verified':'preregistered before run'}`,true];
 }
+/** Build provenance: short label in the navigation bar, full record in Tools. */
+function renderBuild(state: Dashboard) {
+  const build = state.build;
+  const label = byId('build-label');
+  label.textContent = build ? `Build ${build.gitSha.slice(0, 7)}${build.dirty ? ' + uncommitted' : ''}` : 'Build: unknown';
+  label.dataset.tone = !build || build.dirty !== false ? 'warn' : 'muted';
+  label.title = build ? `${build.gitSha} · ${build.branch} · built ${build.builtAt} · ${build.buildId}` : 'No build-info.json: this run was not produced by a clean build.';
+  const details = byId('build-details');
+  const rows: Array<[string, string]> = build ? [['Git SHA', build.gitSha], ['Branch', build.branch],
+    ['Source state', build.dirty === null ? 'unknown' : build.dirty ? 'UNCOMMITTED CHANGES were included' : 'clean (committed source only)'],
+    ['Built', build.builtAt], ['Build ID', build.buildId], ['Dist content ID', build.contentId], ['Kind', build.kind], ['Package version', build.packageVersion], ['Node', build.node]]
+    : [['Build', 'No build-info.json was found. Rebuild with npm run release:build (or npm run ui:build for development).']];
+  details.replaceChildren(...rows.flatMap(([term, value]) => { const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = term; dd.textContent = value; return [dt, dd]; }));
+}
 function render(state: Dashboard) {
   latest = state;
+  renderBuild(state);
   renderPrecision(state);
   renderQrSummary(state);
   renderStatusBar(state);

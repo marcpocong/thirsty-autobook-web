@@ -15,7 +15,7 @@ import { classifyTargetEvidence, readPreReleaseEvidence } from './pre-release-ev
 import { freezePrecisionRace, precisionAttemptSet, precisionTargetPlan, reducePrecisionOutcome,
   validatePrecisionTargets, VerifiedHoldQrError, classifyPrecisionDispatchError,
   type PrecisionAttempt, type PrecisionAttemptState, type PrecisionTarget } from './precision-race.js';
-import { authorizePrecision, precisionCandidateId, PrecisionSession, classifyActionableObservation, pricedPrecisionPlan, adaptiveMaxAgeMs,
+import { authorizePrecision, candidateWirePlan, precisionCandidateId, PrecisionSession, classifyActionableObservation, pricedPrecisionPlan, adaptiveMaxAgeMs,
   adaptiveFitness, freshestAvailabilityObservation, isActionableEvidenceFitness, type AvailabilityObservation } from './precision-phase3.js';
 import { runAdaptiveAttempt, type AdaptiveSelection } from './adaptive-attempt.js';
 import { browserIdentity, verifyDedicatedChromeAsync } from '../browser.js';
@@ -45,7 +45,8 @@ import { assertApiReleaseFresh } from './api-release.js';
 import { canReleaseApiLockAfterParallelFailure } from './api-lock-outcome.js';
 import { PRECISION_FAN_OUT_ATTEMPTS, requiredWorkerIds, type WorkerId } from '../workers.js';
 import { showWorkerPage } from '../browser-window.js';
-import { prooflessCourtHourStatuses, prooflessReleasePlan, resolveProoflessReleasePlan, submitDirectCheckout } from './proofless-checkout.js';
+import { preflightProoflessWire, prooflessCourtHourStatuses, prooflessReleasePlan, resolveProoflessReleasePlan, submitDirectCheckout } from './proofless-checkout.js';
+import { WirePayloadError } from './wire-payload-check.js';
 import { readPublicBookingRecords } from './public-bookings.js';
 import {API_SECURITY_PREWARM_LEAD_MS,safeApiFailureCode} from './run-observability.js';
 import { availabilityObservation, diagnosticLaneForWorker, RunDiagnostics, safeDiagnosticCode,
@@ -374,6 +375,23 @@ try {
       customers=Object.fromEntries(identities.flatMap(identity=>identity.ok?[[identity.worker,identity.customer]]:[]));
     }else customers=assertActiveCustomersValid(identities);
     if(command.mode==='dry'&&!precisionTargets&&!phase3)customers=undefined;
+  }
+  // Arm-time wire self-check (wire-payload-check.ts): every Precision request this run may send is built with its
+  // worker's real identity, serialized and validated now, long before release. A malformed request refuses the run
+  // here instead of failing at release (2026-09-29: 28 × 400 "Invalid booking session time").
+  if((precisionTargets||phase3)&&customers){
+    const fallbackCustomer=Object.values(customers).find(Boolean);
+    const wirePlans:Array<{plan:BookingPlan;workerId?:WorkerId}>=precisionTargets
+      ?precisionAttemptSet(precisionTargets,command.date,precisionFanOut).map(({target,plan})=>({plan,workerId:target.workerId}))
+      :phase3!.candidates.map((candidate,index)=>({plan:candidateWirePlan(command.date,candidate),workerId:phase3!.wave1.find(value=>value.candidateIndex===index)?.workerId}));
+    try{
+      for(const {plan,workerId} of wirePlans){const customer=(workerId&&customers[workerId])||fallbackCustomer;if(customer)preflightProoflessWire(plan,customer);}
+    }catch(error){
+      stage('WIRE_PAYLOAD_SELF_CHECK',{outcome:'FAILED',targetCount:wirePlans.length,code:safeApiFailureCode(error,'WIRE_PAYLOAD_SELF_CHECK_FAILED'),
+        ...(error instanceof WirePayloadError?{message:error.detail.slice(0,240)}:{})});
+      throw Error('WIRE_PAYLOAD_SELF_CHECK_FAILED');
+    }
+    stage('WIRE_PAYLOAD_SELF_CHECK',{outcome:'PASSED',targetCount:wirePlans.length});
   }
   // The dedicated profiles are independent. Wait for both checks to settle so
   // a failure in one browser cannot leave an unobserved preparation running.
@@ -1077,6 +1095,11 @@ try {
       if(primaryProoflessPlans.length!==workerIds.length)throw Error('DIRECT_WORKER_PLAN_MISMATCH');
       if(command.mode!=='dry'){
         primaryProoflessAttempts=makeProoflessAttempts(primaryProoflessPlans,workerIds);
+        // Wire self-check before release (wire-payload-check.ts); submitDirectCheckout re-checks the exact bytes it sends.
+        try{for(const attempt of primaryProoflessAttempts)preflightProoflessWire(attempt.plan,attempt.customer);}
+        catch(error){stage('WIRE_PAYLOAD_SELF_CHECK',{outcome:'FAILED',targetCount:primaryProoflessAttempts.length,
+          ...(error instanceof WirePayloadError?{message:error.detail.slice(0,240)}:{})});throw Error('WIRE_PAYLOAD_SELF_CHECK_FAILED');}
+        stage('WIRE_PAYLOAD_SELF_CHECK',{outcome:'PASSED',targetCount:primaryProoflessAttempts.length});
         for(const attempt of primaryProoflessAttempts)for(const [index,journal] of attempt.journals.entries()){
           const disposition=await journal.recycleReusable(attempt.keys[index]!);
           if(disposition==='blocked')throw Error('DUPLICATE_LOGICAL_BOOKING_BLOCKED');

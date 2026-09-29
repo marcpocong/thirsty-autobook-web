@@ -249,6 +249,14 @@ export function pricedPrecisionPlan(candidate: AuthorizedCandidate, date: string
   return { ...base, courts: [court], chunks: [{ ...base.chunks[0]!, courts: [court], totalPrice: price }], totalPrice: price };
 }
 
+/** The exact plan a saved candidate would be sent with at its rate evidence (for the arm-time wire self-check). */
+export function candidateWirePlan(date: string, candidate: Pick<CandidateInput, 'court' | 'start' | 'durationHours' | 'rateEvidence'>): BookingPlan {
+  const end = endOf(candidate.start, candidate.durationHours);
+  const logicalKey = DurableSubmissionJournal.key(THIRSTY_PICKLE_FACILITY_ID,
+    COURT_TO_SPACE_ID[candidate.court as keyof typeof COURT_TO_SPACE_ID], date, candidate.start, end);
+  return pricedPrecisionPlan({ ...candidate, end, logicalKey } as AuthorizedCandidate, date, candidate.rateEvidence.perHour);
+}
+
 /** `evidenceSeq` is the observation that last authorized the request (the effective evidence);
  * `selectedEvidenceSeq` is the one the candidate was first selected from, when they differ.
  * NOT_DISPATCHED is a reservation proven never to have sent its request (a SubmissionDispatchError with

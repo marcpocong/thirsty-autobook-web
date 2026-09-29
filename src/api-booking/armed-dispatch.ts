@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import type { ApiAutomationLock } from './api-automation-lock.js';
-import { armCheckoutRequest } from './browser-session-transport.js';
+import { armCheckoutRequest } from './armed-request.js';
 import { DurableSubmissionJournal, revokeSubmissionPermit, type SubmissionPermit } from './durable-submission-journal.js';
 import { THIRSTY_PICKLE_FACILITY_ID } from './live-availability-provider.js';
 import { assertPrecisionFreezeIntact, classifyPrecisionDispatchError, type FrozenPrecisionRace, type PrecisionAttempt,
@@ -98,8 +98,9 @@ export async function armPrecisionRace(race: FrozenPrecisionRace, deps: ArmDeps)
   const prepared = race.attempts.map((attempt, index) => {
     const request = deepFreeze(prooflessRequest(attempt.plan, deps.customerFor(attempt.target.workerId)));
     const keys = standardPlanJournalKeys(attempt.plan, THIRSTY_PICKLE_FACILITY_ID);
-    if (keys.length !== 1 || keys[0] !== attempt.target.targetKey || armCheckoutRequest(request).key !== keys[0])
-      throw Error('PRECISION_TARGET_KEY_MISMATCH');
+    if (keys.length !== 1 || keys[0] !== attempt.target.targetKey) throw Error('PRECISION_TARGET_KEY_MISMATCH');
+    // Exact wire-body self-check before anything durable: a malformed request refuses the whole arm, never fails at release.
+    if (armCheckoutRequest(request, { plan: attempt.plan, key: keys[0]! }).key !== keys[0]) throw Error('PRECISION_TARGET_KEY_MISMATCH');
     return { attempt, request, key: keys[0]!, fingerprint: prooflessPlanFingerprint(attempt.plan), triggerMs: triggers[index]! };
   });
   // The global lock is armed before any per-target record, so every armed journal is covered by it.

@@ -193,6 +193,8 @@ export interface Dependencies {
   networkReadinessHistory?():ReadinessResult[];
   replayPlan?(plan:ReplayPlan):{results:ReplayResult[];skipped:Array<{releaseKey:string;reason:string}>};
   adviseFromHistory?(input:AdvisorInput):AdvisorResult;
+  /** Provenance of the running build (read once at startup). */
+  buildInfo?():import('../src/build-info.js').BuildInfo|null;
 }
 const AdvisorRequestSchema=z.object({courts:z.array(z.number().int().min(1).max(7)).min(1).max(7),earliestStart:z.string().regex(/^(0[89]|1\d|2[0-3]):00$/),
   latestStart:z.string().regex(/^(0[89]|1\d|2[0-3]):00$/),durationHours:z.number().int().min(1).max(3),immediate:z.number().int().min(0).max(7),backups:z.number().int().min(0).max(14),
@@ -227,7 +229,7 @@ export class Controller {
   private runnerRunId?:string;
   /** Runner runs whose forensic report waits for this slot watch (by watch ID) to finish. */
   private readonly pendingForensics=new Map<string,string[]>();
-  constructor(private deps: Dependencies) {this.state.runHistory=this.deps.activityJournal?.history?.()??[];this.state.slotWatch=null;this.state.slotWatchHistory=this.readSlotWatchHistory();this.state.releaseForensics=this.readForensicsHistory();this.state.releaseLab=this.readReleaseLabHistory()[0]??null;
+  constructor(private deps: Dependencies) {try{this.state.build=this.deps.buildInfo?.()??null;}catch{this.state.build=null;}this.state.runHistory=this.deps.activityJournal?.history?.()??[];this.state.slotWatch=null;this.state.slotWatchHistory=this.readSlotWatchHistory();this.state.releaseForensics=this.readForensicsHistory();this.state.releaseLab=this.readReleaseLabHistory()[0]??null;
     this.state.phase4={busy:null,message:'',networkReadiness:this.readNetworkHistory()[0]??null,networkHistory:this.networkHistorySummary()};this.readIntelligence();}
   // Phase 4: read-only analysis in this (desktop) process only, never while a release is close or running.
   private readIntelligence(){try{const loaded=this.deps.intelligenceDigest?.();if(loaded){this.state.intelligence=loaded.digest;this.state.phase4!.warmth=loaded.warmth;}}catch{/* derived data only */}}

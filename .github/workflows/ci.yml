@@ -17,5 +17,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      - run: npm run typecheck
-      - run: npm test
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit, integration and UI tests (UI tests drive the real renderer in Chromium)
+        run: npm test
+      - name: Clean UI/runtime build
+        run: npm run ui:build
+      - name: Source-vs-dist consistency
+        run: npm run verify:dist
