@@ -158,11 +158,14 @@ describe('Smart backups compiler', () => {
   });
 
   it('the arming confirmation for a Smart plan is plain language generated from the saved object', () => {
-    const phase3 = compileSmartPlan(draft({ retryReopened: true }), { targetDate }).phase3!;
+    const source = draft({ retryReopened: true });
+    source.immediate[0] = { ...source.immediate[0]!, fanOutOffsetsMs: [-10, 0] };
+    const phase3 = compileSmartPlan(source, { targetDate }).phase3!;
     const view = bookingView(ConfigSchema.parse({ ...defaultSetup, BOOKING_METHOD: 'proofless', DURATION_HOURS: 3, RELEASE_STRATEGY: 'precision', PRECISION_TARGETS: [], PRECISION_PHASE3: phase3, ...players }));
     const text = describePlan({ ...view, targetDate });
     expect(text).toContain('SMART BACKUPS');
-    expect(text).toContain('4 immediate attempts will be sent.');
+    expect(text).toContain('4 immediate targets will be sent as 5 independently tracked attempts (fan-out).');
+    expect(text).toContain('Maximum possible sends: 9');
     expect(text).toContain('Immediate · Worker A → Court 7 19:00–22:00 · PHP 2100');
     expect(text).toContain('UNKNOWN stops later attempts.');
     expect(text).not.toContain('Wave 1 exact sends');

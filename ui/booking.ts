@@ -39,7 +39,8 @@ export function describePrecisionPlan(plan: BookingView) {
   if(plan.setup.PRECISION_PHASE3){
     const draft=plan.setup.PRECISION_PHASE3;
     const auth=authorizePrecision({date:plan.targetDate,releaseMs:plan.releaseMs,candidates:draft.candidates,
-      wave1:draft.wave1.map(value=>({workerId:value.workerId,candidateId:precisionCandidateId(plan.targetDate,draft.candidates[value.candidateIndex]!)})),
+      wave1:draft.wave1.map(value=>({workerId:value.workerId,candidateId:precisionCandidateId(plan.targetDate,draft.candidates[value.candidateIndex]!),
+        ...(value.fanOutOffsetsMs?{fanOutOffsetsMs:value.fanOutOffsetsMs}:value.releaseOffsetMs!==undefined?{releaseOffsetMs:value.releaseOffsetMs}:{})})),
       standby:draft.standby,budgets:draft.budgets,concurrentWave2:draft.concurrentWave2,
       rescueEnabled:draft.rescueEnabled,authorizedAt:new Date().toISOString()});
     const byId=new Map(auth.candidates.map(value=>[value.id,value]));
