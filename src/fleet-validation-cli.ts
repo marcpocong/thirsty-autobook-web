@@ -17,7 +17,7 @@ const all = process.argv.includes('--all');
 const result: Record<string, unknown> = {};
 try {
   const config = loadConfig(), next = clockStatus(loadObservationConfig());
-  const targets = config.RELEASE_STRATEGY === 'precision' ? validatePrecisionTargets(config.PRECISION_TARGETS, next.targetDate) : [];
+  const targets = config.RELEASE_STRATEGY === 'precision' ? validatePrecisionTargets(config.PRECISION_TARGETS, next.targetDate, config.PRECISION_FAN_OUT) : [];
   const workers: WorkerId[] = all ? [...PRECISION_WORKER_IDS] : targets.map(target => target.workerId);
   Object.assign(result, { releaseStrategy: config.RELEASE_STRATEGY, targetDate: next.targetDate, scope: all ? 'ALL_A_G' : 'ACTIVE_PLAN',
     targets: targets.map(target => ({ workerId: target.workerId, court: target.court, start: target.start, end: target.end })) });

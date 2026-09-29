@@ -3,7 +3,7 @@ import type { BookingSetup } from '../../src/config.js';
 import {bookingSetupProblem,reconcileFallbackTimes,type FallbackReconciliation} from '../../src/booking-setup.js';
 import type {ReleasePerformance} from '../../src/release-performance.js';
 import {formatReleaseOffset,isReleaseOffsetMs} from '../../src/release-offset.js';
-import {compileSmartPlan,confirmSmartRates,describeSmartPlan,emptySmartDraft,smartDraftFromPhase3,smartPeso,smartRange,smartSlotText,SMART_MAX_SLOTS,SMART_WORKERS,
+import {applyDurationOffsetPreset,compileSmartPlan,confirmSmartRates,describeSmartPlan,emptySmartDraft,smartDraftFromPhase3,smartPeso,smartRange,smartSlotText,SMART_MAX_SLOTS,SMART_WORKERS,
   type SmartDraft,type SmartSlot,type SmartWorker,type SmartPhase3,type SmartReleaseOffset} from '../../src/precision-simple.js';
 declare global { interface Window { thirsty: Bridge } }
 const byId = (id: string) => document.getElementById(id)!;
@@ -88,9 +88,9 @@ type CourtCount=1|2|3|4|5|6|7;type WorkerId='A'|'B'|'C'|'D'|'E'|'F'|'G'|'H';
 const requiredWorkers=(strategy:string,count:number):WorkerId[]=>['A','B','C','D','E','F','G','H'].slice(0,(strategy==='extended'?2:1)*Math.ceil(count/2)) as WorkerId[];
 const workerLabel=(worker:WorkerId)=>worker==='A'?'Primary player':`Player ${'ABCDEFGH'.indexOf(worker)+1}`;
 const ALL_WORKERS:WorkerId[]=['A','B','C','D','E','F','G','H'];
-type PrecisionRow={court:number;start:string;durationHours:number;releaseOffsetMs?:SmartReleaseOffset};
+type PrecisionRow={court:number;start:string;durationHours:number;releaseOffsetMs?:SmartReleaseOffset;fanOutReleaseOffsetsMs?:SmartReleaseOffset[]};
 type PrecisionMode='fixed'|'smart';
-interface FormDraft {releaseStrategy:'general'|'precision';precisionCount:number;precisionTargets:PrecisionRow[];precisionMode?:PrecisionMode;smart?:SmartDraft;releaseOffsetMs?:number;method:'browser'|'hybrid'|'api-first'|'proofless';strategy:'standard'|'extended';date:string;courtCount:CourtCount;start:string;duration:number;attempts:number;courtOrder:number[];fallbackTimes:string[];exactA:string;exactB:string}
+interface FormDraft {releaseStrategy:'general'|'precision';precisionCount:number;precisionTargets:PrecisionRow[];precisionFanOut?:boolean;precisionMode?:PrecisionMode;smart?:SmartDraft;releaseOffsetMs?:number;method:'browser'|'hybrid'|'api-first'|'proofless';strategy:'standard'|'extended';date:string;courtCount:CourtCount;start:string;duration:number;attempts:number;courtOrder:number[];fallbackTimes:string[];exactA:string;exactB:string}
 let testDraft:FormDraft|undefined,releaseDraft:FormDraft|undefined,testDirty=false,releaseDirty=false;
 let releaseAdjustment:FallbackReconciliation|undefined;
 // The layout is static in index.html; only these few controls move with the active view.
@@ -132,6 +132,11 @@ const PRECISION_WORKERS=['A','B','C','D','E','F','G'] as const;
 // and "What will happen" is generated from that same compiled object.
 let precisionMode:PrecisionMode='fixed',smartDraft:SmartDraft=emptySmartDraft(),smartRenderKey='',smartRatesOpen=false;
 const cloneSmart=(value:SmartDraft):SmartDraft=>JSON.parse(JSON.stringify(value)) as SmartDraft;
+const smartDraftFromSaved=(setup:BookingSetup,targetDate:string)=>{
+  const draft=smartDraftFromPhase3(setup.PRECISION_PHASE3!,{targetDate,unavailable:unreadyWorkers()});
+  if(setup.RELEASE_LAB)draft.releaseLab={...setup.RELEASE_LAB};
+  return draft;
+};
 /** Workers known not ready, by letter only: a player that is not configured, or an identity problem from the latest preparation. */
 function unreadyWorkers():Set<string>{
   const status=latest?.playerStatus,out=new Set<string>();
@@ -260,6 +265,7 @@ function smartAdvanced(compiled:ReturnType<typeof compileSmartPlan>){
 }
 function renderSmart(force=false){
   const unready=unreadyWorkers(),compiled=compileSmartPlan(smartDraft,{targetDate:latest?.booking?.targetDate??'',unavailable:unready});
+  renderReleaseLab(compiled);
   const key=JSON.stringify([smartDraft,latest?.booking?.targetDate,[...unready],smartRatesOpen,precisionMode]);
   if(!force&&key===smartRenderKey)return compiled;
   smartRenderKey=key;
@@ -287,8 +293,41 @@ function renderSmart(force=false){
   if(focused){const again=document.getElementById(focused);if(again&&again!==document.activeElement)again.focus();}
   return compiled;
 }
+function renderReleaseLab(compiled=compileSmartPlan(smartDraft,{targetDate:latest?.booking?.targetDate??'',unavailable:unreadyWorkers()})){
+  const precision=precisionSelected(),smart=precision&&precisionMode==='smart',slots=!precision?[]:smart?smartDraft.immediate:precisionRows();
+  byId('release-lab-matrix').replaceChildren(...slots.map((slot,index)=>{
+    const tr=document.createElement('tr'),worker=smart?compiled.immediateWorkers[index]:PRECISION_WORKERS[index],rate=smart?compiled.rates[index]?.evidence:undefined;
+    const values=[worker??'—',`Court ${slot.court}`,slot.start,`${slot.durationHours}h`,`${slot.releaseOffsetMs??0} ms`,smart?(rate?smartPeso(rate.perHour.reduce((a,b)=>a+b,0)):'Needs rate review'):'Shown after applying preset'];
+    tr.replaceChildren(...values.map(value=>Object.assign(document.createElement('td'),{textContent:value})));return tr;
+  }));
+  byId('release-lab-status').textContent=!precision
+    ? 'Choose PRECISION RELEASE above to configure experiment rows. Release Lab does not create booking targets.'
+    : !smart
+    ? 'Fixed attempts are shown below. Applying the preset switches these exact rows to Smart backups before labelling the experiment.'
+    : smartDraft.releaseLab
+      ? 'Duration × Offset metadata will be frozen beside the authorized plan. Existing validation still controls whether the plan can be saved or armed.'
+      : 'No Release Lab experiment is labelled.';
+  (byId('release-lab-preset') as HTMLButtonElement).disabled=!precision;
+  (byId('release-lab-disable') as HTMLButtonElement).disabled=!precision||!smartDraft.releaseLab;
+  const lab=latest?.releaseLab,results=byId('release-lab-results');
+  if(!lab)results.replaceChildren(smartElement('p','small','No Release Lab report has been generated yet.'));
+  else results.replaceChildren(smartElement('h4','',`Latest results · ${dateLabel(lab.targetDate)}`),
+    smartElement('p','small',`Duration · ${lab.byDuration.map(value=>`${value.key}h: ${value.attemptCount} attempt${value.attemptCount===1?'':'s'}, median wait ${value.medianProviderWaitMs===null?'—':`${value.medianProviderWaitMs.toFixed(1)} ms`}`).join(' · ')||'No joined attempts'}`),
+    smartElement('p','small',`Offsets · ${lab.byOffset.map(value=>`${value.key} ms: ${value.attemptCount}, browser start ${value.medianBrowserRequestStartOffsetMs===null?'—':`${value.medianBrowserRequestStartOffsetMs.toFixed(1)} ms`}`).join(' · ')||'No joined attempts'}`),
+    smartElement('p','small',`Blanket · ${lab.blanket??'none detected'} · Movement clusters: 1h ${lab.distribution.oneHour}, 2h ${lab.distribution.twoHour}, 3h ${lab.distribution.threeHour}, 4+ ${lab.distribution.fourPlus}, ambiguous ${lab.distribution.ambiguous}`),
+    smartElement('p','small',`Reopen Rescue · ${lab.actionableReopenings} actionable reopening${lab.actionableReopenings===1?'':'s'} · ${lab.rescueAttempts} attempted · Detailed report: ${lab.reportPath}`));
+}
 byId('smart-add-immediate').onclick=()=>smartEdit(draft=>{draft.immediate.push(smartNewSlot());});
 byId('smart-add-backup').onclick=()=>smartEdit(draft=>{draft.backups.push(smartNewSlot());});
+byId('release-lab-preset').onclick=()=>{
+  if(!precisionSelected())return;
+  if(precisionMode!=='smart'){
+    smartDraft={...smartDraft,immediate:precisionRows().map(row=>({...row}))};
+    precisionMode='smart';syncStrategy();
+  }
+  smartDraft=applyDurationOffsetPreset(smartDraft);renderSmart(true);changed();
+};
+byId('release-lab-disable').onclick=()=>smartEdit(draft=>{delete draft.releaseLab;});
 byId('smart-concurrent').addEventListener('change',()=>smartEdit(draft=>{draft.useBackupsImmediately=input('smart-concurrent').checked;}));
 byId('smart-rescue').addEventListener('change',()=>smartEdit(draft=>{draft.retryReopened=input('smart-rescue').checked;}));
 byId('smart-rescue-max').addEventListener('change',()=>smartEdit(draft=>{draft.maxReopenedAttempts=Math.min(7,Math.max(1,Math.floor(Number(input('smart-rescue-max').value))||1));}));
@@ -306,26 +345,37 @@ byId('smart-rate-confirm').onclick=()=>{
 for(let i=0;i<PRECISION_WORKERS.length;i++){
   (byId(`precision-court-${i}`) as HTMLSelectElement).replaceChildren(...Array.from({length:7},(_,c)=>new Option(`Court ${c+1}`,String(c+1))));
   (byId(`precision-start-${i}`) as HTMLSelectElement).replaceChildren(...hours.map(h=>new Option(friendly(h),h)));
-  const offset=document.createElement('label'),field=document.createElement('input');field.id=`precision-offset-${i}`;field.type='number';field.min='0';field.max='2000';field.step='1';field.inputMode='numeric';field.value='0';offset.append('Send early by (ms)',field);byId(`precision-evidence-${i}`).before(offset);
+  const offsets=document.createElement('div');offsets.className='precision-offsets';
+  for(let child=0;child<4;child++){const offset=document.createElement('label'),field=document.createElement('input');field.id=child?`precision-offset-${i}-${child}`:`precision-offset-${i}`;field.type='number';field.min='0';field.max='2000';field.step='1';field.inputMode='numeric';field.value='0';offset.className=child?'fan-out-child-offset':'';offset.append(child?`Attempt ${child+1} early by (ms)`:'Send early by (ms)',field);offsets.append(offset);}
+  byId(`precision-evidence-${i}`).before(offsets);
   input(`precision-start-${i}`).value='17:00';input(`precision-duration-${i}`).value='3';input(`precision-court-${i}`).value=String([7,5,3,6,4,2,1][i]);
 }
 /** The exact targets the operator configured; nothing is inferred or added. */
 function precisionRows():PrecisionRow[]{
+  const fanOut=precisionFanOut();
   return Array.from({length:Number(input('precision-count').value)||1},(_,i)=>{const releaseOffsetMs=releaseOffsetFromEarlyInput(input(`precision-offset-${i}`).value) as SmartReleaseOffset;
     return {court:Number(input(`precision-court-${i}`).value),start:input(`precision-start-${i}`).value,durationHours:Number(input(`precision-duration-${i}`).value),
-      ...(releaseOffsetMs===0?{}:{releaseOffsetMs})};});
+      ...(fanOut?{fanOutReleaseOffsetsMs:Array.from({length:4},(_,child)=>releaseOffsetFromEarlyInput(input(child?`precision-offset-${i}-${child}`:`precision-offset-${i}`).value) as SmartReleaseOffset)}:
+        releaseOffsetMs===0?{}:{releaseOffsetMs})};});
+}
+function precisionFanOut(){return precisionMode==='fixed'&&input('precision-fan-out').checked;}
+function syncPrecisionFanOut(){
+  const enabled=precisionFanOut();
+  for(const field of document.querySelectorAll<HTMLElement>('.fan-out-child-offset'))field.hidden=!enabled;
+  byId('precision-fan-out-note').hidden=!enabled;
 }
 function precisionSelected(){return workflow==='release'&&input('precision-strategy').value==='precision';}
 /** Release Offset: the UI accepts a positive "send early by" value; saved timing is release-relative and therefore negative. */
-function releaseOffsetFromEarlyInput(raw:string){const early=raw.trim()===''?Number.NaN:Number(raw);const offset=-early;return isReleaseOffsetMs(offset)?offset:Number.NaN;}
+function releaseOffsetFromEarlyInput(raw:string){const early=raw.trim()===''?Number.NaN:Number(raw);const offset=early===0?0:-early;return isReleaseOffsetMs(offset)?offset:Number.NaN;}
 function releaseOffsetApplies(){return workflow==='release'&&!precisionSelected()&&input('booking-method').value==='proofless';}
 function releaseOffsetValue(){return releaseOffsetApplies()?releaseOffsetFromEarlyInput(input('release-offset-ms').value):0;}
 function setReleaseOffset(value:number){input('release-offset-ms').value=String(isReleaseOffsetMs(value)?-value:0);}
-function strategyFields():Pick<BookingSetup,'RELEASE_STRATEGY'|'PRECISION_TARGETS'|'PRECISION_PHASE3'>{
-  if(!precisionSelected())return {RELEASE_STRATEGY:'general',PRECISION_TARGETS:releaseDraft?.precisionTargets??[]};
-  if(precisionMode!=='smart')return {RELEASE_STRATEGY:'precision',PRECISION_TARGETS:precisionRows()};
+function strategyFields():Pick<BookingSetup,'RELEASE_STRATEGY'|'PRECISION_TARGETS'|'PRECISION_FAN_OUT'|'PRECISION_PHASE3'|'RELEASE_LAB'>{
+  if(!precisionSelected())return {RELEASE_STRATEGY:'general',PRECISION_TARGETS:releaseDraft?.precisionTargets??[],PRECISION_FAN_OUT:false};
+  if(precisionMode!=='smart')return {RELEASE_STRATEGY:'precision',PRECISION_TARGETS:precisionRows(),PRECISION_FAN_OUT:precisionFanOut()};
   const compiled=smartCompiled();
-  return {RELEASE_STRATEGY:'precision',PRECISION_TARGETS:[],...(compiled.phase3?{PRECISION_PHASE3:compiled.phase3}:{})};
+  return {RELEASE_STRATEGY:'precision',PRECISION_TARGETS:[],PRECISION_FAN_OUT:false,...(compiled.phase3?{PRECISION_PHASE3:compiled.phase3}:{}),
+    ...(smartDraft.releaseLab?{RELEASE_LAB:smartDraft.releaseLab}:{})};
 }
 /** Precision is Proofless Direct, Standard only: lock those two fields while it is selected. */
 function syncStrategy(){
@@ -334,15 +384,20 @@ function syncStrategy(){
   byId('setup-fields').classList.toggle('precision-mode',precision);byId('precision-setup').hidden=!precision;
   const smart=precisionMode==='smart';input('precision-mode-smart').checked=smart;input('precision-mode-fixed').checked=!smart;
   byId('legacy-precision-setup').hidden=smart;byId('smart-editor').hidden=!smart;byId('legacy-freeze-note').hidden=smart;
+  input('precision-fan-out').disabled=smart;
+  syncPrecisionFanOut();
   for(let i=0;i<PRECISION_WORKERS.length;i++)byId(`precision-row-${i}`).hidden=i>=count;
   if(precision){input('booking-method').value='proofless';input('booking-type').value='standard';if(Number(input('duration').value)>3)input('duration').value='3';}
   (byId('booking-method') as HTMLSelectElement).disabled=precision;(byId('booking-type') as HTMLSelectElement).disabled=precision;
   byId('release-offset').hidden=!releaseOffsetApplies();
+  renderReleaseLab();
 }
-function formDraft():FormDraft{return {releaseStrategy:input('precision-strategy').value==='precision'?'precision':'general',precisionCount:Number(input('precision-count').value)||1,precisionTargets:precisionRows(),precisionMode,smart:cloneSmart(smartDraft),releaseOffsetMs:releaseOffsetValue(),method:input('booking-method').value as 'browser'|'hybrid'|'api-first'|'proofless',strategy:input('booking-type').value as 'standard'|'extended',date:input('test-date').value,courtCount:Number(input('court-count').value) as CourtCount,start:input('start-time').value,duration:Number(input('duration').value),attempts:Number(input('attempts').value),courtOrder:[...courtOrder],fallbackTimes:[...fallbackTimes],exactA:input('exact-a').value,exactB:input('exact-b').value};}
+function formDraft():FormDraft{return {releaseStrategy:input('precision-strategy').value==='precision'?'precision':'general',precisionCount:Number(input('precision-count').value)||1,precisionTargets:precisionRows(),precisionFanOut:precisionFanOut(),precisionMode,smart:cloneSmart(smartDraft),releaseOffsetMs:releaseOffsetValue(),method:input('booking-method').value as 'browser'|'hybrid'|'api-first'|'proofless',strategy:input('booking-type').value as 'standard'|'extended',date:input('test-date').value,courtCount:Number(input('court-count').value) as CourtCount,start:input('start-time').value,duration:Number(input('duration').value),attempts:Number(input('attempts').value),courtOrder:[...courtOrder],fallbackTimes:[...fallbackTimes],exactA:input('exact-a').value,exactB:input('exact-b').value};}
 function applyDraft(d:FormDraft){input('precision-strategy').value=d.releaseStrategy;input('precision-count').value=String(Math.min(PRECISION_WORKERS.length,Math.max(1,d.precisionCount)));
-  for(let i=0;i<PRECISION_WORKERS.length;i++)input(`precision-offset-${i}`).value='0';
-  d.precisionTargets.slice(0,PRECISION_WORKERS.length).forEach((t,i)=>{input(`precision-court-${i}`).value=String(t.court);input(`precision-start-${i}`).value=t.start;input(`precision-duration-${i}`).value=String(t.durationHours);input(`precision-offset-${i}`).value=String(-(t.releaseOffsetMs??0));});
+  input('precision-fan-out').checked=d.precisionFanOut??false;
+  for(let i=0;i<PRECISION_WORKERS.length;i++)for(let child=0;child<4;child++)input(child?`precision-offset-${i}-${child}`:`precision-offset-${i}`).value='0';
+  d.precisionTargets.slice(0,PRECISION_WORKERS.length).forEach((t,i)=>{input(`precision-court-${i}`).value=String(t.court);input(`precision-start-${i}`).value=t.start;input(`precision-duration-${i}`).value=String(t.durationHours);
+    const offsets=t.fanOutReleaseOffsetsMs??[t.releaseOffsetMs??0];offsets.slice(0,4).forEach((value,child)=>input(child?`precision-offset-${i}-${child}`:`precision-offset-${i}`).value=String(-value));});
   precisionMode=d.precisionMode??'fixed';smartDraft=cloneSmart(d.smart??emptySmartDraft());smartRatesOpen=false;setReleaseOffset(d.releaseOffsetMs??0);
   input('booking-method').value=d.method;input('booking-type').value=d.strategy;input('test-date').value=d.date;input('court-count').value=String(d.courtCount);input('start-time').value=d.start;input('duration').value=String(d.duration);input('attempts').value=String(d.attempts);courtOrder=[...d.courtOrder];fallbackTimes=[...d.fallbackTimes];input('exact-a').value=d.exactA;input('exact-b').value=d.exactB;editors();syncStrategy();renderSmart(true);}
 function storeDraft(){const d=formDraft();if(workflow==='test')testDraft=d;else releaseDraft=d;}
@@ -637,8 +692,14 @@ function renderSlotWatch(state:Dashboard){
           slotFact('Open → unavailable',String(summary.openToUnavailable.length)),
           slotFact('Unavailable at first publication',`${summary.unavailableAtFirstPublication.length} (${summary.unavailableAtFirstPublication.filter(cell=>!cell.record).length} without public booking record · cause unknown)`),
           slotFact('Unavailable → open',String(summary.reopened.length)),slotFact('Median read time',summary.availability.medianLatencyMs===null?'—':`${Math.round(summary.availability.medianLatencyMs)} ms`),
-          slotFact('Max in flight',`${summary.availability.maxInFlight} of ${summary.schedule?.maxInFlight??'?'}${summary.availability.notLaunched?` · ${summary.availability.notLaunched} not launched`:''}`));
+          slotFact('Max in flight',`${summary.availability.maxInFlight} of ${summary.schedule?.maxInFlight??'?'}${summary.availability.notLaunched?` · ${summary.availability.notLaunched} not launched`:''}`),
+          ...(summary.quality?[slotFact('Cache quality',`MISS ${Math.round(summary.quality.cacheRates.MISS*100)}% · HIT ${Math.round(summary.quality.cacheRates.HIT*100)}% · STALE ${Math.round(summary.quality.cacheRates.STALE*100)}%`),
+            slotFact('Evidence quality',`${summary.quality.contradictions} contradictions · ${summary.quality.reopenings.confirmed} confirmed reopenings · ${summary.quality.bookingCoverage.successfulCourtQueries}/${summary.quality.bookingCoverage.totalCourtQueries} booking court reads`)]:[]));
       }
+      const candidates=selected?.candidates??live?.candidates??[];
+      if(candidates.length){const list=smartElement('div','slot-candidates');list.append(smartElement('strong','',`Configured candidates · freshest evidence`));
+        for(const candidate of candidates)list.append(smartElement('div','precision-line',`${candidate.workerId?`Worker ${candidate.workerId} · `:''}${candidate.label??`C${candidate.court} ${candidate.start}–${candidate.end}`} · ${candidate.state.replaceAll('_',' ')} · evidence age ≤ ${candidate.evidenceAgeUpperBoundMs===null?'unknown':`${Math.ceil(candidate.evidenceAgeUpperBoundMs)} ms`}${candidate.reopening?` · reopening ${candidate.reopening.toLowerCase().replaceAll('_',' ')}`:''}`));
+        box.append(list);}
     }
     facts.append(box);
     const timeline=byId('slot-watch-timeline'),atBottom=timeline.scrollTop+timeline.clientHeight>=timeline.scrollHeight-20;
@@ -769,7 +830,7 @@ function render(state: Dashboard) {
   byId('capability-status').textContent=`Selection ${state.capabilities.selectionReady?'ready':'unverified'} · checkout ${state.capabilities.checkoutReady?'verified':'unverified'} · payment handoff ${state.capabilities.paymentBoundaryReady?'verified':'unverified'}`;
   const b=state.booking;
   if(b){
-     if(!releaseDirty&&loadedPlan!==b.fingerprint){loadedPlan=b.fingerprint;releaseDraft={releaseStrategy:b.setup.RELEASE_STRATEGY??'general',precisionCount:Math.max(1,b.setup.PRECISION_TARGETS?.length??0),precisionTargets:[...(b.setup.PRECISION_TARGETS??[])],precisionMode:b.setup.PRECISION_PHASE3?'smart':'fixed',smart:b.setup.PRECISION_PHASE3?smartDraftFromPhase3(b.setup.PRECISION_PHASE3,{targetDate:b.targetDate,unavailable:unreadyWorkers()}):undefined,releaseOffsetMs:b.setup.RELEASE_OFFSET_MS??0,method:b.setup.BOOKING_METHOD??'browser',strategy:b.setup.BOOKING_TYPE??'standard',date:testDraft?.date??input('test-date').value,courtCount:b.setup.COURT_COUNT,start:b.setup.START_TIME,duration:b.setup.DURATION_HOURS,attempts:b.setup.MAX_SELECTION_ATTEMPTS,courtOrder:[...b.setup.PREFERRED_COURTS],fallbackTimes:[...b.setup.FALLBACK_TIMES],exactA:'',exactB:''};if(b.fallbackReconciliation.removed.length){releaseAdjustment=b.fallbackReconciliation;releaseDirty=true;}if(workflow==='release'){applyDraft(releaseDraft);dirty=releaseDirty;}}
+   if(!releaseDirty&&loadedPlan!==b.fingerprint){loadedPlan=b.fingerprint;releaseDraft={releaseStrategy:b.setup.RELEASE_STRATEGY??'general',precisionCount:Math.max(1,b.setup.PRECISION_TARGETS?.length??0),precisionTargets:[...(b.setup.PRECISION_TARGETS??[])],precisionFanOut:b.setup.PRECISION_FAN_OUT,precisionMode:b.setup.PRECISION_PHASE3?'smart':'fixed',smart:b.setup.PRECISION_PHASE3?smartDraftFromSaved(b.setup,b.targetDate):undefined,releaseOffsetMs:b.setup.RELEASE_OFFSET_MS??0,method:b.setup.BOOKING_METHOD??'browser',strategy:b.setup.BOOKING_TYPE??'standard',date:testDraft?.date??input('test-date').value,courtCount:b.setup.COURT_COUNT,start:b.setup.START_TIME,duration:b.setup.DURATION_HOURS,attempts:b.setup.MAX_SELECTION_ATTEMPTS,courtOrder:[...b.setup.PREFERRED_COURTS],fallbackTimes:[...b.setup.FALLBACK_TIMES],exactA:'',exactB:''};if(b.fallbackReconciliation.removed.length){releaseAdjustment=b.fallbackReconciliation;releaseDirty=true;}if(workflow==='release'){applyDraft(releaseDraft);dirty=releaseDirty;}}
      if(workflow==='release'&&precisionMode==='smart')renderSmart();
     byId('booking-preview').textContent=`${dual?'2 COURTS / SAME TIME BLOCK\n':''}TARGET  ${dateLabel(b.targetDate)}\nREQUIRED SLOTS  ${b.slots.join(' · ')}\nCOURT ORDER  ${b.setup.PREFERRED_COURTS.join(' → ')}\nFALLBACK STARTS  ${b.setup.FALLBACK_TIMES.map(friendly).join(' → ')||'None'}\n${b.setup.MAX_SELECTION_ATTEMPTS} candidate attempts · No price ceiling\nPLAYER  Configured ✓`;
   }
@@ -1018,8 +1079,9 @@ byId('terms').addEventListener('change',()=>{void window.thirsty.authorizeTerms(
  for(const id of ['booking-method','test-date','court-count','start-time','duration','attempts','exact-a','exact-b'])byId(id).addEventListener('change',changed);
 byId('booking-method').addEventListener('change',()=>{byId('release-offset').hidden=!releaseOffsetApplies();});
 byId('release-offset-ms').addEventListener('change',changed);
-for(const id of ['precision-strategy','precision-count',...PRECISION_WORKERS.map((_,i)=>i).flatMap(i=>[`precision-court-${i}`,`precision-start-${i}`,`precision-duration-${i}`,`precision-offset-${i}`])])
+for(const id of ['precision-strategy','precision-count',...PRECISION_WORKERS.map((_,i)=>i).flatMap(i=>[`precision-court-${i}`,`precision-start-${i}`,`precision-duration-${i}`,...Array.from({length:4},(_,child)=>child?`precision-offset-${i}-${child}`:`precision-offset-${i}`)])])
   byId(id).addEventListener('change',()=>{syncStrategy();changed();});
+byId('precision-fan-out').addEventListener('change',()=>{syncStrategy();changed();});
 for(const id of ['precision-mode-fixed','precision-mode-smart'])byId(id).addEventListener('change',()=>{
   precisionMode=input('precision-mode-smart').checked?'smart':'fixed';
   // Switching an empty Smart plan on starts from the fixed attempts already on screen.
@@ -1198,7 +1260,7 @@ function smartSavedSummary(plan:NonNullable<BookingSetup['PRECISION_PHASE3']>,ta
 }
 const SMART_OUTCOME:Record<string,string>={OBJECTIVE_ACHIEVED:'Hold verified',OBJECTIVE_ACHIEVED_EXTRA_HOLD:'Hold verified · another attempt also holds a court',
   MANUAL_RECONCILIATION_REQUIRED:'UNKNOWN result · check Onda manually; nothing more will be sent',ALL_REJECTED_WAITING_FOR_REOPEN:'All attempts rejected',NOTHING_DISPATCHED:'Nothing was sent'};
-const AVAILABILITY_STATUS:Record<string,string>={ACTIONABLE_FRESH:'Fresh · usable for backups',FORENSIC_ONLY_CACHE_AGE_UNKNOWN:'Cached or age unknown · not used',
+const AVAILABILITY_STATUS:Record<string,string>={ACTIONABLE_FRESH:'Fresh · usable for backups',ACTIONABLE_BOUNDED_CACHE:'Bounded cache age · usable for backups',FORENSIC_ONLY_CACHE_AGE_UNKNOWN:'Cached or age unknown · not used',
   FORENSIC_ONLY_STALE:'Too old · not used',FORENSIC_ONLY_INCOMPLETE:'Incomplete · not used',FORENSIC_ONLY_OUTDATED_REQUEST:'Older read answered late · not used',
   UNRELEASED:'Not released yet',FAILED:'Read failed'};
 const ATTEMPT_LABEL:Record<string,string>={WAVE_1:'Immediate attempt',WAVE_2:'Backup attempt',RESCUE:'Reopened-slot attempt'};
@@ -1206,7 +1268,7 @@ function renderPrecision(state:Dashboard){
   const setup=state.booking?.setup,live=state.precision;
   if(setup?.RELEASE_STRATEGY==='precision'&&setup.PRECISION_PHASE3){
     const p=setup.PRECISION_PHASE3 as SmartPhase3,phase=state.phase3,panel=byId('precision-panel');panel.hidden=false;
-    const current=state.slotWatch?.current?.seq===phase?.seq&&phase?.fitness==='ACTIONABLE_FRESH';
+    const current=state.slotWatch?.current?.seq===phase?.seq&&(phase?.fitness==='ACTIONABLE_FRESH'||phase?.fitness==='ACTIONABLE_BOUNDED_CACHE');
     const description=describeSmartPlan(p,{unavailable:unreadyWorkers()});
     byId('precision-summary').textContent=[`Smart backups · ${SMART_OUTCOME[phase?.outcome??'']??(phase?.frozen?'Plan frozen for release':'Configured')}`,
       `${description.summary} · maximum ${description.maxSends} sends`,
@@ -1237,10 +1299,11 @@ function renderPrecision(state:Dashboard){
     endTime:`${String(Number(t.start.slice(0,2))+t.durationHours).padStart(2,'0')}:00`,durationHours:t.durationHours}));
   const panel=byId('precision-panel');panel.hidden=!rows.length;
   if(!rows.length)return;
-  byId('precision-summary').textContent=live?.outcome?`Outcome: ${live.outcome.replaceAll('_',' ')}`:
+  const fanOut=setup?.PRECISION_FAN_OUT===true;
+  byId('precision-summary').textContent=(fanOut?`FAN-OUT · ${rows.length} worker goal${rows.length===1?'':'s'} → ${rows.length*4} independently tracked tab attempts\n`:'')+(live?.outcome?`Outcome: ${live.outcome.replaceAll('_',' ')}`:
     live?.frozen?`FROZEN at ${live.frozenAt?new Date(live.frozenAt).toLocaleTimeString('en-GB',{timeZone:'Asia/Manila'}):'T-2 min'} · ${live.frozenCount??0} attempt(s) will be sent at release · no further changes`:
     live?.checkpoint?`Latest evidence: ${live.checkpoint}${live.checkpointAt?` at ${new Date(live.checkpointAt).toLocaleTimeString('en-GB',{timeZone:'Asia/Manila'})}`:''} · freezes at T-2 min`:
-    'Configured targets · evidence appears after Reset & Prepare and at T-60, T-30, T-10 and T-2 min.';
+    'Configured targets · evidence appears after Reset & Prepare and at T-60, T-30, T-10 and T-2 min.');
   if(state.identityIssues?.length)byId('precision-summary').textContent+=`\n${state.identityIssues.join('\n')}`;
   byId('precision-table').replaceChildren(...rows.map(row=>{
     const line=document.createElement('div');line.className='precision-line';

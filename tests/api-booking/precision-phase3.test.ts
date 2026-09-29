@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { authorizePrecision, candidatePriceFromObservation, candidatesConflict, classifyActionableObservation, precisionCandidateId, pricedPrecisionPlan,
+import { authorizePrecision, candidatePriceFromObservation, candidatesConflict, classifyActionableObservation,
+  effectiveRepresentedAgeUpperBoundMs, isActionableEvidenceFitness, precisionCandidateId, pricedPrecisionPlan,
   PrecisionSession, type CandidateInput, type PrecisionAuthorizationInput } from '../../src/api-booking/precision-phase3.js';
 import { prooflessRequest } from '../../src/api-booking/proofless-checkout.js';
 import type { AvailabilityObservation } from '../../src/slot-evidence.js';
@@ -14,10 +15,10 @@ const candidate = (court: number, start: string, durationHours = 3, priority = c
 const input = (candidates: CandidateInput[]): PrecisionAuthorizationInput => ({ date: '2026-09-26', releaseMs, candidates,
   wave1: [], standby: ['B', 'C'], budgets: { wave2: 2, rescue: 1, total: 4 }, concurrentWave2: true,
   rescueEnabled: true, authorizedAt: '2026-09-23T12:00:00Z' });
-const observation = (seq: number, code: 'O' | 'X', cache = 'MISS', offset = 1000): AvailabilityObservation => ({
+const observation = (seq: number, code: 'O' | 'X', cache = 'MISS', offset = 1000, ageS?: number): AvailabilityObservation => ({
   seq, requestOffsetMs: offset, responseOffsetMs: offset + 500, scheduledOffsetMs: offset, outcome: 'ok', targetDatePresent: true,
   matrix: Array.from({ length: 7 }, (_, court) => `${court + 1}:${code.repeat(16)}`).join(','),
-  prices: Array.from({ length: 7 }, () => Array(16).fill(700)), cache: { status: cache },
+  prices: Array.from({ length: 7 }, () => Array(16).fill(700)), cache: { status: cache, ...(ageS === undefined ? {} : { ageS }) },
 });
 describe('Phase 3 authorization and evidence', () => {
   it('allows overlapping alternatives in the pool but rejects duplicate and conflicting Wave 1 assignments', () => {
@@ -42,6 +43,19 @@ describe('Phase 3 authorization and evidence', () => {
     expect(classifyActionableObservation({ ...fresh, matrix: '1:O' }, 2, releaseMs, releaseMs + 2000, 5000).fitness)
       .toBe('FORENSIC_ONLY_INCOMPLETE');
     expect(classifyActionableObservation({ ...fresh, requestOffsetMs: -5 }, 2, releaseMs, releaseMs + 2000, 5000).fitness).toBe('UNRELEASED');
+  });
+  it('uses a conservative integer-Age upper bound for HIT and STALE evidence', () => {
+    const hit = observation(2, 'O', 'HIT', 1_000, 2);
+    expect(effectiveRepresentedAgeUpperBoundMs(hit, releaseMs, releaseMs + 4_000)).toBe(5_500);
+    expect(classifyActionableObservation(hit, 2, releaseMs, releaseMs + 4_000, 6_000)).toMatchObject({
+      fitness: 'ACTIONABLE_BOUNDED_CACHE', ageMs: 5_500,
+    });
+    expect(isActionableEvidenceFitness('ACTIONABLE_BOUNDED_CACHE')).toBe(true);
+    expect(classifyActionableObservation(hit, 2, releaseMs, releaseMs + 4_501, 6_000).fitness).toBe('FORENSIC_ONLY_STALE');
+    expect(classifyActionableObservation(observation(2, 'O', 'STALE', 1_000), 2, releaseMs, releaseMs + 2_000, 6_000).fitness)
+      .toBe('FORENSIC_ONLY_CACHE_AGE_UNKNOWN');
+    expect(classifyActionableObservation(observation(2, 'O', 'STALE', 1_000, 0), 2, releaseMs, releaseMs + 2_000, 6_000).fitness)
+      .toBe('ACTIONABLE_BOUNDED_CACHE');
   });
   it('selects one adaptive wave using prices from the same fresh observation and stops on UNKNOWN', () => {
     const draft = input([candidate(1, '15:00'), candidate(2, '16:00'), candidate(3, '17:00')]);

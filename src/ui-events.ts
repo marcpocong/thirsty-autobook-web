@@ -33,6 +33,8 @@ export const UiEventSchema = z.discriminatedUnion('type', [
     endTime:z.string().regex(/^([01]\d|2[0-4]):00$/).optional(),eligible:z.boolean().optional(),qrAttention:z.boolean().optional(),ok:z.boolean().optional(),
     readSource:z.enum(['availability','bookings']).optional(),failedCourts:z.string().regex(/^([1-7](,[1-7]){0,6})?$/).optional(),attemptNo:z.number().int().positive().optional(),
     offsetMs:z.number().finite().optional(),roundTripMs:z.number().finite().optional(),deltaMs:z.number().finite().optional(),
+    maxPrePostMs:z.number().finite().optional(),maxFetchInvokedMs:z.number().finite().optional(),
+    maxBrowserRequestStartMs:z.number().finite().optional(),maxRequestObservedMs:z.number().finite().optional(),
     sampleCount:z.number().int().nonnegative().optional(),spreadMs:z.number().finite().nonnegative().optional(),uncertaintyMs:z.number().finite().nonnegative().optional(),releaseLatenessMs:z.number().finite().optional(),contextAgeMs:z.number().finite().optional(),
     targetCount:z.number().int().nonnegative().optional(),frozenCount:z.number().int().nonnegative().optional(),verifiedCount:z.number().int().nonnegative().optional(),unknownCount:z.number().int().nonnegative().optional(),rejectedCount:z.number().int().nonnegative().optional(),unsentCount:z.number().int().nonnegative().optional(),
     candidateId:z.string().regex(/^[a-f0-9]{64}$/).optional(),fingerprint:z.string().regex(/^[a-f0-9]{64}$/).optional(),

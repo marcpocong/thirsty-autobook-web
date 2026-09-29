@@ -4,7 +4,7 @@ import { parse as parseEnv } from 'dotenv';
 import { existsSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { reconcileBookingSetupFallbacks, reconcileFallbackTimes, type FallbackReconciliation } from './booking-setup.js';
-import { PRECISION_MAX_ATTEMPTS, WORKER_IDS, type CourtCount, type WorkerId } from './workers.js';
+import { PRECISION_FAN_OUT_ATTEMPTS, PRECISION_MAX_ATTEMPTS, WORKER_IDS, type CourtCount, type WorkerId } from './workers.js';
 import {networkNowMs} from './network-clock.js';
 import { PRECISION_MAX_CANDIDATES } from './api-booking/precision-phase3.js';
 import { isReleaseOffsetMs } from './release-offset.js';
@@ -14,10 +14,12 @@ export const VENUE = 'Thirsty Pickle | SM Seaside';
 const hour = z.string().regex(/^(0[89]|1[0-9]|2[0-3]):00$/);
 const courts = z.array(z.number().int().min(1).max(7));
 /** Release Offset of one Precision attempt; absent means 0 ms (normal). */
-const attemptOffset = z.number().int().refine(isReleaseOffsetMs, 'Release offset must be from -2000 ms through 0 ms.').optional();
+const offsetValue = z.number().int().refine(isReleaseOffsetMs, 'Release offset must be from -2000 ms through 0 ms.');
+const attemptOffset = offsetValue.optional();
 /** One exact Precision target: one court, one start, 1-3 hours. Workers A-G follow row order. */
 export const PrecisionTargetSchema = z.object({ court: z.number().int().min(1).max(7), start: hour, durationHours: z.number().int().min(1).max(3),
-  releaseOffsetMs: attemptOffset }).strict();
+  releaseOffsetMs: attemptOffset, fanOutReleaseOffsetsMs:z.array(offsetValue).length(PRECISION_FAN_OUT_ATTEMPTS).optional() }).strict();
+const precisionFanOut = z.boolean().default(false);
 const releaseStrategy = z.enum(['general','precision']).default('general');
 // Saved plan only (never read from the environment); see release-offset.ts.
 const releaseOffset = z.number().int().refine(isReleaseOffsetMs, 'Release offset must be from -2000 ms through 0 ms.').default(0);
@@ -32,12 +34,15 @@ export const PrecisionPhase3Schema=z.object({
   standby:z.array(precisionWorker).max(7),budgets:z.object({wave2:z.number().int().min(0).max(7),rescue:z.number().int().min(0).max(7),total:z.number().int().min(1).max(28)}).strict(),
   concurrentWave2:z.boolean(),rescueEnabled:z.boolean(),
 }).strict();
+export const ReleaseLabSetupSchema=z.object({version:z.literal(1),kind:z.literal('DURATION_OFFSET_V1'),label:z.literal('Duration × Offset')}).strict();
 function checkReleaseOffset(c:{RELEASE_OFFSET_MS:number;BOOKING_METHOD:string;RELEASE_STRATEGY:string},ctx:z.RefinementCtx){
   if(c.RELEASE_OFFSET_MS!==0&&c.BOOKING_METHOD!=='proofless')ctx.addIssue({code:'custom',message:'Release Offset applies to Proofless Direct only.',path:['RELEASE_OFFSET_MS']});
   // Precision chooses the offset on each attempt instead.
   if(c.RELEASE_OFFSET_MS!==0&&c.RELEASE_STRATEGY==='precision')ctx.addIssue({code:'custom',message:'Precision Release sets the offset on each attempt.',path:['RELEASE_OFFSET_MS']});
 }
-function checkPrecision(c:{RELEASE_STRATEGY:'general'|'precision';BOOKING_METHOD:string;BOOKING_TYPE:string;PRECISION_TARGETS:{court:number;start:string;durationHours:number}[];PRECISION_PHASE3?:z.infer<typeof PrecisionPhase3Schema>},ctx:z.RefinementCtx){
+function checkPrecision(c:{RELEASE_STRATEGY:'general'|'precision';BOOKING_METHOD:string;BOOKING_TYPE:string;PRECISION_TARGETS:z.infer<typeof PrecisionTargetSchema>[];PRECISION_FAN_OUT:boolean;PRECISION_PHASE3?:z.infer<typeof PrecisionPhase3Schema>;RELEASE_LAB?:z.infer<typeof ReleaseLabSetupSchema>},ctx:z.RefinementCtx){
+  if(c.RELEASE_LAB&&(c.RELEASE_STRATEGY!=='precision'||!c.PRECISION_PHASE3))ctx.addIssue({code:'custom',message:'Release Lab requires a Smart Precision plan.',path:['RELEASE_LAB']});
+  if(c.PRECISION_FAN_OUT&&(c.RELEASE_STRATEGY!=='precision'||!!c.PRECISION_PHASE3))ctx.addIssue({code:'custom',message:'Fan-out is available only for Fixed Precision Release.',path:['PRECISION_FAN_OUT']});
   if(c.RELEASE_STRATEGY!=='precision')return;
   if(c.BOOKING_METHOD!=='proofless')ctx.addIssue({code:'custom',message:'Precision Release uses Proofless Direct only.',path:['BOOKING_METHOD']});
   if(c.BOOKING_TYPE!=='standard')ctx.addIssue({code:'custom',message:'Precision Release supports Standard 1-3 hour targets only.',path:['BOOKING_TYPE']});
@@ -65,6 +70,8 @@ function checkPrecision(c:{RELEASE_STRATEGY:'general'|'precision';BOOKING_METHOD
   }
   const t=c.PRECISION_TARGETS;
   if(t.length<1||t.length>PRECISION_MAX_ATTEMPTS)ctx.addIssue({code:'custom',message:`Configure 1 to ${PRECISION_MAX_ATTEMPTS} Precision attempts.`,path:['PRECISION_TARGETS']});
+  if(c.PRECISION_FAN_OUT&&t.some(value=>value.fanOutReleaseOffsetsMs?.length!==PRECISION_FAN_OUT_ATTEMPTS))ctx.addIssue({code:'custom',message:`Fan-out requires exactly ${PRECISION_FAN_OUT_ATTEMPTS} offsets per worker.`,path:['PRECISION_TARGETS']});
+  if(!c.PRECISION_FAN_OUT&&t.some(value=>value.fanOutReleaseOffsetsMs!==undefined))ctx.addIssue({code:'custom',message:'Fan-out offsets require Fixed Precision fan-out.',path:['PRECISION_TARGETS']});
   const end=(x:{start:string;durationHours:number})=>Number(x.start.slice(0,2))+x.durationHours;
   if(t.some(x=>end(x)>24))ctx.addIssue({code:'custom',message:'A Precision attempt would end after midnight.',path:['PRECISION_TARGETS']});
   for(const [i,a] of t.entries())for(const b of t.slice(i+1))if(a.court===b.court&&Number(a.start.slice(0,2))<end(b)&&Number(b.start.slice(0,2))<end(a))
@@ -75,7 +82,9 @@ export const ConfigSchema = z.object({
   BOOKING_TYPE: z.enum(['standard','extended']).default('standard'),
   RELEASE_STRATEGY: releaseStrategy,
   PRECISION_TARGETS: precisionTargets,
+  PRECISION_FAN_OUT: precisionFanOut,
   PRECISION_PHASE3: PrecisionPhase3Schema.optional(),
+  RELEASE_LAB: ReleaseLabSetupSchema.optional(),
   RELEASE_OFFSET_MS: releaseOffset,
   COURT_COUNT: z.union([z.literal(1),z.literal(2),z.literal(3),z.literal(4),z.literal(5),z.literal(6),z.literal(7)]).default(1),
   ONDA_URL: z.literal(ONDA_URL).default(ONDA_URL),
@@ -161,7 +170,7 @@ function parseConfig(includeSaved:boolean,test?:TestRuntimeSetup):{config:Config
   const env = environment();
   let fallbackReconciliation:FallbackReconciliation={valid:[],removed:[]};
   const raw: Record<string, unknown> = { START_TIME:'08:00', DURATION_HOURS:2, PREFERRED_COURTS:[7,6,5,4,3,2,1], FALLBACK_COURTS:[], FALLBACK_TIMES:[] };
-  for (const key of Object.keys(ConfigSchema.shape)) if (key!=='MAX_PRICE'&&key!=='RELEASE_OFFSET_MS'&&env[key] !== undefined) raw[key] = env[key];
+  for (const key of Object.keys(ConfigSchema.shape)) if (key!=='MAX_PRICE'&&key!=='RELEASE_OFFSET_MS'&&key!=='PRECISION_FAN_OUT'&&env[key] !== undefined) raw[key] = env[key];
   for (const key of ['PREFERRED_COURTS', 'FALLBACK_COURTS', 'FALLBACK_TIMES']) {
     if (typeof raw[key] === 'string') raw[key] = (raw[key] as string).split(',').map(s => s.trim()).filter(Boolean).map(s => key === 'FALLBACK_TIMES' ? s : Number(s));
   }
@@ -188,7 +197,9 @@ export const BookingSetupSchema = z.object({
   BOOKING_TYPE: ConfigSchema.shape.BOOKING_TYPE,
   RELEASE_STRATEGY: releaseStrategy,
   PRECISION_TARGETS: precisionTargets,
+  PRECISION_FAN_OUT: precisionFanOut,
   PRECISION_PHASE3: PrecisionPhase3Schema.optional(),
+  RELEASE_LAB: ReleaseLabSetupSchema.optional(),
   RELEASE_OFFSET_MS: releaseOffset,
   COURT_COUNT: ConfigSchema.shape.COURT_COUNT,
   START_TIME: hour, DURATION_HOURS: z.number().int().min(1).max(6),
@@ -222,7 +233,8 @@ export function planFingerprint(c: Config) {
     method:c.BOOKING_METHOD, strategy:c.BOOKING_TYPE, courtCount:c.COURT_COUNT,
     schedule: ObservationSchema.parse(c), target: calculateTarget(c), attempts:c.MAX_SELECTION_ATTEMPTS,
     // Present only for Precision, so a General plan keeps exactly its previous fingerprint.
-    ...(c.RELEASE_STRATEGY==='precision'?{releaseStrategy:'precision',precisionTargets:c.PRECISION_TARGETS,precisionPhase3:c.PRECISION_PHASE3}:{}),
+    ...(c.RELEASE_STRATEGY==='precision'?{releaseStrategy:'precision',precisionTargets:c.PRECISION_TARGETS,precisionFanOut:c.PRECISION_FAN_OUT,precisionPhase3:c.PRECISION_PHASE3,
+      ...(c.RELEASE_LAB?{releaseLab:c.RELEASE_LAB}:{})}:{}),
     // Likewise present only when non-zero; a changed offset after arming is a changed plan.
     ...(c.RELEASE_OFFSET_MS?{releaseOffsetMs:c.RELEASE_OFFSET_MS}:{}) })).digest('hex');
 }

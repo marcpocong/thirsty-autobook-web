@@ -6,11 +6,11 @@ import { PRECISION_WORKER_IDS } from '../src/workers.js';
 import { authorizePrecision, precisionCandidateId } from '../src/api-booking/precision-phase3.js';
 import { describeSmartPlan, smartPlanText } from '../src/precision-simple.js';
 import { formatReleaseOffset } from '../src/release-offset.js';
-export const defaultSetup: BookingSetup = { BOOKING_METHOD:'browser', BOOKING_TYPE:'standard', RELEASE_STRATEGY:'general', PRECISION_TARGETS:[], RELEASE_OFFSET_MS:0, COURT_COUNT:1, START_TIME: '08:00', DURATION_HOURS: 2, PREFERRED_COURTS: [7,6,5,4,3,2,1], FALLBACK_COURTS: [], FALLBACK_TIMES: [], MAX_SELECTION_ATTEMPTS: 3 };
+export const defaultSetup: BookingSetup = { BOOKING_METHOD:'browser', BOOKING_TYPE:'standard', RELEASE_STRATEGY:'general', PRECISION_TARGETS:[], PRECISION_FAN_OUT:false, RELEASE_OFFSET_MS:0, COURT_COUNT:1, START_TIME: '08:00', DURATION_HOURS: 2, PREFERRED_COURTS: [7,6,5,4,3,2,1], FALLBACK_COURTS: [], FALLBACK_TIMES: [], MAX_SELECTION_ATTEMPTS: 3 };
 export function bookingView(c: Config, fallbackReconciliation:FallbackReconciliation={valid:c.FALLBACK_TIMES,removed:[]}) {
   const target = calculateTarget(c);
-  const setup = BookingSetupSchema.parse({ BOOKING_METHOD:c.BOOKING_METHOD, BOOKING_TYPE:c.BOOKING_TYPE, RELEASE_STRATEGY:c.RELEASE_STRATEGY, PRECISION_TARGETS:c.PRECISION_TARGETS,
-    ...(c.PRECISION_PHASE3?{PRECISION_PHASE3:c.PRECISION_PHASE3}:{}), RELEASE_OFFSET_MS:c.RELEASE_OFFSET_MS, COURT_COUNT:c.COURT_COUNT, START_TIME:c.START_TIME, DURATION_HOURS:c.DURATION_HOURS, PREFERRED_COURTS:[...c.PREFERRED_COURTS,...c.FALLBACK_COURTS], FALLBACK_COURTS:[], FALLBACK_TIMES:c.FALLBACK_TIMES, MAX_SELECTION_ATTEMPTS:c.MAX_SELECTION_ATTEMPTS });
+  const setup = BookingSetupSchema.parse({ BOOKING_METHOD:c.BOOKING_METHOD, BOOKING_TYPE:c.BOOKING_TYPE, RELEASE_STRATEGY:c.RELEASE_STRATEGY, PRECISION_TARGETS:c.PRECISION_TARGETS, PRECISION_FAN_OUT:c.PRECISION_FAN_OUT,
+    ...(c.PRECISION_PHASE3?{PRECISION_PHASE3:c.PRECISION_PHASE3}:{}),...(c.RELEASE_LAB?{RELEASE_LAB:c.RELEASE_LAB}:{}), RELEASE_OFFSET_MS:c.RELEASE_OFFSET_MS, COURT_COUNT:c.COURT_COUNT, START_TIME:c.START_TIME, DURATION_HOURS:c.DURATION_HOURS, PREFERRED_COURTS:[...c.PREFERRED_COURTS,...c.FALLBACK_COURTS], FALLBACK_COURTS:[], FALLBACK_TIMES:c.FALLBACK_TIMES, MAX_SELECTION_ATTEMPTS:c.MAX_SELECTION_ATTEMPTS });
   const players=playerReadiness(c);
   return { setup, fallbackReconciliation, targetDate:target.targetDate, releaseMs:target.releaseMs, preferences:target.preferences, playerConfigured:players.primary, extendedPlayerConfigured:players.extended,thirdPlayerConfigured:players.third,fourthPlayerConfigured:players.fourth,fifthPlayerConfigured:players.fifth,sixthPlayerConfigured:players.sixth,seventhPlayerConfigured:players.seventh,eighthPlayerConfigured:players.eighth,fingerprint:planFingerprint(c),
     slots:target.preferences[0]!.hours.map(h => `${h}–${String(Number(h.slice(0,2))+1).padStart(2,'0')}:00`) };
@@ -56,9 +56,11 @@ export function describePrecisionPlan(plan: BookingView) {
   const end=(start:string,hours:number)=>`${String(Number(start.slice(0,2))+hours).padStart(2,'0')}:00`;
   const price=(start:string,hours:number)=>Array.from({length:hours},(_,i)=>Number(start.slice(0,2))+i>=16?700:600).reduce((a,b)=>a+b,0);
   const rows=targets.map((t,i)=>`Worker ${PRECISION_WORKER_IDS[i]} | Court ${t.court} | ${t.start}–${end(t.start,t.durationHours)} | ${t.durationHours} h | ~PHP ${price(t.start,t.durationHours)} (assumed rate)`+
-    (t.releaseOffsetMs?` | Offset ${formatReleaseOffset(t.releaseOffsetMs)}: sent up to ${-t.releaseOffsetMs} ms before the official release time`:' | Normal'));
-  return ['PRECISION RELEASE · GOAL: 1 SUCCESSFUL COURT',`Target date: ${plan.targetDate} · Proofless Direct · Standard`,'',...rows,'',
-    `${targets.length} independent checkout attempt${targets.length===1?' is':'s are'} authorized: each is one court, one exact time, one player/browser.`,
+    (plan.setup.PRECISION_FAN_OUT?` | 4 tabs: ${(t.fanOutReleaseOffsetsMs??[]).map((offset,index)=>`#${index+1} ${offset?formatReleaseOffset(offset):'Normal'}`).join(' · ')}`:
+      t.releaseOffsetMs?` | Offset ${formatReleaseOffset(t.releaseOffsetMs)}: sent up to ${-t.releaseOffsetMs} ms before the official release time`:' | Normal'));
+  return [`PRECISION RELEASE${plan.setup.PRECISION_FAN_OUT?' · FAN-OUT':''} · GOAL: 1 SUCCESSFUL COURT`, `Target date: ${plan.targetDate} · Proofless Direct · Standard`,'',...rows,'',
+    ...(plan.setup.PRECISION_FAN_OUT?[`${targets.length} worker goal${targets.length===1?'':'s'} fan out to ${targets.length*4} independently tracked attempts. Each worker uses one browser with four separate tabs/security contexts; every child has its own ID, offset, dispatch timing, response, and result.`]:[]),
+    `${plan.setup.PRECISION_FAN_OUT?targets.length*4:targets.length} independent checkout attempt${(plan.setup.PRECISION_FAN_OUT?targets.length*4:targets.length)===1?' is':'s are'} authorized.`,
     'These are independent checkout attempts. More than one temporary QR hold may be created. Payment remains manual.',
     'Evidence is read at T-60, T-30, T-10 and T-2 min. The set is frozen 2 minutes before release: a target showing a public booking or unknown evidence at that moment is excluded. No target is ever added, moved or substituted.',
     'The date is not published before 08:00, so no target is confirmed open. Nothing is cancelled automatically; each unpaid hold expires on its own.'].join('\n');

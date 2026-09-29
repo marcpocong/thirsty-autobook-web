@@ -38,6 +38,7 @@
     "release:fleet": "tsx src/fleet-validation-cli.ts",
     "bench:release": "tsx scripts/benchmark-precision-release.ts",
     "release:forensics": "tsx src/release-forensics-cli.ts",
+    "release-lab:rebuild": "tsx scripts/rebuild-release-lab.ts",
     "phase3:simulate": "tsx scripts/simulate-precision-phase3.ts",
     "phase4:replay": "tsx scripts/replay-phase4-fixtures.ts",
     "phase4:research": "tsx scripts/phase4-research.ts",

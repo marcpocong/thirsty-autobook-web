@@ -21,9 +21,10 @@ import type {PreparationInput,PreparationResult} from '../src/booking-plan.js';
 import {scheduledReleaseContext,type ScheduledReleaseContext} from '../src/scheduled-release.js';
 import {formatReleaseOffset} from '../src/release-offset.js';
 import {planWorkerIds,requiredWorkerIds,type CourtCount,type WorkerId} from '../src/workers.js';
-import type {SlotWatchDigest,SlotWatchSummary,SlotWatchView} from '../src/slot-watch.js';
+import type {SlotWatchCandidate,SlotWatchDigest,SlotWatchSummary,SlotWatchView} from '../src/slot-watch.js';
 import type {AvailabilityObservation} from '../src/slot-evidence.js';
 import type {ReleaseForensicsDigest} from '../src/release-forensics.js';
+import type {ReleaseLabDigest} from '../src/release-lab-analysis.js';
 import {PrecisionPhase3Schema,PrecisionTargetSchema} from '../src/config.js';
 import type {IntelligenceDigest,IntelligenceSummary} from '../src/release-intelligence.js';
 import type {AdvisorInput,AdvisorResult} from '../src/release-advisor.js';
@@ -176,12 +177,13 @@ export interface Dependencies {
   countBotBrowsers?():Promise<number>;
   closeBotBrowsers?():Promise<{found:number;closed:number;forced:number}>;
   confirmCloseBrowsers?(input:{open:number;qrPages:number;lock:boolean}):Promise<boolean>;
-  startSlotWatch?(input:{date:string;releaseMs:number;clockOffsetMs:number;clockSynced:boolean},onUpdate:(view:SlotWatchView)=>void,
+  startSlotWatch?(input:{date:string;releaseMs:number;clockOffsetMs:number;clockSynced:boolean;candidates?:SlotWatchCandidate[]},onUpdate:(view:SlotWatchView)=>void,
     onObservation?:(observation:AvailabilityObservation)=>void):{id:string;done:Promise<SlotWatchSummary>;stop(reason:string):Promise<SlotWatchSummary>};
   slotWatchHistory?():SlotWatchDigest[];
   /** Builds the post-run forensic report from local files (after the runner has exited). */
   buildReleaseForensics?(input:{runId:string;status:'preliminary'|'final'}):ReleaseForensicsDigest|undefined;
   releaseForensicsHistory?():ReleaseForensicsDigest[];
+  releaseLabHistory?():ReleaseLabDigest[];
   /** Phase 4 (desktop main process only; never in the runner). */
   rebuildReleaseIntelligence?():IntelligenceSummary;
   clearReleaseIntelligence?():number;
@@ -225,7 +227,7 @@ export class Controller {
   private runnerRunId?:string;
   /** Runner runs whose forensic report waits for this slot watch (by watch ID) to finish. */
   private readonly pendingForensics=new Map<string,string[]>();
-  constructor(private deps: Dependencies) {this.state.runHistory=this.deps.activityJournal?.history?.()??[];this.state.slotWatch=null;this.state.slotWatchHistory=this.readSlotWatchHistory();this.state.releaseForensics=this.readForensicsHistory();
+  constructor(private deps: Dependencies) {this.state.runHistory=this.deps.activityJournal?.history?.()??[];this.state.slotWatch=null;this.state.slotWatchHistory=this.readSlotWatchHistory();this.state.releaseForensics=this.readForensicsHistory();this.state.releaseLab=this.readReleaseLabHistory()[0]??null;
     this.state.phase4={busy:null,message:'',networkReadiness:this.readNetworkHistory()[0]??null,networkHistory:this.networkHistorySummary()};this.readIntelligence();}
   // Phase 4: read-only analysis in this (desktop) process only, never while a release is close or running.
   private readIntelligence(){try{const loaded=this.deps.intelligenceDigest?.();if(loaded){this.state.intelligence=loaded.digest;this.state.phase4!.warmth=loaded.warmth;}}catch{/* derived data only */}}
@@ -296,12 +298,14 @@ export class Controller {
   }
   private readSlotWatchHistory(){try{return this.deps.slotWatchHistory?.()??[];}catch{return [];}}
   private readForensicsHistory(){try{return this.deps.releaseForensicsHistory?.()??[];}catch{return [];}}
+  private readReleaseLabHistory(){try{return this.deps.releaseLabHistory?.()??[];}catch{return [];}}
   /** Post-run forensics: file reads and two small writes in this process, never in the runner, never before the runner has exited. */
   private buildForensics(runId:string,status:'preliminary'|'final'){
     if(!this.deps.buildReleaseForensics)return;
     try{
       const digest=this.deps.buildReleaseForensics({runId,status});
       this.state.releaseForensics=this.readForensicsHistory();
+      this.state.releaseLab=this.readReleaseLabHistory()[0]??null;
       if(digest)this.log(`Release forensics ${status}: ${digest.reportPath}`);
     }catch{this.log('Release forensics report could not be written; the raw logs are unchanged.',true);}
     this.publish();
@@ -314,6 +318,16 @@ export class Controller {
     setImmediate(()=>this.buildForensics(runId,watch?'preliminary':'final'));
   }
   /** Starts the read-only court/hour watch for one release; a watch already covering it is kept. */
+  private configuredWatchCandidates():SlotWatchCandidate[]{try{const setup=this.deps.booking().setup;
+    if(setup.RELEASE_STRATEGY!=='precision')return[];
+    const end=(start:string,duration:number)=>`${String(Number(start.slice(0,2))+duration).padStart(2,'0')}:00`;
+    if(setup.PRECISION_PHASE3){const workers=new Map(setup.PRECISION_PHASE3.wave1.map(value=>[value.candidateIndex,value.workerId]));
+      return setup.PRECISION_PHASE3.candidates.map((candidate,index)=>({id:`candidate-${index+1}`,court:candidate.court,start:candidate.start,
+        end:end(candidate.start,candidate.durationHours),label:`C${candidate.court} ${candidate.start}–${end(candidate.start,candidate.durationHours)}`,
+        ...(workers.get(index)?{workerId:workers.get(index)}:{})}));}
+    return setup.PRECISION_TARGETS.map((candidate,index)=>({id:`fixed-${index+1}`,court:candidate.court,start:candidate.start,
+      end:end(candidate.start,candidate.durationHours),label:`C${candidate.court} ${candidate.start}–${end(candidate.start,candidate.durationHours)}`,
+      workerId:String.fromCharCode(65+index)}));}catch{return[];}}
   private beginSlotWatch(date:string,releaseMs:number,reason:'release'|'manual'){
     if(!this.deps.startSlotWatch)return false;
     const current=this.slotWatch;
@@ -321,7 +335,8 @@ export class Controller {
     if(current){this.slotWatch=undefined;void current.stop('replaced by a newer watch').catch(()=>undefined);}
     const clock=this.deps.clock();
     let id:string|undefined;const early:SlotWatchView[]=[];
-    const handle=this.deps.startSlotWatch({date,releaseMs,clockOffsetMs:clock.clockOffsetMs,clockSynced:clock.networkSynced},view=>{
+    const handle=this.deps.startSlotWatch({date,releaseMs,clockOffsetMs:clock.clockOffsetMs,clockSynced:clock.networkSynced,
+      candidates:this.configuredWatchCandidates()},view=>{
       if(id===undefined){early.push(view);return;}
       if(view.id!==this.displayedSlotWatchId)return;
       this.state.slotWatch=view;this.publish();

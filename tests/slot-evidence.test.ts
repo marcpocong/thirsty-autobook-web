@@ -46,8 +46,9 @@ describe('target range evidence', () => {
     expect(evidence.firstFullyOpen).toEqual({ seq: 1, requestOffsetMs: 0, responseOffsetMs: 6_000 });
     expect(evidence.firstUnavailable).toEqual({ observation: { seq: 2, requestOffsetMs: 250, responseOffsetMs: 700 }, hours: ['16:00'] });
     expect(evidence.firstRecord).toEqual({ observation: { seq: 2, requestOffsetMs: 2_000, responseOffsetMs: 2_300 }, hours: ['16:00'] });
-    expect(evidence.reopen).toEqual({ before: { seq: 3, requestOffsetMs: 1_000, responseOffsetMs: 1_100 }, after: { seq: 4, requestOffsetMs: 60_000, responseOffsetMs: 60_100 }, overlapping: false });
-    expect(evidence.latest).toEqual({ observation: { seq: 4, requestOffsetMs: 60_000, responseOffsetMs: 60_100 }, state: 'FULLY_OPEN' });
+    expect(evidence.reopen).toEqual({ before: { seq: 3, requestOffsetMs: 1_000, responseOffsetMs: 1_100 }, after: { seq: 4, requestOffsetMs: 60_000, responseOffsetMs: 60_100 }, overlapping: false,confidence:'UNKNOWN' });
+    expect(evidence.latest).toEqual({ observation: { seq: 4, requestOffsetMs: 60_000, responseOffsetMs: 60_100 }, state: 'FULLY_OPEN',
+      freshness:{class:'UNBOUNDED',ageUpperBoundMs:null,representedAtLowerBoundOffsetMs:null} });
   });
 
   it('a public booking record is presence only: a failed court query is unknown, never "no record"', () => {
@@ -77,5 +78,14 @@ describe('slot evidence derivation', () => {
     // Earliest REQUEST with the date is #2 even though #3 answered first.
     expect(evidence.publication.firstPublished?.seq).toBe(2);
     expect(evidence.publication.firstPublishedResponse?.seq).toBe(3);
+  });
+
+  it('uses the freshest represented state, so a newer STALE Age 10 response cannot replace an older MISS Age 0 response',()=>{
+    const fresh={...read(1,1_000,1_200,{'7/19:00':'X'}),cache:{status:'MISS',ageS:0}};
+    const stale={...read(2,2_000,2_100),cache:{status:'STALE',ageS:10}};
+    const newerFresh={...read(3,3_000,3_200),cache:{status:'MISS',ageS:0}};
+    expect(deriveSlotEvidence([fresh,stale]).current?.seq).toBe(1);
+    expect(deriveSlotEvidence([fresh,stale]).cells.find(cell=>cell.court===7&&cell.hour==='19:00')?.latest.state).toBe('UNAVAILABLE');
+    expect(deriveSlotEvidence([fresh,stale,newerFresh]).current?.seq).toBe(3);
   });
 });
