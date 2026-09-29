@@ -13,6 +13,10 @@ export function requiredWorkerIds(strategy:'standard'|'extended',courtCount:Cour
 export const PRECISION_MAX_ATTEMPTS = 7;
 /** Fixed Precision fan-out creates exactly four child attempts inside each configured worker browser. */
 export const PRECISION_FAN_OUT_ATTEMPTS = 4;
+/** Smart immediate targets may fan out into 2 to this many independently tracked children (one tab each). */
+export const PRECISION_MAX_FAN_OUT = 4;
+/** Largest send budget: every worker fanned out fully, plus one Wave 2 and one Rescue send per worker. */
+export const PRECISION_MAX_SENDS = PRECISION_MAX_ATTEMPTS * PRECISION_MAX_FAN_OUT + 2 * PRECISION_MAX_ATTEMPTS;
 export const PRECISION_WORKER_IDS = WORKER_IDS.slice(0, PRECISION_MAX_ATTEMPTS) as readonly WorkerId[];
 
 /** Workers a saved plan needs: one per Precision attempt (A-G in row order, no grouping), otherwise the General allocation. */

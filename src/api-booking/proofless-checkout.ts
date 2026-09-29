@@ -6,6 +6,8 @@ import { observedResponse, standardPlanJournalKeys, type CheckoutCustomer, type 
 import type { PublicCheckoutRequest, VerifiedPublicCheckout } from './public-checkout.js';
 import { ondaCheckoutBoundary, validatePublicCheckoutResponse } from './public-checkout.js';
 import type { OndaBrowserSessionTransport } from './browser-session-transport.js';
+import { armCheckoutRequest } from './armed-request.js';
+import { assertWireCheckoutBody } from './wire-payload-check.js';
 import { DurableSubmissionJournal } from './durable-submission-journal.js';
 import { SubmissionDispatchError } from './submission-errors.js';
 import { targetDateState, type ReleaseObservationContext } from './court-hour-matrix.js';
@@ -141,6 +143,21 @@ export function prooflessRequest(plan:BookingPlan,customer:CheckoutCustomer):Pro
       rate:slot.price,chargedAmount:slot.price,guestCount:1,activityKey:null,activityLabel:null,promotionId:null,availabilityProof:null})))};
 }
 
+function deepFreeze<T>(value: T): T {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) { Object.freeze(value); for (const child of Object.values(value)) deepFreeze(child); }
+  return value;
+}
+/**
+ * Arm-time wire self-check for a plan that will be sent later (wire-payload-check.ts): builds the exact
+ * request with the worker's real customer, serializes it and validates the bytes. Sends nothing, writes nothing.
+ * Returns the validated body so callers can log its size.
+ */
+export function preflightProoflessWire(plan:BookingPlan,customer:CheckoutCustomer):string{
+  const body=JSON.stringify(prooflessRequest(plan,customer));
+  assertWireCheckoutBody(body,plan,standardPlanJournalKeys(plan,THIRSTY_PICKLE_FACILITY_ID)[0]!);
+  return body;
+}
+
 export interface DirectDispatchOptions {
   /** Scheduled release: never acquire security inline after the window check. */
   requirePreparedContext?:boolean;
@@ -188,9 +205,11 @@ export async function recordDirectCheckoutOutcome(send:()=>Promise<unknown>,requ
 export async function submitDirectCheckout(plan:BookingPlan,customer:CheckoutCustomer,transport:DirectTransport,
   journal:DurableSubmissionJournal,releaseMs?:number,additionalJournals:DurableSubmissionJournal[]=[],now:()=>number=Date.now,
   dispatch:DirectDispatchOptions={}):Promise<VerifiedPublicCheckout>{
-  const request=prooflessRequest(plan,customer),keys=standardPlanJournalKeys(plan,THIRSTY_PICKLE_FACILITY_ID);
+  const request=deepFreeze(prooflessRequest(plan,customer)),keys=standardPlanJournalKeys(plan,THIRSTY_PICKLE_FACILITY_ID);
   const journals=[journal,...additionalJournals];
   if(journals.length!==keys.length)throw Error('SUBMISSION_JOURNAL_COUNT_INVALID');
+  // The exact body is serialized and self-checked before any journal is touched; the transport sends these very bytes.
+  armCheckoutRequest(request,{plan,key:keys[0]!});
   const fingerprint=prooflessPlanFingerprint(plan);
   const begun:JournalEntry[]=[];
   try{

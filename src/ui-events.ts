@@ -48,7 +48,12 @@ export const UiEventSchema = z.discriminatedUnion('type', [
     amount:z.number().finite().optional(),wave:z.enum(['WAVE_1','WAVE_2','RESCUE']).optional(),
     fitness:z.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/).optional(),cache:z.string().regex(/^[A-Z_]{2,16}$/).optional(),
     rateStatus:z.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/).optional(),source:z.string().max(100).optional(),capturedAt:z.iso.datetime().optional(),
-    message:z.string().max(240).optional(),state:z.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/).optional()}).strict(),
+    message:z.string().max(240).optional(),state:z.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/).optional(),
+    // Fan-out child of a logical target (Fixed or Smart) and the prewarm plan.
+    fanOutIndex:z.number().int().min(0).max(3).optional(),fanOutCount:z.number().int().min(1).max(4).optional(),durationMs:z.number().finite().nonnegative().optional(),
+    // Rescue V2 reopen predictions (release-relative ms) and their observed error.
+    predictedStartMs:z.number().finite().optional(),predictedEndMs:z.number().finite().optional(),errorMs:z.number().finite().optional(),
+    confidence:z.string().regex(/^[A-Z][A-Z0-9_]{0,40}$/).optional(),contextReused:z.boolean().optional()}).strict(),
   z.object({type:z.literal('preparationResult'),result:PreparationResultSchema}).strict(),
   z.object({type:z.literal('preparationProgress'),step:z.enum(['starting','previous-session','holds','onda','calendar','grids','availability','final'])}).strict(),
   z.object({type:z.literal('preparationBlocked'),browser:WorkerIdSchema,hold:z.enum(['Active','Expired','Not detected','Unknown']),countdownSeconds:z.number().int().nonnegative().nullable()}).strict(),

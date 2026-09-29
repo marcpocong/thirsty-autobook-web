@@ -89,6 +89,9 @@ export interface SlotWatchQuality {
   contradictions:number;reopenings:{confirmed:number;probable:number;inconsistent:number;unknown:number};
   candidateReopenings:number;bookingCoverage:{planned:number;launched:number;answered:number;successfulCourtQueries:number;totalCourtQueries:number};
   providerPaths:string[];
+  /** Hold-expiry predictions scored against the first observed reopening of each cell (release-relative ms). Tuning evidence only. */
+  expiryPredictions?:{predicted:number;reopenedInWindow:number;reopenedOutside:number;notReopened:number;medianAbsErrorMs:number|null;
+    rows:Array<{court:number;hour:string;predictedStartMs:number;predictedEndMs:number;observedReopenMs:number|null;errorMs:number|null;insideWindow:boolean|null}>};
 }
 export interface SlotWatchCounts { launched: number; answered: number; failed: number; aborted: number; notLaunched: number }
 export interface SlotWatchDigest {
@@ -208,6 +211,7 @@ export class SlotWatch {
   private eventQueue:Array<{offsetMs:number;kind:'availability'|'bookings'|'publication-burst';source:'base'|'publication'|'expiry'}>=[];
   private readonly eventKeys=new Set<string>();
   private readonly expiryKeys=new Set<string>();
+  private readonly expiryWindows:Array<{court:number;hour:string;startMs:number;endMs:number}>=[];
   private stopReason = 'window complete';
   private status: SlotWatchStatus = 'waiting';
   private readonly availability: AvailabilityObservation[] = [];
@@ -315,6 +319,7 @@ export class SlotWatch {
       if(end<=this.offset(this.now()))continue;
       for(let t=start;t<=end;t+=1_000)this.enqueue('availability',t,'expiry');
       for(let t=Math.ceil(start/2_000)*2_000;t<=end;t+=2_000)this.enqueue('bookings',t,'expiry');
+      this.expiryWindows.push({court:cell.court,hour:cell.hour,startMs:start,endMs:end});
       this.write({type:'expiry-window',court:cell.court,hour:cell.hour,firstUnavailableBracket:{before:transition.before,after:transition.after},
         predictedStartOffsetMs:start,predictedEndOffsetMs:end,holdDurationMs:SLOT_WATCH_HOLD_DURATION_MS});
     }
@@ -483,11 +488,20 @@ export class SlotWatch {
       else if(confidence==='UNKNOWN')reopenings.unknown++;}
     const providerPaths=[...new Set(answered.flatMap(value=>{const p=value.provider;if(!p)return[];
       return [`${p.matchedPath??'(path unknown)'} · ${p.vercelId??'(edge unknown)'}`];}))].sort().slice(0,50);
+    const expiryRows=this.expiryWindows.map(window=>{const cell=evidence.cells.find(value=>value.court===window.court&&value.hour===window.hour);
+      const reopened=cell?.unavailableToOpen&&cell.openToUnavailable&&cell.unavailableToOpen.after.requestOffsetMs>cell.openToUnavailable.after.requestOffsetMs?cell.unavailableToOpen.after.responseOffsetMs:null;
+      const center=(window.startMs+window.endMs)/2;
+      return {court:window.court,hour:window.hour,predictedStartMs:window.startMs,predictedEndMs:window.endMs,observedReopenMs:reopened,
+        errorMs:reopened===null?null:Math.round(reopened-center),insideWindow:reopened===null?null:reopened>=window.startMs&&reopened<=window.endMs};});
+    const expiryErrors=expiryRows.flatMap(row=>row.errorMs===null?[]:[Math.abs(row.errorMs)]);
     const cacheTotal=Math.max(1,answered.length),cacheRates={MISS:cache.MISS/cacheTotal,HIT:cache.HIT/cacheTotal,STALE:cache.STALE/cacheTotal,UNKNOWN:cache.UNKNOWN/cacheTotal};
     const quality:SlotWatchQuality={latency:{medianMs:median(latencies),p95Ms:percentile(latencies,.95),minMs:latencies.length?Math.min(...latencies):null,maxMs:latencies.length?Math.max(...latencies):null},
       cache,cacheRates,contradictions:reopenings.inconsistent,reopenings,candidateReopenings:candidateViews.filter(value=>value.reopening==='CONFIRMED'||value.reopening==='PROBABLE').length,
       bookingCoverage:{planned:this.schedule.bookings.length,launched:this.bookingCounts.launched,answered:this.bookingCounts.answered,
-        successfulCourtQueries:this.bookingCounts.answered*7-this.failedCourtQueries,totalCourtQueries:this.bookingCounts.launched*7},providerPaths};
+        successfulCourtQueries:this.bookingCounts.answered*7-this.failedCourtQueries,totalCourtQueries:this.bookingCounts.launched*7},providerPaths,
+      ...(expiryRows.length?{expiryPredictions:{predicted:expiryRows.length,reopenedInWindow:expiryRows.filter(row=>row.insideWindow===true).length,
+        reopenedOutside:expiryRows.filter(row=>row.insideWindow===false).length,notReopened:expiryRows.filter(row=>row.observedReopenMs===null).length,
+        medianAbsErrorMs:median(expiryErrors),rows:expiryRows.slice(0,200)}}:{})};
     const qualityReportPath=this.path.replace(/\.ndjson$/,'.quality.json');
     const summary: SlotWatchSummary = { version: 3, id: this.id, date: this.options.date, releaseAt: new Date(this.options.releaseMs).toISOString(),
       releaseMs: this.options.releaseMs, startedAt: new Date(this.startedMs).toISOString(), endedAt: new Date(endedMs).toISOString(),

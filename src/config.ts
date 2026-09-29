@@ -4,7 +4,7 @@ import { parse as parseEnv } from 'dotenv';
 import { existsSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { reconcileBookingSetupFallbacks, reconcileFallbackTimes, type FallbackReconciliation } from './booking-setup.js';
-import { PRECISION_FAN_OUT_ATTEMPTS, PRECISION_MAX_ATTEMPTS, WORKER_IDS, type CourtCount, type WorkerId } from './workers.js';
+import { PRECISION_FAN_OUT_ATTEMPTS, PRECISION_MAX_ATTEMPTS, PRECISION_MAX_FAN_OUT, PRECISION_MAX_SENDS, WORKER_IDS, type CourtCount, type WorkerId } from './workers.js';
 import {networkNowMs} from './network-clock.js';
 import { PRECISION_MAX_CANDIDATES } from './api-booking/precision-phase3.js';
 import { isReleaseOffsetMs } from './release-offset.js';
@@ -29,18 +29,35 @@ const rateEvidence=z.object({source:z.string().min(1).max(100),capturedAt:z.iso.
   date:z.iso.date(),perHour:z.array(z.number().positive()).min(1).max(3),actionable:z.boolean()}).strict();
 export const PrecisionPhase3Schema=z.object({
   candidates:z.array(z.object({court:z.number().int().min(1).max(7),start:hour,durationHours:z.number().int().min(1).max(3),
-    priority:z.number().int().min(1),permissions:z.object({wave1:z.boolean(),wave2:z.boolean(),rescue:z.boolean()}).strict(),rateEvidence}).strict()).min(1).max(PRECISION_MAX_CANDIDATES),
-  wave1:z.array(z.object({workerId:precisionWorker,candidateIndex:z.number().int().min(0).max(PRECISION_MAX_CANDIDATES-1),releaseOffsetMs:attemptOffset}).strict()).min(1).max(7),
-  standby:z.array(precisionWorker).max(7),budgets:z.object({wave2:z.number().int().min(0).max(7),rescue:z.number().int().min(0).max(7),total:z.number().int().min(1).max(28)}).strict(),
+    priority:z.number().int().min(1),permissions:z.object({wave1:z.boolean(),wave2:z.boolean(),rescue:z.boolean()}).strict(),rateEvidence,
+    // Planning-time public evidence; the override marker keeps a deliberately force-included conflicting slot at freeze.
+    publicEvidence:z.object({evidence:z.enum(['NO_KNOWN_PUBLIC_CONFLICT','KNOWN_PUBLIC_BOOKING_CONFLICT','UNKNOWN_PUBLIC_QUERY_FAILED','PUBLISHED_OPEN','PUBLISHED_UNAVAILABLE']),
+      override:z.literal('OPERATOR_OVERRIDE_PUBLIC_CONFLICT').optional()}).strict().optional()}).strict()).min(1).max(PRECISION_MAX_CANDIDATES),
+  // fanOutOffsetsMs: 2-4 independently tracked children of this immediate target, one Release Offset each (index order).
+  wave1:z.array(z.object({workerId:precisionWorker,candidateIndex:z.number().int().min(0).max(PRECISION_MAX_CANDIDATES-1),releaseOffsetMs:attemptOffset,
+    fanOutOffsetsMs:z.array(offsetValue).min(2).max(PRECISION_MAX_FAN_OUT).optional()}).strict()).min(1).max(7),
+  standby:z.array(precisionWorker).max(7),budgets:z.object({wave2:z.number().int().min(0).max(7),rescue:z.number().int().min(0).max(7),total:z.number().int().min(1).max(PRECISION_MAX_SENDS)}).strict(),
   concurrentWave2:z.boolean(),rescueEnabled:z.boolean(),
 }).strict();
+/**
+ * Strategy Engine V2 metadata: the operator's goal, preset and fan-out/timing choices, so the Strategy view can reopen and
+ * regenerate the plan. It never decides what is sent: PRECISION_PHASE3 (compiled from it) is the only authorization, and
+ * this object is not part of the plan fingerprint.
+ */
+export const StrategyV2Schema=z.object({version:z.literal(1),preset:z.enum(['BALANCED','RELEASE_FOCUSED','RESCUE_FOCUSED','CUSTOM']),
+  goal:z.object({primeFrom:hour,primeUntil:z.string().regex(/^(09|1\d|2[0-3]):00$|^24:00$/),durations:z.array(z.number().int().min(1).max(3)).min(1).max(3),
+    courts:z.array(z.number().int().min(1).max(7)).min(1).max(7),preferredStart:hour.optional()}).strict(),
+  fanOut:z.object({width:z.number().int().min(1).max(PRECISION_MAX_FAN_OUT),source:z.enum(['MACHINE_RECOMMENDED','OPERATOR_OVERRIDE','NO_PROFILE']),
+    recommendedWidth:z.number().int().min(1).max(PRECISION_MAX_FAN_OUT).nullable(),timing:z.enum(['TIGHT','BALANCED','WIDE','CUSTOM']),
+    profileCreatedAt:z.string().max(40).nullable()}).strict()}).strict();
 export const ReleaseLabSetupSchema=z.object({version:z.literal(1),kind:z.literal('DURATION_OFFSET_V1'),label:z.literal('Duration × Offset')}).strict();
 function checkReleaseOffset(c:{RELEASE_OFFSET_MS:number;BOOKING_METHOD:string;RELEASE_STRATEGY:string},ctx:z.RefinementCtx){
   if(c.RELEASE_OFFSET_MS!==0&&c.BOOKING_METHOD!=='proofless')ctx.addIssue({code:'custom',message:'Release Offset applies to Proofless Direct only.',path:['RELEASE_OFFSET_MS']});
   // Precision chooses the offset on each attempt instead.
   if(c.RELEASE_OFFSET_MS!==0&&c.RELEASE_STRATEGY==='precision')ctx.addIssue({code:'custom',message:'Precision Release sets the offset on each attempt.',path:['RELEASE_OFFSET_MS']});
 }
-function checkPrecision(c:{RELEASE_STRATEGY:'general'|'precision';BOOKING_METHOD:string;BOOKING_TYPE:string;PRECISION_TARGETS:z.infer<typeof PrecisionTargetSchema>[];PRECISION_FAN_OUT:boolean;PRECISION_PHASE3?:z.infer<typeof PrecisionPhase3Schema>;RELEASE_LAB?:z.infer<typeof ReleaseLabSetupSchema>},ctx:z.RefinementCtx){
+function checkPrecision(c:{RELEASE_STRATEGY:'general'|'precision';BOOKING_METHOD:string;BOOKING_TYPE:string;PRECISION_TARGETS:z.infer<typeof PrecisionTargetSchema>[];PRECISION_FAN_OUT:boolean;PRECISION_PHASE3?:z.infer<typeof PrecisionPhase3Schema>;RELEASE_LAB?:z.infer<typeof ReleaseLabSetupSchema>;STRATEGY_V2?:z.infer<typeof StrategyV2Schema>},ctx:z.RefinementCtx){
+  if(c.STRATEGY_V2&&(c.RELEASE_STRATEGY!=='precision'||!c.PRECISION_PHASE3))ctx.addIssue({code:'custom',message:'Strategy V2 settings require a Smart Precision plan.',path:['STRATEGY_V2']});
   if(c.RELEASE_LAB&&(c.RELEASE_STRATEGY!=='precision'||!c.PRECISION_PHASE3))ctx.addIssue({code:'custom',message:'Release Lab requires a Smart Precision plan.',path:['RELEASE_LAB']});
   if(c.PRECISION_FAN_OUT&&(c.RELEASE_STRATEGY!=='precision'||!!c.PRECISION_PHASE3))ctx.addIssue({code:'custom',message:'Fan-out is available only for Fixed Precision Release.',path:['PRECISION_FAN_OUT']});
   if(c.RELEASE_STRATEGY!=='precision')return;
@@ -52,7 +69,10 @@ function checkPrecision(c:{RELEASE_STRATEGY:'general'|'precision';BOOKING_METHOD
     if(p.wave1.some(value=>!p.candidates[value.candidateIndex]?.permissions.wave1))ctx.addIssue({code:'custom',message:'Wave 1 assignment must name a Wave 1 eligible candidate.',path:['PRECISION_PHASE3']});
     if(p.wave1.some(value=>p.candidates[value.candidateIndex]?.rateEvidence.status==='REFERENCE'||
       !p.candidates[value.candidateIndex]?.rateEvidence.actionable))ctx.addIssue({code:'custom',message:'Wave 1 requires actionable, explicitly confirmed rate evidence.',path:['PRECISION_PHASE3']});
-    if(p.budgets.wave2>p.standby.length||p.budgets.total<p.wave1.length||p.budgets.total>p.wave1.length+p.budgets.wave2+p.budgets.rescue||
+    if(p.wave1.some(value=>value.fanOutOffsetsMs&&value.releaseOffsetMs!==undefined))ctx.addIssue({code:'custom',message:'A fan-out target sets one offset per child, not a single Release Offset.',path:['PRECISION_PHASE3']});
+    // Every fan-out child is a send and counts against the total budget.
+    const wave1Sends=p.wave1.reduce((sum,value)=>sum+(value.fanOutOffsetsMs?.length??1),0);
+    if(p.budgets.wave2>p.standby.length||p.budgets.total<wave1Sends||p.budgets.total>wave1Sends+p.budgets.wave2+p.budgets.rescue||
       (p.budgets.rescue>0&&!p.rescueEnabled))ctx.addIssue({code:'custom',message:'Precision dispatch budgets are inconsistent.',path:['PRECISION_PHASE3']});
     for(const candidate of p.candidates)if(Number(candidate.start.slice(0,2))+candidate.durationHours>24||candidate.rateEvidence.perHour.length!==candidate.durationHours)
       ctx.addIssue({code:'custom',message:'Candidate duration or hourly rate is invalid.',path:['PRECISION_PHASE3']});
@@ -85,6 +105,7 @@ export const ConfigSchema = z.object({
   PRECISION_FAN_OUT: precisionFanOut,
   PRECISION_PHASE3: PrecisionPhase3Schema.optional(),
   RELEASE_LAB: ReleaseLabSetupSchema.optional(),
+  STRATEGY_V2: StrategyV2Schema.optional(),
   RELEASE_OFFSET_MS: releaseOffset,
   COURT_COUNT: z.union([z.literal(1),z.literal(2),z.literal(3),z.literal(4),z.literal(5),z.literal(6),z.literal(7)]).default(1),
   ONDA_URL: z.literal(ONDA_URL).default(ONDA_URL),
@@ -200,6 +221,7 @@ export const BookingSetupSchema = z.object({
   PRECISION_FAN_OUT: precisionFanOut,
   PRECISION_PHASE3: PrecisionPhase3Schema.optional(),
   RELEASE_LAB: ReleaseLabSetupSchema.optional(),
+  STRATEGY_V2: StrategyV2Schema.optional(),
   RELEASE_OFFSET_MS: releaseOffset,
   COURT_COUNT: ConfigSchema.shape.COURT_COUNT,
   START_TIME: hour, DURATION_HOURS: z.number().int().min(1).max(6),

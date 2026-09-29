@@ -9,12 +9,13 @@
     <div class="status-chip" title="Asia/Manila network clock"><span class="chip-label">Clock</span><strong id="status-clock">--:--:--</strong><span id="status-clock-sync" class="chip-state" data-tone="warn">Not synced</span></div>
     <div class="status-chip browsers-chip"><span class="chip-label">Browsers</span><div id="browser-strip" class="browser-strip" role="group" aria-label="Bot browsers A to H"></div><button id="close-browsers" class="chip-action" type="button" title="Close every Chrome window the bot opened">Close all</button></div>
     <div class="status-chip"><span class="chip-label">Lock</span><span id="status-lock" class="chip-state" data-tone="muted">Checking</span></div>
-    <button id="status-watch" class="status-chip chip-button" type="button" title="Open the release slot watch"><span class="chip-label">Slot watch</span><span id="status-watch-text" class="chip-state" data-tone="muted">Idle</span></button>
+    <button id="status-watch" class="status-chip chip-button" type="button" title="Open Live: attempts and the release slot watch"><span class="chip-label">Slot watch</span><span id="status-watch-text" class="chip-state" data-tone="muted">Idle</span></button>
   </div>
 </header>
 <nav class="view-nav" aria-label="Main views">
-  <div class="view-tabs"><button type="button" data-view="release" aria-current="page">Next Release</button><button type="button" data-view="plan">Edit Plan</button><button type="button" data-view="tests">Tests</button><button type="button" data-view="slots">Slots</button><button type="button" data-view="runs">Runs</button><button type="button" data-view="tools">Tools</button></div>
+  <div class="view-tabs"><button type="button" data-view="release" aria-current="page">Next Release</button><button type="button" data-view="strategy">Strategy</button><button type="button" data-view="live">Live</button><button type="button" data-view="history">History &amp; Insights</button><button type="button" data-view="tools">Tools</button></div>
   <span class="mode" id="mode-label">CHOOSE BOOKING MODE</span>
+  <span id="build-label" class="build-label" title="Build provenance">Build: unknown</span>
 </nav>
 <main>
   <!-- NEXT RELEASE ─────────────────────────────────────────────── -->
@@ -49,6 +50,7 @@
       <label class="terms-choice"><input id="terms" type="checkbox" disabled> I authorize accepting Onda Terms for this booking</label>
     </section>
     <section id="precision-panel" class="panel precision-panel" hidden><h2>Precision Release</h2><p id="precision-summary" class="small"></p><div id="precision-table" class="precision-table"></div><p class="small">Goal: 1 successful court. These are independent checkout attempts; more than one temporary QR hold may be created. Payment remains manual.</p></section>
+    <section id="next-strategy" class="panel next-strategy"><div class="section-title"><div><p class="eyebrow">Generated from the saved plan</p><h2>Strategy at release</h2></div><span id="next-strategy-name" class="strategy-badge">Not configured</span></div><dl id="next-strategy-facts" class="fact-grid"></dl><p id="next-strategy-note" class="small"></p></section>
     <section class="panel saved-plan"><h2>Saved booking plan</h2><div id="saved-plan-summary" class="plan-card"></div></section>
     <section id="release-readiness-card" class="panel"><h2>Release readiness</h2><div id="release-readiness" class="gate-list"></div></section>
     <section class="panel lock-card" id="lock-card" hidden><h2>Automation lock active</h2><pre id="lock-review">Browser state: Needs verification. Use Review Lock.</pre><p id="lock-note" class="small">Booking actions are blocked. You can still edit and save your next booking plan locally.</p><div class="button-row"><button id="review-lock" class="secondary" type="button">Review Lock</button><button id="clear-lock" class="secondary" type="button" hidden>Clear Verified Stale Lock</button></div></section>
@@ -63,8 +65,32 @@
     </section>
   </div>
 
-  <!-- EDIT PLAN ────────────────────────────────────────────────── -->
-  <div id="view-plan" class="view-grid" aria-label="Edit Plan" hidden>
+  <!-- STRATEGY ───────────────────────────────────────────────────── -->
+  <div id="view-strategy" class="view-grid strategy-view" aria-label="Strategy" hidden>
+    <section id="strategy-goal" class="panel strategy-step"><p class="eyebrow">Step 1</p><h2>Goal</h2>
+      <div class="setup-grid"><label>Target date<output id="strategy-target-date">—</output></label>
+        <label>Prime window from<select id="strategy-prime-from"></select></label><label>Until<select id="strategy-prime-until"></select></label>
+        <label>Durations, preferred first<input id="strategy-durations" value="3,2,1" autocomplete="off" inputmode="numeric"></label>
+        <label>Court priority<input id="strategy-courts" value="7,6,5,4,3,2,1" autocomplete="off" inputmode="numeric"></label></div>
+      <p id="strategy-goal-problems" class="small warn-text" role="status"></p></section>
+    <section id="strategy-schedule" class="panel strategy-step"><div class="section-title"><div><p class="eyebrow">Step 2 · read only</p><h2>Known schedule</h2></div><button id="strategy-check-schedule" class="secondary compact" type="button">Check public bookings</button></div>
+      <p class="small">Public booking records for the target date. Before the date is published, a court/hour without a record is <strong>no known public conflict</strong> — that is not a promise it will be open at release.</p>
+      <div id="strategy-schedule-grid" class="strategy-schedule-grid"></div><p id="strategy-schedule-status" class="small" role="status"></p></section>
+    <section id="strategy-preset" class="panel strategy-step"><p class="eyebrow">Step 3</p><h2>Strategy preset</h2>
+      <div class="plan-mode" role="radiogroup" aria-label="Strategy preset">
+        <label class="plan-mode-option"><input type="radio" name="strategy-preset" value="BALANCED" checked><span><strong>Balanced</strong><small>Some immediate targets at release, standby workers for fresh backups, Rescue for reopenings.</small></span></label>
+        <label class="plan-mode-option"><input type="radio" name="strategy-preset" value="RELEASE_FOCUSED"><span><strong>Release focused</strong><small>Every ready worker sends at release; Rescue only afterwards.</small></span></label>
+        <label class="plan-mode-option"><input type="radio" name="strategy-preset" value="RESCUE_FOCUSED"><span><strong>Rescue focused</strong><small>Fewer immediate targets; more workers kept for backups and reopened slots.</small></span></label>
+        <label class="plan-mode-option"><input type="radio" name="strategy-preset" value="CUSTOM"><span><strong>Custom</strong><small>Edit every attempt yourself under Advanced overrides.</small></span></label></div>
+      <div class="setup-grid"><label>Fan-out per immediate target<select id="strategy-fanout"><option value="auto">Machine recommendation</option><option value="1">1 attempt (override)</option><option value="2">2 attempts (override)</option><option value="3">3 attempts (override)</option><option value="4">4 attempts (override)</option></select></label>
+        <label>Child timing<select id="strategy-timing"><option value="BALANCED">Balanced</option><option value="TIGHT">Tight</option><option value="WIDE">Wide</option></select></label></div>
+      <div id="strategy-fanout-note" class="small strategy-note"></div><ul id="strategy-timing-children" class="strategy-children"></ul></section>
+    <section id="strategy-suggested" class="panel strategy-step"><div class="section-title"><div><p class="eyebrow">Step 4 · a suggestion, not a command</p><h2>Suggested plan</h2></div><div class="button-row"><button id="strategy-suggest" class="secondary compact" type="button">Suggest plan</button><button id="strategy-apply" class="secondary compact" type="button" disabled>Use this plan</button></div></div>
+      <p class="small">Scores rank your own preferences and the evidence quality; they do not predict who wins Onda's arbitration.</p>
+      <div id="strategy-suggestion" class="strategy-suggestion"><p class="empty">Choose a goal and preset, then Suggest plan.</p></div></section>
+    <section id="strategy-review" class="panel strategy-step"><div class="section-title"><div><p class="eyebrow">Step 5</p><h2>Review &amp; save</h2></div><button id="strategy-save" class="primary-action compact" type="button">Save plan</button></div>
+      <ul id="strategy-review-warnings" class="strategy-warnings"></ul><div id="strategy-review-body" class="smart-summary-body"></div><p id="strategy-review-status" class="small" role="status"></p></section>
+    <details id="strategy-advanced" class="panel strategy-advanced"><summary>6. Advanced overrides <span class="small">every setting, Fixed (legacy) attempts, Release Lab experiment</span></summary>
     <section class="panel setup">
       <div class="section-title"><div><p class="eyebrow">Saved plan · used by Next Release and Tests</p><h2>Booking setup</h2></div><span id="player-status" class="small">Player information · Checking</span></div>
       <fieldset id="setup-fields">
@@ -86,7 +112,7 @@
           <h3>Precision Release · goal: 1 successful court</h3>
           <p class="small">Proofless Direct · Standard 1–3 hours · each worker is assigned one exact court/time and one dedicated player/browser. Release only.</p>
           <div class="plan-mode" role="radiogroup" aria-label="Precision plan">
-            <label class="plan-mode-option"><input id="precision-mode-fixed" type="radio" name="precision-mode" value="fixed" checked><span><strong>Fixed attempts</strong><small>Send only the exact attempts listed at 8:00.</small></span></label>
+            <label class="plan-mode-option"><input id="precision-mode-fixed" type="radio" name="precision-mode" value="fixed" checked><span><strong>Fixed attempts <em class="legacy-tag">legacy</em></strong><small>Send only the exact attempts listed at 8:00.</small></span></label>
             <label class="plan-mode-option"><input id="precision-mode-smart" type="radio" name="precision-mode" value="smart"><span><strong>Smart backups</strong><small>Send immediate attempts at 8:00, then use only pre-approved backup slots when fresh availability confirms they are open.</small></span></label>
           </div>
           <div id="legacy-precision-setup">
@@ -168,7 +194,6 @@
           <div class="button-row"><button id="release-lab-preset" class="secondary compact" type="button">Apply Duration × Offset preset</button><button id="release-lab-disable" class="secondary compact" type="button">Clear experiment label</button></div>
           <p id="release-lab-status" class="small"></p>
           <div class="table-scroll"><table class="release-lab-matrix"><thead><tr><th>Worker</th><th>Court</th><th>Start</th><th>Duration</th><th>Release Offset</th><th>Expected Price</th></tr></thead><tbody id="release-lab-matrix"></tbody></table></div>
-          <div id="release-lab-results" class="tool-result" aria-live="polite"></div>
         </details>
         <div id="player-details" class="player-details" aria-label="Player details used for booking"></div>
         <div class="setup-grid editors general-only"><div class="editor-block"><h3>Court priority</h3><ol id="court-order"></ol></div><div class="editor-block"><h3>Fallback starts · in order</h3><div class="button-row"><select id="fallback-time" aria-label="Add fallback start time"></select><button id="add-fallback" class="secondary" type="button">Add</button></div><ol id="fallback-order"></ol><p class="small">Primary time × court order, then each fallback × court order.</p></div></div>
@@ -178,6 +203,7 @@
       <div id="configuration-status" class="small" role="status" hidden></div>
       <div id="booking-preview" class="plan-card" aria-live="polite">Save your booking setup to compile a plan.</div>
     </section>
+    </details>
   </div>
 
   <!-- TESTS ────────────────────────────────────────────────────── -->
@@ -191,8 +217,11 @@
     <details id="test-availability" class="panel"><summary>Read-only availability check</summary><p class="small">Checks availability for the selected test date. Does not create a hold.</p><div id="api-dry-controls" hidden><button id="api-preview" class="secondary" type="button">Check Current API Availability</button><p class="small">Checks the Test Now date, court priority, hours and duration. No hold or booking will be created.</p></div></details>
   </div>
 
-  <!-- SLOTS ────────────────────────────────────────────────────── -->
-  <div id="view-slots" class="view-grid" aria-label="Slots" hidden>
+  <!-- LIVE ───────────────────────────────────────────────────────── -->
+  <div id="view-live" class="view-grid" aria-label="Live" hidden>
+    <section id="live-attempts-card" class="panel live-attempts"><div class="section-title"><div><p class="eyebrow">Current run · by logical target</p><h2>Attempts</h2></div><span id="live-run-state" class="small">No run</span></div>
+      <p id="live-prewarm" class="small" role="status"></p><div id="live-attempts" aria-live="polite"><p class="empty">Attempts appear here when a release run starts.</p></div>
+      <div id="live-rescue" class="live-rescue"></div></section>
     <section id="slot-watch-card" class="panel slot-watch">
       <div class="section-title"><div><p class="eyebrow">Release slot watch · read only</p><h2>Court/hour timeline</h2></div><div class="button-row"><button id="watch-next-release" class="secondary" type="button">Watch next release</button><button id="stop-slot-watch" class="secondary" type="button" hidden>Stop watching</button></div></div>
       <p class="small intro">Every armed release is watched automatically. All 112 court/hours are read from 60 seconds before release until 15 minutes after on the network clock. Freshest bounded evidence wins over a newer stale response; configured candidates are tracked directly. Availability stays dense while public-booking reads concentrate around publication and predicted expiry windows. It shows what Onda returned, not why. It never selects, holds, or books.</p>
@@ -204,21 +233,50 @@
       <div id="slot-watch-timeline" class="slot-timeline" role="log" aria-label="Slot changes"><p class="empty">No slot changes recorded yet.</p></div>
     </section>
     <section class="panel slot-history"><h2>Previous release watches</h2><p class="small">Saved locally with a full read-by-read log and a plain-text report.</p><div id="slot-watch-history" class="slot-history-list"><p class="empty">No finished watches yet.</p></div></section>
-    <section id="block-audit-card" class="panel"><div class="section-title"><div><p class="eyebrow">Read-only schedule intelligence</p><h2>Unreleased court blocks</h2></div><span class="audit-safe-badge">NO BOOKING ACTION</span></div><p class="small audit-intro">Check any date across all seven courts. Confirmed public records appear even before Onda publishes the full schedule. No saved plan, players, browsers, preparation, or Terms authorization is required.</p><div class="audit-controls"><label>Schedule date<input id="block-audit-date" type="date"></label><button id="check-release-blocks" class="secondary" type="button">CHECK ALL COURTS</button></div><div id="block-audit-result" class="block-audit-result" aria-live="polite"><div class="audit-empty"><strong>No audit yet</strong><span>Choose a date, then check all courts.</span></div></div></section>
+
   </div>
 
-  <!-- RUNS ─────────────────────────────────────────────────────── -->
-  <div id="view-runs" class="view-grid" aria-label="Runs" hidden>
+  <!-- HISTORY & INSIGHTS ─────────────────────────────────────────── -->
+  <div id="view-history" class="view-grid" aria-label="History &amp; Insights" hidden>
     <section class="panel run-timing"><div><h2>Current run timing</h2><p class="small">Browser ready to finish; startup and preparation excluded.</p></div><strong id="run-timing">No browser-ready run active</strong></section>
     <section class="panel run-history"><div class="section-title"><div><h2>Previous runs</h2><p class="small">Click any run for its full timeline. The headline time is browser-ready to finish; startup and Reset &amp; Prepare are excluded.</p></div><span class="small">SAVED LOCALLY</span></div><div id="run-history-list" aria-live="polite"><p class="empty">No completed browser-ready runs recorded yet.</p></div></section>
     <section class="panel activity"><div class="section-title"><div><h2>Activity</h2><p class="small">Live milestones and exact timing for the current run.</p></div><span class="small" id="activity-state">LOCAL PROCESS OUTPUT</span><button id="activity-expand" class="activity-expand" type="button" aria-expanded="false">Maximize</button></div><div id="log" role="log" aria-live="polite" aria-label="Activity log"><p class="empty">Activity will appear here as commands run.</p></div></section>
     <section class="panel release-insights" id="release-insights-card"><div class="section-title"><div><h2>Release insights</h2><p class="small">What the latest recorded release showed, in plain terms. Built from local logs after each release; evidence only.</p></div><span class="small">SAVED LOCALLY</span></div><div id="release-insights"><p class="empty">No release intelligence yet. Use Tools → Rebuild intelligence.</p></div></section>
     <section class="panel release-forensics"><div class="section-title"><div><h2>Release forensics</h2><p class="small">Written automatically after each live run: POST timing, the first published grid, provider response timing. Evidence only; full detail in the local report.</p></div><span class="small">SAVED LOCALLY</span></div><div id="release-forensics-list"><p class="empty">No forensic report yet. One is written automatically after each live run.</p></div></section>
+    <section class="panel insights-card" id="fanout-benchmark-card"><div class="section-title"><div><p class="eyebrow">Offline · this machine</p><h2>Fan-out capacity</h2></div></div>
+      <p class="small">Local dispatch measurements from <code>npx tsx scripts/benchmark-fanout-capacity.ts</code>. They say how well this PC keeps many attempts on time; they never predict a booking.</p><div id="fanout-benchmark"><p class="empty">No capacity profile yet.</p></div></section>
+    <section class="panel insights-card" id="offset-calibration-card"><div class="section-title"><div><p class="eyebrow">Configured trigger vs Chrome request</p><h2>Offset calibration</h2></div></div>
+      <p class="small">What each configured offset turned into on this PC in recorded releases (Chrome request start, not network arrival).</p><div id="offset-calibration"><p class="empty">No recorded release with critical-path timing yet.</p></div></section>
+    <section class="panel insights-card" id="reopen-accuracy-card"><div class="section-title"><div><p class="eyebrow">Rescue V2 tuning</p><h2>Reopen prediction accuracy</h2></div></div>
+      <p class="small">Predicted hold-expiry windows against the reopenings Slot Watch actually observed. Predictions only prepare; they never send.</p><div id="reopen-accuracy"><p class="empty">No scored predictions yet.</p></div></section>
+    <section class="panel insights-card" id="release-lab-card"><div class="section-title"><div><p class="eyebrow">Analysis</p><h2>Release Lab</h2></div></div>
+      <p class="small">Results of Duration × Offset experiments recorded in past releases. The experiment itself is set up under Strategy → Advanced overrides.</p>
+      <div id="release-lab-results" class="tool-result" aria-live="polite"></div>
+    </section>
+    <section class="panel tool-card" id="replay-card">
+      <div class="section-title"><div><p class="eyebrow">Offline · no checkout</p><h2>Strategy replay</h2></div><button id="replay-saved" class="secondary" type="button">Replay current plan</button></div>
+      <p class="small">Runs the saved plan through the real release rules against recorded releases. It shows observed opportunities only; it never predicts a win.</p>
+      <div id="replay-results" class="tool-result"><p class="empty">No replay yet.</p></div>
+    </section>
+    <section class="panel tool-card" id="intelligence-card">
+      <div class="section-title"><div><p class="eyebrow">Derived from local logs</p><h2>Release intelligence</h2></div><div class="button-row"><button id="rebuild-intelligence" class="secondary" type="button">Rebuild intelligence</button><button id="clear-intelligence" class="secondary" type="button">Clear derived intelligence</button></div></div>
+      <p class="small">Rebuilds history from Slot Watch, run and forensic logs. Raw logs are never changed; clearing removes only the derived files.</p>
+      <p id="intelligence-status" class="small" role="status"></p>
+      <details id="intelligence-history" class="tool-details"><summary>View history</summary><div id="intelligence-list"></div></details>
+    </section>
     <section class="panel previous-holds" id="previous-holds" hidden><h2>Previous payment holds</h2><p class="small">Verified holds retained when another run was prepared. Recorded expiry is not a payment result; check each QR tab in Chrome.</p><div id="previous-holds-list"></div></section>
   </div>
 
   <!-- TOOLS ────────────────────────────────────────────────────── -->
   <div id="view-tools" class="view-grid" aria-label="Tools" hidden>
+    <section class="panel tool-card" id="build-card">
+      <div class="section-title"><div><p class="eyebrow">Provenance</p><h2>Build information</h2></div></div>
+      <p class="small">To check whether this installation contains a commit, run <code>git merge-base --is-ancestor &lt;commit&gt; &lt;Git SHA&gt;</code> in the source folder. <code>npm run verify:dist -- --dist "../dist"</code> compares the installed runtime with the current source.</p>
+      <dl id="build-details" class="build-details"></dl>
+    </section>
+    <section class="panel tool-card" id="test-tools-card"><div class="section-title"><div><p class="eyebrow">Creates real temporary holds only when you run it</p><h2>Test booking tools</h2></div><button type="button" class="secondary" data-view="tests">Open test booking</button></div>
+      <p class="small">Run the saved plan on a chosen date, check availability, or practise. Nothing starts until you confirm.</p></section>
+    <section id="block-audit-card" class="panel"><div class="section-title"><div><p class="eyebrow">Read-only schedule intelligence</p><h2>Unreleased court blocks</h2></div><span class="audit-safe-badge">NO BOOKING ACTION</span></div><p class="small audit-intro">Check any date across all seven courts. Confirmed public records appear even before Onda publishes the full schedule. No saved plan, players, browsers, preparation, or Terms authorization is required.</p><div class="audit-controls"><label>Schedule date<input id="block-audit-date" type="date"></label><button id="check-release-blocks" class="secondary" type="button">CHECK ALL COURTS</button></div><div id="block-audit-result" class="block-audit-result" aria-live="polite"><div class="audit-empty"><strong>No audit yet</strong><span>Choose a date, then check all courts.</span></div></div></section>
     <section class="panel browsers-card">
       <div class="section-title"><div><p class="eyebrow">Dedicated Chrome windows</p><h2>Bot browsers</h2></div><button id="close-browsers-tools" class="danger-button" type="button">Close all bot browsers</button></div>
       <p class="small">Each checkout uses its own Chrome window and profile (A–H). Closing only affects these windows — your normal Chrome is never touched. It is blocked while a run is active or a release is armed; Reset &amp; Prepare reopens what a run needs.</p>
@@ -228,17 +286,6 @@
       <div class="section-title"><div><p class="eyebrow">Read only · bounded</p><h2>Network readiness</h2></div><button id="run-network-check" class="secondary" type="button">Run network check</button></div>
       <p class="small">Sends 5 read-only availability reads and one network-clock check. No browser, no checkout, no booking. Paused near a release.</p>
       <div id="network-result" class="tool-result"><p class="empty">No network check yet.</p></div>
-    </section>
-    <section class="panel tool-card" id="intelligence-card">
-      <div class="section-title"><div><p class="eyebrow">Derived from local logs</p><h2>Release intelligence</h2></div><div class="button-row"><button id="rebuild-intelligence" class="secondary" type="button">Rebuild intelligence</button><button id="clear-intelligence" class="secondary" type="button">Clear derived intelligence</button></div></div>
-      <p class="small">Rebuilds history from Slot Watch, run and forensic logs. Raw logs are never changed; clearing removes only the derived files.</p>
-      <p id="intelligence-status" class="small" role="status"></p>
-      <details id="intelligence-history" class="tool-details"><summary>View history</summary><div id="intelligence-list"></div></details>
-    </section>
-    <section class="panel tool-card" id="replay-card">
-      <div class="section-title"><div><p class="eyebrow">Offline · no checkout</p><h2>Strategy replay</h2></div><button id="replay-saved" class="secondary" type="button">Replay current plan</button></div>
-      <p class="small">Runs the saved plan through the real release rules against recorded releases. It shows observed opportunities only; it never predicts a win.</p>
-      <div id="replay-results" class="tool-result"><p class="empty">No replay yet.</p></div>
     </section>
     <details id="advanced" class="panel">
       <summary>Legacy browser-mode tools &amp; diagnostics</summary>

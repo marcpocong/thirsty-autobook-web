@@ -33,6 +33,7 @@ import type {ReadinessResult} from '../src/network-readiness.js';
 import type {WarmthAssessment} from '../src/checkout-path-research.js';
 import {TARGET_EVIDENCE_LABEL,type TargetEvidence} from '../src/api-booking/pre-release-evidence.js';
 import type {PrecisionView} from './types.js';
+import {reduceLiveRun} from './live-run.js';
 import type {EnsureManifestResult} from '../src/arbitration/experiment-manifest.js';
 
 /** Race-group headline: the operator's goal is one court, so any verified hold achieves it. */
@@ -193,6 +194,12 @@ export interface Dependencies {
   networkReadinessHistory?():ReadinessResult[];
   replayPlan?(plan:ReplayPlan):{results:ReplayResult[];skipped:Array<{releaseKey:string;reason:string}>};
   adviseFromHistory?(input:AdvisorInput):AdvisorResult;
+  /** This machine's Fan-out Capacity Profiles (newest compatible one in full, for the Strategy timing presets). */
+  fanOutDigest?():import('./types.js').FanOutDigest|null;
+  /** Recent release dispatch telemetry (per child: configured trigger vs Chrome request, compression, prewarm headroom). */
+  releaseTelemetry?():import('../src/release-telemetry.js').RunTelemetry[];
+  /** Provenance of the running build (read once at startup). */
+  buildInfo?():import('../src/build-info.js').BuildInfo|null;
 }
 const AdvisorRequestSchema=z.object({courts:z.array(z.number().int().min(1).max(7)).min(1).max(7),earliestStart:z.string().regex(/^(0[89]|1\d|2[0-3]):00$/),
   latestStart:z.string().regex(/^(0[89]|1\d|2[0-3]):00$/),durationHours:z.number().int().min(1).max(3),immediate:z.number().int().min(0).max(7),backups:z.number().int().min(0).max(14),
@@ -227,7 +234,8 @@ export class Controller {
   private runnerRunId?:string;
   /** Runner runs whose forensic report waits for this slot watch (by watch ID) to finish. */
   private readonly pendingForensics=new Map<string,string[]>();
-  constructor(private deps: Dependencies) {this.state.runHistory=this.deps.activityJournal?.history?.()??[];this.state.slotWatch=null;this.state.slotWatchHistory=this.readSlotWatchHistory();this.state.releaseForensics=this.readForensicsHistory();this.state.releaseLab=this.readReleaseLabHistory()[0]??null;
+  constructor(private deps: Dependencies) {try{this.state.build=this.deps.buildInfo?.()??null;}catch{this.state.build=null;}
+    try{this.state.fanOut=this.deps.fanOutDigest?.()??null;}catch{this.state.fanOut=null;}this.state.runHistory=this.deps.activityJournal?.history?.()??[];this.state.slotWatch=null;this.state.slotWatchHistory=this.readSlotWatchHistory();this.state.releaseForensics=this.readForensicsHistory();this.state.releaseLab=this.readReleaseLabHistory()[0]??null;
     this.state.phase4={busy:null,message:'',networkReadiness:this.readNetworkHistory()[0]??null,networkHistory:this.networkHistorySummary()};this.readIntelligence();}
   // Phase 4: read-only analysis in this (desktop) process only, never while a release is close or running.
   private readIntelligence(){try{const loaded=this.deps.intelligenceDigest?.();if(loaded){this.state.intelligence=loaded.digest;this.state.phase4!.warmth=loaded.warmth;}}catch{/* derived data only */}}
@@ -297,7 +305,7 @@ export class Controller {
     return this.deps.adviseFromHistory({...request,targetDate:this.deps.clock().targetDate});
   }
   private readSlotWatchHistory(){try{return this.deps.slotWatchHistory?.()??[];}catch{return [];}}
-  private readForensicsHistory(){try{return this.deps.releaseForensicsHistory?.()??[];}catch{return [];}}
+  private readForensicsHistory(){try{this.state.telemetry=this.deps.releaseTelemetry?.()??[];}catch{this.state.telemetry=[];}try{return this.deps.releaseForensicsHistory?.()??[];}catch{return [];}}
   private readReleaseLabHistory(){try{return this.deps.releaseLabHistory?.()??[];}catch{return [];}}
   /** Post-run forensics: file reads and two small writes in this process, never in the runner, never before the runner has exited. */
   private buildForensics(runId:string,status:'preliminary'|'final'){
@@ -429,6 +437,9 @@ export class Controller {
     if(event.stage==='PRECISION_OUTCOME')view.outcome=event.outcome;
     this.state.precision=view;
   }
+  private readonly liveCandidates=new Map<string,{court:number;startTime:string;endTime:string}>();
+  /** Live view: the run by logical target and fan-out child (ui/live-run.ts). */
+  private trackLive(event:Extract<UiEvent,{type:'apiStage'}>){try{const next=reduceLiveRun(this.state.live,event,this.liveCandidates);if(next!==undefined)this.state.live=next;}catch{/* view model only */}}
   private trackPhase3(event:Extract<UiEvent,{type:'apiStage'}>){
     if(!event.stage.startsWith('PHASE3_'))return;
     const view=this.state.phase3??{attempts:[]};
@@ -599,6 +610,7 @@ export class Controller {
       this.state.apiStage=event;
       this.trackPrecision(event);
       this.trackPhase3(event);
+      this.trackLive(event);
       const labels:Record<string,string>={RUN_STARTED:'API run started',EXPIRED_HOLD_REUSABLE:'Expired verified hold released for a new test',FINISHED_ATTEMPT_REUSABLE:'Finished attempt archived for a new test',PREPARING_BROWSER:'Preparing isolated Chrome',BROWSER_READY:'API browser ready',
         WAITING_FOR_BLOCK_AUDIT:'Waiting for 7:30 block audit',PRIMARY_PROOFLESS_PLAN_READY:'Proofless court plan resolved',PRIMARY_PROOFLESS_DISPATCHING:'Dispatching proofless checkout',PRIMARY_PROOFLESS_OUTCOME:'Proofless checkout outcome recorded',WAITING_FOR_RELEASE:'Waiting for release',SECURITY_PREWARM_STARTED:'Preparing checkout security before release',SECURITY_PREWARM_READY:'Checkout security ready for release',RELEASE_TRIGGERED:'Release reached',FETCHING_AVAILABILITY:'Fetching live API availability',
         WORKER_OUTCOME:'Checkout outcome recorded',CANDIDATE_READY:'API candidate ready',DRY_RUN_COMPLETE:'API dry run complete',FRESH_VERIFICATION_AND_PROOFS:'Fresh verification and slot proofs',

@@ -4,7 +4,8 @@ export interface CheckoutDiagnostic {
   category: 'http-rejection' | 'invalid-response';
   contentKind: 'json' | 'html' | 'text' | 'empty' | 'other';
   responseSource: 'cloudflare' | 'application' | 'unknown';
-  errorHint: 'verification' | 'availability' | 'customer' | 'rate-limit' | 'access' | 'other' | 'none';
+  /** 'payload': Onda refused the request's shape (e.g. "Invalid booking session time"), never an availability answer. */
+  errorHint: 'verification' | 'availability' | 'customer' | 'rate-limit' | 'access' | 'payload' | 'other' | 'none';
   applicationCode?: string;
   cloudflareRay?: string;
 }
@@ -26,7 +27,8 @@ export function checkoutDiagnostic(input: { status: number; contentType: string;
   // Text is inspected only for bounded categories. Its contents never leave this function.
   const text = [applicationCode, parsed?.error, parsed?.message, contentKind === 'html' ? input.body.slice(0, 4096) : '']
     .filter((value): value is string => typeof value === 'string').join(' ').slice(0, 4096);
-  const errorHint = /turnstile|captcha|challenge|fingerprint|verification|verify/i.test(text) ? 'verification' :
+  const errorHint = /invalid booking session time/i.test(text) ? 'payload' :
+    /turnstile|captcha|challenge|fingerprint|verification|verify/i.test(text) ? 'verification' :
     /slot|availability|unavailable|booked|proof|conflict/i.test(text) ? 'availability' :
       /customer|member|client/i.test(text) ? 'customer' :
         /rate.?limit|too many requests/i.test(text) ? 'rate-limit' :

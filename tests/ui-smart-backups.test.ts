@@ -94,7 +94,7 @@ describe('Smart backups editor (normal operator view)', () => {
     expect(await page.locator('#smart-immediate .smart-row-warn').allInnerTexts()).toEqual(['Worker B is not ready and will not be used.']);
     await page.locator('#smart-add-immediate').click();
     expect(await page.locator('#smart-immediate .smart-worker').allInnerTexts()).toEqual(['Worker A', 'Worker B', 'Worker C', 'Worker D', 'Worker E']);
-    const text = await page.locator('#view-plan').innerText();
+    const text = await page.locator('#view-strategy').innerText();
     expect(text).not.toContain('fixture@example.invalid'); expect(text).not.toContain('09987654321');
     await page.close();
   });

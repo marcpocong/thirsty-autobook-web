@@ -1,5 +1,6 @@
 import { COURT_TO_SPACE_ID } from './availability-parser.js';
 import type { PublicBookingBlock } from './proofless-checkout.js';
+import { normalizeOndaRange } from '../time-range.js';
 
 export interface PublicBookingProviderMetadata {court:number;status:number;latencyMs:number;cacheStatus?:string;ageS?:number;
   vercelId?:string;date?:string;matchedPath?:string}
@@ -11,7 +12,6 @@ export interface PublicBookingOptions {
   onCourt?: (court: number, outcome: { status: 'SUCCESS' | 'FAILED'; recordCount: number }) => void;
 }
 
-const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 const safeHeader=(value:string|null,max=240)=>value&&value.length<=max&&/^[\x20-\x7E]+$/.test(value)?value:undefined;
 
 /**
@@ -41,10 +41,9 @@ export async function readPublicBookingRecords(date: string, options: PublicBook
       const blocks = (Array.isArray(raw) ? raw : []).flatMap(record => {
         if (!record || typeof record !== 'object') return [];
         const item = record as { date?: unknown; startTime?: unknown; endTime?: unknown };
-        const start = typeof item.startTime === 'string' ? item.startTime.slice(0, 5) : '';
-        const end = typeof item.endTime === 'string' ? item.endTime.slice(0, 5) : '';
-        return item.date === date && HHMM.test(start) && HHMM.test(end) && start < end
-          ? [{ court, startTime: start, endTime: end } satisfies PublicBookingBlock] : [];
+        // A record ending at midnight arrives as 23:00 → 00:00; it is kept as 23:00 → 24:00 (time-range.ts).
+        const range = item.date === date ? normalizeOndaRange(item.startTime, item.endTime) : null;
+        return range ? [{ court, ...range } satisfies PublicBookingBlock] : [];
       });
       options.onCourt?.(court, { status: 'SUCCESS', recordCount: blocks.length });
       return { court, blocks, failed: false,provider };
