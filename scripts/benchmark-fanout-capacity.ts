@@ -60,6 +60,13 @@ function childOffset(index: number, width: number): number {
   throw Error('BENCH_PATTERN_INVALID');
 }
 
+/** How many children ended with each dispatcher result code ('-' when none). */
+function countCodes(records: RunSample[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const child of records.flatMap(record => record.children)) counts[child.code ?? '-'] = (counts[child.code ?? '-'] ?? 0) + 1;
+  return counts;
+}
+
 const sourceRoot = resolve(import.meta.dirname, '..');
 const scratch = resolve(args.get('scratch') ?? join(process.env.TEMP ?? sourceRoot, 'thirsty-fanout-bench'));
 const outDir = resolve(args.get('out') ?? join(sourceRoot, '.local/fanout-capacity'));
@@ -122,6 +129,9 @@ async function runOnce(width: number, runIndex: number): Promise<RunSample> {
       observation => { recorder.observeTransport(attempt.id, observation); if (observation.event === 'CHECKOUT_HTTP_POST_INITIATED') traces?.postInitiated(attempt.id); });
     return [attempt.id, transport] as const;
   }));
+  // Renderer mode: each page keeps a registry of keys it already fired (never re-armed). Runs reuse the same pages and keys, so clear it,
+  // which is equivalent to fresh pages; production uses new keys for every release.
+  if (dispatcher === 'renderer') await Promise.all(sessions.flatMap(session => session.pages).map(page => page.evaluate('delete globalThis.__thirstyRendererDispatch')));
   const armed = await armedModule.armPrecisionRace(frozen, { lock, customerFor: () => customer, journalRoot: resolve('.local/api-booking/api-first-journals'),
     releaseMs, now: () => trusted.nowMs() });
   const firstTrigger = armedModule.firstArmedTrigger(armed);
@@ -143,7 +153,7 @@ async function runOnce(width: number, runIndex: number): Promise<RunSample> {
     // --prewarm-concurrency N: the production tiered policy (Tier 1 first, one preparation per browser, at most N at once).
     ...(prewarmConcurrency ? { prewarmPolicy: { concurrency: prewarmConcurrency, perGroupConcurrency: 1, tierBarrierTimeoutMs: Infinity } } : {}),
   };
-  let results: Array<{ attempt: { id: string }; state: string }>;
+  let results: Array<{ attempt: { id: string }; state: string; code?: string }>;
   if (dispatcher === 'coordinator') {
     results = (await coordinatorModule!.dispatchWithCoordinators(armed, { ...common, pool: coordinatorPool!, recorder,
       securityPreparation: { cpuMs: syntheticCpuMs, waitMs: syntheticWaitMs },
@@ -165,12 +175,12 @@ async function runOnce(width: number, runIndex: number): Promise<RunSample> {
   const rows = new Map(recorder.rows().map(row => [row.workerId, row] as const));
   const toRelease = (mono: number | undefined) => mono === undefined ? null : Math.round((mono - trusted.monotonicDeadline(releaseMs)) * 100) / 100;
   const children: ChildSample[] = frozen.attempts.map(attempt => {
-    const row = rows.get(attempt.id), prep = prewarm.get(attempt.id), state = results.find(result => result.attempt.id === attempt.id)?.state ?? 'MISSING';
+    const row = rows.get(attempt.id), prep = prewarm.get(attempt.id), result = results.find(value => value.attempt.id === attempt.id), state = result?.state ?? 'MISSING';
     return { run: runIndex, workerIndex: targets.findIndex(target => target.workerId === attempt.target.workerId), workerId: attempt.target.workerId,
       fanOutIndex: attempt.fanOutIndex, fanOutCount: attempt.fanOutCount, configuredOffsetMs: attempt.target.releaseOffsetMs ?? 0,
       schedulerWakeMs: row?.schedulerFiredMs ?? null, workerInvokedMs: row?.workerInvokedMs ?? null, transportEnteredMs: row?.transportEnteredMs ?? null,
       prePostMs: row?.prePostMs ?? null, evaluateEnteredMs: row?.evaluateEnteredMs?.ms ?? null, fetchInvokedMs: row?.fetchInvokedMs?.ms ?? null,
-      chromeStartMs: row?.browserRequestStartMs ?? null, requestEventMs: row?.requestObservedMs ?? null, responseMs: row?.responseObservedMs ?? null, state,
+      chromeStartMs: row?.browserRequestStartMs ?? null, requestEventMs: row?.requestObservedMs ?? null, responseMs: row?.responseObservedMs ?? null, state, ...(result?.code ? { code: result.code } : {}),
       prewarmDurationMs: prep?.ended !== undefined ? Math.round((prep.ended - prep.started) * 10) / 10 : null, prewarmReadyMs: toRelease(prep?.ended) };
   });
   const summary = race.reducePrecisionOutcome(results.map(result => result.state as import('../src/api-booking/precision-race.js').PrecisionAttemptState));
@@ -203,7 +213,7 @@ try {
     summaries.push(summary);
     const t = summary.triggerToChromeStart;
     process.stdout.write(`${workerCount}x${width} (${summary.attempts} attempts): trigger→Chrome p50 ${t.p50} p95 ${t.p95} p99 ${t.p99} max ${t.max} · spread p95 ${summary.spread.p95} · `
-      + `per child ${summary.perChildIndex.map(value => `#${value.fanOutIndex} p95 ${value.triggerToChromeStart.p95}`).join(', ')} · states ${JSON.stringify(summary.states)}\n`);
+      + `codes ${JSON.stringify(countCodes(records))} · per child ${summary.perChildIndex.map(value => `#${value.fanOutIndex} p95 ${value.triggerToChromeStart.p95}`).join(', ')} · states ${JSON.stringify(summary.states)}\n`);
   }
   const recommendation = capacity.recommendFanOutWidth(summaries);
   const gitInfo = (await import(moduleUrl('scripts/build-support.mjs')) as { gitInfo: () => { gitSha: string; dirty: boolean | null } }).gitInfo();

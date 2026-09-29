@@ -35,6 +35,8 @@ export interface ChildSample {
   schedulerWakeMs: number | null; workerInvokedMs: number | null; transportEnteredMs: number | null; prePostMs: number | null;
   evaluateEnteredMs: number | null; fetchInvokedMs: number | null; chromeStartMs: number | null; requestEventMs: number | null; responseMs: number | null;
   state: string;
+  /** The dispatcher's result code, when any (raw samples only). */
+  code?: string;
   /** Security preparation of this child: duration and completion time (release-relative), null when it never finished. */
   prewarmDurationMs: number | null; prewarmReadyMs: number | null;
 }
