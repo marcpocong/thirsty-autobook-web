@@ -2,29 +2,33 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { constants as osConstants, getPriority, setPriority } from 'node:os';
 import { join, resolve } from 'node:path';
-import { mkdir, open } from 'node:fs/promises';
+import { mkdir, open, writeFile } from 'node:fs/promises';
 import { performance } from 'node:perf_hooks';
 import { chromium } from 'playwright';
 import { z } from 'zod';
 import { ONDA_URL, VENUE, loadConfig, planFingerprint, releaseMsForTargetDate } from '../config.js';
 import { consensusState, NETWORK_CLOCK_MAX_AGE_MS, queryGoogleClockConsensus, readNetworkClock, recordClockEvidence, writeNetworkClockState } from '../network-clock.js';
 import { adoptConsensus, DEFAULT_SPIN_TAIL_MS, RELEASE_CLOCK_ROUNDS, TrustedReleaseClock } from '../release-clock.js';
+import { releaseTriggerMs } from '../release-offset.js';
 import { armedNothingFired, armPrecisionRace, disarmUnfired, dispatchArmedPrecisionRace } from './armed-dispatch.js';
 import { classifyTargetEvidence, readPreReleaseEvidence } from './pre-release-evidence.js';
-import { freezePrecisionRace, precisionTargetPlan, reducePrecisionOutcome, validatePrecisionTargets, VerifiedHoldQrError, classifyPrecisionDispatchError } from './precision-race.js';
-import { authorizePrecision, precisionCandidateId, PrecisionSession, classifyActionableObservation, pricedPrecisionPlan, adaptiveMaxAgeMs } from './precision-phase3.js';
+import { freezePrecisionRace, precisionAttemptSet, reducePrecisionOutcome, validatePrecisionTargets, VerifiedHoldQrError, classifyPrecisionDispatchError } from './precision-race.js';
+import { authorizePrecision, precisionCandidateId, PrecisionSession, classifyActionableObservation, pricedPrecisionPlan, adaptiveMaxAgeMs, adaptiveFitness, freshestAvailabilityObservation, isActionableEvidenceFitness } from './precision-phase3.js';
+import { runAdaptiveAttempt } from './adaptive-attempt.js';
 import { browserIdentity, verifyDedicatedChromeAsync } from '../browser.js';
 import { emitUiEvent } from '../ui-events.js';
 import { discoverApiAvailability } from './availability-engine.js';
 import { OndaLiveAvailabilityProvider, THIRSTY_PICKLE_FACILITY_ID } from './live-availability-provider.js';
 import { parseAvailability } from './availability-parser.js';
 import { DurableSubmissionJournal } from './durable-submission-journal.js';
-import { SubmissionDispatchError } from './submission-errors.js';
 import { assertActiveCustomersValid, resolveActiveCustomers } from './customer-identity.js';
 import { submitCalendarFreeTwoHourCheckout } from './calendar-free-checkout.js';
 import { officialCheckoutUrl } from './checkout-restoration.js';
 import { OndaBrowserSessionTransport } from './browser-session-transport.js';
 import { ProviderTraceSet } from './checkout-provider-trace.js';
+import { CriticalPathRecorder, warmUpCriticalPath } from './critical-path.js';
+import { calibrateRendererClock, calibrateRendererClockAdaptive, sampleRendererClock } from './renderer-clock.js';
+import { rendererDispatchEnabled } from './renderer-dispatch.js';
 import { calendarFreeSecurityContext } from './calendar-free-security-context.js';
 import { firstUnjournaledAvailableCandidate } from './candidate-journal.js';
 import { standardCheckoutChunks } from './extended-checkout.js';
@@ -34,7 +38,7 @@ import { ApiRunProgressLog } from './run-progress-log.js';
 import { ApiAutomationLock } from './api-automation-lock.js';
 import { assertApiReleaseFresh } from './api-release.js';
 import { canReleaseApiLockAfterParallelFailure } from './api-lock-outcome.js';
-import { requiredWorkerIds } from '../workers.js';
+import { PRECISION_FAN_OUT_ATTEMPTS, requiredWorkerIds } from '../workers.js';
 import { showWorkerPage } from '../browser-window.js';
 import { prooflessCourtHourStatuses, prooflessReleasePlan, resolveProoflessReleasePlan, submitDirectCheckout } from './proofless-checkout.js';
 import { readPublicBookingRecords } from './public-bookings.js';
@@ -128,7 +132,9 @@ const sanitizedCheckoutCapture = (response) => {
     }
     catch { }
     return { capturedAt: new Date(nowMs()).toISOString(), status: response.status, contentType: response.contentType,
-        diagnostic: checkoutDiagnostic(response), observed: observedResponse(parsed, 'RESPONSE_CAPTURED') };
+        diagnostic: checkoutDiagnostic(response), observed: observedResponse(parsed, 'RESPONSE_CAPTURED'),
+        // Structure-first evidence of a rejection (sanitized in the transport); never the body text.
+        ...(response.evidence ? { evidence: response.evidence } : {}) };
 };
 const connectedBrowsers = [];
 let liveLock, retainLiveLock = false, verifiedHold = false;
@@ -144,8 +150,68 @@ const persistLatestVerifiedHold = async () => {
 // Passive checkout provider trace (see checkout-provider-trace.ts). Attached in the background well
 // before any POST, written only after every POST has settled; checkout never depends on it.
 let providerTraces, providerTracesSaved = false;
+// Critical-path telemetry (critical-path.ts): in-memory marks during dispatch; renderer clocks are
+// calibrated and the file is written only after every POST has settled.
+let criticalPath, criticalPathPages = new Map(), criticalPathSaved = false;
+const startCriticalPath = (clock, releaseMs, pages) => {
+    criticalPathPages = new Map(pages);
+    criticalPathSaved = false;
+    try {
+        warmUpCriticalPath();
+    }
+    catch { /* telemetry only */ }
+    criticalPath = new CriticalPathRecorder(releaseMs, clock.monotonicDeadline(releaseMs), clock.offsetMs - clock.wallDisagreementMs(), [...pages.keys()]);
+    return criticalPath;
+};
+const persistCriticalPath = async () => {
+    const recorder = criticalPath;
+    if (!recorder || criticalPathSaved)
+        return;
+    criticalPathSaved = true;
+    for (const workerId of recorder.workerIds()) {
+        const page = criticalPathPages.get(workerId);
+        if (!page || page.isClosed())
+            continue;
+        try {
+            recorder.calibration(workerId, calibrateRendererClock(await sampleRendererClock(page, 8)));
+        }
+        catch { /* the row keeps Node-side marks only */ }
+    }
+    try {
+        const directory = resolve('.local/release-forensics', progressLog.runId);
+        await mkdir(directory, { recursive: true, mode: 0o700 });
+        await writeFile(join(directory, 'critical-path.ndjson'), recorder.toNdjson({ runId: progressLog.runId }), { mode: 0o600, flag: 'wx' });
+        const rows = recorder.rows(), worst = (pick) => { const values = rows.map(pick).filter((value) => value !== null); return values.length ? Math.max(...values) : -1; };
+        stage('CRITICAL_PATH_SAVED', { workerCount: rows.length, maxPrePostMs: worst(row => row.prePostMs), maxFetchInvokedMs: worst(row => row.fetchInvokedMs?.ms ?? null),
+            maxBrowserRequestStartMs: worst(row => row.browserRequestStartMs), maxRequestObservedMs: worst(row => row.requestObservedMs) });
+    }
+    catch {
+        stage('CRITICAL_PATH_SAVED', { outcome: 'FAILED' });
+    }
+};
+/**
+ * EXPERIMENTAL renderer-resident dispatch deps, only when ONDA_EXPERIMENTAL_RENDERER_DISPATCH=RENDERER_RESIDENT_V1.
+ * Without the flag this returns {} and the dispatch is exactly the Node-triggered path.
+ */
+const experimentalRendererDispatch = (pageFor, transportFor) => rendererDispatchEnabled() ? { rendererDispatch: { pageUrl: ONDA_URL, transportFor: (_worker, attempt) => transportFor(attempt),
+        calibrate: async (attempt) => {
+            const page = pageFor(attempt);
+            if (!page)
+                throw Error('RENDERER_PAGE_MISSING');
+            return calibrateRendererClockAdaptive(page, { targetUncertaintyMs: 1.5, maxSamples: 32 });
+        },
+        // Called inside the arm pass: in-memory now, logging on a later macrotask.
+        onPlan: (event) => {
+            if (event.mode === 'renderer') {
+                criticalPath?.mode(event.attemptId, 'renderer-experimental');
+                criticalPath?.calibration(event.attemptId, event.calibration);
+            }
+            setImmediate(() => stage('RENDERER_DISPATCH_PLAN', { workerId: event.workerId, attemptId: event.attemptId, outcome: event.mode === 'renderer' ? 'RENDERER_ARMED' : 'NODE_FALLBACK', ...(event.code ? { code: event.code } : {}),
+                ...(event.calibration ? { uncertaintyMs: Math.round(event.calibration.uncertaintyMs * 100) / 100 } : {}) }));
+        } } } : {};
 const openTraceSession = (page) => () => page.context().newCDPSession(page);
 const persistProviderTraces = async () => {
+    await persistCriticalPath().catch(() => undefined);
     if (!providerTraces || providerTracesSaved)
         return;
     providerTracesSaved = true;
@@ -154,7 +220,7 @@ const persistProviderTraces = async () => {
     trace('PROVIDER_TRACE_SAVED', { status: path ? 'SUCCESS' : 'FAILED', traceCount: records.length, traceComplete: records.filter(value => value.complete).length,
         ...(unavailable.length ? { traceUnavailable: unavailable.map(value => `${value.workerId}:${value.code ?? 'UNAVAILABLE'}`).join(',') } : {}) });
 };
-async function prepareWorker(workerId) {
+async function prepareWorker(workerId, fanOutCount = 1) {
     const identity = browserIdentity(workerId);
     stage('PREPARING_BROWSER', { workerId });
     try {
@@ -174,16 +240,21 @@ async function prepareWorker(workerId) {
     if (!context)
         throw Error('API_BROWSER_CONTEXT_MISSING');
     const matchingPages = context.pages().filter(candidate => candidate.url() === ONDA_URL);
-    const page = matchingPages[0] ?? await context.newPage();
-    await Promise.all(matchingPages.slice(1).map(duplicate => duplicate.close().catch(() => undefined)));
-    if (page.url() !== ONDA_URL)
-        await page.goto(ONDA_URL, { waitUntil: 'domcontentloaded', timeout: 45_000 });
-    await page.getByTestId('public-booking-hero-title').first().waitFor({ state: 'visible', timeout: 45_000 });
-    if ((await page.getByTestId('public-booking-hero-title').first().innerText()).trim() !== VENUE)
-        throw Error('WRONG_VENUE');
+    const pages = matchingPages.slice(0, fanOutCount);
+    while (pages.length < fanOutCount)
+        pages.push(await context.newPage());
+    await Promise.all(matchingPages.slice(fanOutCount).map(duplicate => duplicate.close().catch(() => undefined)));
+    await Promise.all(pages.map(async (page) => {
+        if (page.url() !== ONDA_URL)
+            await page.goto(ONDA_URL, { waitUntil: 'domcontentloaded', timeout: 45_000 });
+        await page.getByTestId('public-booking-hero-title').first().waitFor({ state: 'visible', timeout: 45_000 });
+        if ((await page.getByTestId('public-booking-hero-title').first().innerText()).trim() !== VENUE)
+            throw Error('WRONG_VENUE');
+    }));
+    const page = pages[0];
     await showWorkerPage(page, workerId);
     stage('BROWSER_READY', { workerId, port: identity.port });
-    return { workerId, browser, page, port: identity.port };
+    return { workerId, browser, page, pages: Object.freeze(pages), port: identity.port };
 }
 /** One read-only availability GET; every read lands in the trace with its exact 112-cell matrix. */
 async function readAvailabilitySnapshot(date) {
@@ -309,13 +380,20 @@ try {
     // Precision Release: the saved plan authorizes 1-3 exact, independent one-court targets (never COURT_COUNT).
     const phase3 = !requested && config.RELEASE_STRATEGY === 'precision' && command.mode !== 'audit' ? config.PRECISION_PHASE3 : undefined;
     const precisionTargets = !phase3 && !requested && config.RELEASE_STRATEGY === 'precision' && command.mode !== 'audit'
-        ? validatePrecisionTargets(config.PRECISION_TARGETS, command.date) : undefined;
+        ? validatePrecisionTargets(config.PRECISION_TARGETS, command.date, config.PRECISION_FAN_OUT) : undefined;
     if ((precisionTargets || phase3) && (config.BOOKING_METHOD !== 'proofless' || command.checkoutMethod !== 'proofless' || config.BOOKING_TYPE !== 'standard'))
         throw Error('PRECISION_REQUIRES_PROOFLESS_STANDARD');
+    // Operator Release Offset (release-offset.ts): moves only the pre-armed Proofless Direct trigger of a scheduled release.
+    // General uses this plan-wide value; Precision sets one per attempt (frozen with the target).
+    const releaseOffsetMs = !requested && command.mode === 'live' && command.checkoutMethod === 'proofless' ? config.RELEASE_OFFSET_MS : 0;
     stage('RUN_CONFIGURATION', { bookingMethod: config.BOOKING_METHOD,
         workerCount: precisionTargets?.length ?? (phase3 ? phase3.wave1.length + phase3.standby.length : requiredWorkerIds(config.BOOKING_TYPE, config.COURT_COUNT).length),
         prewarmLeadMs: API_SECURITY_PREWARM_LEAD_MS,
-        ...(command.releaseMs ? { releaseMs: command.releaseMs } : {}) });
+        ...(command.releaseMs ? { releaseMs: command.releaseMs } : {}), ...(releaseOffsetMs ? { releaseOffsetMs } : {}) });
+    const scheduledTrigger = (releaseMs, triggerMs, workerId) => {
+        if (triggerMs !== releaseMs)
+            stage('RELEASE_OFFSET_SCHEDULED', { releaseMs, triggerMs, releaseOffsetMs: triggerMs - releaseMs, ...(workerId ? { workerId } : {}) });
+    };
     const strategy = requested?.strategy ?? config.BOOKING_TYPE;
     const duration = requested?.duration ?? config.DURATION_HOURS;
     const courtCount = requested?.courtCount ?? config.COURT_COUNT;
@@ -373,7 +451,7 @@ try {
     }
     // The dedicated profiles are independent. Wait for both checks to settle so
     // a failure in one browser cannot leave an unobserved preparation running.
-    const prepared = await Promise.allSettled(workerIds.map(prepareWorker));
+    const prepared = await Promise.allSettled(workerIds.map(worker => prepareWorker(worker, config.PRECISION_FAN_OUT ? PRECISION_FAN_OUT_ATTEMPTS : 1)));
     prepared.forEach((result, index) => stage('BROWSER_PREPARATION_OUTCOME', { workerId: workerIds[index], status: result.status,
         code: result.status === 'fulfilled' ? 'COMPLETED' : safeApiFailureCode(result.reason, 'API_BROWSER_PREPARATION_FAILED') }));
     const failure = prepared.find((result) => result.status === 'rejected');
@@ -399,7 +477,7 @@ try {
         const releaseTransports = new Map();
         const activeAttemptContexts = new Map();
         const activeTransportOperations = new Map();
-        const transportContext = (workerId) => activeAttemptContexts.get(workerId) ??
+        const transportContext = (workerId, transportKey) => activeAttemptContexts.get(transportKey) ??
             { workerId, lane: diagnosticLaneForWorker(workerId) };
         const beginTransport = (key, operation, stage, context, extra) => {
             const end = diagnostics.begin(operation, stage, context, extra), queue = activeTransportOperations.get(key) ?? [];
@@ -415,45 +493,48 @@ try {
             else
                 diagnostics.observe(stage, context, extra);
         };
-        const observeTransport = (workerId, raw) => {
-            const context = transportContext(workerId);
+        const observeTransport = (workerId, transportKey, raw) => {
+            criticalPath?.observeTransport(transportKey, raw);
+            const context = transportContext(workerId, transportKey);
             // Release lateness on the final pre-POST gate and on the observed POST (network-corrected clock;
             // the anchored release clock once Precision has prepared it).
             const observation = (raw.event === 'CHECKOUT_PRE_POST' || raw.event === 'CHECKOUT_HTTP_POST_INITIATED') && command.releaseMs
                 ? { ...raw, releaseLatenessMs: tenth((releaseClock?.nowMs() ?? nowMs()) - command.releaseMs) } : raw;
-            // These two fire between the release instant and the POST: time is captured now, bookkeeping runs afterwards.
-            if (observation.event === 'CHECKOUT_FUNCTION_ENTERED' || observation.event === 'CHECKOUT_PRE_POST') {
+            // These fire between the release instant (or the experimental renderer arm) and the POST: time is captured now, bookkeeping runs afterwards.
+            if (observation.event === 'CHECKOUT_FUNCTION_ENTERED' || observation.event === 'CHECKOUT_PRE_POST' || observation.event === 'RENDERER_DISPATCH_ARMED') {
                 diagnostics.observeDeferred(observation.event, context, observation);
                 return;
             }
             if (observation.event === 'SECURITY_PREPARATION_STARTED') {
-                beginTransport(`${workerId}:security:${observation.securitySource}`, 'security', observation.event, context, observation);
+                beginTransport(`${transportKey}:security:${observation.securitySource}`, 'security', observation.event, context, observation);
                 return;
             }
             if (observation.event === 'SECURITY_PREPARATION_COMPLETED') {
-                endTransport(`${workerId}:security:${observation.securitySource}`, observation.event, context, observation);
+                endTransport(`${transportKey}:security:${observation.securitySource}`, observation.event, context, observation);
                 return;
             }
             if (observation.event === 'SLOT_CHECK_STARTED') {
-                beginTransport(`${workerId}:slot`, 'slotCheck', observation.event, context, observation);
+                beginTransport(`${transportKey}:slot`, 'slotCheck', observation.event, context, observation);
                 return;
             }
             if (observation.event === 'SLOT_CHECK_COMPLETED') {
-                endTransport(`${workerId}:slot`, observation.event, context, observation);
+                endTransport(`${transportKey}:slot`, observation.event, context, observation);
                 return;
             }
             if (observation.event === 'CHECKOUT_HTTP_POST_INITIATED') {
                 // This worker's POST has left its page. Once every traced POST has, the passive traces enable Network (later macrotask).
-                providerTraces?.postInitiated(workerId);
+                providerTraces?.postInitiated(transportKey);
                 const waveContext = activeWaveContexts.get(workerId);
+                // The effective evidence is read at the POST itself: the pre-POST gate may have rebased it.
+                const evidenceSeq = waveContext?.evidenceSeq?.();
                 if (waveContext)
                     setImmediate(() => stage('PHASE3_DISPATCH', { workerId, candidateId: waveContext.candidateId,
-                        wave: waveContext.wave, attemptId: context.attemptId ?? 'unknown' }));
-                beginTransport(`${workerId}:checkout`, 'checkout', observation.event, context, observation);
+                        wave: waveContext.wave, attemptId: context.attemptId ?? 'unknown', ...(evidenceSeq !== undefined ? { evidenceSeq } : {}) }));
+                beginTransport(`${transportKey}:checkout`, 'checkout', observation.event, context, observation);
                 return;
             }
             if (observation.event === 'CHECKOUT_RESPONSE_COMPLETED') {
-                endTransport(`${workerId}:checkout`, observation.event, context, observation);
+                endTransport(`${transportKey}:checkout`, observation.event, context, observation);
                 return;
             }
             diagnostics.observe(observation.event, context, observation);
@@ -461,11 +542,14 @@ try {
         if (command.mode === 'live' || command.mode === 'live-now' && command.checkoutMethod === 'proofless')
             for (const session of sessions) {
                 const workerId = session.workerId;
-                releaseTransports.set(workerId, new OndaBrowserSessionTransport(session.page, () => calendarFreeSecurityContext(session.page)(), response => responseCaptures.get(workerId)?.(response) ?? Promise.reject(Error('CHECKOUT_RESPONSE_CAPTURE_MISSING')), { onHumanVerificationRequired: async () => {
-                        await session.page.evaluate(id => { document.title = `THIRSTY BOT ${id} - VERIFY HERE`; }, workerId);
-                        await showWorkerPage(session.page, workerId);
-                        stage('HUMAN_VERIFICATION_REQUIRED', { workerId });
-                    }, onHumanVerificationCompleted: async () => { stage('HUMAN_VERIFICATION_COMPLETE', { workerId }); } }, observation => observeTransport(workerId, observation)));
+                for (const [pageIndex, page] of session.pages.entries()) {
+                    const transportKey = config.PRECISION_FAN_OUT ? `${workerId}:${pageIndex}` : workerId;
+                    releaseTransports.set(transportKey, new OndaBrowserSessionTransport(page, () => calendarFreeSecurityContext(page)(), response => responseCaptures.get(transportKey)?.(response) ?? Promise.reject(Error('CHECKOUT_RESPONSE_CAPTURE_MISSING')), { onHumanVerificationRequired: async () => {
+                            await page.evaluate(id => { document.title = `THIRSTY BOT ${id} - VERIFY HERE`; }, `${workerId}-${pageIndex + 1}`);
+                            await showWorkerPage(page, workerId);
+                            stage('HUMAN_VERIFICATION_REQUIRED', { workerId });
+                        }, onHumanVerificationCompleted: async () => { stage('HUMAN_VERIFICATION_COMPLETE', { workerId }); } }, observation => observeTransport(workerId, transportKey, observation)));
+                }
             }
         // Hoisted so the E/F adaptive lane can dispatch a proof-based attempt as
         // soon as its court is ready, through the exact same verified path as the
@@ -598,12 +682,12 @@ try {
         });
         /** Before any send: binds the attempt's diagnostics correlation and its private response capture. */
         const bindProoflessAttempt = (value, startedStage = 'DIAGNOSTIC_ATTEMPT_STARTED') => {
-            const { plan, workerId } = value, correlation = { workerId, lane: value.lane, attemptType: value.attemptType, attemptId: value.attemptId };
-            activeAttemptContexts.set(workerId, correlation);
+            const { plan, workerId } = value, transportKey = value.transportKey ?? workerId, correlation = { workerId, lane: value.lane, attemptType: value.attemptType, attemptId: value.attemptId };
+            activeAttemptContexts.set(transportKey, correlation);
             diagnostics.observe(startedStage, correlation, { court: plan.courts[0].court, startTime: plan.startTime, durationHours: plan.durationHours });
             const captured = {};
-            responseCaptures.set(workerId, async (response) => {
-                providerTraces?.captureFallback({ workerId, attemptId: value.attemptId, ...activeWaveContexts.get(workerId) }, response);
+            responseCaptures.set(transportKey, async (response) => {
+                providerTraces?.captureFallback({ workerId: transportKey, attemptId: value.attemptId, ...activeWaveContexts.get(workerId) }, response);
                 await saveOnce(value.directory, 'checkout-response-private.json', sanitizedCheckoutCapture(response));
                 try {
                     const parsed = JSON.parse(response.body);
@@ -612,13 +696,13 @@ try {
                 }
                 catch { }
             });
-            const binding = { correlation, started: performance.now(), captured,
+            const binding = { correlation, transportKey, started: performance.now(), captured,
                 workerTiming: () => ({ workerId, workerElapsedMs: Math.round(performance.now() - binding.started) }) };
             return binding;
         };
         const unbindProoflessAttempt = (binding) => {
-            if (activeAttemptContexts.get(binding.correlation.workerId)?.attemptId === binding.correlation.attemptId)
-                activeAttemptContexts.delete(binding.correlation.workerId);
+            if (activeAttemptContexts.get(binding.transportKey)?.attemptId === binding.correlation.attemptId)
+                activeAttemptContexts.delete(binding.transportKey);
         };
         /** A validated pending booking: record it, then open the official QR page. A QR failure never reads as "no hold". */
         const completeVerifiedProoflessHold = async (binding, session, plan, hold) => {
@@ -724,14 +808,17 @@ try {
         const runPrecision = async (targets) => {
             const date = command.date, releaseMs = command.releaseMs ?? releaseMsForTargetDate(config, date);
             const states = new Map(), codes = new Map();
-            const setState = (target, state, code, duplicateOf) => {
-                states.set(target.workerId, state);
+            let completedAttempts = [];
+            const setState = (target, state, code, duplicateOf, attemptId) => {
+                const stateKey = attemptId ?? target.workerId;
+                states.set(stateKey, state);
                 if (code)
-                    codes.set(target.workerId, code);
+                    codes.set(stateKey, code);
                 stage('PRECISION_ATTEMPT_STATE', { workerId: target.workerId, court: target.court, startTime: target.start, endTime: target.end,
-                    durationHours: target.durationHours, attemptState: state, ...(code ? { code } : {}), ...(duplicateOf ? { duplicateOf } : {}) });
+                    durationHours: target.durationHours, attemptState: state, ...(attemptId ? { attemptId } : {}), ...(code ? { code } : {}), ...(duplicateOf ? { duplicateOf } : {}) });
             };
-            stage('PRECISION_RACE_CONFIGURED', { date, targetCount: targets.length, releaseMs });
+            const fanOut = config.PRECISION_FAN_OUT;
+            stage('PRECISION_RACE_CONFIGURED', { date, targetCount: targets.length, releaseMs, fanOut });
             for (const target of targets)
                 stage('PRECISION_TARGET', { workerId: target.workerId, court: target.court, startTime: target.start,
                     endTime: target.end, durationHours: target.durationHours, assumedPrice: target.assumedAmount });
@@ -739,7 +826,7 @@ try {
                 const unavailable = unavailableWorkers.get(target.workerId);
                 if (unavailable)
                     setState(target, unavailable.state, unavailable.code, unavailable.duplicateOf);
-                else if (command.mode === 'live' && !releaseTransports.get(target.workerId))
+                else if (command.mode === 'live' && !releaseTransports.get(fanOut ? `${target.workerId}:0` : target.workerId))
                     setState(target, 'BROWSER_FAILED', 'API_CHECKOUT_WORKER_MISSING');
             }
             const eligible = new Map();
@@ -769,7 +856,7 @@ try {
             if (command.mode === 'dry') {
                 await checkpoint('PREPARE');
                 const usable = targets.filter(target => !states.has(target.workerId) && eligible.get(target.workerId));
-                stage('PRECISION_DRY_COMPLETE', { targetCount: targets.length, frozenCount: usable.length });
+                stage('PRECISION_DRY_COMPLETE', { targetCount: targets.length, frozenCount: usable.length * (fanOut ? PRECISION_FAN_OUT_ATTEMPTS : 1) });
                 if (!usable.length)
                     throw Error('PRECISION_NO_ELIGIBLE_TARGET');
                 return;
@@ -794,7 +881,7 @@ try {
             await checkpoint('FREEZE');
             assertClockFresh();
             await checkJournals();
-            const frozen = [];
+            const frozenTargets = [];
             for (const target of targets) {
                 if (states.has(target.workerId))
                     continue;
@@ -802,20 +889,32 @@ try {
                     setState(target, 'EXCLUDED_BEFORE_FREEZE', 'TARGET_EVIDENCE_NOT_ELIGIBLE');
                     continue;
                 }
-                frozen.push({ target, plan: precisionTargetPlan(target, date) });
+                frozenTargets.push(target);
             }
-            const race = freezePrecisionRace(date, releaseMs, frozen);
+            const race = freezePrecisionRace(date, releaseMs, precisionAttemptSet(frozenTargets, date, fanOut));
+            completedAttempts = race.attempts;
+            const attemptDirectory = (attempt) => attempt.fanOutCount > 1
+                ? resolve('.local/api-booking/api-first-journals', attempt.target.targetKey, 'fan-out', race.fingerprint, attempt.id)
+                : resolve('.local/api-booking/api-first-journals', attempt.target.targetKey);
             await saveOnce(resolve('.local/api-booking/precision-races'), `${progressLog.runId}-freeze.json`, { frozenAt: new Date(nowMs()).toISOString(),
-                date, releaseMs, freezeHash: race.fingerprint, attempts: race.attempts.map(({ target }) => ({ workerId: target.workerId, court: target.court,
-                    start: target.start, end: target.end, targetKey: target.targetKey })),
+                date, releaseMs, freezeHash: race.fingerprint, fanOut: race.fanOut, attempts: race.attempts.map(({ id, target, fanOutIndex, fanOutCount }) => ({ attemptId: id,
+                    parentGoalId: target.targetKey, fanOutIndex, fanOutCount, workerId: target.workerId, court: target.court,
+                    start: target.start, end: target.end, targetKey: target.targetKey, releaseOffsetMs: target.releaseOffsetMs ?? 0 })),
                 notDispatched: [...states].map(([workerId, state]) => ({ workerId, state, code: codes.get(workerId) ?? null })) });
             stage('PRECISION_FROZEN', { targetCount: targets.length, frozenCount: race.attempts.length });
             if (race.attempts.length) {
                 // Pre-release: bind diagnostics/response capture, then durably arm the lock, every journal and every one-shot.
+                const transportKeyFor = (attempt) => attempt.fanOutCount > 1 ? `${attempt.target.workerId}:${attempt.fanOutIndex}` : attempt.target.workerId;
+                const sessionFor = (attempt) => {
+                    const base = sessions.find(value => value.workerId === attempt.target.workerId);
+                    if (!base)
+                        return undefined;
+                    return { ...base, page: base.pages[attempt.fanOutIndex] ?? base.page };
+                };
                 const bindings = new Map(race.attempts.map(attempt => {
                     const workerId = attempt.target.workerId, lane = diagnosticLaneForWorker(workerId);
-                    return [workerId, bindProoflessAttempt({ plan: attempt.plan, workerId, lane, attemptType: 'official', attemptId: diagnostics.nextAttemptId(lane, workerId, 'official'),
-                            directory: resolve('.local/api-booking/api-first-journals', attempt.target.targetKey) }, 'DIAGNOSTIC_ATTEMPT_ARMED')];
+                    return [attempt.id, bindProoflessAttempt({ plan: attempt.plan, workerId, lane, attemptType: 'official', attemptId: attempt.id,
+                            directory: attemptDirectory(attempt), transportKey: transportKeyFor(attempt) }, 'DIAGNOSTIC_ATTEMPT_ARMED')];
                 }));
                 let armed, previousPriority;
                 try {
@@ -828,36 +927,50 @@ try {
                     throw error;
                 }
                 retainLiveLock = true;
-                stage('PRECISION_ARMED', { frozenCount: race.attempts.length, unsentCount: armed.unarmed.length, releaseMs });
+                stage('PRECISION_ARMED', { frozenCount: race.attempts.length, unsentCount: armed.unarmed.length, releaseMs, fanOut: race.fanOut,
+                    parentGoalCount: new Set(race.attempts.map(attempt => attempt.target.targetKey)).size });
+                for (const attempt of armed.attempts)
+                    scheduledTrigger(releaseMs, attempt.triggerMs, attempt.target.workerId);
                 for (const value of armed.unarmed) {
-                    setState(value.attempt.target, value.state, value.code);
-                    unbindProoflessAttempt(bindings.get(value.attempt.target.workerId));
+                    setState(value.attempt.target, value.state, value.code, undefined, value.attempt.id);
+                    unbindProoflessAttempt(bindings.get(value.attempt.id));
                 }
                 // T-2 min: passive DevTools sessions attach in the background with no domain enabled (no per-request cost).
                 // Each enables Network only after its own POST has left; nothing on the release path waits for them.
                 const traces = providerTraces = new ProviderTraceSet(progressLog.runId, 'release', releaseMs, () => (releaseClock?.nowMs() ?? nowMs()) - releaseMs);
                 for (const attempt of armed.attempts) {
-                    const session = sessions.find(value => value.workerId === attempt.target.workerId);
+                    const session = sessionFor(attempt.attempt), transportKey = transportKeyFor(attempt.attempt);
                     if (session)
-                        traces.start({ workerId: attempt.target.workerId, attemptId: bindings.get(attempt.target.workerId)?.correlation.attemptId,
+                        traces.start({ workerId: transportKey, attemptId: bindings.get(attempt.attempt.id)?.correlation.attemptId,
                             court: attempt.target.court, startTime: attempt.target.start, endTime: attempt.target.end }, openTraceSession(session.page));
                 }
                 // After the one-second dispatch window no POST can start: enable any trace whose request event was not seen.
                 setTimeout(() => traces.enableAll(), Math.max(0, armed.dispatchDeadlineMs + 100 - nowMs())).unref();
                 try {
                     releaseClock = await prepareReleaseClock(releaseMs);
+                    const recorder = startCriticalPath(releaseClock, releaseMs, new Map(armed.attempts.flatMap(attempt => {
+                        const session = sessionFor(attempt.attempt);
+                        return session ? [[attempt.attempt.id, session.page]] : [];
+                    })));
                     const outcome = await dispatchArmedPrecisionRace(armed, { clock: releaseClock, prewarmLeadMs: API_SECURITY_PREWARM_LEAD_MS, spinTailMs: DEFAULT_SPIN_TAIL_MS,
-                        isAborted: () => abort.signal.aborted, sleep: pause, transportFor: worker => releaseTransports.get(worker),
+                        isAborted: () => abort.signal.aborted, sleep: pause, transportFor: (_worker, attempt) => releaseTransports.get(transportKeyFor(attempt.attempt)),
+                        onWake: () => recorder.mark('*', 'schedulerFired'), onMark: (_worker, name, attempt) => {
+                            if (name === 'transportCall')
+                                recorder.mark(attempt.attempt.id, 'workerInvoked');
+                            else if (name === 'rendererArm')
+                                recorder.mark(attempt.attempt.id, 'rendererArmSent');
+                        },
+                        ...experimentalRendererDispatch(attempt => sessionFor(attempt.attempt)?.page, attempt => releaseTransports.get(transportKeyFor(attempt.attempt))),
                         prewarm: async (attempt) => {
-                            const transport = releaseTransports.get(attempt.target.workerId);
+                            const transport = releaseTransports.get(transportKeyFor(attempt.attempt));
                             if (!transport)
                                 throw Error('API_CHECKOUT_WORKER_MISSING');
                             stage('SECURITY_PREWARM_STARTED', { workerId: attempt.target.workerId });
                             await transport.prepareCheckoutContext();
                         },
                         onVerifiedHold: async (attempt, hold) => {
-                            const session = sessions.find(value => value.workerId === attempt.target.workerId);
-                            await completeVerifiedProoflessHold(bindings.get(attempt.target.workerId), session, attempt.plan, hold);
+                            const session = sessionFor(attempt.attempt);
+                            await completeVerifiedProoflessHold(bindings.get(attempt.attempt.id), session, attempt.plan, hold);
                             return { state: 'QR_READY' };
                         },
                         // Written only after every ready POST has been started (never on the path to a POST).
@@ -879,20 +992,20 @@ try {
                         } },
                         onEvent: event => {
                             if (event.kind === 'prewarm-ready')
-                                stage('SECURITY_PREWARM_READY', { workerId: event.workerId });
+                                stage('SECURITY_PREWARM_READY', { workerId: event.workerId, attemptId: event.attemptId });
                             else if (event.kind === 'prewarm-failed')
-                                stage('SECURITY_PREWARM_FAILED', { workerId: event.workerId, code: event.code ?? 'SECURITY_PREWARM_FAILED' });
+                                stage('SECURITY_PREWARM_FAILED', { workerId: event.workerId, attemptId: event.attemptId, code: event.code ?? 'SECURITY_PREWARM_FAILED' });
                             else if (event.kind === 'prewarm-retry')
-                                stage('SECURITY_PREWARM_RETRY', { workerId: event.workerId });
+                                stage('SECURITY_PREWARM_RETRY', { workerId: event.workerId, attemptId: event.attemptId });
                             else if (event.kind === 'dispatch-start') {
-                                const binding = bindings.get(event.workerId), plan = race.attempts.find(value => value.target.workerId === event.workerId)?.plan;
+                                const binding = bindings.get(event.attemptId), plan = race.attempts.find(value => value.id === event.attemptId)?.plan;
                                 if (binding && plan) {
                                     binding.started = performance.now();
                                     diagnostics.observe('DIAGNOSTIC_ATTEMPT_STARTED', binding.correlation, { court: plan.courts[0].court, startTime: plan.startTime, durationHours: plan.durationHours });
                                 }
                             }
                             else if (event.kind === 'settled') {
-                                const binding = bindings.get(event.workerId);
+                                const binding = bindings.get(event.attemptId);
                                 if (binding) {
                                     // A verified hold records its own completion; everything else (including a QR failure) is recorded here, as before.
                                     if (event.state !== 'QR_READY')
@@ -904,7 +1017,7 @@ try {
                     if (outcome.afterFireError)
                         stage('PRECISION_LOCK_DISPATCHING_FAILED', { code: outcome.afterFireError });
                     for (const result of outcome.results)
-                        setState(result.attempt.target, result.state, result.code);
+                        setState(result.attempt.target, result.state, result.code, undefined, result.attempt.id);
                     // Every attempt has settled: only now is the trace written.
                     await persistProviderTraces().catch(() => undefined);
                 }
@@ -916,7 +1029,7 @@ try {
                     await disarmUnfired(armed, safeApiFailureCode(error, 'ARMED_NOT_DISPATCHED'), nowMs).catch(() => []);
                     if (armedNothingFired(armed)) {
                         for (const attempt of armed.attempts)
-                            setState(attempt.target, 'NOT_DISPATCHED', safeApiFailureCode(error, 'ARMED_NOT_DISPATCHED'));
+                            setState(attempt.target, 'NOT_DISPATCHED', safeApiFailureCode(error, 'ARMED_NOT_DISPATCHED'), undefined, attempt.attempt.id);
                         retainLiveLock = false;
                         await liveLock?.release();
                         liveLock = undefined;
@@ -925,7 +1038,12 @@ try {
                 }
             }
             await persistLatestVerifiedHold();
-            const summary = reducePrecisionOutcome(targets.map(target => states.get(target.workerId) ?? 'NOT_DISPATCHED'));
+            const summaryStates = fanOut ? targets.flatMap(target => {
+                const children = completedAttempts.filter(attempt => attempt.target.workerId === target.workerId);
+                return children.length ? children.map(attempt => states.get(attempt.id) ?? 'NOT_DISPATCHED') : Array(PRECISION_FAN_OUT_ATTEMPTS).fill(states.get(target.workerId) ?? 'NOT_DISPATCHED');
+            }) :
+                targets.map(target => states.get(target.workerId) ?? 'NOT_DISPATCHED');
+            const summary = reducePrecisionOutcome(summaryStates);
             stage('PRECISION_OUTCOME', { outcome: summary.outcome, verifiedCount: summary.verifiedCount, unknownCount: summary.unknownCount,
                 rejectedCount: summary.rejectedCount, unsentCount: summary.unsentCount, qrAttention: summary.qrAttention });
             // Release the lock only when nothing can have been held; otherwise keep it for review.
@@ -970,6 +1088,8 @@ try {
                     throw Error('PHASE3_PRIOR_JOURNAL_UNRESOLVED');
             }
             const wave1 = [];
+            // Each immediate attempt's Release Offset comes from the saved plan (covered by the plan fingerprint).
+            const wave1Offsets = new Map(draft.wave1.map(value => [value.workerId, value.releaseOffsetMs ?? 0]));
             for (const assignment of authorization.wave1) {
                 const candidate = byId.get(assignment.candidateId);
                 if (unavailableWorkers.has(assignment.workerId) || !releaseTransports.has(assignment.workerId)) {
@@ -981,14 +1101,28 @@ try {
                     stage('PHASE3_JOURNAL_BLOCKED', { workerId: assignment.workerId, candidateId: candidate.id });
                     continue;
                 }
+                const offset = wave1Offsets.get(assignment.workerId) ?? 0;
                 const target = { court: candidate.court, start: candidate.start, durationHours: candidate.durationHours,
-                    end: candidate.end, workerId: assignment.workerId, targetKey: candidate.logicalKey, assumedAmount: candidate.expectedAmount };
+                    end: candidate.end, workerId: assignment.workerId, targetKey: candidate.logicalKey, assumedAmount: candidate.expectedAmount,
+                    ...(offset ? { releaseOffsetMs: offset } : {}) };
                 wave1.push({ target, plan: pricedPrecisionPlan(candidate, date, candidate.rateEvidence.perHour) });
                 stage('PHASE3_WAVE1_PRICE', { workerId: assignment.workerId, candidateId: candidate.id, amount: candidate.expectedAmount,
                     source: candidate.rateEvidence.source, rateStatus: candidate.rateEvidence.status, capturedAt: candidate.rateEvidence.capturedAt });
             }
             const frozen = freezePrecisionRace(date, releaseMs, wave1);
             await saveOnce(resolve('.local/api-booking/precision-races'), `${progressLog.runId}-phase3-freeze.json`, { runId: progressLog.runId, frozenAt: new Date(nowMs()).toISOString(), authorization, wave1Freeze: frozen.fingerprint });
+            if (config.RELEASE_LAB) {
+                const createdAt = new Date(nowMs()).toISOString();
+                await saveOnce(resolve('.local/api-booking/precision-races'), `${progressLog.runId}-release-lab.json`, {
+                    version: 1, runId: progressLog.runId, authorizationFingerprint: authorization.fingerprint, createdAt,
+                    experiment: { ...config.RELEASE_LAB, createdAt, rows: authorization.wave1.map(assignment => {
+                            const candidate = byId.get(assignment.candidateId);
+                            return { workerId: assignment.workerId, candidateId: candidate.id, durationHours: candidate.durationHours,
+                                releaseOffsetMs: wave1Offsets.get(assignment.workerId) ?? 0 };
+                        }) }
+                });
+                stage('RELEASE_LAB_FROZEN', { candidateCount: authorization.wave1.length, fingerprint: authorization.fingerprint });
+            }
             stage('PHASE3_FROZEN', { candidateCount: authorization.candidates.length, wave1Count: wave1.length,
                 fingerprint: authorization.fingerprint });
             const bindings = new Map(wave1.map(attempt => {
@@ -1001,6 +1135,8 @@ try {
             const armed = await armPrecisionRace(frozen, { lock: liveLock, customerFor: worker => customers[worker],
                 journalRoot: resolve('.local/api-booking/api-first-journals'), releaseMs, now: nowMs });
             retainLiveLock = true;
+            for (const attempt of armed.attempts)
+                scheduledTrigger(releaseMs, attempt.triggerMs, attempt.target.workerId);
             const traces = providerTraces = new ProviderTraceSet(progressLog.runId, 'release', releaseMs, () => (releaseClock?.nowMs() ?? nowMs()) - releaseMs);
             for (const workerId of workerIds) {
                 const workerSession = sessions.find(value => value.workerId === workerId);
@@ -1027,94 +1163,72 @@ try {
                 }));
             })();
             let newestSeq = 0, securityRefreshMs = 2500, wave1Fired = false, wave1Settled = false;
-            const refreshFitness = (evidence, at = nowMs()) => {
-                const latency = Math.max(0, evidence.observation.responseOffsetMs - evidence.observation.requestOffsetMs);
-                const maxAgeMs = adaptiveMaxAgeMs(latency, securityRefreshMs);
-                return classifyActionableObservation(evidence.observation, newestSeq, releaseMs, at, maxAgeMs);
-            };
+            const receivedEvidence = [];
             const pending = new Set();
+            // A newer Slot Watch read no longer ends the attempt by itself: each checkpoint re-evaluates the
+            // newest read for the SAME candidate (adaptive-attempt.ts) and adopts it as the effective evidence.
             const dispatchAdaptive = (selection, wave) => {
-                let recordedAttemptId;
-                const task = (async () => {
-                    const { candidate, workerId, prices, evidenceSeq } = selection, transport = releaseTransports.get(workerId);
-                    if (!transport || unavailableWorkers.has(workerId))
-                        return;
-                    const started = performance.now();
-                    try {
-                        await transport.prepareCheckoutContext(wave === 'RESCUE');
-                        securityRefreshMs = Math.max(securityRefreshMs, performance.now() - started);
-                    }
-                    catch (error) {
-                        stage('PHASE3_SECURITY_FAILED', { workerId, candidateId: candidate.id, code: safeApiFailureCode(error, 'SECURITY_PREWARM_FAILED') });
-                        return;
-                    }
-                    const current = session.latest;
-                    if (!current || current.observation.seq !== evidenceSeq || refreshFitness(current).fitness !== 'ACTIONABLE_FRESH' ||
-                        verifiedHold || abort.signal.aborted || session.attempts.some(value => value.state === 'UNKNOWN' || value.state === 'VERIFIED') ||
-                        (wave === 'RESCUE' && session.attempts.some(value => value.state === 'IN_FLIGHT')))
-                        return;
-                    const journal = new DurableSubmissionJournal(resolve('.local/api-booking/api-first-journals', candidate.logicalKey));
-                    if (await journal.recycleReusable(candidate.logicalKey).catch(() => 'blocked') === 'blocked') {
+                const { candidate, workerId } = selection;
+                const journal = new DurableSubmissionJournal(resolve('.local/api-booking/api-first-journals', candidate.logicalKey));
+                const task = runAdaptiveAttempt(selection, wave, { session, date, now: nowMs, dispatchNow: () => releaseClock?.nowMs() ?? nowMs(),
+                    newestSeq: () => newestSeq, securityRefreshMs: () => securityRefreshMs, aborted: () => abort.signal.aborted, verifiedHold: () => verifiedHold,
+                    workerReady: () => releaseTransports.has(workerId) && !unavailableWorkers.has(workerId),
+                    prepareSecurity: async () => {
+                        const started = performance.now();
+                        try {
+                            await releaseTransports.get(workerId).prepareCheckoutContext(wave === 'RESCUE');
+                            securityRefreshMs = Math.max(securityRefreshMs, performance.now() - started);
+                        }
+                        catch (error) {
+                            stage('PHASE3_SECURITY_FAILED', { workerId, candidateId: candidate.id, code: safeApiFailureCode(error, 'SECURITY_PREWARM_FAILED') });
+                            throw error;
+                        }
+                    },
+                    journalReusable: async () => {
+                        if (await journal.recycleReusable(candidate.logicalKey).catch(() => 'blocked') !== 'blocked')
+                            return true;
                         stage('PHASE3_JOURNAL_BLOCKED', { workerId, candidateId: candidate.id });
-                        return;
-                    }
-                    if (!session.latest || session.latest.observation.seq !== evidenceSeq || refreshFitness(session.latest).fitness !== 'ACTIONABLE_FRESH')
-                        return;
-                    const plan = pricedPrecisionPlan(candidate, date, prices), attempt = makeProoflessAttempts([plan], [workerId])[0];
-                    recordedAttemptId = attempt.attemptId;
-                    activeWaveContexts.set(workerId, { candidateId: candidate.id, wave });
-                    traces.updateContext(workerId, { workerId, attemptId: attempt.attemptId, court: candidate.court, startTime: candidate.start, endTime: candidate.end });
-                    await saveOnce(resolve('.local/api-booking/precision-races'), `${progressLog.runId}-${attempt.attemptId}.json`, { runId: progressLog.runId, authorizationFingerprint: authorization.fingerprint, candidateId: candidate.id,
-                        workerId, wave, evidenceSeq, prices, evaluatedAt: new Date(nowMs()).toISOString() });
-                    session.record({ id: attempt.attemptId, candidateId: candidate.id, workerId, wave, state: 'IN_FLIGHT', evidenceSeq,
-                        ...(selection.reopenEpoch !== undefined ? { reopenEpoch: selection.reopenEpoch } : {}) });
-                    stage('PHASE3_ATTEMPT_RESERVED', { workerId, candidateId: candidate.id, wave, evidenceSeq, attemptId: attempt.attemptId, amount: plan.totalPrice,
-                        court: candidate.court, startTime: candidate.start, endTime: candidate.end });
-                    try {
-                        await executeProoflessAttempt(attempt, undefined, { requirePreparedContext: true, beforePost: () => {
-                                const fresh = session.latest;
-                                if ((releaseClock?.nowMs() ?? nowMs()) < releaseMs || abort.signal.aborted || verifiedHold || !fresh || fresh.observation.seq !== evidenceSeq ||
-                                    (wave === 'RESCUE' && session.attempts.some(value => value.id !== attempt.attemptId && value.state === 'IN_FLIGHT')) ||
-                                    refreshFitness(fresh).fitness !== 'ACTIONABLE_FRESH' || session.attempts.some(value => value.state === 'UNKNOWN' || value.state === 'VERIFIED'))
-                                    throw new SubmissionDispatchError('PHASE3_DISPATCH_GUARD_CLOSED', false);
-                            } });
-                        session.attempts.find(value => value.id === attempt.attemptId).state = 'VERIFIED';
-                    }
-                    catch (error) {
-                        const state = await classifyPrecisionDispatchError(error, async () => {
-                            try {
-                                return (await journal.read(candidate.logicalKey)).state;
-                            }
-                            catch {
-                                return undefined;
-                            }
-                        });
-                        session.attempts.find(value => value.id === attempt.attemptId).state = state.state === 'REJECTED' || state.state === 'NOT_DISPATCHED' ? 'REJECTED' :
-                            state.state === 'QR_READY' || state.state === 'HOLD_VERIFIED_QR_ATTENTION' ? 'VERIFIED' : 'UNKNOWN';
-                        stage('PHASE3_SETTLED', { workerId, candidateId: candidate.id, wave, attemptId: attempt.attemptId, state: state.state, code: state.code ?? 'COMPLETED' });
-                    }
-                })().catch(error => {
-                    const value = session.attempts.find(value => value.id === recordedAttemptId);
-                    if (value)
-                        value.state = 'UNKNOWN';
-                    stage('PHASE3_ADAPTIVE_FAILED', { code: safeApiFailureCode(error, 'PHASE3_ADAPTIVE_FAILED') });
-                });
+                        return false;
+                    },
+                    reserve: async ({ plan, prices, evidenceSeq, selectedEvidenceSeq }) => {
+                        const attempt = makeProoflessAttempts([plan], [workerId])[0];
+                        activeWaveContexts.set(workerId, { candidateId: candidate.id, wave,
+                            evidenceSeq: () => session.attempts.find(value => value.id === attempt.attemptId)?.evidenceSeq });
+                        traces.updateContext(workerId, { workerId, attemptId: attempt.attemptId, court: candidate.court, startTime: candidate.start, endTime: candidate.end });
+                        // evidenceSeq is the effective evidence at reservation; a later pre-POST rebase is logged as PHASE3_EVIDENCE_REBASED.
+                        await saveOnce(resolve('.local/api-booking/precision-races'), `${progressLog.runId}-${attempt.attemptId}.json`, { runId: progressLog.runId, authorizationFingerprint: authorization.fingerprint, candidateId: candidate.id,
+                            workerId, wave, evidenceSeq, selectedEvidenceSeq, prices, evaluatedAt: new Date(nowMs()).toISOString() });
+                        return { attemptId: attempt.attemptId, dispatch: beforePost => executeProoflessAttempt(attempt, undefined, { requirePreparedContext: true, beforePost }).then(() => undefined) };
+                    },
+                    classifyFailure: error => classifyPrecisionDispatchError(error, async () => {
+                        try {
+                            return (await journal.read(candidate.logicalKey)).state;
+                        }
+                        catch {
+                            return undefined;
+                        }
+                    }),
+                    failureCode: error => safeApiFailureCode(error, 'PHASE3_ADAPTIVE_FAILED'),
+                    event: (name, extra) => stage(name, extra) });
                 pending.add(task);
                 void task.finally(() => pending.delete(task));
             };
             const adaptiveLoop = (async () => {
                 while (!abort.signal.aborted && nowMs() < releaseMs + 15 * 60_000) {
                     for (const observation of phase3Observations.splice(0)) {
-                        newestSeq = Math.max(newestSeq, observation.seq);
+                        receivedEvidence.push(observation);
+                        const operational = freshestAvailabilityObservation(receivedEvidence);
+                        newestSeq = operational?.seq ?? 0;
                         const latency = Math.max(0, observation.responseOffsetMs - observation.requestOffsetMs);
                         const maxAge = adaptiveMaxAgeMs(latency, securityRefreshMs);
                         const evidence = classifyActionableObservation(observation, newestSeq, releaseMs, nowMs(), maxAge);
-                        session.observe(evidence);
-                        stage('PHASE3_EVIDENCE', { seq: observation.seq, fitness: evidence.fitness, cache: observation.cache?.status ?? 'UNKNOWN' });
-                        if (evidence.fitness !== 'ACTIONABLE_FRESH')
+                        stage('PHASE3_EVIDENCE', { seq: observation.seq, fitness: evidence.fitness, cache: observation.cache?.status ?? 'UNKNOWN',
+                            operational: operational?.seq === observation.seq });
+                        if (!operational)
                             continue;
-                        const fresh = refreshFitness(evidence);
-                        if (fresh.fitness !== 'ACTIONABLE_FRESH')
+                        const fresh = adaptiveFitness(operational, newestSeq, releaseMs, nowMs(), securityRefreshMs);
+                        session.observe(fresh);
+                        if (operational.seq !== observation.seq || !isActionableEvidenceFitness(fresh.fitness))
                             continue;
                         if (authorization.rescueEnabled && pending.size === 0)
                             for (const choice of session.select('RESCUE', nowMs(), maxAge))
@@ -1136,8 +1250,19 @@ try {
             try {
                 releaseClock = await prepareReleaseClock(releaseMs);
                 let previousPriority;
+                const recorder = startCriticalPath(releaseClock, releaseMs, new Map(armed.attempts.flatMap(attempt => {
+                    const workerSession = sessions.find(value => value.workerId === attempt.target.workerId);
+                    return workerSession ? [[attempt.target.workerId, workerSession.page]] : [];
+                })));
                 const outcome = await dispatchArmedPrecisionRace(armed, { clock: releaseClock, prewarmLeadMs: API_SECURITY_PREWARM_LEAD_MS,
                     spinTailMs: DEFAULT_SPIN_TAIL_MS, isAborted: () => abort.signal.aborted, sleep: pause,
+                    onWake: () => recorder.mark('*', 'schedulerFired'), onMark: (worker, name) => {
+                        if (name === 'transportCall')
+                            recorder.mark(worker, 'workerInvoked');
+                        else if (name === 'rendererArm')
+                            recorder.mark(worker, 'rendererArmSent');
+                    },
+                    ...experimentalRendererDispatch(attempt => sessions.find(value => value.workerId === attempt.target.workerId)?.page, attempt => releaseTransports.get(attempt.target.workerId)),
                     transportFor: worker => releaseTransports.get(worker), prewarm: async (attempt) => {
                         const transport = releaseTransports.get(attempt.target.workerId);
                         if (!transport)
@@ -1192,7 +1317,8 @@ try {
                 await persistLatestVerifiedHold();
                 await persistProviderTraces().catch(() => undefined);
                 stage('PHASE3_OUTCOME', { outcome: session.status, verifiedCount: session.attempts.filter(value => value.state === 'VERIFIED').length,
-                    unknownCount: session.attempts.filter(value => value.state === 'UNKNOWN').length, attemptCount: session.attempts.length });
+                    unknownCount: session.attempts.filter(value => value.state === 'UNKNOWN').length, attemptCount: session.attempts.length,
+                    unsentCount: session.attempts.filter(value => value.state === 'NOT_DISPATCHED').length });
                 if (session.status === 'ALL_REJECTED_WAITING_FOR_REOPEN' || session.status === 'NOTHING_DISPATCHED') {
                     retainLiveLock = false;
                     await liveLock?.release();
@@ -1269,22 +1395,25 @@ try {
                     ...(releasePlan.courts[1] ? { courtB: releasePlan.courts[1].court } : {}), date: command.date, startTime: releasePlan.startTime,
                     durationHours: releasePlan.durationHours, assumedPrice: releasePlan.totalPrice });
             }
+            // Only the pre-planned Proofless Direct dispatch can use a Release Offset; a path that reads availability waits for release.
+            const generalTriggerMs = command.mode === 'live' ? releaseTriggerMs(command.releaseMs, primaryProoflessPlans ? releaseOffsetMs : 0) : undefined;
             if (command.mode === 'live') {
-                const releaseMs = command.releaseMs;
-                if (releaseMs <= nowMs())
+                const releaseMs = command.releaseMs, triggerMs = generalTriggerMs;
+                if (triggerMs <= nowMs())
                     throw Error('RELEASE_MISSED');
                 await refreshClockBeforeRelease(releaseMs);
-                if (releaseMs <= nowMs())
+                if (triggerMs <= nowMs())
                     throw Error('RELEASE_MISSED');
                 stage('WAITING_FOR_RELEASE', { releaseMs });
-                while (nowMs() < releaseMs) {
+                scheduledTrigger(releaseMs, triggerMs);
+                while (nowMs() < triggerMs) {
                     ensureActive();
-                    const remaining = releaseMs - nowMs();
+                    const remaining = triggerMs - nowMs();
                     if (remaining <= API_SECURITY_PREWARM_LEAD_MS)
                         startWarmup();
                     await pause(Math.min(500, Math.max(1, remaining), warmup ? 500 : Math.max(1, remaining - API_SECURITY_PREWARM_LEAD_MS)));
                 }
-                assertApiReleaseFresh(releaseMs, nowMs());
+                assertApiReleaseFresh(releaseMs, nowMs(), triggerMs);
                 stage('RELEASE_TRIGGERED');
                 await finishWarmup();
             }
@@ -1349,7 +1478,8 @@ try {
                 await liveLock?.dispatching();
                 retainLiveLock = true;
                 stage('PRIMARY_PROOFLESS_DISPATCHING', { workerCount: attempts.length });
-                const outcomes = await Promise.allSettled(attempts.map(attempt => executeProoflessAttempt(attempt, command.releaseMs, { requirePreparedContext: command.mode === 'live' })));
+                const outcomes = await Promise.allSettled(attempts.map(attempt => executeProoflessAttempt(attempt, command.releaseMs, { requirePreparedContext: command.mode === 'live',
+                    ...(generalTriggerMs !== undefined ? { triggerMs: generalTriggerMs } : {}) })));
                 await persistProviderTraces().catch(() => undefined);
                 attempts.forEach((attempt, index) => {
                     const outcome = outcomes[index];
