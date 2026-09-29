@@ -204,14 +204,15 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
     }
   }
 
-  async prepareCheckoutContext(forceRefresh = false): Promise<void> {
+  /** `reuseWithinMs`: a prepared, unused context at most this old is kept (default 20 s; Rescue V2 allows up to 60 s, still inside the 120 s submit limit). */
+  async prepareCheckoutContext(forceRefresh = false, reuseWithinMs = 20_000): Promise<void> {
     this.assertPage();
     if (process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT !== 'SUPERVISED_ONE_SHOT')
       throw new BrowserSessionTransportError('LIVE_SUBMISSION_DISABLED');
     // An armed run may acquire the genuine page context just before release.
     // Keep it only briefly and consume it once at checkout.
     if (!forceRefresh && this.preparedHeaders && this.preparedAt !== undefined && Date.now() - this.preparedAt >= 0 &&
-      Date.now() - this.preparedAt <= 20_000) {
+      Date.now() - this.preparedAt <= Math.min(reuseWithinMs, 90_000)) {
       this.observe({ event: 'SECURITY_PREPARATION_STARTED', securitySource: 'RECENT_CONTEXT_REUSE' });
       this.observe({ event: 'SECURITY_PREPARATION_COMPLETED', securitySource: 'RECENT_CONTEXT_REUSE', durationMs: 0 });
       return;

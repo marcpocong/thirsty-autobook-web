@@ -324,7 +324,21 @@ export class PrecisionSession {
   evidenceFreshnessOffset(seq:number):number|undefined{return this.representedAtBySeq.get(seq);}
   lastUnavailableFreshnessOffset(candidateId:string):number|undefined{return this.unavailableAt.get(candidateId)?.representedAtLowerBoundOffsetMs;}
   /** Pure selection; caller must durably reserve and recheck before each dispatch. */
-  select(wave: 'WAVE_2' | 'RESCUE', nowMs: number, maxAgeMs: number): Array<{ candidate: AuthorizedCandidate; workerId: WorkerId; prices: number[]; evidenceSeq: number; reopenEpoch?: number }> {
+  /**
+   * Workers that may take a new attempt of this wave now, in preference order: Wave 2 uses unused standby workers; Rescue
+   * uses standby workers first, then immediate workers whose earlier attempts all settled (reuse after a conclusive
+   * rejection; any UNKNOWN blocks every adaptive attempt anyway). `rank` (lower first) lets the caller prefer workers whose
+   * security context is already prepared; ties keep the default order.
+   */
+  adaptiveWorkers(wave: 'WAVE_2' | 'RESCUE', rank?: (worker: WorkerId) => number): WorkerId[] {
+    const workers = (wave === 'WAVE_2' ? this.authorization.standby : [...this.authorization.standby, ...this.authorization.wave1.map(value => value.workerId)])
+      .filter(worker => wave === 'WAVE_2'
+        ? !this.attempts.some(value => value.workerId === worker)
+        : !this.attempts.some(value => value.workerId === worker && value.state === 'IN_FLIGHT'));
+    const unique = [...new Set(workers)];
+    return rank ? unique.map((worker, index) => ({ worker, index, key: rank(worker) })).sort((a, b) => a.key - b.key || a.index - b.index).map(value => value.worker) : unique;
+  }
+  select(wave: 'WAVE_2' | 'RESCUE', nowMs: number, maxAgeMs: number, options: { workerRank?: (worker: WorkerId) => number } = {}): Array<{ candidate: AuthorizedCandidate; workerId: WorkerId; prices: number[]; evidenceSeq: number; reopenEpoch?: number }> {
     if (wave === 'WAVE_2' && this.wave2Selected || wave === 'RESCUE' && !this.authorization.rescueEnabled) return [];
     if (this.attempts.some(value => value.state === 'UNKNOWN' || value.state === 'VERIFIED')) return [];
     if (wave === 'WAVE_2' && !this.authorization.concurrentWave2 && this.attempts.some(value => value.state === 'IN_FLIGHT')) return [];
@@ -339,11 +353,7 @@ export class PrecisionSession {
     if (budget <= 0) return [];
     const byId = new Map(this.authorization.candidates.map(value => [value.id, value]));
     const active = this.attempts.filter(value => value.state === 'IN_FLIGHT' || value.state === 'VERIFIED').map(value => byId.get(value.candidateId)!);
-    const workers = (wave === 'WAVE_2' ? this.authorization.standby :
-      [...this.authorization.standby, ...this.authorization.wave1.map(value => value.workerId)])
-      .filter(worker => wave === 'WAVE_2'
-        ? !this.attempts.some(value => value.workerId === worker)
-        : !this.attempts.some(value => value.workerId === worker && value.state === 'IN_FLIGHT'));
+    const workers = this.adaptiveWorkers(wave, options.workerRank);
     const selected: Array<{ candidate: AuthorizedCandidate; workerId: WorkerId; prices: number[]; evidenceSeq: number; reopenEpoch?: number }> = [];
     for (const candidate of [...this.authorization.candidates].sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id))) {
       if (selected.length >= budget || selected.length >= workers.length) break;
