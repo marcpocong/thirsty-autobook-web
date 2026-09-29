@@ -2,6 +2,60 @@ import { MATRIX_COURTS, MATRIX_HOURS } from './api-booking/court-hour-matrix.js'
 const ref = (value) => ({ seq: value.seq, requestOffsetMs: value.requestOffsetMs, responseOffsetMs: value.responseOffsetMs });
 export const cellKey = (court, hour) => `${court}/${hour}`;
 const overlapping = (before, after) => before.responseOffsetMs > after.requestOffsetMs;
+/**
+ * Conservative freshness model used by Slot Watch operational state.
+ * - MISS/age 0 can have been produced no earlier than request start.
+ * - HIT/STALE Age is integer seconds and may be rounded down, so add one full second.
+ * - Missing/unsupported cache provenance is unbounded and cannot supersede bounded evidence.
+ */
+export function availabilityFreshness(observation, evaluatedOffsetMs) {
+    if (observation.outcome !== 'ok' || !Number.isFinite(evaluatedOffsetMs))
+        return { class: 'UNBOUNDED', ageUpperBoundMs: null, representedAtLowerBoundOffsetMs: null };
+    const status = observation.cache?.status, ageS = observation.cache?.ageS;
+    if (status === 'MISS' && (ageS === undefined || ageS === 0)) {
+        const age = evaluatedOffsetMs - observation.requestOffsetMs;
+        return Number.isFinite(age) && age >= 0
+            ? { class: 'ORIGIN_FRESH', ageUpperBoundMs: age, representedAtLowerBoundOffsetMs: observation.requestOffsetMs }
+            : { class: 'UNBOUNDED', ageUpperBoundMs: null, representedAtLowerBoundOffsetMs: null };
+    }
+    if ((status === 'HIT' || status === 'STALE') && Number.isSafeInteger(ageS) && ageS >= 0) {
+        const representedAt = observation.responseOffsetMs - (ageS + 1) * 1000;
+        const age = evaluatedOffsetMs - representedAt;
+        return Number.isFinite(age) && age >= 0
+            ? { class: 'BOUNDED_CACHE', ageUpperBoundMs: age, representedAtLowerBoundOffsetMs: representedAt }
+            : { class: 'UNBOUNDED', ageUpperBoundMs: null, representedAtLowerBoundOffsetMs: null };
+    }
+    return { class: 'UNBOUNDED', ageUpperBoundMs: null, representedAtLowerBoundOffsetMs: null };
+}
+/** Positive means `candidate` is better operational evidence than `current`. */
+export function compareAvailabilityFreshness(candidate, current, evaluatedOffsetMs = Math.max(candidate.responseOffsetMs, current.responseOffsetMs)) {
+    const a = availabilityFreshness(candidate, evaluatedOffsetMs), b = availabilityFreshness(current, evaluatedOffsetMs);
+    if (a.representedAtLowerBoundOffsetMs !== null && b.representedAtLowerBoundOffsetMs === null)
+        return 1;
+    if (a.representedAtLowerBoundOffsetMs === null && b.representedAtLowerBoundOffsetMs !== null)
+        return -1;
+    if (a.representedAtLowerBoundOffsetMs !== null && b.representedAtLowerBoundOffsetMs !== null &&
+        a.representedAtLowerBoundOffsetMs !== b.representedAtLowerBoundOffsetMs)
+        return a.representedAtLowerBoundOffsetMs - b.representedAtLowerBoundOffsetMs;
+    // If neither response is bounded, retain the legacy request-order fallback for display only.
+    return candidate.seq - current.seq;
+}
+export function freshestAvailabilityObservation(values) {
+    const answered = values.filter(value => value.outcome === 'ok');
+    const evaluated = Math.max(0, ...answered.map(value => value.responseOffsetMs));
+    return answered.reduce((best, value) => !best || compareAvailabilityFreshness(value, best, evaluated) > 0 ? value : best, undefined);
+}
+export function classifyReopening(before, after) {
+    const evaluated = Math.max(before.responseOffsetMs, after.responseOffsetMs);
+    const a = availabilityFreshness(before, evaluated), b = availabilityFreshness(after, evaluated);
+    if (overlapping(before, after))
+        return 'OBSERVATION_INCONSISTENCY';
+    if (b.representedAtLowerBoundOffsetMs === null)
+        return 'UNKNOWN';
+    if (a.representedAtLowerBoundOffsetMs !== null && b.representedAtLowerBoundOffsetMs <= a.representedAtLowerBoundOffsetMs)
+        return 'OBSERVATION_INCONSISTENCY';
+    return b.class === 'ORIGIN_FRESH' ? 'CONFIRMED' : 'PROBABLE';
+}
 /** Decodes one matrix string into code lookups by cell key; unknown or malformed rows stay absent. */
 export function decodeMatrix(matrix) {
     const cells = new Map();
@@ -27,7 +81,7 @@ export function deriveSlotEvidence(availability, bookings = []) {
     const first = published[0];
     const firstResponse = [...published].sort((a, b) => a.responseOffsetMs - b.responseOffsetMs || a.seq - b.seq)[0];
     const lastUnpublished = first ? answered.filter(value => !value.targetDatePresent && value.seq < first.seq).at(-1) : answered.filter(value => !value.targetDatePresent).at(-1);
-    const current = answered.at(-1);
+    const current = freshestAvailabilityObservation(answered);
     const decoded = new Map(published.map(value => [value.seq, decodeMatrix(value.matrix)]));
     const answeredBookings = byRequest(bookings.filter(value => value.outcome === 'ok'));
     const bookingSets = new Map(answeredBookings.map(value => [value.seq, new Set(value.cells)]));
@@ -47,13 +101,25 @@ export function deriveSlotEvidence(availability, bookings = []) {
                 firstOpen ??= ref(observation);
             else
                 firstUnavailable ??= ref(observation);
+            if (previous && compareAvailabilityFreshness(observation, previous.observation) <= 0) {
+                if (previous.state !== state) {
+                    changes++;
+                    const change = { before: ref(previous.observation), after: ref(observation), overlapping: overlapping(previous.observation, observation) };
+                    if (state === 'OPEN' && !unavailableToOpen)
+                        unavailableToOpen = { ...change, confidence: 'OBSERVATION_INCONSISTENCY' };
+                }
+                continue;
+            }
             if (previous && previous.state !== state) {
                 changes++;
                 const change = { before: ref(previous.observation), after: ref(observation), overlapping: overlapping(previous.observation, observation) };
                 if (state === 'UNAVAILABLE')
                     openToUnavailable ??= change;
-                else
-                    unavailableToOpen ??= change;
+                else {
+                    const next = { ...change, confidence: classifyReopening(previous.observation, observation) };
+                    if (!unavailableToOpen || unavailableToOpen.confidence === 'OBSERVATION_INCONSISTENCY' || unavailableToOpen.confidence === 'UNKNOWN')
+                        unavailableToOpen = next;
+                }
             }
             previous = { state, observation };
         }
@@ -76,7 +142,9 @@ export function deriveSlotEvidence(availability, bookings = []) {
         publication: { lastUnpublished: lastUnpublished ? ref(lastUnpublished) : null,
             firstPublished: first ? { ...ref(first), ...(first.cache ? { cache: first.cache } : {}) } : null,
             firstPublishedResponse: firstResponse ? ref(firstResponse) : null },
-        current: current ? ref(current) : null, currentMatrix: current?.matrix ?? null,
+        current: current ? ref(current) : null,
+        currentFreshness: current ? availabilityFreshness(current, Math.max(0, ...answered.map(value => value.responseOffsetMs))) : null,
+        currentMatrix: current?.matrix ?? null,
         firstPublishedMatrix: first?.matrix ?? null, cells,
     };
 }
@@ -151,13 +219,24 @@ export function targetEvidence(availability, bookings, target) {
     const statesOf = (observation) => { const cells = decodeMatrix(observation.matrix); return hours.map(hour => evidenceState(cells.get(cellKey(target.court, hour)))); };
     const first = published[0];
     let firstFullyOpen = null, firstUnavailable = null, reopen = null;
-    let lastUnavailable;
+    let lastUnavailable, operational;
     for (const observation of published) {
         const states = statesOf(observation), state = rangeState(states);
+        if (operational && compareAvailabilityFreshness(observation, operational) <= 0) {
+            if (state === 'FULLY_OPEN' && lastUnavailable && !reopen)
+                reopen = { before: ref(lastUnavailable), after: ref(observation),
+                    overlapping: overlapping(lastUnavailable, observation), confidence: 'OBSERVATION_INCONSISTENCY' };
+            continue;
+        }
+        operational = observation;
         if (state === 'FULLY_OPEN') {
             firstFullyOpen ??= ref(observation);
-            if (lastUnavailable && !reopen)
-                reopen = { before: ref(lastUnavailable), after: ref(observation), overlapping: overlapping(lastUnavailable, observation) };
+            if (lastUnavailable) {
+                const next = { before: ref(lastUnavailable), after: ref(observation), overlapping: overlapping(lastUnavailable, observation),
+                    confidence: classifyReopening(lastUnavailable, observation) };
+                if (!reopen || reopen.confidence === 'OBSERVATION_INCONSISTENCY' || reopen.confidence === 'UNKNOWN')
+                    reopen = next;
+            }
             lastUnavailable = undefined;
         }
         else if (states.includes('UNAVAILABLE')) {
@@ -175,12 +254,14 @@ export function targetEvidence(availability, bookings, target) {
             break;
         }
     }
-    const current = answered.at(-1);
+    const current = freshestAvailabilityObservation(answered);
+    const evaluated = Math.max(0, ...answered.map(value => value.responseOffsetMs));
     return { hours,
         firstPublished: first ? { observation: ref(first), state: rangeState(statesOf(first)),
             hours: hours.map((hour, index) => ({ hour, state: statesOf(first)[index], price: priceAt(first, target.court, hour) })) } : null,
         firstFullyOpen, firstUnavailable, firstRecord, reopen,
-        latest: { observation: current ? ref(current) : null, state: current?.targetDatePresent ? rangeState(statesOf(current)) : 'UNKNOWN_INCOMPLETE' } };
+        latest: { observation: current ? ref(current) : null, state: current?.targetDatePresent ? rangeState(statesOf(current)) : 'UNKNOWN_INCOMPLETE',
+            freshness: current ? availabilityFreshness(current, evaluated) : null } };
 }
 export const RANGE_STATE_LABEL = {
     FULLY_OPEN: 'FULLY OPEN', PARTIALLY_UNAVAILABLE: 'PARTIALLY UNAVAILABLE', FULLY_UNAVAILABLE: 'FULLY UNAVAILABLE', UNKNOWN_INCOMPLETE: 'UNKNOWN / INCOMPLETE',

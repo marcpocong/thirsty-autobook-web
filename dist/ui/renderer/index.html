@@ -77,15 +77,22 @@
           <label class="general-only">Duration (hours)<input id="duration" type="number" min="1" max="3" value="2"></label>
           <label class="general-only">Maximum candidate attempts<input id="attempts" type="number" min="1" max="5" value="3"></label>
         </div>
+        <div id="release-offset" class="editor-block release-offset" hidden>
+          <h3 id="release-offset-title">Release Offset</h3>
+          <label class="release-offset-control">Send early by <span><input id="release-offset-ms" type="number" min="0" max="2000" step="1" value="0" inputmode="numeric"> ms</span></label>
+          <p class="small">Choose any whole millisecond from 0 (Normal) through 2000 (2 seconds early).</p>
+        </div>
         <div id="precision-setup" class="editor-block precision-setup" hidden>
           <h3>Precision Release · goal: 1 successful court</h3>
-          <p class="small">Proofless Direct · Standard 1–3 hours · each attempt is exactly one court, one exact time and one dedicated player/browser. Release only.</p>
+          <p class="small">Proofless Direct · Standard 1–3 hours · each worker is assigned one exact court/time and one dedicated player/browser. Release only.</p>
           <div class="plan-mode" role="radiogroup" aria-label="Precision plan">
             <label class="plan-mode-option"><input id="precision-mode-fixed" type="radio" name="precision-mode" value="fixed" checked><span><strong>Fixed attempts</strong><small>Send only the exact attempts listed at 8:00.</small></span></label>
             <label class="plan-mode-option"><input id="precision-mode-smart" type="radio" name="precision-mode" value="smart"><span><strong>Smart backups</strong><small>Send immediate attempts at 8:00, then use only pre-approved backup slots when fresh availability confirms they are open.</small></span></label>
           </div>
           <div id="legacy-precision-setup">
-          <label>Precision attempts<select id="precision-count"><option value="1">1 attempt</option><option value="2">2 attempts</option><option value="3">3 attempts</option><option value="4">4 attempts</option><option value="5">5 attempts</option><option value="6">6 attempts</option><option value="7">7 attempts</option></select></label>
+          <label>Worker goals<select id="precision-count"><option value="1">1 worker</option><option value="2">2 workers</option><option value="3">3 workers</option><option value="4">4 workers</option><option value="5">5 workers</option><option value="6">6 workers</option><option value="7">7 workers</option></select></label>
+          <label class="fan-out-toggle"><input id="precision-fan-out" type="checkbox"> <span><strong>Four attempts per worker</strong><small>Each configured worker keeps its own Court/Start/Duration and uses one browser with four independently tracked tabs and offsets.</small></span></label>
+          <p id="precision-fan-out-note" class="fan-out-warning" hidden><strong>Advanced:</strong> up to 28 checkout attempts may be sent (4 for each of Workers A–G), and more than one pending hold is possible. Every child has its own tab, security context, attempt ID, response, and result. Payment remains manual.</p>
           <div class="precision-rows">
             <div class="precision-row" id="precision-row-0"><strong>Worker A</strong><label>Court<select id="precision-court-0"></select></label><label>Start<select id="precision-start-0"></select></label><label>Duration<select id="precision-duration-0"><option value="1">1 h</option><option value="2">2 h</option><option value="3">3 h</option></select></label><span id="precision-evidence-0" class="small precision-evidence"></span></div>
             <div class="precision-row" id="precision-row-1"><strong>Worker B</strong><label>Court<select id="precision-court-1"></select></label><label>Start<select id="precision-start-1"></select></label><label>Duration<select id="precision-duration-1"><option value="1">1 h</option><option value="2">2 h</option><option value="3">3 h</option></select></label><span id="precision-evidence-1" class="small precision-evidence"></span></div>
@@ -155,6 +162,14 @@
           <p class="precision-warning"><strong>These are independent checkout attempts. More than one temporary QR hold may be created. Payment remains manual.</strong></p>
           <p id="legacy-freeze-note" class="small">Evidence is read at T−60, T−30, T−10 and T−2 min. The set freezes 2 minutes before release: a target showing a public booking or unknown evidence then is excluded, and no court, time or attempt is ever added or changed. Nothing is cancelled automatically.</p>
         </div>
+        <details id="release-lab" class="smart-advanced release-lab">
+          <summary>Release Lab <span class="small">advanced experiment</span></summary>
+          <p class="small">Available from both Fixed attempts and Smart backups. Applying the preset switches the configured Fixed rows to Smart backups, then changes only their durations and release offsets. Courts, start times, and worker choices are never invented or rearranged.</p>
+          <div class="button-row"><button id="release-lab-preset" class="secondary compact" type="button">Apply Duration × Offset preset</button><button id="release-lab-disable" class="secondary compact" type="button">Clear experiment label</button></div>
+          <p id="release-lab-status" class="small"></p>
+          <div class="table-scroll"><table class="release-lab-matrix"><thead><tr><th>Worker</th><th>Court</th><th>Start</th><th>Duration</th><th>Release Offset</th><th>Expected Price</th></tr></thead><tbody id="release-lab-matrix"></tbody></table></div>
+          <div id="release-lab-results" class="tool-result" aria-live="polite"></div>
+        </details>
         <div id="player-details" class="player-details" aria-label="Player details used for booking"></div>
         <div class="setup-grid editors general-only"><div class="editor-block"><h3>Court priority</h3><ol id="court-order"></ol></div><div class="editor-block"><h3>Fallback starts · in order</h3><div class="button-row"><select id="fallback-time" aria-label="Add fallback start time"></select><button id="add-fallback" class="secondary" type="button">Add</button></div><ol id="fallback-order"></ol><p class="small">Primary time × court order, then each fallback × court order.</p></div></div>
         <div class="setup-actions"><button id="save-booking" class="secondary" type="button">Save booking plan</button><span id="edit-status" class="small"></span></div>
@@ -180,7 +195,7 @@
   <div id="view-slots" class="view-grid" aria-label="Slots" hidden>
     <section id="slot-watch-card" class="panel slot-watch">
       <div class="section-title"><div><p class="eyebrow">Release slot watch · read only</p><h2>Court/hour timeline</h2></div><div class="button-row"><button id="watch-next-release" class="secondary" type="button">Watch next release</button><button id="stop-slot-watch" class="secondary" type="button" hidden>Stop watching</button></div></div>
-      <p class="small intro">Every armed release is watched automatically. All 112 court/hours are read from 60 seconds before release until 15 minutes after on the network clock. Early reads overlap (up to a small cap) so one slow answer cannot hide the rest, and each read keeps its request and response time. It shows what Onda returned, not why. It never selects, holds, or books.</p>
+      <p class="small intro">Every armed release is watched automatically. All 112 court/hours are read from 60 seconds before release until 15 minutes after on the network clock. Freshest bounded evidence wins over a newer stale response; configured candidates are tracked directly. Availability stays dense while public-booking reads concentrate around publication and predicted expiry windows. It shows what Onda returned, not why. It never selects, holds, or books.</p>
       <div id="slot-watch-meta" class="slot-watch-meta"></div>
       <div id="slot-matrix-mode" class="slot-mode-toggle" role="group" aria-label="Matrix shown"><button type="button" class="secondary" data-mode="current" aria-pressed="true">Current</button><button type="button" class="secondary" data-mode="first" aria-pressed="false">First published</button></div>
       <div id="slot-watch-matrix"></div>

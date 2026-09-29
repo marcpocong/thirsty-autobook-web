@@ -2,9 +2,10 @@ import { createHash } from 'node:crypto';
 import { COURT_TO_SPACE_ID } from './availability-parser.js';
 import { THIRSTY_PICKLE_FACILITY_ID } from './live-availability-provider.js';
 import { observedResponse, standardPlanJournalKeys } from './two-hour-reservation.js';
-import { validatePublicCheckoutResponse } from './public-checkout.js';
+import { ondaCheckoutBoundary, validatePublicCheckoutResponse } from './public-checkout.js';
 import { SubmissionDispatchError } from './submission-errors.js';
 import { targetDateState } from './court-hour-matrix.js';
+import { isValidReleaseTrigger } from '../release-offset.js';
 export const DIRECT_ASSUMED_DAY_RATE = 600;
 export const DIRECT_ASSUMED_EVENING_RATE = 700;
 export const DIRECT_MAX_DISPATCH_LATENESS_MS = 1_000;
@@ -111,8 +112,9 @@ export function resolveProoflessReleasePlan(preferences, snapshot, publicBlocks 
     }
     throw Error('DIRECT_NO_UNBLOCKED_CONFIGURATION');
 }
-export function assertDirectDispatchWindow(releaseMs, now = Date.now()) {
-    if (!Number.isSafeInteger(releaseMs) || releaseMs <= 0 || !Number.isFinite(now) || now < releaseMs ||
+/** Never before the scheduled trigger (the release instant unless an operator Release Offset is set), never past release + lateness. */
+export function assertDirectDispatchWindow(releaseMs, now = Date.now(), triggerMs = releaseMs) {
+    if (!Number.isSafeInteger(releaseMs) || releaseMs <= 0 || !isValidReleaseTrigger(releaseMs, triggerMs) || !Number.isFinite(now) || now < triggerMs ||
         now - releaseMs > DIRECT_MAX_DISPATCH_LATENESS_MS)
         throw Error('DIRECT_RELEASE_WINDOW_MISSED');
 }
@@ -127,7 +129,7 @@ export function prooflessRequest(plan, customer) {
         customerPhone: customer.customerPhone, customerFirstName: null, customerLastName: null, facilityId: THIRSTY_PICKLE_FACILITY_ID,
         bookingType: 'online', usedCustomerMembershipId: null, userId: null,
         items: courts.flatMap((court, courtIndex) => court.slots.map(slot => ({ sessionRef: `session_${courtIndex + 1}`, facilityId: THIRSTY_PICKLE_FACILITY_ID,
-            spaceId: slot.spaceId, date: slot.date, startTime: slot.startTime, endTime: slot.endTime, duration: 60,
+            spaceId: slot.spaceId, date: slot.date, startTime: slot.startTime, endTime: ondaCheckoutBoundary(slot.endTime), duration: 60,
             rate: slot.price, chargedAmount: slot.price, guestCount: 1, activityKey: null, activityLabel: null, promotionId: null, availabilityProof: null }))) };
 }
 export function prooflessPlanFingerprint(plan) {
@@ -200,7 +202,7 @@ export async function submitDirectCheckout(plan, customer, transport, journal, r
     const windowCheck = () => {
         if (releaseMs !== undefined) {
             try {
-                assertDirectDispatchWindow(releaseMs, now());
+                assertDirectDispatchWindow(releaseMs, now(), dispatch.triggerMs ?? releaseMs);
             }
             catch {
                 throw new SubmissionDispatchError('DIRECT_RELEASE_WINDOW_MISSED', false);

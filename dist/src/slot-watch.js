@@ -5,7 +5,7 @@ import { OndaLiveAvailabilityProvider } from './api-booking/live-availability-pr
 import { parseAvailability } from './api-booking/availability-parser.js';
 import { readPublicBookingRecords } from './api-booking/public-bookings.js';
 import { MATRIX_COURTS, MATRIX_HOURS, SLOT_STATE_CODE, countCourtHourStates, courtHourStates, encodeCourtHourStates } from './api-booking/court-hour-matrix.js';
-import { cellKey, decodeMatrix, deriveSlotEvidence, deriveTimeline, describeRead, relativeSeconds } from './slot-evidence.js';
+import { availabilityFreshness, cellKey, decodeMatrix, deriveSlotEvidence, deriveTimeline, describeRead, freshestAvailabilityObservation, relativeSeconds, targetEvidence } from './slot-evidence.js';
 export { relativeSeconds } from './slot-evidence.js';
 /**
  * Release slot watch: a read-only observer of all 112 court-hours around a release.
@@ -24,13 +24,22 @@ export const SLOT_WATCH_AFTER_MS = 15 * 60_000;
 /** Release-relative launches that may overlap. Six launches, six slots: six 6-second reads all still launch. */
 export const SLOT_WATCH_EARLY_OFFSETS_MS = [0, 250, 500, 1_000, 2_000, 5_000];
 export const SLOT_WATCH_MAX_IN_FLIGHT = 6;
+/**
+ * Pending holds expire 10 minutes after the checkout that created them (hold_expires_at). On 2026-09-24/25 many
+ * first-wave holds reopened between the +10:00 and +10:30 reads. A 1 s cadence across this window dates each
+ * reopening, i.e. each first-wave hold's creation (commit) + 10 min, or shows that holds reopen in one batch
+ * (a periodic cleanup, which would not date them). Same read, same cadence as the first minute after release.
+ */
+export const SLOT_WATCH_HOLD_EXPIRY_WINDOW_MS = [595_000, 665_000];
 /** Release-time reads took up to ~6 s on 2026-09-23/24; the old 5 s limit discarded them. */
 export const SLOT_WATCH_READ_TIMEOUT_MS = 15_000;
 export const SLOT_WATCH_BOOKING_TIMEOUT_MS = 10_000;
+export const SLOT_WATCH_PUBLICATION_BURST_END_MS = 60_000;
+export const SLOT_WATCH_HOLD_DURATION_MS = 10 * 60_000;
 /** A launch this late (PC sleep, stalled loop) is recorded as not launched. */
 const LATE_LAUNCH_MS = 1_000;
 const TIMELINE_LIMIT = 600;
-/** Sparse before release, an overlapping burst at release, 1 s to a minute, then sparse; public records at a few moments only. */
+/** Availability stays dense; the heavier public-booking endpoint is strategically dense, never concurrent with itself. */
 export function slotWatchSchedule() {
     const availability = new Set();
     for (let t = -SLOT_WATCH_BEFORE_MS; t < 0; t += 10_000)
@@ -44,22 +53,36 @@ export function slotWatchSchedule() {
         availability.add(t);
     for (let t = 330_000; t <= SLOT_WATCH_AFTER_MS; t += 30_000)
         availability.add(t);
-    return { availability: [...availability].sort((a, b) => a - b),
-        bookings: [-SLOT_WATCH_BEFORE_MS, 2_000, 10_000, 30_000, 60_000, 120_000, 300_000, 600_000, SLOT_WATCH_AFTER_MS] };
+    for (let t = SLOT_WATCH_HOLD_EXPIRY_WINDOW_MS[0]; t <= SLOT_WATCH_HOLD_EXPIRY_WINDOW_MS[1]; t += 1_000)
+        availability.add(t);
+    const bookings = new Set([-SLOT_WATCH_BEFORE_MS]);
+    for (let t = 0; t <= 30_000; t += 2_000)
+        bookings.add(t);
+    for (let t = 35_000; t <= 120_000; t += 5_000)
+        bookings.add(t);
+    for (let t = 135_000; t <= 570_000; t += 15_000)
+        bookings.add(t);
+    bookings.add(SLOT_WATCH_AFTER_MS);
+    return { availability: [...availability].sort((a, b) => a - b), bookings: [...bookings].sort((a, b) => a - b) };
 }
 const cacheOf = (headers) => {
     const status = headers.get('x-vercel-cache') ?? '', age = headers.get('age') ?? '';
     const cache = { ...(/^[A-Z_]{2,16}$/.test(status) ? { status } : {}), ...(/^\d{1,7}$/.test(age) ? { ageS: Number(age) } : {}) };
     return Object.keys(cache).length ? cache : undefined;
 };
+const safeHeader = (value, max = 240) => value && value.length <= max && /^[\x20-\x7E]+$/.test(value) ? value : undefined;
+const providerOf = (headers) => {
+    const vercelId = safeHeader(headers.get('x-vercel-id')), date = safeHeader(headers.get('date')), matchedPath = safeHeader(headers.get('x-matched-path'));
+    return vercelId || date || matchedPath ? { ...(vercelId ? { vercelId } : {}), ...(date ? { date } : {}), ...(matchedPath ? { matchedPath } : {}) } : undefined;
+};
 const withSignal = (signal) => (input, init) => fetch(input, { ...init, signal: init?.signal ? AbortSignal.any([init.signal, signal]) : signal });
 async function liveAvailability(date, signal) {
-    let cache;
-    const fetcher = async (input, init) => { const response = await withSignal(signal)(input, init); cache = cacheOf(response.headers); return response; };
+    let cache, provider;
+    const fetcher = async (input, init) => { const response = await withSignal(signal)(input, init); cache = cacheOf(response.headers); provider = providerOf(response.headers); return response; };
     const envelope = await new OndaLiveAvailabilityProvider({ allowIncompleteRange: true, timeoutMs: SLOT_WATCH_READ_TIMEOUT_MS, fetcher })
         .getAvailability({ startDate: date, endDate: date });
     return { snapshot: parseAvailability(envelope.raw, { startDate: date, endDate: date, capturedAt: envelope.capturedAt,
-            fixtureKind: envelope.fixtureKind, label: envelope.label, now: new Date(), maximumAgeMs: 15_000, requireCompleteRange: false }), ...(cache ? { cache } : {}) };
+            fixtureKind: envelope.fixtureKind, label: envelope.label, now: new Date(), maximumAgeMs: 15_000, requireCompleteRange: false }), ...(cache ? { cache } : {}), ...(provider ? { provider } : {}) };
 }
 const liveBookings = (date, signal) => readPublicBookingRecords(date, { timeoutMs: SLOT_WATCH_BOOKING_TIMEOUT_MS, fetcher: withSignal(signal) });
 const abortableSleep = (ms, signal) => new Promise(done => {
@@ -74,6 +97,7 @@ const abortableSleep = (ms, signal) => new Promise(done => {
 const safeCode = (error) => error instanceof Error && /^[A-Z][A-Z0-9_]{0,79}$/.test(error.message) ? error.message : 'READ_FAILED';
 const round = (value) => Math.round(value * 10) / 10;
 const median = (values) => { const sorted = [...values].sort((a, b) => a - b); return sorted.length ? sorted[Math.floor(sorted.length / 2)] : null; };
+const percentile = (values, fraction) => { const sorted = [...values].sort((a, b) => a - b); return sorted.length ? sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * fraction) - 1)] : null; };
 const toSlotState = (code) => code === 'O' ? 'OPEN' : code === 'X' ? 'TAKEN' : code === 'U' ? 'UNRELEASED' : 'UNKNOWN';
 const counts = (matrix) => {
     if (!matrix)
@@ -101,6 +125,11 @@ export class SlotWatch {
     maxInFlight;
     readTimeoutMs;
     bookingTimeoutMs;
+    dynamicScheduling;
+    candidates;
+    eventQueue = [];
+    eventKeys = new Set();
+    expiryKeys = new Set();
     stopReason = 'window complete';
     status = 'waiting';
     availability = [];
@@ -131,12 +160,14 @@ export class SlotWatch {
         this.maxInFlight = options.maxInFlight ?? SLOT_WATCH_MAX_IN_FLIGHT;
         this.readTimeoutMs = options.readTimeoutMs ?? SLOT_WATCH_READ_TIMEOUT_MS;
         this.bookingTimeoutMs = options.bookingTimeoutMs ?? SLOT_WATCH_BOOKING_TIMEOUT_MS;
+        this.dynamicScheduling = options.dynamicScheduling ?? !options.schedule;
+        this.candidates = [...(options.candidates ?? [])];
         if (!Number.isInteger(this.maxInFlight) || this.maxInFlight < 1 || this.maxInFlight > 16)
             throw Error('SLOT_WATCH_INPUT_INVALID');
         mkdirSync(options.directory, { recursive: true, mode: 0o700 });
         this.path = join(options.directory, `${options.date}_${this.id}.ndjson`);
         this.handle = openSync(this.path, 'wx', 0o600);
-        this.write({ type: 'header', version: 2, id: this.id, date: options.date, releaseAt: new Date(options.releaseMs).toISOString(), releaseMs: options.releaseMs,
+        this.write({ type: 'header', version: 3, id: this.id, date: options.date, releaseAt: new Date(options.releaseMs).toISOString(), releaseMs: options.releaseMs,
             releaseManila: manilaStamp(options.releaseMs), startedAt: new Date(this.startedMs).toISOString(),
             clockOffsetMs: options.clockOffsetMs ?? 0, clockSynced: options.clockSynced ?? false,
             schedule: { availability: this.schedule.availability, bookings: this.schedule.bookings, maxInFlight: this.maxInFlight,
@@ -152,7 +183,7 @@ export class SlotWatch {
     } return this.done; }
     view() {
         const current = this.evidence.currentMatrix ? decodeMatrix(this.evidence.currentMatrix) : undefined;
-        const newest = this.availability.filter(value => value.outcome === 'ok').sort((a, b) => b.seq - a.seq)[0];
+        const newest = freshestAvailabilityObservation(this.availability);
         const changed = new Map();
         for (const entry of this.timeline)
             if (entry.kind === 'state')
@@ -169,7 +200,7 @@ export class SlotWatch {
             polls: this.availabilityCounts.answered + this.availabilityCounts.failed, failedPolls: this.availabilityCounts.failed,
             inFlight: this.availabilityInFlight, maxInFlight: this.maxInFlight, notLaunched: this.availabilityCounts.notLaunched,
             dateReleased: newest ? newest.targetDatePresent : null, publication: this.evidence.publication, current: this.evidence.current,
-            cells, timeline: this.timeline.slice(-300), logPath: this.path,
+            cells, candidates: this.candidateViews(this.offset(this.now())), timeline: this.timeline.slice(-300), logPath: this.path,
             ...(this.lastResponseMs !== undefined ? { lastPollAt: new Date(this.lastResponseMs).toISOString() } : {}),
             ...(this.lastLatencyMs !== undefined ? { lastLatencyMs: this.lastLatencyMs } : {}), ...(this.lastError ? { lastError: this.lastError } : {}),
             ...(this.summary ? { summary: digestOf(this.summary) } : {}) };
@@ -183,6 +214,16 @@ export class SlotWatch {
     }
     catch { /* UI updates are best-effort. */ } }
     offset(epochMs) { return round(epochMs - this.options.releaseMs); }
+    candidateViews(evaluatedOffsetMs) {
+        return this.candidates.map(candidate => {
+            const evidence = targetEvidence(this.availability, this.bookings, { court: candidate.court, startTime: candidate.start, endTime: candidate.end });
+            const observation = evidence.latest.observation ? this.availability.find(value => value.seq === evidence.latest.observation.seq) : undefined;
+            const freshness = observation ? availabilityFreshness(observation, evaluatedOffsetMs) : null;
+            return { ...candidate, state: evidence.latest.state, evidence: evidence.latest.observation,
+                evidenceAgeUpperBoundMs: freshness?.ageUpperBoundMs ?? null, freshness: freshness?.class ?? 'UNBOUNDED',
+                reopening: evidence.reopen?.confidence ?? null };
+        });
+    }
     recordClock() {
         try {
             const offset = this.options.clockOffset?.();
@@ -193,34 +234,84 @@ export class SlotWatch {
         }
         catch { /* clock evidence is best-effort */ }
     }
+    enqueue(kind, offsetMs, source) {
+        if (offsetMs < -SLOT_WATCH_BEFORE_MS || offsetMs > SLOT_WATCH_AFTER_MS)
+            return;
+        const networkKind = kind === 'bookings' ? 'bookings' : 'availability', key = `${networkKind}:${offsetMs}`;
+        if (this.eventKeys.has(key))
+            return;
+        this.eventKeys.add(key);
+        this.eventQueue.push({ offsetMs, kind, source });
+    }
+    scheduleExpiryWindows() {
+        if (!this.dynamicScheduling)
+            return;
+        for (const cell of this.evidence.cells) {
+            const transition = cell.openToUnavailable;
+            if (!transition)
+                continue;
+            const key = `${cell.court}/${cell.hour}/${transition.after.seq}`;
+            if (this.expiryKeys.has(key))
+                continue;
+            this.expiryKeys.add(key);
+            const start = Math.max(Math.ceil((this.offset(this.now()) + 1) / 1_000) * 1_000, Math.floor((transition.before.responseOffsetMs + SLOT_WATCH_HOLD_DURATION_MS - 2_000) / 1_000) * 1_000);
+            const end = Math.min(SLOT_WATCH_AFTER_MS, Math.ceil((transition.after.responseOffsetMs + SLOT_WATCH_HOLD_DURATION_MS + 2_000) / 1_000) * 1_000);
+            if (end <= this.offset(this.now()))
+                continue;
+            for (let t = start; t <= end; t += 1_000)
+                this.enqueue('availability', t, 'expiry');
+            for (let t = Math.ceil(start / 2_000) * 2_000; t <= end; t += 2_000)
+                this.enqueue('bookings', t, 'expiry');
+            this.write({ type: 'expiry-window', court: cell.court, hour: cell.hour, firstUnavailableBracket: { before: transition.before, after: transition.after },
+                predictedStartOffsetMs: start, predictedEndOffsetMs: end, holdDurationMs: SLOT_WATCH_HOLD_DURATION_MS });
+        }
+    }
     async run() {
         const signal = this.abort.signal;
         try {
             this.publish();
-            const events = [...this.schedule.availability.map(offsetMs => ({ offsetMs, kind: 'availability' })),
-                ...this.schedule.bookings.map(offsetMs => ({ offsetMs, kind: 'bookings' }))]
-                .sort((a, b) => a.offsetMs - b.offsetMs || (a.kind === 'availability' ? -1 : 1));
-            for (const event of events) {
-                if (signal.aborted)
-                    break;
-                const target = this.options.releaseMs + event.offsetMs;
-                // Points before this watch existed are not part of it.
-                if (target < this.startedMs)
-                    continue;
-                // Re-check the clock after each wait so PC sleep or a clock resync cannot launch a read early.
-                while (!signal.aborted && this.now() < target)
-                    await this.sleep(Math.min(target - this.now(), 60_000), signal);
-                if (signal.aborted)
-                    break;
-                if (this.now() - target > LATE_LAUNCH_MS) {
-                    this.notLaunched(event.kind, event.offsetMs, 'LATE');
-                    continue;
+            for (const offsetMs of this.schedule.availability)
+                this.enqueue('availability', offsetMs, 'base');
+            for (const offsetMs of this.schedule.bookings)
+                this.enqueue('bookings', offsetMs, 'base');
+            if (this.dynamicScheduling)
+                for (let offsetMs = 2_500; offsetMs <= SLOT_WATCH_PUBLICATION_BURST_END_MS; offsetMs += 500)
+                    this.enqueue('publication-burst', offsetMs, 'publication');
+            let cursor = 0;
+            while (!signal.aborted) {
+                while (cursor < this.eventQueue.length) {
+                    this.eventQueue.sort((a, b) => a.offsetMs - b.offsetMs || (a.kind === 'bookings' ? 1 : -1));
+                    const event = this.eventQueue[cursor++];
+                    if (signal.aborted)
+                        break;
+                    if (event.kind === 'publication-burst' && this.evidence.publication.firstPublished)
+                        continue;
+                    const target = this.options.releaseMs + event.offsetMs;
+                    // Points before this watch existed are not part of it.
+                    if (target < this.startedMs)
+                        continue;
+                    // Re-check the clock after each wait so PC sleep or a clock resync cannot launch a read early.
+                    while (!signal.aborted && this.now() < target)
+                        await this.sleep(Math.min(target - this.now(), 60_000), signal);
+                    if (signal.aborted)
+                        break;
+                    const kind = event.kind === 'bookings' ? 'bookings' : 'availability';
+                    if (this.now() - target > LATE_LAUNCH_MS) {
+                        this.notLaunched(kind, event.offsetMs, 'LATE');
+                        continue;
+                    }
+                    this.status = 'watching';
+                    if (kind === 'availability')
+                        this.launchAvailability(event.offsetMs);
+                    else
+                        this.launchBookings(event.offsetMs);
                 }
-                this.status = 'watching';
-                if (event.kind === 'availability')
-                    this.launchAvailability(event.offsetMs);
-                else
-                    this.launchBookings(event.offsetMs);
+                if (signal.aborted || !this.inFlight.size)
+                    break;
+                // An answered read may add a dynamic expiry window after the original queue drained.
+                await Promise.allSettled([...this.inFlight]);
+                if (cursor >= this.eventQueue.length)
+                    break;
             }
             // In-flight reads end on their own timeouts, or at once when the watch is stopped.
             await Promise.allSettled([...this.inFlight]);
@@ -280,11 +371,11 @@ export class SlotWatch {
             requestOffsetMs: this.offset(read.requestMs), responseOffsetMs: this.offset(read.responseMs) };
         let observation, detail = { responseComplete: false };
         if (value) {
-            const snapshot = 'snapshot' in value ? value.snapshot : value, cache = 'snapshot' in value ? value.cache : undefined;
+            const snapshot = 'snapshot' in value ? value.snapshot : value, cache = 'snapshot' in value ? value.cache : undefined, provider = 'snapshot' in value ? value.provider : undefined;
             const states = courtHourStates(snapshot, date), tally = countCourtHourStates(states), flag = snapshot.returnedDates[date];
             const prices = MATRIX_COURTS.map(court => MATRIX_HOURS.map(hour => snapshot.slots.find(slot => slot.date === date && slot.court === court && slot.startTime === hour)?.price ?? null));
             observation = { ...base, outcome: 'ok', targetDatePresent: flag === true,
-                matrix: encodeCourtHourStates(states), ...(flag === true ? { prices } : {}), ...(cache ? { cache } : {}) };
+                matrix: encodeCourtHourStates(states), ...(flag === true ? { prices } : {}), ...(cache ? { cache } : {}), ...(provider ? { provider } : {}) };
             // Complete = the date was published and every one of the 112 cells was present. A missing cell stays unknown, never open.
             detail = { dateFlag: flag === true ? 'published' : flag === false ? 'unpublished' : 'absent', responseComplete: flag === true && tally.UNKNOWN === 0, counts: tally };
             this.availabilityCounts.answered++;
@@ -339,7 +430,7 @@ export class SlotWatch {
                         cells.add(cellKey(block.court, hour));
                 }
             }
-            observation = { ...base, outcome: 'ok', failedCourts: failed, cells: [...cells].sort() };
+            observation = { ...base, outcome: 'ok', failedCourts: failed, cells: [...cells].sort(), ...(value.provider ? { provider: value.provider } : {}) };
             this.bookingCounts.answered++;
             this.failedCourtQueries += failed.length;
         }
@@ -361,6 +452,7 @@ export class SlotWatch {
         try {
             this.evidence = deriveSlotEvidence(this.availability, this.bookings);
             this.timeline = deriveTimeline(this.availability, this.bookings, TIMELINE_LIMIT);
+            this.scheduleExpiryWindows();
         }
         catch { /* keep the previous derivation; the raw log is complete */ }
         this.publish();
@@ -369,8 +461,40 @@ export class SlotWatch {
         const endedMs = this.now(), evidence = this.evidence;
         const reportPath = this.path.replace(/\.ndjson$/, '.txt');
         const answered = this.availability.filter(value => value.outcome === 'ok');
-        const finalMatrix = evidence.currentMatrix ?? '';
-        const summary = { version: 2, id: this.id, date: this.options.date, releaseAt: new Date(this.options.releaseMs).toISOString(),
+        const finalMatrix = evidence.currentMatrix ?? '', candidateViews = this.candidateViews(this.offset(endedMs));
+        const latencies = answered.map(value => value.responseOffsetMs - value.requestOffsetMs), cache = { MISS: 0, HIT: 0, STALE: 0, UNKNOWN: 0 };
+        for (const value of answered) {
+            const status = value.cache?.status;
+            if (status === 'MISS' || status === 'HIT' || status === 'STALE')
+                cache[status]++;
+            else
+                cache.UNKNOWN++;
+        }
+        const reopenings = { confirmed: 0, probable: 0, inconsistent: 0, unknown: 0 };
+        for (const cell of evidence.cells) {
+            const confidence = cell.unavailableToOpen?.confidence;
+            if (confidence === 'CONFIRMED')
+                reopenings.confirmed++;
+            else if (confidence === 'PROBABLE')
+                reopenings.probable++;
+            else if (confidence === 'OBSERVATION_INCONSISTENCY')
+                reopenings.inconsistent++;
+            else if (confidence === 'UNKNOWN')
+                reopenings.unknown++;
+        }
+        const providerPaths = [...new Set(answered.flatMap(value => {
+                const p = value.provider;
+                if (!p)
+                    return [];
+                return [`${p.matchedPath ?? '(path unknown)'} · ${p.vercelId ?? '(edge unknown)'}`];
+            }))].sort().slice(0, 50);
+        const cacheTotal = Math.max(1, answered.length), cacheRates = { MISS: cache.MISS / cacheTotal, HIT: cache.HIT / cacheTotal, STALE: cache.STALE / cacheTotal, UNKNOWN: cache.UNKNOWN / cacheTotal };
+        const quality = { latency: { medianMs: median(latencies), p95Ms: percentile(latencies, .95), minMs: latencies.length ? Math.min(...latencies) : null, maxMs: latencies.length ? Math.max(...latencies) : null },
+            cache, cacheRates, contradictions: reopenings.inconsistent, reopenings, candidateReopenings: candidateViews.filter(value => value.reopening === 'CONFIRMED' || value.reopening === 'PROBABLE').length,
+            bookingCoverage: { planned: this.schedule.bookings.length, launched: this.bookingCounts.launched, answered: this.bookingCounts.answered,
+                successfulCourtQueries: this.bookingCounts.answered * 7 - this.failedCourtQueries, totalCourtQueries: this.bookingCounts.launched * 7 }, providerPaths };
+        const qualityReportPath = this.path.replace(/\.ndjson$/, '.quality.json');
+        const summary = { version: 3, id: this.id, date: this.options.date, releaseAt: new Date(this.options.releaseMs).toISOString(),
             releaseMs: this.options.releaseMs, startedAt: new Date(this.startedMs).toISOString(), endedAt: new Date(endedMs).toISOString(),
             status: this.status === 'stopped' ? 'stopped' : 'finished', reason: this.stopReason,
             clockOffsetMs: this.lastClockOffset ?? this.options.clockOffsetMs ?? 0, clockSynced: this.options.clockSynced ?? false,
@@ -386,7 +510,7 @@ export class SlotWatch {
                 .map(cell => ({ court: cell.court, hour: cell.hour, record: cell.firstRecord?.observation ?? null })),
             reopened: evidence.cells.filter(cell => cell.unavailableToOpen).map(cell => ({ court: cell.court, hour: cell.hour, ...cell.unavailableToOpen }))
                 .sort((a, b) => a.after.requestOffsetMs - b.after.requestOffsetMs || a.court - b.court || a.hour.localeCompare(b.hour)),
-            current: evidence.current, finalMatrix, stillOpen: counts(finalMatrix || null)?.OPEN ?? 0,
+            candidates: candidateViews, quality, qualityReportPath, current: evidence.current, finalMatrix, stillOpen: counts(finalMatrix || null)?.OPEN ?? 0,
             timeline: this.timeline, logPath: this.path, reportPath,
             requestOrder: [...this.availability].sort((a, b) => a.seq - b.seq).map(({ matrix, prices: _prices, ...row }) => {
                 const cells = decodeMatrix(matrix), tally = { OPEN: 0, TAKEN: 0, UNRELEASED: 0, UNKNOWN: 0 };
@@ -403,6 +527,7 @@ export class SlotWatch {
         catch { /* already closed */ }
         try {
             writeFileSync(reportPath, slotWatchReport(summary), { encoding: 'utf8', mode: 0o600 });
+            writeFileSync(qualityReportPath, JSON.stringify({ version: 1, watchId: this.id, date: this.options.date, generatedAt: new Date(endedMs).toISOString(), quality, candidates: candidateViews }, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 });
             const summaryPath = this.path.replace(/\.ndjson$/, '.summary.json'), temporary = `${summaryPath}.tmp`;
             writeFileSync(temporary, JSON.stringify(summary), { encoding: 'utf8', mode: 0o600 });
             renameSync(temporary, summaryPath);
@@ -422,7 +547,7 @@ const bookingRead = (value) => describeRead(value, '#b');
 const change = (value) => `open in ${describeRead(value.before)}; unavailable in ${describeRead(value.after)}${value.overlapping ? ' (reads overlapped: their provider-side order is not established)' : ''}`;
 /** Plain-text report. Evidence only: it states what each read returned, never why. */
 export function slotWatchReport(summary) {
-    const a = summary.availability, b = summary.bookings, p = summary.publication;
+    const a = summary.availability, b = summary.bookings, p = summary.publication, q = summary.quality;
     const lines = [`RELEASE SLOT WATCH — target ${summary.date}`,
         `Release: ${manilaStamp(summary.releaseMs)} Manila · observer network clock ${summary.clockSynced ? `synchronized (offset ${summary.clockOffsetMs.toFixed(1)} ms)` : 'NOT synchronized'}`,
         `Watch ${summary.status}: ${summary.reason}`,
@@ -457,12 +582,18 @@ export function slotWatchReport(summary) {
         if (cells.length)
             lines.push(`  Court ${court}: ${cells.map(cell => `${hourLabel(cell.hour)} (${cell.record ? `public booking record, first seen ${relativeSeconds(cell.record.responseOffsetMs)}` : 'no matching public booking record · cause unknown'})`).join(', ')}`);
     }
-    lines.push('', 'UNAVAILABLE → OPEN (reopened; cause unknown)');
+    lines.push('', 'UNAVAILABLE → OPEN (reopening evidence; cause unknown)');
     if (!summary.reopened.length)
         lines.push('  none observed');
     for (const cell of summary.reopened)
-        lines.push(`  Court ${cell.court} ${hourLabel(cell.hour).padEnd(5)} unavailable in ${describeRead(cell.before)}; open in ${describeRead(cell.after)}${cell.overlapping ? ' (reads overlapped)' : ''}`);
-    lines.push('', `CURRENT MATRIX (newest answered request${summary.current ? `: ${describeRead(summary.current)}` : ''}; a late answer to an older request never replaces it)`, ...matrixLines(summary.finalMatrix), '', 'LIMITATIONS', '  - A read does not show the provider-side moment of a change; only the request/response interval of the reads around it.', '  - Unavailable without a matching public booking record: the cause is not visible in Onda\'s public data.', '  - A public booking record shows that a booking record exists. It does not show who made it or why.', '  - Responses served from Onda\'s edge cache (x-vercel-cache/age) may reflect an earlier state than the request time.', '', `Full read-by-read log (response order, with request order in seq): ${summary.logPath}`);
+        lines.push(`  Court ${cell.court} ${hourLabel(cell.hour).padEnd(5)} ${cell.confidence} · unavailable in ${describeRead(cell.before)}; open in ${describeRead(cell.after)}${cell.overlapping ? ' (reads overlapped)' : ''}`);
+    lines.push('', 'CONFIGURED CANDIDATES');
+    if (!summary.candidates.length)
+        lines.push('  none supplied by the saved booking plan');
+    for (const candidate of summary.candidates)
+        lines.push(`  ${candidate.label ?? candidate.id}: C${candidate.court} ${candidate.start}–${candidate.end} ${candidate.state} · evidence age ≤ ${candidate.evidenceAgeUpperBoundMs === null ? 'UNKNOWN' : `${Math.ceil(candidate.evidenceAgeUpperBoundMs)} ms`} · ${candidate.freshness}${candidate.reopening ? ` · reopening ${candidate.reopening}` : ''}`);
+    lines.push('', 'SLOT WATCH QUALITY', `  Latency: median ${q?.latency.medianMs ?? '?'} ms · p95 ${q?.latency.p95Ms ?? '?'} ms · min ${q?.latency.minMs ?? '?'} ms · max ${q?.latency.maxMs ?? '?'} ms`, `  Cache: MISS ${q?.cache.MISS ?? 0} (${Math.round((q?.cacheRates.MISS ?? 0) * 100)}%) · HIT ${q?.cache.HIT ?? 0} (${Math.round((q?.cacheRates.HIT ?? 0) * 100)}%) · STALE ${q?.cache.STALE ?? 0} (${Math.round((q?.cacheRates.STALE ?? 0) * 100)}%) · unknown ${q?.cache.UNKNOWN ?? 0} (${Math.round((q?.cacheRates.UNKNOWN ?? 0) * 100)}%)`, `  Reopenings: confirmed ${q?.reopenings.confirmed ?? 0} · probable ${q?.reopenings.probable ?? 0} · inconsistent ${q?.reopenings.inconsistent ?? 0} · unknown ${q?.reopenings.unknown ?? 0}`, `  Candidate reopenings: ${q?.candidateReopenings ?? 0} · contradictions: ${q?.contradictions ?? 0}`, `  Public-booking coverage: ${q?.bookingCoverage.answered ?? 0}/${q?.bookingCoverage.launched ?? 0} reads answered · ${q?.bookingCoverage.successfulCourtQueries ?? 0}/${q?.bookingCoverage.totalCourtQueries ?? 0} court queries successful`, `  Provider paths/edges: ${q?.providerPaths.length ? q.providerPaths.join(' | ') : 'not exposed'}`, `  Quality JSON: ${summary.qualityReportPath ?? 'unavailable'}`);
+    lines.push('', `CURRENT MATRIX (freshest bounded evidence${summary.current ? `: ${describeRead(summary.current)}` : ''}; a newer stale response cannot replace fresher evidence)`, ...matrixLines(summary.finalMatrix), '', 'LIMITATIONS', '  - A read does not show the provider-side moment of a change; only the request/response interval of the reads around it.', '  - Unavailable without a matching public booking record: the cause is not visible in Onda\'s public data.', '  - A public booking record shows that a booking record exists. It does not show who made it or why.', '  - Responses served from Onda\'s edge cache (x-vercel-cache/age) may reflect an earlier state than the request time.', '', `Full read-by-read log (response order, with request order in seq): ${summary.logPath}`);
     return `${lines.join('\n')}\n`;
 }
 function matrixLines(matrix) {
@@ -483,8 +614,8 @@ export function readSlotWatchHistory(directory, limit = 12) {
         .flatMap(({ name }) => {
         try {
             const value = JSON.parse(readFileSync(join(directory, name), 'utf8'));
-            if (value.version === 2 && typeof value.id === 'string' && typeof value.date === 'string' && Array.isArray(value.timeline))
-                return [digestOf(value)];
+            if ((value.version === 2 || value.version === 3) && typeof value.id === 'string' && typeof value.date === 'string' && Array.isArray(value.timeline))
+                return [digestOf({ candidates: [], quality: null, ...value })];
             if (value.version === 1 && typeof value.id === 'string' && typeof value.date === 'string')
                 return [legacyDigest(value)];
             return [];
@@ -504,7 +635,7 @@ function legacyDigest(value) {
         availability: { ...emptyCounts(), launched: polls, answered: polls - failed, failed, maxInFlight: 1, medianLatencyMs: typeof value.medianLatencyMs === 'number' ? value.medianLatencyMs : null },
         bookings: { ...emptyCounts(), failedCourtQueries: 0 },
         publication: { lastUnpublished: null, firstPublished: null, firstPublishedResponse: null }, firstPublishedMatrix: null, firstPublishedCounts: null,
-        openToUnavailable: [], unavailableAtFirstPublication: [], reopened: [], current: null,
+        openToUnavailable: [], unavailableAtFirstPublication: [], reopened: [], candidates: [], quality: null, current: null,
         finalMatrix: typeof value.finalMatrix === 'string' ? value.finalMatrix : '', stillOpen: Number(value.stillOpen) || 0, timeline: [],
         logPath: String(value.logPath ?? ''), reportPath: String(value.reportPath ?? '') };
 }
