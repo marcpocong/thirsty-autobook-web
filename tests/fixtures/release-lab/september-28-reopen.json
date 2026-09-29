@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "source": "Sanitized minimal reconstruction of the September 28 archived release",
+  "target": { "court": 7, "start": "19:00", "durationHours": 3 },
+  "releaseMs": 1790553600000,
+  "initialAttempt": "REJECTED",
+  "observations": [
+    { "seq": 1, "requestOffsetMs": 590000, "responseOffsetMs": 590200, "state": "OPEN", "cacheStatus": "HIT" },
+    { "seq": 2, "requestOffsetMs": 600000, "responseOffsetMs": 600200, "state": "UNAVAILABLE", "cacheStatus": "MISS", "ageS": 0 },
+    { "seq": 3, "requestOffsetMs": 603000, "responseOffsetMs": 603200, "state": "OPEN", "cacheStatus": "HIT", "ageS": 10 },
+    { "seq": 4, "requestOffsetMs": 606000, "responseOffsetMs": 606200, "state": "OPEN", "cacheStatus": "STALE", "ageS": 2 }
+  ]
+}

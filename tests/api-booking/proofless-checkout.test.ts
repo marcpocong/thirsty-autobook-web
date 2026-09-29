@@ -40,6 +40,29 @@ describe('Proofless checkout lane',()=>{
     expect([early.totalPrice,late.totalPrice]).toEqual([3*DIRECT_ASSUMED_EVENING_RATE,2*DIRECT_ASSUMED_EVENING_RATE]);
     expect(prooflessRequest(early,customer).items.map(item=>item.availabilityProof)).toEqual([null,null,null]);
   });
+  it('serializes a midnight-ending checkout as 00:00 and validates the matching pending hold',async()=>{
+    const root=await mkdtemp(join(tmpdir(),'direct-midnight-test-'));
+    try{
+      const plan=eveningPlan('21:00',3),request=prooflessRequest(plan,customer),journal=new DurableSubmissionJournal(join(root,'journal'));
+      expect(plan.endTime).toBe('24:00');
+      expect(request.items.map(item=>[item.startTime,item.endTime])).toEqual([
+        ['21:00','22:00'],['22:00','23:00'],['23:00','00:00'],
+      ]);
+      expect(JSON.stringify(request)).not.toContain('24:00');
+      const ids=request.items.map((_,index)=>`booking-${index}`);
+      const response={success:true,bookings:request.items.map((item,index)=>({id:ids[index],booking_no:`number-${index}`,
+        customer_id:customer.customerId,space_id:item.spaceId,facility_id:item.facilityId,date:item.date,
+        start_time:`${item.startTime}:00`,end_time:`${item.endTime}:00`,duration:60,rate:item.rate,guest_count:1,
+        booking_status:'pending',payment_status:'pending',booking_session_id:'session',hold_expires_at:holdExpiresAt})),
+        bookingSessions:[{requestSessionRef:'session_1',bookingSessionId:'session',facilityId:request.facilityId,
+          spaceId:request.items[0]!.spaceId,date,startTime:'21:00:00',endTime:'00:00:00',durationHours:3,bookingIds:ids}],
+        transaction:{id:'transaction',reference:'number-0',amount:plan.totalPrice,status:'pending'},trustedTotalAmount:plan.totalPrice};
+      const transport={publicCheckoutProofless:async()=>response} as unknown as OndaBrowserSessionTransport;
+      await expect(submitDirectCheckout(plan,customer,transport,journal)).resolves.toMatchObject({bookingIds:ids,trustedTotalAmount:plan.totalPrice});
+      const key=DurableSubmissionJournal.key(request.facilityId,plan.courts[0]!.spaceId,date,'21:00','24:00');
+      expect((await journal.read(key)).state).toBe('verified');
+    }finally{await rm(root,{recursive:true,force:true});}
+  });
   it('builds a deterministic primary release plan before target availability exists',()=>{
     const plan=prooflessReleasePlan({mode:'extended',targetDate:date,durationHours:5,preferredStartTimes:['15:00'],
       fallbackStartTimes:[],courtPriority:[7,6,5,4,3,2,1],fallbackCourts:[],courtCount:2,

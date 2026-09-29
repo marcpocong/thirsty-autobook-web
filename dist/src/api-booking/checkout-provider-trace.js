@@ -341,7 +341,9 @@ export class ProviderTraceSet {
                 status: response.status, contentType: sanitizeContentType(response.contentType), server: sanitizeHeader('server', response.server),
                 cfRay: sanitizeHeader('cf-ray', response.cloudflareRay), vercelId: sanitizeHeader('x-vercel-id', response.vercelId),
                 requestId: sanitizeHeader('x-request-id', response.requestId), serverTiming: sanitizeServerTiming(response.serverTiming),
-                responseReceivedMs: timing(response.responseReceivedMs), responseCompletedMs: timing(response.responseCompletedMs) });
+                responseReceivedMs: timing(response.responseReceivedMs), responseCompletedMs: timing(response.responseCompletedMs),
+                // Already sanitized by the transport; copied structurally so a later mutation cannot leak into the file.
+                ...(response.evidence ? { evidence: structuredClone(response.evidence) } : {}) });
         }
         catch { /* telemetry must never affect checkout */ }
     }

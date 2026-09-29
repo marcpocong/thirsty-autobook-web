@@ -3,17 +3,17 @@ import { join } from 'node:path';
 import { runAdaptiveAttempt, type AdaptiveAttemptDeps, type AdaptiveAttemptResult, type AdaptiveSelection } from '../../src/api-booking/adaptive-attempt.js';
 import { BrowserSessionTransportError, type OndaBrowserSessionTransport } from '../../src/api-booking/browser-session-transport.js';
 import { DurableSubmissionJournal, type SubmissionRecord } from '../../src/api-booking/durable-submission-journal.js';
-import { adaptiveFitness, adaptiveMaxAgeMs, classifyActionableObservation, type ActionableObservation,
+import { adaptiveFitness, adaptiveMaxAgeMs, classifyActionableObservation, isActionableEvidenceFitness, type ActionableObservation,
   type PrecisionSession } from '../../src/api-booking/precision-phase3.js';
 import { classifyPrecisionDispatchError } from '../../src/api-booking/precision-race.js';
 import { submitDirectCheckout, type ProoflessCheckoutRequest } from '../../src/api-booking/proofless-checkout.js';
 import type { BookingPlan } from '../../src/api-booking/types.js';
-import type { AvailabilityObservation } from '../../src/slot-evidence.js';
+import {freshestAvailabilityObservation,type AvailabilityObservation} from '../../src/slot-evidence.js';
 
 /**
  * Deterministic, offline stand-in for the release runner around runAdaptiveAttempt. Time is virtual
  * (milliseconds after release). Slot Watch observations are delivered exactly as the runner's adaptive
- * loop does (classify with the newest sequence, then session.observe). Security preparation only moves
+ * loop does (select the freshest represented state, then session.observe). Security preparation only moves
  * virtual time. Checkout goes through the real submitDirectCheckout and a real DurableSubmissionJournal
  * in `root`; the transport is fake and never touches the network.
  */
@@ -58,6 +58,7 @@ export class AdaptiveHarness {
   private order = 0;
   private securityCalls = 0;
   private attempts = 0;
+  private readonly observations:AvailabilityObservation[]=[];
 
   constructor(readonly session: PrecisionSession, readonly root: string) {}
   get releaseMs(): number { return this.session.authorization.releaseMs; }
@@ -75,10 +76,12 @@ export class AdaptiveHarness {
 
   /** Same steps as the runner's adaptive loop for one received Slot Watch observation. */
   deliver(observation: AvailabilityObservation): ActionableObservation {
-    this.newestSeq = Math.max(this.newestSeq, observation.seq);
+    this.observations.push(observation);
+    const operational=freshestAvailabilityObservation(this.observations);
+    this.newestSeq=operational?.seq??0;
     const maxAge = adaptiveMaxAgeMs(Math.max(0, observation.responseOffsetMs - observation.requestOffsetMs), this.securityRefreshMs);
     const evidence = classifyActionableObservation(observation, this.newestSeq, this.releaseMs, this.releaseMs + this.now, maxAge);
-    this.session.observe(evidence);
+    if(operational)this.session.observe(adaptiveFitness(operational,this.newestSeq,this.releaseMs,this.releaseMs+this.now,this.securityRefreshMs));
     this.events.push({ stage: 'PHASE3_EVIDENCE', at: this.now, seq: observation.seq, fitness: evidence.fitness });
     return evidence;
   }
@@ -166,7 +169,7 @@ export class AdaptiveHarness {
     let pending = false, trigger: ActionableObservation | undefined;
     const latency = (observation: AvailabilityObservation) => Math.max(0, observation.responseOffsetMs - observation.requestOffsetMs);
     this.onArrival = arrival => {
-      if (arrival.kind === 'observation' && !pending && !trigger && arrival.evidence.fitness === 'ACTIONABLE_FRESH') trigger = arrival.evidence;
+      if (arrival.kind === 'observation' && !pending && !trigger && isActionableEvidenceFitness(arrival.evidence.fitness)) trigger = arrival.evidence;
       const latest = this.session.latest;
       if (options.wave2 && latest) {
         const choices = this.session.select('WAVE_2', this.releaseMs + this.now, adaptiveMaxAgeMs(latency(latest.observation), this.securityRefreshMs));
@@ -178,7 +181,7 @@ export class AdaptiveHarness {
         const evidence = trigger;
         trigger = undefined;
         if (evidence && this.session.authorization.rescueEnabled &&
-          adaptiveFitness(evidence.observation, this.newestSeq, this.releaseMs, this.releaseMs + this.now, this.securityRefreshMs).fitness === 'ACTIONABLE_FRESH') {
+          isActionableEvidenceFitness(adaptiveFitness(evidence.observation, this.newestSeq, this.releaseMs, this.releaseMs + this.now, this.securityRefreshMs).fitness)) {
           const choices = this.session.select('RESCUE', this.releaseMs + this.now, adaptiveMaxAgeMs(latency(evidence.observation), this.securityRefreshMs));
           if (choices.length) {
             pending = true;

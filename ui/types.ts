@@ -20,6 +20,7 @@ import type {ReadinessResult} from '../src/network-readiness.js';
 import type {WarmthAssessment} from '../src/checkout-path-research.js';
 import type {AdvisorResult} from '../src/release-advisor.js';
 import type {ReplaySummary} from './controller.js';
+import type {ReleaseLabDigest} from '../src/release-lab-analysis.js';
 export type DualPracticeCommand = { kind:'dualDry'; date:string } | { kind:'dualPractice'|'dualFullPractice'; input:DualPracticeInput };
 export interface ConfirmRequest { id:string; tone:'question'|'warning'; title:string; message:string; detail:string; confirmLabel:string; cancelLabel?:string }
 export interface ApiRunPreferences {strategy:'standard'|'extended';date:string;start:string;duration:number;courtCount:CourtCount;maximum?:number;priority:number[];fallbackStarts:string[];exact?:number[][]}
@@ -61,6 +62,8 @@ export interface Dashboard {
   slotWatchHistory?:SlotWatchDigest[];
   /** Post-run forensic digests (newest first) for the Runs view. */
   releaseForensics?:ReleaseForensicsDigest[];
+  /** Latest derived Release Lab summary; raw logs remain authoritative. */
+  releaseLab?:ReleaseLabDigest|null;
   /** Phase 4 derived release intelligence (read-only digest). */
   intelligence?:IntelligenceDigest|null;
   phase4?:{busy:'rebuild'|'network'|null;message:string;networkReadiness?:ReadinessResult|null;networkHistory?:Array<{measuredAt:string;verdict:string;medianMs:number|null}>;warmth?:WarmthAssessment|null};

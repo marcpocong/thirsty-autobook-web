@@ -38,6 +38,7 @@ import { DEFAULT_RENDERER_DISPATCH_OPTIONS, planRendererFire, type RendererDispa
  */
 export type ArmedAttemptState = 'armed' | 'fired' | 'refused' | 'disarmed';
 export interface ArmedAttempt {
+  readonly attempt: PrecisionAttempt;
   readonly target: PrecisionTarget;
   readonly plan: BookingPlan;
   readonly key: string;
@@ -55,8 +56,17 @@ export interface ArmedPrecisionRace {
   readonly releaseMs: number;
   readonly dispatchDeadlineMs: number;
   readonly attempts: readonly ArmedAttempt[];
+  /** One durable logical-target guard for each worker's four-child fan-out group. */
+  readonly fanOutGuards: readonly ArmedFanOutGuard[];
   /** Frozen attempts that could not be armed: provably unsent. */
   readonly unarmed: ReadonlyArray<{ attempt: PrecisionAttempt; state: PrecisionAttemptState; code: string }>;
+}
+export interface ArmedFanOutGuard {
+  readonly key: string;
+  readonly journal: DurableSubmissionJournal;
+  readonly permit: SubmissionPermit;
+  readonly attemptIds: readonly string[];
+  state: 'armed' | 'settled' | 'disarmed';
 }
 
 const safeCode = (error: unknown, fallback: string) => error instanceof Error && /^[A-Z][A-Z0-9_]{0,79}$/.test(error.message) ? error.message : fallback;
@@ -94,9 +104,27 @@ export async function armPrecisionRace(race: FrozenPrecisionRace, deps: ArmDeps)
   });
   // The global lock is armed before any per-target record, so every armed journal is covered by it.
   await deps.lock?.armed(deps.releaseMs, dispatchDeadlineMs, prepared.length);
+  const grouped = new Map<string, typeof prepared>();
+  for (const value of prepared) { const values = grouped.get(value.key) ?? []; values.push(value); grouped.set(value.key, values); }
+  const fanOutGuards: ArmedFanOutGuard[] = [];
+  for (const [key, values] of grouped) {
+    if (values.length < 2) continue;
+    const parent = new DurableSubmissionJournal(resolve(deps.journalRoot, key));
+    const first = values[0]!;
+    await parent.arm(key, new Date(deps.now()), { attemptId: key, planFingerprint: race.fingerprint,
+      targetDate: first.attempt.plan.targetDate, courtIds: first.attempt.plan.courts.map(court => court.court),
+      hourlyBoundaries: first.attempt.plan.courts.flatMap(court => court.slots.map(slot => ({ startTime: slot.startTime, endTime: slot.endTime }))),
+      expectedBookingCount: first.request.items.length, maximumAmount: first.attempt.plan.totalPrice, stage: 'armed',
+      releaseMs: deps.releaseMs, dispatchDeadlineMs });
+    const permit = await parent.claimArmedOneShot(key, new Date(deps.now()));
+    fanOutGuards.push({ key, journal: parent, permit, attemptIds: values.map(value => value.attempt.id), state: 'armed' });
+  }
   const settled = await Promise.allSettled(prepared.map(async ({ attempt, request, key, fingerprint, triggerMs }): Promise<ArmedAttempt> => {
-    const journal = deps.journalFor?.(key) ?? new DurableSubmissionJournal(resolve(deps.journalRoot, key));
-    await journal.arm(key, new Date(deps.now()), { attemptId: key, planFingerprint: fingerprint, targetDate: attempt.plan.targetDate,
+    const isFanOut = (grouped.get(key)?.length ?? 0) > 1;
+    const journal = isFanOut
+      ? new DurableSubmissionJournal(resolve(deps.journalRoot, key, 'fan-out', race.fingerprint, attempt.id))
+      : deps.journalFor?.(key) ?? new DurableSubmissionJournal(resolve(deps.journalRoot, key));
+    await journal.arm(key, new Date(deps.now()), { attemptId: isFanOut ? attempt.id : key, planFingerprint: fingerprint, targetDate: attempt.plan.targetDate,
       courtIds: attempt.plan.courts.map(court => court.court),
       hourlyBoundaries: attempt.plan.courts.flatMap(court => court.slots.map(slot => ({ startTime: slot.startTime, endTime: slot.endTime }))),
       expectedBookingCount: request.items.length, maximumAmount: attempt.plan.totalPrice, stage: 'armed',
@@ -108,7 +136,7 @@ export async function armPrecisionRace(race: FrozenPrecisionRace, deps: ArmDeps)
       await journal.mark(key, 'rejected', new Date(deps.now()), undefined, undefined, 'ARMED_NOT_DISPATCHED').catch(() => undefined);
       throw error;
     }
-    return { target: attempt.target, plan: attempt.plan, key, request, journal, permit, triggerMs, state: 'armed' };
+    return { attempt, target: attempt.target, plan: attempt.plan, key, request, journal, permit, triggerMs, state: 'armed' };
   }));
   const attempts: ArmedAttempt[] = [], unarmed: Array<{ attempt: PrecisionAttempt; state: PrecisionAttemptState; code: string }> = [];
   settled.forEach((result, index) => {
@@ -118,7 +146,12 @@ export async function armPrecisionRace(race: FrozenPrecisionRace, deps: ArmDeps)
       unarmed.push({ attempt: prepared[index]!.attempt, state: code === 'DUPLICATE_LOGICAL_BOOKING_BLOCKED' ? 'JOURNAL_BLOCKED' : 'NOT_DISPATCHED', code });
     }
   });
-  return Object.freeze({ race, releaseMs: deps.releaseMs, dispatchDeadlineMs, attempts: Object.freeze(attempts), unarmed: Object.freeze(unarmed) });
+  for (const guard of fanOutGuards) if (!attempts.some(attempt => guard.attemptIds.includes(attempt.attempt.id))) {
+    if (revokeSubmissionPermit(guard.permit)) await guard.journal.mark(guard.key, 'rejected', new Date(deps.now()), undefined, undefined, 'ARMED_NOT_DISPATCHED').catch(() => undefined);
+    guard.state = 'disarmed';
+  }
+  return Object.freeze({ race, releaseMs: deps.releaseMs, dispatchDeadlineMs, attempts: Object.freeze(attempts),
+    fanOutGuards: Object.freeze(fanOutGuards), unarmed: Object.freeze(unarmed) });
 }
 
 /**
@@ -199,6 +232,12 @@ export async function disarmAttempt(attempt: ArmedAttempt, code: string, now: ()
 }
 export async function disarmUnfired(armed: ArmedPrecisionRace, code: string, now: () => number): Promise<WorkerId[]> {
   const results = await Promise.allSettled(armed.attempts.map(attempt => disarmAttempt(attempt, code, now)));
+  for (const guard of armed.fanOutGuards) if (guard.state === 'armed' && armed.attempts
+    .filter(attempt => guard.attemptIds.includes(attempt.attempt.id)).every(attempt => attempt.state !== 'fired')) {
+    if (revokeSubmissionPermit(guard.permit)) await guard.journal.mark(guard.key, 'rejected', new Date(now()), undefined, undefined,
+      /^[A-Z][A-Z0-9_]{0,79}$/.test(code) ? code : 'ARMED_NOT_DISPATCHED').catch(() => undefined);
+    guard.state = 'disarmed';
+  }
   return armed.attempts.flatMap((attempt, index) => results[index]!.status === 'fulfilled' && (results[index] as PromiseFulfilledResult<boolean>).value ? [attempt.target.workerId] : []);
 }
 /** True when no armed attempt ever reached the transport (every one refused or disarmed). */
@@ -219,14 +258,14 @@ export interface ArmedDispatchDeps {
   /** Timer sleep for the waits; the runner passes its abort-aware pause so Stop is honoured within milliseconds. */
   sleep?: (ms: number) => Promise<void>;
   prewarm: (attempt: ArmedAttempt) => Promise<void>;
-  transportFor: (worker: WorkerId) => DirectTransport | undefined;
+  transportFor: (worker: WorkerId, attempt: ArmedAttempt) => DirectTransport | undefined;
   isAborted: () => boolean;
   /** A validated pending hold: record it and hand off to the official QR page. Returns the final state or throws VerifiedHoldQrError. */
   onVerifiedHold?: (attempt: ArmedAttempt, verified: VerifiedPublicCheckout) => Promise<PrecisionDispatchResult>;
-  onEvent?: (event: { kind: 'prewarm-ready' | 'prewarm-failed' | 'prewarm-retry' | 'dispatch-start' | 'settled'; workerId: WorkerId; state?: PrecisionAttemptState; code?: string }) => void;
+  onEvent?: (event: { kind: 'prewarm-ready' | 'prewarm-failed' | 'prewarm-retry' | 'dispatch-start' | 'settled'; workerId: WorkerId; attemptId: string; state?: PrecisionAttemptState; code?: string }) => void;
   onWake?: () => void;
   /** Benchmark instrumentation only. */
-  onMark?: (worker: WorkerId, name: string) => void;
+  onMark?: (worker: WorkerId, name: string, attempt: ArmedAttempt) => void;
   /** Runs after every ready attempt has been fired (never before a POST), e.g. the lock's FINAL_ACTION_DISPATCHING record. */
   afterFire?: () => Promise<void>;
   /**
@@ -246,8 +285,8 @@ export interface ArmedDispatchDeps {
     options?: Partial<RendererDispatchOptions>;
     /** Samples and calibrates the attempt's page clock (a few CDP round trips), called once ~3 s before release. */
     calibrate: (attempt: ArmedAttempt) => Promise<RendererClockCalibration>;
-    transportFor: (worker: WorkerId) => RendererTransport | undefined;
-    onPlan?: (event: { workerId: WorkerId; mode: 'renderer' | 'node-fallback'; code?: string; calibration?: RendererClockCalibration; plan?: RendererFirePlan }) => void;
+    transportFor: (worker: WorkerId, attempt: ArmedAttempt) => RendererTransport | undefined;
+    onPlan?: (event: { workerId: WorkerId; attemptId:string; mode: 'renderer' | 'node-fallback'; code?: string; calibration?: RendererClockCalibration; plan?: RendererFirePlan }) => void;
   };
 }
 export const FINAL_APPROACH_MS = 1_000;
@@ -299,20 +338,20 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
     for (const index of groupOf(triggerMs)) {
       const attempt = armed.attempts[index]!, ready = readiness[index]!, calibration = calibrations.get(index);
       if (!ready.settled || !ready.ok || !calibration) continue;
-      const transport = renderer!.transportFor(attempt.target.workerId);
-      if (!transport) { emitPlan({ workerId: attempt.target.workerId, mode: 'node-fallback', code: 'RENDERER_TRANSPORT_MISSING' }); continue; }
+      const transport = renderer!.transportFor(attempt.target.workerId,attempt);
+      if (!transport) { emitPlan({ workerId: attempt.target.workerId, attemptId:attempt.attempt.id, mode: 'node-fallback', code: 'RENDERER_TRANSPORT_MISSING' }); continue; }
       let plan: RendererFirePlan;
       // The page fires at the trigger, so the trigger is the "release" it plans for.
       try { plan = planRendererFire({ key: attempt.key, pageUrl: renderer!.pageUrl, calibration, clock, releaseMs: triggerMs, dispatchDeadlineMs, nodeNowMs: performance.now(), options: rendererOptions }); }
-      catch (error) { emitPlan({ workerId: attempt.target.workerId, mode: 'node-fallback', code: safeCode(error, 'RENDERER_PLAN_FAILED'), calibration }); continue; }
+      catch (error) { emitPlan({ workerId: attempt.target.workerId, attemptId:attempt.attempt.id, mode: 'node-fallback', code: safeCode(error, 'RENDERER_PLAN_FAILED'), calibration }); continue; }
       // Too close to (or past) the trigger to arm safely: leave it to the Node path at its trigger.
-      if (!(now() < triggerMs - 1)) { emitPlan({ workerId: attempt.target.workerId, mode: 'node-fallback', code: 'RENDERER_ARM_TOO_LATE', calibration }); continue; }
-      deps.onMark?.(attempt.target.workerId, 'rendererArm');
+      if (!(now() < triggerMs - 1)) { emitPlan({ workerId: attempt.target.workerId, attemptId:attempt.attempt.id, mode: 'node-fallback', code: 'RENDERER_ARM_TOO_LATE', calibration }); continue; }
+      deps.onMark?.(attempt.target.workerId,'rendererArm',attempt);
       const sent = fireArmedAttemptRenderer(attempt, transport, clock, armedWindow(armed, attempt), plan, deps.isAborted, rendererOptions.armLeadMs);
       sent.catch(() => undefined);
       sends[index] = sent;
       rendererArmed.push(index);
-      emitPlan({ workerId: attempt.target.workerId, mode: 'renderer', calibration, plan });
+      emitPlan({ workerId: attempt.target.workerId, attemptId:attempt.attempt.id, mode: 'renderer', calibration, plan });
     }
   };
   /** ---- Trigger: one synchronous, in-memory pass. No I/O, hashing or request building here. ---- */
@@ -320,9 +359,9 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
     for (const index of groupOf(triggerMs)) {
       const attempt = armed.attempts[index]!, ready = readiness[index]!;
       if (sends[index] || !ready.settled || !ready.ok) continue;
-      const transport = deps.transportFor(attempt.target.workerId);
+      const transport = deps.transportFor(attempt.target.workerId,attempt);
       if (!transport) continue;
-      deps.onMark?.(attempt.target.workerId, 'transportCall');
+      deps.onMark?.(attempt.target.workerId,'transportCall',attempt);
       const sent = fireArmedAttempt(attempt, transport, clock, armedWindow(armed, attempt), deps.isAborted);
       sent.catch(() => undefined); // observed below; marked handled so a refusal is never an unhandled rejection meanwhile
       sends[index] = sent;
@@ -335,7 +374,7 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
   const committedAbort = () => {
     if (!disarmRequested && deps.isAborted()) {
       disarmRequested = true;
-      for (const index of rendererArmed) void renderer!.transportFor(armed.attempts[index]!.target.workerId)?.disarmRendererCheckout(armed.attempts[index]!.key);
+      for (const index of rendererArmed) {const attempt=armed.attempts[index]!;void renderer!.transportFor(attempt.target.workerId,attempt)?.disarmRendererCheckout(attempt.key);}
     }
     return false;
   };
@@ -348,11 +387,11 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
         for (let round = 1; round <= 2; round++) {
           try { await deps.prewarm(attempt); }
           catch (error) {
-            emit({ kind: 'prewarm-failed', workerId: attempt.target.workerId, code: safeCode(error, 'SECURITY_PREWARM_FAILED') });
-            if (round === 1 && now() < retryCutoff) { emit({ kind: 'prewarm-retry', workerId: attempt.target.workerId }); continue; }
+            emit({ kind: 'prewarm-failed', workerId: attempt.target.workerId, attemptId: attempt.attempt.id, code: safeCode(error, 'SECURITY_PREWARM_FAILED') });
+            if (round === 1 && now() < retryCutoff) { emit({ kind: 'prewarm-retry', workerId: attempt.target.workerId, attemptId: attempt.attempt.id }); continue; }
             return false;
           }
-          emit({ kind: 'prewarm-ready', workerId: attempt.target.workerId });
+          emit({ kind: 'prewarm-ready', workerId: attempt.target.workerId, attemptId: attempt.attempt.id });
           return true;
         }
         return false;
@@ -371,7 +410,7 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
       await Promise.race([
         Promise.all(armed.attempts.map(async (attempt, index) => {
           try { const calibration = await renderer.calibrate(attempt); if (open) collected.set(index, calibration); }
-          catch (error) { if (open) emitPlan({ workerId: attempt.target.workerId, mode: 'node-fallback', code: safeCode(error, 'RENDERER_CLOCK_SAMPLING_FAILED') }); }
+          catch (error) { if (open) emitPlan({ workerId: attempt.target.workerId, attemptId:attempt.attempt.id, mode: 'node-fallback', code: safeCode(error, 'RENDERER_CLOCK_SAMPLING_FAILED') }); }
           finally { if (open) finished.add(index); }
         })),
         new Promise<void>(done => { timer = setTimeout(done, Math.max(0, clock.monotonicDeadline(firstTriggerMs - FINAL_APPROACH_MS) - performance.now())); }),
@@ -380,7 +419,7 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
       clearTimeout(timer);
       calibrations = collected;
       armed.attempts.forEach((attempt, index) => {
-        if (!finished.has(index)) emitPlan({ workerId: attempt.target.workerId, mode: 'node-fallback', code: 'RENDERER_CALIBRATION_TIMEOUT' });
+        if (!finished.has(index)) emitPlan({ workerId: attempt.target.workerId, attemptId:attempt.attempt.id, mode: 'node-fallback', code: 'RENDERER_CALIBRATION_TIMEOUT' });
       });
     }
     if (deps.onFinalApproach) { await waitFor(firstTriggerMs - FINAL_APPROACH_MS); try { deps.onFinalApproach(); } catch { /* optional tuning */ } }
@@ -415,11 +454,11 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
         if (outcome === timedOut) { await disarmAttempt(attempt, 'PREWARM_NOT_READY_IN_WINDOW', now).catch(() => undefined); return { state: 'WINDOW_MISSED', code: 'PREWARM_NOT_READY_IN_WINDOW' }; }
       }
       if (!ready.ok) { await disarmAttempt(attempt, 'SECURITY_PREWARM_FAILED', now).catch(() => undefined); return { state: 'PREWARM_FAILED', code: 'SECURITY_PREWARM_FAILED' }; }
-      const transport = deps.transportFor(attempt.target.workerId);
+      const transport = deps.transportFor(attempt.target.workerId,attempt);
       if (!transport) { await disarmAttempt(attempt, 'API_CHECKOUT_WORKER_MISSING', now).catch(() => undefined); return { state: 'NOT_DISPATCHED', code: 'API_CHECKOUT_WORKER_MISSING' }; }
       sent = fireArmedAttempt(attempt, transport, clock, armedWindow(armed, attempt), deps.isAborted);
     }
-    emit({ kind: 'dispatch-start', workerId: attempt.target.workerId });
+    emit({ kind: 'dispatch-start', workerId: attempt.target.workerId, attemptId: attempt.attempt.id });
     try {
       const verified = await settleArmedAttempt(attempt, sent, now);
       return deps.onVerifiedHold ? await deps.onVerifiedHold(attempt, verified) : { state: 'QR_READY' };
@@ -434,14 +473,22 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
     // settleInner classifies its own failures; an unexpected throw may have happened after the POST.
     const result = await settleInner(index).catch((): PrecisionDispatchResult => ({ state: 'UNKNOWN', code: 'PRECISION_DISPATCH_UNCLASSIFIED' }));
     const attempt = armed.attempts[index]!;
-    emit({ kind: 'settled', workerId: attempt.target.workerId, state: result.state, ...(result.code ? { code: result.code } : {}) });
+    emit({ kind: 'settled', workerId: attempt.target.workerId, attemptId: attempt.attempt.id, state: result.state, ...(result.code ? { code: result.code } : {}) });
     return result;
   };
   const settled = await Promise.all(armed.attempts.map((_, index) => settleOne(index)));
+  for (const guard of armed.fanOutGuards) if (guard.state === 'armed') {
+    const states = armed.attempts.flatMap((attempt, index) => guard.attemptIds.includes(attempt.attempt.id) ? [settled[index]!.state] : []);
+    const state = states.some(value => value === 'QR_READY' || value === 'HOLD_VERIFIED_QR_ATTENTION') ? 'verified'
+      : states.some(value => value === 'UNKNOWN') ? 'unknown' : 'rejected';
+    await guard.journal.mark(guard.key, state, new Date(now()), undefined, undefined,
+      state === 'rejected' ? 'FAN_OUT_ALL_CHILDREN_CONCLUSIVE' : undefined).catch(() => undefined);
+    revokeSubmissionPermit(guard.permit); guard.state = 'settled';
+  }
   const disarmed = await disarmUnfired(armed, 'ARMED_NOT_DISPATCHED', now);
   const afterFireError = await afterFire;
-  const byWorker = new Map(armed.attempts.map((attempt, index) => [attempt.target.workerId, settled[index]!] as const));
-  for (const value of armed.unarmed) byWorker.set(value.attempt.target.workerId, { state: value.state, code: value.code });
-  return { results: armed.race.attempts.map(attempt => ({ attempt, ...(byWorker.get(attempt.target.workerId) ?? { state: 'NOT_DISPATCHED' as const, code: 'PRECISION_NOT_ARMED' }) })),
+  const byAttempt = new Map(armed.attempts.map((attempt, index) => [attempt.attempt.id, settled[index]!] as const));
+  for (const value of armed.unarmed) byAttempt.set(value.attempt.id, { state: value.state, code: value.code });
+  return { results: armed.race.attempts.map(attempt => ({ attempt, ...(byAttempt.get(attempt.id) ?? { state: 'NOT_DISPATCHED' as const, code: 'PRECISION_NOT_ARMED' }) })),
     disarmed, ...(afterFireError ? { afterFireError } : {}) };
 }

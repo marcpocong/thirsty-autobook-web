@@ -4,7 +4,7 @@ import { THIRSTY_PICKLE_FACILITY_ID } from './live-availability-provider.js';
 import type { AvailabilitySnapshot, BookingPlan, AvailabilitySlot, BookingPreferences, PlannedCourt } from './types.js';
 import { observedResponse, standardPlanJournalKeys, type CheckoutCustomer, type TwoHourCheckoutRequest } from './two-hour-reservation.js';
 import type { PublicCheckoutRequest, VerifiedPublicCheckout } from './public-checkout.js';
-import { validatePublicCheckoutResponse } from './public-checkout.js';
+import { ondaCheckoutBoundary, validatePublicCheckoutResponse } from './public-checkout.js';
 import type { OndaBrowserSessionTransport } from './browser-session-transport.js';
 import { DurableSubmissionJournal } from './durable-submission-journal.js';
 import { SubmissionDispatchError } from './submission-errors.js';
@@ -137,7 +137,7 @@ export function prooflessRequest(plan:BookingPlan,customer:CheckoutCustomer):Pro
     customerPhone:customer.customerPhone,customerFirstName:null,customerLastName:null,facilityId:THIRSTY_PICKLE_FACILITY_ID,
     bookingType:'online',usedCustomerMembershipId:null,userId:null,
     items:courts.flatMap((court,courtIndex)=>court.slots.map(slot=>({sessionRef:`session_${courtIndex+1}` as const,facilityId:THIRSTY_PICKLE_FACILITY_ID,
-      spaceId:slot.spaceId,date:slot.date,startTime:slot.startTime,endTime:slot.endTime,duration:60,
+      spaceId:slot.spaceId,date:slot.date,startTime:slot.startTime,endTime:ondaCheckoutBoundary(slot.endTime),duration:60,
       rate:slot.price,chargedAmount:slot.price,guestCount:1,activityKey:null,activityLabel:null,promotionId:null,availabilityProof:null})))};
 }
 

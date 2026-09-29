@@ -50,11 +50,12 @@ execFileSync(compiler, ['/nologo', '/target:winexe', '/optimize+', `/win32icon:$
   '/reference:System.Windows.Forms.dll', `/out:${join(output, 'Thirsty Pickle Bot.exe')}`,
   resolve(root, 'scripts/ThirstyPickleBotLauncher.cs')], { cwd: root, stdio: 'inherit', windowsHide: true });
 const appHash=await hash(join(output,'Thirsty Pickle Bot.exe'));
-let sourceRevision='unknown';
-try{const head=execFileSync('git',['rev-parse','--short','HEAD'],{cwd:root,encoding:'utf8'}).trim();
-  const dirty=execFileSync('git',['status','--porcelain'],{cwd:root,encoding:'utf8'}).trim()?' + uncommitted changes':'';sourceRevision=`${head}${dirty}`;}catch{}
+let sourceRevision='unknown',sourceBranch='unknown',sourceDirty='unknown';
+try{sourceRevision=execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim();
+  sourceBranch=execFileSync('git',['branch','--show-current'],{cwd:root,encoding:'utf8'}).trim()||'detached';
+  sourceDirty=execFileSync('git',['status','--porcelain'],{cwd:root,encoding:'utf8'}).trim()?'yes':'no';}catch{}
 await writeFile(join(output, 'BUILD-INFO.txt'),
-  `Thirsty Pickle Bot self-contained installation\nBuilt: ${new Date().toISOString()}\nSource: ${sourceRevision}\nLauncher SHA256: ${appHash}\n`+
+  `Thirsty Pickle Bot self-contained installation\nBuilt: ${new Date().toISOString()}\nSource Commit: ${sourceRevision}\nBranch: ${sourceBranch}\nDirty: ${sourceDirty}\nLauncher SHA256: ${appHash}\n`+
   'API-first is the primary booking method. Payment remains manual. This folder includes its own Node and Electron runtime and requires installed Chrome.\n');
 await mkdir(join(output, '.local/private'), { recursive: true });
 if(!existsSync(join(output,'.local/private/.env.example')))await copyFile(join(root, '.env.example'), join(output, '.local/private/.env.example'));

@@ -3,11 +3,11 @@ import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { armedNothingFired, armedWindow, armPrecisionRace, disarmAttempt, dispatchArmedPrecisionRace, fireArmedAttempt, settleArmedAttempt,
+import { armedNothingFired, armedWindow, armPrecisionRace, disarmAttempt, disarmUnfired, dispatchArmedPrecisionRace, fireArmedAttempt, settleArmedAttempt,
   type ArmedAttempt, type ArmedPrecisionRace } from '../../src/api-booking/armed-dispatch.js';
 import { BrowserSessionTransportError } from '../../src/api-booking/browser-session-transport.js';
 import { consumeSubmissionPermit, DurableSubmissionJournal, isSubmissionPermitUnspent } from '../../src/api-booking/durable-submission-journal.js';
-import { classifyPrecisionDispatchError, freezePrecisionRace, precisionTargetPlan, reducePrecisionOutcome, validatePrecisionTargets,
+import { classifyPrecisionDispatchError, freezePrecisionRace, precisionAttemptSet, precisionTargetPlan, reducePrecisionOutcome, validatePrecisionTargets,
   type FrozenPrecisionRace, type PrecisionAttemptState } from '../../src/api-booking/precision-race.js';
 import type { DirectTransport, ProoflessCheckoutRequest } from '../../src/api-booking/proofless-checkout.js';
 import { TrustedReleaseClock } from '../../src/release-clock.js';
@@ -35,6 +35,16 @@ function fakeLock() {
 async function arm(count: number, leadMs = 400, offsets: readonly number[] = []) {
   const releaseMs = Date.now() + leadMs, race = frozenRace(count, releaseMs, offsets), lock = fakeLock();
   const clock = TrustedReleaseClock.fromOffset(0, { method: 'test', sampleCount: 5 });
+  const armed = await armPrecisionRace(race, { lock, customerFor: () => customer, journalRoot: root, releaseMs, now: () => clock.nowMs() });
+  return { armed, race, lock, clock, releaseMs };
+}
+async function armFanOut(count = 2, leadMs = 60_000) {
+  const releaseMs = Date.now() + leadMs;
+  const inputs = Array.from({ length: count }, (_, index) =>
+    ({ court: 7 - index, start: '17:00', durationHours: 3, fanOutReleaseOffsetsMs: [0, -10, -20, -30] }));
+  const targets = validatePrecisionTargets(inputs, date, true);
+  const race = freezePrecisionRace(date, releaseMs, precisionAttemptSet(targets, date, true));
+  const lock = fakeLock(), clock = TrustedReleaseClock.fromOffset(0, { method: 'test', sampleCount: 5 });
   const armed = await armPrecisionRace(race, { lock, customerFor: () => customer, journalRoot: root, releaseMs, now: () => clock.nowMs() });
   return { armed, race, lock, clock, releaseMs };
 }
@@ -88,6 +98,31 @@ describe('durable pre-release arm', () => {
       expect(JSON.stringify(record)).not.toContain(customer.customerId); // journals never store customer data
     }
     expect(() => { (armed.attempts as ArmedAttempt[]).push(armed.attempts[0]!); }).toThrow();
+  });
+
+  it('uses one crash-safe parent guard plus four distinct child journals for each worker goal', async () => {
+    const { armed, race } = await armFanOut();
+    expect(armed.attempts).toHaveLength(8);
+    expect(armed.fanOutGuards).toHaveLength(2);
+    for (const guard of armed.fanOutGuards) {
+      expect(guard).toMatchObject({ state: 'armed' });
+      expect(guard.attemptIds).toHaveLength(4);
+      expect(await journalAt(guard.key).read(guard.key)).toMatchObject({ state: 'armed', attempt: { attemptId: guard.key, planFingerprint: race.fingerprint } });
+      expect(await journalAt(guard.key).oneShotClaimed()).toBe(true);
+    }
+    for (const attempt of armed.attempts) {
+      const key = attempt.target.targetKey;
+      const child = new DurableSubmissionJournal(join(root, key, 'fan-out', race.fingerprint, attempt.attempt.id));
+      expect(await child.read(key)).toMatchObject({ state: 'armed', attempt: { attemptId: attempt.attempt.id } });
+      expect(await child.oneShotClaimed()).toBe(true);
+    }
+    await expect(armPrecisionRace(race, { customerFor: () => customer, journalRoot: root, releaseMs: race.releaseMs, now: Date.now }))
+      .rejects.toThrow('DUPLICATE_LOGICAL_BOOKING_BLOCKED');
+    expect(await disarmUnfired(armed, 'USER_ABORT', Date.now)).toEqual(['A', 'A', 'A', 'A', 'B', 'B', 'B', 'B']);
+    for (const guard of armed.fanOutGuards) {
+      expect(await journalAt(guard.key).read(guard.key)).toMatchObject({ state: 'rejected', failureCode: 'USER_ABORT' });
+      expect(await journalAt(guard.key).recycleReusable(guard.key)).toBe('reused');
+    }
   });
 
   it('no alternative target can replace an armed target', async () => {
