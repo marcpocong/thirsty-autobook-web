@@ -52,6 +52,17 @@ export function consumeSubmissionPermit(permit: SubmissionPermit, expectedKey: s
 export function isSubmissionPermitUnspent(permit: SubmissionPermit): boolean { return unspentPermits.has(permit); }
 /** Makes an unspent permit unusable. Returns true only if it was still unspent (so no POST can ever have used it). */
 export function revokeSubmissionPermit(permit: SubmissionPermit): boolean { return unspentPermits.delete(permit); }
+/**
+ * EXPERIMENTAL dispatch coordinator only (dispatch-coordinator-child.ts). Mints, inside a coordinator CHILD process, the
+ * in-memory permit of a one-shot whose durable claim was made by the PARENT, which consumed its own permit for the same
+ * key before delegating. One durable claim therefore still yields at most one usable permit across both processes.
+ */
+export function delegatedSubmissionPermit(key: string): SubmissionPermit {
+  if (typeof process.send !== 'function' || !/^[a-f0-9]{64}$/.test(key)) throw Error('DELEGATED_PERMIT_NOT_ALLOWED');
+  const permit = Object.freeze({ key });
+  unspentPermits.add(permit);
+  return permit;
+}
 const ONE_SHOT_FILE = 'supervised-one-shot.json';
 
 function validAttempt(attempt: SanitizedSubmissionAttempt, stage: SanitizedSubmissionAttempt['stage']): boolean {

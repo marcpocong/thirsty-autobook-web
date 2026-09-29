@@ -86,6 +86,8 @@ function warmUpOnce(): void {
 
 export class CriticalPathRecorder {
   private readonly workers = new Map<string, WorkerRecord>();
+  /** Rows measured elsewhere (an experimental dispatch coordinator process), already release-relative on the trusted clock. */
+  private readonly adopted = new Map<string, CriticalPathRow>();
   private schedulerFired: number | undefined;
 
   /**
@@ -97,7 +99,11 @@ export class CriticalPathRecorder {
     for (const worker of workers) this.workers.set(worker, { node: {}, dispatchMode: defaultMode });
   }
 
-  private entry(worker: string): WorkerRecord {
+  /** Transport key (e.g. "A:2") → attempt ID, so one child's marks and transport observations land on one row. */
+  private readonly aliases = new Map<string, string>();
+  alias(from: string, to: string): void { if (from !== to) this.aliases.set(from, to); }
+  private entry(key: string): WorkerRecord {
+    const worker = this.aliases.get(key) ?? key;
     let value = this.workers.get(worker);
     if (!value) { value = { node: {}, dispatchMode: this.defaultMode }; this.workers.set(worker, value); }
     return value;
@@ -134,11 +140,15 @@ export class CriticalPathRecorder {
     } catch { /* telemetry only */ }
   }
   calibration(worker: string, calibration: RendererClockCalibration | undefined): void { if (calibration) this.entry(worker).calibration = calibration; }
-  workerIds(): string[] { return [...this.workers.keys()].sort(); }
+  workerIds(): string[] { return [...new Set([...this.workers.keys(), ...this.adopted.keys()])].sort(); }
+  /** Takes over a complete row measured in another process; it replaces this recorder's row for the same ID. */
+  adopt(row: CriticalPathRow): void { if (row && row.schema === 'critical-path/v1' && typeof row.workerId === 'string') this.adopted.set(row.workerId, row); }
 
   rows(): CriticalPathRow[] {
     const rel = (mono: number | undefined) => mono === undefined ? null : round(mono - this.releaseMono);
     return this.workerIds().map(workerId => {
+      const adopted = this.adopted.get(workerId);
+      if (adopted) return adopted;
       const record = this.workers.get(workerId)!, node = record.node, calibration = record.calibration;
       const mapped = (rendererMs: number | undefined): Bounded | null => {
         if (rendererMs === undefined || !calibration?.consistent || !Number.isFinite(rendererMs)) return null;
