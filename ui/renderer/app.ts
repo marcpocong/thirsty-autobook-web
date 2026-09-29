@@ -109,8 +109,12 @@ const releaseAction=releaseView.querySelector('.release-action')!;
 const VIEWS=['release','strategy','live','history','tools','tests'] as const;
 // These views only observe; they stay reachable while a run is in progress.
 const OBSERVER_VIEWS:readonly View[]=['live','history','tools'];
+// The main release dashboard is also safe to revisit during a run: render() keeps
+// its mutating controls in the running/disabled state. Strategy remains blocked
+// so an in-flight plan cannot be edited accidentally.
+const RUN_ACCESSIBLE_VIEWS:readonly View[]=['release',...OBSERVER_VIEWS];
 function showView(view:View){
-  if(latest&&latest.operation!=='idle'&&latest.operation!=='scheduled'&&!OBSERVER_VIEWS.includes(view)&&!(view==='tests'&&workflow==='test'))return;
+  if(latest&&latest.operation!=='idle'&&latest.operation!=='scheduled'&&!RUN_ACCESSIBLE_VIEWS.includes(view)&&!(view==='tests'&&workflow==='test'))return;
   currentView=view;
   for(const id of VIEWS){byId(`view-${id}`).hidden=id!==view;for(const tab of document.querySelectorAll(`[data-view="${id}"]`))tab.setAttribute('aria-current',id===view||(id==='tools'&&view==='tests')?'page':'false');}
   const nextWorkflow=view==='tests'?'test':OBSERVER_VIEWS.includes(view)?workflow:'release';
