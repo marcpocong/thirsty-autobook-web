@@ -3,9 +3,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Page } from 'playwright';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { OndaBrowserSessionTransport } from '../../src/api-booking/browser-session-transport.js';
+import { OndaBrowserSessionTransport, armCheckoutRequest } from '../../src/api-booking/browser-session-transport.js';
+import { prooflessReleasePlan, prooflessRequest } from '../../src/api-booking/proofless-checkout.js';
 import { DurableSubmissionJournal } from '../../src/api-booking/durable-submission-journal.js';
-import { TwoHourReservationAdapter, type SlotCheckRequest, type TwoHourCheckoutRequest } from '../../src/api-booking/two-hour-reservation.js';
+import { TwoHourReservationAdapter, standardPlanJournalKeys, type SlotCheckRequest, type TwoHourCheckoutRequest } from '../../src/api-booking/two-hour-reservation.js';
 import { currentHeadersFromNormalSiteHelpers } from '../../src/api-booking/normal-site-security-context.js';
 import { CalendarFreeSecurityError } from '../../src/api-booking/calendar-free-security-context.js';
 import { SubmissionDispatchError } from '../../src/api-booking/submission-errors.js';
@@ -321,5 +322,33 @@ describe('browser session transport, offline', () => {
     await expect(adapter.submit(plan, customer, { supervisedOneShot: true }))
       .rejects.toThrow('CURRENT_CHECKOUT_HEADERS_UNAVAILABLE');
     expect(evaluate).not.toHaveBeenCalled();
+  });
+});
+
+// 2026-09-29: the payload now ends the 23:00 hour at "00:00", but journal and permit keys keep "24:00".
+// A mismatched key made the transport throw before sending, and made Precision refuse to arm.
+describe('midnight-ending proofless checkout keys', () => {
+  const plan = prooflessReleasePlan({ mode: 'standard', targetDate: date, durationHours: 2, preferredStartTimes: ['22:00'],
+    fallbackStartTimes: [], courtPriority: [6], fallbackCourts: [], courtCount: 1, maximumTotalPrice: Infinity, currency: 'PHP' });
+  const customer = { clientId: 'synthetic-client', customerId: 'synthetic-customer', customerEmail: 'example@test.invalid',
+    customerPhone: '0000000000', customerFirstName: 'Synthetic', customerLastName: 'Player' };
+  const deepFreeze = <T,>(value: T): T => { if (value && typeof value === 'object') { Object.values(value).forEach(deepFreeze); Object.freeze(value); } return value; };
+
+  it('consumes the permit claimed under the plan key and sends 00:00', async () => {
+    const { page, evaluate } = fakePage({ success: true });
+    const transport = new OndaBrowserSessionTransport(page, async () => ({ turnstileToken: 'synthetic-current-token', publicFingerprint: 'synthetic-current-fingerprint' }));
+    process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT = 'SUPERVISED_ONE_SHOT';
+    const directory = await mkdtemp(join(tmpdir(), 'onda-transport-')); directories.push(directory);
+    const journal = new DurableSubmissionJournal(directory), [key] = standardPlanJournalKeys(plan, facilityId);
+    expect(plan.endTime).toBe('24:00');
+    await journal.begin(key!);
+    await expect(transport.publicCheckoutProofless(prooflessRequest(plan, customer), await journal.claimSupervisedOneShot(key!))).resolves.toEqual({ success: true });
+    expect(evaluate).toHaveBeenCalledOnce();
+    expect(JSON.stringify(evaluate.mock.calls[0]![1])).toContain('"endTime":"00:00"');
+  });
+
+  it('arms under the same key as the Precision target journal', () => {
+    const request = deepFreeze(prooflessRequest(plan, customer));
+    expect(armCheckoutRequest(request).key).toBe(standardPlanJournalKeys(plan, facilityId)[0]);
   });
 });
