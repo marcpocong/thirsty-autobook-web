@@ -47,7 +47,9 @@
     "arbitration:manifest": "tsx scripts/create-arbitration-manifest.ts",
     "arbitration:replay": "tsx scripts/replay-release-arbitration.ts",
     "verify:dist": "node scripts/verify-dist.mjs",
-    "release:build": "node scripts/release-build.mjs"
+    "release:build": "node scripts/release-build.mjs",
+    "replay:strategy": "tsx scripts/replay-strategy-v2.ts",
+    "bench:fanout": "tsx scripts/benchmark-fanout-capacity.ts"
   },
   "dependencies": {
     "@fingerprintjs/fingerprintjs": "5.2.0",
