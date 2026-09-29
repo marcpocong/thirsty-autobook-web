@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { PRECISION_MAX_ATTEMPTS, PRECISION_WORKER_IDS, type WorkerId } from '../workers.js';
+import { PRECISION_FAN_OUT_ATTEMPTS, PRECISION_MAX_ATTEMPTS, PRECISION_WORKER_IDS, type WorkerId } from '../workers.js';
 import { COURT_TO_SPACE_ID } from './availability-parser.js';
 import { DurableSubmissionJournal, type SubmissionState } from './durable-submission-journal.js';
 import { SubmissionDispatchError } from './submission-errors.js';
@@ -20,6 +20,8 @@ export interface PrecisionTargetInput {
   court: number; start: string; durationHours: number;
   /** Operator Release Offset for this attempt only (release-offset.ts); absent means 0 ms (normal). */
   releaseOffsetMs?: number;
+  /** Fixed fan-out only: the four independently scheduled child offsets for this worker/browser. */
+  fanOutReleaseOffsetsMs?: readonly number[];
 }
 export interface PrecisionTarget extends PrecisionTargetInput {
   workerId: WorkerId;
@@ -36,7 +38,7 @@ export function precisionTargetEnd(target: PrecisionTargetInput): string {
 }
 
 /** Validates the exact authorized target set. Rejects duplicates and any same-court overlap. */
-export function validatePrecisionTargets(inputs: readonly PrecisionTargetInput[], date: string): PrecisionTarget[] {
+export function validatePrecisionTargets(inputs: readonly PrecisionTargetInput[], date: string, fanOut = false): PrecisionTarget[] {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw Error('PRECISION_DATE_INVALID');
   if (!Array.isArray(inputs) || inputs.length < 1 || inputs.length > PRECISION_MAX_TARGETS) throw Error('PRECISION_TARGET_COUNT_INVALID');
   const targets = inputs.map((input, index) => {
@@ -44,7 +46,7 @@ export function validatePrecisionTargets(inputs: readonly PrecisionTargetInput[]
     if (!Number.isInteger(input.court) || !COURT_TO_SPACE_ID[input.court as keyof typeof COURT_TO_SPACE_ID] ||
       !/^(0[89]|1\d|2[0-3]):00$/.test(input.start) || !Number.isInteger(input.durationHours) ||
       input.durationHours < 1 || input.durationHours > 3 || start + input.durationHours > 24 ||
-      !isReleaseOffsetMs(input.releaseOffsetMs ?? 0)) throw Error('PRECISION_TARGET_INVALID');
+      !isReleaseOffsetMs(input.releaseOffsetMs ?? 0) || input.fanOutReleaseOffsetsMs?.some((value: number)=>!isReleaseOffsetMs(value))) throw Error('PRECISION_TARGET_INVALID');
     const workerId = PRECISION_WORKER_IDS[index]!;
     const end = precisionTargetEnd(input);
     const spaceId = COURT_TO_SPACE_ID[input.court as keyof typeof COURT_TO_SPACE_ID];
@@ -52,13 +54,25 @@ export function validatePrecisionTargets(inputs: readonly PrecisionTargetInput[]
       start + offset >= 16 ? DIRECT_ASSUMED_EVENING_RATE : DIRECT_ASSUMED_DAY_RATE).reduce((sum, value) => sum + value, 0);
     return { court: input.court, start: input.start, durationHours: input.durationHours, workerId, end, assumedAmount,
       targetKey: DurableSubmissionJournal.key(THIRSTY_PICKLE_FACILITY_ID, spaceId, date, input.start, end),
-      ...(input.releaseOffsetMs ? { releaseOffsetMs: input.releaseOffsetMs } : {}) } satisfies PrecisionTarget;
+      ...(input.releaseOffsetMs ? { releaseOffsetMs: input.releaseOffsetMs } : {}),
+      ...(input.fanOutReleaseOffsetsMs ? { fanOutReleaseOffsetsMs:Object.freeze([...input.fanOutReleaseOffsetsMs]) } : {}) } satisfies PrecisionTarget;
   });
+  if (fanOut && targets.some(target => target.fanOutReleaseOffsetsMs?.length !== PRECISION_FAN_OUT_ATTEMPTS)) throw Error('PRECISION_FAN_OUT_OFFSETS_INVALID');
+  if (!fanOut && targets.some(target => target.fanOutReleaseOffsetsMs !== undefined)) throw Error('PRECISION_FAN_OUT_DISABLED');
   for (const [index, target] of targets.entries()) for (const other of targets.slice(index + 1)) {
     if (target.targetKey === other.targetKey) throw Error('PRECISION_TARGET_DUPLICATE');
     if (target.court === other.court && target.start < other.end && other.start < target.end) throw Error('PRECISION_TARGET_OVERLAP');
   }
   return targets;
+}
+
+/** Expands each configured worker goal into either one ordinary attempt or four fan-out children. */
+export function precisionAttemptSet(targets:readonly PrecisionTarget[],date:string,fanOut:boolean):Array<{target:PrecisionTarget;plan:BookingPlan}>{
+  return targets.flatMap(target=>(fanOut?target.fanOutReleaseOffsetsMs??[]:[target.releaseOffsetMs??0]).map(releaseOffsetMs=>{
+    const {fanOutReleaseOffsetsMs:_fanOut,releaseOffsetMs:_single,...base}=target;
+    const child={...base,...(releaseOffsetMs?{releaseOffsetMs}:{})} as PrecisionTarget;
+    return {target:child,plan:precisionTargetPlan(child,date)};
+  }));
 }
 
 /** The exact single-court Proofless plan for one target; never combined with another target. */
@@ -68,9 +82,9 @@ export function precisionTargetPlan(target: PrecisionTarget, date: string): Book
     courtCount: 1, exactCourts: [[target.court]], maximumTotalPrice: Infinity, currency: 'PHP' });
 }
 
-export function precisionFingerprint(date: string, releaseMs: number, targets: readonly PrecisionTarget[]): string {
+export function precisionFingerprint(date: string, releaseMs: number, targets: readonly PrecisionTarget[], fanOut = false): string {
   // A non-zero Release Offset is appended, so a set without offsets keeps its previous fingerprint.
-  return createHash('sha256').update(JSON.stringify({ kind: 'precision-v1', date, releaseMs, desiredHolds: PRECISION_DESIRED_HOLDS,
+  return createHash('sha256').update(JSON.stringify({ kind: fanOut ? 'precision-fan-out-v1' : 'precision-v1', date, releaseMs, desiredHolds: PRECISION_DESIRED_HOLDS,
     targets: targets.map(target => [target.workerId, target.court, target.start, target.end, target.assumedAmount,
       ...(target.releaseOffsetMs ? [target.releaseOffsetMs] : [])]) })).digest('hex');
 }
@@ -159,22 +173,44 @@ export async function classifyPrecisionDispatchError(error: unknown,
   return { state: 'UNKNOWN', code };
 }
 
-export interface PrecisionAttempt { target: PrecisionTarget; plan: BookingPlan }
+export interface PrecisionAttempt {
+  /** Stable child identity, distinct even when fan-out children share one logical target key. */
+  id: string;
+  target: PrecisionTarget;
+  plan: BookingPlan;
+  fanOutIndex: number;
+  fanOutCount: number;
+}
 export interface FrozenPrecisionRace {
   readonly date: string;
   readonly releaseMs: number;
   readonly attempts: readonly PrecisionAttempt[];
   readonly fingerprint: string;
+  readonly fanOut: boolean;
 }
 
+const precisionAttemptId = (date: string, releaseMs: number, target: PrecisionTarget, index: number) =>
+  createHash('sha256').update(JSON.stringify(['precision-attempt-v1', date, releaseMs, target.targetKey, target.workerId,
+    target.releaseOffsetMs ?? 0, index])).digest('hex');
+
 /** Freezes the exact dispatch set: an immutable copy plus a fingerprint re-checked before dispatch. */
-export function freezePrecisionRace(date: string, releaseMs: number, attempts: readonly PrecisionAttempt[]): FrozenPrecisionRace {
-  const copy = Object.freeze(attempts.map(attempt => Object.freeze({ target: Object.freeze({ ...attempt.target }), plan: attempt.plan })));
-  return Object.freeze({ date, releaseMs, attempts: copy, fingerprint: precisionFingerprint(date, releaseMs, copy.map(attempt => attempt.target)) });
+export function freezePrecisionRace(date: string, releaseMs: number,
+  attempts: ReadonlyArray<Omit<PrecisionAttempt, 'id' | 'fanOutIndex' | 'fanOutCount'> & Partial<Pick<PrecisionAttempt, 'id' | 'fanOutIndex' | 'fanOutCount'>>>): FrozenPrecisionRace {
+  const counts = new Map<string, number>();
+  for (const attempt of attempts) counts.set(attempt.target.targetKey, (counts.get(attempt.target.targetKey) ?? 0) + 1);
+  const seen = new Map<string, number>();
+  const copy = Object.freeze(attempts.map((attempt, index) => {
+    const fanOutIndex = seen.get(attempt.target.targetKey) ?? 0; seen.set(attempt.target.targetKey, fanOutIndex + 1);
+    return Object.freeze({ id: attempt.id ?? precisionAttemptId(date, releaseMs, attempt.target, index),
+      target: Object.freeze({ ...attempt.target }), plan: attempt.plan, fanOutIndex, fanOutCount: counts.get(attempt.target.targetKey)! });
+  }));
+  const fanOut = [...counts.values()].some(count => count > 1);
+  return Object.freeze({ date, releaseMs, attempts: copy, fanOut,
+    fingerprint: precisionFingerprint(date, releaseMs, copy.map(attempt => attempt.target), fanOut) });
 }
 
 export function assertPrecisionFreezeIntact(race: FrozenPrecisionRace): void {
-  if (precisionFingerprint(race.date, race.releaseMs, race.attempts.map(attempt => attempt.target)) !== race.fingerprint)
+  if (precisionFingerprint(race.date, race.releaseMs, race.attempts.map(attempt => attempt.target), race.fanOut) !== race.fingerprint)
     throw Error('PRECISION_FROZEN_SET_CHANGED');
 }
 
@@ -192,7 +228,7 @@ export interface PrecisionDispatchDeps {
   prewarmRetryCutoffMs?: number;
   dispatchWindowMs?: number;
   onEvent?: (event: { kind: 'prewarm-ready' | 'prewarm-failed' | 'prewarm-retry' | 'dispatch-start' | 'settled';
-    workerId: WorkerId; state?: PrecisionAttemptState; code?: string }) => void;
+    workerId: WorkerId; attemptId: string; state?: PrecisionAttemptState; code?: string }) => void;
 }
 
 /**
@@ -209,11 +245,11 @@ export async function dispatchPrecisionRace(race: FrozenPrecisionRace, deps: Pre
   await deps.waitUntil(race.releaseMs - deps.prewarmLeadMs);
   const readiness = race.attempts.map(attempt => (async (): Promise<boolean> => {
     for (let round = 1; round <= 2; round++) {
-      try { await deps.prewarm(attempt); deps.onEvent?.({ kind: 'prewarm-ready', workerId: attempt.target.workerId }); return true; }
+      try { await deps.prewarm(attempt); deps.onEvent?.({ kind: 'prewarm-ready', workerId: attempt.target.workerId, attemptId: attempt.id }); return true; }
       catch (error) {
         const code = error instanceof Error && /^[A-Z][A-Z0-9_]{0,79}$/.test(error.message) ? error.message : 'SECURITY_PREWARM_FAILED';
-        deps.onEvent?.({ kind: 'prewarm-failed', workerId: attempt.target.workerId, code });
-        if (round === 1 && deps.now() < retryCutoff) { deps.onEvent?.({ kind: 'prewarm-retry', workerId: attempt.target.workerId }); continue; }
+        deps.onEvent?.({ kind: 'prewarm-failed', workerId: attempt.target.workerId, attemptId: attempt.id, code });
+        if (round === 1 && deps.now() < retryCutoff) { deps.onEvent?.({ kind: 'prewarm-retry', workerId: attempt.target.workerId, attemptId: attempt.id }); continue; }
         return false;
       }
     }
@@ -227,14 +263,14 @@ export async function dispatchPrecisionRace(race: FrozenPrecisionRace, deps: Pre
     if (ready === timedOut) return { state: 'WINDOW_MISSED', code: 'PREWARM_NOT_READY_IN_WINDOW' };
     if (!ready) return { state: 'PREWARM_FAILED', code: 'SECURITY_PREWARM_FAILED' };
     if (deps.now() > deadline) return { state: 'WINDOW_MISSED', code: 'DIRECT_RELEASE_WINDOW_MISSED' };
-    deps.onEvent?.({ kind: 'dispatch-start', workerId: attempt.target.workerId });
+    deps.onEvent?.({ kind: 'dispatch-start', workerId: attempt.target.workerId, attemptId: attempt.id });
     return deps.dispatch(attempt);
   }));
   return race.attempts.map((attempt, index) => {
     const outcome = settled[index]!;
     // dispatch() classifies its own failures; an unexpected throw may have happened after the POST.
     const result: PrecisionDispatchResult = outcome.status === 'fulfilled' ? outcome.value : { state: 'UNKNOWN', code: 'PRECISION_DISPATCH_UNCLASSIFIED' };
-    deps.onEvent?.({ kind: 'settled', workerId: attempt.target.workerId, state: result.state, ...(result.code ? { code: result.code } : {}) });
+    deps.onEvent?.({ kind: 'settled', workerId: attempt.target.workerId, attemptId: attempt.id, state: result.state, ...(result.code ? { code: result.code } : {}) });
     return { attempt, ...result };
   });
 }

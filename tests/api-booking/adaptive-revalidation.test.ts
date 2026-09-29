@@ -26,14 +26,15 @@ const targetId = precisionCandidateId(date, target);
 const TARGET_CELLS = ['2/17', '2/18', '2/19'];
 
 interface GridOptions { closed?: string[]; codes?: Record<string, string>; price?: number; prices?: Record<string, number | null>;
-  cache?: string; latencyMs?: number; outcome?: AvailabilityObservation['outcome']; dropCourt?: number }
+  cache?: string; cacheAgeS?:number|null; latencyMs?: number; outcome?: AvailabilityObservation['outcome']; dropCourt?: number }
 /** A complete 7×16 grid, every cell OPEN at PHP 700 unless overridden. Cells are `court/hour` (hour 8–23). */
 function grid(seq: number, requestOffsetMs: number, options: GridOptions = {}): AvailabilityObservation {
   const code = (court: number, hour: number) => options.codes?.[`${court}/${hour}`] ?? (options.closed?.includes(`${court}/${hour}`) ? 'X' : 'O');
   const rows = Array.from({ length: 7 }, (_, index) => index + 1).filter(court => court !== options.dropCourt)
     .map(court => `${court}:${MATRIX_HOURS.map(hour => code(court, Number(hour.slice(0, 2)))).join('')}`);
   return { seq, scheduledOffsetMs: Math.round(requestOffsetMs), requestOffsetMs, responseOffsetMs: requestOffsetMs + (options.latencyMs ?? 150),
-    outcome: options.outcome ?? 'ok', targetDatePresent: true, matrix: rows.join(','), cache: { status: options.cache ?? 'MISS', ageS: 0 },
+    outcome: options.outcome ?? 'ok', targetDatePresent: true, matrix: rows.join(','), cache: { status: options.cache ?? 'MISS',
+      ...(options.cacheAgeS===null?{}:{ageS:options.cacheAgeS??0}) },
     prices: Array.from({ length: 7 }, (_, court) => MATRIX_HOURS.map(hour => {
       const key = `${court + 1}/${Number(hour.slice(0, 2))}`;
       return (key in (options.prices ?? {}) ? options.prices![key] : options.price ?? 700) as number;
@@ -172,22 +173,24 @@ describe('Test 4: the candidate becomes UNKNOWN or the grid incomplete', () => {
     const { harness, selection } = await reopened();
     harness.schedule(598_150, grid(129, 598_000, { dropCourt: 2 }));
     expect(await harness.run(selection, 'RESCUE', date)).toMatchObject({ outcome: 'SKIPPED', reason: 'LATEST_NOT_ACTIONABLE' });
-    expect(harness.stages('PHASE3_ADAPTIVE_SKIPPED')[0]).toMatchObject({ fitness: 'FORENSIC_ONLY_INCOMPLETE', seq: 129 });
+    expect(harness.stages('PHASE3_EVIDENCE').at(-1)).toMatchObject({ fitness: 'FORENSIC_ONLY_INCOMPLETE', seq: 129 });
+    expect(harness.stages('PHASE3_ADAPTIVE_SKIPPED')[0]).toMatchObject({ fitness: 'FORENSIC_ONLY_OUTDATED_REQUEST', seq: 128 });
     expect(harness.posts).toEqual([]);
   });
 });
 
-describe('Test 5: the newest read is stale or not actionable', () => {
+describe('Test 5: freshest evidence wins over a newer response with no usable represented state', () => {
   for (const [label, observation, fitness] of [
-    ['cached', grid(129, 598_000, { cache: 'HIT' }), 'FORENSIC_ONLY_CACHE_AGE_UNKNOWN'],
+    ['cached with unknown age', grid(129, 598_000, { cache: 'HIT',cacheAgeS:null }), 'FORENSIC_ONLY_CACHE_AGE_UNKNOWN'],
+    ['STALE Age 10',grid(129,598_000,{cache:'STALE',cacheAgeS:10}),'FORENSIC_ONLY_STALE'],
     ['failed', grid(129, 598_000, { outcome: 'failed' }), 'FAILED'],
   ] as const) {
-    it(`a ${label} newest read ends the attempt without falling back to #128`, async () => {
+    it(`a ${label} newer response is logged but cannot replace bounded MISS evidence #128`, async () => {
       const { harness, selection } = await reopened();
       harness.schedule(598_150, observation);
-      expect(await harness.run(selection, 'RESCUE', date)).toMatchObject({ outcome: 'SKIPPED', reason: 'LATEST_NOT_ACTIONABLE' });
-      expect(harness.stages('PHASE3_ADAPTIVE_SKIPPED')[0]).toMatchObject({ seq: 129, fitness });
-      expect(harness.posts).toEqual([]);
+      expect(await harness.run(selection, 'RESCUE', date)).toMatchObject({ outcome: 'SETTLED',selectedEvidenceSeq:128,evidenceSeq:128 });
+      expect(harness.stages('PHASE3_EVIDENCE').at(-1)).toMatchObject({ seq: 129, fitness });
+      expect(harness.posts).toEqual([expect.objectContaining({evidenceSeq:128})]);
     });
   }
   it('no newer read, but the selected read has aged past the freshness window: no POST', async () => {

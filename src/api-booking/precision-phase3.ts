@@ -3,8 +3,9 @@ import { COURT_TO_SPACE_ID } from './availability-parser.js';
 import { DurableSubmissionJournal } from './durable-submission-journal.js';
 import { THIRSTY_PICKLE_FACILITY_ID } from './live-availability-provider.js';
 import { MATRIX_HOURS } from './court-hour-matrix.js';
-import { decodeMatrix, type AvailabilityObservation } from '../slot-evidence.js';
+import { availabilityFreshness, compareAvailabilityFreshness, decodeMatrix, freshestAvailabilityObservation, type AvailabilityObservation } from '../slot-evidence.js';
 export type { AvailabilityObservation } from '../slot-evidence.js';
+export { freshestAvailabilityObservation } from '../slot-evidence.js';
 import { PRECISION_WORKER_IDS, type WorkerId } from '../workers.js';
 import { precisionTargetPlan, type PrecisionTarget } from './precision-race.js';
 import type { BookingPlan } from './types.js';
@@ -106,14 +107,33 @@ export function authorizePrecision(input: PrecisionAuthorizationInput): FrozenPr
     fingerprint: hash(frozen) });
 }
 
-export type EvidenceFitness = 'ACTIONABLE_FRESH' | 'FORENSIC_ONLY_CACHE_AGE_UNKNOWN' | 'FORENSIC_ONLY_STALE' |
+export type EvidenceFitness = 'ACTIONABLE_FRESH' | 'ACTIONABLE_BOUNDED_CACHE' | 'FORENSIC_ONLY_CACHE_AGE_UNKNOWN' | 'FORENSIC_ONLY_STALE' |
   'FORENSIC_ONLY_INCOMPLETE' | 'FORENSIC_ONLY_OUTDATED_REQUEST' | 'UNRELEASED' | 'FAILED';
-export interface ActionableObservation { observation: AvailabilityObservation; fitness: EvidenceFitness; ageMs: number }
-/** MISS is the only currently documented cache status accepted for action. HIT, STALE,
- * absent metadata, and AGE alone cannot bound the represented state. */
+export interface ActionableObservation { observation: AvailabilityObservation; fitness: EvidenceFitness; ageMs: number;
+  representedAtLowerBoundOffsetMs: number | null }
+export function isActionableEvidenceFitness(fitness: EvidenceFitness): boolean {
+  return fitness === 'ACTIONABLE_FRESH' || fitness === 'ACTIONABLE_BOUNDED_CACHE';
+}
+/** Conservative upper bound on how old the represented state can be at evaluation time.
+ * HTTP Age is an integer number of seconds and can be rounded down, so one full second is
+ * added at the response boundary. Time elapsed since that response is then added. */
+export function effectiveRepresentedAgeUpperBoundMs(observation: AvailabilityObservation,
+  releaseMs: number, evaluatedMs: number): number | null {
+  const ageS = observation.cache?.ageS;
+  if (!Number.isSafeInteger(ageS) || ageS! < 0) return null;
+  const elapsedSinceResponseMs = evaluatedMs - (releaseMs + observation.responseOffsetMs);
+  if (!Number.isFinite(elapsedSinceResponseMs) || elapsedSinceResponseMs < 0) return null;
+  return (ageS! + 1) * 1000 + elapsedSinceResponseMs;
+}
+/** MISS/age 0 is genuinely current evidence. HIT or STALE can be actionable only when
+ * integer Age metadata gives a conservative upper bound inside the same freshness budget. */
 export function classifyActionableObservation(observation: AvailabilityObservation, newestAnsweredSeq: number,
   releaseMs: number, evaluatedMs: number, maxAgeMs: number): ActionableObservation {
-  const ageMs = evaluatedMs - (releaseMs + observation.requestOffsetMs);
+  const evaluatedOffsetMs=evaluatedMs-releaseMs,requestAgeMs = evaluatedOffsetMs-observation.requestOffsetMs;
+  const cacheStatus = observation.cache?.status;
+  const freshness=availabilityFreshness(observation,evaluatedOffsetMs);
+  const boundedCacheAgeMs = cacheStatus === 'HIT' || cacheStatus === 'STALE' ? freshness.ageUpperBoundMs : null;
+  const ageMs = boundedCacheAgeMs ?? requestAgeMs;
   let fitness: EvidenceFitness;
   if (observation.outcome !== 'ok') fitness = 'FAILED';
   else if (!observation.targetDatePresent || observation.requestOffsetMs < 0) fitness = 'UNRELEASED';
@@ -121,11 +141,15 @@ export function classifyActionableObservation(observation: AvailabilityObservati
   else if (decodeMatrix(observation.matrix).size !== 112 || !observation.prices ||
     observation.prices.length !== 7 || observation.prices.some(row => row.length !== MATRIX_HOURS.length))
     fitness = 'FORENSIC_ONLY_INCOMPLETE';
-  else if (observation.cache?.status !== 'MISS' || (observation.cache.ageS ?? 0) > 0)
+  else if (cacheStatus === 'HIT' || cacheStatus === 'STALE') {
+    if (boundedCacheAgeMs === null) fitness = 'FORENSIC_ONLY_CACHE_AGE_UNKNOWN';
+    else if (boundedCacheAgeMs > maxAgeMs) fitness = 'FORENSIC_ONLY_STALE';
+    else fitness = 'ACTIONABLE_BOUNDED_CACHE';
+  } else if (cacheStatus !== 'MISS' || (observation.cache?.ageS ?? 0) > 0)
     fitness = 'FORENSIC_ONLY_CACHE_AGE_UNKNOWN';
-  else if (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > maxAgeMs) fitness = 'FORENSIC_ONLY_STALE';
+  else if (!Number.isFinite(requestAgeMs) || requestAgeMs < 0 || requestAgeMs > maxAgeMs) fitness = 'FORENSIC_ONLY_STALE';
   else fitness = 'ACTIONABLE_FRESH';
-  return { observation, fitness, ageMs };
+  return { observation, fitness, ageMs, representedAtLowerBoundOffsetMs:freshness.representedAtLowerBoundOffsetMs };
 }
 
 /** Freshness window for adaptive evidence: max(6 s, 2 × read latency + security refresh + 1 s), capped at 15 s.
@@ -155,7 +179,7 @@ function readCandidateRange(candidate: AuthorizedCandidate, observation: Availab
 }
 
 export function candidatePriceFromObservation(candidate: AuthorizedCandidate, evidence: ActionableObservation): number[] | null {
-  if (evidence.fitness !== 'ACTIONABLE_FRESH') return null;
+  if (!isActionableEvidenceFitness(evidence.fitness)) return null;
   const range = readCandidateRange(candidate, evidence.observation);
   return range.state === 'OPEN' ? range.prices : null;
 }
@@ -183,7 +207,7 @@ export type AdaptiveRevalidation =
 /**
  * The one rule every adaptive checkpoint (after security preparation, before reservation, immediately
  * before POST) applies. A newer Slot Watch sequence is not by itself a reason to stop: the newest
- * observation must independently be ACTIONABLE_FRESH now, and the SAME candidate must still be fully
+ * observation must independently be actionable now, and the SAME candidate must still be fully
  * OPEN in it with valid prices, in which case that observation becomes the effective evidence. The
  * candidate is never swapped; an older observation is never used in place of a newer one.
  */
@@ -198,12 +222,13 @@ export function revalidateAdaptiveAttempt(input: AdaptiveRevalidationInput): Ada
   if (!latest) return { valid: false, reason: 'LATEST_NOT_ACTIONABLE' };
   const seq = latest.observation.seq;
   const evidence = adaptiveFitness(latest.observation, input.newestSeq, releaseMs, input.nowMs, input.securityRefreshMs);
-  if (evidence.fitness !== 'ACTIONABLE_FRESH' || seq < input.selectedEvidenceSeq)
+  if (!isActionableEvidenceFitness(evidence.fitness))
     return { valid: false, reason: 'LATEST_NOT_ACTIONABLE', seq, fitness: evidence.fitness };
   // Open again now is not enough: a fresh read that showed the range unavailable after selection
   // ends this attempt (a later reopening is a new event for the adaptive loop to consider).
-  const closedAt = session.lastUnavailableSeq(candidate.id);
-  if (closedAt !== undefined && closedAt > input.selectedEvidenceSeq) return { valid: false, reason: 'CANDIDATE_NO_LONGER_OPEN', seq };
+  const closedAt = session.lastUnavailableFreshnessOffset(candidate.id),selectedAt=session.evidenceFreshnessOffset(input.selectedEvidenceSeq);
+  if (closedAt !== undefined && selectedAt !== undefined && closedAt > selectedAt)
+    return { valid: false, reason: 'CANDIDATE_NO_LONGER_OPEN', seq };
   const range = readCandidateRange(candidate, latest.observation);
   if (range.state !== 'OPEN') return { valid: false, seq, reason: range.state === 'UNAVAILABLE' ? 'CANDIDATE_NO_LONGER_OPEN' :
     range.state === 'UNKNOWN' ? 'CANDIDATE_STATE_UNKNOWN' : 'PRICE_INVALID' };
@@ -235,7 +260,8 @@ export class PrecisionSession {
   readonly attempts: RaceAttempt[] = [];
   latest?: ActionableObservation;
   private wave2Selected = false;
-  private readonly unavailableAt = new Map<string, {seq:number;responseOffsetMs:number}>();
+  private readonly unavailableAt = new Map<string, {seq:number;responseOffsetMs:number;representedAtLowerBoundOffsetMs:number}>();
+  private readonly representedAtBySeq = new Map<number,number>();
   private readonly rangeWasUnavailable = new Map<string, boolean>();
   constructor(readonly authorization: FrozenPrecisionAuthorization) {}
   get status(): 'OBJECTIVE_ACHIEVED' | 'OBJECTIVE_ACHIEVED_EXTRA_HOLD' | 'MANUAL_RECONCILIATION_REQUIRED' |
@@ -251,9 +277,12 @@ export class PrecisionSession {
    * A reservation consumes from the moment it is recorded (IN_FLIGHT), so a pending final gate still blocks. */
   private consuming(): RaceAttempt[] { return this.attempts.filter(value => value.state !== 'NOT_DISPATCHED'); }
   observe(evidence: ActionableObservation): void {
-    if (this.latest && evidence.observation.seq <= this.latest.observation.seq) return;
+    if (!isActionableEvidenceFitness(evidence.fitness)) return;
+    const representedAt=evidence.representedAtLowerBoundOffsetMs;
+    if(representedAt===null)return;
+    this.representedAtBySeq.set(evidence.observation.seq,representedAt);
+    if (this.latest && compareAvailabilityFreshness(evidence.observation,this.latest.observation) <= 0) return;
     this.latest = evidence;
-    if (evidence.fitness !== 'ACTIONABLE_FRESH') return;
     for (const candidate of this.authorization.candidates) {
       const cells = decodeMatrix(evidence.observation.matrix);
       const hours = Number(candidate.start.slice(0, 2));
@@ -262,10 +291,12 @@ export class PrecisionSession {
       if (codes.some(value => value !== 'O' && value !== 'X')) continue;
       const unavailable = codes.some(value => value === 'X');
       if (unavailable && !this.rangeWasUnavailable.get(candidate.id)) this.unavailableAt.set(candidate.id,
-        {seq:evidence.observation.seq,responseOffsetMs:evidence.observation.responseOffsetMs});
+        {seq:evidence.observation.seq,responseOffsetMs:evidence.observation.responseOffsetMs,representedAtLowerBoundOffsetMs:representedAt});
       this.rangeWasUnavailable.set(candidate.id, unavailable);
     }
   }
+  evidenceFreshnessOffset(seq:number):number|undefined{return this.representedAtBySeq.get(seq);}
+  lastUnavailableFreshnessOffset(candidateId:string):number|undefined{return this.unavailableAt.get(candidateId)?.representedAtLowerBoundOffsetMs;}
   /** Pure selection; caller must durably reserve and recheck before each dispatch. */
   select(wave: 'WAVE_2' | 'RESCUE', nowMs: number, maxAgeMs: number): Array<{ candidate: AuthorizedCandidate; workerId: WorkerId; prices: number[]; evidenceSeq: number; reopenEpoch?: number }> {
     if (wave === 'WAVE_2' && this.wave2Selected || wave === 'RESCUE' && !this.authorization.rescueEnabled) return [];
@@ -274,8 +305,8 @@ export class PrecisionSession {
     if (wave === 'RESCUE' && this.attempts.some(value => value.state === 'IN_FLIGHT')) return [];
     if (wave === 'RESCUE' && !this.attempts.some(value => value.state === 'REJECTED')) return [];
     const evidence = this.latest;
-    if (!evidence || classifyActionableObservation(evidence.observation, evidence.observation.seq,
-      this.authorization.releaseMs, nowMs, maxAgeMs).fitness !== 'ACTIONABLE_FRESH') return [];
+    if (!evidence || !isActionableEvidenceFitness(classifyActionableObservation(evidence.observation, evidence.observation.seq,
+      this.authorization.releaseMs, nowMs, maxAgeMs).fitness)) return [];
     const consuming = this.consuming();
     const budget = Math.min(this.authorization.budgets.total - consuming.length,
       this.authorization.budgets[wave === 'WAVE_2' ? 'wave2' : 'rescue'] - consuming.filter(value => value.wave === wave).length);
@@ -293,7 +324,8 @@ export class PrecisionSession {
       if (!(wave === 'WAVE_2' ? candidate.permissions.wave2 : candidate.permissions.rescue)) continue;
       if (wave === 'WAVE_2' && this.attempts.some(value => value.candidateId === candidate.id)) continue;
       const unavailable=this.unavailableAt.get(candidate.id);
-      if (wave === 'RESCUE' && (!unavailable || unavailable.seq >= evidence.observation.seq ||
+      const currentRepresentedAt=evidence.representedAtLowerBoundOffsetMs;
+      if (wave === 'RESCUE' && (!unavailable || currentRepresentedAt===null || unavailable.representedAtLowerBoundOffsetMs>=currentRepresentedAt ||
         unavailable.responseOffsetMs > evidence.observation.requestOffsetMs ||
         consuming.some(value => value.wave === 'RESCUE' && value.candidateId === candidate.id && value.reopenEpoch === unavailable.seq))) continue;
       if ([...active, ...selected.map(value => value.candidate)].some(value => candidatesConflict(value, candidate))) continue;
