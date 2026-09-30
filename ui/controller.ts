@@ -163,6 +163,7 @@ export interface Dependencies {
   recentQrHandoffs?(expiresAt:string):Promise<QrHandoffSummary[]>;
   previousHolds?():Promise<Dashboard['previousHolds']>;
   browserHealth?():Promise<Partial<Record<WorkerId,boolean>>>;
+  browserReadiness?():Promise<Partial<Record<WorkerId,{connected:boolean;commandLatencyMs:number|null;tabCount:number;targetReady:boolean}>>>;
   playerStatus?():Pick<NonNullable<Dashboard['playerStatus']>,'primary'|'extended'> & Partial<NonNullable<Dashboard['playerStatus']>>;
   confirm(kind?: 'observe'|'selection'|'dry'|'full', plan?:BookingView): Promise<boolean>; publish(status: Dashboard): void;
   booking(): BookingView; saveBooking(input:unknown): BookingView;
@@ -560,7 +561,8 @@ export class Controller {
     this.polling = true;
     try {
       const wasReady = this.state.ready;
-      const [lock, observedHealth] = await Promise.all([this.deps.lock(), this.deps.browserHealth?this.deps.browserHealth():this.deps.cdp().then(A=>({A,B:A,C:false,D:false}))]);
+      const [lock, observedHealth,workerProbes] = await Promise.all([this.deps.lock(), this.deps.browserHealth?this.deps.browserHealth():this.deps.cdp().then(A=>({A,B:A,C:false,D:false})),
+        this.deps.browserReadiness?.()??Promise.resolve({} as Partial<Record<WorkerId,{connected:boolean;commandLatencyMs:number|null;tabCount:number;targetReady:boolean}>>)]);
       const health:Record<WorkerId,boolean>={A:false,B:false,C:false,D:false,E:false,F:false,G:false,H:false,...observedHealth};
       this.state.lock = lock; this.state.browserHealth=health;this.state.cdp = !!health.A;this.state.playerStatus=this.players();
       const retained=lock&&this.state.operation==='idle'?await this.deps.retainedHold?.():null;
@@ -601,8 +603,8 @@ export class Controller {
       }
       const clock=this.state.clock,clockAt=clock?.clockSynchronizedAt?Date.parse(clock.clockSynchronizedAt):NaN,clockRoundTrip=clock?.clockRoundTripMs;
       const workerIds=this.state.booking?planWorkerIds(this.state.booking.setup):[];
-      const workers=Object.fromEntries(workerIds.map(id=>[id,{connected:!!health[id],identityValid:!(this.state.identityIssues??[]).some(issue=>issue.startsWith(`Worker ${id} `)),
-        securityReady:this.apiReadyWorkers.has(id)||!!this.state.apiFirstReady}])) as Record<string,{connected:boolean;identityValid:boolean;securityReady:boolean}>;
+      const workers=Object.fromEntries(workerIds.map(id=>{const probe=workerProbes[id];return [id,{connected:probe?.connected??!!health[id],identityValid:!(this.state.identityIssues??[]).some(issue=>issue.startsWith(`Worker ${id} `)),
+        securityReady:this.apiReadyWorkers.has(id)||!!this.state.apiFirstReady,...(probe?{targetReady:probe.targetReady,tabCount:probe.tabCount,latencyP95Ms:probe.commandLatencyMs}: {})}];})) as Record<string,{connected:boolean;identityValid:boolean;securityReady:boolean;targetReady?:boolean;tabCount?:number;latencyP95Ms?:number|null}>;
       const latestProfile=this.state.fanOut?.latest,observerView=this.state.slotWatch,latestRead=observerView?.lastPollAt?Date.parse(observerView.lastPollAt):NaN;
       const fallbackMachine:MachineHealth={measuredAt:new Date().toISOString(),cpuCount:0,memoryUsedPct:100,eventLoopP95Ms:100,processRssMb:0};
       this.state.releaseReadiness=evaluateReleaseReadiness({build:this.state.build??null,testedBuild:this.deps.testedBuild?.()??null,configValid:!!this.state.booking,
