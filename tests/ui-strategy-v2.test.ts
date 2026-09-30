@@ -215,6 +215,36 @@ describe('Strategy view (Goal → Known schedule → Preset → Suggested plan �
     await page.close();
   });
 
+  it('composes worker de-skew into the displayed, reviewed and saved literal offsets', async () => {
+    // Two fresh width-2 real releases: worker A's own invocation -> Chrome lag is 10 ms, every other worker 4 ms.
+    const lagStats = { n: 14, p50: 5, p95: 11, p99: 11, max: 11, min: 5, mean: 6 }, none = { n: 0, p50: null, p95: null, p99: null, max: null, min: null, mean: null };
+    const telemetry = ['2026-09-28T00:00:00Z', '2026-09-29T00:00:00Z'].map((generatedAt, run) => ({ runId: `live-${run}`, date: '2026-10-01', generatedAt, releaseMs: Date.parse(generatedAt),
+      origin: 'REAL_RELEASE', mode: 'live', machineKey: null, runtimeKey: null,
+      children: 'ABCDEFG'.split('').flatMap((workerId, worker) => [0, 1].map(fanOutIndex => {
+        const configuredOffsetMs = fanOutIndex ? 0 : -10, invoked = configuredOffsetMs + worker * 0.4, chrome = invoked + (workerId === 'A' ? 10 : 4);
+        return { attemptId: `${workerId}${fanOutIndex}`, label: `${workerId}${fanOutIndex}`, workerId, parentGoalId: null, fanOutIndex, fanOutCount: 2, configuredOffsetMs,
+          workerInvokedMs: invoked, fetchInvokedMs: null, chromeStartMs: chrome, requestEventMs: chrome + 1, responseMs: 8_000, errorMs: Math.round((chrome - configuredOffsetMs) * 100) / 100,
+          prewarmReadyMs: -1_400, finalState: 'REJECTED', dispatchMode: 'node', trustedClockValid: true, dispatched: true };
+      })),
+      summary: { configuredToChrome: lagStats, perChildIndex: [], perWorker: {}, spreadMs: 12, compression: 1, prewarmHeadroomMs: none, adaptiveSelectionToPost: none, reopenPredictionErrorMs: none } }));
+    const page = await openRenderer(browser, { booking: smartBooking(), blockAudit: blockAudit([]), fanOut: fanOutDigest(), telemetry }, 'strategy');
+    await page.locator('#strategy-anchor-mode').selectOption('MANUAL');
+    await page.locator('#strategy-anchor-shift').fill('5');
+    await page.locator('#strategy-anchor-shift').press('Tab');
+    await page.locator('#strategy-suggest').click();
+    expect(await page.locator('#strategy-timing-children').innerText()).toContain('A0: base -10 ms + local de-skew -6 ms = final -16 ms · USABLE');
+    await page.locator('#strategy-apply').click();
+    expect(await page.locator('#strategy-immediate-offset-0-0').inputValue()).toBe('16');
+    expect(await page.locator('#strategy-immediate-offset-0-1').inputValue()).toBe('11');
+    expect(await page.locator('#strategy-review-body').innerText()).toContain('A0 16 ms early, A1 11 ms early');
+    await page.locator('#strategy-save').click(); await page.waitForFunction(() => !!(window as any).fixtureSaved);
+    const setup = await saved(page);
+    expect(setup.PRECISION_PHASE3.wave1[0].fanOutOffsetsMs).toEqual([-16, -11]);
+    expect(setup.STRATEGY_V2.timingCalibration.deskew.corrections).toContainEqual({ workerId: 'A', fanOutIndex: 0, correctionMs: -6, matchingReleases: 2, evidenceStrength: 'USABLE' });
+    expect(setup.STRATEGY_V2.timingCalibration.deskew.corrections).toContainEqual({ workerId: 'B', fanOutIndex: 1, correctionMs: 0, matchingReleases: 2, evidenceStrength: 'USABLE' });
+    await page.close();
+  });
+
   it('shows width-1 live history as context but not as width-2 matching calibration', async () => {
     const children = [-50, -25, -10, -5, 0, 0, 0].map((configuredOffsetMs, index) => ({ attemptId: `a${index}`, label: String.fromCharCode(65 + index), workerId: String.fromCharCode(65 + index),
       parentGoalId: null, fanOutIndex: 0, fanOutCount: 1, configuredOffsetMs, workerInvokedMs: configuredOffsetMs, fetchInvokedMs: null,

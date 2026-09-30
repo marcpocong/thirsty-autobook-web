@@ -28,7 +28,8 @@ export class ReleaseCriticalLockdown {
   exit(): void {
     if (this.state !== 'RELEASE_CRITICAL_LOCKDOWN') return;
     this.exitedAt = this.now(); this.state = 'FLUSHING';
-    const queued = this.queue.splice(0); setImmediate(() => { for (const callback of queued) { try { callback(); } finally { this.flushed++; } } this.state = 'IDLE'; });
+    // A failing nonessential callback must never escape setImmediate and take the runner down after the POSTs left.
+    const queued = this.queue.splice(0); setImmediate(() => { for (const callback of queued) { try { callback(); } catch { /* nonessential */ } finally { this.flushed++; } } this.state = 'IDLE'; });
   }
   summary(): LockdownSummary {
     const count = (window: 10 | 20 | 50) => this.marks.filter(mark => mark.windowMs > 0 && mark.windowMs <= window).length;

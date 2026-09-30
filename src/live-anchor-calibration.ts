@@ -16,6 +16,11 @@ export interface LiveTimingSample {
   configuredOffsetMs: number;
   observedChromeStartMs: number;
   triggerToChromeLagMs: number;
+  /**
+   * Worker invocation -> Chrome request start. Unlike triggerToChromeLagMs it excludes the time a child waited behind
+   * earlier children in the central dispatcher queue, so it is the only lag that local de-skew may learn from.
+   */
+  invokeToChromeLagMs?: number | null;
   workerId: string;
   fanOutIndex: number | null;
   fanOutCount: number;
@@ -83,12 +88,15 @@ const percentile = (values: readonly number[], p: number) => values.length ? [..
 export function liveTimingSamples(runs: ReadonlyArray<{
   runId: string; generatedAt: string; releaseMs?: number | null; origin?: LiveTimingOrigin; machineKey?: string | null; runtimeKey?: string | null;
   children: ReadonlyArray<{ workerId: string; fanOutIndex: number; fanOutCount: number; configuredOffsetMs: number | null; chromeStartMs: number | null;
-    errorMs: number | null; responseMs: number | null; finalState: string | null; dispatchMode?: string; trustedClockValid?: boolean; dispatched?: boolean }>;
+    errorMs: number | null; responseMs: number | null; finalState: string | null; dispatchMode?: string; trustedClockValid?: boolean; dispatched?: boolean;
+    workerInvokedMs?: number | null }>;
 }>): LiveTimingSample[] {
   return runs.flatMap(run => run.children.flatMap(child => {
     if (!finite(run.releaseMs) || child.configuredOffsetMs === null || child.chromeStartMs === null || child.errorMs === null) return [];
+    const invokeToChrome = finite(child.workerInvokedMs) ? Math.round((child.chromeStartMs - child.workerInvokedMs) * 100) / 100 : null;
     return [{ runId: run.runId, releaseMs: run.releaseMs, configuredOffsetMs: child.configuredOffsetMs, observedChromeStartMs: child.chromeStartMs,
-      triggerToChromeLagMs: child.errorMs, workerId: child.workerId, fanOutIndex: child.fanOutIndex, fanOutCount: child.fanOutCount,
+      triggerToChromeLagMs: child.errorMs, invokeToChromeLagMs: invokeToChrome !== null && invokeToChrome >= 0 && invokeToChrome <= 2_000 ? invokeToChrome : null,
+      workerId: child.workerId, fanOutIndex: child.fanOutIndex, fanOutCount: child.fanOutCount,
       dispatchMode: child.dispatchMode ?? 'unknown', origin: run.origin ?? 'SYNTHETIC', trustedClockValid: child.trustedClockValid === true,
       dispatched: child.dispatched === true, recordedAt: run.generatedAt, machineKey: run.machineKey, runtimeKey: run.runtimeKey,
       outcome: child.finalState ?? undefined, responseDurationMs: child.responseMs === null ? null : child.responseMs - child.chromeStartMs } satisfies LiveTimingSample];

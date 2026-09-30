@@ -20,7 +20,19 @@ fresh worker/index releases -> bounded local de-skew
 base + anchor + de-skew     -> final literal offset saved in PRECISION_PHASE3
 ```
 
-The legal final range remains `-2000..0 ms`. Auto de-skew is capped at `+/-12 ms`, requires two matching real releases, and is zero for insufficient evidence. Evidence must be a confirmed dispatch with a valid trusted-clock mapping and the same fan-out width and dispatch mode; machine/runtime identifiers must match when both sides provide them. Synthetic tests, offline benchmarks, invalid clocks and `NOT_DISPATCHED` rows are excluded.
+The legal final range remains `-2000..0 ms`. Auto de-skew is capped at `+/-12 ms`, requires two matching real releases, and is zero for insufficient evidence.
+
+De-skew learns only from **worker invocation → Chrome request start** (`chromeStartMs - workerInvokedMs` in critical-path telemetry), never from configured trigger → Chrome. The latter also contains the time a child waited behind earlier children in the central dispatcher's single synchronous fire pass. In offline 7×1/7×2 runs that queue wait is the entire A→G slope (0 → 2.7/3.3 ms), while each worker's own invoke → Chrome time is flat (see [FANOUT_CAPACITY_BENCHMARK.md](FANOUT_CAPACITY_BENCHMARK.md)). Retiming cannot remove serialization. Moving G earlier just makes it fire alone, and the next calibration would move it back. The whole-group anchor absorbs serialization instead. Rows without `workerInvokedMs` are never used for de-skew, though they still count toward the anchor. Correction = release-level baseline median − the worker's (or index's) median of per-release medians.
+
+Worked example (the `ui-strategy-v2` regression case): width 2 with base spacing `[-5, 0]`, a −5 ms group shift, and two fresh matching releases in which worker A's invoke → Chrome is 10 ms and every other worker's is 4 ms (baseline 4 ms):
+
+```text
+child  base  + group anchor  + worker  + index  = final (Review and PRECISION_PHASE3)
+A0      -5        -5            -6         0       -16
+A1       0        -5            -6         0       -11
+B0      -5        -5             0         0       -10
+B1       0        -5             0         0        -5
+``` Evidence must be a confirmed dispatch with a valid trusted-clock mapping and the same fan-out width and dispatch mode; machine/runtime identifiers must match when both sides provide them. Synthetic tests, offline benchmarks, invalid clocks and `NOT_DISPATCHED` rows are excluded.
 
 Freshness is an input filter. Rows older than 30 days remain visible in History & Insights but never enter an Auto calculation. The group anchor first computes a median for each release and then a median across releases, so a high-width run has one main vote. Worker and index de-skew similarly uses release-level medians. Operational labels are `NONE`, `LIMITED`, `USABLE` and `STRONG`; they are not formal statistical confidence.
 
@@ -40,6 +52,24 @@ monotonic timer wakes
   -> fetch()
   -> Chrome request start
 ```
+
+What happens from T−60 s through T+1 s:
+
+```text
+T-60 s   observer child starts reading availability/public bookings (its own process)
+T-10 min..T-2 s  trusted clock refreshed; plans, bodies, journals, permits, tabs, transports ready
+T-~1.5 s tiered security prewarm (adaptive lead, index 0 first); readiness recorded in memory
+T-1 s    RELEASE_CRITICAL_LOCKDOWN + HIGH priority
+         prewarm progress lines (SECURITY_PREWARM_READY / _FAILED / _RETRY) are queued, not written
+T+offset timer wakes -> prebuilt transport -> renderer fetch() -> Chrome request start (per child)
+after the last POST has left:
+         Lockdown exits, priority restored, queued lines flushed (each tagged lockdownDeferredMs),
+         RELEASE_LOCKDOWN_COMPLETE written; FINAL_ACTION_DISPATCHING / dispatch-start / settled
+         proceed exactly as before
+T+1 s    dispatch window ends; Wave 2 / Rescue only on new validated observer evidence
+```
+
+The runner's `dispatch-start` and `settled` handlers already ran only after the fire pass, so they were not moved. Lockdown takes only the informational prewarm lines that could land inside the last second: each one is a progress-log append plus a UI IPC message. A failing deferred callback is swallowed at flush and never escapes `setImmediate`.
 
 The Lockdown object only accepts explicitly nonessential callbacks for deferral. Required pre-POST journal writes, one-shot permits, trusted-clock gates, `UNKNOWN` guards, price binding and adaptive revalidation must never be deferred. Hot-path instrumentation is in-memory. After the last POST has left, priority is restored, deferred callbacks flush on `setImmediate`, and aggregate Lockdown telemetry is written.
 
@@ -96,4 +126,4 @@ npm run bench:fanout -- --workers 7 --widths 1,2 --runs 40
 npx tsx scripts/benchmark-critical-path-overhead.ts
 ```
 
-Only the fan-out benchmark measures the production-shaped local Chrome path. The Lockdown microbenchmark measures instrumentation overhead, not provider behavior or release success.
+Only the fan-out benchmark measures the production-shaped local Chrome path. The Lockdown microbenchmark measures instrumentation overhead, not provider behavior or release success. The 2026-09-30 runs and the queue-position analysis are in [FANOUT_CAPACITY_BENCHMARK.md](FANOUT_CAPACITY_BENCHMARK.md). They show no measurable improvement or regression attributable to V3, and no apples-to-apples baseline exists. Offline results never calibrate Auto.

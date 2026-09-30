@@ -93,6 +93,30 @@ Central and coordinator runs 1 and 2 used 40 and 30 runs per width respectively;
 
 The central dispatcher's delay grows linearly with each attempt's position in the single synchronous fire pass: per-worker p95 at 7×4 runs from A 9.9 ms to G 17.4 ms. Most of that delay is between the transport call and the renderer's fetch(). This is Node-side serialization of CDP commands.
 
+### Release Precision V3 re-runs (2026-09-30, central dispatcher, 7 workers, 40 runs per width)
+
+| Build | 7×1 Chrome p50 / p95 / p99 / max | 7×2 Chrome p50 / p95 / p99 / max | 7×2 spread p95 |
+|---|---|---|---|
+| 2026-09-29 baseline above (f16f80b, dirty) | 4.84 / 6.40 / 7.27 / 8.06 | 7.21 / 9.92 / 12.62 / 15.08 | 5.69 |
+| 692fc8f + V3 work in progress | 6.06 / 8.10 / 8.86 / 9.53 | 8.92 / 13.12 / 14.96 / 17.21 | 6.24 |
+| 9534d4f (V3 controls) | 5.73 / 9.22 / 10.95 / 11.94 | 8.87 / 14.49 / 19.59 / 22.15 | 6.37 |
+| 29d6aab (V3 + worker probes) | 6.48 / 10.30 / 11.69 / 12.74 | 8.70 / 14.11 / 16.39 / 17.24 | 6.12 |
+
+These are **not** an apples-to-apples before/after. The three 09-30 runs came a day later under different machine load, and none is slower or faster in a way that can be attributed to V3. | 29d6aab with `--lockdown`, 16 min after the row above | 5.77 / 9.32 / 12.31 / 14.11 | 8.82 / 13.77 / 15.67 / 17.95 | 5.94 |
+
+The first four rows used the default harness. The last row used `--lockdown`, which adds final-second HIGH priority plus the Lockdown lifecycle; an earlier attempt at it exited during Chrome startup. Compared with the run 16 minutes before it on the same build, Lockdown is within noise: p50/p95 are slightly lower, and p99/max slightly higher at width 1. The harness has no deferrable runner work to remove, so this measures only the priority and lifecycle cost. It shows that cost does no harm; it does not show a gain. The recommendation remained **2 per target** in every run.
+
+Splitting each child's lag shows where the per-worker slope comes from (29d6aab run, p50 in ms):
+
+| Worker | A | B | C | D | E | F | G |
+|---|---|---|---|---|---|---|---|
+| 7×1 scheduler → worker invoked | 0.02 | 0.73 | 1.13 | 1.54 | 1.91 | 2.29 | 2.66 |
+| 7×1 worker invoked → Chrome start | 5.36 | 5.19 | 4.98 | 5.07 | 5.34 | 5.38 | 5.09 |
+| 7×2 scheduler → worker invoked | 0.06 | 1.08 | 1.52 | 1.95 | 2.45 | 2.83 | 3.31 |
+| 7×2 worker invoked → Chrome start | 6.35 | 6.28 | 6.31 | 6.44 | 6.55 | 6.69 | 6.71 |
+
+The whole A→G slope is queue position in the single synchronous fire pass. Each worker's own invoke → Chrome time is flat. Retiming one worker cannot remove serialization: moving G earlier only makes it fire alone, and the next calibration would undo the move. Release Precision V3 de-skew therefore learns only from invoke → Chrome time, and on this machine it should stay near zero unless a live release shows a genuinely slow browser.
+
 ### Per-browser coordinator: not promoted
 
 One Node process per browser removes most of that serialization. Its median and p95 are 30–45 % lower at every width.
