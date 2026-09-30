@@ -4,7 +4,7 @@ The historical reports stay at the repository root so that existing links keep w
 
 ## Current
 
-- [Strategy Engine V2](STRATEGY_ENGINE_V2.md) · [Reopen Rescue V2](RESCUE_V2.md) · [Fan-out Capacity Benchmark](FANOUT_CAPACITY_BENCHMARK.md) · [Build and release](BUILD_AND_RELEASE.md)
+- [Strategy Engine V2](STRATEGY_ENGINE_V2.md) · [Release Precision V3](RELEASE_PRECISION_V3.md) · [Reopen Rescue V2](RESCUE_V2.md) · [Fan-out Capacity Benchmark](FANOUT_CAPACITY_BENCHMARK.md) · [Build and release](BUILD_AND_RELEASE.md)
 - [README](../README.md) · [Review guide](../REVIEW_GUIDE.md) · [Telemetry spec](../TELEMETRY_SPEC.md) · [Verified Onda behavior](../VERIFIED_ONDA.md)
 
 ## Release run reports (newest first)

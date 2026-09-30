@@ -1,6 +1,7 @@
 import type { Dashboard } from '../types.js';
 import { byId, el, empty, table } from './dom.js';
 import { calibrateLiveAnchor, liveTimingSamples } from '../../src/live-anchor-calibration.js';
+import {calibrateTimingDeskew} from '../../src/timing-deskew.js';
 
 /** HISTORY & INSIGHTS analysis panels. Evidence only; none of this predicts or decides a booking. */
 const ms = (value: number | null | undefined) => value === null || value === undefined ? '—' : `${value < 0 ? '−' : ''}${Math.abs(value).toFixed(1)} ms`;
@@ -60,10 +61,17 @@ export function renderLiveAnchorCalibration(state: Dashboard): void {
   const machineKey = machine ? JSON.stringify({ cpuModel: machine.cpuModel, logicalCores: machine.logicalCores, totalMemGb: machine.totalMemGb,
     platform: machine.platform, osRelease: machine.osRelease }) : null;
   const rows = [1, 2, 3, 4].map(width => calibrateLiveAnchor(samples, { dispatchMode: 'node', fanOutWidth: width, machineKey, runtimeKey: machine?.chromeVersion ?? null }));
-  if (!rows.some(row => row.sampleCount)) { host.replaceChildren(empty('No valid real-release samples with configured offset, trusted-clock Chrome start, and confirmed dispatch.')); return; }
-  const parts: HTMLElement[] = [table(['Topology', 'Samples', 'Real releases', 'Median lag', 'p95', 'Range', 'Evidence', 'Freshness'], rows.map(row => [
-    `Node · width ${row.fanOutWidth}`, String(row.sampleCount), String(row.releaseCount), ms(row.medianLagMs), ms(row.p95LagMs),
+  if (!rows.some(row => row.sampleCount||row.staleSampleCount)) { host.replaceChildren(empty('No valid real-release samples with configured offset, trusted-clock Chrome start, and confirmed dispatch.')); return; }
+  const parts: HTMLElement[] = [table(['Topology', 'Fresh samples', 'Fresh releases', 'Old excluded', 'Median release lag', 'p95 releases', 'Range', 'Evidence', 'Freshness'], rows.map(row => [
+    `Node · width ${row.fanOutWidth}`, String(row.sampleCount), String(row.releaseCount), String(row.staleSampleCount),ms(row.medianLagMs), ms(row.p95LagMs),
     row.minLagMs === null ? '—' : `${ms(row.minLagMs)}…${ms(row.maxLagMs)}`, row.evidenceStrength, row.latestSampleAt ? `${row.latestSampleAt.slice(0, 10)}${row.stale ? ' · STALE' : ''}` : '—']))];
+  const width=state.booking?.setup.PRECISION_PHASE3?.wave1[0]?.fanOutOffsetsMs?.length??1,anchor=rows.find(row=>row.fanOutWidth===width)!;
+  const deskew=calibrateTimingDeskew(samples,anchor,{dispatchMode:'node',fanOutWidth:width,machineKey,runtimeKey:machine?.chromeVersion??null});
+  const corrections=deskew.corrections.filter(value=>value.correctionMs!==0||value.matchingReleases>0);
+  if(corrections.length){const details=el('details','tool-details');details.append(el('summary','',`Worker / index local de-skew (${corrections.length})`),
+    table(['Worker/index','Worker correction','Index correction','Final correction','Releases','Evidence'],corrections.map(value=>[`${value.workerId}${value.fanOutIndex}`,ms(value.workerCorrectionMs),ms(value.fanOutIndexCorrectionMs),ms(value.correctionMs),String(value.matchingReleases),value.evidenceStrength])));parts.push(details);}
+  const medians=rows.flatMap(row=>row.releaseMedians.map(value=>[`width ${row.fanOutWidth} · ${value.recordedAt.slice(0,10)}`,String(value.sampleCount),ms(value.medianLagMs)]));
+  if(medians.length){const details=el('details','tool-details');details.append(el('summary','',`Release-level votes (${medians.length})`),table(['Release','Children','Median lag'],medians));parts.push(details);}
   const byRun = new Map<string, typeof samples>(); for (const sample of samples.filter(value => value.origin === 'REAL_RELEASE')) {
     const list = byRun.get(sample.runId) ?? []; list.push(sample); byRun.set(sample.runId, list);
   }

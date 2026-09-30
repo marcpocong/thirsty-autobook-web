@@ -20,7 +20,10 @@ export function renderLive(state: Dashboard): void {
   const live = state.live, host = byId('live-attempts');
   byId('live-run-state').textContent = live?.outcome ? live.outcome.replaceAll('_', ' ').toLowerCase()
     : state.operation !== 'idle' && state.operation !== 'scheduled' ? 'Running' : live?.parents.length ? 'Finished' : 'No run';
-  byId('live-prewarm').textContent = [live?.prewarm && live.prewarm.width > 1 ? `Security prepares tier by tier, ${Math.round(live.prewarm.leadMs / 1000)} s ahead` : '',
+  const observer=state.slotWatch&&['waiting','watching'].includes(state.slotWatch.status)
+    ? `Observer ONLINE${state.slotWatch.lastLatencyMs!==undefined?` · ${Math.round(state.slotWatch.lastLatencyMs)} ms`:''}`:'Observer OFFLINE / DEGRADED';
+  const lockdown=state.operation==='full'&&state.clock&&state.clock.remainingMs<=1_000?'RELEASE CRITICAL LOCKDOWN active':'';
+  byId('live-prewarm').textContent = [observer,lockdown,live?.prewarm && live.prewarm.width > 1 ? `Security prepares tier by tier, ${Math.round(live.prewarm.leadMs / 1000)} s ahead` : '',
     live?.tiers ?? ''].filter(Boolean).join(' · ');
   if (!live?.parents.length) host.replaceChildren(empty('Attempts appear here when a release run starts.'));
   else host.replaceChildren(...live.parents.map(parent => {

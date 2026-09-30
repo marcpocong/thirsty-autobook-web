@@ -26,6 +26,10 @@ export function renderNextRelease(state: Dashboard): void {
       : meta.fanOut.source === 'MACHINE_RECOMMENDED' ? ' · machine recommendation' : ' · no capacity profile' : '';
     name.textContent = meta ? `Smart · ${STRATEGY_PRESET_LABEL[meta.preset]}` : 'Smart (custom)';
     facts(target, [
+      ['Release readiness', state.releaseReadiness?.verdict.replaceAll('_',' ') ?? 'checking'],
+      ['Build integrity', state.releaseReadiness?.checks.find(value=>value.id==='build')?.detail ?? build],
+      ['Trusted clock', state.releaseReadiness?.checks.find(value=>value.id==='clock')?.detail ?? 'checking'],
+      ['Observer', state.releaseReadiness?.checks.find(value=>value.id==='observer')?.detail ?? 'offline'],
       ['Target date', targetDate],
       ['Immediate logical targets', String(plan.wave1.length)],
       ['Fan-out', `${widths.length === 1 ? widths[0] : widths.join('/')} per target · ${sends} send${sends === 1 ? '' : 's'}${fanOutSource}`],
@@ -36,6 +40,7 @@ export function renderNextRelease(state: Dashboard): void {
       ['Players ready', `${ready.length}/${workers.length}`],
       ['Browsers ready', `${browsers.length}/${workers.length}`],
       ['Security prewarm', state.live?.tiers ?? (state.live?.prewarm ? `lead ${Math.round(state.live.prewarm.leadMs / 1000)} s` : widths.some(width => width > 1) ? 'tiered: Tier 1 first' : 'all at once, 15 s before')],
+      ['Ready workers', state.releaseReadiness ? `${state.releaseReadiness.readyWorkers.length}/${workers.length}${state.releaseReadiness.degradedWorkers.length?` · degraded ${state.releaseReadiness.degradedWorkers.join(', ')}`:''}` : `${ready.length}/${workers.length}`],
       ['Build', build],
     ]);
     note.textContent = description.summary;

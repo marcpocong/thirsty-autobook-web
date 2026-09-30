@@ -32,6 +32,7 @@ import type { AvailabilitySnapshot, BookingPlan, BookingPreferences } from './ty
 import { OndaBrowserSessionTransport, type BrowserTransportObservation, type CheckoutHttpResponse } from './browser-session-transport.js';
 import { ProviderTraceSet, type CdpSessionLike } from './checkout-provider-trace.js';
 import { CriticalPathRecorder, warmUpCriticalPath, type CriticalPathRow } from './critical-path.js';
+import { ReleaseCriticalLockdown } from '../release-lockdown.js';
 import { calibrateRendererClock, calibrateRendererClockAdaptive, sampleRendererClock } from './renderer-clock.js';
 import { rendererDispatchEnabled } from './renderer-dispatch.js';
 import { calendarFreeSecurityContext } from './calendar-free-security-context.js';
@@ -147,13 +148,18 @@ interface WorkerSession { workerId:WorkerId; browser: Browser; page: Page; pages
 let providerTraces:ProviderTraceSet|undefined,providerTracesSaved=false;
 // Critical-path telemetry (critical-path.ts): in-memory marks during dispatch; renderer clocks are
 // calibrated and the file is written only after every POST has settled.
-let criticalPath:CriticalPathRecorder|undefined,criticalPathPages=new Map<string,Page>(),criticalPathSaved=false;
+let criticalPath:CriticalPathRecorder|undefined,criticalPathPages=new Map<string,Page>(),criticalPathSaved=false,releaseLockdown:ReleaseCriticalLockdown|undefined,lockdownPriority:number|undefined;
 const startCriticalPath=(clock:TrustedReleaseClock,releaseMs:number,pages:ReadonlyMap<string,Page>)=>{
   criticalPathPages=new Map(pages);criticalPathSaved=false;
   try{warmUpCriticalPath();}catch{/* telemetry only */}
   criticalPath=new CriticalPathRecorder(releaseMs,clock.monotonicDeadline(releaseMs),clock.offsetMs-clock.wallDisagreementMs(),[...pages.keys()]);
+  releaseLockdown=new ReleaseCriticalLockdown(clock.monotonicDeadline(releaseMs));
   return criticalPath;
 };
+const enterReleaseLockdown=()=>{releaseLockdown?.enter();try{lockdownPriority=getPriority();setPriority(osConstants.priority.PRIORITY_HIGH);}catch{lockdownPriority=undefined;}};
+const exitReleaseLockdown=()=>{releaseLockdown?.exit();if(lockdownPriority!==undefined){try{setPriority(lockdownPriority);}catch{}lockdownPriority=undefined;}
+  const value=releaseLockdown;setImmediate(()=>{if(value){const summary=value.summary();stage('RELEASE_LOCKDOWN_COMPLETE',{deferred:summary.deferred,flushed:summary.flushed,
+    workInFinal50Ms:summary.workInFinal50Ms,workInFinal20Ms:summary.workInFinal20Ms,workInFinal10Ms:summary.workInFinal10Ms});}});};
 const persistCriticalPath=async()=>{
   const recorder=criticalPath;
   if(!recorder||criticalPathSaved)return;
@@ -796,7 +802,7 @@ try {
           return [attempt.id,bindProoflessAttempt({plan:attempt.plan,workerId,lane,attemptType:'official',attemptId:attempt.id,
             directory:attemptDirectory(attempt),transportKey:transportKeyFor(attempt)},'DIAGNOSTIC_ATTEMPT_ARMED')] as const;
         }));
-        let armed:ArmedPrecisionRace,previousPriority:number|undefined;
+        let armed:ArmedPrecisionRace;
         try{armed=await armPrecisionRace(race,{lock:liveLock,customerFor:worker=>customers![worker]!,
           journalRoot:resolve('.local/api-booking/api-first-journals'),releaseMs,now:nowMs});}
         catch(error){for(const binding of bindings.values())unbindProoflessAttempt(binding);throw error;}
@@ -826,7 +832,7 @@ try {
           const outcome=await dispatchArmedPrecisionRace(armed,{clock:releaseClock,spinTailMs:DEFAULT_SPIN_TAIL_MS,
             ...fanOutPrewarm(race.fanOut?PRECISION_FAN_OUT_ATTEMPTS:1,armed.attempts.filter(attempt=>attempt.attempt.fanOutIndex===0).length),
             isAborted:()=>abort.signal.aborted,sleep:pause,transportFor:(_worker,attempt)=>releaseTransports.get(transportKeyFor(attempt.attempt)),
-            onWake:()=>recorder.mark('*','schedulerFired'),onMark:(_worker,name,attempt)=>{if(name==='transportCall')recorder.mark(attempt.attempt.id,'workerInvoked');
+            onWake:()=>{recorder.mark('*','schedulerFired');releaseLockdown?.mark('scheduler-wake');},onMark:(_worker,name,attempt)=>{if(name==='transportCall'){recorder.mark(attempt.attempt.id,'workerInvoked');releaseLockdown?.mark(`transport:${attempt.attempt.id}`);}
               else if(name==='rendererArm')recorder.mark(attempt.attempt.id,'rendererArmSent');},
             ...experimentalRendererDispatch(attempt=>sessionFor(attempt.attempt)?.page,attempt=>releaseTransports.get(transportKeyFor(attempt.attempt))),
             prewarm:async attempt=>{
@@ -841,8 +847,8 @@ try {
             // Written only after every ready POST has been started (never on the path to a POST).
             afterFire:async()=>{await liveLock?.dispatching();stage('PRECISION_DISPATCHING',{frozenCount:race.attempts.length});},
             // HIGH (never REALTIME) only for the last second before release until the POSTs have left.
-            onFinalApproach:()=>{try{previousPriority=getPriority();setPriority(osConstants.priority.PRIORITY_HIGH);}catch{previousPriority=undefined;}},
-            onReleaseWindowEnd:()=>{if(previousPriority!==undefined){try{setPriority(previousPriority);}catch{}previousPriority=undefined;}},
+            onFinalApproach:enterReleaseLockdown,
+            onReleaseWindowEnd:exitReleaseLockdown,
             onEvent:event=>{
               if(event.kind==='prewarm-ready'){stage('SECURITY_PREWARM_READY',{workerId:event.workerId,attemptId:event.attemptId});
                 recorder.describe(event.attemptId,{prewarmReadyMs:Math.round((releaseClock?.nowMs()??nowMs())-releaseMs)});}
@@ -1116,7 +1122,6 @@ try {
       })();
       try{
         releaseClock=await prepareReleaseClock(releaseMs);
-        let previousPriority:number|undefined;
         // Critical-path rows are per child attempt; each tab's transport observations are aliased onto its attempt.
         const recorder=startCriticalPath(releaseClock,releaseMs,new Map(armed.attempts.flatMap(attempt=>{
           const page=pageOf(attempt.attempt);return page?[[attempt.attempt.id,page] as const]:[];})));
@@ -1126,7 +1131,7 @@ try {
         const transportOf=(attempt:ArmedAttempt)=>releaseTransports.get(transportKeyOf(attempt.target.workerId,attempt.attempt.fanOutIndex));
         const outcome=await dispatchArmedPrecisionRace(armed,{clock:releaseClock,spinTailMs:DEFAULT_SPIN_TAIL_MS,isAborted:()=>abort.signal.aborted,sleep:pause,
           ...fanOutPrewarm(fanOutWidth,armed.attempts.filter(attempt=>attempt.attempt.fanOutIndex===0).length),
-          onWake:()=>recorder.mark('*','schedulerFired'),onMark:(_worker,name,attempt)=>{if(name==='transportCall')recorder.mark(attempt.attempt.id,'workerInvoked');
+          onWake:()=>{recorder.mark('*','schedulerFired');releaseLockdown?.mark('scheduler-wake');},onMark:(_worker,name,attempt)=>{if(name==='transportCall'){recorder.mark(attempt.attempt.id,'workerInvoked');releaseLockdown?.mark(`transport:${attempt.attempt.id}`);}
             else if(name==='rendererArm')recorder.mark(attempt.attempt.id,'rendererArmSent');},
           ...experimentalRendererDispatch(attempt=>pageOf(attempt.attempt),transportOf),
           transportFor:(_worker,attempt)=>transportOf(attempt),prewarm:async attempt=>{
@@ -1135,8 +1140,8 @@ try {
           onVerifiedHold:async(attempt,hold)=>{const base=sessions.find(value=>value.workerId===attempt.target.workerId)!;
             await completeVerifiedProoflessHold(bindings.get(attempt.attempt.id)!,{...base,page:pageOf(attempt.attempt)??base.page},attempt.plan,hold);return {state:'QR_READY'};},
           afterFire:async()=>{await liveLock?.dispatching();},
-          onFinalApproach:()=>{try{previousPriority=getPriority();setPriority(osConstants.priority.PRIORITY_HIGH);}catch{previousPriority=undefined;}},
-          onReleaseWindowEnd:()=>{if(previousPriority!==undefined){try{setPriority(previousPriority);}catch{}previousPriority=undefined;}},
+          onFinalApproach:enterReleaseLockdown,
+          onReleaseWindowEnd:exitReleaseLockdown,
           onEvent:event=>{const binding=bindings.get(event.attemptId),child=frozen.attempts.find(value=>value.id===event.attemptId);
             if(event.kind==='prewarm-ready')recorder.describe(event.attemptId,{prewarmReadyMs:Math.round((releaseClock?.nowMs()??nowMs())-releaseMs)});
             const fanOut:Record<string,number>=child&&child.fanOutCount>1?{fanOutIndex:child.fanOutIndex,fanOutCount:child.fanOutCount}:{};

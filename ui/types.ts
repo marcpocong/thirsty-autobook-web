@@ -59,6 +59,7 @@ export interface Dashboard {
   fanOut?:FanOutDigest|null;
   /** Recent release dispatch telemetry (History & Insights). */
   telemetry?:import('../src/release-telemetry.js').RunTelemetry[];
+  releaseReadiness?:import('../src/release-readiness-gate.js').ReleaseReadinessGate;
   /** Customer-identity problems found by the latest preparation or run (worker letters and codes only). */
   identityIssues?:string[];
   bookingResult?:Extract<UiEvent,{type:'bookingResult'}>;

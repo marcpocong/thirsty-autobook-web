@@ -56,6 +56,12 @@ export interface LiveAnchorCalibration {
   stale: boolean;
   machineKey: string | null;
   runtimeKey: string | null;
+  /** Compatible samples excluded from Auto because they predate the freshness horizon. */
+  staleSampleCount: number;
+  /** Compatible releases represented by those old samples. */
+  staleReleaseCount: number;
+  /** One robust vote per release, rather than one vote per fan-out child. */
+  releaseMedians: Array<{ runId: string; recordedAt: string; sampleCount: number; medianLagMs: number }>;
 }
 
 export type LiveAnchorSource = 'LIVE_CALIBRATION' | 'RELEASE_CENTERED_FALLBACK' | 'OPERATOR_OVERRIDE';
@@ -104,19 +110,35 @@ function compatible(sample: LiveTimingSample, identity: LiveAnchorIdentity): boo
 
 /** Operational evidence gates, not formal statistical confidence: 0/1/2-3/4+ matching real releases. */
 export function calibrateLiveAnchor(samples: readonly LiveTimingSample[], identity: LiveAnchorIdentity, options: { now?: number; staleDays?: number } = {}): LiveAnchorCalibration {
-  const selected = samples.filter(sample => compatible(sample, identity));
-  const releases = new Set(selected.map(sample => sample.runId)).size;
-  const values = selected.map(sample => sample.triggerToChromeLagMs), rounded = (value: number | null) => value === null ? null : Math.round(value * 100) / 100;
-  const p50 = rounded(percentile(values, 50)), p95 = rounded(percentile(values, 95));
+  const now = options.now ?? Date.now(), staleDays = options.staleDays ?? LIVE_ANCHOR_STALE_DAYS;
+  const horizon = now - staleDays * dayMs;
+  const compatibleSamples = samples.filter(sample => compatible(sample, identity));
+  // Freshness is an input filter, not a label applied after calculation. One new row must never
+  // resurrect years of otherwise compatible data into Auto.
+  const selected = compatibleSamples.filter(sample => { const at = Date.parse(sample.recordedAt); return Number.isFinite(at) && at >= horizon && at <= now + dayMs; });
+  const staleSamples = compatibleSamples.filter(sample => !selected.includes(sample));
+  const rounded = (value: number | null) => value === null ? null : Math.round(value * 100) / 100;
+  const byRelease = new Map<string, LiveTimingSample[]>();
+  for (const sample of selected) byRelease.set(sample.runId, [...(byRelease.get(sample.runId) ?? []), sample]);
+  const releaseMedians = [...byRelease.entries()].map(([runId, rows]) => ({ runId,
+    recordedAt: rows.map(row => row.recordedAt).sort().at(-1)!, sampleCount: rows.length,
+    medianLagMs: rounded(percentile(rows.map(row => row.triggerToChromeLagMs), 50))! })).sort((a, b) => a.recordedAt.localeCompare(b.recordedAt));
+  const releases = releaseMedians.length;
+  const values = selected.map(sample => sample.triggerToChromeLagMs);
+  // Whole-group anchor: every release receives one vote regardless of its fan-out width/row count.
+  const releaseValues = releaseMedians.map(value => value.medianLagMs);
+  const p50 = rounded(percentile(releaseValues, 50)), p95 = rounded(percentile(releaseValues, 95));
   const indices = [...new Set(selected.map(sample => sample.fanOutIndex).filter((value): value is number => value !== null))].sort((a, b) => a - b);
   const latest = selected.map(sample => Date.parse(sample.recordedAt)).filter(Number.isFinite).sort((a, b) => b - a)[0] ?? null;
-  const now = options.now ?? Date.now(), staleDays = options.staleDays ?? LIVE_ANCHOR_STALE_DAYS;
   return { version: LIVE_ANCHOR_SCHEMA, sampleCount: selected.length, releaseCount: releases, medianLagMs: p50, p50LagMs: p50,
     p95LagMs: p95, minLagMs: values.length ? rounded(Math.min(...values)) : null, maxLagMs: values.length ? rounded(Math.max(...values)) : null, mode: identity.dispatchMode, fanOutWidth: identity.fanOutWidth,
-    perChildIndex: indices.map(fanOutIndex => { const child = selected.filter(sample => sample.fanOutIndex === fanOutIndex).map(sample => sample.triggerToChromeLagMs);
-      return { fanOutIndex, sampleCount: child.length, p50LagMs: rounded(percentile(child, 50)), p95LagMs: rounded(percentile(child, 95)) }; }),
+    perChildIndex: indices.map(fanOutIndex => { const childRows = selected.filter(sample => sample.fanOutIndex === fanOutIndex), childRuns = new Map<string, number[]>();
+      for (const sample of childRows) childRuns.set(sample.runId,[...(childRuns.get(sample.runId)??[]),sample.triggerToChromeLagMs]);
+      const releaseVotes=[...childRuns.values()].map(values=>percentile(values,50)!);
+      return { fanOutIndex, sampleCount: childRows.length, p50LagMs: rounded(percentile(releaseVotes, 50)), p95LagMs: rounded(percentile(releaseVotes, 95)) }; }),
     evidenceStrength: evidenceStrength(releases), generatedAt: new Date(now).toISOString(), latestSampleAt: latest === null ? null : new Date(latest).toISOString(),
-    stale: latest === null || now - latest > staleDays * dayMs, machineKey: identity.machineKey ?? null, runtimeKey: identity.runtimeKey ?? null };
+    stale: selected.length === 0, machineKey: identity.machineKey ?? null, runtimeKey: identity.runtimeKey ?? null,
+    staleSampleCount: staleSamples.length, staleReleaseCount: new Set(staleSamples.map(sample => sample.runId)).size, releaseMedians };
 }
 
 /**

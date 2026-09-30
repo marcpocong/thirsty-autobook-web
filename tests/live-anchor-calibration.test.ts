@@ -70,4 +70,17 @@ describe('Smart Timing V2.2 live anchor', () => {
     expect(plan).toMatchObject({ groupShiftMs: -5, anchorSource: 'OPERATOR_OVERRIDE' });
     expect(plan.children.map(value => value.configuredOffsetMs)).toEqual([-15, -5]);
   });
+
+  it('filters old rows before Auto so one recent release cannot resurrect them', () => {
+    const recent=sample('recent',0,6),old=Array.from({length:20},(_,index)=>sample(`old-${index}`,0,100,{recordedAt:'2026-01-01T00:00:00.000Z'}));
+    const calibration=calibrateLiveAnchor([...old,recent],{dispatchMode:'node',fanOutWidth:1},{now});
+    expect(calibration).toMatchObject({sampleCount:1,releaseCount:1,medianLagMs:6,staleSampleCount:20,staleReleaseCount:20});
+  });
+
+  it('gives each release one main vote instead of weighting a high-width run by its children',()=>{
+    const noisy=Array.from({length:100},(_,index)=>sample('wide',0,1,{workerId:String.fromCharCode(65+(index%7))}));
+    const calibration=calibrateLiveAnchor([...noisy,sample('normal-1',0,9),sample('normal-2',0,9)],{dispatchMode:'node',fanOutWidth:1},{now});
+    expect(calibration.medianLagMs).toBe(9);
+    expect(calibration.releaseMedians).toHaveLength(3);
+  });
 });

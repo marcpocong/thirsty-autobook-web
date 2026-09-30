@@ -53,7 +53,10 @@ export const StrategyV2Schema=z.object({version:z.literal(1),preset:z.enum(['BAL
     basedOnTiming:z.enum(['TIGHT','BALANCED','WIDE']).optional(),profileCreatedAt:z.string().max(40).nullable()}).strict(),
   timingCalibration:z.object({spacingSource:z.enum(['MACHINE_PROFILE','FALLBACK']),anchorSource:z.enum(['LIVE_CALIBRATION','RELEASE_CENTERED_FALLBACK','OPERATOR_OVERRIDE']),
     groupShiftMs:z.number().int().min(-2000).max(0),matchingReleases:z.number().int().min(0),matchingSamples:z.number().int().min(0),
-    evidenceStrength:z.enum(['NONE','LIMITED','USABLE','STRONG']),generatedAt:z.iso.datetime().optional()}).strict().optional(),
+    evidenceStrength:z.enum(['NONE','LIMITED','USABLE','STRONG']),generatedAt:z.iso.datetime().optional(),
+    deskew:z.object({capMs:z.number().int().min(0).max(50),source:z.enum(['LIVE_CALIBRATION','INSUFFICIENT_EVIDENCE']),
+      corrections:z.array(z.object({workerId:precisionWorker,fanOutIndex:z.number().int().min(0).max(PRECISION_MAX_FAN_OUT-1),correctionMs:z.number().int().min(-50).max(50),
+        matchingReleases:z.number().int().min(0),evidenceStrength:z.enum(['NONE','LIMITED','USABLE','STRONG'])}).strict()).max(28)}).strict().optional()}).strict().optional(),
   // Reset baseline only. It never authorizes execution; the sibling PRECISION_PHASE3 remains the sole current authority.
   acceptedPhase3:PrecisionPhase3Schema.optional(),
   lineage:z.object({immediate:z.array(z.string().regex(/^I\d+$/).nullable()).max(7),backups:z.array(z.string().regex(/^B\d+$/).nullable()).max(21)}).strict().optional(),
