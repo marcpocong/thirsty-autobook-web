@@ -1,5 +1,21 @@
+import {mkdtempSync,mkdirSync,rmSync,writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {describe,expect,it} from 'vitest';
-import {evaluateReleaseReadiness} from '../src/release-readiness-gate.js';
+import {evaluateReleaseReadiness,readLastReleaseBuild} from '../src/release-readiness-gate.js';
+
+describe('tested release build record',()=>{
+  it('reads the record written by scripts/release-build.mjs and returns null when absent or malformed',()=>{
+    const root=mkdtempSync(join(tmpdir(),'thirsty-build-'));
+    try{
+      expect(readLastReleaseBuild(root)).toBeNull();
+      mkdirSync(join(root,'.local/build'),{recursive:true});
+      writeFileSync(join(root,'.local/build/last-release-build.json'),'{not json');expect(readLastReleaseBuild(root)).toBeNull();
+      writeFileSync(join(root,'.local/build/last-release-build.json'),JSON.stringify({finishedAt:'2026-09-30T10:50:57.058Z',buildId:'cba6d30-x',gitSha:'c'.repeat(40),dirty:false,packaged:true,output:'installation',steps:[]}));
+      expect(readLastReleaseBuild(root)).toEqual({gitSha:'c'.repeat(40),dirty:false,finishedAt:'2026-09-30T10:50:57.058Z',packaged:true});
+    }finally{rmSync(root,{recursive:true,force:true});}
+  });
+});
 
 type Input=Parameters<typeof evaluateReleaseReadiness>[0];
 const worker=()=>({connected:true,identityValid:true,securityReady:true,targetReady:true,tabCount:2,latencyP95Ms:3 as number|null});
