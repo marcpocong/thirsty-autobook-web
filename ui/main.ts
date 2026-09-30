@@ -14,9 +14,10 @@ import { resetPracticeSession } from './practice-reset.js';
 import {requiredWorkerIds,WORKER_IDS} from '../src/workers.js';
 import {focusDedicatedBrowser} from '../src/browser-window.js';
 import type {ConfirmRequest} from './types.js';
-import {networkNowMs,readNetworkClock,synchronizeNetworkClock} from '../src/network-clock.js';
+import {readNetworkClock,synchronizeNetworkClock} from '../src/network-clock.js';
 import {closeBotBrowsers,countBotBrowsers} from './browser-cleanup.js';
-import {SlotWatch,readSlotWatchHistory} from '../src/slot-watch.js';
+import {readSlotWatchHistory} from '../src/slot-watch.js';
+import {startSlotWatchObserver} from '../src/slot-watch-observer.js';
 import {buildReleaseForensics,forensicInputsFor,forensicsDigest,readReleaseForensicsHistory} from '../src/release-forensics.js';
 import {buildReleaseLabForRun,readReleaseLabHistory} from '../src/release-lab-analysis.js';
 import {clearReleaseIntelligence,intelligenceDigest,readReleaseIntelligence,rebuildReleaseIntelligence} from '../src/release-intelligence.js';
@@ -28,6 +29,7 @@ import {ensureExperimentManifest} from '../src/arbitration/experiment-manifest.j
 import {readBuildInfo} from '../src/build-info.js';
 import {currentMachineIdentity,fanOutDigest} from '../src/fanout-capacity.js';
 import {readReleaseTelemetry} from '../src/release-telemetry.js';
+import {createMachineHealthSampler,readLastReleaseBuild} from '../src/release-readiness-gate.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 process.chdir(root);
@@ -40,6 +42,7 @@ const index = resolve(root, 'dist/ui/renderer/index.html');
 const indexUrl = pathToFileURL(index).href;
 let window: BrowserWindow;
 let exiting = false;
+const machineHealth=createMachineHealthSampler();
 // In-app confirmation modal: replaces native dialog.showMessageBox with a renderer-drawn
 // dialog matching the app theme. Main still decides *when* to ask and blocks on the answer;
 // the renderer only presents the question and reports back the operator's choice.
@@ -72,8 +75,9 @@ const controller = new Controller({
     detail:`Only Chrome windows using the bot's own profiles are closed. Your normal Chrome is not touched.${qrPages?`\n\n${qrPages} QR payment page${qrPages===1?' is':'s are'} still open. Closing does NOT cancel ${qrPages===1?'that hold':'those holds'} on Onda, but you would lose the open QR page${qrPages===1?'':'s'}. Pay first if you want ${qrPages===1?'it':'them'}.`:''}${lock?'\n\nA retained automation lock stays recorded; Reset & Prepare will inspect it before the next run.':''}\n\nThe browsers reopen with Reset & Prepare.`,
     confirmLabel:`Close ${open} browser${open===1?'':'s'}`}),
   startSlotWatch:(input,onUpdate,onObservation)=>{const clockPath=resolve(root,'.local/network-clock.json');
-    const watch=new SlotWatch({...input,directory:resolve(root,'.local/slot-watch'),now:()=>networkNowMs(clockPath),clockOffset:()=>readNetworkClock(clockPath)?.offsetMs??input.clockOffsetMs,onUpdate,onObservation});
-    return {id:watch.id,done:watch.done,stop:reason=>watch.stop(reason)};},
+    const offset=readNetworkClock(clockPath)?.offsetMs??input.clockOffsetMs;
+    return startSlotWatchObserver({...input,clockOffsetMs:offset,clockPath,directory:resolve(root,'.local/slot-watch'),nodePath:node,
+      childPath:resolve(root,'dist/src/slot-watch-observer-child.js'),onUpdate,onObservation});},
   slotWatchHistory:()=>readSlotWatchHistory(resolve(root,'.local/slot-watch')),
   // Same .local as the runner's evidence, so arbitration:analyze finds it; runs before the runner is spawned.
   ensureArbitrationManifest:({targetDate,releaseMs,clockOffsetMs})=>ensureExperimentManifest({localRoot:resolve(root,'.local'),
@@ -97,6 +101,7 @@ const controller = new Controller({
     detail: (plan ? describePlan(plan)+'\n\n' : '') + (kind==='full'?'Terms authorization: YES, for this booking only.\nFinal automation boundary: QR Checkout.\nThe bot will continue through Onda until the QR payment page is reached, then stop. Payment itself remains manual.':kind==='selection'?'At release this automation MAY SELECT available court slots.\nSelection Only stops before Proceed. Selection is not a reservation.':'This waits for release and performs read-only refresh/date navigation. No court slots will be selected.'),
     confirmLabel: kind==='full'?'Arm Full Booking':kind==='selection'?'Arm Selection':kind==='dry'?'Arm Dry Race':'Arm observation' }),
   buildInfo:()=>readBuildInfo(resolve(root,'dist/build-info.json')),
+  machineHealth:()=>machineHealth.sample(),testedBuild:()=>readLastReleaseBuild(root),
   // Profiles are measured offline by scripts/benchmark-fanout-capacity.ts on this machine (source tree or installation).
   releaseTelemetry:()=>readReleaseTelemetry(root),
   fanOutDigest:()=>fanOutDigest([root,resolve(root,'Source')],{machine:currentMachineIdentity(),gitSha:readBuildInfo(resolve(root,'dist/build-info.json'))?.gitSha??'unknown',dispatcher:'central'}),

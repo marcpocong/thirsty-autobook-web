@@ -31,6 +31,7 @@ import type {AdvisorInput,AdvisorResult} from '../src/release-advisor.js';
 import {STRATEGY_MAX_ENUMERATED_WINDOWS,type StrategyHistoricalEvidence,type Window as StrategyWindow} from '../src/strategy-engine.js';
 import type {ReplayPlan,ReplayResult} from '../src/strategy-replay.js';
 import type {ReadinessResult} from '../src/network-readiness.js';
+import {evaluateReleaseReadiness,type MachineHealth} from '../src/release-readiness-gate.js';
 import type {WarmthAssessment} from '../src/checkout-path-research.js';
 import {TARGET_EVIDENCE_LABEL,type TargetEvidence} from '../src/api-booking/pre-release-evidence.js';
 import type {PrecisionView} from './types.js';
@@ -202,6 +203,8 @@ export interface Dependencies {
   releaseTelemetry?():import('../src/release-telemetry.js').RunTelemetry[];
   /** Provenance of the running build (read once at startup). */
   buildInfo?():import('../src/build-info.js').BuildInfo|null;
+  machineHealth?():MachineHealth;
+  testedBuild?():{gitSha:string;dirty:boolean|null;finishedAt:string;packaged:boolean}|null;
 }
 const AdvisorRequestSchema=z.object({courts:z.array(z.number().int().min(1).max(7)).min(1).max(7),earliestStart:z.string().regex(/^(0[89]|1\d|2[0-3]):00$/),
   latestStart:z.string().regex(/^(0[89]|1\d|2[0-3]):00$/),durationHours:z.number().int().min(1).max(3),immediate:z.number().int().min(0).max(7),backups:z.number().int().min(0).max(14),
@@ -370,7 +373,10 @@ export class Controller {
       this.log(`Slot watch ${summary.status} for ${summary.date}: ${reads?.answered??0} reads answered${reads?.notLaunched?` · ${reads.notLaunched} not launched`:''}${first?` · first published grid requested ${(first.requestOffsetMs/1000).toFixed(3)} s, answered ${(first.responseOffsetMs/1000).toFixed(3)} s after release`:''} · ${summary.openToUnavailable?.length??0} open → unavailable. Report: ${summary.reportPath}`);
       for(const runId of this.pendingForensics.get(watch.id)??[])this.buildForensics(runId,'final');
       this.pendingForensics.delete(watch.id);
-    }).catch(()=>{if(this.slotWatch?.id===watch.id)this.slotWatch=undefined;for(const runId of this.pendingForensics.get(watch.id)??[])this.buildForensics(runId,'final');this.pendingForensics.delete(watch.id);});
+    }).catch(()=>{if(this.slotWatch?.id===watch.id)this.slotWatch=undefined;
+      if(this.state.slotWatch?.id===watch.id)this.state.slotWatch={...this.state.slotWatch,status:'stopped',inFlight:0,lastError:'OBSERVER_OFFLINE'};
+      this.log('Slot Watch observer is offline. Wave 1 authorization is unchanged; Wave 2 and Rescue still require new valid evidence.',true);this.publish();
+      for(const runId of this.pendingForensics.get(watch.id)??[])this.buildForensics(runId,'final');this.pendingForensics.delete(watch.id);});
     return true;
   }
   /** A cancelled or aborted release has nothing to observe; an operator-started watch keeps running. */
@@ -593,6 +599,18 @@ export class Controller {
       if(retained&&['RESET REQUIRED','Preparation needs rechecking','PAYMENT HOLD ACTIVE','UNRESOLVED CHECKOUT LOCK','API BROWSER READY','API READY TO TEST','HOLD TIMER ELAPSED'].includes(this.state.headline)){
         this.state.headline=retained.stage==='FINAL_ACTION_DISPATCHING'?'UNRESOLVED CHECKOUT LOCK':retained.remainingSeconds===0?'HOLD TIMER ELAPSED':'PAYMENT HOLD ACTIVE';this.state.detail=this.holdDetail(retained);
       }
+      const clock=this.state.clock,clockAt=clock?.clockSynchronizedAt?Date.parse(clock.clockSynchronizedAt):NaN,clockRoundTrip=clock?.clockRoundTripMs;
+      const workerIds=this.state.booking?planWorkerIds(this.state.booking.setup):[];
+      const workers=Object.fromEntries(workerIds.map(id=>[id,{connected:!!health[id],identityValid:!(this.state.identityIssues??[]).some(issue=>issue.startsWith(`Worker ${id} `)),
+        securityReady:this.apiReadyWorkers.has(id)||!!this.state.apiFirstReady}])) as Record<string,{connected:boolean;identityValid:boolean;securityReady:boolean}>;
+      const latestProfile=this.state.fanOut?.latest,observerView=this.state.slotWatch,latestRead=observerView?.lastPollAt?Date.parse(observerView.lastPollAt):NaN;
+      const fallbackMachine:MachineHealth={measuredAt:new Date().toISOString(),cpuCount:0,memoryUsedPct:100,eventLoopP95Ms:100,processRssMb:0};
+      this.state.releaseReadiness=evaluateReleaseReadiness({build:this.state.build??null,testedBuild:this.deps.testedBuild?.()??null,configValid:!!this.state.booking,
+        authorizationValid:!!this.state.booking&&(this.state.booking.setup.RELEASE_STRATEGY!=='precision'||!!this.state.booking.setup.PRECISION_PHASE3),
+        clock:{synced:!!clock?.networkSynced,ageMs:Number.isFinite(clockAt)?Date.now()-clockAt:null,uncertaintyMs:clockRoundTrip===null||clockRoundTrip===undefined?null:clockRoundTrip/2,offsetMs:clock?.clockOffsetMs??null},
+        machine:this.deps.machineHealth?.()??fallbackMachine,workers,observer:{online:!!this.slotWatch&&!!observerView&&['waiting','watching'].includes(observerView.status),
+          lastReadAgeMs:Number.isFinite(latestRead)?Date.now()-latestRead:null,availabilityLatencyMs:observerView?.lastLatencyMs??null},
+        fanOut:latestProfile?{compatible:latestProfile.compatible,stale:latestProfile.stale,width:latestProfile.recommendedWidth}:null,prewarm:!!this.state.apiFirstReady});
       this.publish();
     } finally { this.polling = false; }
   }

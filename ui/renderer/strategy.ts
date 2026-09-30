@@ -5,6 +5,7 @@ import { DEFAULT_STRATEGY_GOAL, draftFromSuggestion, enumeratePrimeWindows, isCo
   type KnownSchedule, type ScoredWindow, type StrategyGoal, type StrategyHistoricalEvidence, type StrategyPreset, type SuggestedPlan, type SuggestionIntelligenceMode, type Window } from '../../src/strategy-engine.js';
 import { describeChildTiming, fanOutTimingPlan } from '../../src/fanout-timing.js';
 import { applyLiveAnchor, calibrateLiveAnchor, liveTimingSamples, type AnchoredTimingPlan, type LiveAnchorSource } from '../../src/live-anchor-calibration.js';
+import { applyTimingDeskew, calibrateTimingDeskew } from '../../src/timing-deskew.js';
 import { byId, el, empty, inputById, selectById } from './dom.js';
 
 /**
@@ -42,7 +43,8 @@ export interface StrategyV2Meta { version: 1; preset: StrategyPreset; goal: Stra
   fanOut: { width: number; source: 'MACHINE_RECOMMENDED' | 'OPERATOR_OVERRIDE' | 'NO_PROFILE'; acceptedSource?: 'MACHINE_RECOMMENDED' | 'OPERATOR_OVERRIDE' | 'NO_PROFILE'; recommendedWidth: number | null; timing: 'TIGHT' | 'BALANCED' | 'WIDE' | 'CUSTOM';
     basedOnTiming?: 'TIGHT' | 'BALANCED' | 'WIDE'; profileCreatedAt: string | null };
   timingCalibration?: { spacingSource: 'MACHINE_PROFILE' | 'FALLBACK'; anchorSource: LiveAnchorSource; groupShiftMs: number;
-    matchingReleases: number; matchingSamples: number; evidenceStrength: 'NONE' | 'LIMITED' | 'USABLE' | 'STRONG'; generatedAt?: string };
+    matchingReleases: number; matchingSamples: number; evidenceStrength: 'NONE' | 'LIMITED' | 'USABLE' | 'STRONG'; generatedAt?: string;
+    deskew?: { capMs:number; source:'LIVE_CALIBRATION'|'INSUFFICIENT_EVIDENCE'; corrections:Array<{workerId:'A'|'B'|'C'|'D'|'E'|'F'|'G';fanOutIndex:number;correctionMs:number;matchingReleases:number;evidenceStrength:'NONE'|'LIMITED'|'USABLE'|'STRONG'}> } };
   acceptedPhase3?: NonNullable<ReturnType<typeof compileSmartPlan>['phase3']>;
   lineage?: EditableSuggestionLineage; intelligenceMode?: SuggestionIntelligenceMode;
   provenance?: { source: 'SMART_SUGGESTED' | 'EXISTING_SMART_PLAN' | 'OPERATOR_BUILT'; operatorModifications: number } }
@@ -76,7 +78,9 @@ const parseList = (value: string) => value.split(/[\s,>→]+/).map(Number).filte
 
 function recommendation(state: Dashboard | undefined) {
   const latest = state?.fanOut?.latest;
-  return { width: latest?.recommendedWidth ?? 1, profile: latest?.profile ?? null, createdAt: latest?.createdAt ?? null, reasons: latest?.reasons ?? [], notes: latest?.notes ?? [] };
+  const usable=latest?.compatible&&!latest.stale;
+  return { width: usable ? latest.recommendedWidth : 1, profile: usable ? latest.profile : null, createdAt: usable ? latest.createdAt : null,
+    reasons: latest?.reasons ?? [], notes: [...(latest?.notes ?? []),...(latest&&!usable?['Auto falls back to 1 because the newest profile is stale or incompatible.']:[])] };
 }
 function chosenWidth(state: Dashboard | undefined) {
   const choice = selectById('strategy-fanout').value, machine = recommendation(state);
@@ -94,6 +98,13 @@ function childOffsets(state: Dashboard | undefined) {
   const early = Number(inputById('strategy-anchor-shift').value), shift = manual && Number.isSafeInteger(early) && early >= 0 ? -early : undefined;
   try { return applyLiveAnchor(fanOutTimingPlan(timing, width, recommendation(state).profile), calibration, shift); }
   catch { return applyLiveAnchor(fanOutTimingPlan(timing, width, recommendation(state).profile), calibration); }
+}
+function timingEvidence(state: Dashboard | undefined, anchored = childOffsets(state)) {
+  const machine = recommendation(state).profile?.machine;
+  const identity = { dispatchMode: 'node', fanOutWidth: anchored.width,
+    machineKey: machine ? JSON.stringify({ cpuModel: machine.cpuModel, logicalCores: machine.logicalCores, totalMemGb: machine.totalMemGb, platform: machine.platform, osRelease: machine.osRelease }) : null,
+    runtimeKey: machine?.chromeVersion ?? null };
+  return calibrateTimingDeskew(liveTimingSamples(state?.telemetry ?? []), anchored.calibration, identity);
 }
 function schedule(state: Dashboard | undefined): KnownSchedule | null {
   const audit = state?.blockAudit, date = state?.booking?.targetDate;
@@ -133,13 +144,22 @@ export function initStrategy(value: StrategyHost): void {
   byId('strategy-apply').addEventListener('click', () => {
     const state = host.state(); if (!suggestion) return;
     const timing = childOffsets(state), width = chosenWidth(state), machine = recommendation(state);
-    const offsets = timing.children.map(child => child.configuredOffsetMs);
-    const draft = draftFromSuggestion(suggestion, host.draft(), offsets);
+    const calibration = timingEvidence(state, timing), base = draftFromSuggestion(suggestion, host.draft(), timing.children.map(child => child.configuredOffsetMs));
+    // Worker assignment is deterministic (A..G) and the final literal values are copied into the
+    // draft. From here through Review, Save and backend authorization there is nothing left to add.
+    const draft = { ...base, immediate: base.immediate.map((slot, index) => {
+      const workerId = String.fromCharCode(65 + index), plan = applyTimingDeskew(timing, calibration, workerId);
+      const offsets = plan.children.map(child => child.finalConfiguredOffsetMs), next = { ...slot }; delete next.releaseOffsetMs; delete next.fanOutOffsetsMs;
+      if (offsets.length > 1) next.fanOutOffsetsMs = offsets; else if (offsets[0] !== 0) next.releaseOffsetMs = offsets[0]; return next;
+    }) };
     host.useSuggestion(draft, { version: 1, preset, goal: { ...goal }, lineage: suggestionLineage(draft), intelligenceMode,
       fanOut: { width: width.width, source: width.source, acceptedSource: width.source, recommendedWidth: machine.profile ? machine.width : null, timing: timing.preset,
         basedOnTiming: selectById('strategy-timing').value as 'TIGHT' | 'BALANCED' | 'WIDE', profileCreatedAt: machine.createdAt },
       timingCalibration: { spacingSource: machine.profile ? 'MACHINE_PROFILE' : 'FALLBACK', anchorSource: timing.anchorSource, groupShiftMs: timing.groupShiftMs,
-        matchingReleases: timing.matchingReleases, matchingSamples: timing.matchingSamples, evidenceStrength: timing.calibration.evidenceStrength, generatedAt: timing.calibration.generatedAt },
+        matchingReleases: timing.matchingReleases, matchingSamples: timing.matchingSamples, evidenceStrength: timing.calibration.evidenceStrength, generatedAt: timing.calibration.generatedAt,
+        deskew:{capMs:calibration.capMs,source:calibration.corrections.some(value=>value.matchingReleases>=2)?'LIVE_CALIBRATION':'INSUFFICIENT_EVIDENCE',
+          corrections:calibration.corrections.filter(value=>/^[A-G]$/.test(value.workerId)).map(value=>({workerId:value.workerId as 'A'|'B'|'C'|'D'|'E'|'F'|'G',fanOutIndex:value.fanOutIndex,
+            correctionMs:value.correctionMs,matchingReleases:value.matchingReleases,evidenceStrength:value.evidenceStrength}))}},
       provenance: { source: 'SMART_SUGGESTED', operatorModifications: 0 } });
     byId('strategy-review-status').textContent = 'Suggested plan copied into the plan below. Review it, then Save plan.';
     render();
@@ -249,7 +269,10 @@ function renderPreset(state: Dashboard | undefined) {
   const otherWidthOne = calibrateLiveAnchor(liveTimingSamples(state?.telemetry ?? []), { dispatchMode: 'node', fanOutWidth: 1 });
   byId('strategy-anchor-note').replaceChildren(el('strong', '', 'Live anchor: '), document.createTextNode(`${shift} · ${anchor.anchorSource.replaceAll('_', ' ').toLowerCase()}`),
     el('p', 'small', context), ...(timing.width > 1 && !calibration.sampleCount && otherWidthOne.sampleCount ? [el('p', 'small', `${otherWidthOne.sampleCount} single-attempt timing samples are available, but they are not width-${timing.width} matching evidence.`)] : []));
+  const deskew=timingEvidence(state,timing),workers=Array.from({length:Math.min(7,suggestion?.allocation.immediateTargets??0)},(_,index)=>String.fromCharCode(65+index));
   byId('strategy-timing-children').replaceChildren(...(timing.width > 1 ? timing.children.map(child => el('li', '', `Child ${child.fanOutIndex}: ${describeChildTiming(child)}`)) : []),
+    ...workers.flatMap(worker=>applyTimingDeskew(timing,deskew,worker).children.filter(child=>child.correctionMs!==0).map(child=>el('li','',
+      `${worker}${child.fanOutIndex}: base ${child.baseConfiguredOffsetMs} ms + local de-skew ${child.correctionMs} ms = final ${child.finalConfiguredOffsetMs} ms · ${child.evidenceStrength}`))),
     ...timing.warnings.map(warning => el('li', 'warn-text', warning)), el('li', 'small', `Fan-out spacing ${timing.spacingMs} ms · ${timing.basis}`));
 }
 
@@ -365,7 +388,14 @@ function renderReview(state: Dashboard | undefined) {
   if (!smart) { body.replaceChildren(empty('The current plan is not a Smart plan. Use a suggestion, or edit under Advanced overrides.')); return; }
   if (!compiled.phase3) { body.replaceChildren(empty('Fix the problems above to see what will happen.')); return; }
   const description = describeSmartPlan(compiled.phase3, { unavailable: host.unready() });
+  const saved=state?.booking?.setup,savedMeta=saved?.STRATEGY_V2?.timingCalibration;
+  const decomposition=saved?.PRECISION_PHASE3===compiled.phase3||JSON.stringify(saved?.PRECISION_PHASE3)===JSON.stringify(compiled.phase3)
+    ? compiled.phase3.wave1.flatMap(assignment=>(assignment.fanOutOffsetsMs??[assignment.releaseOffsetMs??0]).map((final,index)=>{
+      const correction=savedMeta?.deskew?.corrections.find(value=>value.workerId===assignment.workerId&&value.fanOutIndex===index)?.correctionMs??0;
+      return el('p','small',`${assignment.workerId}${(assignment.fanOutOffsetsMs?.length??1)>1?index:''} · base + group anchor ${final-correction} ms · worker/index correction ${correction>=0?'+':''}${correction} ms · FINAL SAVED TRIGGER ${final} ms`);
+    })):[];
   body.replaceChildren(...description.sections.flatMap(section => [el('h4', '', section.title), ...section.lines.map(line => el('p', 'small', line))]),
+    ...(decomposition.length?[el('h4','','Saved timing decomposition'),...decomposition]:[]),
     el('p', '', `${description.summary} · Maximum possible sends: ${description.maxSends}`));
 }
 

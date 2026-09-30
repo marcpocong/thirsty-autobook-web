@@ -18,10 +18,11 @@
  *   --dispatcher central | coordinator | renderer              (coordinator: experimental per-browser processes; renderer: experimental)
  *   --prewarm-lead <ms> (default 1500)  --prewarm-concurrency <n> (tiered policy, as production fan-out)  --synthetic-prewarm cpu:<ms>,wait:<ms>  --page-busy <ms per 10 ms>
  *   --headed (real windows; background tabs as in production)  --traces (passive CDP provider traces on every tab, as production)
+ *   --lockdown (production final-second HIGH priority plus in-memory RELEASE_CRITICAL_LOCKDOWN lifecycle)
  *   --chrome <path>  --label <text>  --out <dir>
  */
 import { mkdir, writeFile } from 'node:fs/promises';
-import { cpus, platform, release as osRelease, totalmem } from 'node:os';
+import { constants as osConstants, cpus, getPriority, platform, release as osRelease, setPriority, totalmem } from 'node:os';
 import { join, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { pathToFileURL } from 'node:url';
@@ -44,6 +45,7 @@ const pageBusy = args.get('page-busy') ?? '0';
 const headed = args.get('headed') === 'true';
 const saveProfile = args.get('save-profile') === 'true';
 const tracesOn = args.get('traces') === 'true';
+const lockdownOn = args.get('lockdown') === 'true';
 const label = args.get('label') ?? `${dispatcher}-${pattern.replace(/[^a-z0-9-]/gi, '')}${headed ? '-headed' : ''}`;
 if (!(workerCount >= 1 && workerCount <= 7) || widths.some(width => !(width >= 1 && width <= 4)) || !(runs >= 1) || !['central', 'coordinator', 'renderer'].includes(dispatcher) ||
   !(prewarmLeadMs >= 200 && prewarmLeadMs <= 30_000) || (dispatcher === 'renderer' && prewarmLeadMs < 1300)) throw Error('BENCH_ARGS_INVALID');
@@ -83,6 +85,7 @@ const clockModule = await import(moduleUrl('src/release-clock.ts')) as typeof im
 const cp = await import(moduleUrl('src/api-booking/critical-path.ts')) as typeof import('../src/api-booking/critical-path.js');
 const rc = await import(moduleUrl('src/api-booking/renderer-clock.ts')) as typeof import('../src/api-booking/renderer-clock.js');
 const capacity = await import(moduleUrl('src/fanout-capacity.ts')) as typeof import('../src/fanout-capacity.js');
+const lockdownModule = lockdownOn ? await import(moduleUrl('src/release-lockdown.ts')) as typeof import('../src/release-lockdown.js') : undefined;
 const coordinatorModule = dispatcher === 'coordinator'
   ? await import(moduleUrl('src/api-booking/dispatch-coordinator.ts')) as typeof import('../src/api-booking/dispatch-coordinator.js') : undefined;
 const { ONDA_URL } = await import(moduleUrl('src/config.ts')) as typeof import('../src/config.js');
@@ -135,6 +138,8 @@ async function runOnce(width: number, runIndex: number): Promise<RunSample> {
   const armed = await armedModule.armPrecisionRace(frozen, { lock, customerFor: () => customer, journalRoot: resolve('.local/api-booking/api-first-journals'),
     releaseMs, now: () => trusted.nowMs() });
   const firstTrigger = armedModule.firstArmedTrigger(armed);
+  const lockdown=lockdownModule?new lockdownModule.ReleaseCriticalLockdown(trusted.monotonicDeadline(firstTrigger)):undefined;
+  let previousPriority:number|undefined;
   let cpuBefore: ReturnType<typeof cpuSnapshot> | undefined, nodeCpuBefore: NodeJS.CpuUsage | undefined;
   const common = {
     clock: trusted, prewarmLeadMs, isAborted: () => false, transportFor: (_worker: string, attempt: { attempt: { id: string } }) => transports.get(attempt.attempt.id)!,
@@ -150,6 +155,8 @@ async function runOnce(width: number, runIndex: number): Promise<RunSample> {
       if (name === 'transportCall') recorder.mark(attempt.attempt.id, 'workerInvoked'); else if (name === 'rendererArm') recorder.mark(attempt.attempt.id, 'rendererArmSent');
     },
     afterFire: async () => { await lock.dispatching(); },
+    ...(lockdown?{onFinalApproach:()=>{lockdown.enter();try{previousPriority=getPriority();setPriority(osConstants.priority.PRIORITY_HIGH);}catch{previousPriority=undefined;}},
+      onReleaseWindowEnd:()=>{lockdown.exit();if(previousPriority!==undefined){try{setPriority(previousPriority);}catch{}previousPriority=undefined;}}}:{}),
     // --prewarm-concurrency N: the production tiered policy (Tier 1 first, one preparation per browser, at most N at once).
     ...(prewarmConcurrency ? { prewarmPolicy: { concurrency: prewarmConcurrency, perGroupConcurrency: 1, tierBarrierTimeoutMs: Infinity } } : {}),
   };
