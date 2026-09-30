@@ -21,7 +21,7 @@ export function readLastReleaseBuild(root:string):{gitSha:string;dirty:boolean|n
     return typeof value.gitSha==='string'&&typeof value.finishedAt==='string'&&typeof value.packaged==='boolean'?{gitSha:value.gitSha,dirty:typeof value.dirty==='boolean'?value.dirty:null,finishedAt:value.finishedAt,packaged:value.packaged}:null;}catch{return null;}
 }
 export function evaluateReleaseReadiness(input:{build:BuildInfo|null;testedBuild:{gitSha:string;dirty:boolean|null;finishedAt:string;packaged:boolean}|null;configValid:boolean;authorizationValid:boolean;
-  clock:{synced:boolean;ageMs:number|null;uncertaintyMs:number|null;offsetMs:number|null};machine:MachineHealth;workers:Record<string,{connected:boolean;identityValid:boolean;securityReady:boolean;latencyP95Ms?:number|null}>;
+  clock:{synced:boolean;ageMs:number|null;uncertaintyMs:number|null;offsetMs:number|null};machine:MachineHealth;workers:Record<string,{connected:boolean;identityValid:boolean;securityReady:boolean;targetReady?:boolean;tabCount?:number;latencyP95Ms?:number|null}>;
   observer:{online:boolean;lastReadAgeMs:number|null;availabilityLatencyMs:number|null};fanOut:{compatible:boolean;stale:boolean;width:number}|null;prewarm:boolean}):ReleaseReadinessGate{
   const checks:ReadinessCheck[]=[];const add=(check:ReadinessCheck)=>checks.push(check);
   const buildMatch=!!input.build&&!!input.testedBuild&&input.build.gitSha===input.testedBuild.gitSha&&input.testedBuild.packaged;
@@ -35,9 +35,9 @@ export function evaluateReleaseReadiness(input:{build:BuildInfo|null;testedBuild
   add({id:'machine',label:'Machine',level:machineBad?'UNAVAILABLE':machineWarn?'DEGRADED':'GOOD',hardBlock:false,detail:`memory ${input.machine.memoryUsedPct}% · event-loop p95 ${input.machine.eventLoopP95Ms} ms · app RSS ${input.machine.processRssMb} MB`});
   const readyWorkers:string[]=[],degradedWorkers:string[]=[],unavailableWorkers:string[]=[];
   for(const [id,value] of Object.entries(input.workers).sort()){
-    const level:ReadinessLevel=!value.connected||!value.identityValid?'UNAVAILABLE':!value.securityReady||(value.latencyP95Ms??0)>20?'DEGRADED':'GOOD';
+    const level:ReadinessLevel=!value.connected||!value.identityValid?'UNAVAILABLE':!value.securityReady||value.targetReady===false||value.tabCount===0||(value.latencyP95Ms??0)>20?'DEGRADED':'GOOD';
     (level==='GOOD'?readyWorkers:level==='DEGRADED'?degradedWorkers:unavailableWorkers).push(id);
-    add({id:`worker-${id}`,label:`Worker ${id}`,level,hardBlock:false,detail:!value.connected?'browser disconnected':!value.identityValid?'identity/profile not verified':!value.securityReady?'security preparation not ready':value.latencyP95Ms?`renderer command p95 ${value.latencyP95Ms} ms`:'connected, identified and prepared'});
+    add({id:`worker-${id}`,label:`Worker ${id}`,level,hardBlock:false,detail:!value.connected?'browser disconnected':!value.identityValid?'identity/profile not verified':!value.securityReady?'security preparation not ready':value.targetReady===false?'expected Onda target tab not found':value.tabCount===0?'no responsive tab':`connected · ${value.tabCount??'?'} tab(s) · probe ${value.latencyP95Ms?.toFixed(1)??'?'} ms`});
   }
   add({id:'observer',label:'Observer',level:input.observer.online?'GOOD':'DEGRADED',hardBlock:false,detail:input.observer.online?`online · latest read ${input.observer.lastReadAgeMs===null?'pending':Math.round(input.observer.lastReadAgeMs/1000)+' s ago'}`:'offline; Wave 2 and Rescue require new valid evidence'});
   add({id:'fanout',label:'Fan-out profile',level:input.fanOut?.compatible&&!input.fanOut.stale?'GOOD':input.fanOut?'DEGRADED':'UNAVAILABLE',hardBlock:false,detail:input.fanOut?`${input.fanOut.width} per target${input.fanOut.stale?' · stale':''}${input.fanOut.compatible?'':' · incompatible'}`:'Auto falls back to width 1'});

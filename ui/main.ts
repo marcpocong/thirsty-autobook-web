@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { Controller } from './controller.js';
 import { createRunner } from './processes.js';
 import { ActivityJournal } from './activity-journal.js';
-import { readLock, readHandoff, readRetainedHold, readPreviousHolds, readLatestQrHandoffs, probeCdp, probeBrowserHealth, readClock } from './status.js';
+import { readLock, readHandoff, readRetainedHold, readPreviousHolds, readLatestQrHandoffs, probeCdp, probeBrowserHealth, probeBrowserReadiness, readClock } from './status.js';
 import { readBooking, saveBooking, describePlan } from './booking.js';
 import { resetPracticeSession } from './practice-reset.js';
 import {requiredWorkerIds,WORKER_IDS} from '../src/workers.js';
@@ -67,7 +67,7 @@ const controller = new Controller({
   confirmPractice:async input=>confirmModal({tone:'question',title:'Run Full Flow Practice to QR?',message:'RUN FULL FLOW PRACTICE TO QR?',detail:`Date: ${input.target.date}\nCourt: ${input.target.court}\nStart: ${input.target.start}\nDuration: ${input.target.duration} hours\nNo price ceiling\nPlayer information: Configured\nTerms authorization: YES\n\nThis continues until Onda displays the QR payment page. Payment itself will NOT be performed.`,confirmLabel:'Run Practice'}),
   dualEvidence:async()=>{const {readDualEvidence,dualValidationFingerprint}=await import('../src/dual-runtime.js');const e=await readDualEvidence(dualValidationFingerprint(loadConfig()));return {selection:!!(e.readiness&&e.dry&&e.selection),full:!!(e.readiness&&e.dry&&e.selection&&e.full)};},
   confirmDualPractice:async command=>confirmModal({tone:'warning',title:'Create TWO real temporary holds?',message:'THIS TEST CAN CREATE TWO REAL TEMPORARY RESERVATION HOLDS.',detail:command.kind==='dualDry'?'':`Date: ${command.input.target.date}\nCourts: ${command.input.target.court} + ${command.input.courtB}\nStart: ${command.input.target.start}\nDuration: ${command.input.target.duration} hours\nNo price ceiling\nTerms authorized: YES\nNoncompetitive target: confirmed\nPAYMENT WILL NOT BE AUTOMATED.`,confirmLabel:'Create two test holds'}),
-  booking:readBooking, saveBooking, handoff:()=>readHandoff(root),browserHealth:async()=>{const h=await probeBrowserHealth();return {A:!!h.A,B:!!h.B,C:!!h.C,D:!!h.D,E:!!h.E,F:!!h.F,G:!!h.G,H:!!h.H};},playerStatus:loadPlayerProfiles,
+  booking:readBooking, saveBooking, handoff:()=>readHandoff(root),browserHealth:async()=>{const h=await probeBrowserHealth();return {A:!!h.A,B:!!h.B,C:!!h.C,D:!!h.D,E:!!h.E,F:!!h.F,G:!!h.G,H:!!h.H};},browserReadiness:probeBrowserReadiness,playerStatus:loadPlayerProfiles,
   startSleepProtection:()=>powerSaveBlocker.start('prevent-app-suspension'),stopSleepProtection:id=>{if(powerSaveBlocker.isStarted(id))powerSaveBlocker.stop(id);},
   countBotBrowsers:()=>countBotBrowsers(root),closeBotBrowsers:()=>closeBotBrowsers(root),
   confirmCloseBrowsers:async({open,qrPages,lock})=>confirmModal({tone:qrPages||lock?'warning':'question',title:'Close all bot browsers?',
