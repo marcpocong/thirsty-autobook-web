@@ -101,7 +101,8 @@ const controller = new Controller({
     detail: (plan ? describePlan(plan)+'\n\n' : '') + (kind==='full'?'Terms authorization: YES, for this booking only.\nFinal automation boundary: QR Checkout.\nThe bot will continue through Onda until the QR payment page is reached, then stop. Payment itself remains manual.':kind==='selection'?'At release this automation MAY SELECT available court slots.\nSelection Only stops before Proceed. Selection is not a reservation.':'This waits for release and performs read-only refresh/date navigation. No court slots will be selected.'),
     confirmLabel: kind==='full'?'Arm Full Booking':kind==='selection'?'Arm Selection':kind==='dry'?'Arm Dry Race':'Arm observation' }),
   buildInfo:()=>readBuildInfo(resolve(root,'dist/build-info.json')),
-  machineHealth:()=>machineHealth.sample(),testedBuild:()=>readLastReleaseBuild(root),
+  machineHealth:()=>machineHealth.sample(),// release:build records under the source tree; an installation runs from its parent folder.
+  testedBuild:()=>readLastReleaseBuild(root)??readLastReleaseBuild(resolve(root,'Source')),
   // Profiles are measured offline by scripts/benchmark-fanout-capacity.ts on this machine (source tree or installation).
   releaseTelemetry:()=>readReleaseTelemetry(root),
   fanOutDigest:()=>fanOutDigest([root,resolve(root,'Source')],{machine:currentMachineIdentity(),gitSha:readBuildInfo(resolve(root,'dist/build-info.json'))?.gitSha??'unknown',dispatcher:'central'}),
