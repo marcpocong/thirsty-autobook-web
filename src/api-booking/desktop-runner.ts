@@ -160,6 +160,12 @@ const enterReleaseLockdown=()=>{releaseLockdown?.enter();try{lockdownPriority=ge
 const exitReleaseLockdown=()=>{releaseLockdown?.exit();if(lockdownPriority!==undefined){try{setPriority(lockdownPriority);}catch{}lockdownPriority=undefined;}
   const value=releaseLockdown;setImmediate(()=>{if(value){const summary=value.summary();stage('RELEASE_LOCKDOWN_COMPLETE',{deferred:summary.deferred,flushed:summary.flushed,
     workInFinal50Ms:summary.workInFinal50Ms,workInFinal20Ms:summary.workInFinal20Ms,workInFinal10Ms:summary.workInFinal10Ms});}});};
+// Informational progress/UI lines (file append + IPC) raised inside the final second are queued until the POSTs have
+// left. Never use this for journal, permit, gate or state writes; exact timings are already in the in-memory recorder.
+const deferrableStage=(name:string,extra:Record<string,string|number|boolean>={})=>{
+  const lockdown=releaseLockdown;if(lockdown?.state!=='RELEASE_CRITICAL_LOCKDOWN'){stage(name,extra);return;}
+  const queuedAt=performance.now();lockdown.defer(()=>stage(name,{...extra,lockdownDeferredMs:Math.round(performance.now()-queuedAt)}));
+};
 const persistCriticalPath=async()=>{
   const recorder=criticalPath;
   if(!recorder||criticalPathSaved)return;
@@ -850,10 +856,11 @@ try {
             onFinalApproach:enterReleaseLockdown,
             onReleaseWindowEnd:exitReleaseLockdown,
             onEvent:event=>{
-              if(event.kind==='prewarm-ready'){stage('SECURITY_PREWARM_READY',{workerId:event.workerId,attemptId:event.attemptId});
-                recorder.describe(event.attemptId,{prewarmReadyMs:Math.round((releaseClock?.nowMs()??nowMs())-releaseMs)});}
-              else if(event.kind==='prewarm-failed')stage('SECURITY_PREWARM_FAILED',{workerId:event.workerId,attemptId:event.attemptId,code:event.code??'SECURITY_PREWARM_FAILED'});
-              else if(event.kind==='prewarm-retry')stage('SECURITY_PREWARM_RETRY',{workerId:event.workerId,attemptId:event.attemptId});
+              if(event.kind==='prewarm-ready'){recorder.describe(event.attemptId,{prewarmReadyMs:Math.round((releaseClock?.nowMs()??nowMs())-releaseMs)});
+                deferrableStage('SECURITY_PREWARM_READY',{workerId:event.workerId,attemptId:event.attemptId});}
+              // Informational only: an unready child is refused by armed-dispatch itself, not by this log line.
+              else if(event.kind==='prewarm-failed')deferrableStage('SECURITY_PREWARM_FAILED',{workerId:event.workerId,attemptId:event.attemptId,code:event.code??'SECURITY_PREWARM_FAILED'});
+              else if(event.kind==='prewarm-retry')deferrableStage('SECURITY_PREWARM_RETRY',{workerId:event.workerId,attemptId:event.attemptId});
               else if(event.kind==='dispatch-start'){const binding=bindings.get(event.attemptId),plan=race.attempts.find(value=>value.id===event.attemptId)?.plan;
                 if(binding&&plan){binding.started=performance.now();
                   diagnostics.observe('DIAGNOSTIC_ATTEMPT_STARTED',binding.correlation,{court:plan.courts[0]!.court,startTime:plan.startTime,durationHours:plan.durationHours});}}

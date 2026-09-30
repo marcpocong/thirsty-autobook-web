@@ -1,12 +1,79 @@
 import {describe,expect,it} from 'vitest';
 import {evaluateReleaseReadiness} from '../src/release-readiness-gate.js';
 
-const base=()=>({build:{schema:'thirsty-build-info/v1' as const,kind:'installation' as const,gitSha:'a'.repeat(40),branch:'main',dirty:false,builtAt:'2026-09-30T00:00:00Z',packageVersion:'0.1.0',node:'v24',contentId:'b'.repeat(64),buildId:'x'},
+type Input=Parameters<typeof evaluateReleaseReadiness>[0];
+const worker=()=>({connected:true,identityValid:true,securityReady:true,targetReady:true,tabCount:2,latencyP95Ms:3 as number|null});
+const base=():Input=>({build:{schema:'thirsty-build-info/v1' as const,kind:'installation' as const,gitSha:'a'.repeat(40),branch:'main',dirty:false,builtAt:'2026-09-30T00:00:00Z',packageVersion:'0.1.0',node:'v24',contentId:'b'.repeat(64),buildId:'x'},
   testedBuild:{gitSha:'a'.repeat(40),dirty:false,finishedAt:'2026-09-30T00:00:00Z',packaged:true},configValid:true,authorizationValid:true,
   clock:{synced:true,ageMs:1000,uncertaintyMs:2,offsetMs:1},machine:{measuredAt:'2026-09-30T00:00:00Z',cpuCount:8,memoryUsedPct:50,eventLoopP95Ms:2,processRssMb:200},
-  workers:{A:{connected:true,identityValid:true,securityReady:true}},observer:{online:true,lastReadAgeMs:100,availabilityLatencyMs:20},fanOut:{compatible:true,stale:false,width:2},prewarm:true});
+  workers:Object.fromEntries('ABCDEFG'.split('').map(id=>[id,worker()])),observer:{online:true,lastReadAgeMs:100,availabilityLatencyMs:20},fanOut:{compatible:true,stale:false,width:2},prewarm:true});
+const check=(input:Input,id:string)=>evaluateReleaseReadiness(input).checks.find(value=>value.id===id)!;
+
 describe('release readiness gate',()=>{
-  it('reports READY only when every check is good',()=>expect(evaluateReleaseReadiness(base()).verdict).toBe('READY'));
-  it('warns for a degraded worker without silently excluding it',()=>{const input=base();input.workers.A.securityReady=false;const result=evaluateReleaseReadiness(input);expect(result.verdict).toBe('READY_WITH_WARNINGS');expect(result.degradedWorkers).toEqual(['A']);});
-  it('hard-blocks an invalid saved authorization or missing trusted clock',()=>{const input=base();input.authorizationValid=false;input.clock.synced=false;expect(evaluateReleaseReadiness(input).verdict).toBe('NOT_READY');});
+  it('reports READY only when every check is good',()=>{
+    const result=evaluateReleaseReadiness(base());
+    expect(result.verdict).toBe('READY');expect(result.readyWorkers).toEqual('ABCDEFG'.split(''));
+  });
+
+  it('warns for a degraded worker without silently excluding it',()=>{
+    const input=base();input.workers.A!.securityReady=false;const result=evaluateReleaseReadiness(input);
+    expect(result.verdict).toBe('READY_WITH_WARNINGS');expect(result.degradedWorkers).toEqual(['A']);expect(result.readyWorkers).not.toContain('A');
+    expect(check(input,'worker-A')).toMatchObject({level:'DEGRADED',hardBlock:false,detail:'security preparation not ready'});
+  });
+
+  it('marks a worker with slow command latency degraded and names the measurement',()=>{
+    const input=base();input.workers.F!.latencyP95Ms=24;
+    expect(check(input,'worker-F')).toMatchObject({level:'DEGRADED',detail:expect.stringContaining('probe 24.0 ms')});
+    expect(evaluateReleaseReadiness(input).degradedWorkers).toEqual(['F']);
+  });
+
+  it('marks a missing or unidentified worker unavailable as a warning, not a safety block',()=>{
+    const input=base();input.workers.B!.connected=false;input.workers.C!.identityValid=false;const result=evaluateReleaseReadiness(input);
+    expect(result.verdict).toBe('READY_WITH_WARNINGS');expect(result.unavailableWorkers).toEqual(['B','C']);
+    expect(check(input,'worker-B').detail).toBe('browser disconnected');expect(check(input,'worker-C').detail).toBe('identity/profile not verified');
+  });
+
+  it('flags a worker without its Onda tab or any responsive tab',()=>{
+    const input=base();input.workers.D!.targetReady=false;input.workers.E!.tabCount=0;
+    expect(evaluateReleaseReadiness(input).degradedWorkers).toEqual(['D','E']);
+  });
+
+  it('hard-blocks an invalid saved authorization or missing trusted clock',()=>{
+    const auth=base();auth.authorizationValid=false;expect(evaluateReleaseReadiness(auth).verdict).toBe('NOT_READY');
+    const config=base();config.configValid=false;expect(check(config,'config')).toMatchObject({level:'UNAVAILABLE',hardBlock:true,detail:'Configuration is invalid'});
+    const clock=base();clock.clock.synced=false;expect(evaluateReleaseReadiness(clock).verdict).toBe('NOT_READY');
+  });
+
+  it('warns for an old or uncertain trusted clock without blocking',()=>{
+    const uncertain=base();uncertain.clock.uncertaintyMs=40;
+    expect(check(uncertain,'clock')).toMatchObject({level:'DEGRADED',hardBlock:false});expect(evaluateReleaseReadiness(uncertain).verdict).toBe('READY_WITH_WARNINGS');
+    const old=base();old.clock.ageMs=20*60_000;expect(check(old,'clock').level).toBe('DEGRADED');
+  });
+
+  it('flags a running build that is not the tested packaged build, a dirty build, or no record',()=>{
+    const wrong=base();wrong.testedBuild!.gitSha='c'.repeat(40);
+    expect(check(wrong,'build')).toMatchObject({level:'DEGRADED',detail:'Running SHA does not match the last tested packaged build'});
+    const unpackaged=base();unpackaged.testedBuild!.packaged=false;expect(check(unpackaged,'build').level).toBe('DEGRADED');
+    const dirty=base();dirty.build!.dirty=true;expect(check(dirty,'build').detail).toContain('dirty');
+    const none=base();none.testedBuild=null;expect(check(none,'build')).toMatchObject({level:'UNAVAILABLE',hardBlock:false});
+  });
+
+  it('reports a stale, incompatible or missing fan-out profile and Auto width 1 fallback',()=>{
+    const stale=base();stale.fanOut!.stale=true;expect(check(stale,'fanout')).toMatchObject({level:'DEGRADED',detail:'2 per target · stale'});
+    const incompatible=base();incompatible.fanOut!.compatible=false;expect(check(incompatible,'fanout').detail).toContain('incompatible');
+    const missing=base();missing.fanOut=null;expect(check(missing,'fanout')).toMatchObject({level:'UNAVAILABLE',detail:'Auto falls back to width 1'});
+  });
+
+  it('shows an offline observer as a warning and keeps adaptive waves fail-closed',()=>{
+    const input=base();input.observer.online=false;
+    expect(check(input,'observer')).toMatchObject({level:'DEGRADED',hardBlock:false,detail:expect.stringContaining('Wave 2 and Rescue require new valid evidence')});
+    expect(evaluateReleaseReadiness(input).verdict).toBe('READY_WITH_WARNINGS');
+  });
+
+  it('grades machine pressure and missing prewarm as warnings',()=>{
+    const busy=base();busy.machine.eventLoopP95Ms=25;expect(check(busy,'machine').level).toBe('DEGRADED');
+    const severe=base();severe.machine.memoryUsedPct=95;expect(check(severe,'machine')).toMatchObject({level:'UNAVAILABLE',hardBlock:false});
+    const cold=base();cold.prewarm=false;expect(check(cold,'prewarm').level).toBe('DEGRADED');
+    expect(evaluateReleaseReadiness(severe).verdict).toBe('READY_WITH_WARNINGS');
+  });
 });
