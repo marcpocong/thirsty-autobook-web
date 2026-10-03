@@ -23,7 +23,7 @@ export function renderLive(state: Dashboard): void {
   const observer=state.slotWatch&&['waiting','watching'].includes(state.slotWatch.status)
     ? `Observer ONLINE${state.slotWatch.lastLatencyMs!==undefined?` · ${Math.round(state.slotWatch.lastLatencyMs)} ms`:''}`:'Observer OFFLINE / DEGRADED';
   const lockdown=state.operation==='full'&&state.clock&&state.clock.remainingMs<=1_000?'RELEASE CRITICAL LOCKDOWN active':'';
-  const allChildren=live?.parents.filter(value=>value.wave==='WAVE_1').flatMap(value=>value.children)??[],shotgunChildren=allChildren.filter(value=>value.shotCount!==undefined),shotgunTotal=state.booking?.setup.STRATEGY_V2?.shotgun?.exactSchedule.length;
+  const allChildren=live?.parents.filter(value=>value.wave==='WAVE_1').flatMap(value=>value.children)??[],shotgunChildren=allChildren.filter(value=>value.shotIndex!==undefined),shotgunTotal=state.booking?.setup.STRATEGY_V2?.shotgun?.exactSchedule.length;
   const sent=shotgunChildren.filter(value=>['IN_FLIGHT','REJECTED','UNKNOWN','QR_READY','VERIFIED','HOLD_VERIFIED','HOLD_VERIFIED_QR_ATTENTION'].includes(value.state)).length;
   const suppressed=shotgunChildren.filter(value=>value.state==='NOT_DISPATCHED'&&value.code?.startsWith('SHOTGUN_')).length;
   byId('live-prewarm').textContent = [observer,lockdown,live?.prewarm && live.prewarm.width > 1 ? `Security prepares tier by tier, ${Math.round(live.prewarm.leadMs / 1000)} s ahead` : '',
@@ -33,7 +33,7 @@ export function renderLive(state: Dashboard): void {
     const details = el('details', 'live-parent');
     const busy = parent.children.some(child => ['IN_FLIGHT', 'UNKNOWN', 'QR_READY', 'VERIFIED', 'HOLD_VERIFIED'].includes(child.state));
     details.open = busy || parent.children.length === 1;
-    const shotgun=parent.wave==='WAVE_1'&&parent.children.some(child=>(child.shotCount??0)>1);
+    const shotgun=parent.wave==='WAVE_1'&&parent.children.some(child=>child.shotIndex!==undefined);
     const title = `${parent.court ? `Court ${parent.court}` : 'Target'} · ${hour(parent.startTime)}–${hour(parent.endTime)} · ${shotgun?`Shotgun · ${Math.max(...parent.children.map(child=>child.shotCount??parent.children.length))} attempts`:`${parent.workerId ? `Worker ${parent.workerId} · ` : ''}${waveLabel[parent.wave]}`}`;
     details.append(el('summary', '', `${title} — ${parentSummary(parent)}`));
     const chips = el('div', 'live-children');

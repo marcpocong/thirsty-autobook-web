@@ -23,6 +23,11 @@ export interface ShotgunSettings {
   windowStartMs: number;
   windowEndMs: number;
   timingMode: ShotgunTimingMode;
+  /** Exact global release-relative positions used only when timingMode is CUSTOM. */
+  customOffsetsMs?: number[];
+  timingCapacityOverride?: boolean;
+  allowStandbyConsumption?: boolean;
+  /** Legacy read compatibility. Migrated conservatively by the editor. */
   capacityOverride?: boolean;
 }
 
@@ -33,6 +38,12 @@ export interface ShotgunCapacityInput {
   recommendedBurstChildren?: number;
   /** Existing fresh learned/manual group anchor applied uniformly to the deterministic relative schedule. */
   groupAnchorMs?: number;
+}
+
+/** Legacy override acknowledged timing risk only; standby sacrifice is never inferred. */
+export function migrateShotgunSettings<T extends ShotgunSettings>(settings:T):T{
+  const migrated={...settings,timingCapacityOverride:settings.timingCapacityOverride??settings.capacityOverride??false,
+    allowStandbyConsumption:settings.allowStandbyConsumption??false};delete migrated.capacityOverride;return migrated;
 }
 
 export interface ShotgunPlan {
@@ -112,13 +123,21 @@ export function planShotgun(settings: ShotgunSettings, targets: readonly Shotgun
   const timingFactor=settings.timingMode==='TIGHT'?1:settings.timingMode==='BALANCED'?2:settings.timingMode==='WIDE'?4:null;
   const desiredSpan=timingFactor===null?span:spacing*timingFactor*Math.max(0,allocatedCount-1);
   const scheduleStart=timingFactor!==null&&desiredSpan<=span?settings.windowEndMs-desiredSpan:settings.windowStartMs;
-  const groupAnchorMs=Number.isSafeInteger(capacity.groupAnchorMs)?capacity.groupAnchorMs!:0;
-  const offsets=shotgunOffsets(allocatedCount,scheduleStart,settings.windowEndMs).map(value=>value+groupAnchorMs);
+  const configuredAnchorMs=Number.isSafeInteger(capacity.groupAnchorMs)?capacity.groupAnchorMs!:0;
+  const custom=settings.timingMode==='CUSTOM';
+  const groupAnchorMs=custom?0:configuredAnchorMs;
+  if(custom&&settings.customOffsetsMs?.length!==allocatedCount)problems.push(`Custom Shotgun timing requires exactly ${allocatedCount} signed offsets.`);
+  if(custom&&settings.customOffsetsMs?.some(value=>!isShotgunOffsetMs(value)))problems.push('Custom Shotgun offsets must be whole milliseconds from -2000 through +2000.');
+  // Custom values are final operator-entered triggers: anchors must never silently rewrite them.
+  const offsets=custom?[...(settings.customOffsetsMs??[])]:shotgunOffsets(allocatedCount,scheduleStart,settings.windowEndMs).map(value=>value+groupAnchorMs);
   if(offsets.some(value=>!isShotgunOffsetMs(value)))problems.push(`The ${groupAnchorMs>=0?'+':''}${groupAnchorMs} ms group anchor moves a Shotgun trigger outside -2000 through +2000 ms.`);
-  const requestedSpacingMs = offsets.length>1?Math.min(...offsets.slice(1).map((value,index)=>value-offsets[index]!)):null;
-  const capacityWarning = allocatedCount > recommendedMaximum
+  const chronological=[...offsets].sort((a,b)=>a-b);
+  const requestedSpacingMs = chronological.length>1?Math.min(...chronological.slice(1).map((value,index)=>value-chronological[index]!)):null;
+  const capacityWarning = custom&&requestedSpacingMs!==null&&requestedSpacingMs<spacing
+    ? `Requested Custom spacing reaches ${requestedSpacingMs} ms; measured meaningful spacing is ${spacing} ms.`
+    : allocatedCount > recommendedMaximum
     ? `Requested ${allocatedCount}; recommended maximum for this window is about ${recommendedMaximum} at ${spacing} ms meaningful spacing.` : null;
-  if (capacityWarning && !settings.capacityOverride) problems.push(`${capacityWarning} Enable the explicit capacity override or reduce the budget.`);
+  if (capacityWarning && !(settings.timingCapacityOverride??settings.capacityOverride??false)) problems.push(`${capacityWarning} Enable the timing capacity override or reduce the budget.`);
   // Lay out one global schedule, then distribute those positions fairly among targets. This preserves the
   // advertised aggregate spacing instead of placing every target at the same endpoints and creating hidden bursts.
   const placements=Object.entries(allocated.counts).flatMap(([logicalTargetId,shotCount])=>Array.from({length:shotCount},(_,shotIndex)=>
@@ -141,6 +160,18 @@ export function shotgunTimingBucket(offsetMs: number): ShotgunTimingBucket {
   if (offsetMs <= 100) return '0 to +100 ms';
   if (offsetMs <= 250) return '+100 to +250 ms';
   return '> +250 ms';
+}
+
+/** Telemetry topology comes only from the saved exact schedule, never from fan-out shape. */
+export function deriveShotgunTopology(attempts:readonly {id:string;logicalTargetId:string;configuredOffsetMs:number}[],schedule:readonly {logicalTargetId:string;shotIndex:number;configuredOffsetMs:number}[]){
+  const result=new Map<string,{shotIndex:number;shotCount:number;timingBucket:ShotgunTimingBucket}>();
+  for(const logicalTargetId of new Set(schedule.map(value=>value.logicalTargetId))){
+    const planned=schedule.filter(value=>value.logicalTargetId===logicalTargetId).sort((a,b)=>a.shotIndex-b.shotIndex);
+    const actual=attempts.filter(value=>value.logicalTargetId===logicalTargetId);
+    const used=new Set<number>();actual.forEach(attempt=>{const index=planned.findIndex((shot,shotIndex)=>!used.has(shotIndex)&&shot.configuredOffsetMs===attempt.configuredOffsetMs),shot=planned[index];
+      if(shot){used.add(index);result.set(attempt.id,{shotIndex:shot.shotIndex,shotCount:planned.length,timingBucket:shotgunTimingBucket(shot.configuredOffsetMs)});}});
+  }
+  return result;
 }
 
 /** Outcome-driven same-target stop rule. Confirmed rejection deliberately permits later shots. */

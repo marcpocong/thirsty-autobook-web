@@ -265,7 +265,7 @@ export function compileSmartPlan(draft: SmartDraft, context: SmartContext): Smar
     warnings.push(standby.length ? `Only ${smartCount(standby.length, 'backup worker')} ${standby.length === 1 ? 'is' : 'are'} free, so at most ${standby.length} of ${backupChoices} backups can be tried.`
       : 'No worker is free for backups. Backups can only be tried as reopened slots.');
   const normalReadyWorkers=SMART_WORKERS.filter(worker=>!unavailable.has(worker)).length,normalStandby=Math.min(backupChoices,Math.max(0,normalReadyWorkers-draft.immediate.length));
-  if(shotgun&&standby.length<normalStandby&&!draft.shotgun?.capacityOverride)problems.push(`Shotgun would reduce reserved Wave 2 workers from ${normalStandby} to ${standby.length}. Use the explicit capacity override only if that resource tradeoff is intentional.`);
+  if(shotgun&&standby.length<normalStandby&&!draft.shotgun?.allowStandbyConsumption)problems.push(`Shotgun would reduce reserved Wave 2 workers from ${normalStandby} to ${standby.length}. Enable standby consumption only if that resource tradeoff is intentional.`);
 
   const reopened = Math.min(7, Math.max(1, Math.floor(draft.maxReopenedAttempts) || SMART_DEFAULT_REOPENED));
   const auto = { wave2: Math.min(backupChoices, standby.length), rescue: retry ? reopened : 0 };

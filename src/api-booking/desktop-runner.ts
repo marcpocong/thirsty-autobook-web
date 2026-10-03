@@ -51,7 +51,7 @@ import { WirePayloadError } from './wire-payload-check.js';
 import { adaptivePrewarmLeadMs, describeTierStatus, type TierStatus } from './prewarm-scheduler.js';
 import { securityPrepHistory } from '../security-prep-history.js';
 import { currentMachineIdentity } from '../fanout-capacity.js';
-import {shotgunTimingBucket} from '../shotgun.js';
+import {deriveShotgunTopology,logicalTargetId} from '../shotgun.js';
 import { predictionError, predictReopenings, RESCUE_CONTEXT_REUSE_MS, RESCUE_PREWARM_MAX_PER_RELEASE, rescuePrewarmDue, type ReopenPrediction } from './reopen-prediction.js';
 import { readPublicBookingRecords } from './public-bookings.js';
 import {API_SECURITY_PREWARM_LEAD_MS,safeApiFailureCode} from './run-observability.js';
@@ -974,16 +974,19 @@ try {
           ...(offsets.length>1?{fanOutCount:offsets.length}:{})});
       }
       const frozen=freezePrecisionRace(date,releaseMs,wave1);
-      const shotgunTopology=new Map<string,{shotIndex:number;shotCount:number;timingBucket:ReturnType<typeof shotgunTimingBucket>}>();
-      for(const targetKey of new Set(frozen.attempts.map(value=>value.target.targetKey))){const values=frozen.attempts.filter(value=>value.target.targetKey===targetKey);
-        values.forEach((value,shotIndex)=>shotgunTopology.set(value.id,{shotIndex,shotCount:values.length,timingBucket:shotgunTimingBucket(value.target.releaseOffsetMs??0)}));}
+      const savedShotgun=config.STRATEGY_V2?.shotgun;
+      const shotgunTopology=deriveShotgunTopology(frozen.attempts.map(value=>{const candidate=authorization.candidates.find(candidate=>candidate.logicalKey===value.target.targetKey)!;
+        return {id:value.id,logicalTargetId:logicalTargetId(candidate),configuredOffsetMs:value.target.releaseOffsetMs??0};}),savedShotgun?.enabled?savedShotgun.exactSchedule:[]);
       const fanOutWidth=Math.max(1,...frozen.attempts.map(attempt=>attempt.fanOutCount));
       await saveOnce(resolve('.local/api-booking/precision-races'),`${progressLog.runId}-phase3-freeze.json`,
         {runId:progressLog.runId,frozenAt:new Date(nowMs()).toISOString(),authorization,wave1Freeze:frozen.fingerprint,
           shotgun:config.STRATEGY_V2?.shotgun?{enabled:config.STRATEGY_V2.shotgun.enabled,budget:config.STRATEGY_V2.shotgun.budget,
             selectedLogicalTargets:config.STRATEGY_V2.shotgun.selectedTargetIds,allocationMode:config.STRATEGY_V2.shotgun.allocationMode,
             counts:config.STRATEGY_V2.shotgun.counts,windowStartMs:config.STRATEGY_V2.shotgun.windowStartMs,windowEndMs:config.STRATEGY_V2.shotgun.windowEndMs,
-            timingMode:config.STRATEGY_V2.shotgun.timingMode,groupAnchor:config.STRATEGY_V2.timingCalibration??null}:{enabled:false}});
+            timingMode:config.STRATEGY_V2.shotgun.timingMode,customOffsetsMs:config.STRATEGY_V2.shotgun.customOffsetsMs,
+            timingCapacityOverride:config.STRATEGY_V2.shotgun.timingCapacityOverride??config.STRATEGY_V2.shotgun.capacityOverride??false,
+            allowStandbyConsumption:config.STRATEGY_V2.shotgun.allowStandbyConsumption??false,exactSchedule:config.STRATEGY_V2.shotgun.exactSchedule,
+            groupAnchor:config.STRATEGY_V2.timingCalibration??null}:{enabled:false}});
       if(config.RELEASE_LAB){
         const createdAt=new Date(nowMs()).toISOString();
         await saveOnce(resolve('.local/api-booking/precision-races'),`${progressLog.runId}-release-lab.json`,{
@@ -1166,7 +1169,7 @@ try {
                 fanOutIndex:child.fanOutIndex,fanOutCount:child.fanOutCount,...shotgunTopology.get(child.id)!});}
             if(event.kind==='prewarm-failed'&&binding&&child)stage('SECURITY_PREWARM_FAILED',{workerId:event.workerId,candidateId:candidateOf(child).id,attemptId:binding.correlation.attemptId,code:event.code??'SECURITY_PREWARM_FAILED',
               fanOutIndex:child.fanOutIndex,fanOutCount:child.fanOutCount,...shotgunTopology.get(child.id)!});
-            const fanOut:Record<string,number|string>=child&&child.fanOutCount>1?{fanOutIndex:child.fanOutIndex,fanOutCount:child.fanOutCount,...shotgunTopology.get(child.id)!}:{};
+            const fanOut:Record<string,number|string>=child?{...(child.fanOutCount>1?{fanOutIndex:child.fanOutIndex,fanOutCount:child.fanOutCount}:{}),...shotgunTopology.get(child.id)!}:{};
             if(event.kind==='dispatch-start'&&binding&&child){wave1Fired=true;const candidate=candidateOf(child);
               session.record({id:binding.correlation.attemptId,candidateId:candidate.id,workerId:event.workerId,wave:'WAVE_1',state:'IN_FLIGHT',...fanOut});
               stage('PHASE3_WAVE1_STARTED',{workerId:event.workerId,candidateId:candidate.id,wave:'WAVE_1',attemptId:binding.correlation.attemptId,

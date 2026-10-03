@@ -79,7 +79,7 @@ let intelligenceMode: SuggestionIntelligenceMode = 'AUTO';
 let loadedKey = '';
 let courtsOverridden = false;
 const defaultShotgun=(targets:readonly SmartSlot[]):ShotgunSettings=>({enabled:true,budget:20,allocationMode:'EQUAL',
-  selectedTargetIds:targets.map(logicalTargetId),windowStartMs:-2000,windowEndMs:0,timingMode:'AUTO'});
+  selectedTargetIds:targets.map(logicalTargetId),windowStartMs:-2000,windowEndMs:0,timingMode:'AUTO',timingCapacityOverride:false,allowStandbyConsumption:false});
 const hourLabel = (hour: number) => hour === 24 ? '12:00 MN' : `${hour % 12 || 12}:00 ${hour < 12 ? 'AM' : 'PM'}`;
 const hourText = (hour: number) => `${String(hour).padStart(2, '0')}:00`;
 const sameWindow = (a: Window, b: Window) => a.court === b.court && a.start === b.start && a.durationHours === b.durationHours;
@@ -153,11 +153,14 @@ export function initStrategy(value: StrategyHost): void {
   for(const radio of document.querySelectorAll<HTMLInputElement>('input[name="strategy-intensity"]'))radio.addEventListener('change',()=>{
     if(!radio.checked)return;host.ensureMeta();host.edit(draft=>{if(radio.value==='SHOTGUN')draft.shotgun=draft.shotgun??defaultShotgun(draft.immediate);else delete draft.shotgun;});
   });
-  for(const id of ['strategy-shotgun-budget','strategy-shotgun-allocation','strategy-shotgun-start','strategy-shotgun-end','strategy-shotgun-timing','strategy-shotgun-override'])
+  for(const id of ['strategy-shotgun-budget','strategy-shotgun-allocation','strategy-shotgun-start','strategy-shotgun-end','strategy-shotgun-timing','strategy-shotgun-timing-override','strategy-shotgun-standby-override','strategy-shotgun-custom-offsets'])
     byId(id).addEventListener('change',()=>host.edit(draft=>{const current=draft.shotgun??defaultShotgun(draft.immediate);draft.shotgun={...current,
       budget:Number(inputById('strategy-shotgun-budget').value),allocationMode:selectById('strategy-shotgun-allocation').value as ShotgunSettings['allocationMode'],
       windowStartMs:Number(inputById('strategy-shotgun-start').value),windowEndMs:Number(inputById('strategy-shotgun-end').value),
-      timingMode:selectById('strategy-shotgun-timing').value as ShotgunSettings['timingMode'],capacityOverride:(byId('strategy-shotgun-override') as HTMLInputElement).checked};}));
+      timingMode:selectById('strategy-shotgun-timing').value as ShotgunSettings['timingMode'],
+      customOffsetsMs:(byId('strategy-shotgun-custom-offsets') as HTMLTextAreaElement).value.split(',').map(value=>value.trim()).filter(Boolean).map(Number),
+      timingCapacityOverride:(byId('strategy-shotgun-timing-override') as HTMLInputElement).checked,
+      allowStandbyConsumption:(byId('strategy-shotgun-standby-override') as HTMLInputElement).checked};delete draft.shotgun.capacityOverride;}));
   byId('strategy-shotgun-preset').addEventListener('click',()=>host.edit(draft=>{draft.shotgun={...(draft.shotgun??defaultShotgun(draft.immediate)),enabled:true,budget:20,
     windowStartMs:-2000,windowEndMs:0,allocationMode:'EQUAL',timingMode:'AUTO',selectedTargetIds:draft.immediate.map(logicalTargetId)};}));
   byId('strategy-check-schedule').addEventListener('click', () => {
@@ -414,7 +417,11 @@ function renderShotgun(state:Dashboard|undefined){
   byId('strategy-shotgun').hidden=!settings?.enabled;if(!settings?.enabled)return;
   inputById('strategy-shotgun-budget').value=String(settings.budget);selectById('strategy-shotgun-allocation').value=settings.allocationMode;
   inputById('strategy-shotgun-start').value=String(settings.windowStartMs);inputById('strategy-shotgun-end').value=String(settings.windowEndMs);
-  selectById('strategy-shotgun-timing').value=settings.timingMode;(byId('strategy-shotgun-override') as HTMLInputElement).checked=!!settings.capacityOverride;
+  selectById('strategy-shotgun-timing').value=settings.timingMode;
+  (byId('strategy-shotgun-timing-override') as HTMLInputElement).checked=!!(settings.timingCapacityOverride??settings.capacityOverride);
+  (byId('strategy-shotgun-standby-override') as HTMLInputElement).checked=!!settings.allowStandbyConsumption;
+  byId('strategy-shotgun-advanced').toggleAttribute('open',settings.timingMode==='CUSTOM');
+  const customInput=byId('strategy-shotgun-custom-offsets') as HTMLTextAreaElement;if(document.activeElement!==customInput)customInput.value=(settings.customOffsetsMs??[]).map(value=>value>=0?`+${value}`:String(value)).join(', ');
   const targets=byId('strategy-shotgun-targets');targets.replaceChildren(...draft.immediate.map((slot,index)=>{
     const id=logicalTargetId(slot),label=el('label','strategy-shotgun-target'),check=document.createElement('input');check.type='checkbox';check.checked=settings.selectedTargetIds.includes(id);
     check.addEventListener('change',()=>host.edit(next=>{const current=next.shotgun!;current.selectedTargetIds=check.checked?[...new Set([...current.selectedTargetIds,id])]:current.selectedTargetIds.filter(value=>value!==id);}));
@@ -429,6 +436,7 @@ function renderShotgun(state:Dashboard|undefined){
     ...(plan?.shots.length?[`Effective triggers: ${plan.shots[0]!.configuredOffsetMs>=0?'+':''}${plan.shots[0]!.configuredOffsetMs} ms → ${plan.shots.at(-1)!.configuredOffsetMs>=0?'+':''}${plan.shots.at(-1)!.configuredOffsetMs} ms`]:[]),
     `Approx spacing: ${plan?.requestedSpacingMs===null?'n/a':`${Math.round(plan?.requestedSpacingMs??0)} ms`}`,
     `Recommended maximum for this window: ~${plan?.recommendedMaximum??'—'}`,
+    `Timing capacity override: ${(settings.timingCapacityOverride??settings.capacityOverride)?'ACTIVE':'off'} · Standby consumption: ${settings.allowStandbyConsumption?'ACTIVE':'protected'}`,
     `Standby workers: ${compiled.standby.join(' / ')||'none'} · Wave 2 max ${compiled.budgets.wave2} · Rescue max ${compiled.budgets.rescue}`,
     ...(plan?.capacityWarning?[plan.capacityWarning]:[]),...compiled.problems];
   byId('strategy-shotgun-preview').replaceChildren(...lines.map((line,index)=>el('p',index>=lines.length-compiled.problems.length&&compiled.problems.length?'warn-text':'small',line)));
@@ -448,6 +456,7 @@ function renderReview(state: Dashboard | undefined) {
     el('p','small',`Enabled · budget ${draft.shotgun.budget} · ${draft.shotgun.allocationMode.replaceAll('_',' ').toLowerCase()} · window ${draft.shotgun.windowStartMs>=0?'+':''}${draft.shotgun.windowStartMs} ms → ${draft.shotgun.windowEndMs>=0?'+':''}${draft.shotgun.windowEndMs} ms · ${draft.shotgun.timingMode.toLowerCase()} · group anchor ${shotgun.groupAnchorMs>=0?'+':''}${shotgun.groupAnchorMs} ms (${host.meta()?.timingCalibration?.anchorSource??'no fresh anchor evidence'})`),
     ...Object.entries(shotgun.counts).map(([id,count])=>el('p','small',`${id} → ${count} Shotgun attempt${count===1?'':'s'}`)),
     ...shotgun.shots.map(shot=>el('p','small',`${shot.logicalTargetId} · shot ${shot.shotIndex+1}/${shot.shotCount} · FINAL SAVED TRIGGER ${shot.configuredOffsetMs>=0?'+':''}${shot.configuredOffsetMs} ms`)),
+    el('p',(draft.shotgun.timingCapacityOverride??draft.shotgun.capacityOverride)||draft.shotgun.allowStandbyConsumption?'warn-text':'small',`Timing capacity override: ${(draft.shotgun.timingCapacityOverride??draft.shotgun.capacityOverride)?'ACTIVE':'off'} · Standby consumption: ${draft.shotgun.allowStandbyConsumption?'ACTIVE':'protected'}`),
     el('p',shotgun.capacityWarning?'warn-text':'small',shotgun.capacityWarning??`Capacity: ${shotgun.meaningfulSpacingMs} ms meaningful spacing · recommended maximum ~${shotgun.recommendedMaximum}.`)] : [el('h4','','Shotgun'),el('p','small','Disabled · Normal machine-recommended fan-out applies.')];
   const saved=state?.booking?.setup,savedMeta=saved?.STRATEGY_V2?.timingCalibration;
   const decomposition=saved?.PRECISION_PHASE3===compiled.phase3||JSON.stringify(saved?.PRECISION_PHASE3)===JSON.stringify(compiled.phase3)

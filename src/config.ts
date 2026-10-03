@@ -66,6 +66,7 @@ export const StrategyV2Schema=z.object({version:z.literal(1),preset:z.enum(['BAL
     allocationMode:z.enum(['EQUAL','PRIORITY_WEIGHTED','CUSTOM']),selectedTargetIds:z.array(z.string().min(1).max(100)).min(1).max(7),
     customCounts:z.record(z.string(),z.number().int().nonnegative()).optional(),windowStartMs:z.number().int().min(-2000).max(2000),
     windowEndMs:z.number().int().min(-2000).max(2000),timingMode:z.enum(['AUTO','TIGHT','BALANCED','WIDE','CUSTOM']),
+    customOffsetsMs:z.array(phase3OffsetValue).max(PRECISION_MAX_SENDS).optional(),timingCapacityOverride:z.boolean().optional(),allowStandbyConsumption:z.boolean().optional(),
     capacityOverride:z.boolean().optional(),counts:z.record(z.string(),z.number().int().nonnegative()),
     exactSchedule:z.array(z.object({logicalTargetId:z.string().min(1).max(100),shotIndex:z.number().int().nonnegative(),configuredOffsetMs:phase3OffsetValue}).strict()).max(PRECISION_MAX_SENDS),
     capacity:z.object({meaningfulSpacingMs:z.number().positive(),recommendedMaximum:z.number().int().positive(),warning:z.string().nullable(),groupAnchorMs:z.number().int()}).strict()}).strict().optional(),
@@ -95,7 +96,20 @@ function checkPrecision(c:{RELEASE_STRATEGY:'general'|'precision';BOOKING_METHOD
       if(countSum>shotgun.budget||shotgun.exactSchedule.length!==countSum||Object.entries(shotgun.counts).some(([id,count])=>!selected.has(id)||scheduleCounts.get(id)!==count)||
         (shotgun.allocationMode!=='CUSTOM'&&countSum!==shotgun.budget))ctx.addIssue({code:'custom',message:'Shotgun budget, allocation, or exact schedule is inconsistent.',path:['STRATEGY_V2','shotgun']});
       if(shotgun.allocationMode==='CUSTOM'&&Object.entries(shotgun.customCounts??{}).some(([id,count])=>!selected.has(id)||shotgun.counts[id]!==count))
-        ctx.addIssue({code:'custom',message:'Custom Shotgun allocation was not preserved exactly.',path:['STRATEGY_V2','shotgun','customCounts']});}
+        ctx.addIssue({code:'custom',message:'Custom Shotgun allocation was not preserved exactly.',path:['STRATEGY_V2','shotgun','customCounts']});
+      if(shotgun.timingMode==='CUSTOM'&&(shotgun.customOffsetsMs?.length!==countSum||shotgun.exactSchedule.map(value=>value.configuredOffsetMs).some((value,index)=>value!==shotgun.customOffsetsMs?.[index])))
+        ctx.addIssue({code:'custom',message:'Custom Shotgun timing was not preserved exactly.',path:['STRATEGY_V2','shotgun','customOffsetsMs']});
+      const authorized=new Map<string,number[]>();
+      for(const assignment of p.wave1){const id=logicalTargetId(p.candidates[assignment.candidateIndex]!);const values=authorized.get(id)??[];values.push(...(assignment.fanOutOffsetsMs??[assignment.releaseOffsetMs??0]));authorized.set(id,values);}
+      const scheduled=new Map<string,number[]>();for(const shot of [...shotgun.exactSchedule].sort((a,b)=>a.logicalTargetId.localeCompare(b.logicalTargetId)||a.shotIndex-b.shotIndex)){const values=scheduled.get(shot.logicalTargetId)??[];values.push(shot.configuredOffsetMs);scheduled.set(shot.logicalTargetId,values);}
+      const indexesValid=[...scheduled.keys()].every(id=>shotgun.exactSchedule.filter(value=>value.logicalTargetId===id).map(value=>value.shotIndex).sort((a,b)=>a-b).every((value,index)=>value===index));
+      if(!indexesValid||[...scheduled.keys()].some(id=>!selected.has(id)||JSON.stringify(authorized.get(id)??[])!==JSON.stringify(scheduled.get(id)??[]))||
+        Object.entries(shotgun.counts).some(([id,count])=>count>0&&!scheduled.has(id)))
+        ctx.addIssue({code:'custom',message:'Shotgun exact schedule does not match PRECISION_PHASE3 authorization.',path:['STRATEGY_V2','shotgun','exactSchedule']});
+    }
+    const shotgunIds=new Set(shotgun?.enabled?shotgun.exactSchedule.map(value=>value.logicalTargetId):[]);
+    if(p.wave1.some(value=>(value.fanOutOffsetsMs??[value.releaseOffsetMs??0]).some(offset=>offset>0)&&!shotgunIds.has(logicalTargetId(p.candidates[value.candidateIndex]!))))
+      ctx.addIssue({code:'custom',message:'Positive Wave 1 offsets are allowed only for saved Shotgun assignments.',path:['PRECISION_PHASE3','wave1']});
     if(new Set(workers).size!==workers.length)ctx.addIssue({code:'custom',message:'Precision workers must be unique across Wave 1 and standby.',path:['PRECISION_PHASE3']});
     if(p.wave1.some(value=>!p.candidates[value.candidateIndex]?.permissions.wave1))ctx.addIssue({code:'custom',message:'Wave 1 assignment must name a Wave 1 eligible candidate.',path:['PRECISION_PHASE3']});
     if(p.wave1.some(value=>p.candidates[value.candidateIndex]?.rateEvidence.status==='REFERENCE'||

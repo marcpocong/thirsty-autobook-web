@@ -9,6 +9,16 @@ import { byId, facts } from './dom.js';
  */
 const PLAYER_KEYS: Record<SmartWorker, keyof NonNullable<Dashboard['playerStatus']>> = { A: 'primary', B: 'extended', C: 'third', D: 'fourth', E: 'fifth', F: 'sixth', G: 'seventh' };
 
+export function shotgunReadinessText(planned:number,children:Array<{shotIndex?:number;state:string}>):string{
+  const observed=children.filter(value=>value.shotIndex!==undefined).slice(0,planned),counts={READY:0,PREPARING:0,FAILED:0,OMITTED:0};
+  for(const child of observed){if(child.state==='READY')counts.READY++;else if(child.state==='FAILED'||child.state==='PREWARM_FAILED'||child.state==='BROWSER_FAILED'||child.state==='IDENTITY_FAILED')counts.FAILED++;
+    else if(child.state==='OMITTED'||child.state==='NOT_DISPATCHED')counts.OMITTED++;else counts.PREPARING++;}
+  const missing=Math.max(0,planned-observed.length),parts=[`${counts.READY}/${planned} READY`];
+  if(counts.PREPARING||(!observed.length&&missing))parts.push(`${counts.PREPARING+(!observed.length?missing:0)} PREPARING`);
+  if(counts.FAILED)parts.push(`${counts.FAILED} FAILED`);if(counts.OMITTED)parts.push(`${counts.OMITTED} OMITTED`);
+  if(observed.length&&missing)parts.push(`${missing} MISSING / NOT YET OBSERVED`);return parts.join(' · ');
+}
+
 export function renderNextRelease(state: Dashboard): void {
   const setup = state.booking?.setup, name = byId('next-strategy-name'), target = byId('next-strategy-facts'), note = byId('next-strategy-note');
   const build = state.build ? `${state.build.gitSha.slice(0, 7)}${state.build.dirty ? ' + uncommitted' : ''}` : 'unknown';
@@ -21,7 +31,7 @@ export function renderNextRelease(state: Dashboard): void {
     const browsers = workers.filter(worker => state.browserHealth?.[worker]);
     const widths = [...new Set(plan.wave1.map(value => value.fanOutOffsetsMs?.length ?? 1))];
     const sends = smartImmediateSends(plan.wave1),logicalTargets=new Set(plan.wave1.map(value=>value.candidateIndex)).size;
-    const liveChildren=state.live?.parents.filter(value=>value.wave==='WAVE_1').flatMap(value=>value.children).filter(value=>value.shotCount!==undefined)??[],readyChildren=liveChildren.filter(value=>value.state==='READY').length;
+    const liveChildren=state.live?.parents.filter(value=>value.wave==='WAVE_1').flatMap(value=>value.children)??[];
     const description = describeSmartPlan(plan);
     const fanOutSource = meta ? meta.fanOut.source === 'OPERATOR_OVERRIDE' ? ` · operator override (machine: ${meta.fanOut.recommendedWidth ?? '—'})`
       : meta.fanOut.source === 'MACHINE_RECOMMENDED' ? ' · machine recommendation' : ' · no capacity profile' : '';
@@ -34,7 +44,7 @@ export function renderNextRelease(state: Dashboard): void {
       ['Target date', targetDate],
       ['Immediate logical targets', String(logicalTargets)],
       [meta?.shotgun?.enabled?'Shotgun':'Fan-out', meta?.shotgun?.enabled?`${sends} total Wave 1 sends · budget ${meta.shotgun.budget} · ${meta.shotgun.windowStartMs}…${meta.shotgun.windowEndMs} ms`:`${widths.length === 1 ? widths[0] : widths.join('/')} per target · ${sends} send${sends === 1 ? '' : 's'}${fanOutSource}`],
-      ...(meta?.shotgun?.enabled?[['Shotgun readiness',liveChildren.length?`${readyChildren}/${liveChildren.length} READY`:`0/${meta.shotgun.exactSchedule.length} PREPARING`] as [string,string]]:[]),
+      ...(meta?.shotgun?.enabled?[['Shotgun readiness',shotgunReadinessText(meta.shotgun.exactSchedule.length,liveChildren)] as [string,string]]:[]),
       ['Standby workers', plan.standby.length ? plan.standby.join(', ') : 'none'],
       ['Wave 2', plan.budgets.wave2 > 0 ? `up to ${plan.budgets.wave2}${plan.concurrentWave2 ? ' · concurrent' : ''}` : 'off'],
       ['Rescue', plan.rescueEnabled && plan.budgets.rescue > 0 ? `on · up to ${plan.budgets.rescue}` : 'off'],
