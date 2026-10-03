@@ -60,6 +60,8 @@ export interface Dashboard {
   /** Recent release dispatch telemetry (History & Insights). */
   telemetry?:import('../src/release-telemetry.js').RunTelemetry[];
   releaseReadiness?:import('../src/release-readiness-gate.js').ReleaseReadinessGate;
+  /** Deterministic forecast for the exact saved PRECISION_PHASE3 Wave 1 authorization. */
+  prewarmFeasibility?:import('../src/api-booking/prewarm-feasibility.js').PrewarmFeasibilityResult|null;
   /** Customer-identity problems found by the latest preparation or run (worker letters and codes only). */
   identityIssues?:string[];
   bookingResult?:Extract<UiEvent,{type:'bookingResult'}>;

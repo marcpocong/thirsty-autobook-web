@@ -48,7 +48,8 @@ import { requiredWorkerIds, type WorkerId } from '../workers.js';
 import { showWorkerPage } from '../browser-window.js';
 import { preflightProoflessWire, prooflessCourtHourStatuses, prooflessReleasePlan, resolveProoflessReleasePlan, submitDirectCheckout } from './proofless-checkout.js';
 import { WirePayloadError } from './wire-payload-check.js';
-import { adaptivePrewarmLeadMs, describeTierStatus, type TierStatus } from './prewarm-scheduler.js';
+import { describeTierStatus, type PrewarmTask, type TierStatus } from './prewarm-scheduler.js';
+import {exactPrewarmLeadMs} from './prewarm-feasibility.js';
 import { securityPrepHistory } from '../security-prep-history.js';
 import { currentMachineIdentity } from '../fanout-capacity.js';
 import {deriveShotgunTopology,logicalTargetId} from '../shotgun.js';
@@ -709,14 +710,18 @@ try {
      * children prepare tier by tier (A0…G0 first, prewarm-scheduler.ts) with one preparation per browser at a time, and the lead
      * grows with the number of tiers at this installation's measured p95 preparation time (security-prep-history.ts).
      */
-    const fanOutPrewarm=(width:number,tier1Count:number)=>{
+    const fanOutPrewarm=(attempts:readonly ArmedAttempt[])=>{
+      const width=Math.max(1,...attempts.map(attempt=>attempt.attempt.fanOutCount));
       if(width<=1)return {prewarmLeadMs:API_SECURITY_PREWARM_LEAD_MS};
-      const history=securityPrepHistory('.',tier1Count);
-      const prewarmLeadMs=adaptivePrewarmLeadMs({tiers:width,workers:tier1Count,concurrency:tier1Count,prepP95Ms:history.p95Ms});
-      stage('PREWARM_PLAN',{prewarmLeadMs,fanOutCount:width,workerCount:tier1Count,sampleCount:history.samples,
-        ...(history.p95Ms!==null?{durationMs:Math.round(history.p95Ms)}:{})});
+      const groups=new Set(attempts.map(attempt=>attempt.target.workerId)).size,history=securityPrepHistory('.',groups);
+      const compatibleP95Ms=history.atConcurrency===groups?history.p95Ms:null,prepP95Ms=compatibleP95Ms??12_000,
+        prewarmPolicy={concurrency:Math.max(1,groups),perGroupConcurrency:1,tierBarrierTimeoutMs:Math.max(4_000,Math.round(prepP95Ms*1.5))};
+      const tasks:PrewarmTask[]=attempts.map((attempt,index)=>({id:attempt.attempt.id,tier:attempt.attempt.fanOutIndex,order:index,group:attempt.target.workerId}));
+      const prewarmLeadMs=exactPrewarmLeadMs(tasks,prewarmPolicy,prepP95Ms);
+      stage('PREWARM_PLAN',{prewarmLeadMs,fanOutCount:width,workerCount:groups,sampleCount:history.samples,
+        ...(compatibleP95Ms!==null?{durationMs:Math.round(compatibleP95Ms)}:{})});
       let last='';
-      return {prewarmLeadMs,prewarmPolicy:{concurrency:Math.max(1,tier1Count),perGroupConcurrency:1,tierBarrierTimeoutMs:Math.max(4_000,Math.round((history.p95Ms??8_000)*1.5))},
+      return {prewarmLeadMs,prewarmPolicy,prewarmExpectedDurationMs:prepP95Ms,
         onPrewarmStatus:(status:TierStatus[])=>{const text=describeTierStatus(status);if(text===last)return;last=text;
           // Never write near the trigger; the release summary and per-child states are logged afterwards.
           setImmediate(()=>{if(!command.releaseMs||command.releaseMs-nowMs()>1_500)stage('PREWARM_TIER_STATUS',{message:text.slice(0,240)});});}};
@@ -838,7 +843,7 @@ try {
             recorder.describe(attempt.attempt.id,{parentGoalId:attempt.target.targetKey,workerId:attempt.target.workerId,fanOutIndex:attempt.attempt.fanOutIndex,
               fanOutCount:attempt.attempt.fanOutCount,configuredOffsetMs:attempt.triggerMs-releaseMs,wave:'WAVE_1'});}
           const outcome=await dispatchArmedPrecisionRace(armed,{clock:releaseClock,spinTailMs:DEFAULT_SPIN_TAIL_MS,
-            ...fanOutPrewarm(Math.max(1,...race.attempts.map(attempt=>attempt.fanOutCount)),armed.attempts.filter(attempt=>attempt.attempt.fanOutIndex===0).length),
+            ...fanOutPrewarm(armed.attempts),
             isAborted:()=>abort.signal.aborted,sleep:pause,transportFor:(_worker,attempt)=>releaseTransports.get(transportKeyFor(attempt.attempt)),
             onWake:()=>{recorder.mark('*','schedulerFired');releaseLockdown?.mark('scheduler-wake');},onMark:(_worker,name,attempt)=>{if(name==='transportCall'){recorder.mark(attempt.attempt.id,'workerInvoked');releaseLockdown?.mark(`transport:${attempt.attempt.id}`);}
               else if(name==='rendererArm')recorder.mark(attempt.attempt.id,'rendererArmSent');},
@@ -859,7 +864,10 @@ try {
             onReleaseWindowEnd:exitReleaseLockdown,
             onEvent:event=>{
               if(event.kind==='prewarm-ready'){recorder.describe(event.attemptId,{prewarmReadyMs:Math.round((releaseClock?.nowMs()??nowMs())-releaseMs)});
-                deferrableStage('SECURITY_PREWARM_READY',{workerId:event.workerId,attemptId:event.attemptId});}
+                deferrableStage('SECURITY_PREWARM_READY',{workerId:event.workerId,attemptId:event.attemptId,
+                  ...(event.predictedReadyOffsetMs!==undefined?{predictedReadyOffsetMs:event.predictedReadyOffsetMs}:{}),...(event.actualReadyOffsetMs!==undefined?{actualReadyOffsetMs:event.actualReadyOffsetMs}:{}),
+                  ...(event.predictionErrorMs!==undefined?{predictionErrorMs:event.predictionErrorMs}:{}),...(event.queueDelayMs!==undefined?{queueDelayMs:event.queueDelayMs}:{}),
+                  ...(event.prepDurationMs!==undefined?{prepDurationMs:event.prepDurationMs}:{})});}
               // Informational only: an unready child is refused by armed-dispatch itself, not by this log line.
               else if(event.kind==='prewarm-failed')deferrableStage('SECURITY_PREWARM_FAILED',{workerId:event.workerId,attemptId:event.attemptId,code:event.code??'SECURITY_PREWARM_FAILED'});
               else if(event.kind==='prewarm-retry')deferrableStage('SECURITY_PREWARM_RETRY',{workerId:event.workerId,attemptId:event.attemptId});
@@ -1149,7 +1157,7 @@ try {
             fanOutCount:attempt.attempt.fanOutCount,configuredOffsetMs:attempt.triggerMs-releaseMs,...shotgunTopology.get(attempt.attempt.id)!,wave:'WAVE_1'});}
         const transportOf=(attempt:ArmedAttempt)=>releaseTransports.get(transportKeyOf(attempt.target.workerId,attempt.attempt.fanOutIndex));
         const outcome=await dispatchArmedPrecisionRace(armed,{clock:releaseClock,spinTailMs:DEFAULT_SPIN_TAIL_MS,isAborted:()=>abort.signal.aborted,sleep:pause,
-          ...fanOutPrewarm(fanOutWidth,armed.attempts.filter(attempt=>attempt.attempt.fanOutIndex===0).length),
+          ...fanOutPrewarm(armed.attempts),
           onWake:()=>{recorder.mark('*','schedulerFired');releaseLockdown?.mark('scheduler-wake');},onMark:(_worker,name,attempt)=>{if(name==='transportCall'){recorder.mark(attempt.attempt.id,'workerInvoked');releaseLockdown?.mark(`transport:${attempt.attempt.id}`);}
             else if(name==='rendererArm')recorder.mark(attempt.attempt.id,'rendererArmSent');},
           ...experimentalRendererDispatch(attempt=>pageOf(attempt.attempt),transportOf),
@@ -1166,7 +1174,10 @@ try {
           onEvent:event=>{const binding=bindings.get(event.attemptId),child=frozen.attempts.find(value=>value.id===event.attemptId);
             if(event.kind==='prewarm-ready'){recorder.describe(event.attemptId,{prewarmReadyMs:Math.round((releaseClock?.nowMs()??nowMs())-releaseMs)});
               if(binding&&child)stage('SECURITY_PREWARM_READY',{workerId:event.workerId,candidateId:candidateOf(child).id,attemptId:binding.correlation.attemptId,
-                fanOutIndex:child.fanOutIndex,fanOutCount:child.fanOutCount,...shotgunTopology.get(child.id)!});}
+                fanOutIndex:child.fanOutIndex,fanOutCount:child.fanOutCount,
+                ...(event.predictedReadyOffsetMs!==undefined?{predictedReadyOffsetMs:event.predictedReadyOffsetMs}:{}),...(event.actualReadyOffsetMs!==undefined?{actualReadyOffsetMs:event.actualReadyOffsetMs}:{}),
+                ...(event.predictionErrorMs!==undefined?{predictionErrorMs:event.predictionErrorMs}:{}),...(event.queueDelayMs!==undefined?{queueDelayMs:event.queueDelayMs}:{}),
+                ...(event.prepDurationMs!==undefined?{prepDurationMs:event.prepDurationMs}:{}),...shotgunTopology.get(child.id)!});}
             if(event.kind==='prewarm-failed'&&binding&&child)stage('SECURITY_PREWARM_FAILED',{workerId:event.workerId,candidateId:candidateOf(child).id,attemptId:binding.correlation.attemptId,code:event.code??'SECURITY_PREWARM_FAILED',
               fanOutIndex:child.fanOutIndex,fanOutCount:child.fanOutCount,...shotgunTopology.get(child.id)!});
             const fanOut:Record<string,number|string>=child?{...(child.fanOutCount>1?{fanOutIndex:child.fanOutIndex,fanOutCount:child.fanOutCount}:{}),...shotgunTopology.get(child.id)!}:{};

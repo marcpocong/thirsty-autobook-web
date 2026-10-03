@@ -32,6 +32,8 @@ import {STRATEGY_MAX_ENUMERATED_WINDOWS,type StrategyHistoricalEvidence,type Win
 import type {ReplayPlan,ReplayResult} from '../src/strategy-replay.js';
 import type {ReadinessResult} from '../src/network-readiness.js';
 import {evaluateReleaseReadiness,type MachineHealth} from '../src/release-readiness-gate.js';
+import {evaluatePrewarmFeasibility} from '../src/api-booking/prewarm-feasibility.js';
+import {securityPrepHistory} from '../src/security-prep-history.js';
 import type {WarmthAssessment} from '../src/checkout-path-research.js';
 import {TARGET_EVIDENCE_LABEL,type TargetEvidence} from '../src/api-booking/pre-release-evidence.js';
 import type {PrecisionView} from './types.js';
@@ -68,6 +70,8 @@ const errors: Record<string, string> = {
   NETWORK_CLOCK_STALE:'The Google network clock could not be refreshed and the last sync is too old. Nothing was sent.',
   PRECISION_NO_ELIGIBLE_TARGET:'No Precision target is currently eligible (public booking or unknown evidence on every target). Edit the targets.',
   PRECISION_TOO_LATE_TO_ARM:'Precision Release must be armed at least 3 minutes before release so the target set can be frozen at T-2 min.',
+  PREWARM_PLAN_NOT_FEASIBLE:'The exact saved Wave 1 plan has projected preparation omissions. Edit the Strategy and save a new PRECISION_PHASE3 authorization before arming.',
+  PREWARM_FEASIBILITY_UNAVAILABLE:'Preparation feasibility for the exact saved Wave 1 plan is unavailable. Reset & Prepare, then recheck Release Readiness before arming.',
   ARBITRATION_MANIFEST_STORAGE_FAILED:'Investigation setup could not be saved. Nothing was armed. Check that the app can write to its local data folder, then try again.',
   ARBITRATION_MANIFEST_MISMATCH:'An investigation setup already exists for this release but does not match the current release. Nothing was armed.',
   ARBITRATION_MANIFEST_MALFORMED:'The saved investigation setup for this release is damaged; it was kept, not replaced. Nothing was armed.',
@@ -233,6 +237,7 @@ export class Controller {
   private lastLogMono = 0;
   private runReadyMono?:number;
   private apiReadyWorkers=new Set<WorkerId>();
+  private workerProbes:Partial<Record<WorkerId,{connected:boolean;commandLatencyMs:number|null;tabCount:number;targetReady:boolean}>>={};
   private slotWatch?:SlotWatchHandle;
   /** The watch shown in the UI; it keeps showing its final state after it ends until another watch replaces it. */
   private displayedSlotWatchId?:string;
@@ -396,6 +401,12 @@ export class Controller {
     this.slotWatch=undefined;await watch.stop(reason).catch(()=>undefined);this.publish();
   }
   private players():NonNullable<Dashboard['playerStatus']>{if(this.deps.playerStatus)return {third:false,fourth:false,...this.deps.playerStatus()};try{const b=this.deps.booking();return {primary:b.playerConfigured,extended:b.extendedPlayerConfigured,third:b.thirdPlayerConfigured,fourth:b.fourthPlayerConfigured,fifth:b.fifthPlayerConfigured,sixth:b.sixthPlayerConfigured,seventh:b.seventhPlayerConfigured,eighth:b.eighthPlayerConfigured};}catch{return {primary:false,extended:false,third:false,fourth:false};}}
+  private forecastPrewarm(plan:BookingView){const phase3=plan.setup.PRECISION_PHASE3;if(!phase3)return null;
+    const ids=new Set(phase3.wave1.map(value=>value.workerId)),availableWorkers=new Set([...ids].filter(id=>{const worker=id as WorkerId,probe=this.workerProbes[worker];
+      return (probe?.connected??!!this.state.browserHealth?.[worker])&&probe?.targetReady!==false&&probe?.tabCount!==0&&!(this.state.identityIssues??[]).some(issue=>issue.startsWith(`Worker ${id} `));}));
+    const groupCount=ids.size,history=securityPrepHistory('.',Math.max(1,groupCount));
+    return evaluatePrewarmFeasibility({phase3,prepP95Ms:history.atConcurrency===groupCount?history.p95Ms:null,sampleCount:history.samples,availableWorkers,globalConcurrency:Math.max(1,groupCount)});
+  }
   private requirePlayers(workers:readonly WorkerId[]){
     const players=this.players(),map={A:players.primary,B:players.extended,C:players.third,D:players.fourth,E:!!players.fifth,F:!!players.sixth,G:!!players.seventh,H:!!players.eighth};
     const missing=workers.find(worker=>!map[worker]);
@@ -564,6 +575,7 @@ export class Controller {
       const [lock, observedHealth,workerProbes] = await Promise.all([this.deps.lock(), this.deps.browserHealth?this.deps.browserHealth():this.deps.cdp().then(A=>({A,B:A,C:false,D:false})),
         this.deps.browserReadiness?.()??Promise.resolve({} as Partial<Record<WorkerId,{connected:boolean;commandLatencyMs:number|null;tabCount:number;targetReady:boolean}>>)]);
       const health:Record<WorkerId,boolean>={A:false,B:false,C:false,D:false,E:false,F:false,G:false,H:false,...observedHealth};
+      this.workerProbes=workerProbes;
       this.state.lock = lock; this.state.browserHealth=health;this.state.cdp = !!health.A;this.state.playerStatus=this.players();
       const retained=lock&&this.state.operation==='idle'?await this.deps.retainedHold?.():null;
       if(retained?.stage==='HOLD_VERIFIED'&&retained.expiresAt&&!this.qrRecoveryChecked&&!this.state.qrHandoffs?.length){
@@ -606,13 +618,15 @@ export class Controller {
       const workers=Object.fromEntries(workerIds.map(id=>{const probe=workerProbes[id];return [id,{connected:probe?.connected??!!health[id],identityValid:!(this.state.identityIssues??[]).some(issue=>issue.startsWith(`Worker ${id} `)),
         securityReady:this.apiReadyWorkers.has(id)||!!this.state.apiFirstReady,...(probe?{targetReady:probe.targetReady,tabCount:probe.tabCount,latencyP95Ms:probe.commandLatencyMs}: {})}];})) as Record<string,{connected:boolean;identityValid:boolean;securityReady:boolean;targetReady?:boolean;tabCount?:number;latencyP95Ms?:number|null}>;
       const latestProfile=this.state.fanOut?.latest,observerView=this.state.slotWatch,latestRead=observerView?.lastPollAt?Date.parse(observerView.lastPollAt):NaN;
+      this.state.prewarmFeasibility=this.state.booking?this.forecastPrewarm(this.state.booking):null;
       const fallbackMachine:MachineHealth={measuredAt:new Date().toISOString(),cpuCount:0,memoryUsedPct:100,eventLoopP95Ms:100,processRssMb:0};
       this.state.releaseReadiness=evaluateReleaseReadiness({build:this.state.build??null,testedBuild:this.deps.testedBuild?.()??null,configValid:!!this.state.booking,
         authorizationValid:!!this.state.booking&&(this.state.booking.setup.RELEASE_STRATEGY!=='precision'||!!this.state.booking.setup.PRECISION_PHASE3),
         clock:{synced:!!clock?.networkSynced,ageMs:Number.isFinite(clockAt)?Date.now()-clockAt:null,uncertaintyMs:clockRoundTrip===null||clockRoundTrip===undefined?null:clockRoundTrip/2,offsetMs:clock?.clockOffsetMs??null},
         machine:this.deps.machineHealth?.()??fallbackMachine,workers,observer:{online:!!this.slotWatch&&!!observerView&&['waiting','watching'].includes(observerView.status),
           lastReadAgeMs:Number.isFinite(latestRead)?Date.now()-latestRead:null,availabilityLatencyMs:observerView?.lastLatencyMs??null},
-        fanOut:latestProfile?{compatible:latestProfile.compatible,stale:latestProfile.stale,width:latestProfile.recommendedWidth}:null,prewarm:!!this.state.apiFirstReady});
+        fanOut:latestProfile?{compatible:latestProfile.compatible,stale:latestProfile.stale,width:latestProfile.recommendedWidth}:null,prewarm:!!this.state.apiFirstReady,
+        prewarmFeasibility:this.state.prewarmFeasibility});
       this.publish();
     } finally { this.polling = false; }
   }
@@ -983,6 +997,8 @@ export class Controller {
     this.requirePlayers(planWorkerIds(plan.setup));
     if(!clock.networkSynced)throw Error('NETWORK_CLOCK_SYNC_REQUIRED');
     if(plan.setup.RELEASE_STRATEGY==='precision'&&clock.releaseMs-(Date.now()+clock.clockOffsetMs)<3*60_000)throw Error('PRECISION_TOO_LATE_TO_ARM');
+    if(plan.setup.PRECISION_PHASE3){this.state.prewarmFeasibility=this.forecastPrewarm(plan);if(!this.state.prewarmFeasibility)throw Error('PREWARM_FEASIBILITY_UNAVAILABLE');
+      if(this.state.prewarmFeasibility.projectedOmitted)throw Error('PREWARM_PLAN_NOT_FEASIBLE');}
     if(clock.releaseMs<=Date.now()+clock.clockOffsetMs)throw Error('RELEASE_MISSED');
     const confirmed=await this.deps.confirm('full',plan);if(!confirmed)return;
     if(this.deps.booking().fingerprint!==plan.fingerprint||this.deps.clock().releaseMs!==clock.releaseMs)

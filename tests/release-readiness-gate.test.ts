@@ -92,4 +92,15 @@ describe('release readiness gate',()=>{
     const cold=base();cold.prewarm=false;expect(check(cold,'prewarm').level).toBe('DEGRADED');
     expect(evaluateReleaseReadiness(severe).verdict).toBe('READY_WITH_WARNINGS');
   });
+  it('grades exact Wave 1 preparation capacity and hard-blocks projected omissions',()=>{
+    const good=base();good.prewarmFeasibility={verdict:'READY',configuredWave1LogicalTargets:2,configuredWave1Attempts:4,preparationTaskCount:4,tiers:2,groups:2,
+      prewarmLeadMs:35_000,preparationP95Ms:8_000,p95Source:'COMPATIBLE_MEASURED_HISTORY',sampleCount:10,predictedPreparationStartMs:-35_000,
+      projectedReady:4,projectedAtRisk:0,projectedOmitted:0,limitingConstraints:[],freshnessMarginMs:90_000,
+      concurrency:{global:2,perGroup:1,tierBarrierTimeoutMs:12_000,stopStartingLeadMs:3_000},retryAssumption:{maxAttempts:2,retryCutoffLeadMs:7_000,forecastAssumesSuccessAttempt:1},attempts:[]};
+    expect(check(good,'wave1-preparation-capacity')).toMatchObject({level:'GOOD',hardBlock:false});
+    const risk=structuredClone(good);risk.prewarmFeasibility!.verdict='AT_RISK';risk.prewarmFeasibility!.projectedReady=3;risk.prewarmFeasibility!.projectedAtRisk=1;
+    expect(evaluateReleaseReadiness(risk).verdict).toBe('READY_WITH_WARNINGS');
+    const omitted=structuredClone(good);omitted.prewarmFeasibility!.verdict='NOT_FEASIBLE';omitted.prewarmFeasibility!.projectedReady=3;omitted.prewarmFeasibility!.projectedOmitted=1;
+    expect(check(omitted,'wave1-preparation-capacity')).toMatchObject({level:'UNAVAILABLE',hardBlock:true});expect(evaluateReleaseReadiness(omitted).verdict).toBe('NOT_READY');
+  });
 });

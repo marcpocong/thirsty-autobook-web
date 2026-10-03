@@ -85,6 +85,8 @@ If the observer crashes or disconnects, its promise fails and UI health becomes 
 
 ## Release Readiness Gate
 
+The gate includes **Wave 1 preparation capacity**, evaluated from the exact saved `PRECISION_PHASE3` children, workers, signed triggers and tiers. All projected ready is `GOOD`; narrow deterministic margins are `DEGRADED`; any projected omission is `UNAVAILABLE` and a hard arming block. Before prewarm the UI labels this as projected readiness. Once prewarm begins, observed READY / PREPARING / WAITING / FAILED / OMITTED state remains separate and any divergence stays visible.
+
 The gate reports `READY`, `READY WITH WARNINGS`, or `NOT READY`, with individual checks:
 
 - Build: running metadata versus the last tested packaged release-build record, including dirty state.

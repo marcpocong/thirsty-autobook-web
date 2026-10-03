@@ -57,6 +57,9 @@ describe('Shotgun allocation and timing',()=>{
     expect(plan.shots.map(value=>value.configuredOffsetMs)).toEqual(custom);expect(plan.groupAnchorMs).toBe(0);expect(plan.problems).toEqual([]);
     expect(planShotgun(settings({budget:4,selectedTargetIds:['c6'],timingMode:'CUSTOM',customOffsetsMs:[-1,0]}),targets,{meaningfulSpacingMs:95}).problems.join(' ')).toMatch(/exactly 4/);
   });
+  it('identifies duplicate Custom triggers without rewriting the operator schedule',()=>{const offsets=[0,0,0,25],plan=planShotgun(settings({budget:4,selectedTargetIds:['c6'],timingMode:'CUSTOM',customOffsetsMs:offsets,timingCapacityOverride:true}),targets,{meaningfulSpacingMs:95});
+    expect(plan.coincidentWarning).toBe('CUSTOM timing contains 3 attempts at +0 ms.');expect(plan.shots.map(value=>value.configuredOffsetMs)).toEqual(offsets);
+  });
   it('separates timing capacity and standby-consumption consent and migrates legacy consent conservatively',()=>{
     expect(migrateShotgunSettings(settings({capacityOverride:true,timingCapacityOverride:undefined,allowStandbyConsumption:undefined}))).toMatchObject({timingCapacityOverride:true,allowStandbyConsumption:false});
     expect(migrateShotgunSettings(settings({capacityOverride:true,timingCapacityOverride:false,allowStandbyConsumption:true}))).toMatchObject({timingCapacityOverride:false,allowStandbyConsumption:true});

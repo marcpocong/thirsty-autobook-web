@@ -52,6 +52,7 @@ export interface ShotgunPlan {
   requestedSpacingMs: number | null;
   recommendedMaximum: number;
   capacityWarning: string | null;
+  coincidentWarning: string | null;
   meaningfulSpacingMs: number;
   groupAnchorMs:number;
   problems: string[];
@@ -133,6 +134,8 @@ export function planShotgun(settings: ShotgunSettings, targets: readonly Shotgun
   if(offsets.some(value=>!isShotgunOffsetMs(value)))problems.push(`The ${groupAnchorMs>=0?'+':''}${groupAnchorMs} ms group anchor moves a Shotgun trigger outside -2000 through +2000 ms.`);
   const chronological=[...offsets].sort((a,b)=>a-b);
   const requestedSpacingMs = chronological.length>1?Math.min(...chronological.slice(1).map((value,index)=>value-chronological[index]!)):null;
+  const coincident=[...new Map(offsets.map(offset=>[offset,offsets.filter(value=>value===offset).length])).entries()].filter(([,count])=>count>1).sort((a,b)=>b[1]-a[1]||a[0]-b[0]);
+  const coincidentWarning=coincident.length?coincident.map(([offset,count])=>`${custom?'CUSTOM timing':'Timing'} contains ${count} attempts at ${offset>=0?'+':''}${offset} ms.`).join(' '):null;
   const capacityWarning = custom&&requestedSpacingMs!==null&&requestedSpacingMs<spacing
     ? `Requested Custom spacing reaches ${requestedSpacingMs} ms; measured meaningful spacing is ${spacing} ms.`
     : allocatedCount > recommendedMaximum
@@ -145,7 +148,7 @@ export function planShotgun(settings: ShotgunSettings, targets: readonly Shotgun
     .sort((a,b)=>a.rank-b.rank||a.logicalTargetId.localeCompare(b.logicalTargetId)||a.shotIndex-b.shotIndex);
   const shots = placements.map((placement,index)=>({logicalTargetId:placement.logicalTargetId,shotIndex:placement.shotIndex,
     shotCount:placement.shotCount,configuredOffsetMs:offsets[index]!}));
-  return { counts: allocated.counts, shots, requestedSpacingMs, recommendedMaximum, capacityWarning, meaningfulSpacingMs:spacing,groupAnchorMs, problems: [...new Set(problems)] };
+  return { counts: allocated.counts, shots, requestedSpacingMs, recommendedMaximum, capacityWarning, coincidentWarning, meaningfulSpacingMs:spacing,groupAnchorMs, problems: [...new Set(problems)] };
 }
 
 /** Split one logical target across browser workers while preserving the authoritative per-worker child ceiling. */

@@ -84,7 +84,9 @@ At the T−2 min freeze, an immediate target that now shows a known public booki
 
 Fan-out children prepare security by tier: A0…G0 first, then A1…G1, and so on. Concurrency is bounded (one preparation per browser at a time) and a tier barrier holds lower tiers back. The barrier is bounded, so one stuck challenge cannot starve everything.
 
-No preparation starts in the last 3 s. A lower-tier child not ready at its trigger is **omitted**: provably unsent, and never fired late. The lead grows with the number of tiers and this installation's measured p95 preparation time (`security-prep-history.ts`). It is capped at 75 s, well inside the 120 s prepared-context limit. Without fan-out the old behavior is unchanged: everything prepares 15 s before release.
+No preparation starts in the last 3 s. A lower-tier child not ready at its trigger is **omitted**: provably unsent, and never fired late. The lead grows from the exact saved Wave 1 task topology and this installation's compatible measured p95 preparation time (`security-prep-history.ts`), with a conservative 12-second fallback. It is capped at 105 s, leaving 15 s under the 120 s prepared-context limit at the release instant. Without fan-out the old behavior is unchanged: everything prepares 15 s before release.
+
+Before arming, the same task-order, tier-barrier and global/per-browser concurrency policy is run as a deterministic feasibility simulation against the exact compiled `PRECISION_PHASE3` plan. Strategy Review shows projected per-child start, ready, trigger and freshness state. Release Readiness reports `GOOD`, `DEGRADED` or `UNAVAILABLE`; projected omissions make the saved authorization `NOT READY` and require the operator to save a different plan. The forecast never edits targets, offsets or Shotgun budget.
 
 ## Timing presets and live anchor
 

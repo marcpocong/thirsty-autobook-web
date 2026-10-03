@@ -1,6 +1,7 @@
 import type { Dashboard } from '../types.js';
-import { compileSmartPlan, describeSmartPlan, resizeSmartFanOut, setSmartChildOffset, smartRange, smartSlotOffsets,
+import { compileSmartPlan, describeSmartPlan, resizeSmartFanOut, setSmartChildOffset, smartRange, smartSlotOffsets, SMART_WORKERS,
   type SmartDraft, type SmartSlot } from '../../src/precision-simple.js';
+import {evaluatePrewarmFeasibility,type PrewarmFeasibilityResult} from '../../src/api-booking/prewarm-feasibility.js';
 import { DEFAULT_STRATEGY_GOAL, draftFromSuggestion, enumeratePrimeWindows, isConflict, knownScheduleFromCells, presetAllocation, suggestPlan, validateGoal, windowEvidence, WINDOW_EVIDENCE_LABEL,
   type KnownSchedule, type ScoredWindow, type StrategyGoal, type StrategyHistoricalEvidence, type StrategyPreset, type SuggestedPlan, type SuggestionIntelligenceMode, type Window } from '../../src/strategy-engine.js';
 import { describeChildTiming, fanOutTimingPlan, minimumMeaningfulSpacingMs } from '../../src/fanout-timing.js';
@@ -95,6 +96,18 @@ function recommendation(state: Dashboard | undefined) {
 const shotgunCapacity=(state:Dashboard|undefined,budget:number,groupAnchorMs=0)=>({meaningfulSpacingMs:Math.max(SHOTGUN_MEANINGFUL_SPACING_MS,
   minimumMeaningfulSpacingMs(recommendation(state).profile,Math.max(1,Math.min(PRECISION_MAX_FAN_OUT,budget))).spacingMs),
   recommendedBurstChildren:recommendation(state).width,groupAnchorMs});
+const draftFeasibility=(state:Dashboard|undefined,phase3:ReturnType<typeof compileSmartPlan>['phase3']):PrewarmFeasibilityResult|null=>{
+  if(!phase3)return null;const unavailable=host.unready(),available=new Set(SMART_WORKERS.filter(worker=>!unavailable.has(worker))),prior=state?.prewarmFeasibility;
+  return evaluatePrewarmFeasibility({phase3,prepP95Ms:prior?.p95Source==='COMPATIBLE_MEASURED_HISTORY'?prior.preparationP95Ms:null,sampleCount:prior?.sampleCount??0,
+    availableWorkers:available,globalConcurrency:Math.max(1,new Set(phase3.wave1.map(value=>value.workerId)).size)});
+};
+const feasibilityLines=(value:PrewarmFeasibilityResult|null):string[]=>value?[`Preparation feasibility: ${value.verdict.replaceAll('_',' ')}`,
+  `Configured Wave 1 attempts: ${value.configuredWave1Attempts} · tasks ${value.preparationTaskCount} · tiers ${value.tiers} · worker groups ${value.groups}`,
+  `Prewarm lead ${(value.prewarmLeadMs/1000).toFixed(1)} s · prep p95 ${(value.preparationP95Ms/1000).toFixed(1)} s · ${value.p95Source==='FALLBACK'?'fallback':`${value.sampleCount} compatible samples`}`,
+  `Projected: READY ${value.projectedReady} · AT RISK ${value.projectedAtRisk} · OMITTED ${value.projectedOmitted}`,
+  `Earliest preparation T${value.predictedPreparationStartMs>=0?'+':''}${(value.predictedPreparationStartMs/1000).toFixed(1)} s · freshness margin ${(value.freshnessMarginMs/1000).toFixed(1)} s`,
+  `Assumptions: global ${value.concurrency.global} · per browser ${value.concurrency.perGroup} · tier barrier ${(value.concurrency.tierBarrierTimeoutMs/1000).toFixed(1)} s · first attempt succeeds at p95; retry remains runtime-only before T-${value.retryAssumption.retryCutoffLeadMs/1000} s`,
+  ...value.attempts.filter(attempt=>attempt.verdict==='OMITTED').map(attempt=>`${attempt.logicalTargetId} · Worker ${attempt.workerId} shot ${attempt.tier+1} · ${attempt.reason}`)]:[];
 function chosenWidth(state: Dashboard | undefined) {
   const choice = selectById('strategy-fanout').value, machine = recommendation(state);
   return choice === 'auto' ? { width: machine.width, source: machine.profile ? 'MACHINE_RECOMMENDED' as const : 'NO_PROFILE' as const }
@@ -152,7 +165,8 @@ export function initStrategy(value: StrategyHost): void {
   byId('strategy-anchor-shift').addEventListener('change', invalidate);
   for(const radio of document.querySelectorAll<HTMLInputElement>('input[name="strategy-intensity"]'))radio.addEventListener('change',()=>{
     if(!radio.checked)return;host.ensureMeta();host.edit(draft=>{if(radio.value==='SHOTGUN')draft.shotgun=draft.shotgun??defaultShotgun(draft.immediate);else delete draft.shotgun;});
-  });
+});
+
   for(const id of ['strategy-shotgun-budget','strategy-shotgun-allocation','strategy-shotgun-start','strategy-shotgun-end','strategy-shotgun-timing','strategy-shotgun-timing-override','strategy-shotgun-standby-override','strategy-shotgun-custom-offsets'])
     byId(id).addEventListener('change',()=>host.edit(draft=>{const current=draft.shotgun??defaultShotgun(draft.immediate);draft.shotgun={...current,
       budget:Number(inputById('strategy-shotgun-budget').value),allocationMode:selectById('strategy-shotgun-allocation').value as ShotgunSettings['allocationMode'],
@@ -431,6 +445,7 @@ function renderShotgun(state:Dashboard|undefined){
     return label;
   }));
   const compiled=compileSmartPlan(draft,{targetDate:state?.booking?.targetDate??'',unavailable:host.unready(),shotgunCapacity:shotgunCapacity(state,settings.budget,host.meta()?.timingCalibration?.groupShiftMs??0)}),plan=compiled.shotgun;
+  const feasibility=draftFeasibility(state,compiled.phase3);
   const lines=[`${plan?.shots.length??settings.budget} Shotgun attempts · budget ${settings.budget}`,...Object.entries(plan?.counts??{}).map(([id,count])=>`${id} → ${count}`),
     `Window: ${settings.windowStartMs>=0?'+':''}${settings.windowStartMs} ms → ${settings.windowEndMs>=0?'+':''}${settings.windowEndMs} ms`,
     ...(plan?.shots.length?[`Effective triggers: ${plan.shots[0]!.configuredOffsetMs>=0?'+':''}${plan.shots[0]!.configuredOffsetMs} ms → ${plan.shots.at(-1)!.configuredOffsetMs>=0?'+':''}${plan.shots.at(-1)!.configuredOffsetMs} ms`]:[]),
@@ -438,13 +453,14 @@ function renderShotgun(state:Dashboard|undefined){
     `Recommended maximum for this window: ~${plan?.recommendedMaximum??'—'}`,
     `Timing capacity override: ${(settings.timingCapacityOverride??settings.capacityOverride)?'ACTIVE':'off'} · Standby consumption: ${settings.allowStandbyConsumption?'ACTIVE':'protected'}`,
     `Standby workers: ${compiled.standby.join(' / ')||'none'} · Wave 2 max ${compiled.budgets.wave2} · Rescue max ${compiled.budgets.rescue}`,
-    ...(plan?.capacityWarning?[plan.capacityWarning]:[]),...compiled.problems];
+    ...(plan?.capacityWarning?[plan.capacityWarning]:[]),...(plan?.coincidentWarning?[plan.coincidentWarning]:[]),...feasibilityLines(feasibility),...compiled.problems];
   byId('strategy-shotgun-preview').replaceChildren(...lines.map((line,index)=>el('p',index>=lines.length-compiled.problems.length&&compiled.problems.length?'warn-text':'small',line)));
 }
 
 function renderReview(state: Dashboard | undefined) {
   const draft = host.draft(), compiled = compileSmartPlan(draft, { targetDate: state?.booking?.targetDate ?? '', unavailable: host.unready(),shotgunCapacity:shotgunCapacity(state,draft.shotgun?.budget??1,host.meta()?.timingCalibration?.groupShiftMs??0) });
   const smart = state?.booking && (document.getElementById('precision-strategy') as HTMLSelectElement | null)?.value === 'precision' && (document.getElementById('precision-mode-smart') as HTMLInputElement | null)?.checked;
+  const feasibility=draftFeasibility(state,compiled.phase3);
   const warnings = [...draft.immediate, ...draft.backups].filter(slot => slot.publicEvidence?.override).map(slot =>
     `${windowText(slot)} was force-included despite ${slot.publicEvidence!.evidence === 'UNKNOWN_PUBLIC_QUERY_FAILED' ? 'a failed public-booking read' : 'a known public booking'} (OPERATOR_OVERRIDE_PUBLIC_CONFLICT).`);
   byId('strategy-review-warnings').replaceChildren(...[...warnings, ...compiled.problems].map(text => el('li', '', text)));
@@ -457,7 +473,8 @@ function renderReview(state: Dashboard | undefined) {
     ...Object.entries(shotgun.counts).map(([id,count])=>el('p','small',`${id} → ${count} Shotgun attempt${count===1?'':'s'}`)),
     ...shotgun.shots.map(shot=>el('p','small',`${shot.logicalTargetId} · shot ${shot.shotIndex+1}/${shot.shotCount} · FINAL SAVED TRIGGER ${shot.configuredOffsetMs>=0?'+':''}${shot.configuredOffsetMs} ms`)),
     el('p',(draft.shotgun.timingCapacityOverride??draft.shotgun.capacityOverride)||draft.shotgun.allowStandbyConsumption?'warn-text':'small',`Timing capacity override: ${(draft.shotgun.timingCapacityOverride??draft.shotgun.capacityOverride)?'ACTIVE':'off'} · Standby consumption: ${draft.shotgun.allowStandbyConsumption?'ACTIVE':'protected'}`),
-    el('p',shotgun.capacityWarning?'warn-text':'small',shotgun.capacityWarning??`Capacity: ${shotgun.meaningfulSpacingMs} ms meaningful spacing · recommended maximum ~${shotgun.recommendedMaximum}.`)] : [el('h4','','Shotgun'),el('p','small','Disabled · Normal machine-recommended fan-out applies.')];
+    el('p',shotgun.capacityWarning?'warn-text':'small',shotgun.capacityWarning??`Capacity: ${shotgun.meaningfulSpacingMs} ms meaningful spacing · recommended maximum ~${shotgun.recommendedMaximum}.`),
+    ...(shotgun.coincidentWarning?[el('p','warn-text',shotgun.coincidentWarning)]:[]),...feasibilityLines(feasibility).map(line=>el('p',feasibility?.verdict==='READY'?'small':'warn-text',line))] : [el('h4','','Shotgun'),el('p','small','Disabled · Normal machine-recommended fan-out applies.'),...feasibilityLines(feasibility).map(line=>el('p',feasibility?.verdict==='READY'?'small':'warn-text',line))];
   const saved=state?.booking?.setup,savedMeta=saved?.STRATEGY_V2?.timingCalibration;
   const decomposition=saved?.PRECISION_PHASE3===compiled.phase3||JSON.stringify(saved?.PRECISION_PHASE3)===JSON.stringify(compiled.phase3)
     ? compiled.phase3.wave1.flatMap(assignment=>(assignment.fanOutOffsetsMs??[assignment.releaseOffsetMs??0]).map((final,index)=>{

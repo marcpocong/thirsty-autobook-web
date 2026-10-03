@@ -15,6 +15,8 @@ The burst run used eight measured iterations per width and recommended **two chi
 
 The preparation lead now scales by tier and measured preparation p95, with a conservative 12-second round used when no compatible history exists. It is capped at 105 seconds before release, leaving 15 seconds under the 120-second prepared-context freshness bound at the release instant. A child not ready by its trigger remains unsent with a specific reason; the scheduler does not delay ready children.
 
+The October 3 topology is retained as a structural regression fixture: four parent targets, two children each, primaries preserved, six projected ready and two projected lower-tier omissions under matching constrained assumptions. This demonstrates that the model can expose the same class of capacity failure before dispatch; it does not claim the historical run was predictably identical without the exact compatible preparation history available at that time.
+
 ## Unified Strategy integration
 
 Shotgun is now a release intensity inside the Smart Strategy Engine, not a separate Fixed Precision path. The operator selects stable logical targets, a total budget, Equal / Priority weighted / Custom allocation, and a signed release-relative window. The compiler creates one aggregate deterministic schedule, distributes its positions fairly across selected targets, and splits any target above six attempts into worker groups capped by `PRECISION_MAX_FAN_OUT`. Unselected immediate targets remain normal Wave 1; the same saved `PRECISION_PHASE3` remains the authorization authority.
