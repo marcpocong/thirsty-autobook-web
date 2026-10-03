@@ -123,13 +123,16 @@ export function describeTierStatus(status: readonly TierStatus[]): string {
  * with a margin — capped well inside the 120 s prepared-context freshness limit.
  */
 export const BASE_PREWARM_LEAD_MS = 15_000;
-export const MAX_PREWARM_LEAD_MS = 75_000;
+// Leave at least 15 seconds between the earliest possible preparation and the 120-second freshness boundary.
+export const MAX_PREWARM_LEAD_MS = 105_000;
 export function adaptivePrewarmLeadMs(input: { tiers: number; workers: number; concurrency: number; prepP95Ms: number | null; baseLeadMs?: number; marginMs?: number }): number {
-  const base = input.baseLeadMs ?? BASE_PREWARM_LEAD_MS, margin = input.marginMs ?? 3_000;
-  if (!(input.tiers > 1) || input.prepP95Ms === null || !(input.prepP95Ms > 0)) return base;
+  const base = input.baseLeadMs ?? BASE_PREWARM_LEAD_MS, margin = input.marginMs ?? 15_000;
+  if (!(input.tiers > 1)) return base;
+  // Without a compatible history, reserve a conservative preparation round per tier; never silently use the single-shot 15 s lead.
+  const prepP95Ms=input.prepP95Ms!==null&&input.prepP95Ms>0?input.prepP95Ms:12_000;
   const children = input.tiers * Math.max(1, input.workers);
   const waves = Math.ceil(children / Math.max(1, Math.min(input.concurrency, children)));
   // Each tier waits for the previous one, so at least one preparation round per tier.
   const rounds = Math.max(waves, input.tiers);
-  return Math.min(MAX_PREWARM_LEAD_MS, Math.max(base, Math.ceil(rounds * input.prepP95Ms * 1.25 + margin)));
+  return Math.min(MAX_PREWARM_LEAD_MS, Math.max(base, Math.ceil(rounds * prepP95Ms * 1.25 + margin)));
 }

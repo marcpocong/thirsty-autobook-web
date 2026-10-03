@@ -51,6 +51,21 @@ describe('Smart immediate targets with fan-out children', () => {
     expect(wave1SendCount(authorization)).toBe(6);
     expect(authorization.wave1[0]!.fanOutOffsetsMs).toEqual([-20, -10, 0]);
   });
+  it('compiles the four-target five-shot ladder with three Wave 2 and three Rescue sends to a 26-send ceiling',()=>{
+    const perTarget=Array.from({length:4},()=>[] as number[]);
+    for(let shot=0;shot<20;shot++)perTarget[shot%4]!.push(-Math.round(2000-shot*2000/19)+0);
+    const plan=draft({immediate:[
+      {court:6,start:'22:00',durationHours:2,fanOutOffsetsMs:perTarget[0]},
+      {court:7,start:'22:00',durationHours:2,fanOutOffsetsMs:perTarget[1]},
+      {court:1,start:'20:00',durationHours:3,fanOutOffsetsMs:perTarget[2]},
+      {court:2,start:'21:00',durationHours:3,fanOutOffsetsMs:perTarget[3]},
+    ],backups:[{court:3,start:'17:00',durationHours:2},{court:4,start:'17:00',durationHours:2},{court:5,start:'17:00',durationHours:2}],
+      maxReopenedAttempts:3,advanced:{wave2:3,rescue:3,total:26}});
+    const compiled=compileSmartPlan(plan,{targetDate});expect(compiled.problems).toEqual([]);
+    expect(smartImmediateSends(compiled.phase3!.wave1)).toBe(20);
+    expect(compiled.phase3!.budgets).toEqual({wave2:3,rescue:3,total:26});
+    expect(wave1SendCount(backend(compiled.phase3!))).toBe(20);
+  });
   it('edits the authoritative child array without creating a competing parent offset', () => {
     const edited = setSmartChildOffset({ court: 7, start: '19:00', durationHours: 3, fanOutOffsetsMs: [-25, -10] }, 1, -5);
     expect(edited).toMatchObject({ fanOutOffsetsMs: [-25, -5] });
@@ -76,11 +91,11 @@ describe('Smart immediate targets with fan-out children', () => {
     const again = compileSmartPlan(smartDraftFromPhase3(phase3, { targetDate }), { targetDate }).phase3!;
     expect(again).toEqual(phase3);
   });
-  it('rejects fan-out on a backup, a single child, five children, or together with a single offset', () => {
+  it('rejects fan-out on a backup, a single child, seven children, or together with a single offset', () => {
     const problems = (value: SmartDraft) => compileSmartPlan(value, { targetDate }).problems.join(' ');
     expect(problems(draft({ backups: [{ court: 5, start: '18:00', durationHours: 3, fanOutOffsetsMs: [-10, 0] }] }))).toMatch(/invalid fan-out/);
     expect(problems(draft({ immediate: [{ court: 7, start: '19:00', durationHours: 3, fanOutOffsetsMs: [0] }] }))).toMatch(/invalid fan-out/);
-    expect(problems(draft({ immediate: [{ court: 7, start: '19:00', durationHours: 3, fanOutOffsetsMs: [-40, -30, -20, -10, 0] }] }))).toMatch(/invalid fan-out/);
+    expect(problems(draft({ immediate: [{ court: 7, start: '19:00', durationHours: 3, fanOutOffsetsMs: [-60, -50, -40, -30, -20, -10, 0] }] }))).toMatch(/invalid fan-out/);
     expect(problems(draft({ immediate: [{ court: 7, start: '19:00', durationHours: 3, fanOutOffsetsMs: [-10, 0], releaseOffsetMs: -5 }] }))).toMatch(/invalid fan-out/);
   });
   it('the config schema and authorizePrecision refuse inconsistent fan-out budgets', () => {
@@ -194,7 +209,7 @@ describe('strategy presets', () => {
   });
   it('an operator fan-out override wins over the machine recommendation (up to the hard limit)', () => {
     expect(presetAllocation('BALANCED', { readyWorkers: 7, recommendedFanOutWidth: 2, fanOutWidthOverride: 4 }).fanOutWidth).toBe(4);
-    expect(presetAllocation('BALANCED', { readyWorkers: 7, recommendedFanOutWidth: 2, fanOutWidthOverride: 9 }).fanOutWidth).toBe(4);
+    expect(presetAllocation('BALANCED', { readyWorkers: 7, recommendedFanOutWidth: 2, fanOutWidthOverride: 9 }).fanOutWidth).toBe(6);
   });
   it('every preset compiles into the same authoritative backend object type', () => {
     for (const preset of ['BALANCED', 'RELEASE_FOCUSED', 'RESCUE_FOCUSED'] as const) {

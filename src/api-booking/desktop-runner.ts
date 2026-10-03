@@ -44,7 +44,7 @@ import { ApiRunProgressLog } from './run-progress-log.js';
 import { ApiAutomationLock } from './api-automation-lock.js';
 import { assertApiReleaseFresh } from './api-release.js';
 import { canReleaseApiLockAfterParallelFailure } from './api-lock-outcome.js';
-import { PRECISION_FAN_OUT_ATTEMPTS, requiredWorkerIds, type WorkerId } from '../workers.js';
+import { requiredWorkerIds, type WorkerId } from '../workers.js';
 import { showWorkerPage } from '../browser-window.js';
 import { preflightProoflessWire, prooflessCourtHourStatuses, prooflessReleasePlan, resolveProoflessReleasePlan, submitDirectCheckout } from './proofless-checkout.js';
 import { WirePayloadError } from './wire-payload-check.js';
@@ -417,7 +417,8 @@ try {
   // The dedicated profiles are independent. Wait for both checks to settle so
   // a failure in one browser cannot leave an unobserved preparation running.
   const smartTabs=new Map<WorkerId,number>((phase3?.wave1??[]).map(value=>[value.workerId,value.fanOutOffsetsMs?.length??1]));
-  const prepared=await Promise.allSettled(workerIds.map(worker=>prepareWorker(worker,precisionFanOut?PRECISION_FAN_OUT_ATTEMPTS:smartTabs.get(worker)??1)));
+  const fixedTabs=new Map<WorkerId,number>((precisionTargets??[]).map(value=>[value.workerId,value.fanOutReleaseOffsetsMs?.length??1]));
+  const prepared=await Promise.allSettled(workerIds.map(worker=>prepareWorker(worker,precisionFanOut?fixedTabs.get(worker)??1:smartTabs.get(worker)??1)));
   prepared.forEach((result,index)=>stage('BROWSER_PREPARATION_OUTCOME',{workerId:workerIds[index]!,status:result.status,
     code:result.status==='fulfilled'?'COMPLETED':safeApiFailureCode(result.reason,'API_BROWSER_PREPARATION_FAILED')}));
   const failure=prepared.find((result):result is PromiseRejectedResult=>result.status==='rejected');
@@ -762,7 +763,7 @@ try {
       if(command.mode==='dry'){
         await checkpoint('PREPARE');
         const usable=targets.filter(target=>!states.has(target.workerId)&&eligible.get(target.workerId));
-        stage('PRECISION_DRY_COMPLETE',{targetCount:targets.length,frozenCount:usable.length*(fanOut?PRECISION_FAN_OUT_ATTEMPTS:1)});
+        stage('PRECISION_DRY_COMPLETE',{targetCount:targets.length,frozenCount:usable.reduce((sum,target)=>sum+(fanOut?target.fanOutReleaseOffsetsMs?.length??1:1),0)});
         if(!usable.length)throw Error('PRECISION_NO_ELIGIBLE_TARGET');
         return;
       }
@@ -836,7 +837,7 @@ try {
             recorder.describe(attempt.attempt.id,{parentGoalId:attempt.target.targetKey,workerId:attempt.target.workerId,fanOutIndex:attempt.attempt.fanOutIndex,
               fanOutCount:attempt.attempt.fanOutCount,configuredOffsetMs:attempt.triggerMs-releaseMs,wave:'WAVE_1'});}
           const outcome=await dispatchArmedPrecisionRace(armed,{clock:releaseClock,spinTailMs:DEFAULT_SPIN_TAIL_MS,
-            ...fanOutPrewarm(race.fanOut?PRECISION_FAN_OUT_ATTEMPTS:1,armed.attempts.filter(attempt=>attempt.attempt.fanOutIndex===0).length),
+            ...fanOutPrewarm(Math.max(1,...race.attempts.map(attempt=>attempt.fanOutCount)),armed.attempts.filter(attempt=>attempt.attempt.fanOutIndex===0).length),
             isAborted:()=>abort.signal.aborted,sleep:pause,transportFor:(_worker,attempt)=>releaseTransports.get(transportKeyFor(attempt.attempt)),
             onWake:()=>{recorder.mark('*','schedulerFired');releaseLockdown?.mark('scheduler-wake');},onMark:(_worker,name,attempt)=>{if(name==='transportCall'){recorder.mark(attempt.attempt.id,'workerInvoked');releaseLockdown?.mark(`transport:${attempt.attempt.id}`);}
               else if(name==='rendererArm')recorder.mark(attempt.attempt.id,'rendererArmSent');},
@@ -889,7 +890,7 @@ try {
       }
       await persistLatestVerifiedHold();
       const summaryStates=fanOut?targets.flatMap(target=>{const children=completedAttempts.filter(attempt=>attempt.target.workerId===target.workerId);
-        return children.length?children.map(attempt=>states.get(attempt.id)??'NOT_DISPATCHED'):Array(PRECISION_FAN_OUT_ATTEMPTS).fill(states.get(target.workerId)??'NOT_DISPATCHED') as PrecisionAttemptState[];}):
+        return children.length?children.map(attempt=>states.get(attempt.id)??'NOT_DISPATCHED'):Array(target.fanOutReleaseOffsetsMs?.length??1).fill(states.get(target.workerId)??'NOT_DISPATCHED') as PrecisionAttemptState[];}):
         targets.map(target=>states.get(target.workerId)??'NOT_DISPATCHED');
       const summary=reducePrecisionOutcome(summaryStates);
       stage('PRECISION_OUTCOME',{outcome:summary.outcome,verifiedCount:summary.verifiedCount,unknownCount:summary.unknownCount,

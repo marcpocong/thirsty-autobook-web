@@ -372,7 +372,7 @@ it('shows Precision targets, the independent-attempt warning and per-target race
   expect(await page.locator('#precision-row-1').isVisible()).toBe(true);
   expect(await page.locator('#precision-row-2').isVisible()).toBe(false);
   expect(await page.locator('#precision-court-1').inputValue()).toBe('5');
-  expect(await page.locator('#court-order').isVisible()).toBe(false);
+  expect(await page.locator('#court-order').isVisible()).toBe(true);
   expect(await page.locator('#booking-method').isDisabled()).toBe(true);
   expect(await page.locator('.precision-warning').innerText()).toBe('These are independent checkout attempts. More than one temporary QR hold may be created. Payment remains manual.');
   await page.close();

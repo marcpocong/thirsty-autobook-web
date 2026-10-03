@@ -28,7 +28,7 @@ export interface RateEvidence {
 export interface AuthorizedCandidate extends CandidateInput {
   id: string; end: string; logicalKey: string; expectedAmount: number;
 }
-/** One immediate logical target. With fanOutOffsetsMs it is sent as 2–4 independently tracked children (one per offset). */
+/** One immediate logical target. With fanOutOffsetsMs it is sent as 2–6 independently tracked children (one per offset). */
 export interface Wave1Assignment { workerId: WorkerId; candidateId: string; releaseOffsetMs?: number; fanOutOffsetsMs?: readonly number[] }
 export interface PrecisionAuthorizationInput {
   date: string; releaseMs: number; candidates: CandidateInput[];

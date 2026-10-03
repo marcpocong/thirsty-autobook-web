@@ -205,12 +205,14 @@ export function buildReleaseForensics(input: ForensicInputs): ReleaseForensicsSu
       if(!attemptId||!candidateId||!workerId||!wave)return [];
       const candidate=p3Candidates.get(candidateId),posted=stages('CHECKOUT_HTTP_POST_INITIATED').find(value=>value.attemptId===attemptId),
         settled=stages('PHASE3_SETTLED').find(value=>value.attemptId===attemptId),answered=stages('CHECKOUT_RESPONSE_COMPLETED').find(value=>value.attemptId===attemptId),
+        verifiedHold=stages('DIAGNOSTIC_VERIFIED_HOLD').some(value=>value.attemptId===attemptId),
+        qrHandoff=verifiedHold&&stages('DIAGNOSTIC_QR_HANDOFF').some(value=>value.attemptId===attemptId),
         dispatched=stages('PHASE3_DISPATCH').find(value=>value.attemptId===attemptId);
       // The dispatch record carries the evidence that authorized the POST itself (it can be newer than the reservation's).
       const evidenceSeq=num(dispatched?.evidenceSeq)??num(line.evidenceSeq)??null,selectedEvidenceSeq=num(line.selectedEvidenceSeq)??null;
       return [{attemptId,candidateId,workerId,wave,court:num(candidate?.court)??null,startTime:str(candidate?.startTime)??null,
         endTime:str(candidate?.endTime)??null,evidenceSeq,selectedEvidenceSeq:selectedEvidenceSeq!==evidenceSeq?selectedEvidenceSeq:null,
-        postOffsetMs:num(posted?.releaseLatenessMs)??null,state:str(settled?.state)??null,
+        postOffsetMs:num(posted?.releaseLatenessMs)??null,state:qrHandoff?'VERIFIED_PENDING_HOLD_QR_HANDOFF':verifiedHold?'VERIFIED_PENDING_HOLD':str(settled?.state)??null,
         statusCode:num(answered?.statusCode)??null,providerTrace:traces.some(value=>value.attemptId===attemptId),
         fallback:fallbacks.find(value=>value.attemptId===attemptId)??null}];
     }).sort((a,b)=>(a.postOffsetMs??Infinity)-(b.postOffsetMs??Infinity))}:undefined;

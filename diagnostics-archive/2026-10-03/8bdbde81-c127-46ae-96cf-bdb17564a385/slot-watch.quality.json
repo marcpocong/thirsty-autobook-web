@@ -1,0 +1,723 @@
+{
+  "version": 1,
+  "watchId": "REF_024",
+  "date": "2026-10-05",
+  "generatedAt": "2026-10-03T00:15:00.457Z",
+  "quality": {
+    "latency": {
+      "medianMs": 82,
+      "p95Ms": 204,
+      "minMs": 61,
+      "maxMs": 308
+    },
+    "cache": {
+      "MISS": 1,
+      "HIT": 158,
+      "STALE": 53,
+      "UNKNOWN": 0
+    },
+    "cacheRates": {
+      "MISS": 0.0047169811320754715,
+      "HIT": 0.7452830188679245,
+      "STALE": 0.25,
+      "UNKNOWN": 0
+    },
+    "contradictions": 0,
+    "reopenings": {
+      "confirmed": 0,
+      "probable": 13,
+      "inconsistent": 0,
+      "unknown": 0
+    },
+    "candidateReopenings": 4,
+    "bookingCoverage": {
+      "planned": 66,
+      "launched": 77,
+      "answered": 77,
+      "successfulCourtQueries": 539,
+      "totalCourtQueries": 539
+    },
+    "providerPaths": [
+      "/api/public/facilities/[facilityId]/date-availability · REF_352",
+      "/api/public/facilities/[facilityId]/date-availability · REF_612",
+      "/api/public/facilities/[facilityId]/date-availability · REF_688",
+      "/api/public/facilities/[facilityId]/date-availability · REF_332",
+      "/api/public/facilities/[facilityId]/date-availability · REF_672",
+      "/api/public/facilities/[facilityId]/date-availability · REF_693",
+      "/api/public/facilities/[facilityId]/date-availability · REF_343",
+      "/api/public/facilities/[facilityId]/date-availability · REF_393",
+      "/api/public/facilities/[facilityId]/date-availability · REF_681",
+      "/api/public/facilities/[facilityId]/date-availability · REF_675",
+      "/api/public/facilities/[facilityId]/date-availability · REF_188",
+      "/api/public/facilities/[facilityId]/date-availability · REF_684",
+      "/api/public/facilities/[facilityId]/date-availability · REF_025",
+      "/api/public/facilities/[facilityId]/date-availability · REF_342",
+      "/api/public/facilities/[facilityId]/date-availability · REF_036",
+      "/api/public/facilities/[facilityId]/date-availability · REF_362",
+      "/api/public/facilities/[facilityId]/date-availability · REF_690",
+      "/api/public/facilities/[facilityId]/date-availability · REF_768",
+      "/api/public/facilities/[facilityId]/date-availability · REF_372",
+      "/api/public/facilities/[facilityId]/date-availability · REF_739",
+      "/api/public/facilities/[facilityId]/date-availability · REF_273",
+      "/api/public/facilities/[facilityId]/date-availability · REF_712",
+      "/api/public/facilities/[facilityId]/date-availability · REF_040",
+      "/api/public/facilities/[facilityId]/date-availability · REF_160",
+      "/api/public/facilities/[facilityId]/date-availability · REF_341",
+      "/api/public/facilities/[facilityId]/date-availability · REF_676",
+      "/api/public/facilities/[facilityId]/date-availability · REF_054",
+      "/api/public/facilities/[facilityId]/date-availability · REF_106",
+      "/api/public/facilities/[facilityId]/date-availability · REF_265",
+      "/api/public/facilities/[facilityId]/date-availability · REF_433",
+      "/api/public/facilities/[facilityId]/date-availability · REF_448",
+      "/api/public/facilities/[facilityId]/date-availability · REF_581",
+      "/api/public/facilities/[facilityId]/date-availability · REF_174",
+      "/api/public/facilities/[facilityId]/date-availability · REF_134",
+      "/api/public/facilities/[facilityId]/date-availability · REF_382",
+      "/api/public/facilities/[facilityId]/date-availability · REF_412",
+      "/api/public/facilities/[facilityId]/date-availability · REF_656",
+      "/api/public/facilities/[facilityId]/date-availability · REF_164",
+      "/api/public/facilities/[facilityId]/date-availability · REF_176",
+      "/api/public/facilities/[facilityId]/date-availability · REF_210",
+      "/api/public/facilities/[facilityId]/date-availability · REF_413",
+      "/api/public/facilities/[facilityId]/date-availability · REF_691",
+      "/api/public/facilities/[facilityId]/date-availability · REF_731",
+      "/api/public/facilities/[facilityId]/date-availability · REF_172",
+      "/api/public/facilities/[facilityId]/date-availability · REF_289",
+      "/api/public/facilities/[facilityId]/date-availability · REF_668",
+      "/api/public/facilities/[facilityId]/date-availability · REF_682",
+      "/api/public/facilities/[facilityId]/date-availability · REF_578",
+      "/api/public/facilities/[facilityId]/date-availability · REF_638",
+      "/api/public/facilities/[facilityId]/date-availability · REF_680"
+    ],
+    "expiryPredictions": {
+      "predicted": 31,
+      "reopenedInWindow": 7,
+      "reopenedOutside": 6,
+      "notReopened": 18,
+      "medianAbsErrorMs": 4304,
+      "rows": [
+        {
+          "court": 1,
+          "hour": "18:00",
+          "predictedStartMs": 604000,
+          "predictedEndMs": 621000,
+          "observedReopenMs": 808209.3,
+          "errorMs": 195709,
+          "insideWindow": false
+        },
+        {
+          "court": 1,
+          "hour": "19:00",
+          "predictedStartMs": 604000,
+          "predictedEndMs": 621000,
+          "observedReopenMs": null,
+          "errorMs": null,
+          "insideWindow": null
+        },
+        {
+          "court": 1,
+          "hour": "20:00",
+          "predictedStartMs": 604000,
+          "predictedEndMs": 621000,
+          "observedReopenMs": null,
+          "errorMs": null,
+          "insideWindow": null
+        },
+        {
+          "court": 1,
+          "hour": "21:00",
+          "predictedStartMs": 604000,
+          "predictedEndMs": 621000,
+          "observedReopenMs": 608196.3,
+          "errorMs": -4304,
+          "insideWindow": true
+        },
+        {
+          "court": 1,
+          "hour": "22:00",
+          "predictedStartMs": 604000,
+          "predictedEndMs": 621000,
+          "observedReopenMs": null,
+          "errorMs": null,
+          "insideWindow": null
+        },
+        {
+          "court": 2,
+          "hour": "18:00",
+          "predictedStartMs": 604000,
+          "predictedEndMs": 621000,
+          "observedReopenMs": 808209.3,
+          "errorMs": 195709,
+          "insideWindow": false
+        },
+        {
+          "court": 2,
+          "hour": "19:00",
+          "predictedStartMs": 604000,
+          "predictedEndMs": 621000,
+          "observedReopenMs": null,
+          "errorMs": null,
+          "insideWindow": null
+        },
+        {
+          "court": 2,
+          "hour": "20:00",
+          "predictedStartMs": 604000,
+          "predictedEndMs": 621000,
+          "observedReopenMs": 608196.3,
+          "errorMs": -4304,
+          "insideWindow": true
+        },
+        {
+          "court": 2,
+          "hour": "21:00",
+          "predictedStartMs": 604000,
+          "predictedEndMs": 621000,
+          "observedReopenMs": null,
+          "errorMs": null,
+          "insideWindow": null
+        },
+        {
+          "court": 2,
+          "hour": "22:00",
+          "predictedStartMs": 604000,
+          "predictedEndMs": 621000,
+          "observedReopenMs": 808209.3,
+          "errorMs": 195709,
+          "insideWindow": false
+        },
+        {
+          "court": 3,
+          "hour": "18:00",
+          "predictedStartMs": 604000,
+          "predictedEndMs": 621000,
+          "observedReopenMs": null,
+          "errorMs": null,
+          "insideWindow": null
+        },
+        {
+          "court": 3,
+          "hour": "19:00",
+          "predictedStartMs": 604000,
+          "predictedEndMs": 621000,
+          "observedReopenMs": null,
+          "errorMs": null,
+          "insideWindow": null
+        },
+        {
+          "court": 3,
+          "hour": "20:00",
+          "predictedStartMs": 604000,
+          "predictedEndMs": 621000,
+          "observedReopenMs": 608196.3,
+          "errorMs": -4304,
+          "insideWindow": true
+        },
+        {
+          "court": 3,
+          "hour": "21:00",
+          "predictedStartMs": 604000,
+          "predictedEndMs": 621000,
+          "observedReopenMs": 808209.3,
+          "errorMs": 195709,
+          "insideWindow": false
+        },
+        {
+          "court": 3,
+          "hour": "22:00",
+          "predictedStartMs": 604000,
+          "predictedEndMs": 621000,
+          "observedReopenMs": 808209.3,
+          "errorMs": 195709,
+          "insideWindow": false
+        },
+        {
+          "court": 4,
+          "hour": "21:00",
+          "predictedStartMs": 604000,
+          "predictedEndMs": 621000,
+          "observedReopenMs": 608196.3,
+          "errorMs": -4304,
+          "insideWindow": true
+        },
+        {
+          "court": 4,
+          "hour": "22:00",
+          "predictedStartMs": 604000,
+          "predictedEndMs": 621000,
+          "observedReopenMs": 628075.3,
+          "errorMs": 15575,
+          "insideWindow": false
+        },
+        {
+          "court": 5,
+          "hour": "18:00",
+          "predictedStartMs": 604000,
+          "predictedEndMs": 621000,
+          "observedReopenMs": null,
+          "errorMs": null,
+          "insideWindow": null
+        },
+        {
+          "court": 5,
+          "hour": "19:00",
+          "predictedStartMs": 604000,
+          "predictedEndMs": 621000,
+          "observedReopenMs": null,
+          "errorMs": null,
+          "insideWindow": null
+        },
+        {
+          "court": 5,
+          "hour": "20:00",
+          "predictedStartMs": 604000,
+          "predictedEndMs": 621000,
+          "observedReopenMs": 608196.3,
+          "errorMs": -4304,
+          "insideWindow": true
+        },
+        {
+          "court": 5,
+          "hour": "21:00",
+          "predictedStartMs": 604000,
+          "predictedEndMs": 621000,
+          "observedReopenMs": null,
+          "errorMs": null,
+          "insideWindow": null
+        },
+        {
+          "court": 5,
+          "hour": "22:00",
+          "predictedStartMs": 604000,
+          "predictedEndMs": 621000,
+          "observedReopenMs": null,
+          "errorMs": null,
+          "insideWindow": null
+        },
+        {
+          "court": 6,
+          "hour": "22:00",
+          "predictedStartMs": 604000,
+          "predictedEndMs": 621000,
+          "observedReopenMs": 608196.3,
+          "errorMs": -4304,
+          "insideWindow": true
+        },
+        {
+          "court": 7,
+          "hour": "22:00",
+          "predictedStartMs": 604000,
+          "predictedEndMs": 621000,
+          "observedReopenMs": 608196.3,
+          "errorMs": -4304,
+          "insideWindow": true
+        },
+        {
+          "court": 5,
+          "hour": "15:00",
+          "predictedStartMs": 808000,
+          "predictedEndMs": 818000,
+          "observedReopenMs": null,
+          "errorMs": null,
+          "insideWindow": null
+        },
+        {
+          "court": 5,
+          "hour": "16:00",
+          "predictedStartMs": 808000,
+          "predictedEndMs": 818000,
+          "observedReopenMs": null,
+          "errorMs": null,
+          "insideWindow": null
+        },
+        {
+          "court": 5,
+          "hour": "17:00",
+          "predictedStartMs": 808000,
+          "predictedEndMs": 818000,
+          "observedReopenMs": null,
+          "errorMs": null,
+          "insideWindow": null
+        },
+        {
+          "court": 6,
+          "hour": "15:00",
+          "predictedStartMs": 808000,
+          "predictedEndMs": 818000,
+          "observedReopenMs": null,
+          "errorMs": null,
+          "insideWindow": null
+        },
+        {
+          "court": 6,
+          "hour": "16:00",
+          "predictedStartMs": 808000,
+          "predictedEndMs": 818000,
+          "observedReopenMs": null,
+          "errorMs": null,
+          "insideWindow": null
+        },
+        {
+          "court": 6,
+          "hour": "17:00",
+          "predictedStartMs": 808000,
+          "predictedEndMs": 818000,
+          "observedReopenMs": null,
+          "errorMs": null,
+          "insideWindow": null
+        },
+        {
+          "court": 6,
+          "hour": "23:00",
+          "predictedStartMs": 1217000,
+          "predictedEndMs": 900000,
+          "observedReopenMs": null,
+          "errorMs": null,
+          "insideWindow": null
+        }
+      ]
+    }
+  },
+  "candidates": [
+    {
+      "id": "candidate-1",
+      "court": 6,
+      "start": "22:00",
+      "end": "24:00",
+      "label": "C6 22:00–24:00",
+      "workerId": "A",
+      "state": "FULLY_UNAVAILABLE",
+      "evidence": {
+        "seq": 220,
+        "requestOffsetMs": 900008.3,
+        "responseOffsetMs": 900208.3
+      },
+      "evidenceAgeUpperBoundMs": 9249,
+      "freshness": "BOUNDED_CACHE",
+      "reopening": "PROBABLE"
+    },
+    {
+      "id": "candidate-2",
+      "court": 7,
+      "start": "22:00",
+      "end": "24:00",
+      "label": "C7 22:00–24:00",
+      "workerId": "B",
+      "state": "FULLY_OPEN",
+      "evidence": {
+        "seq": 220,
+        "requestOffsetMs": 900008.3,
+        "responseOffsetMs": 900208.3
+      },
+      "evidenceAgeUpperBoundMs": 9249,
+      "freshness": "BOUNDED_CACHE",
+      "reopening": "PROBABLE"
+    },
+    {
+      "id": "candidate-3",
+      "court": 1,
+      "start": "20:00",
+      "end": "23:00",
+      "label": "C1 20:00–23:00",
+      "workerId": "C",
+      "state": "FULLY_UNAVAILABLE",
+      "evidence": {
+        "seq": 220,
+        "requestOffsetMs": 900008.3,
+        "responseOffsetMs": 900208.3
+      },
+      "evidenceAgeUpperBoundMs": 9249,
+      "freshness": "BOUNDED_CACHE",
+      "reopening": null
+    },
+    {
+      "id": "candidate-4",
+      "court": 2,
+      "start": "21:00",
+      "end": "24:00",
+      "label": "C2 21:00–24:00",
+      "workerId": "D",
+      "state": "PARTIALLY_UNAVAILABLE",
+      "evidence": {
+        "seq": 220,
+        "requestOffsetMs": 900008.3,
+        "responseOffsetMs": 900208.3
+      },
+      "evidenceAgeUpperBoundMs": 9249,
+      "freshness": "BOUNDED_CACHE",
+      "reopening": null
+    },
+    {
+      "id": "candidate-5",
+      "court": 2,
+      "start": "20:00",
+      "end": "23:00",
+      "label": "C2 20:00–23:00",
+      "state": "PARTIALLY_UNAVAILABLE",
+      "evidence": {
+        "seq": 220,
+        "requestOffsetMs": 900008.3,
+        "responseOffsetMs": 900208.3
+      },
+      "evidenceAgeUpperBoundMs": 9249,
+      "freshness": "BOUNDED_CACHE",
+      "reopening": null
+    },
+    {
+      "id": "candidate-6",
+      "court": 1,
+      "start": "21:00",
+      "end": "24:00",
+      "label": "C1 21:00–24:00",
+      "state": "PARTIALLY_UNAVAILABLE",
+      "evidence": {
+        "seq": 220,
+        "requestOffsetMs": 900008.3,
+        "responseOffsetMs": 900208.3
+      },
+      "evidenceAgeUpperBoundMs": 9249,
+      "freshness": "BOUNDED_CACHE",
+      "reopening": null
+    },
+    {
+      "id": "candidate-7",
+      "court": 1,
+      "start": "19:00",
+      "end": "22:00",
+      "label": "C1 19:00–22:00",
+      "state": "FULLY_UNAVAILABLE",
+      "evidence": {
+        "seq": 220,
+        "requestOffsetMs": 900008.3,
+        "responseOffsetMs": 900208.3
+      },
+      "evidenceAgeUpperBoundMs": 9249,
+      "freshness": "BOUNDED_CACHE",
+      "reopening": null
+    },
+    {
+      "id": "candidate-8",
+      "court": 3,
+      "start": "20:00",
+      "end": "23:00",
+      "label": "C3 20:00–23:00",
+      "state": "FULLY_UNAVAILABLE",
+      "evidence": {
+        "seq": 220,
+        "requestOffsetMs": 900008.3,
+        "responseOffsetMs": 900208.3
+      },
+      "evidenceAgeUpperBoundMs": 9249,
+      "freshness": "BOUNDED_CACHE",
+      "reopening": null
+    },
+    {
+      "id": "candidate-9",
+      "court": 2,
+      "start": "19:00",
+      "end": "22:00",
+      "label": "C2 19:00–22:00",
+      "state": "FULLY_UNAVAILABLE",
+      "evidence": {
+        "seq": 220,
+        "requestOffsetMs": 900008.3,
+        "responseOffsetMs": 900208.3
+      },
+      "evidenceAgeUpperBoundMs": 9249,
+      "freshness": "BOUNDED_CACHE",
+      "reopening": null
+    },
+    {
+      "id": "candidate-10",
+      "court": 4,
+      "start": "20:00",
+      "end": "23:00",
+      "label": "C4 20:00–23:00",
+      "state": "FULLY_UNAVAILABLE",
+      "evidence": {
+        "seq": 220,
+        "requestOffsetMs": 900008.3,
+        "responseOffsetMs": 900208.3
+      },
+      "evidenceAgeUpperBoundMs": 9249,
+      "freshness": "BOUNDED_CACHE",
+      "reopening": null
+    },
+    {
+      "id": "candidate-11",
+      "court": 3,
+      "start": "21:00",
+      "end": "24:00",
+      "label": "C3 21:00–24:00",
+      "state": "PARTIALLY_UNAVAILABLE",
+      "evidence": {
+        "seq": 220,
+        "requestOffsetMs": 900008.3,
+        "responseOffsetMs": 900208.3
+      },
+      "evidenceAgeUpperBoundMs": 9249,
+      "freshness": "BOUNDED_CACHE",
+      "reopening": "PROBABLE"
+    },
+    {
+      "id": "candidate-12",
+      "court": 3,
+      "start": "19:00",
+      "end": "22:00",
+      "label": "C3 19:00–22:00",
+      "state": "FULLY_UNAVAILABLE",
+      "evidence": {
+        "seq": 220,
+        "requestOffsetMs": 900008.3,
+        "responseOffsetMs": 900208.3
+      },
+      "evidenceAgeUpperBoundMs": 9249,
+      "freshness": "BOUNDED_CACHE",
+      "reopening": null
+    },
+    {
+      "id": "candidate-13",
+      "court": 1,
+      "start": "20:00",
+      "end": "22:00",
+      "label": "C1 20:00–22:00",
+      "state": "FULLY_UNAVAILABLE",
+      "evidence": {
+        "seq": 220,
+        "requestOffsetMs": 900008.3,
+        "responseOffsetMs": 900208.3
+      },
+      "evidenceAgeUpperBoundMs": 9249,
+      "freshness": "BOUNDED_CACHE",
+      "reopening": null
+    },
+    {
+      "id": "candidate-14",
+      "court": 5,
+      "start": "20:00",
+      "end": "23:00",
+      "label": "C5 20:00–23:00",
+      "state": "FULLY_UNAVAILABLE",
+      "evidence": {
+        "seq": 220,
+        "requestOffsetMs": 900008.3,
+        "responseOffsetMs": 900208.3
+      },
+      "evidenceAgeUpperBoundMs": 9249,
+      "freshness": "BOUNDED_CACHE",
+      "reopening": null
+    },
+    {
+      "id": "candidate-15",
+      "court": 4,
+      "start": "21:00",
+      "end": "24:00",
+      "label": "C4 21:00–24:00",
+      "state": "PARTIALLY_UNAVAILABLE",
+      "evidence": {
+        "seq": 220,
+        "requestOffsetMs": 900008.3,
+        "responseOffsetMs": 900208.3
+      },
+      "evidenceAgeUpperBoundMs": 9249,
+      "freshness": "BOUNDED_CACHE",
+      "reopening": "PROBABLE"
+    },
+    {
+      "id": "candidate-16",
+      "court": 4,
+      "start": "19:00",
+      "end": "22:00",
+      "label": "C4 19:00–22:00",
+      "state": "FULLY_UNAVAILABLE",
+      "evidence": {
+        "seq": 220,
+        "requestOffsetMs": 900008.3,
+        "responseOffsetMs": 900208.3
+      },
+      "evidenceAgeUpperBoundMs": 9249,
+      "freshness": "BOUNDED_CACHE",
+      "reopening": null
+    },
+    {
+      "id": "candidate-17",
+      "court": 2,
+      "start": "20:00",
+      "end": "22:00",
+      "label": "C2 20:00–22:00",
+      "state": "FULLY_UNAVAILABLE",
+      "evidence": {
+        "seq": 220,
+        "requestOffsetMs": 900008.3,
+        "responseOffsetMs": 900208.3
+      },
+      "evidenceAgeUpperBoundMs": 9249,
+      "freshness": "BOUNDED_CACHE",
+      "reopening": null
+    },
+    {
+      "id": "candidate-18",
+      "court": 1,
+      "start": "21:00",
+      "end": "23:00",
+      "label": "C1 21:00–23:00",
+      "state": "FULLY_UNAVAILABLE",
+      "evidence": {
+        "seq": 220,
+        "requestOffsetMs": 900008.3,
+        "responseOffsetMs": 900208.3
+      },
+      "evidenceAgeUpperBoundMs": 9249,
+      "freshness": "BOUNDED_CACHE",
+      "reopening": null
+    },
+    {
+      "id": "candidate-19",
+      "court": 1,
+      "start": "19:00",
+      "end": "21:00",
+      "label": "C1 19:00–21:00",
+      "state": "FULLY_UNAVAILABLE",
+      "evidence": {
+        "seq": 220,
+        "requestOffsetMs": 900008.3,
+        "responseOffsetMs": 900208.3
+      },
+      "evidenceAgeUpperBoundMs": 9249,
+      "freshness": "BOUNDED_CACHE",
+      "reopening": null
+    },
+    {
+      "id": "candidate-20",
+      "court": 5,
+      "start": "21:00",
+      "end": "24:00",
+      "label": "C5 21:00–24:00",
+      "state": "PARTIALLY_UNAVAILABLE",
+      "evidence": {
+        "seq": 220,
+        "requestOffsetMs": 900008.3,
+        "responseOffsetMs": 900208.3
+      },
+      "evidenceAgeUpperBoundMs": 9249,
+      "freshness": "BOUNDED_CACHE",
+      "reopening": null
+    },
+    {
+      "id": "candidate-21",
+      "court": 5,
+      "start": "19:00",
+      "end": "22:00",
+      "label": "C5 19:00–22:00",
+      "state": "FULLY_UNAVAILABLE",
+      "evidence": {
+        "seq": 220,
+        "requestOffsetMs": 900008.3,
+        "responseOffsetMs": 900208.3
+      },
+      "evidenceAgeUpperBoundMs": 9249,
+      "freshness": "BOUNDED_CACHE",
+      "reopening": null
+    }
+  ]
+}

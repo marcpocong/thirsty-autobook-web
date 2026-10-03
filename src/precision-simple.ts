@@ -23,8 +23,8 @@ export const SMART_EVENING_RATE_SOURCE = 'venue schedule from 4 PM';
 export const SMART_EVENING_RATE_CONFIRMED_AT = '2026-09-30T00:00:00.000Z';
 export const SMART_DEFAULT_REOPENED = 1;
 /** Mirrors PRECISION_MAX_FAN_OUT and PRECISION_MAX_SENDS (test-enforced). */
-export const SMART_MAX_FAN_OUT = 4;
-export const SMART_MAX_SENDS = 42;
+export const SMART_MAX_FAN_OUT = 6;
+export const SMART_MAX_SENDS = 56;
 
 export type SmartRateStatus = 'TARGET_DATE_PUBLISHED' | 'VENUE_SCHEDULE' | 'OPERATOR_CONFIRMED' | 'REFERENCE';
 export interface SmartRateEvidence { source: string; capturedAt: string; status: SmartRateStatus; date: string; perHour: number[]; actionable: boolean }
@@ -41,7 +41,7 @@ export interface SmartSlot {
   court: number; start: string; durationHours: number;
   /** Immediate attempts only: Release Offset in ms. Absent means normal (at the release time). */
   releaseOffsetMs?: SmartReleaseOffset;
-  /** Immediate attempts only: 2–4 fan-out children, one Release Offset each (index order). Replaces releaseOffsetMs. */
+  /** Immediate attempts only: 2–6 fan-out children, one Release Offset each (index order). Replaces releaseOffsetMs. */
   fanOutOffsetsMs?: SmartReleaseOffset[];
   /** Advanced overrides. Absent means automatic. */
   worker?: SmartWorker; priority?: number; permissions?: SmartPermissions; rate?: SmartRateEvidence;

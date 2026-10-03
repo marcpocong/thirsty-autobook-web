@@ -51,7 +51,7 @@ it('Precision hides the plan-wide box and gives each Fixed attempt its own Offse
   const page = await openRenderer(browser, { booking: booking({ DURATION_HOURS: 3, RELEASE_STRATEGY: 'precision', PRECISION_TARGETS: [{ ...a, releaseOffsetMs: -1010 }, b] }) });
   expect(await page.locator('#precision-setup').isVisible()).toBe(true);
   expect(await page.locator('#release-offset').isVisible()).toBe(false);
-  expect(await page.locator('#precision-offset-1').getAttribute('max')).toBe('2000');
+  expect(await page.locator('#precision-offset-1').getAttribute('inputmode')).toBe('numeric');
   expect(await page.locator('#precision-offset-0').inputValue()).toBe('1010');
   expect(await page.locator('#precision-offset-1').inputValue()).toBe('0');
   await page.locator('#precision-offset-1').fill('1750');
@@ -78,6 +78,8 @@ it('lets each Fixed Precision worker keep a different goal and configure four in
   await page.locator('#precision-court-1').selectOption('6');
   await page.locator('#precision-start-1').selectOption('19:00');
   await page.locator('#precision-duration-1').selectOption('3');
+  await page.locator('#precision-width-0').selectOption('4');
+  await page.locator('#precision-width-1').selectOption('4');
   const earlyBy = [[25, 10, 0, 100], [20, 0, 250, 500]];
   for (const [worker, values] of earlyBy.entries()) for (const [child, value] of values.entries())
     await page.locator(child ? `#precision-offset-${worker}-${child}` : `#precision-offset-${worker}`).fill(String(value));
@@ -91,6 +93,27 @@ it('lets each Fixed Precision worker keep a different goal and configure four in
   ]);
   await toggle.uncheck();
   expect(await page.locator('#precision-court-1').isEnabled()).toBe(true);
+  await page.close();
+});
+
+it('applies the editable 20-shot ladder and preserves mixed widths after save', async () => {
+  const targets=[{court:6,start:'22:00',durationHours:2},{court:7,start:'22:00',durationHours:2},
+    {court:1,start:'20:00',durationHours:3},{court:2,start:'21:00',durationHours:3}];
+  const page=await openRenderer(browser,{booking:booking({RELEASE_STRATEGY:'precision',PRECISION_TARGETS:targets})});
+  await page.locator('#precision-shotgun-preset').click();
+  expect(await page.locator('#precision-width-0').inputValue()).toBe('5');
+  const expected=Array.from({length:4},()=>[] as number[]);
+  for(let shot=0;shot<20;shot++)expected[shot%4]!.push(-Math.round(2000-shot*2000/19)+0);
+  await page.locator('#precision-width-1').selectOption('6');
+  await page.locator('#precision-offset-1-5').fill('733');
+  await page.locator('#precision-offset-1-5').press('Enter');
+  await page.locator('#save-booking').click();
+  await page.waitForFunction(()=>(window as any).fixtureSaved);
+  const result=await saved(page);
+  expect(result.PRECISION_TARGETS[0].fanOutReleaseOffsetsMs).toEqual(expected[0]);
+  expect(result.PRECISION_TARGETS[1].fanOutReleaseOffsetsMs).toEqual([...expected[1]!,-733]);
+  expect(result.PRECISION_TARGETS[2].fanOutReleaseOffsetsMs).toEqual(expected[2]);
+  expect(result.PRECISION_TARGETS[3].fanOutReleaseOffsetsMs).toEqual(expected[3]);
   await page.close();
 });
 

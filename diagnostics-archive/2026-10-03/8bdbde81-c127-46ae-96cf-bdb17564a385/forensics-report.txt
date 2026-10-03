@@ -1,0 +1,162 @@
+RELEASE FORENSICS — run 8bdbde81-c127-46ae-96cf-bdb17564a385 · target 2026-10-05 · mode live
+Status: FINAL · generated 2026-10-03T00:36:45.627Z
+All offsets are relative to the release instant (2026-10-03T00:00:00.000Z).
+
+1. RELEASE CLOCK
+  T-10M  offset +936.0 ms · 10 samples · RTT 43 ms · spread 8.1 ms · ±23.2 ms · used
+  T-60S  offset +939.0 ms · 10 samples · RTT 43 ms · spread 3.1 ms · ±23.2 ms · used
+  T-30S  offset +941.4 ms · 10 samples · RTT 44 ms · spread 4.5 ms · ±22.3 ms · used
+  Observer (Slot Watch) offset at release: 936.3 ms · observer − dispatch -5.1 ms
+
+2. POST INITIATION (browser request event)
+  Worker D  −0.046 s
+  Worker B  −0.042 s
+  Worker A  −0.021 s
+  Worker C  +0.006 s
+  Worker E  +608.313 s
+  First −0.046 s · last +608.313 s · spread 608,358.8 ms
+
+3. FIRST PUBLISHED GRID (Slot Watch)
+  Reads: 221 scheduled · 212 answered · 8 failed · 1 not launched · max in flight 6 · early launches +0.000 s, +0.250 s, +0.500 s, +1.000 s, +2.000 s, +5.000 s
+  Last read without the date:  #19 request +6.008 s → response +6.099 s
+  First read with the date:    #20 request +6.508 s → response +6.580 s · edge cache HIT, age 0 s
+  Open 82 · unavailable 30 · unknown 0
+         08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23   (O open, X unavailable, ? unknown)
+    C1    O  O  O  O  O  O  O  O  O  O  O  O  O  O  O  O
+    C2    X  X  X  O  O  O  O  O  O  O  O  O  O  O  O  O
+    C3    X  X  X  O  O  O  O  O  O  O  O  O  O  O  O  O
+    C4    X  X  X  O  O  O  O  O  O  X  X  X  X  O  O  O
+    C5    X  X  X  O  O  O  O  O  O  O  O  O  O  O  O  O
+    C6    X  X  X  O  O  O  O  O  O  O  X  X  X  X  O  O
+    C7    X  X  X  O  O  O  O  O  O  O  X  X  X  X  O  O
+
+4. TARGETS
+  Phase 3 race REF_791 · 21 authorized candidates · Wave 2 max 3 · Rescue max 3 · total max 14
+  WAVE_1 · Worker D · Court 2 21:00–24:00 · candidate REF_004 · attempt core-D-official-7
+    Observation #pre-release assignment · POST −0.046 s · REJECTED · HTTP 409
+    Passive trace available · response fallback HTTP 409, server Vercel, request —
+  WAVE_1 · Worker B · Court 7 22:00–24:00 · candidate REF_002 · attempt core-B-official-3
+    Observation #pre-release assignment · POST −0.042 s · REJECTED · HTTP 409
+    Passive trace available · response fallback HTTP 409, server Vercel, request —
+  WAVE_1 · Worker A · Court 6 22:00–24:00 · candidate REF_001 · attempt core-A-official-1
+    Observation #pre-release assignment · POST −0.032 s · REJECTED · HTTP 409
+    Passive trace available · response fallback HTTP 409, server Vercel, request —
+  WAVE_1 · Worker C · Court 1 20:00–23:00 · candidate REF_003 · attempt core-C-official-5
+    Observation #pre-release assignment · POST −0.027 s · REJECTED · HTTP 409
+    Passive trace available · response fallback HTTP 409, server Vercel, request —
+  WAVE_1 · Worker A · Court 6 22:00–24:00 · candidate REF_001 · attempt core-A-official-2
+    Observation #pre-release assignment · POST −0.021 s · REJECTED · HTTP 409
+    Passive trace available · response fallback HTTP 409, server Vercel, request —
+  WAVE_1 · Worker C · Court 1 20:00–23:00 · candidate REF_003 · attempt core-C-official-6
+    Observation #pre-release assignment · POST +0.006 s · REJECTED · HTTP 409
+    Passive trace available · response fallback HTTP 409, server Vercel, request —
+  RESCUE · Worker E · Court 6 22:00–24:00 · candidate REF_001 · attempt core-E-official-9
+    Observation #145 · POST +608.313 s · VERIFIED_PENDING_HOLD_QR_HANDOFF · HTTP 200
+    Passive trace unavailable · response fallback HTTP 200, server Vercel, request —
+
+  Worker A · Court 6 · 22:00–24:00 · core-A-official-2
+    POST initiated:              −0.021 s
+    First published state:       FULLY OPEN (22:00 open PHP 700, 23:00 open PHP 700)
+      from read                  #20 request +6.508 s → response +6.580 s
+      That read was requested 6.529 s after this POST; the grid at POST time was not observed.
+    First fully-open read:       #20 request +6.508 s → response +6.580 s
+    First unavailable read:      #32 request +18.010 s → response +18.081 s (22:00)
+    Public booking record:       #b4 request +10.012 s → response +12.321 s (22:00)
+    Reopened (fully open again): #145 request +608.002 s → response +608.196 s after #142 request +605.006 s → response +605.104 s
+    Checkout:                    HTTP 409 · hint availability
+    Response recorded by runner: +17.950 s (network duration 17,975 ms)
+    Response headers:            +14.217 s
+    Body complete:               +14.218 s
+    Protocol / connection:       h2 · reused yes · dns — · connect — · tls — · send 0.1 ms · wait 14,237.4 ms
+    Provider IDs:                x-vercel-id REF_776 · x-request-id — · cf-ray —
+    Server / cache / timing:     Vercel · x-vercel-cache MISS · server-timing —
+
+  Worker B · Court 7 · 22:00–24:00 · core-B-official-3
+    POST initiated:              −0.042 s
+    First published state:       FULLY OPEN (22:00 open PHP 700, 23:00 open PHP 700)
+      from read                  #20 request +6.508 s → response +6.580 s
+      That read was requested 6.550 s after this POST; the grid at POST time was not observed.
+    First fully-open read:       #20 request +6.508 s → response +6.580 s
+    First unavailable read:      #32 request +18.010 s → response +18.081 s (22:00)
+    Public booking record:       #b4 request +10.012 s → response +12.321 s (22:00)
+    Reopened (fully open again): #145 request +608.002 s → response +608.196 s after #142 request +605.006 s → response +605.104 s
+    Checkout:                    HTTP 409 · hint availability
+    Response recorded by runner: +16.585 s (network duration 16,630 ms)
+    Response headers:            +16.583 s
+    Body complete:               +16.584 s
+    Protocol / connection:       h2 · reused yes · dns — · connect — · tls — · send 0.2 ms · wait 16,624.2 ms
+    Provider IDs:                x-vercel-id REF_778 · x-request-id — · cf-ray —
+    Server / cache / timing:     Vercel · x-vercel-cache MISS · server-timing —
+
+  Worker C · Court 1 · 20:00–23:00 · core-C-official-6
+    POST initiated:              +0.006 s
+    First published state:       FULLY OPEN (20:00 open PHP 700, 21:00 open PHP 700, 22:00 open PHP 700)
+      from read                  #20 request +6.508 s → response +6.580 s
+      That read was requested 6.502 s after this POST; the grid at POST time was not observed.
+    First fully-open read:       #20 request +6.508 s → response +6.580 s
+    First unavailable read:      #32 request +18.010 s → response +18.081 s (20:00, 21:00, 22:00)
+    Public booking record:       #b4 request +10.012 s → response +12.321 s (20:00, 21:00, 22:00)
+    Reopened (fully open again): none observed
+    Checkout:                    HTTP 409 · hint availability
+    Response recorded by runner: +17.761 s (network duration 17,761 ms)
+    Response headers:            +16.606 s
+    Body complete:               +16.606 s
+    Protocol / connection:       h2 · reused yes · dns — · connect — · tls — · send 0.2 ms · wait 16,598.8 ms
+    Provider IDs:                x-vercel-id REF_779 · x-request-id — · cf-ray —
+    Server / cache / timing:     Vercel · x-vercel-cache MISS · server-timing —
+
+  Worker D · Court 2 · 21:00–24:00 · core-D-official-7
+    POST initiated:              −0.046 s
+    First published state:       FULLY OPEN (21:00 open PHP 700, 22:00 open PHP 700, 23:00 open PHP 700)
+      from read                  #20 request +6.508 s → response +6.580 s
+      That read was requested 6.554 s after this POST; the grid at POST time was not observed.
+    First fully-open read:       #20 request +6.508 s → response +6.580 s
+    First unavailable read:      #32 request +18.010 s → response +18.081 s (21:00, 22:00)
+    Public booking record:       #b4 request +10.012 s → response +12.321 s (21:00, 22:00)
+    Reopened (fully open again): none observed
+    Checkout:                    HTTP 409 · hint availability
+    Response recorded by runner: +15.626 s (network duration 15,675 ms)
+    Response headers:            +15.623 s
+    Body complete:               +15.625 s
+    Protocol / connection:       h2 · reused yes · dns — · connect — · tls — · send 0.1 ms · wait 15,669.1 ms
+    Provider IDs:                x-vercel-id REF_781 · x-request-id — · cf-ray —
+    Server / cache / timing:     Vercel · x-vercel-cache MISS · server-timing —
+
+  Worker E · Court 6 · 22:00–24:00 · core-E-official-9
+    POST initiated:              +608.313 s
+    First published state:       FULLY OPEN (22:00 open PHP 700, 23:00 open PHP 700)
+      from read                  #20 request +6.508 s → response +6.580 s
+    First fully-open read:       #20 request +6.508 s → response +6.580 s
+    First unavailable read:      #32 request +18.010 s → response +18.081 s (22:00)
+    Public booking record:       #b4 request +10.012 s → response +12.321 s (22:00)
+    Reopened (fully open again): #145 request +608.002 s → response +608.196 s after #142 request +605.006 s → response +605.104 s
+    Checkout:                    HTTP 200
+    Response recorded by runner: +609.054 s (network duration 746 ms)
+    Provider trace:              unavailable
+
+5. AVAILABILITY TRANSITIONS
+  OPEN → unavailable (cells): 31 · unavailable → OPEN (cells): 13. Per-cell read pairs are in the Slot Watch report and summary.
+
+6. PUBLIC BOOKING EVIDENCE
+  77 public booking reads answered · 0 failed · 0 failed court queries
+  Unavailable in the first published grid without any matching public booking record during the watch: 22 cells (cause unknown).
+
+7. PROVIDER / NETWORK TRACE
+  6 traced POST(s), 6 complete. Details per target above.
+
+8. CHECKOUT OUTCOME
+  OBJECTIVE_ACHIEVED
+
+9. LIMITATIONS
+  - An availability read shows Onda's state at an unknown moment between its request start and its response. No source here gives the provider-side moment of a change.
+  - Unavailable without a matching public booking record: the cause is not visible in Onda's public data.
+  - A public booking record shows that a booking record exists. It does not show who made it, whether it belongs to this bot, or why.
+  - POST initiation is the Playwright request event in the runner (trusted release clock). Header and body times are that instant plus Chrome intervals from its network request start (under 1 ms after the request event); they carry the few-ms delivery lag of that event.
+  - The provider trace enables DevTools Network only after each POST has left, so it never adds work at the release instant; a response that arrives before it is enabled (tens of ms) is not traced.
+  - Response timing and headers describe what arrived at this PC. They do not establish how Onda queued or ordered requests, or why a request was accepted or rejected.
+  - The observer and the dispatch clocks differ by -5.1 ms (observer minus dispatch); comparisons between grid reads and POST times carry that difference.
+
+SOURCES
+  Runner trace:   [LOCAL_PATH] Pickle Bot\.local\api-booking\run-progress\8bdbde81-c127-46ae-96cf-bdb17564a385.ndjson
+  Slot Watch log: [LOCAL_PATH] Pickle Bot\.local\slot-watch\2026-10-05_3985a823-0d0e-463e-acb7-230c39819df2.ndjson
+  Provider trace: [LOCAL_PATH] Pickle Bot\.local\release-forensics\8bdbde81-c127-46ae-96cf-bdb17564a385\provider-trace.ndjson

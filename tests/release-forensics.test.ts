@@ -181,6 +181,26 @@ describe('post-run release forensics', () => {
     } finally { await cleanup(root); }
   });
 
+  it('reports a Rescue verified pending hold and QR handoff without a PHASE3_SETTLED event', async () => {
+    const root=await mkdtemp(join(tmpdir(),'forensics-rescue-hold-'));
+    try {
+      const progress=join(root,'run.ndjson'),attemptId='core-E-official-9',candidateId='c'.repeat(64);
+      await writeFile(progress,ndjson([
+        {...base,stage:'RUN_CONFIGURATION',bookingMethod:'proofless',releaseMs},
+        {...base,stage:'PHASE3_AUTHORIZATION',fingerprint:'f'.repeat(64),candidateCount:1,maxWave2:0,maxRescue:1,maxTotal:2},
+        {...base,stage:'PHASE3_CANDIDATE',candidateId,court:6,startTime:'22:00',endTime:'24:00'},
+        {...base,stage:'PHASE3_ATTEMPT_RESERVED',workerId:'E',candidateId,wave:'RESCUE',attemptId,evidenceSeq:145},
+        {...base,stage:'CHECKOUT_HTTP_POST_INITIATED',workerId:'E',attemptId,releaseLatenessMs:608313},
+        {...base,stage:'CHECKOUT_RESPONSE_COMPLETED',workerId:'E',attemptId,statusCode:200,networkDurationMs:746},
+        {...base,stage:'DIAGNOSTIC_VERIFIED_HOLD',workerId:'E',attemptId},
+        {...base,stage:'DIAGNOSTIC_QR_HANDOFF',workerId:'E',attemptId},
+      ]));
+      const summary=buildReleaseForensics({runProgressPath:progress,outputDirectory:join(root,'out'),status:'final'});
+      expect(summary.phase3?.attempts[0]?.state).toBe('VERIFIED_PENDING_HOLD_QR_HANDOFF');
+      expect(await readFile(summary.reportPath,'utf8')).toContain('VERIFIED_PENDING_HOLD_QR_HANDOFF · HTTP 200');
+    } finally {await cleanup(root);}
+  });
+
   it('picks the watch with the most reads for the release and ignores other releases', async () => {
     const root = await installation();
     try {

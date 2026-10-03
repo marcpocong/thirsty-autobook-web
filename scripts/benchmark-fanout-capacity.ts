@@ -12,7 +12,7 @@
  * first-to-last spread, prewarm durations, last-ready margin, Node CPU and machine CPU busy share.
  *
  * Usage:
- *   npx tsx scripts/benchmark-fanout-capacity.ts --workers 7 --widths 1,2,3,4 --runs 40 --save-profile
+ *   npx tsx scripts/benchmark-fanout-capacity.ts --workers 7 --widths 1,2,3,4,5,6 --runs 40 --save-profile
  * Options:
  *   --pattern burst | offsets:-35,-30,-25,-10 | spaced:<ms>   child offsets (default burst: every child at the release instant)
  *   --dispatcher central | coordinator | renderer              (coordinator: experimental per-browser processes; renderer: experimental)
@@ -34,7 +34,7 @@ for (let index = 2; index < process.argv.length; index++) {
   if (next !== undefined && !next.startsWith('--')) { args.set(key, next); index++; } else args.set(key, 'true');
 }
 const workerCount = Number(args.get('workers') ?? 7);
-const widths = (args.get('widths') ?? '1,2,3,4').split(',').map(Number);
+const widths = (args.get('widths') ?? '1,2,3,4,5,6').split(',').map(Number);
 const runs = Number(args.get('runs') ?? 30), warmup = Number(args.get('warmup') ?? 2);
 const pattern = args.get('pattern') ?? 'burst';
 const dispatcher = (args.get('dispatcher') ?? 'central') as 'central' | 'coordinator' | 'renderer';
@@ -47,7 +47,7 @@ const saveProfile = args.get('save-profile') === 'true';
 const tracesOn = args.get('traces') === 'true';
 const lockdownOn = args.get('lockdown') === 'true';
 const label = args.get('label') ?? `${dispatcher}-${pattern.replace(/[^a-z0-9-]/gi, '')}${headed ? '-headed' : ''}`;
-if (!(workerCount >= 1 && workerCount <= 7) || widths.some(width => !(width >= 1 && width <= 4)) || !(runs >= 1) || !['central', 'coordinator', 'renderer'].includes(dispatcher) ||
+if (!(workerCount >= 1 && workerCount <= 7) || widths.some(width => !(width >= 1 && width <= 6)) || !(runs >= 1) || !['central', 'coordinator', 'renderer'].includes(dispatcher) ||
   !(prewarmLeadMs >= 200 && prewarmLeadMs <= 30_000) || (dispatcher === 'renderer' && prewarmLeadMs < 1300)) throw Error('BENCH_ARGS_INVALID');
 const [syntheticCpuMs = 0, syntheticWaitMs = 0] = [/cpu:(\d+)/.exec(syntheticPrewarm)?.[1], /wait:(\d+)/.exec(syntheticPrewarm)?.[1]].map(value => Number(value ?? 0));
 const pageBusyMs = Number(pageBusy);
