@@ -20,7 +20,7 @@ fresh worker/index releases -> bounded local de-skew
 base + anchor + de-skew     -> final literal offset saved in PRECISION_PHASE3
 ```
 
-The legal final range remains `-2000..0 ms`. Auto de-skew is capped at `+/-12 ms`, requires two matching real releases, and is zero for insufficient evidence.
+Normal/legacy final offsets remain `-2000..0 ms`; Shotgun's explicit signed window may extend through `+2000 ms`. Auto de-skew is capped at `+/-12 ms`, requires two matching real releases, and is zero for insufficient evidence.
 
 De-skew learns only from **worker invocation → Chrome request start** (`chromeStartMs - workerInvokedMs` in critical-path telemetry), never from configured trigger → Chrome. The latter also contains the time a child waited behind earlier children in the central dispatcher's single synchronous fire pass. In offline 7×1/7×2 runs that queue wait is the entire A→G slope (0 → 2.7/3.3 ms), while each worker's own invoke → Chrome time is flat (see [FANOUT_CAPACITY_BENCHMARK.md](FANOUT_CAPACITY_BENCHMARK.md)). Retiming cannot remove serialization. Moving G earlier just makes it fire alone, and the next calibration would move it back. The whole-group anchor absorbs serialization instead. Rows without `workerInvokedMs` are never used for de-skew, though they still count toward the anchor. Correction = release-level baseline median − the worker's (or index's) median of per-release medians.
 
@@ -106,6 +106,7 @@ Performance degradation is normally a warning and visible Auto-allocation input,
 - `PRECISION_PHASE3` remains the single authorization source.
 - Wave 2 and Rescue still require new validated observer evidence and final revalidation.
 - Verified holds stop conflicting sends; durable journals, crash safety, parent guards and one-shot permits remain unchanged.
+- Shotgun checks settled same-target outcomes between triggers: verified hold, UNKNOWN and provider throttle suppress later unsent children; rejection continues. A late-ready omitted child is never fired.
 - Price re-binding, public-conflict freeze markers and visible operator overrides remain unchanged.
 - Official release remains the forensic reference. Early offsets move only authorized Wave 1 trigger times.
 

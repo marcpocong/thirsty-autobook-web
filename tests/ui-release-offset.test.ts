@@ -96,24 +96,27 @@ it('lets each Fixed Precision worker keep a different goal and configure four in
   await page.close();
 });
 
-it('applies the editable 20-shot ladder and preserves mixed widths after save', async () => {
-  const targets=[{court:6,start:'22:00',durationHours:2},{court:7,start:'22:00',durationHours:2},
-    {court:1,start:'20:00',durationHours:3},{court:2,start:'21:00',durationHours:3}];
-  const page=await openRenderer(browser,{booking:booking({RELEASE_STRATEGY:'precision',PRECISION_TARGETS:targets})});
-  await page.locator('#precision-shotgun-preset').click();
-  expect(await page.locator('#precision-width-0').inputValue()).toBe('5');
-  const expected=Array.from({length:4},()=>[] as number[]);
-  for(let shot=0;shot<20;shot++)expected[shot%4]!.push(-Math.round(2000-shot*2000/19)+0);
-  await page.locator('#precision-width-1').selectOption('6');
-  await page.locator('#precision-offset-1-5').fill('733');
-  await page.locator('#precision-offset-1-5').press('Enter');
-  await page.locator('#save-booking').click();
+it('routes the 20-shot preset through unified Smart Shotgun metadata and PRECISION_PHASE3', async () => {
+  const targetDate=booking().targetDate,rates=confirmSmartRates(600,700,'VENUE_SCHEDULE',targetDate,new Date());
+  const draft:SmartDraft={...emptySmartDraft(),rates,retryReopened:true,maxReopenedAttempts:3,immediate:[{court:6,start:'22:00',durationHours:2},{court:7,start:'22:00',durationHours:2},
+    {court:1,start:'20:00',durationHours:3},{court:2,start:'21:00',durationHours:3}],backups:[{court:3,start:'17:00',durationHours:2},{court:4,start:'17:00',durationHours:2},{court:5,start:'17:00',durationHours:2}]};
+  const phase3=compileSmartPlan(draft,{targetDate}).phase3!;
+  const page=await openRenderer(browser,{booking:booking({RELEASE_STRATEGY:'precision',PRECISION_TARGETS:[],PRECISION_PHASE3:phase3})});
+  await page.locator('[data-view="strategy"]').first().click();
+  await page.locator('input[name="strategy-intensity"][value="SHOTGUN"]').check();
+  await page.locator('#strategy-shotgun-preset').click();
+  const checks=page.locator('#strategy-shotgun-targets input[type="checkbox"]');await checks.nth(2).uncheck();await checks.nth(3).uncheck();
+  await page.locator('#strategy-shotgun-allocation').selectOption('PRIORITY_WEIGHTED');
+  await page.locator('#strategy-shotgun-override').check();
+  await page.locator('#strategy-save').click();
   await page.waitForFunction(()=>(window as any).fixtureSaved);
   const result=await saved(page);
-  expect(result.PRECISION_TARGETS[0].fanOutReleaseOffsetsMs).toEqual(expected[0]);
-  expect(result.PRECISION_TARGETS[1].fanOutReleaseOffsetsMs).toEqual([...expected[1]!,-733]);
-  expect(result.PRECISION_TARGETS[2].fanOutReleaseOffsetsMs).toEqual(expected[2]);
-  expect(result.PRECISION_TARGETS[3].fanOutReleaseOffsetsMs).toEqual(expected[3]);
+  expect(result.STRATEGY_V2.shotgun.counts).toEqual({'court-6:22:00:2h':12,'court-7:22:00:2h':8});
+  expect(result.STRATEGY_V2.shotgun.exactSchedule).toHaveLength(20);
+  expect(result.PRECISION_PHASE3.wave1.filter((value:any)=>value.candidateIndex===0).map((value:any)=>value.fanOutOffsetsMs?.length??1)).toEqual([6,6]);
+  expect(result.PRECISION_PHASE3.wave1.filter((value:any)=>value.candidateIndex===1).map((value:any)=>value.fanOutOffsetsMs?.length??1)).toEqual([6,2]);
+  expect(result.PRECISION_PHASE3.wave1.filter((value:any)=>value.candidateIndex===2)).toHaveLength(1);
+  expect(result.PRECISION_PHASE3.wave1.filter((value:any)=>value.candidateIndex===3)).toHaveLength(1);
   await page.close();
 });
 

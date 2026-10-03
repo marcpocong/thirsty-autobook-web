@@ -7,6 +7,7 @@ import { THIRSTY_PICKLE_FACILITY_ID } from './live-availability-provider.js';
 import { DIRECT_ASSUMED_DAY_RATE, DIRECT_ASSUMED_EVENING_RATE, DIRECT_MAX_DISPATCH_LATENESS_MS, prooflessReleasePlan } from './proofless-checkout.js';
 import type { BookingPlan } from './types.js';
 import { isReleaseOffsetMs } from '../release-offset.js';
+import { isShotgunOffsetMs } from '../shotgun.js';
 
 /**
  * Precision Release v1: the operator wants ONE court and authorizes 1-7 exact,
@@ -46,7 +47,7 @@ export function validatePrecisionTargets(inputs: readonly PrecisionTargetInput[]
     if (!Number.isInteger(input.court) || !COURT_TO_SPACE_ID[input.court as keyof typeof COURT_TO_SPACE_ID] ||
       !/^(0[89]|1\d|2[0-3]):00$/.test(input.start) || !Number.isInteger(input.durationHours) ||
       input.durationHours < 1 || input.durationHours > 3 || start + input.durationHours > 24 ||
-      !isReleaseOffsetMs(input.releaseOffsetMs ?? 0) || input.fanOutReleaseOffsetsMs?.some((value: number)=>!isReleaseOffsetMs(value))) throw Error('PRECISION_TARGET_INVALID');
+      !isShotgunOffsetMs(input.releaseOffsetMs ?? 0) || input.fanOutReleaseOffsetsMs?.some((value: number)=>!isShotgunOffsetMs(value))) throw Error('PRECISION_TARGET_INVALID');
     const workerId = PRECISION_WORKER_IDS[index]!;
     const end = precisionTargetEnd(input);
     const spaceId = COURT_TO_SPACE_ID[input.court as keyof typeof COURT_TO_SPACE_ID];
@@ -162,6 +163,7 @@ export async function classifyPrecisionDispatchError(error: unknown,
   journalState: () => Promise<SubmissionState | undefined>): Promise<PrecisionDispatchResult> {
   const code = error instanceof Error && /^[A-Z][A-Z0-9_]{0,79}$/.test(error.message) ? error.message : 'PRECISION_DISPATCH_FAILED';
   if (error instanceof VerifiedHoldQrError) return { state: 'HOLD_VERIFIED_QR_ATTENTION', code };
+  if(error instanceof SubmissionDispatchError&&error.diagnostic?.status===429)return {state:'REJECTED',code:'SHOTGUN_PROVIDER_THROTTLE_STOP'};
   if (error instanceof SubmissionDispatchError && !error.dispatched)
     return { state: code === 'DIRECT_RELEASE_WINDOW_MISSED' ? 'WINDOW_MISSED' : 'NOT_DISPATCHED', code };
   if (PRE_DISPATCH_CODES.has(code)) return { state: 'NOT_DISPATCHED', code };
@@ -197,15 +199,17 @@ const precisionAttemptId = (date: string, releaseMs: number, target: PrecisionTa
 /** Freezes the exact dispatch set: an immutable copy plus a fingerprint re-checked before dispatch. */
 export function freezePrecisionRace(date: string, releaseMs: number,
   attempts: ReadonlyArray<Omit<PrecisionAttempt, 'id' | 'fanOutIndex' | 'fanOutCount'> & Partial<Pick<PrecisionAttempt, 'id' | 'fanOutIndex' | 'fanOutCount'>>>): FrozenPrecisionRace {
+  const groupKey=(attempt:(typeof attempts)[number])=>`${attempt.target.workerId}|${attempt.target.targetKey}`;
   const counts = new Map<string, number>();
-  for (const attempt of attempts) counts.set(attempt.target.targetKey, (counts.get(attempt.target.targetKey) ?? 0) + 1);
+  for (const attempt of attempts) counts.set(groupKey(attempt), (counts.get(groupKey(attempt)) ?? 0) + 1);
   const seen = new Map<string, number>();
   const copy = Object.freeze(attempts.map((attempt, index) => {
-    const fanOutIndex = seen.get(attempt.target.targetKey) ?? 0; seen.set(attempt.target.targetKey, fanOutIndex + 1);
+    const key=groupKey(attempt),fanOutIndex = seen.get(key) ?? 0; seen.set(key, fanOutIndex + 1);
     return Object.freeze({ id: attempt.id ?? precisionAttemptId(date, releaseMs, attempt.target, index),
-      target: Object.freeze({ ...attempt.target }), plan: attempt.plan, fanOutIndex, fanOutCount: counts.get(attempt.target.targetKey)! });
+      target: Object.freeze({ ...attempt.target }), plan: attempt.plan, fanOutIndex, fanOutCount: counts.get(key)! });
   }));
-  const fanOut = [...counts.values()].some(count => count > 1);
+  const logicalCounts=new Map<string,number>();for(const attempt of attempts)logicalCounts.set(attempt.target.targetKey,(logicalCounts.get(attempt.target.targetKey)??0)+1);
+  const fanOut = [...logicalCounts.values()].some(count => count > 1);
   return Object.freeze({ date, releaseMs, attempts: copy, fanOut,
     fingerprint: precisionFingerprint(date, releaseMs, copy.map(attempt => attempt.target), fanOut) });
 }

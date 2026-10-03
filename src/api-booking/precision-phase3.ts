@@ -7,7 +7,7 @@ import { availabilityFreshness, compareAvailabilityFreshness, decodeMatrix, fres
 export type { AvailabilityObservation } from '../slot-evidence.js';
 export { freshestAvailabilityObservation } from '../slot-evidence.js';
 import { PRECISION_MAX_FAN_OUT, PRECISION_WORKER_IDS, type WorkerId } from '../workers.js';
-import { isReleaseOffsetMs } from '../release-offset.js';
+import { isShotgunOffsetMs } from '../shotgun.js';
 import { precisionTargetPlan, type PrecisionTarget } from './precision-race.js';
 import type { BookingPlan } from './types.js';
 
@@ -79,21 +79,21 @@ export function authorizePrecision(input: PrecisionAuthorizationInput): FrozenPr
   });
   if (new Set(candidates.map(value => value.id)).size !== candidates.length) throw Error('PRECISION_CANDIDATE_DUPLICATE');
   const byId = new Map(candidates.map(value => [value.id, value]));
-  const usedWorkers = new Set<WorkerId>(), usedCandidates = new Set<string>();
+  const usedWorkers = new Set<WorkerId>();
   for (const assignment of input.wave1) {
     const candidate = byId.get(assignment.candidateId);
     const offsets = assignment.fanOutOffsetsMs;
-    if ((assignment.releaseOffsetMs !== undefined && (!isReleaseOffsetMs(assignment.releaseOffsetMs) || offsets)) ||
-      (offsets && (!Array.isArray(offsets) || offsets.length < 2 || offsets.length > PRECISION_MAX_FAN_OUT || offsets.some(value => !isReleaseOffsetMs(value)))))
+    if ((assignment.releaseOffsetMs !== undefined && (!isShotgunOffsetMs(assignment.releaseOffsetMs) || offsets)) ||
+      (offsets && (!Array.isArray(offsets) || offsets.length < 2 || offsets.length > PRECISION_MAX_FAN_OUT || offsets.some(value => !isShotgunOffsetMs(value)))))
       throw Error('PRECISION_WAVE1_ASSIGNMENT_INVALID');
     if (!isWorker(assignment.workerId) || usedWorkers.has(assignment.workerId) || !candidate?.permissions.wave1 ||
-      usedCandidates.has(candidate.id) || !candidate.rateEvidence.actionable || candidate.rateEvidence.status === 'REFERENCE')
+      !candidate.rateEvidence.actionable || candidate.rateEvidence.status === 'REFERENCE')
       throw Error('PRECISION_WAVE1_ASSIGNMENT_INVALID');
-    usedWorkers.add(assignment.workerId); usedCandidates.add(candidate.id);
+    usedWorkers.add(assignment.workerId);
   }
   if (!input.wave1.length || input.wave1.length > PRECISION_WORKER_IDS.length ||
     input.wave1.some((assignment, index) => input.wave1.slice(index + 1).some(other =>
-      candidatesConflict(byId.get(assignment.candidateId)!, byId.get(other.candidateId)!))))
+      assignment.candidateId!==other.candidateId&&candidatesConflict(byId.get(assignment.candidateId)!, byId.get(other.candidateId)!))))
     throw Error('PRECISION_WAVE1_CONFLICT');
   if (new Set(input.standby).size !== input.standby.length ||
     input.standby.some(worker => !isWorker(worker) || usedWorkers.has(worker))) throw Error('PRECISION_STANDBY_INVALID');

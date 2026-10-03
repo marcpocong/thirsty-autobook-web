@@ -81,6 +81,38 @@ describe('priority-aware prewarm in the armed dispatcher', () => {
   });
 });
 
+describe('Shotgun same-target stop conditions',()=>{
+  const run=async(mode:'unknown'|'rejected'|'throttle'|'hold')=>{
+    const {armed,clock}=await armChildren(1,[0,150],900);let calls=0;
+    const transport:DirectTransport={publicCheckoutProofless:async(request,permit,options)=>{calls++;consumeSubmissionPermit(permit,requestKey(request));options?.beforePost?.();
+      if(mode==='unknown')throw Error('network outcome unavailable');
+      if(mode==='throttle')throw new BrowserSessionTransportError('ONDA_HTTP_STATUS_INVALID',true,{status:429,category:'http-rejection',contentKind:'json',responseSource:'application',errorHint:'rate-limit'},true);
+      if(mode==='hold'){const ids=request.items.map((_,index)=>`booking-${index}`);return {success:true,bookings:request.items.map((item,index)=>({id:ids[index],booking_no:`number-${index}`,customer_id:request.customerId,
+        space_id:item.spaceId,facility_id:item.facilityId,date:item.date,start_time:`${item.startTime}:00`,end_time:`${item.endTime}:00`,duration:60,rate:item.rate,guest_count:1,
+        booking_status:'pending',payment_status:'pending',booking_session_id:'session',hold_expires_at:new Date(Date.now()+600_000).toISOString()})),bookingSessions:[{requestSessionRef:'session_1',bookingSessionId:'session',facilityId:request.facilityId,
+        spaceId:request.items[0]!.spaceId,date,startTime:'17:00:00',endTime:'20:00:00',durationHours:3,bookingIds:ids}],transaction:{id:'transaction',reference:'number-0',amount:2100,status:'pending'},trustedTotalAmount:2100};}
+      return conflict();}};
+    const outcome=await dispatchArmedPrecisionRace(armed,{clock,prewarmLeadMs:500,spinTailMs:20,isAborted:()=>false,transportFor:()=>transport,prewarm:async()=>undefined,
+      ...(mode==='hold'?{onVerifiedHold:async()=>({state:'QR_READY' as const})}:{})});
+    return {outcome,calls};
+  };
+  it('UNKNOWN suppresses a later same-target child as provably unsent',async()=>{
+    const {outcome,calls}=await run('unknown');expect(calls).toBe(1);
+    expect(outcome.results.map(value=>[value.state,value.code])).toEqual([['UNKNOWN','SUBMISSION_OUTCOME_UNKNOWN_RECONCILIATION_REQUIRED'],['NOT_DISPATCHED','SHOTGUN_TARGET_OUTCOME_UNKNOWN']]);
+  });
+  it('a confirmed rejection permits the later child',async()=>{const {outcome,calls}=await run('rejected');expect(calls).toBe(2);expect(outcome.results.map(value=>value.state)).toEqual(['REJECTED','REJECTED']);});
+  it('HTTP 429 stops later redundant children instead of increasing traffic',async()=>{
+    const {outcome,calls}=await run('throttle');expect(calls).toBe(1);
+    expect(outcome.results.map(value=>[value.state,value.code])).toEqual([['REJECTED','SHOTGUN_PROVIDER_THROTTLE_STOP'],['NOT_DISPATCHED','SHOTGUN_PROVIDER_THROTTLE_STOP']]);
+  });
+  it('a verified hold suppresses later same-target children',async()=>{const {outcome,calls}=await run('hold');expect(calls).toBe(1);
+    expect(outcome.results.map(value=>[value.state,value.code])).toEqual([['QR_READY',undefined],['NOT_DISPATCHED','SHOTGUN_TARGET_ALREADY_ACHIEVED']]);});
+  it('dispatches and tracks the authoritative sixth child',async()=>{const {armed,clock}=await armChildren(1,[0,20,40,60,80,100],900);let calls=0;
+    const transport:DirectTransport={publicCheckoutProofless:async(request,permit,options)=>{calls++;consumeSubmissionPermit(permit,requestKey(request));options?.beforePost?.();return conflict();}};
+    const outcome=await dispatchArmedPrecisionRace(armed,{clock,prewarmLeadMs:500,spinTailMs:20,isAborted:()=>false,transportFor:()=>transport,prewarm:async()=>undefined});
+    expect(calls).toBe(6);expect(outcome.results.at(-1)?.attempt).toMatchObject({fanOutIndex:5,fanOutCount:6});});
+});
+
 describe('experimental per-browser coordinators: safety semantics (fake coordinator process)', () => {
   const fake = resolve('tests/fixtures/fake-coordinator-child.mjs');
   const run = async (mode: string) => {

@@ -35,7 +35,7 @@ export interface PrecisionTargetView { workerId:WorkerId; court:number; startTim
 /** Live Precision race view built from runner stage events; purely informational. */
 export interface PrecisionView { targets:PrecisionTargetView[]; frozen:boolean; frozenCount?:number; frozenAt?:string; checkpoint?:string; checkpointAt?:string; outcome?:string }
 /** One independently tracked attempt (a fan-out child, or the single attempt of a target). */
-export interface LiveChildView { attemptId:string; label:string; fanOutIndex:number; fanOutCount:number; offsetMs?:number; state:string; code?:string }
+export interface LiveChildView { attemptId:string; label:string; fanOutIndex:number; fanOutCount:number; shotIndex?:number;shotCount?:number;offsetMs?:number; state:string; code?:string }
 /** A logical target (the parent goal) and its attempts, for the Live view. */
 export interface LiveParentView { key:string; wave:'WAVE_1'|'WAVE_2'|'RESCUE'; workerId?:string; court?:number; startTime?:string; endTime?:string; candidateId?:string; children:LiveChildView[] }
 export interface LivePredictionView { candidateId:string; court?:number; startTime?:string; endTime?:string; predictedStartMs:number; predictedEndMs:number; confidence:string;

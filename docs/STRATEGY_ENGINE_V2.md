@@ -57,7 +57,20 @@ Timing offsets remain based on the local Fan-out Capacity Profile. Sparse provid
 
 ## Fan-out children
 
-An immediate target is the **parent goal**. With `fanOutOffsetsMs` (2–4 values), it is sent as that many **children**. Each child has its own tab and security context, attempt ID, `parentGoalId`, `fanOutIndex` / `fanOutCount`, configured trigger, journal directory, response capture, critical-path row and outcome.
+An immediate target is the **parent goal**. With `fanOutOffsetsMs` (2–`PRECISION_MAX_FAN_OUT`, currently six, values), one worker sends that many **children**. Each child has its own tab and security context, attempt ID, `parentGoalId`, `fanOutIndex` / `fanOutCount`, configured trigger, journal directory, response capture, critical-path row and outcome.
+
+## Shotgun release intensity
+
+Shotgun is not another engine. `STRATEGY_V2.shotgun` stores versioned UX/provenance data; `compileSmartPlan()` expands it into the same authoritative `PRECISION_PHASE3` used by Normal, Wave 2 and Rescue.
+
+- Stable logical target IDs are derived from court/start/duration, so reordering rows cannot move a selection to another target.
+- The Shotgun budget counts attempts on selected targets. Unselected immediate targets remain one normal Wave 1 target (with their normal configured fan-out).
+- Equal uses quotient/remainder in priority order. Priority weighted uses deterministic weights `N+1, N, ..., 2` and largest remainder; with two targets, 20 becomes 12/8. Custom persists exact non-negative integers and never rewrites them.
+- A target allocation is split into worker groups of at most `PRECISION_MAX_FAN_OUT`; for example ten shots become groups of six and four. This preserves one authoritative per-browser/tab ceiling.
+- One aggregate timing schedule is distributed fairly across selected targets, so targets do not create coincident hidden bursts. Auto and Custom span the full signed window. Tight, Balanced and Wide request 1x, 2x and 4x the machine's meaningful spacing and end at `windowEndMs`; when that cannot fit, the full window plus a capacity warning applies. The existing fresh learned/manual group anchor is then added uniformly; Save fails if it would move a final trigger outside the signed range. There is no learned offset per child.
+- The capacity planner compares requested spacing with the local meaningful-spacing input, reports a recommended maximum and blocks Save unless an explicit capacity override is present.
+- A verified hold, UNKNOWN, or recognized provider throttle suppresses remaining unsent same-target shots. Confirmed rejection permits later scheduled shots. Suppression is `NOT_DISPATCHED` with a specific `SHOTGUN_*` reason.
+- Review is generated from the compiled object and lists allocation, window, exact triggers, standby workers, Wave 2, Rescue and maximum sends.
 
 The editor reads and writes those actual `fanOutOffsetsMs` values. It never shows a competing single-parent offset for a fan-out target. UI values are positive **milliseconds early** (`25 ms early` saves as `-25`; `0` saves as the release instant). Increasing width preserves existing indices and derives only new children from the selected Tight/Balanced/Wide profile; decreasing width keeps the first N. Individual edits make timing Custom, based on the original profile, without making the whole strategy preset Custom.
 
@@ -97,13 +110,13 @@ Release Precision V3 adds a third, bounded term: a local worker/fan-out-index de
 
 The live model measures only `triggerToChromeLagMs = observedChromeStartMs - configuredOffsetMs`. A sample is eligible only when it is from a real live release, the release/trusted-clock mapping and configured offset are valid, and dispatch actually occurred. It is grouped by dispatch mode and fan-out width; machine and Chrome/runtime identity are also matched when both the sample and current installation expose them. Synthetic fixtures and offline benchmarks never calibrate Auto. Provider outcome, response duration/order and the timestamp-like part of `x-vercel-id` are retained only for forensics. The latter remains **UNDOCUMENTED** and is not a confirmed edge-receipt timestamp.
 
-Evidence levels are operational gates, not statistical confidence: `NONE` = 0 matching releases, `LIMITED` = 1, `USABLE` = 2–3, and `STRONG` = 4+. Width 2–4 Auto requires USABLE/STRONG matching evidence; one width-1 release may directly calibrate a width-1 attempt. Freshness is an input filter (V3): rows older than 30 days are removed before any Auto calculation, so one recent release can never bring older rows back into the median; they remain visible in History & Insights. The anchor takes a median per release, then the median across releases, so a wide release with many children still casts one vote. With no fresh matching release, Auto falls back to no group shift. Missing, inconsistent, impossible or `NOT_DISPATCHED` timing never becomes zero.
+Evidence levels are operational gates, not statistical confidence: `NONE` = 0 matching releases, `LIMITED` = 1, `USABLE` = 2–3, and `STRONG` = 4+. Multi-child Auto requires USABLE/STRONG matching evidence; one width-1 release may directly calibrate a width-1 attempt. Freshness is an input filter (V3): rows older than 30 days are removed before any Auto calculation, so one recent release can never bring older rows back into the median; they remain visible in History & Insights. The anchor takes a median per release, then the median across releases, so a wide release with many children still casts one vote. With no fresh matching release, Auto falls back to no group shift. Missing, inconsistent, impossible or `NOT_DISPATCHED` timing never becomes zero.
 
 Auto uses the robust median local lag and centers the predicted local Chrome-start group on the official release boundary, rounded to whole milliseconds and clamped to the existing `-2000..0` configured-offset range. It does not learn a provider "winning time." If the base spacing already straddles release, zero additional shift is valid. Manual lets the operator specify the group shift without changing the Strategy preset to Custom; provenance is saved as `OPERATOR_OVERRIDE`. The anchor is applied only when generating a suggestion. Once accepted, child-level edits remain authoritative and are never silently rewritten; Suggest/Regenerate may compute a new preview, while Reset restores the accepted suggestion.
 
 September 28 is the regression case: configured offsets `[-50, -25, -10, -5, 0, 0, 0]` mapped to Chrome starts `[-45.59, -20.92, -5.98, -0.78, 4.23, 4.29, 4.83]`, a median local lag of about `+4.23 ms` and range `+4.02..+4.83 ms`. That supports roughly `-4 ms` for a width-1 release-centered attempt. It does **not** justify `-25 ms` as a default: Worker B's HTTP 409 happened to return first, but response order did not follow send order. For a width-2 base `[-10, 0]`, the same lag already approximately straddles release and implies no material extra shift; in any event, width-1 history is not matching width-2 evidence, so current width-2 Auto uses the deterministic release-centered fallback until enough width-2 releases exist.
 
-**Signed offsets.** Stored offsets are already signed: negative means before the release instant, 0 means at it. Positive (after-release) triggers would fit the trusted-clock and 1 s dispatch-window model, but they are not enabled. There is no measured benefit yet and no UI to set them, and widening a validated range without evidence was out of scope. Existing configurations need no migration.
+**Signed offsets.** Legacy Normal/Fixed controls remain `-2000..0`. Shotgun windows use `-2000..+2000`: negative means before release, 0 at release, positive after release. The UI never converts this to the legacy positive “send early by” convention. Existing saved plans need no migration.
 
 ## Rescue V2 and Slot Watch
 
@@ -113,7 +126,7 @@ See [RESCUE_V2.md](RESCUE_V2.md).
 
 Every critical-path row (`.local/release-forensics/<run>/critical-path.ndjson`) records one attempt:
 
-- identity: parent goal, worker, fan-out index/count, configured offset, wave;
+- identity: parent goal, worker, fan-out index/count, Shotgun shot index/count, configured offset, timing bucket, wave;
 - timing: scheduler wake, worker invocation, transport entry, renderer entry, fetch(), Chrome request start, Playwright request event, response;
 - outcome: final state and prewarm-ready time.
 

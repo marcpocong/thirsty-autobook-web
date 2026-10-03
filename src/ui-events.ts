@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PRECISION_MAX_FAN_OUT } from './workers.js';
 import {PreparationResultSchema} from './booking-plan.js';
 import {WORKER_IDS} from './workers.js';
 const WorkerIdSchema=z.enum(WORKER_IDS);
@@ -19,7 +20,7 @@ export const UiEventSchema = z.discriminatedUnion('type', [
   z.object({type:z.literal('apiStage'),stage:z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/),elapsedMs:z.number().int().nonnegative(),
     at:z.iso.datetime().optional(),sincePreviousMs:z.number().int().nonnegative().optional(),runId:z.uuid().optional(),
     code:z.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/).optional(),workerId:WorkerIdSchema.optional(),workerElapsedMs:z.number().int().nonnegative().optional(),port:z.number().int().optional(),releaseMs:z.number().int().optional(),
-    releaseOffsetMs:z.number().int().max(0).optional(),triggerMs:z.number().int().optional(),
+    releaseOffsetMs:z.number().int().min(-2000).max(2000).optional(),triggerMs:z.number().int().optional(),
     bookingMethod:z.enum(['browser','hybrid','api-first','proofless']).optional(),
     prewarmLeadMs:z.number().int().positive().optional(),
     date:z.iso.date().optional(),court:z.number().int().min(1).max(7).optional(),courtB:z.number().int().min(1).max(7).optional(),startTime:z.string().optional(),
@@ -50,7 +51,8 @@ export const UiEventSchema = z.discriminatedUnion('type', [
     rateStatus:z.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/).optional(),source:z.string().max(100).optional(),capturedAt:z.iso.datetime().optional(),
     message:z.string().max(240).optional(),state:z.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/).optional(),
     // Fan-out child of a logical target (Fixed or Smart) and the prewarm plan.
-    fanOutIndex:z.number().int().min(0).max(3).optional(),fanOutCount:z.number().int().min(1).max(4).optional(),durationMs:z.number().finite().nonnegative().optional(),
+    fanOutIndex:z.number().int().min(0).max(PRECISION_MAX_FAN_OUT-1).optional(),fanOutCount:z.number().int().min(1).max(PRECISION_MAX_FAN_OUT).optional(),durationMs:z.number().finite().nonnegative().optional(),
+    shotIndex:z.number().int().nonnegative().optional(),shotCount:z.number().int().positive().optional(),timingBucket:z.enum(['< -500 ms','-500 to -100 ms','-100 to 0 ms','0 to +100 ms','+100 to +250 ms','> +250 ms']).optional(),
     // Rescue V2 reopen predictions (release-relative ms) and their observed error.
     predictedStartMs:z.number().finite().optional(),predictedEndMs:z.number().finite().optional(),errorMs:z.number().finite().optional(),
     confidence:z.string().regex(/^[A-Z][A-Z0-9_]{0,40}$/).optional(),contextReused:z.boolean().optional()}).strict(),

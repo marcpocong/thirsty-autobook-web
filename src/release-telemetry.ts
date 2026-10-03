@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { stats, type Stats } from './fanout-capacity.js';
 import { liveTimingSamples, type LiveTimingOrigin } from './live-anchor-calibration.js';
+import {shotgunTimingBucket,type ShotgunTimingBucket} from './shotgun.js';
 
 /**
  * Release dispatch telemetry for History & Insights (Phase 13), derived only from local files written after each run:
@@ -10,6 +11,8 @@ import { liveTimingSamples, type LiveTimingOrigin } from './live-anchor-calibrat
  * Rows carry no tokens, cookies or customer data. Nothing here predicts a booking outcome.
  */
 export interface TelemetryChild { attemptId: string; label: string; workerId: string; parentGoalId: string | null; fanOutIndex: number; fanOutCount: number;
+  shotIndex:number|null;shotCount:number|null;timingBucket:ShotgunTimingBucket|null;suppressionReason:string|null;
+  httpStatus:number|null;providerThrottleSignal:boolean;logicalTargetOutcome:string|null;stopCondition:string|null;
   configuredOffsetMs: number | null; workerInvokedMs: number | null; fetchInvokedMs: number | null; chromeStartMs: number | null; requestEventMs: number | null;
   responseMs: number | null; errorMs: number | null; prewarmReadyMs: number | null; finalState: string | null;
   dispatchMode?: string; trustedClockValid?: boolean; dispatched?: boolean }
@@ -65,6 +68,10 @@ export function summarizeRun(runId: string, rows: Array<Record<string, unknown>>
     const count = num(meta.fanOutCount) ?? childTopology?.count ?? (legacyIndex !== null ? scheduledOffsets?.length ?? 1 : 1);
     const calibration = row.calibration as Record<string, unknown> | null | undefined;
     return { attemptId: String(row.workerId), label: `${workerId}${count > 1 ? index : ''}`, workerId, parentGoalId: str(meta.parentGoalId), fanOutIndex: index, fanOutCount: count,
+      shotIndex:num(meta.shotIndex),shotCount:num(meta.shotCount),timingBucket:configured===null?null:shotgunTimingBucket(configured),
+      suppressionReason:/^SHOTGUN_/.test(str(meta.finalCode)??'')?str(meta.finalCode):null,
+      httpStatus:num(meta.httpStatus),providerThrottleSignal:meta.providerThrottleSignal===true,logicalTargetOutcome:str(meta.finalState),
+      stopCondition:/^SHOTGUN_/.test(str(meta.finalCode)??'')?str(meta.finalCode):null,
       configuredOffsetMs: configured, workerInvokedMs: num(row.workerInvokedMs), fetchInvokedMs: num((row.fetchInvokedMs as { ms?: unknown } | null)?.ms),
       chromeStartMs: chrome, requestEventMs: num(row.requestObservedMs), responseMs: num(row.responseObservedMs),
       errorMs: configured !== null && chrome !== null ? Math.round((chrome - configured) * 100) / 100 : null, prewarmReadyMs: num(meta.prewarmReadyMs), finalState: str(meta.finalState),

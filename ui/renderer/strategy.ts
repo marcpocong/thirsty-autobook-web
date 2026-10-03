@@ -3,9 +3,11 @@ import { compileSmartPlan, describeSmartPlan, resizeSmartFanOut, setSmartChildOf
   type SmartDraft, type SmartSlot } from '../../src/precision-simple.js';
 import { DEFAULT_STRATEGY_GOAL, draftFromSuggestion, enumeratePrimeWindows, isConflict, knownScheduleFromCells, presetAllocation, suggestPlan, validateGoal, windowEvidence, WINDOW_EVIDENCE_LABEL,
   type KnownSchedule, type ScoredWindow, type StrategyGoal, type StrategyHistoricalEvidence, type StrategyPreset, type SuggestedPlan, type SuggestionIntelligenceMode, type Window } from '../../src/strategy-engine.js';
-import { describeChildTiming, fanOutTimingPlan } from '../../src/fanout-timing.js';
+import { describeChildTiming, fanOutTimingPlan, minimumMeaningfulSpacingMs } from '../../src/fanout-timing.js';
 import { applyLiveAnchor, calibrateLiveAnchor, liveTimingSamples, type AnchoredTimingPlan, type LiveAnchorSource } from '../../src/live-anchor-calibration.js';
 import { applyTimingDeskew, calibrateTimingDeskew } from '../../src/timing-deskew.js';
+import { logicalTargetId, SHOTGUN_MEANINGFUL_SPACING_MS, type ShotgunSettings } from '../../src/shotgun.js';
+import {PRECISION_MAX_FAN_OUT,PRECISION_MAX_SENDS} from '../../src/workers.js';
 import { byId, el, empty, inputById, selectById } from './dom.js';
 
 /**
@@ -46,6 +48,8 @@ export interface StrategyV2Meta { version: 1; preset: StrategyPreset; goal: Stra
     matchingReleases: number; matchingSamples: number; evidenceStrength: 'NONE' | 'LIMITED' | 'USABLE' | 'STRONG'; generatedAt?: string;
     deskew?: { capMs:number; source:'LIVE_CALIBRATION'|'INSUFFICIENT_EVIDENCE'; corrections:Array<{workerId:'A'|'B'|'C'|'D'|'E'|'F'|'G';fanOutIndex:number;correctionMs:number;matchingReleases:number;evidenceStrength:'NONE'|'LIMITED'|'USABLE'|'STRONG'}> } };
   acceptedPhase3?: NonNullable<ReturnType<typeof compileSmartPlan>['phase3']>;
+  shotgun?: ShotgunSettings & {version:1;counts:Record<string,number>;exactSchedule:Array<{logicalTargetId:string;shotIndex:number;configuredOffsetMs:number}>;
+    capacity:{meaningfulSpacingMs:number;recommendedMaximum:number;warning:string|null;groupAnchorMs:number}};
   lineage?: EditableSuggestionLineage; intelligenceMode?: SuggestionIntelligenceMode;
   provenance?: { source: 'SMART_SUGGESTED' | 'EXISTING_SMART_PLAN' | 'OPERATOR_BUILT'; operatorModifications: number } }
 export interface StrategyHost {
@@ -58,6 +62,8 @@ export interface StrategyHost {
   accepted(): SmartDraft | null;
   lineage(): EditableSuggestionLineage;
   edit(mutate: (draft: SmartDraft, lineage: EditableSuggestionLineage) => void): void;
+  ensureMeta():void;
+  meta():StrategyV2Meta|undefined;
   resetAll(): void;
   save(): void;
 }
@@ -72,6 +78,8 @@ let pendingSuggestionGeneration: number | null = null;
 let intelligenceMode: SuggestionIntelligenceMode = 'AUTO';
 let loadedKey = '';
 let courtsOverridden = false;
+const defaultShotgun=(targets:readonly SmartSlot[]):ShotgunSettings=>({enabled:true,budget:20,allocationMode:'EQUAL',
+  selectedTargetIds:targets.map(logicalTargetId),windowStartMs:-2000,windowEndMs:0,timingMode:'AUTO'});
 const hourLabel = (hour: number) => hour === 24 ? '12:00 MN' : `${hour % 12 || 12}:00 ${hour < 12 ? 'AM' : 'PM'}`;
 const hourText = (hour: number) => `${String(hour).padStart(2, '0')}:00`;
 const sameWindow = (a: Window, b: Window) => a.court === b.court && a.start === b.start && a.durationHours === b.durationHours;
@@ -84,6 +92,9 @@ function recommendation(state: Dashboard | undefined) {
   return { width: usable ? latest.recommendedWidth : 1, profile: usable ? latest.profile : null, createdAt: usable ? latest.createdAt : null,
     reasons: latest?.reasons ?? [], notes: [...(latest?.notes ?? []),...(latest&&!usable?['Auto falls back to 1 because the newest profile is stale or incompatible.']:[])] };
 }
+const shotgunCapacity=(state:Dashboard|undefined,budget:number,groupAnchorMs=0)=>({meaningfulSpacingMs:Math.max(SHOTGUN_MEANINGFUL_SPACING_MS,
+  minimumMeaningfulSpacingMs(recommendation(state).profile,Math.max(1,Math.min(PRECISION_MAX_FAN_OUT,budget))).spacingMs),
+  recommendedBurstChildren:recommendation(state).width,groupAnchorMs});
 function chosenWidth(state: Dashboard | undefined) {
   const choice = selectById('strategy-fanout').value, machine = recommendation(state);
   return choice === 'auto' ? { width: machine.width, source: machine.profile ? 'MACHINE_RECOMMENDED' as const : 'NO_PROFILE' as const }
@@ -128,6 +139,8 @@ export function initStrategy(value: StrategyHost): void {
   selectById('strategy-prime-until').replaceChildren(...Array.from({ length: 16 }, (_, index) => { const hour = index + 9, option = el('option', '', hour === 24 ? 'Midnight' : hourLabel(hour));
     option.value = hour === 24 ? '24:00' : hourText(hour); return option; }));
   writeGoal(goal);
+  selectById('strategy-fanout').replaceChildren(new Option('Machine recommendation','auto'),...Array.from({length:PRECISION_MAX_FAN_OUT},(_,index)=>new Option(`${index+1} attempt${index?'s':''} (override)`,String(index+1))));
+  inputById('strategy-shotgun-budget').max=String(PRECISION_MAX_SENDS);
   for (const id of ['strategy-prime-from', 'strategy-prime-until', 'strategy-durations', 'strategy-courts'])
     byId(id).addEventListener('change', () => { goal = readGoal(); if(id==='strategy-courts')courtsOverridden=true; invalidate(); });
   byId('strategy-sync-courts').addEventListener('click',()=>{courtsOverridden=false;strategyMainCourtOrderChanged();});
@@ -137,6 +150,16 @@ export function initStrategy(value: StrategyHost): void {
   byId('strategy-timing').addEventListener('change', invalidate);
   byId('strategy-anchor-mode').addEventListener('change', () => { byId('strategy-anchor-shift-label').hidden = selectById('strategy-anchor-mode').value !== 'MANUAL'; invalidate(); });
   byId('strategy-anchor-shift').addEventListener('change', invalidate);
+  for(const radio of document.querySelectorAll<HTMLInputElement>('input[name="strategy-intensity"]'))radio.addEventListener('change',()=>{
+    if(!radio.checked)return;host.ensureMeta();host.edit(draft=>{if(radio.value==='SHOTGUN')draft.shotgun=draft.shotgun??defaultShotgun(draft.immediate);else delete draft.shotgun;});
+  });
+  for(const id of ['strategy-shotgun-budget','strategy-shotgun-allocation','strategy-shotgun-start','strategy-shotgun-end','strategy-shotgun-timing','strategy-shotgun-override'])
+    byId(id).addEventListener('change',()=>host.edit(draft=>{const current=draft.shotgun??defaultShotgun(draft.immediate);draft.shotgun={...current,
+      budget:Number(inputById('strategy-shotgun-budget').value),allocationMode:selectById('strategy-shotgun-allocation').value as ShotgunSettings['allocationMode'],
+      windowStartMs:Number(inputById('strategy-shotgun-start').value),windowEndMs:Number(inputById('strategy-shotgun-end').value),
+      timingMode:selectById('strategy-shotgun-timing').value as ShotgunSettings['timingMode'],capacityOverride:(byId('strategy-shotgun-override') as HTMLInputElement).checked};}));
+  byId('strategy-shotgun-preset').addEventListener('click',()=>host.edit(draft=>{draft.shotgun={...(draft.shotgun??defaultShotgun(draft.immediate)),enabled:true,budget:20,
+    windowStartMs:-2000,windowEndMs:0,allocationMode:'EQUAL',timingMode:'AUTO',selectedTargetIds:draft.immediate.map(logicalTargetId)};}));
   byId('strategy-check-schedule').addEventListener('click', () => {
     const date = host.state()?.booking?.targetDate; if (!date) return;
     byId('strategy-schedule-status').textContent = `Reading public bookings for ${date} (read only)…`;
@@ -150,7 +173,8 @@ export function initStrategy(value: StrategyHost): void {
     const calibration = timingEvidence(state, timing), base = draftFromSuggestion(suggestion, host.draft(), timing.children.map(child => child.configuredOffsetMs));
     // Worker assignment is deterministic (A..G) and the final literal values are copied into the
     // draft. From here through Review, Save and backend authorization there is nothing left to add.
-    const draft = { ...base, immediate: base.immediate.map((slot, index) => {
+    const shotgunOn=document.querySelector<HTMLInputElement>('input[name="strategy-intensity"]:checked')?.value==='SHOTGUN';
+    const draft = { ...base, ...(shotgunOn?{shotgun:defaultShotgun(base.immediate)}:{}), immediate: base.immediate.map((slot, index) => {
       const workerId = String.fromCharCode(65 + index), plan = applyTimingDeskew(timing, calibration, workerId);
       const offsets = plan.children.map(child => child.finalConfiguredOffsetMs), next = { ...slot }; delete next.releaseOffsetMs; delete next.fanOutOffsetsMs;
       if (offsets.length > 1) next.fanOutOffsetsMs = offsets; else if (offsets[0] !== 0) next.releaseOffsetMs = offsets[0]; return next;
@@ -338,7 +362,7 @@ function editableRow(kind: 'immediate' | 'backups', slot: SmartSlot, index: numb
     editorSelect(`strategy-${kind}-duration-${index}`, 'Duration', [['1 hour', '1'], ['2 hours', '2'], ['3 hours', '3']], String(slot.durationHours), value => patch({ durationHours: Number(value) })));
   if (immediate) {
     const offsets = smartSlotOffsets(slot);
-    fields.append(editorSelect(`strategy-immediate-width-${index}`, 'Fan-out', [1, 2, 3, 4, 5, 6].map(value => [`${value} child${value === 1 ? '' : 'ren'}`, String(value)]), String(offsets.length), value => {
+    fields.append(editorSelect(`strategy-immediate-width-${index}`, 'Fan-out', Array.from({length:PRECISION_MAX_FAN_OUT},(_,index)=>index+1).map(value => [`${value} child${value === 1 ? '' : 'ren'}`, String(value)]), String(offsets.length), value => {
       const width = Number(value), defaults = resizeDefaults(state, width); host.edit(draft => { draft.immediate[index] = resizeSmartFanOut(draft.immediate[index]!, width, defaults); });
     }));
     const worker = el('span', 'strategy-worker', `Worker ${letter} · automatically assigned`); fields.append(worker);
@@ -374,7 +398,7 @@ function renderEditable(state: Dashboard | undefined) {
     && (document.getElementById('precision-mode-smart') as HTMLInputElement | null)?.checked;
   section.hidden = !smart; if (!smart) return;
   if(document.activeElement instanceof HTMLInputElement&&document.activeElement.id.startsWith('strategy-immediate-offset-'))return;
-  const draft = host.draft(), accepted = host.accepted(), compiled = compileSmartPlan(draft, { targetDate: state?.booking?.targetDate ?? '', unavailable: host.unready() });
+  const draft = host.draft(), accepted = host.accepted(), compiled = compileSmartPlan(draft, { targetDate: state?.booking?.targetDate ?? '', unavailable: host.unready(),shotgunCapacity:shotgunCapacity(state,draft.shotgun?.budget??1,host.meta()?.timingCalibration?.groupShiftMs??0) });
   const lineage = host.lineage(), modifications = strategyModificationCount(draft, accepted, lineage);
   byId('strategy-edit-provenance').textContent = accepted ? `Source: Smart generated · Operator modifications: ${modifications}` : 'Source: Existing Smart plan';
   (byId('strategy-reset-all') as HTMLButtonElement).disabled = !accepted || modifications === 0;
@@ -384,8 +408,34 @@ function renderEditable(state: Dashboard | undefined) {
   byId('strategy-edit-warnings').replaceChildren(...(baselineStarts > currentStarts ? [el('li', '', `This change reduces start-time diversification from ${baselineStarts} unique starts to ${currentStarts}.`)] : []));
 }
 
+function renderShotgun(state:Dashboard|undefined){
+  const draft=host.draft(),settings=draft.shotgun;
+  for(const radio of document.querySelectorAll<HTMLInputElement>('input[name="strategy-intensity"]'))radio.checked=radio.value===(settings?.enabled?'SHOTGUN':'NORMAL');
+  byId('strategy-shotgun').hidden=!settings?.enabled;if(!settings?.enabled)return;
+  inputById('strategy-shotgun-budget').value=String(settings.budget);selectById('strategy-shotgun-allocation').value=settings.allocationMode;
+  inputById('strategy-shotgun-start').value=String(settings.windowStartMs);inputById('strategy-shotgun-end').value=String(settings.windowEndMs);
+  selectById('strategy-shotgun-timing').value=settings.timingMode;(byId('strategy-shotgun-override') as HTMLInputElement).checked=!!settings.capacityOverride;
+  const targets=byId('strategy-shotgun-targets');targets.replaceChildren(...draft.immediate.map((slot,index)=>{
+    const id=logicalTargetId(slot),label=el('label','strategy-shotgun-target'),check=document.createElement('input');check.type='checkbox';check.checked=settings.selectedTargetIds.includes(id);
+    check.addEventListener('change',()=>host.edit(next=>{const current=next.shotgun!;current.selectedTargetIds=check.checked?[...new Set([...current.selectedTargetIds,id])]:current.selectedTargetIds.filter(value=>value!==id);}));
+    label.append(check,document.createTextNode(` Court ${slot.court} · ${smartRange(slot.start,slot.durationHours)} · ${slot.durationHours} h · priority ${slot.priority??index+1}`));
+    if(settings.allocationMode==='CUSTOM'){const count=document.createElement('input');count.type='number';count.min='0';count.step='1';count.value=String(settings.customCounts?.[id]??0);
+      count.setAttribute('aria-label',`Custom shots for Court ${slot.court}`);count.addEventListener('change',()=>host.edit(next=>{const current=next.shotgun!;current.customCounts={...(current.customCounts??{}),[id]:Number(count.value)};}));label.append(count);}
+    return label;
+  }));
+  const compiled=compileSmartPlan(draft,{targetDate:state?.booking?.targetDate??'',unavailable:host.unready(),shotgunCapacity:shotgunCapacity(state,settings.budget,host.meta()?.timingCalibration?.groupShiftMs??0)}),plan=compiled.shotgun;
+  const lines=[`${plan?.shots.length??settings.budget} Shotgun attempts · budget ${settings.budget}`,...Object.entries(plan?.counts??{}).map(([id,count])=>`${id} → ${count}`),
+    `Window: ${settings.windowStartMs>=0?'+':''}${settings.windowStartMs} ms → ${settings.windowEndMs>=0?'+':''}${settings.windowEndMs} ms`,
+    ...(plan?.shots.length?[`Effective triggers: ${plan.shots[0]!.configuredOffsetMs>=0?'+':''}${plan.shots[0]!.configuredOffsetMs} ms → ${plan.shots.at(-1)!.configuredOffsetMs>=0?'+':''}${plan.shots.at(-1)!.configuredOffsetMs} ms`]:[]),
+    `Approx spacing: ${plan?.requestedSpacingMs===null?'n/a':`${Math.round(plan?.requestedSpacingMs??0)} ms`}`,
+    `Recommended maximum for this window: ~${plan?.recommendedMaximum??'—'}`,
+    `Standby workers: ${compiled.standby.join(' / ')||'none'} · Wave 2 max ${compiled.budgets.wave2} · Rescue max ${compiled.budgets.rescue}`,
+    ...(plan?.capacityWarning?[plan.capacityWarning]:[]),...compiled.problems];
+  byId('strategy-shotgun-preview').replaceChildren(...lines.map((line,index)=>el('p',index>=lines.length-compiled.problems.length&&compiled.problems.length?'warn-text':'small',line)));
+}
+
 function renderReview(state: Dashboard | undefined) {
-  const draft = host.draft(), compiled = compileSmartPlan(draft, { targetDate: state?.booking?.targetDate ?? '', unavailable: host.unready() });
+  const draft = host.draft(), compiled = compileSmartPlan(draft, { targetDate: state?.booking?.targetDate ?? '', unavailable: host.unready(),shotgunCapacity:shotgunCapacity(state,draft.shotgun?.budget??1,host.meta()?.timingCalibration?.groupShiftMs??0) });
   const smart = state?.booking && (document.getElementById('precision-strategy') as HTMLSelectElement | null)?.value === 'precision' && (document.getElementById('precision-mode-smart') as HTMLInputElement | null)?.checked;
   const warnings = [...draft.immediate, ...draft.backups].filter(slot => slot.publicEvidence?.override).map(slot =>
     `${windowText(slot)} was force-included despite ${slot.publicEvidence!.evidence === 'UNKNOWN_PUBLIC_QUERY_FAILED' ? 'a failed public-booking read' : 'a known public booking'} (OPERATOR_OVERRIDE_PUBLIC_CONFLICT).`);
@@ -394,13 +444,18 @@ function renderReview(state: Dashboard | undefined) {
   if (!smart) { body.replaceChildren(empty('The current plan is not a Smart plan. Use a suggestion, or edit under Advanced overrides.')); return; }
   if (!compiled.phase3) { body.replaceChildren(empty('Fix the problems above to see what will happen.')); return; }
   const description = describeSmartPlan(compiled.phase3, { unavailable: host.unready() });
+  const shotgun=compiled.shotgun,shotgunReview=shotgun&&draft.shotgun?[el('h4','','Shotgun'),
+    el('p','small',`Enabled · budget ${draft.shotgun.budget} · ${draft.shotgun.allocationMode.replaceAll('_',' ').toLowerCase()} · window ${draft.shotgun.windowStartMs>=0?'+':''}${draft.shotgun.windowStartMs} ms → ${draft.shotgun.windowEndMs>=0?'+':''}${draft.shotgun.windowEndMs} ms · ${draft.shotgun.timingMode.toLowerCase()} · group anchor ${shotgun.groupAnchorMs>=0?'+':''}${shotgun.groupAnchorMs} ms (${host.meta()?.timingCalibration?.anchorSource??'no fresh anchor evidence'})`),
+    ...Object.entries(shotgun.counts).map(([id,count])=>el('p','small',`${id} → ${count} Shotgun attempt${count===1?'':'s'}`)),
+    ...shotgun.shots.map(shot=>el('p','small',`${shot.logicalTargetId} · shot ${shot.shotIndex+1}/${shot.shotCount} · FINAL SAVED TRIGGER ${shot.configuredOffsetMs>=0?'+':''}${shot.configuredOffsetMs} ms`)),
+    el('p',shotgun.capacityWarning?'warn-text':'small',shotgun.capacityWarning??`Capacity: ${shotgun.meaningfulSpacingMs} ms meaningful spacing · recommended maximum ~${shotgun.recommendedMaximum}.`)] : [el('h4','','Shotgun'),el('p','small','Disabled · Normal machine-recommended fan-out applies.')];
   const saved=state?.booking?.setup,savedMeta=saved?.STRATEGY_V2?.timingCalibration;
   const decomposition=saved?.PRECISION_PHASE3===compiled.phase3||JSON.stringify(saved?.PRECISION_PHASE3)===JSON.stringify(compiled.phase3)
     ? compiled.phase3.wave1.flatMap(assignment=>(assignment.fanOutOffsetsMs??[assignment.releaseOffsetMs??0]).map((final,index)=>{
       const correction=savedMeta?.deskew?.corrections.find(value=>value.workerId===assignment.workerId&&value.fanOutIndex===index)?.correctionMs??0;
       return el('p','small',`${assignment.workerId}${(assignment.fanOutOffsetsMs?.length??1)>1?index:''} · base + group anchor ${final-correction} ms · worker/index correction ${correction>=0?'+':''}${correction} ms · FINAL SAVED TRIGGER ${final} ms`);
     })):[];
-  body.replaceChildren(...description.sections.flatMap(section => [el('h4', '', section.title), ...section.lines.map(line => el('p', 'small', line))]),
+  body.replaceChildren(...shotgunReview,...description.sections.flatMap(section => [el('h4', '', section.title), ...section.lines.map(line => el('p', 'small', line))]),
     ...(decomposition.length?[el('h4','','Saved timing decomposition'),...decomposition]:[]),
     el('p', '', `${description.summary} · Maximum possible sends: ${description.maxSends}`));
 }
@@ -437,7 +492,7 @@ export function strategyMainCourtOrderChanged():void {
 function render() {
   const state = host.state();
   (byId('strategy-suggest') as HTMLButtonElement).disabled = preset === 'CUSTOM' || validateGoal(goal).length > 0;
-  renderSchedule(state); renderPreset(state); renderSuggestion(state); renderEditable(state); renderReview(state);
+  renderSchedule(state); renderPreset(state); renderSuggestion(state); renderEditable(state); renderShotgun(state); renderReview(state);
 }
 /** Exposed for tests and the Next Release summary. */
 export const strategySnapshot = () => ({ goal: { ...goal }, preset, forced: [...forced], suggestion, suggestionGeneration, pendingSuggestionGeneration });

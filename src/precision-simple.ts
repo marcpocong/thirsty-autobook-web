@@ -10,6 +10,8 @@
  * Plain terms: Immediate attempts = Wave 1, Backup choices = Wave 2 candidates, Backup workers =
  * standby, Try reopened slots = Reopen Rescue, Use backups immediately = concurrent Wave 2.
  */
+import { logicalTargetId, planShotgun, SHOTGUN_MEANINGFUL_SPACING_MS, shotgunWorkerGroups, type ShotgunSettings } from './shotgun.js';
+import {PRECISION_MAX_FAN_OUT,PRECISION_MAX_SENDS} from './workers.js';
 export type SmartWorker = 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G';
 /** Mirrors PRECISION_WORKER_IDS (test-enforced). Worker H is never a Precision worker. */
 export const SMART_WORKERS: readonly SmartWorker[] = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
@@ -23,8 +25,8 @@ export const SMART_EVENING_RATE_SOURCE = 'venue schedule from 4 PM';
 export const SMART_EVENING_RATE_CONFIRMED_AT = '2026-09-30T00:00:00.000Z';
 export const SMART_DEFAULT_REOPENED = 1;
 /** Mirrors PRECISION_MAX_FAN_OUT and PRECISION_MAX_SENDS (test-enforced). */
-export const SMART_MAX_FAN_OUT = 6;
-export const SMART_MAX_SENDS = 56;
+export const SMART_MAX_FAN_OUT = PRECISION_MAX_FAN_OUT;
+export const SMART_MAX_SENDS = PRECISION_MAX_SENDS;
 
 export type SmartRateStatus = 'TARGET_DATE_PUBLISHED' | 'VENUE_SCHEDULE' | 'OPERATOR_CONFIRMED' | 'REFERENCE';
 export interface SmartRateEvidence { source: string; capturedAt: string; status: SmartRateStatus; date: string; perHour: number[]; actionable: boolean }
@@ -36,7 +38,7 @@ export interface SmartPublicEvidence { evidence: 'NO_KNOWN_PUBLIC_CONFLICT' | 'K
   override?: 'OPERATOR_OVERRIDE_PUBLIC_CONFLICT' }
 /** Structural copy of release-offset.ts's guarded range (this module stays import-free for the renderer). */
 export type SmartReleaseOffset = number;
-const validSmartReleaseOffset = (value: unknown) => Number.isSafeInteger(value) && (value as number) >= -2_000 && (value as number) <= 0;
+const validSmartReleaseOffset = (value: unknown) => Number.isSafeInteger(value) && (value as number) >= -2_000 && (value as number) <= 2_000;
 export interface SmartSlot {
   court: number; start: string; durationHours: number;
   /** Immediate attempts only: Release Offset in ms. Absent means normal (at the release time). */
@@ -55,6 +57,8 @@ export interface SmartDraft {
   advanced: { standby?: SmartWorker[]; wave2?: number; rescue?: number; total?: number };
   /** Analysis-only marker. It never changes authorization; candidate and assignment data remain authoritative. */
   releaseLab?: { version: 1; kind: 'DURATION_OFFSET_V1'; label: 'Duration × Offset' };
+  /** Unified Strategy metadata compiled into PRECISION_PHASE3; never a second authorization source. */
+  shotgun?: ShotgunSettings;
 }
 /** Structural copy of the config PrecisionPhase3Schema. */
 export interface SmartPhase3 {
@@ -66,12 +70,13 @@ export interface SmartPhase3 {
   concurrentWave2: boolean; rescueEnabled: boolean;
 }
 /** `unavailable`: workers known not ready (missing player or invalid identity), by letter only. */
-export interface SmartContext { targetDate: string; unavailable?: ReadonlySet<string> }
+export interface SmartContext { targetDate: string; unavailable?: ReadonlySet<string>; shotgunCapacity?: { meaningfulSpacingMs:number; recommendedBurstChildren?:number } }
 export interface SmartRateView { evidence: SmartRateEvidence | null; label: string; needsReview: boolean }
 export interface SmartCompiled {
   phase3: SmartPhase3 | null; problems: string[]; warnings: string[];
   immediateWorkers: Array<SmartWorker | null>; standby: SmartWorker[]; budgets: { wave2: number; rescue: number; total: number };
   rates: SmartRateView[];
+  shotgun?: ReturnType<typeof planShotgun>;
 }
 
 const smartHourOf = (start: string) => Number(start.slice(0, 2));
@@ -215,14 +220,24 @@ export function compileSmartPlan(draft: SmartDraft, context: SmartContext): Smar
     if (smartOverlap(slot, other) && smartKey(slot) !== smartKey(other)) problems.push(`Immediate attempts ${smartSlotText(slot)} and ${smartSlotText(other)} overlap on the same court.`);
   }));
 
-  // Workers: manual picks first, then the next ready worker in A–G order.
+  const shotgun = draft.shotgun?.enabled ? planShotgun(draft.shotgun,
+    draft.immediate.map((slot,index)=>({logicalTargetId:logicalTargetId(slot),priority:slot.priority??index+1})),
+    context.shotgunCapacity??{meaningfulSpacingMs:SHOTGUN_MEANINGFUL_SPACING_MS}) : undefined;
+  if(shotgun)problems.push(...shotgun.problems);
+  const shotgunOffsetsByTarget=new Map<string,number[]>();
+  for(const shot of shotgun?.shots??[]){const values=shotgunOffsetsByTarget.get(shot.logicalTargetId)??[];values.push(shot.configuredOffsetMs);shotgunOffsetsByTarget.set(shot.logicalTargetId,values);}
+  const groupCount=(slot:SmartSlot)=>shotgunOffsetsByTarget.has(logicalTargetId(slot))?shotgunWorkerGroups(shotgunOffsetsByTarget.get(logicalTargetId(slot))!).length:1;
+
+  // Workers: manual picks first, then the next ready worker in A–G order. Shotgun may assign multiple workers to one logical target;
+  // each worker still owns at most SMART_MAX_FAN_OUT child tabs.
   const manual = draft.immediate.map(slot => slot.worker).filter((worker): worker is SmartWorker => !!worker);
   if (new Set(manual).size !== manual.length) problems.push('Each immediate attempt needs its own worker.');
   if (manual.some(worker => !SMART_WORKERS.includes(worker))) problems.push('Only workers A–G can make Precision attempts.');
   const free = SMART_WORKERS.filter(worker => !unavailable.has(worker) && !manual.includes(worker) && !draft.advanced.standby?.includes(worker));
-  const immediateWorkers = draft.immediate.map(slot => slot.worker ?? free.shift() ?? null);
-  const missing = immediateWorkers.filter(worker => worker === null).length;
-  if (missing) problems.push(`Only ${draft.immediate.length - missing} ready worker${draft.immediate.length - missing === 1 ? ' is' : 's are'} free for ${smartCount(draft.immediate.length, 'immediate attempt')}. Remove an attempt or fix the workers that are not ready.`);
+  const workerGroups=draft.immediate.map(slot=>Array.from({length:groupCount(slot)},(_,group)=>group===0&&slot.worker?slot.worker:free.shift()??null));
+  const immediateWorkers = workerGroups.map(value=>value[0]??null);
+  const requiredGroups=workerGroups.reduce((sum,value)=>sum+value.length,0),missing=workerGroups.flat().filter(worker=>worker===null).length;
+  if (missing) problems.push(`Only ${requiredGroups-missing} ready worker${requiredGroups-missing===1?' is':'s are'} free for ${requiredGroups} immediate worker groups. Reduce the Shotgun budget or preserve more workers.`);
   for (const worker of manual) if (unavailable.has(worker)) warnings.push(`Worker ${worker} is not ready and will not be used.`);
 
   const retry = draft.retryReopened;
@@ -238,21 +253,25 @@ export function compileSmartPlan(draft: SmartDraft, context: SmartContext): Smar
   let standby: SmartWorker[];
   if (draft.advanced.standby) {
     standby = [...draft.advanced.standby];
-    if (new Set(standby).size !== standby.length || standby.some(worker => !SMART_WORKERS.includes(worker) || immediateWorkers.includes(worker)))
+    const assignedWorkers=workerGroups.flat().filter((value):value is SmartWorker=>value!==null);
+    if (new Set(standby).size !== standby.length || standby.some(worker => !SMART_WORKERS.includes(worker) || assignedWorkers.includes(worker)))
       problems.push('Backup workers must be distinct and not used by an immediate attempt.');
     for (const worker of standby) if (unavailable.has(worker)) warnings.push(`Worker ${worker} is not ready and will not be used.`);
   } else {
-    standby = SMART_WORKERS.filter(worker => !unavailable.has(worker) && !immediateWorkers.includes(worker)).slice(0, backupChoices);
+    const assignedWorkers=workerGroups.flat();
+    standby = SMART_WORKERS.filter(worker => !unavailable.has(worker) && !assignedWorkers.includes(worker)).slice(0, backupChoices);
   }
   if (backupChoices > standby.length && !draft.advanced.standby)
     warnings.push(standby.length ? `Only ${smartCount(standby.length, 'backup worker')} ${standby.length === 1 ? 'is' : 'are'} free, so at most ${standby.length} of ${backupChoices} backups can be tried.`
       : 'No worker is free for backups. Backups can only be tried as reopened slots.');
+  const normalReadyWorkers=SMART_WORKERS.filter(worker=>!unavailable.has(worker)).length,normalStandby=Math.min(backupChoices,Math.max(0,normalReadyWorkers-draft.immediate.length));
+  if(shotgun&&standby.length<normalStandby&&!draft.shotgun?.capacityOverride)problems.push(`Shotgun would reduce reserved Wave 2 workers from ${normalStandby} to ${standby.length}. Use the explicit capacity override only if that resource tradeoff is intentional.`);
 
   const reopened = Math.min(7, Math.max(1, Math.floor(draft.maxReopenedAttempts) || SMART_DEFAULT_REOPENED));
   const auto = { wave2: Math.min(backupChoices, standby.length), rescue: retry ? reopened : 0 };
   const wave2 = draft.advanced.wave2 ?? auto.wave2, rescue = draft.advanced.rescue ?? auto.rescue;
   // Every fan-out child is a send; without fan-out this equals the number of immediate attempts.
-  const immediateSends = smartImmediateSends(draft.immediate);
+  const immediateSends = draft.immediate.reduce((sum,slot)=>sum+(shotgunOffsetsByTarget.get(logicalTargetId(slot))?.length??smartSlotOffsets(slot).length),0);
   const total = draft.advanced.total ?? immediateSends + wave2 + rescue;
   const budgets = { wave2, rescue, total };
   if (![wave2, rescue, total].every(value => Number.isSafeInteger(value) && value >= 0) || wave2 > 7 || rescue > 7 || total > SMART_MAX_SENDS ||
@@ -274,12 +293,15 @@ export function compileSmartPlan(draft: SmartDraft, context: SmartContext): Smar
     candidates: slots.map(({ slot }, index) => ({ court: slot.court, start: slot.start, durationHours: slot.durationHours, priority: priorities[index]!,
       permissions: permissions[index]!, rateEvidence: { ...rates[index]!.evidence!, perHour: [...rates[index]!.evidence!.perHour] },
       ...(slot.publicEvidence ? { publicEvidence: { ...slot.publicEvidence } } : {}) })),
-    wave1: immediateWorkers.map((workerId, candidateIndex) => ({ workerId: workerId!, candidateIndex,
-      ...(draft.immediate[candidateIndex]!.fanOutOffsetsMs ? { fanOutOffsetsMs: [...draft.immediate[candidateIndex]!.fanOutOffsetsMs!] }
-        : draft.immediate[candidateIndex]!.releaseOffsetMs ? { releaseOffsetMs: draft.immediate[candidateIndex]!.releaseOffsetMs } : {}) })),
+    wave1: draft.immediate.flatMap((slot,candidateIndex)=>{
+      const offsets=shotgunOffsetsByTarget.get(logicalTargetId(slot));
+      const groups=offsets?shotgunWorkerGroups(offsets):[smartSlotOffsets(slot)];
+      return groups.map((values,group)=>({workerId:workerGroups[candidateIndex]![group]!,candidateIndex,
+        ...(values.length>1?{fanOutOffsetsMs:[...values]}:values[0]?{releaseOffsetMs:values[0]}:{})}));
+    }),
     standby: [...standby], budgets, concurrentWave2: draft.useBackupsImmediately, rescueEnabled: retry,
   };
-  return { phase3, problems: [...new Set(problems)], warnings: [...new Set(warnings)], immediateWorkers, standby, budgets, rates };
+  return { phase3, problems: [...new Set(problems)], warnings: [...new Set(warnings)], immediateWorkers, standby, budgets, rates, ...(shotgun?{shotgun}:{}) };
 }
 
 /**
@@ -288,11 +310,11 @@ export function compileSmartPlan(draft: SmartDraft, context: SmartContext): Smar
  * same backend object (candidates in canonical order: immediate attempts, then backups).
  */
 export function smartDraftFromPhase3(saved: SmartPhase3, context: SmartContext): SmartDraft {
-  const assigned = new Map(saved.wave1.map(value => [value.candidateIndex, value.workerId] as const));
+  const assigned = new Map<number,SmartWorker>();for(const value of saved.wave1)if(!assigned.has(value.candidateIndex))assigned.set(value.candidateIndex,value.workerId);
   const plain = (index: number): SmartSlot => { const c = saved.candidates[index]!;
     return { court: c.court, start: c.start, durationHours: c.durationHours, ...(c.publicEvidence ? { publicEvidence: { ...c.publicEvidence } } : {}) }; };
   const order = (indices: number[]) => indices.sort((a, b) => saved.candidates[a]!.priority - saved.candidates[b]!.priority || a - b);
-  const immediateIndex = saved.wave1.map(value => value.candidateIndex);
+  const immediateIndex = [...new Set(saved.wave1.map(value => value.candidateIndex))];
   const backupIndex = order(saved.candidates.map((_, index) => index).filter(index => !assigned.has(index)));
   const rescueOn = saved.rescueEnabled;
   // Rate card: the most common evidence set among candidates, split into daytime and evening hourly rates.
@@ -308,8 +330,8 @@ export function smartDraftFromPhase3(saved: SmartPhase3, context: SmartContext):
         if (evening) table.evening ??= price; else table.day ??= price; });
     }
   }
-  const draft: SmartDraft = { immediate: saved.wave1.map(value => ({ ...plain(value.candidateIndex), ...(value.fanOutOffsetsMs ? { fanOutOffsetsMs: [...value.fanOutOffsetsMs] }
-    : value.releaseOffsetMs ? { releaseOffsetMs: value.releaseOffsetMs } : {}) })),
+  const draft: SmartDraft = { immediate: immediateIndex.map(candidateIndex=>{const value=saved.wave1.find(row=>row.candidateIndex===candidateIndex)!;return ({ ...plain(candidateIndex), ...(value.fanOutOffsetsMs ? { fanOutOffsetsMs: [...value.fanOutOffsetsMs] }
+    : value.releaseOffsetMs ? { releaseOffsetMs: value.releaseOffsetMs } : {}) });}),
     backups: backupIndex.map(plain), useBackupsImmediately: saved.concurrentWave2,
     retryReopened: rescueOn, maxReopenedAttempts: rescueOn && saved.budgets.rescue > 0 ? saved.budgets.rescue : SMART_DEFAULT_REOPENED, rates: table, advanced: {} };
   const canonical = [...immediateIndex, ...backupIndex];

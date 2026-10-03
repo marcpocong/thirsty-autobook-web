@@ -9,7 +9,7 @@ import type { LiveChildView, LiveParentView, LiveRunView } from './types.js';
 type Stage = Extract<UiEvent, { type: 'apiStage' }>;
 export const emptyLiveRun = (): LiveRunView => ({ parents: [], predictions: [], notes: [] });
 const TERMINAL = new Set(['REJECTED', 'UNKNOWN', 'VERIFIED', 'QR_READY', 'HOLD_VERIFIED', 'HOLD_VERIFIED_QR_ATTENTION', 'NOT_DISPATCHED', 'WINDOW_MISSED',
-  'PREWARM_FAILED', 'EXCLUDED_BEFORE_FREEZE', 'JOURNAL_BLOCKED', 'BROWSER_FAILED', 'IDENTITY_FAILED']);
+  'PREWARM_FAILED', 'OMITTED', 'EXCLUDED_BEFORE_FREEZE', 'JOURNAL_BLOCKED', 'BROWSER_FAILED', 'IDENTITY_FAILED']);
 
 function parentFor(view: LiveRunView, key: string, init: Omit<LiveParentView, 'key' | 'children'>): LiveParentView {
   let parent = view.parents.find(value => value.key === key);
@@ -27,6 +27,7 @@ function childFor(parent: LiveParentView, event: Stage, fallbackIndex = 0): Live
   }
   if (event.attemptId && child.attemptId.startsWith('pending-')) child.attemptId = event.attemptId;
   child.fanOutCount = Math.max(child.fanOutCount, count);
+  if(event.shotIndex!==undefined)child.shotIndex=event.shotIndex;if(event.shotCount!==undefined)child.shotCount=event.shotCount;
   return child;
 }
 const setState = (child: LiveChildView, state: string, code?: string) => {
@@ -63,7 +64,7 @@ export function reduceLiveRun(previous: LiveRunView | null | undefined, event: S
       const parent = view.parents.find(value => value.wave === 'WAVE_1' && (value.candidateId === event.candidateId || (!event.candidateId && value.workerId === event.workerId)));
       if (event.stage === 'PHASE3_OVERRIDE_KEPT') { view.notes.push(`Worker ${event.workerId}: kept despite a known public booking (operator override).`); return view; }
       if (event.stage === 'PHASE3_WAVE1_EXCLUDED') { view.notes.push(`Worker ${event.workerId}: left out at freeze (${(event.code ?? 'EXCLUDED').replaceAll('_', ' ').toLowerCase()}).`); return view; }
-      if (parent) setState(childFor(parent, event), event.state ?? 'NOT_DISPATCHED', event.code);
+      if (parent) setState(childFor(parent, event), event.code==='PREWARM_TIER_OMITTED'?'OMITTED':event.state ?? 'NOT_DISPATCHED', event.code);
       return view;
     }
     case 'PRECISION_ATTEMPT_STATE': {
@@ -73,6 +74,10 @@ export function reduceLiveRun(previous: LiveRunView | null | undefined, event: S
       return view;
     }
     case 'PREWARM_PLAN': view.prewarm = { leadMs: event.prewarmLeadMs ?? 0, width: event.fanOutCount ?? 1 }; return view;
+    case 'SECURITY_PREWARM_STARTED': case 'SECURITY_PREWARM_READY': case 'SECURITY_PREWARM_FAILED': {
+      if(!event.attemptId)return previous??null;const parent=view.parents.find(value=>value.children.some(child=>child.attemptId===event.attemptId));if(!parent)return previous??null;
+      const child=childFor(parent,event);setState(child,event.stage==='SECURITY_PREWARM_STARTED'?'PREPARING':event.stage==='SECURITY_PREWARM_READY'?'READY':'FAILED',event.code);return view;
+    }
     case 'PREWARM_TIER_STATUS': view.tiers = event.message; return view;
     case 'RESCUE_PREDICTION': {
       if (!event.candidateId || event.predictedStartMs === undefined || event.predictedEndMs === undefined) return previous ?? null;

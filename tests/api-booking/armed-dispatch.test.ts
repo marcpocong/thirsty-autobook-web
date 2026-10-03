@@ -409,6 +409,11 @@ describe('Release Offset (per attempt)', () => {
     expect(armed.attempts.map(attempt => attempt.triggerMs)).toEqual([releaseMs, releaseMs]);
   });
 
+  it('retains the one-second dispatch tolerance after a legal post-release Shotgun trigger', async()=>{
+    const {armed,releaseMs}=await arm(1,60_000,[2_000]);
+    expect(armed.attempts[0]?.triggerMs).toBe(releaseMs+2_000);expect(armed.dispatchDeadlineMs).toBe(releaseMs+3_000);
+  });
+
   it('each attempt arms for its own trigger; the lock, journals and lateness bound keep the official release', async () => {
     const { armed, lock, releaseMs } = await arm(3, 2_500, [-1733, 0, -407]);
     expect(armed.attempts.map(attempt => attempt.triggerMs)).toEqual([releaseMs - 1733, releaseMs, releaseMs - 407]);
@@ -425,7 +430,7 @@ describe('Release Offset (per attempt)', () => {
     expect(() => frozenRace(1, releaseMs, [-2001])).toThrow('PRECISION_TARGET_INVALID');
     const race = frozenRace(1, releaseMs), lock = fakeLock();
     const forged = freezePrecisionRace(date, releaseMs, [{ ...race.attempts[0]!, target: { ...race.attempts[0]!.target, releaseOffsetMs: -2001 } }]);
-    await expect(armPrecisionRace(forged, { lock, customerFor: () => customer, journalRoot: root, releaseMs, now: Date.now })).rejects.toThrow('RELEASE_OFFSET_INVALID');
+    await expect(armPrecisionRace(forged, { lock, customerFor: () => customer, journalRoot: root, releaseMs, now: Date.now })).rejects.toThrow('SHOTGUN_OFFSET_INVALID');
     expect(lock.calls).toEqual([]);
     expect(await readdir(root)).toEqual([]);
   });
