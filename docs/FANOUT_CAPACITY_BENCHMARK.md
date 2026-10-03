@@ -69,7 +69,7 @@ The width must also pass the safety and readiness gates:
 - every child's Chrome start recorded;
 - every child prepared at least 1 s before its trigger.
 
-There are no absolute "winning" milliseconds. The operator can always override up to the hard limit of 4; the UI labels this an operator override.
+There are no absolute "winning" milliseconds. The operator can override up to the authoritative `PRECISION_MAX_FAN_OUT` limit (currently six) per worker/browser group; the UI labels this an operator override.
 
 ## Results on this PC (2026-09-29, i5-13500HX, 20 threads, Chrome 154, headless, burst)
 

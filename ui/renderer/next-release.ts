@@ -20,7 +20,8 @@ export function renderNextRelease(state: Dashboard): void {
     const ready = workers.filter(worker => state.playerStatus?.[PLAYER_KEYS[worker]] !== false && !(state.identityIssues ?? []).some(issue => issue.startsWith(`Worker ${worker} `)));
     const browsers = workers.filter(worker => state.browserHealth?.[worker]);
     const widths = [...new Set(plan.wave1.map(value => value.fanOutOffsetsMs?.length ?? 1))];
-    const sends = smartImmediateSends(plan.wave1);
+    const sends = smartImmediateSends(plan.wave1),logicalTargets=new Set(plan.wave1.map(value=>value.candidateIndex)).size;
+    const liveChildren=state.live?.parents.filter(value=>value.wave==='WAVE_1').flatMap(value=>value.children).filter(value=>value.shotCount!==undefined)??[],readyChildren=liveChildren.filter(value=>value.state==='READY').length;
     const description = describeSmartPlan(plan);
     const fanOutSource = meta ? meta.fanOut.source === 'OPERATOR_OVERRIDE' ? ` · operator override (machine: ${meta.fanOut.recommendedWidth ?? '—'})`
       : meta.fanOut.source === 'MACHINE_RECOMMENDED' ? ' · machine recommendation' : ' · no capacity profile' : '';
@@ -31,8 +32,9 @@ export function renderNextRelease(state: Dashboard): void {
       ['Trusted clock', state.releaseReadiness?.checks.find(value=>value.id==='clock')?.detail ?? 'checking'],
       ['Observer', state.releaseReadiness?.checks.find(value=>value.id==='observer')?.detail ?? 'offline'],
       ['Target date', targetDate],
-      ['Immediate logical targets', String(plan.wave1.length)],
-      ['Fan-out', `${widths.length === 1 ? widths[0] : widths.join('/')} per target · ${sends} send${sends === 1 ? '' : 's'}${fanOutSource}`],
+      ['Immediate logical targets', String(logicalTargets)],
+      [meta?.shotgun?.enabled?'Shotgun':'Fan-out', meta?.shotgun?.enabled?`${sends} total Wave 1 sends · budget ${meta.shotgun.budget} · ${meta.shotgun.windowStartMs}…${meta.shotgun.windowEndMs} ms`:`${widths.length === 1 ? widths[0] : widths.join('/')} per target · ${sends} send${sends === 1 ? '' : 's'}${fanOutSource}`],
+      ...(meta?.shotgun?.enabled?[['Shotgun readiness',liveChildren.length?`${readyChildren}/${liveChildren.length} READY`:`0/${meta.shotgun.exactSchedule.length} PREPARING`] as [string,string]]:[]),
       ['Standby workers', plan.standby.length ? plan.standby.join(', ') : 'none'],
       ['Wave 2', plan.budgets.wave2 > 0 ? `up to ${plan.budgets.wave2}${plan.concurrentWave2 ? ' · concurrent' : ''}` : 'off'],
       ['Rescue', plan.rescueEnabled && plan.budgets.rescue > 0 ? `on · up to ${plan.budgets.rescue}` : 'off'],
@@ -48,7 +50,7 @@ export function renderNextRelease(state: Dashboard): void {
   }
   if (setup.RELEASE_STRATEGY === 'precision') {
     name.textContent = 'Fixed Precision (legacy)';
-    facts(target, [['Target date', targetDate], ['Attempts', String(setup.PRECISION_TARGETS.length)], ['Fan-out', setup.PRECISION_FAN_OUT ? '4 per worker' : 'off'],
+    facts(target, [['Target date', targetDate], ['Attempts', String(setup.PRECISION_TARGETS.length)], ['Fan-out', setup.PRECISION_FAN_OUT ? `${setup.PRECISION_TARGETS.reduce((sum,value)=>sum+(value.fanOutReleaseOffsetsMs?.length??1),0)} total` : 'off'],
       ['Wave 2 / Rescue', 'not available in Fixed mode'], ['Build', build]]);
     note.textContent = 'Fixed attempts are sent exactly as listed. The Strategy view builds a Smart plan with backups and Rescue.';
     return;

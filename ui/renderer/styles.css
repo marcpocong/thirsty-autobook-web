@@ -587,6 +587,11 @@ footer > div { display: flex; align-items: center; gap: 8px; font-size: 11px; co
 #view-strategy .strategy-advanced[open] > summary { margin-bottom: 12px; }
 .strategy-step h2 { margin: 0 0 10px; }
 .strategy-note { margin: 8px 0 0; }
+.shotgun-intensity { border: 0; padding: 0; margin: 12px 0; }
+.shotgun-intensity legend { font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+.strategy-shotgun-targets { display: grid; gap: 6px; margin: 8px 0 12px; }
+.strategy-shotgun-target { display: flex; align-items: center; gap: 8px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; font-size: 12px; }
+.strategy-shotgun-target input[type="number"] { width: 70px; margin-left: auto; }
 .strategy-children, .strategy-warnings { margin: 8px 0 0; padding-left: 18px; font-size: 12px; }
 .strategy-warnings li { color: var(--warning); }
 .strategy-schedule-grid { display: grid; grid-template-columns: 64px repeat(7, minmax(0, 1fr)); gap: 2px; font-size: 11px; margin-top: 8px; }
@@ -634,6 +639,9 @@ footer > div { display: flex; align-items: center; gap: 8px; font-size: 11px; co
 .live-child[data-state="REJECTED"] { background: #3a2323; color: #ffc9c9; }
 .live-child[data-state="UNKNOWN"] { background: #4a3a14; color: #ffe39a; }
 .live-child[data-state="IN_FLIGHT"], .live-child[data-state="ARMED"] { background: #1d3a4a; color: #cde9ff; }
+.live-child[data-state="READY"] { background: #173e32; color: #c8f4df; }
+.live-child[data-state="PREPARING"] { background: #2c3448; color: #d8e3ff; }
+.live-child[data-state="NOT_DISPATCHED"], .live-child[data-state="FAILED"] { background: #493b24; color: #ffe2ac; }
 .live-child[data-state="QR_READY"], .live-child[data-state="VERIFIED"], .live-child[data-state="HOLD_VERIFIED"] { background: #1d4a2c; color: #d9ffe3; }
 .live-rescue { margin-top: 10px; font-size: 12px; }
 #view-history .insights-card, #view-history #replay-card, #view-history #intelligence-card { grid-column: 1 / -1; }

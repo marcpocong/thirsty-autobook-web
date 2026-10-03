@@ -57,12 +57,13 @@ export function describePrecisionPlan(plan: BookingView) {
   const targets=plan.setup.PRECISION_TARGETS;
   const end=(start:string,hours:number)=>`${String(Number(start.slice(0,2))+hours).padStart(2,'0')}:00`;
   const price=(start:string,hours:number)=>Array.from({length:hours},(_,i)=>Number(start.slice(0,2))+i>=16?700:600).reduce((a,b)=>a+b,0);
+  const fanOutCount=targets.reduce((sum,target)=>sum+(target.fanOutReleaseOffsetsMs?.length??1),0);
   const rows=targets.map((t,i)=>`Worker ${PRECISION_WORKER_IDS[i]} | Court ${t.court} | ${t.start}–${end(t.start,t.durationHours)} | ${t.durationHours} h | ~PHP ${price(t.start,t.durationHours)} (assumed rate)`+
-    (plan.setup.PRECISION_FAN_OUT?` | 4 tabs: ${(t.fanOutReleaseOffsetsMs??[]).map((offset,index)=>`#${index+1} ${offset?formatReleaseOffset(offset):'Normal'}`).join(' · ')}`:
+    (plan.setup.PRECISION_FAN_OUT?` | ${t.fanOutReleaseOffsetsMs?.length??1} tab${(t.fanOutReleaseOffsetsMs?.length??1)===1?'':'s'}: ${(t.fanOutReleaseOffsetsMs??[t.releaseOffsetMs??0]).map((offset,index)=>`#${index+1} ${offset?formatReleaseOffset(offset):'Normal'}`).join(' · ')}`:
       t.releaseOffsetMs?` | Offset ${formatReleaseOffset(t.releaseOffsetMs)}: sent up to ${-t.releaseOffsetMs} ms before the official release time`:' | Normal'));
   return [`PRECISION RELEASE${plan.setup.PRECISION_FAN_OUT?' · FAN-OUT':''} · GOAL: 1 SUCCESSFUL COURT`, `Target date: ${plan.targetDate} · Proofless Direct · Standard`,'',...rows,'',
-    ...(plan.setup.PRECISION_FAN_OUT?[`${targets.length} worker goal${targets.length===1?'':'s'} fan out to ${targets.length*4} independently tracked attempts. Each worker uses one browser with four separate tabs/security contexts; every child has its own ID, offset, dispatch timing, response, and result.`]:[]),
-    `${plan.setup.PRECISION_FAN_OUT?targets.length*4:targets.length} independent checkout attempt${(plan.setup.PRECISION_FAN_OUT?targets.length*4:targets.length)===1?' is':'s are'} authorized.`,
+    ...(plan.setup.PRECISION_FAN_OUT?[`${targets.length} worker goal${targets.length===1?'':'s'} fan out to ${fanOutCount} independently tracked attempts. Each worker uses one browser with a dynamic tab/security-context count; every child has its own ID, offset, dispatch timing, response, and result.`]:[]),
+    `${plan.setup.PRECISION_FAN_OUT?fanOutCount:targets.length} independent checkout attempt${(plan.setup.PRECISION_FAN_OUT?fanOutCount:targets.length)===1?' is':'s are'} authorized.`,
     'These are independent checkout attempts. More than one temporary QR hold may be created. Payment remains manual.',
     'Evidence is read at T-60, T-30, T-10 and T-2 min. The set is frozen 2 minutes before release: a target showing a public booking or unknown evidence at that moment is excluded. No target is ever added, moved or substituted.',
     'The date is not published before 08:00, so no target is confirmed open. Nothing is cancelled automatically; each unpaid hold expires on its own.'].join('\n');

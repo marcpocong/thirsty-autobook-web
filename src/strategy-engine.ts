@@ -12,6 +12,7 @@
  * Dependency-free (types only) so the renderer, the main process and tests share one engine.
  */
 import type { SmartDraft, SmartSlot, SmartWorker } from './precision-simple.js';
+import {PRECISION_MAX_FAN_OUT} from './workers.js';
 
 export const STRATEGY_MAX_CANDIDATES = 21;
 export const STRATEGY_WORKERS: readonly SmartWorker[] = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
@@ -147,8 +148,8 @@ export interface PresetAllocation { immediateTargets: number; fanOutWidth: numbe
  */
 export function presetAllocation(preset: Exclude<StrategyPreset, 'CUSTOM'>, input: { readyWorkers: number; recommendedFanOutWidth: number; fanOutWidthOverride?: number }): PresetAllocation {
   const workers = Math.max(0, Math.min(STRATEGY_WORKERS.length, Math.floor(input.readyWorkers)));
-  const recommended = Math.max(1, Math.min(4, Math.floor(input.recommendedFanOutWidth) || 1));
-  const width = (value: number) => Math.max(1, Math.min(6, input.fanOutWidthOverride ?? value));
+  const recommended = Math.max(1, Math.min(PRECISION_MAX_FAN_OUT, Math.floor(input.recommendedFanOutWidth) || 1));
+  const width = (value: number) => Math.max(1, Math.min(PRECISION_MAX_FAN_OUT, input.fanOutWidthOverride ?? value));
   if (!workers) return { immediateTargets: 0, fanOutWidth: 1, standby: 0, wave2: false, rescue: false, rescueMax: 0, concurrentWave2: false };
   if (preset === 'RELEASE_FOCUSED') return { immediateTargets: workers, fanOutWidth: width(recommended), standby: 0, wave2: false, rescue: true, rescueMax: Math.min(2, workers), concurrentWave2: false };
   if (preset === 'RESCUE_FOCUSED') { const immediate = Math.max(1, Math.ceil(workers / 3));

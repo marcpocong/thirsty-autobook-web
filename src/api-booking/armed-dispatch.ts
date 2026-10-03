@@ -12,12 +12,12 @@ import { SubmissionDispatchError } from './submission-errors.js';
 import { standardPlanJournalKeys, type CheckoutCustomer } from './two-hour-reservation.js';
 import type { BookingPlan } from './types.js';
 import { DEFAULT_SPIN_TAIL_MS, waitForMonotonicDeadline, type TrustedReleaseClock } from '../release-clock.js';
-import { releaseTriggerMs } from '../release-offset.js';
 import type { WorkerId } from '../workers.js';
 import type { OndaBrowserSessionTransport } from './browser-session-transport.js';
 import type { RendererClockCalibration } from './renderer-clock.js';
 import { DEFAULT_RENDERER_DISPATCH_OPTIONS, planRendererFire, type RendererDispatchOptions, type RendererFirePlan } from './renderer-dispatch.js';
 import { schedulePrewarm, UNBOUNDED_PREWARM, type PrewarmPolicy, type PrewarmSchedule, type TierStatus } from './prewarm-scheduler.js';
+import { shotgunStopReason, shotgunTriggerMs, type ShotgunSuppressionReason } from '../shotgun.js';
 
 /**
  * Durable pre-armed Precision dispatch.
@@ -46,7 +46,7 @@ export interface ArmedAttempt {
   readonly request: ProoflessCheckoutRequest;
   readonly journal: DurableSubmissionJournal;
   readonly permit: SubmissionPermit;
-  /** Scheduled trigger: the release instant plus this attempt's Release Offset (a whole millisecond from -2000 through 0). */
+  /** Scheduled trigger: the release instant plus this attempt's signed Shotgun offset (-2000 through +2000 ms). */
   readonly triggerMs: number;
   /** 'armed' until the one in-memory transition; 'fired' is set synchronously before the transport call. */
   state: ArmedAttemptState;
@@ -57,7 +57,7 @@ export interface ArmedPrecisionRace {
   readonly releaseMs: number;
   readonly dispatchDeadlineMs: number;
   readonly attempts: readonly ArmedAttempt[];
-  /** One durable logical-target guard for each worker's four-child fan-out group. */
+  /** One durable logical-target guard for each worker's bounded fan-out group. */
   readonly fanOutGuards: readonly ArmedFanOutGuard[];
   /** Frozen attempts that could not be armed: provably unsent. */
   readonly unarmed: ReadonlyArray<{ attempt: PrecisionAttempt; state: PrecisionAttemptState; code: string }>;
@@ -93,9 +93,11 @@ export async function armPrecisionRace(race: FrozenPrecisionRace, deps: ArmDeps)
   if (race.releaseMs !== deps.releaseMs || !Number.isSafeInteger(deps.releaseMs)) throw Error('PRECISION_ARM_RELEASE_MISMATCH');
   if (!race.attempts.length) throw Error('PRECISION_NOTHING_TO_ARM');
   // Validated before anything durable: an out-of-range offset refuses the whole arm.
-  const triggers = race.attempts.map(attempt => releaseTriggerMs(deps.releaseMs, attempt.target.releaseOffsetMs ?? 0));
+  const triggers = race.attempts.map(attempt => shotgunTriggerMs(deps.releaseMs, attempt.target.releaseOffsetMs ?? 0));
   if (!(deps.now() < Math.min(...triggers))) throw Error('PRECISION_ARM_TOO_LATE');
-  const dispatchDeadlineMs = deps.releaseMs + (deps.dispatchWindowMs ?? DIRECT_MAX_DISPATCH_LATENESS_MS);
+  const latestTriggerOffsetMs = Math.max(0, ...triggers.map(triggerMs => triggerMs - deps.releaseMs));
+  const dispatchDeadlineMs = deps.releaseMs + Math.max(deps.dispatchWindowMs ?? DIRECT_MAX_DISPATCH_LATENESS_MS,
+    latestTriggerOffsetMs + DIRECT_MAX_DISPATCH_LATENESS_MS);
   const prepared = race.attempts.map((attempt, index) => {
     const request = deepFreeze(prooflessRequest(attempt.plan, deps.customerFor(attempt.target.workerId)));
     const keys = standardPlanJournalKeys(attempt.plan, THIRSTY_PICKLE_FACILITY_ID);
@@ -178,7 +180,7 @@ export function fireArmedAttempt(attempt: ArmedAttempt, transport: DirectTranspo
     attempt.state = 'fired';
     // Checked once more as the transport's last step before the network.
     const beforePost = () => {
-      try { assertDirectDispatchWindow(window.releaseMs, clock.nowMs(), triggerMs); }
+      try { assertDirectDispatchWindow(window.releaseMs, clock.nowMs(), triggerMs,true); }
       catch { throw new SubmissionDispatchError('DIRECT_RELEASE_WINDOW_MISSED', false); }
     };
     return transport.publicCheckoutProofless(attempt.request, attempt.permit, { requirePreparedContext: true, beforePost });
@@ -334,6 +336,9 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
   let prewarmSchedule: PrewarmSchedule | undefined;
   const tiered = !!deps.prewarmPolicy;
   const sends: Array<Promise<unknown> | undefined> = new Array(armed.attempts.length);
+  const outcomes:Array<Promise<PrecisionDispatchResult>|undefined>=new Array(armed.attempts.length);
+  const suppressed:Array<ShotgunSuppressionReason|undefined>=new Array(armed.attempts.length);
+  const targetStops=new Map<string,ShotgunSuppressionReason>();
   const renderer = deps.rendererDispatch;
   const rendererOptions = { ...DEFAULT_RENDERER_DISPATCH_OPTIONS, ...(renderer?.options ?? {}) };
   const rendererArmed: number[] = [];
@@ -346,11 +351,30 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
     .sort((a, b) => a.at - b.at || (a.kind === b.kind ? 0 : a.kind === 'fire' ? -1 : 1));
   const groupOf = (triggerMs: number) => armed.attempts.flatMap((attempt, index) => attempt.triggerMs === triggerMs ? [index] : []);
   let calibrations = new Map<number, RendererClockCalibration>();
+  const settleSent=(index:number,sent:Promise<unknown>)=>{
+    const attempt=armed.attempts[index]!;
+    const outcome=(async():Promise<PrecisionDispatchResult>=>{
+      try { const verified=await settleArmedAttempt(attempt,sent,now);return deps.onVerifiedHold?await deps.onVerifiedHold(attempt,verified):{state:'QR_READY'}; }
+      catch(error){return classifyPrecisionDispatchError(error,async()=>{try{return (await attempt.journal.read(attempt.key)).state;}catch(readError){if((readError as NodeJS.ErrnoException).code==='ENOENT')return undefined;throw readError;}});}
+    })().catch(():PrecisionDispatchResult=>({state:'UNKNOWN',code:'PRECISION_DISPATCH_UNCLASSIFIED'})).then(async result=>{
+      const reason=shotgunStopReason({state:result.state,throttle:!!result.code&&/(?:429|THROTTL|RATE_LIMIT)/.test(result.code)});
+      if(reason){targetStops.set(attempt.target.targetKey,reason);
+        // A renderer child can already be armed for a later trigger. Disarm it as soon as this
+        // same logical target becomes conclusive/unknown/throttled, and retain the exact reason.
+        await Promise.all(rendererArmed.flatMap(otherIndex=>{const other=armed.attempts[otherIndex]!;
+          if(otherIndex===index||other.target.targetKey!==attempt.target.targetKey||other.triggerMs<=now())return[];
+          suppressed[otherIndex]=reason;
+          return [renderer?.transportFor(other.target.workerId,other)?.disarmRendererCheckout(other.key).catch(()=>undefined)??Promise.resolve()];}));}
+      return result;
+    });
+    outcomes[index]=outcome;return outcome;
+  };
   /** EXPERIMENTAL: one synchronous pass handing each calibrated, ready attempt of this trigger to its page. */
   const armRendererGroup = (triggerMs: number) => {
     for (const index of groupOf(triggerMs)) {
       const attempt = armed.attempts[index]!, ready = readiness[index]!, calibration = calibrations.get(index);
       if (!ready.settled || !ready.ok || !calibration) continue;
+      const stop=targetStops.get(attempt.target.targetKey);if(stop){suppressed[index]=stop;continue;}
       const transport = renderer!.transportFor(attempt.target.workerId,attempt);
       if (!transport) { emitPlan({ workerId: attempt.target.workerId, attemptId:attempt.attempt.id, mode: 'node-fallback', code: 'RENDERER_TRANSPORT_MISSING' }); continue; }
       let plan: RendererFirePlan;
@@ -363,6 +387,7 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
       const sent = fireArmedAttemptRenderer(attempt, transport, clock, armedWindow(armed, attempt), plan, deps.isAborted, rendererOptions.armLeadMs);
       sent.catch(() => undefined);
       sends[index] = sent;
+      settleSent(index,sent);
       rendererArmed.push(index);
       emitPlan({ workerId: attempt.target.workerId, attemptId:attempt.attempt.id, mode: 'renderer', calibration, plan });
     }
@@ -372,12 +397,14 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
     for (const index of groupOf(triggerMs)) {
       const attempt = armed.attempts[index]!, ready = readiness[index]!;
       if (sends[index] || !ready.settled || !ready.ok) continue;
+      const stop=targetStops.get(attempt.target.targetKey);if(stop){suppressed[index]=stop;continue;}
       const transport = deps.transportFor(attempt.target.workerId,attempt);
       if (!transport) continue;
       deps.onMark?.(attempt.target.workerId,'transportCall',attempt);
       const sent = fireArmedAttempt(attempt, transport, clock, armedWindow(armed, attempt), deps.isAborted);
       sent.catch(() => undefined); // observed below; marked handled so a refusal is never an unhandled rejection meanwhile
       sends[index] = sent;
+      settleSent(index,sent);
     }
   };
   // Once anything has been sent (or a page armed) a wait can no longer throw: a Stop disarms the armed pages (best
@@ -467,6 +494,8 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
     : Promise.resolve(undefined);
   const settleInner = async (index: number): Promise<PrecisionDispatchResult> => {
     const attempt = armed.attempts[index]!, ready = readiness[index]!;
+    if(suppressed[index]){await disarmAttempt(attempt,suppressed[index]!,now).catch(()=>undefined);return {state:'NOT_DISPATCHED',code:suppressed[index]};}
+    if(outcomes[index]){emit({kind:'dispatch-start',workerId:attempt.target.workerId,attemptId:attempt.attempt.id});return outcomes[index]!;}
     let sent = sends[index];
     if (!sent) {
       // A lower-tier fan-out child that was not ready (or never started) at its trigger is omitted, never sent late.
@@ -482,20 +511,15 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
         if (outcome === timedOut) { await disarmAttempt(attempt, 'PREWARM_NOT_READY_IN_WINDOW', now).catch(() => undefined); return { state: 'WINDOW_MISSED', code: 'PREWARM_NOT_READY_IN_WINDOW' }; }
       }
       if (!ready.ok) { await disarmAttempt(attempt, 'SECURITY_PREWARM_FAILED', now).catch(() => undefined); return { state: 'PREWARM_FAILED', code: 'SECURITY_PREWARM_FAILED' }; }
+      const stop=targetStops.get(attempt.target.targetKey);
+      if(stop){await disarmAttempt(attempt,stop,now).catch(()=>undefined);return {state:'NOT_DISPATCHED',code:stop};}
       const transport = deps.transportFor(attempt.target.workerId,attempt);
       if (!transport) { await disarmAttempt(attempt, 'API_CHECKOUT_WORKER_MISSING', now).catch(() => undefined); return { state: 'NOT_DISPATCHED', code: 'API_CHECKOUT_WORKER_MISSING' }; }
       sent = fireArmedAttempt(attempt, transport, clock, armedWindow(armed, attempt), deps.isAborted);
+      sends[index]=sent;
     }
     emit({ kind: 'dispatch-start', workerId: attempt.target.workerId, attemptId: attempt.attempt.id });
-    try {
-      const verified = await settleArmedAttempt(attempt, sent, now);
-      return deps.onVerifiedHold ? await deps.onVerifiedHold(attempt, verified) : { state: 'QR_READY' };
-    } catch (error) {
-      return classifyPrecisionDispatchError(error, async () => {
-        try { return (await attempt.journal.read(attempt.key)).state; }
-        catch (readError) { if ((readError as NodeJS.ErrnoException).code === 'ENOENT') return undefined; throw readError; }
-      });
-    }
+    return settleSent(index,sent);
   };
   const settleOne = async (index: number): Promise<PrecisionDispatchResult> => {
     // settleInner classifies its own failures; an unexpected throw may have happened after the POST.

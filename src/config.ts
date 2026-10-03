@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import { reconcileBookingSetupFallbacks, reconcileFallbackTimes, type FallbackReconciliation } from './booking-setup.js';
 import { PRECISION_MAX_ATTEMPTS, PRECISION_MAX_FAN_OUT, PRECISION_MAX_SENDS, WORKER_IDS, type CourtCount, type WorkerId } from './workers.js';
 import {networkNowMs} from './network-clock.js';
+import { isShotgunOffsetMs,logicalTargetId } from './shotgun.js';
 import { PRECISION_MAX_CANDIDATES } from './api-booking/precision-phase3.js';
 import { isReleaseOffsetMs } from './release-offset.js';
 
@@ -15,6 +16,7 @@ const hour = z.string().regex(/^(0[89]|1[0-9]|2[0-3]):00$/);
 const courts = z.array(z.number().int().min(1).max(7));
 /** Release Offset of one Precision attempt; absent means 0 ms (normal). */
 const offsetValue = z.number().int().refine(isReleaseOffsetMs, 'Release offset must be from -2000 ms through 0 ms.');
+const phase3OffsetValue=z.number().int().refine(isShotgunOffsetMs,'Shotgun trigger must be from -2000 ms through +2000 ms.');
 const attemptOffset = offsetValue.optional();
 /** One exact Precision target: one court, one start, 1-3 hours. Workers A-G follow row order. */
 export const PrecisionTargetSchema = z.object({ court: z.number().int().min(1).max(7), start: hour, durationHours: z.number().int().min(1).max(3),
@@ -33,9 +35,9 @@ export const PrecisionPhase3Schema=z.object({
     // Planning-time public evidence; the override marker keeps a deliberately force-included conflicting slot at freeze.
     publicEvidence:z.object({evidence:z.enum(['NO_KNOWN_PUBLIC_CONFLICT','KNOWN_PUBLIC_BOOKING_CONFLICT','UNKNOWN_PUBLIC_QUERY_FAILED','PUBLISHED_OPEN','PUBLISHED_UNAVAILABLE']),
       override:z.literal('OPERATOR_OVERRIDE_PUBLIC_CONFLICT').optional()}).strict().optional()}).strict()).min(1).max(PRECISION_MAX_CANDIDATES),
-  // fanOutOffsetsMs: 2-4 independently tracked children of this immediate target, one Release Offset each (index order).
-  wave1:z.array(z.object({workerId:precisionWorker,candidateIndex:z.number().int().min(0).max(PRECISION_MAX_CANDIDATES-1),releaseOffsetMs:attemptOffset,
-    fanOutOffsetsMs:z.array(offsetValue).min(2).max(PRECISION_MAX_FAN_OUT).optional()}).strict()).min(1).max(7),
+  // fanOutOffsetsMs: 2-PRECISION_MAX_FAN_OUT independently tracked children, one signed trigger each (index order).
+  wave1:z.array(z.object({workerId:precisionWorker,candidateIndex:z.number().int().min(0).max(PRECISION_MAX_CANDIDATES-1),releaseOffsetMs:phase3OffsetValue.optional(),
+    fanOutOffsetsMs:z.array(phase3OffsetValue).min(2).max(PRECISION_MAX_FAN_OUT).optional()}).strict()).min(1).max(7),
   standby:z.array(precisionWorker).max(7),budgets:z.object({wave2:z.number().int().min(0).max(7),rescue:z.number().int().min(0).max(7),total:z.number().int().min(1).max(PRECISION_MAX_SENDS)}).strict(),
   concurrentWave2:z.boolean(),rescueEnabled:z.boolean(),
 }).strict();
@@ -60,6 +62,13 @@ export const StrategyV2Schema=z.object({version:z.literal(1),preset:z.enum(['BAL
   // Reset baseline only. It never authorizes execution; the sibling PRECISION_PHASE3 remains the sole current authority.
   acceptedPhase3:PrecisionPhase3Schema.optional(),
   lineage:z.object({immediate:z.array(z.string().regex(/^I\d+$/).nullable()).max(7),backups:z.array(z.string().regex(/^B\d+$/).nullable()).max(21)}).strict().optional(),
+  shotgun:z.object({version:z.literal(1),enabled:z.boolean(),budget:z.number().int().min(1).max(PRECISION_MAX_SENDS),
+    allocationMode:z.enum(['EQUAL','PRIORITY_WEIGHTED','CUSTOM']),selectedTargetIds:z.array(z.string().min(1).max(100)).min(1).max(7),
+    customCounts:z.record(z.string(),z.number().int().nonnegative()).optional(),windowStartMs:z.number().int().min(-2000).max(2000),
+    windowEndMs:z.number().int().min(-2000).max(2000),timingMode:z.enum(['AUTO','TIGHT','BALANCED','WIDE','CUSTOM']),
+    capacityOverride:z.boolean().optional(),counts:z.record(z.string(),z.number().int().nonnegative()),
+    exactSchedule:z.array(z.object({logicalTargetId:z.string().min(1).max(100),shotIndex:z.number().int().nonnegative(),configuredOffsetMs:phase3OffsetValue}).strict()).max(PRECISION_MAX_SENDS),
+    capacity:z.object({meaningfulSpacingMs:z.number().positive(),recommendedMaximum:z.number().int().positive(),warning:z.string().nullable(),groupAnchorMs:z.number().int()}).strict()}).strict().optional(),
   intelligenceMode:z.enum(['AUTO','PREFERENCE_ONLY']).optional(),
   provenance:z.object({source:z.enum(['SMART_SUGGESTED','EXISTING_SMART_PLAN','OPERATOR_BUILT']),operatorModifications:z.number().int().min(0)}).strict().optional()}).strict();
 export const ReleaseLabSetupSchema=z.object({version:z.literal(1),kind:z.literal('DURATION_OFFSET_V1'),label:z.literal('Duration × Offset')}).strict();
@@ -77,6 +86,16 @@ function checkPrecision(c:{RELEASE_STRATEGY:'general'|'precision';BOOKING_METHOD
   if(c.BOOKING_TYPE!=='standard')ctx.addIssue({code:'custom',message:'Precision Release supports Standard 1-3 hour targets only.',path:['BOOKING_TYPE']});
   if(c.PRECISION_PHASE3){
     const p=c.PRECISION_PHASE3,workers=[...p.wave1.map(value=>value.workerId),...p.standby];
+    const shotgun=c.STRATEGY_V2?.shotgun;
+    if(shotgun){const selected=new Set(shotgun.selectedTargetIds),candidateIds=new Set(p.wave1.map(value=>logicalTargetId(p.candidates[value.candidateIndex]!)));
+      if(shotgun.windowStartMs>shotgun.windowEndMs||selected.size!==shotgun.selectedTargetIds.length||[...selected].some(value=>!candidateIds.has(value)))
+        ctx.addIssue({code:'custom',message:'Shotgun target selection or timing window is inconsistent.',path:['STRATEGY_V2','shotgun']});
+      const countSum=Object.values(shotgun.counts).reduce((sum,value)=>sum+value,0),scheduleCounts=new Map<string,number>();
+      for(const shot of shotgun.exactSchedule)scheduleCounts.set(shot.logicalTargetId,(scheduleCounts.get(shot.logicalTargetId)??0)+1);
+      if(countSum>shotgun.budget||shotgun.exactSchedule.length!==countSum||Object.entries(shotgun.counts).some(([id,count])=>!selected.has(id)||scheduleCounts.get(id)!==count)||
+        (shotgun.allocationMode!=='CUSTOM'&&countSum!==shotgun.budget))ctx.addIssue({code:'custom',message:'Shotgun budget, allocation, or exact schedule is inconsistent.',path:['STRATEGY_V2','shotgun']});
+      if(shotgun.allocationMode==='CUSTOM'&&Object.entries(shotgun.customCounts??{}).some(([id,count])=>!selected.has(id)||shotgun.counts[id]!==count))
+        ctx.addIssue({code:'custom',message:'Custom Shotgun allocation was not preserved exactly.',path:['STRATEGY_V2','shotgun','customCounts']});}
     if(new Set(workers).size!==workers.length)ctx.addIssue({code:'custom',message:'Precision workers must be unique across Wave 1 and standby.',path:['PRECISION_PHASE3']});
     if(p.wave1.some(value=>!p.candidates[value.candidateIndex]?.permissions.wave1))ctx.addIssue({code:'custom',message:'Wave 1 assignment must name a Wave 1 eligible candidate.',path:['PRECISION_PHASE3']});
     if(p.wave1.some(value=>p.candidates[value.candidateIndex]?.rateEvidence.status==='REFERENCE'||
@@ -93,7 +112,7 @@ function checkPrecision(c:{RELEASE_STRATEGY:'general'|'precision';BOOKING_METHOD
         ctx.addIssue({code:'custom',message:'Exact duplicate Precision candidate.',path:['PRECISION_PHASE3']});
     for(const [index,assignment] of p.wave1.entries())for(const other of p.wave1.slice(index+1)){
       const a=p.candidates[assignment.candidateIndex],b=p.candidates[other.candidateIndex];
-      if(assignment.candidateIndex===other.candidateIndex||a&&b&&a.court===b.court&&
+      if(assignment.candidateIndex!==other.candidateIndex&&a&&b&&a.court===b.court&&
         Number(a.start.slice(0,2))<Number(b.start.slice(0,2))+b.durationHours&&
         Number(b.start.slice(0,2))<Number(a.start.slice(0,2))+a.durationHours)
         ctx.addIssue({code:'custom',message:'Wave 1 assignments conflict on the same court and time.',path:['PRECISION_PHASE3']});

@@ -18,9 +18,9 @@ export function releaseTriggerMs(releaseMs: number, offsetMs = 0): number {
   return releaseMs + offsetMs;
 }
 
-/** A trigger is valid only from two seconds before the release instant through the release instant. */
+/** A legacy trigger is valid only from two seconds before release through release. */
 export const isValidReleaseTrigger = (releaseMs: number, triggerMs: number) =>
   Number.isSafeInteger(releaseMs) && Number.isSafeInteger(triggerMs) && isReleaseOffsetMs(triggerMs - releaseMs);
 
 /** Operator wording, e.g. "−50 ms" or "0 ms". */
-export const formatReleaseOffset = (offsetMs: number) => offsetMs < 0 ? `−${-offsetMs} ms` : `${offsetMs} ms`;
+export const formatReleaseOffset = (offsetMs: number) => offsetMs < 0 ? `−${-offsetMs} ms` : offsetMs > 0 ? `+${offsetMs} ms` : '0 ms';

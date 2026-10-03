@@ -51,6 +51,7 @@ import { WirePayloadError } from './wire-payload-check.js';
 import { adaptivePrewarmLeadMs, describeTierStatus, type TierStatus } from './prewarm-scheduler.js';
 import { securityPrepHistory } from '../security-prep-history.js';
 import { currentMachineIdentity } from '../fanout-capacity.js';
+import {shotgunTimingBucket} from '../shotgun.js';
 import { predictionError, predictReopenings, RESCUE_CONTEXT_REUSE_MS, RESCUE_PREWARM_MAX_PER_RELEASE, rescuePrewarmDue, type ReopenPrediction } from './reopen-prediction.js';
 import { readPublicBookingRecords } from './public-bookings.js';
 import {API_SECURITY_PREWARM_LEAD_MS,safeApiFailureCode} from './run-observability.js';
@@ -973,9 +974,16 @@ try {
           ...(offsets.length>1?{fanOutCount:offsets.length}:{})});
       }
       const frozen=freezePrecisionRace(date,releaseMs,wave1);
+      const shotgunTopology=new Map<string,{shotIndex:number;shotCount:number;timingBucket:ReturnType<typeof shotgunTimingBucket>}>();
+      for(const targetKey of new Set(frozen.attempts.map(value=>value.target.targetKey))){const values=frozen.attempts.filter(value=>value.target.targetKey===targetKey);
+        values.forEach((value,shotIndex)=>shotgunTopology.set(value.id,{shotIndex,shotCount:values.length,timingBucket:shotgunTimingBucket(value.target.releaseOffsetMs??0)}));}
       const fanOutWidth=Math.max(1,...frozen.attempts.map(attempt=>attempt.fanOutCount));
       await saveOnce(resolve('.local/api-booking/precision-races'),`${progressLog.runId}-phase3-freeze.json`,
-        {runId:progressLog.runId,frozenAt:new Date(nowMs()).toISOString(),authorization,wave1Freeze:frozen.fingerprint});
+        {runId:progressLog.runId,frozenAt:new Date(nowMs()).toISOString(),authorization,wave1Freeze:frozen.fingerprint,
+          shotgun:config.STRATEGY_V2?.shotgun?{enabled:config.STRATEGY_V2.shotgun.enabled,budget:config.STRATEGY_V2.shotgun.budget,
+            selectedLogicalTargets:config.STRATEGY_V2.shotgun.selectedTargetIds,allocationMode:config.STRATEGY_V2.shotgun.allocationMode,
+            counts:config.STRATEGY_V2.shotgun.counts,windowStartMs:config.STRATEGY_V2.shotgun.windowStartMs,windowEndMs:config.STRATEGY_V2.shotgun.windowEndMs,
+            timingMode:config.STRATEGY_V2.shotgun.timingMode,groupAnchor:config.STRATEGY_V2.timingCalibration??null}:{enabled:false}});
       if(config.RELEASE_LAB){
         const createdAt=new Date(nowMs()).toISOString();
         await saveOnce(resolve('.local/api-booking/precision-races'),`${progressLog.runId}-release-lab.json`,{
@@ -1004,7 +1012,7 @@ try {
           directory:childDirectory(attempt)},'DIAGNOSTIC_ATTEMPT_ARMED')] as const;
       }));
       if(fanOutWidth>1)for(const attempt of frozen.attempts)stage('PHASE3_FAN_OUT_CHILD',{workerId:attempt.target.workerId,candidateId:candidateOf(attempt).id,
-        attemptId:bindings.get(attempt.id)!.correlation.attemptId,fanOutIndex:attempt.fanOutIndex,fanOutCount:attempt.fanOutCount,releaseOffsetMs:attempt.target.releaseOffsetMs??0});
+        attemptId:bindings.get(attempt.id)!.correlation.attemptId,fanOutIndex:attempt.fanOutIndex,fanOutCount:attempt.fanOutCount,releaseOffsetMs:attempt.target.releaseOffsetMs??0,...shotgunTopology.get(attempt.id)!});
       const armed=await armPrecisionRace(frozen,{lock:liveLock,customerFor:worker=>customers![worker]!,
         journalRoot:resolve('.local/api-booking/api-first-journals'),releaseMs,now:nowMs});
       retainLiveLock=true;
@@ -1135,7 +1143,7 @@ try {
           const page=pageOf(attempt.attempt);return page?[[attempt.attempt.id,page] as const]:[];})));
         for(const attempt of armed.attempts){recorder.alias(transportKeyOf(attempt.target.workerId,attempt.attempt.fanOutIndex),attempt.attempt.id);
           recorder.describe(attempt.attempt.id,{parentGoalId:candidateOf(attempt.attempt).id,workerId:attempt.target.workerId,fanOutIndex:attempt.attempt.fanOutIndex,
-            fanOutCount:attempt.attempt.fanOutCount,configuredOffsetMs:attempt.triggerMs-releaseMs,wave:'WAVE_1'});}
+            fanOutCount:attempt.attempt.fanOutCount,configuredOffsetMs:attempt.triggerMs-releaseMs,...shotgunTopology.get(attempt.attempt.id)!,wave:'WAVE_1'});}
         const transportOf=(attempt:ArmedAttempt)=>releaseTransports.get(transportKeyOf(attempt.target.workerId,attempt.attempt.fanOutIndex));
         const outcome=await dispatchArmedPrecisionRace(armed,{clock:releaseClock,spinTailMs:DEFAULT_SPIN_TAIL_MS,isAborted:()=>abort.signal.aborted,sleep:pause,
           ...fanOutPrewarm(fanOutWidth,armed.attempts.filter(attempt=>attempt.attempt.fanOutIndex===0).length),
@@ -1144,6 +1152,8 @@ try {
           ...experimentalRendererDispatch(attempt=>pageOf(attempt.attempt),transportOf),
           transportFor:(_worker,attempt)=>transportOf(attempt),prewarm:async attempt=>{
             const transport=transportOf(attempt);if(!transport)throw Error('API_CHECKOUT_WORKER_MISSING');
+            const child=attempt.attempt,candidate=candidateOf(child);stage('SECURITY_PREWARM_STARTED',{workerId:attempt.target.workerId,candidateId:candidate.id,attemptId:bindings.get(child.id)!.correlation.attemptId,
+              fanOutIndex:child.fanOutIndex,fanOutCount:child.fanOutCount,...shotgunTopology.get(child.id)!});
             await transport.prepareCheckoutContext();},
           onVerifiedHold:async(attempt,hold)=>{const base=sessions.find(value=>value.workerId===attempt.target.workerId)!;
             await completeVerifiedProoflessHold(bindings.get(attempt.attempt.id)!,{...base,page:pageOf(attempt.attempt)??base.page},attempt.plan,hold);return {state:'QR_READY'};},
@@ -1151,8 +1161,12 @@ try {
           onFinalApproach:enterReleaseLockdown,
           onReleaseWindowEnd:exitReleaseLockdown,
           onEvent:event=>{const binding=bindings.get(event.attemptId),child=frozen.attempts.find(value=>value.id===event.attemptId);
-            if(event.kind==='prewarm-ready')recorder.describe(event.attemptId,{prewarmReadyMs:Math.round((releaseClock?.nowMs()??nowMs())-releaseMs)});
-            const fanOut:Record<string,number>=child&&child.fanOutCount>1?{fanOutIndex:child.fanOutIndex,fanOutCount:child.fanOutCount}:{};
+            if(event.kind==='prewarm-ready'){recorder.describe(event.attemptId,{prewarmReadyMs:Math.round((releaseClock?.nowMs()??nowMs())-releaseMs)});
+              if(binding&&child)stage('SECURITY_PREWARM_READY',{workerId:event.workerId,candidateId:candidateOf(child).id,attemptId:binding.correlation.attemptId,
+                fanOutIndex:child.fanOutIndex,fanOutCount:child.fanOutCount,...shotgunTopology.get(child.id)!});}
+            if(event.kind==='prewarm-failed'&&binding&&child)stage('SECURITY_PREWARM_FAILED',{workerId:event.workerId,candidateId:candidateOf(child).id,attemptId:binding.correlation.attemptId,code:event.code??'SECURITY_PREWARM_FAILED',
+              fanOutIndex:child.fanOutIndex,fanOutCount:child.fanOutCount,...shotgunTopology.get(child.id)!});
+            const fanOut:Record<string,number|string>=child&&child.fanOutCount>1?{fanOutIndex:child.fanOutIndex,fanOutCount:child.fanOutCount,...shotgunTopology.get(child.id)!}:{};
             if(event.kind==='dispatch-start'&&binding&&child){wave1Fired=true;const candidate=candidateOf(child);
               session.record({id:binding.correlation.attemptId,candidateId:candidate.id,workerId:event.workerId,wave:'WAVE_1',state:'IN_FLIGHT',...fanOut});
               stage('PHASE3_WAVE1_STARTED',{workerId:event.workerId,candidateId:candidate.id,wave:'WAVE_1',attemptId:binding.correlation.attemptId,
@@ -1169,8 +1183,9 @@ try {
         for(const result of outcome.results)recorder.describe(result.attempt.id,{finalState:result.state,...(result.code?{finalCode:result.code}:{})});
         for(const result of outcome.results){const binding=bindings.get(result.attempt.id);
           if(!binding||!session.attempts.some(value=>value.id===binding.correlation.attemptId))
-            stage('PHASE3_WAVE1_UNSENT',{workerId:result.attempt.target.workerId,state:result.state,...(result.code?{code:result.code}:{}),
-              ...(result.attempt.fanOutCount>1?{fanOutIndex:result.attempt.fanOutIndex,fanOutCount:result.attempt.fanOutCount} as Record<string,number>:{})});}
+            stage('PHASE3_WAVE1_UNSENT',{workerId:result.attempt.target.workerId,candidateId:candidateOf(result.attempt).id,
+              ...(binding?{attemptId:binding.correlation.attemptId}:{}),state:result.state,...(result.code?{code:result.code}:{}),
+              fanOutIndex:result.attempt.fanOutIndex,fanOutCount:result.attempt.fanOutCount,...shotgunTopology.get(result.attempt.id)!});}
         await standbyReady;
         await adaptiveLoop;
         await persistLatestVerifiedHold();

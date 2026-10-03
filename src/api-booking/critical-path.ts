@@ -29,7 +29,8 @@ interface WorkerRecord {
 }
 /** Per-attempt identity and outcome (Phase 13): parent goal, worker, fan-out position, configured offset, wave and final state. Never private data. */
 export type CriticalPathMeta = Partial<{ parentGoalId: string; workerId: string; fanOutIndex: number; fanOutCount: number; configuredOffsetMs: number;
-  wave: string; finalState: string; finalCode: string; prewarmReadyMs: number }>;
+  shotIndex:number;shotCount:number;timingBucket:string;wave: string; finalState: string; finalCode: string; prewarmReadyMs: number;
+  httpStatus:number;providerThrottleSignal:boolean }>;
 
 export interface CriticalPathRow {
   schema: 'critical-path/v1';
@@ -139,6 +140,7 @@ export class CriticalPathRecorder {
           this.mark(worker, 'responseObserved', at);
           this.renderer(worker, observation.renderer);
           this.browserRequestWall(worker, observation.browserRequestWallMs);
+          if(observation.statusCode!==undefined)this.describe(worker,{httpStatus:observation.statusCode,providerThrottleSignal:observation.statusCode===429});
           break;
         default: break;
       }

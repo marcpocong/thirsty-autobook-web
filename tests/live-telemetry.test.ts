@@ -21,12 +21,13 @@ describe('Live view model (parent goal → independently tracked children)', () 
       stage('PHASE3_SETTLED', { workerId: 'A', candidateId: candidate, attemptId: 'att-1', state: 'REJECTED', fanOutIndex: 1, fanOutCount: 3, wave: 'WAVE_1' }),
       // A late non-terminal event never overwrites a terminal outcome.
       stage('PHASE3_WAVE1_STARTED', { workerId: 'A', candidateId: candidate, attemptId: 'att-0', fanOutIndex: 0, fanOutCount: 3 }),
+      stage('PHASE3_WAVE1_UNSENT', { workerId: 'A', candidateId: candidate, attemptId: 'att-2', fanOutIndex: 2, fanOutCount: 3, state: 'NOT_DISPATCHED', code: 'PREWARM_TIER_OMITTED' }),
     ]) view = reduceLiveRun(view, event, candidates);
     expect(view!.parents).toHaveLength(1);
     const parent = view!.parents[0]!;
     expect(parent).toMatchObject({ wave: 'WAVE_1', workerId: 'A', court: 7, startTime: '19:00', endTime: '22:00' });
-    expect(parent.children.map(child => [child.label, child.state, child.offsetMs])).toEqual([['A0', 'REJECTED', -20], ['A1', 'REJECTED', -10], ['A2', 'IN_FLIGHT', 0]]);
-    expect(describeChildren(parent)).toBe('3 attempts: 2 rejected, 1 in flight');
+    expect(parent.children.map(child => [child.label, child.state, child.offsetMs])).toEqual([['A0', 'REJECTED', -20], ['A1', 'REJECTED', -10], ['A2', 'OMITTED', 0]]);
+    expect(describeChildren(parent)).toBe('3 attempts: 2 rejected, 1 omitted');
     expect(view).toMatchObject({ rescueEnabled: true, rescueMax: 2, tiers: 'Tier 1 ready: 1/1' });
   });
   it('tracks Rescue as its own parent per candidate, with predictions, prewarm and observed error', () => {
@@ -58,7 +59,8 @@ describe('release dispatch telemetry summary', () => {
       workerInvokedMs: configured + 0.3, requestObservedMs: chrome + 2, responseObservedMs: chrome + 900, fetchInvokedMs: { ms: chrome - 1, lowMs: chrome - 1.5, highMs: chrome - 0.5 },
       browserRequestStartMs: chrome, meta: { workerId, fanOutIndex: index, fanOutCount: 2, configuredOffsetMs: configured, parentGoalId: `g-${workerId}`, finalState: 'REJECTED',
         prewarmReadyMs: -9_000, ...extra } });
-    const summary = summarizeRun('run-1', [{ type: 'header', schema: 'critical-path/v1' }, row('a0', 'A', 0, -35, -4), row('a1', 'A', 1, -10, 11), row('b0', 'B', 0, -35, -3), row('b1', 'B', 1, -10, 12)], [
+    const summary = summarizeRun('run-1', [{ type: 'header', schema: 'critical-path/v1' }, row('a0', 'A', 0, -35, -4,
+      {shotIndex:4,shotCount:6,timingBucket:'-100 to 0 ms',httpStatus:429,providerThrottleSignal:true,finalCode:'SHOTGUN_PROVIDER_THROTTLE_STOP'}), row('a1', 'A', 1, -10, 11), row('b0', 'B', 0, -35, -3), row('b1', 'B', 1, -10, 12)], [
       { stage: 'PHASE3_ADAPTIVE_SELECTED', at: '2026-09-29T00:10:00.000Z', workerId: 'E', candidateId: 'c', wave: 'RESCUE' },
       { stage: 'PHASE3_DISPATCH', at: '2026-09-29T00:10:00.400Z', workerId: 'E', candidateId: 'c', wave: 'RESCUE' },
       { stage: 'RESCUE_PREDICTION_OUTCOME', errorMs: 1500 }]);
@@ -69,6 +71,8 @@ describe('release dispatch telemetry summary', () => {
     expect(summary.summary.prewarmHeadroomMs.min).toBe(8_965);
     expect(summary.summary.adaptiveSelectionToPost.p50).toBe(400);
     expect(summary.summary.reopenPredictionErrorMs.p50).toBe(1500);
+    expect(summary.children[0]).toMatchObject({shotIndex:4,shotCount:6,timingBucket:'-100 to 0 ms',httpStatus:429,providerThrottleSignal:true,
+      suppressionReason:'SHOTGUN_PROVIDER_THROTTLE_STOP',stopCondition:'SHOTGUN_PROVIDER_THROTTLE_STOP',logicalTargetOutcome:'REJECTED'});
     expect(JSON.stringify(summary)).not.toMatch(/token|cookie|customer/i);
   });
   it('recovers legacy single-attempt offsets from live progress and does not turn undispatched missing data into zero', () => {

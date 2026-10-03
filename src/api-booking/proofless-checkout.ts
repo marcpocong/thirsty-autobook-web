@@ -125,9 +125,11 @@ export function resolveProoflessReleasePlan(preferences:BookingPreferences,snaps
 }
 
 /** Never before the scheduled trigger (the release instant unless an operator Release Offset is set), never past release + lateness. */
-export function assertDirectDispatchWindow(releaseMs:number,now=Date.now(),triggerMs=releaseMs):void{
-  if(!Number.isSafeInteger(releaseMs)||releaseMs<=0||!isValidReleaseTrigger(releaseMs,triggerMs)||!Number.isFinite(now)||now<triggerMs||
-    now-releaseMs>DIRECT_MAX_DISPATCH_LATENESS_MS)throw Error('DIRECT_RELEASE_WINDOW_MISSED');
+export function assertDirectDispatchWindow(releaseMs:number,now=Date.now(),triggerMs=releaseMs,allowPostRelease=false):void{
+  const offset=triggerMs-releaseMs,validTrigger=allowPostRelease?Number.isSafeInteger(offset)&&offset>=-2000&&offset<=2000:isValidReleaseTrigger(releaseMs,triggerMs);
+  const maximumLateMs=allowPostRelease?Math.max(DIRECT_MAX_DISPATCH_LATENESS_MS,offset+DIRECT_MAX_DISPATCH_LATENESS_MS):DIRECT_MAX_DISPATCH_LATENESS_MS;
+  if(!Number.isSafeInteger(releaseMs)||releaseMs<=0||!validTrigger||!Number.isFinite(now)||now<triggerMs||
+    now-releaseMs>maximumLateMs)throw Error('DIRECT_RELEASE_WINDOW_MISSED');
 }
 
 export function prooflessRequest(plan:BookingPlan,customer:CheckoutCustomer):ProoflessCheckoutRequest{

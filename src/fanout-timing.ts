@@ -12,6 +12,7 @@
  * Dependency-free (types only) so the renderer, the main process and tests share one generator.
  */
 import type { FanOutProfile, Stats, WidthSummary } from './fanout-capacity.js';
+import {PRECISION_MAX_FAN_OUT} from './workers.js';
 
 export type FanOutTimingPreset = 'TIGHT' | 'BALANCED' | 'WIDE' | 'CUSTOM';
 export const FANOUT_TIMING_PRESETS: readonly Exclude<FanOutTimingPreset, 'CUSTOM'>[] = ['TIGHT', 'BALANCED', 'WIDE'];
@@ -70,7 +71,7 @@ function predict(summary: WidthSummary | undefined, fanOutIndex: number, configu
  * children step back by the preset spacing; a spacing never goes below the machine's minimum meaningful spacing.
  */
 export function fanOutTimingPlan(preset: Exclude<FanOutTimingPreset, 'CUSTOM'>, fanOutWidth: number, profile: FanOutProfile | null): FanOutTimingPlan {
-  if (!Number.isInteger(fanOutWidth) || fanOutWidth < 1 || fanOutWidth > 6) throw Error('FANOUT_WIDTH_INVALID');
+  if (!Number.isInteger(fanOutWidth) || fanOutWidth < 1 || fanOutWidth > PRECISION_MAX_FAN_OUT) throw Error('FANOUT_WIDTH_INVALID');
   const minimum = minimumMeaningfulSpacingMs(profile, fanOutWidth);
   const spacing = Math.max(minimum.spacingMs, nearest(minimum.spacingMs * SPACING_FACTOR[preset], 5));
   const summary = width(profile, fanOutWidth);
@@ -85,7 +86,7 @@ export function fanOutTimingPlan(preset: Exclude<FanOutTimingPreset, 'CUSTOM'>, 
 
 /** An operator's own offsets, validated and annotated with the same local predictions and spacing warnings. */
 export function customFanOutTiming(offsets: readonly number[], profile: FanOutProfile | null): FanOutTimingPlan {
-  if (!offsets.length || offsets.length > 6) throw Error('FANOUT_WIDTH_INVALID');
+  if (!offsets.length || offsets.length > PRECISION_MAX_FAN_OUT) throw Error('FANOUT_WIDTH_INVALID');
   if (offsets.some(value => !Number.isSafeInteger(value) || value < OFFSET_MIN_MS || value > OFFSET_MAX_MS)) throw Error('FANOUT_OFFSET_INVALID');
   const minimum = minimumMeaningfulSpacingMs(profile, offsets.length), summary = width(profile, offsets.length);
   const sorted = [...offsets].sort((a, b) => a - b);

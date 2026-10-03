@@ -70,6 +70,9 @@ describe('release trigger', () => {
     // An out-of-range or later-than-release trigger is never honoured.
     expect(() => assertDirectDispatchWindow(release, release - 2001, release - 2001)).toThrow('DIRECT_RELEASE_WINDOW_MISSED');
     expect(() => assertDirectDispatchWindow(release, release + 5, release + 5)).toThrow('DIRECT_RELEASE_WINDOW_MISSED');
+    expect(() => assertDirectDispatchWindow(release, release + 2_000, release + 2_000, true)).not.toThrow();
+    expect(() => assertDirectDispatchWindow(release, release + 3_000, release + 2_000, true)).not.toThrow();
+    expect(() => assertDirectDispatchWindow(release, release + 3_001, release + 2_000, true)).toThrow('DIRECT_RELEASE_WINDOW_MISSED');
     // Without a trigger the window is unchanged: never before release.
     expect(() => assertDirectDispatchWindow(release, release - 1)).toThrow('DIRECT_RELEASE_WINDOW_MISSED');
   });
