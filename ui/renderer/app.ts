@@ -6,7 +6,7 @@ import {formatReleaseOffset,isReleaseOffsetMs} from '../../src/release-offset.js
 import {applyDurationOffsetPreset,compileSmartPlan,confirmSmartRates,describeSmartPlan,emptySmartDraft,resizeSmartFanOut,setSmartChildOffset,smartDraftFromPhase3,smartPeso,smartRange,smartSlotOffsets,smartSlotText,SMART_EVENING_RATE,SMART_MAX_SLOTS,SMART_WORKERS,
   type SmartDraft,type SmartSlot,type SmartWorker,type SmartPhase3,type SmartReleaseOffset} from '../../src/precision-simple.js';
 import {fanOutTimingPlan,minimumMeaningfulSpacingMs} from '../../src/fanout-timing.js';
-import {SHOTGUN_MEANINGFUL_SPACING_MS} from '../../src/shotgun.js';
+import {migrateShotgunSettings,SHOTGUN_MEANINGFUL_SPACING_MS} from '../../src/shotgun.js';
 import {initStrategy,reconstructLineage,renderStrategy,strategyMainCourtOrderChanged,strategyModificationCount,suggestionLineage,type EditableSuggestionLineage,type StrategyV2Meta} from './strategy.js';
 import {renderLive} from './live.js';
 import {renderInsights} from './insights.js';
@@ -149,7 +149,8 @@ const cloneSmart=(value:SmartDraft):SmartDraft=>JSON.parse(JSON.stringify(value)
 const smartDraftFromSaved=(setup:BookingSetup,targetDate:string)=>{
   const draft=smartDraftFromPhase3(setup.PRECISION_PHASE3!,{targetDate,unavailable:unreadyWorkers()});
   if(setup.RELEASE_LAB)draft.releaseLab={...setup.RELEASE_LAB};
-  if(setup.STRATEGY_V2?.shotgun){const {counts:_counts,exactSchedule:_schedule,capacity:_capacity,version:_version,...settings}=setup.STRATEGY_V2.shotgun;draft.shotgun=structuredClone(settings);}
+  if(setup.STRATEGY_V2?.shotgun){const {counts:_counts,exactSchedule:_schedule,capacity:_capacity,version:_version,...settings}=setup.STRATEGY_V2.shotgun;
+    draft.shotgun=structuredClone(migrateShotgunSettings(settings));}
   return draft;
 };
 /** Workers known not ready, by letter only: a player that is not configured, or an identity problem from the latest preparation. */
