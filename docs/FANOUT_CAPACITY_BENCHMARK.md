@@ -179,7 +179,7 @@ The synthetic preparation (400 ms of page CPU plus 2 s of waiting) does not repr
 - **all at once**: 28 parallel preparations, last child ready 9.6 s before the trigger;
 - **tiered** (7 at a time, one per browser, tier barrier): four sequential tiers, last child ready 2.3 s before the trigger at a 12 s lead.
 
-The tiered policy gives Tier 1 the full machine and omits late lower-tier children. The runner therefore sizes the lead from the measured production p95 (see `adaptivePrewarmLeadMs`).
+The tiered policy gives Tier 1 the full machine and omits late lower-tier children. The runner sizes the lead from the exact authorized task topology and the measured compatible production p95. The pre-arm feasibility forecast and production executor share the scheduling decision core, including tier ordering, group/global concurrency and barriers; the forecast substitutes the p95 for each task while production uses observed completions.
 
 ## Timing presets derived from the profile
 

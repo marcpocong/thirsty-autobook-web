@@ -20,10 +20,12 @@ The steps run in order, and each must pass:
 5. Packaging with `scripts/build-app.mjs`: it compiles into `dist.staging`, verifies it, then swaps it in. The previous install dist is kept as `.local/build/dist.previous`.
 6. Build metadata:
    - `dist/build-info.json`: git SHA, branch, dirty state, build time, content ID and build ID;
-   - `BUILD-INFO.txt` in the installation;
+   - `BUILD-INFO.txt` in the installation (the parent of the Git checkout, never tracked source state);
    - `.local/build/last-release-build.json`.
 
 Packaging a dirty tree is refused unless `--allow-dirty` is given.
+
+The historical root-of-checkout `BUILD-INFO.txt` was stale generated installation state and has been removed from source control. Current provenance is `dist/build-info.json`, the installed parent `BUILD-INFO.txt`, and `.local/build/last-release-build.json`.
 
 The default packaging target is the **installed app** (the folder that contains `Thirsty Pickle Bot.exe`). Close the app first. Packaging keeps the operator's saved `config.local.json` and booking method.
 

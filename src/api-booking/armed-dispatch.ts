@@ -266,7 +266,8 @@ export interface ArmedDispatchDeps {
   isAborted: () => boolean;
   /** A validated pending hold: record it and hand off to the official QR page. Returns the final state or throws VerifiedHoldQrError. */
   onVerifiedHold?: (attempt: ArmedAttempt, verified: VerifiedPublicCheckout) => Promise<PrecisionDispatchResult>;
-  onEvent?: (event: { kind: 'prewarm-ready' | 'prewarm-failed' | 'prewarm-retry' | 'dispatch-start' | 'settled'; workerId: WorkerId; attemptId: string; state?: PrecisionAttemptState; code?: string }) => void;
+  onEvent?: (event: { kind: 'prewarm-ready' | 'prewarm-failed' | 'prewarm-retry' | 'dispatch-start' | 'settled'; workerId: WorkerId; attemptId: string; state?: PrecisionAttemptState; code?: string;
+    predictedReadyOffsetMs?:number;actualReadyOffsetMs?:number;predictionErrorMs?:number;queueDelayMs?:number;prepDurationMs?:number }) => void;
   onWake?: () => void;
   /**
    * Priority-aware prewarm (prewarm-scheduler.ts): children are prepared tier by tier (fan-out index 0 first) with bounded
@@ -275,6 +276,8 @@ export interface ArmedDispatchDeps {
    * preparation starts after `prewarmStopStartingLeadMs` before the first trigger.
    */
   prewarmPolicy?: PrewarmPolicy;
+  /** Duration substituted by the feasibility forecast; telemetry only. */
+  prewarmExpectedDurationMs?:number;
   prewarmStopStartingLeadMs?: number;
   onPrewarmStatus?: (status: TierStatus[]) => void;
   /** Benchmark instrumentation only. */
@@ -422,6 +425,7 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
     assertPrecisionFreezeIntact(armed.race);
     await waitFor(firstTriggerMs - deps.prewarmLeadMs);
     const prepare = async (attempt: ArmedAttempt): Promise<boolean> => {
+      const startedAt=now(),queueDelayMs=startedAt-(firstTriggerMs-deps.prewarmLeadMs);
       for (let round = 1; round <= 2; round++) {
         try { await deps.prewarm(attempt); }
         catch (error) {
@@ -429,7 +433,10 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
           if (round === 1 && now() < retryCutoff) { emit({ kind: 'prewarm-retry', workerId: attempt.target.workerId, attemptId: attempt.attempt.id }); continue; }
           return false;
         }
-        emit({ kind: 'prewarm-ready', workerId: attempt.target.workerId, attemptId: attempt.attempt.id });
+        const readyAt=now(),actualReadyOffsetMs=readyAt-armed.releaseMs;
+        const prediction=deps.prewarmExpectedDurationMs===undefined?{}:(()=>{const predictedReadyOffsetMs=startedAt-armed.releaseMs+deps.prewarmExpectedDurationMs!;
+          return {predictedReadyOffsetMs,predictionErrorMs:actualReadyOffsetMs-predictedReadyOffsetMs};})();
+        emit({ kind: 'prewarm-ready', workerId: attempt.target.workerId, attemptId: attempt.attempt.id,...prediction,actualReadyOffsetMs,queueDelayMs,prepDurationMs:readyAt-startedAt });
         return true;
       }
       return false;

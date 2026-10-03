@@ -3,6 +3,7 @@ import { cpus, freemem, totalmem } from 'node:os';
 import { join } from 'node:path';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import type { BuildInfo } from './build-info.js';
+import type {PrewarmFeasibilityResult} from './api-booking/prewarm-feasibility.js';
 
 export type ReadinessLevel='GOOD'|'DEGRADED'|'UNAVAILABLE';
 export type ReleaseGateVerdict='READY'|'READY_WITH_WARNINGS'|'NOT_READY';
@@ -22,7 +23,8 @@ export function readLastReleaseBuild(root:string):{gitSha:string;dirty:boolean|n
 }
 export function evaluateReleaseReadiness(input:{build:BuildInfo|null;testedBuild:{gitSha:string;dirty:boolean|null;finishedAt:string;packaged:boolean}|null;configValid:boolean;authorizationValid:boolean;
   clock:{synced:boolean;ageMs:number|null;uncertaintyMs:number|null;offsetMs:number|null};machine:MachineHealth;workers:Record<string,{connected:boolean;identityValid:boolean;securityReady:boolean;targetReady?:boolean;tabCount?:number;latencyP95Ms?:number|null}>;
-  observer:{online:boolean;lastReadAgeMs:number|null;availabilityLatencyMs:number|null};fanOut:{compatible:boolean;stale:boolean;width:number}|null;prewarm:boolean}):ReleaseReadinessGate{
+  observer:{online:boolean;lastReadAgeMs:number|null;availabilityLatencyMs:number|null};fanOut:{compatible:boolean;stale:boolean;width:number}|null;prewarm:boolean;
+  prewarmFeasibility?:PrewarmFeasibilityResult|null}):ReleaseReadinessGate{
   const checks:ReadinessCheck[]=[];const add=(check:ReadinessCheck)=>checks.push(check);
   const buildMatch=!!input.build&&!!input.testedBuild&&input.build.gitSha===input.testedBuild.gitSha&&input.testedBuild.packaged;
   add({id:'build',label:'Build integrity',level:!input.build||!input.testedBuild?'UNAVAILABLE':buildMatch&&!input.build.dirty?'GOOD':'DEGRADED',hardBlock:false,
@@ -41,6 +43,10 @@ export function evaluateReleaseReadiness(input:{build:BuildInfo|null;testedBuild
   }
   add({id:'observer',label:'Observer',level:input.observer.online?'GOOD':'DEGRADED',hardBlock:false,detail:input.observer.online?`online · latest read ${input.observer.lastReadAgeMs===null?'pending':Math.round(input.observer.lastReadAgeMs/1000)+' s ago'}`:'offline; Wave 2 and Rescue require new valid evidence'});
   add({id:'fanout',label:'Fan-out profile',level:input.fanOut?.compatible&&!input.fanOut.stale?'GOOD':input.fanOut?'DEGRADED':'UNAVAILABLE',hardBlock:false,detail:input.fanOut?`${input.fanOut.width} per target${input.fanOut.stale?' · stale':''}${input.fanOut.compatible?'':' · incompatible'}`:'Auto falls back to width 1'});
+  const feasibility=input.prewarmFeasibility;
+  if(feasibility)add({id:'wave1-preparation-capacity',label:'Wave 1 preparation capacity',
+    level:feasibility.verdict==='READY'?'GOOD':feasibility.verdict==='AT_RISK'?'DEGRADED':'UNAVAILABLE',hardBlock:feasibility.projectedOmitted>0,
+    detail:`${feasibility.configuredWave1Attempts} configured · ${feasibility.projectedReady} projected ready · ${feasibility.projectedAtRisk} at risk · ${feasibility.projectedOmitted} projected omitted`});
   add({id:'prewarm',label:'Prewarm',level:input.prewarm?'GOOD':'DEGRADED',hardBlock:false,detail:input.prewarm?'release preparation complete':'not yet prepared'});
   const hard=checks.some(value=>value.hardBlock&&value.level!=='GOOD'),warnings=checks.some(value=>value.level!=='GOOD');
   return {verdict:hard?'NOT_READY':warnings?'READY_WITH_WARNINGS':'READY',measuredAt:new Date().toISOString(),checks,readyWorkers,degradedWorkers,unavailableWorkers};

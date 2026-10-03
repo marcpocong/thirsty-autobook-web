@@ -35,6 +35,44 @@ export interface PrewarmClock { now(): number; setTimer(callback: () => void, ms
 export const realPrewarmClock: PrewarmClock = { now: () => performance.now(),
   setTimer: (callback, ms) => { const timer = setTimeout(callback, Math.max(0, ms)); return { cancel: () => clearTimeout(timer) }; } };
 
+export interface PrewarmDecisionState {
+  started: ReadonlySet<string>;
+  settled: ReadonlySet<string>;
+  tierStartedAt: ReadonlyMap<number, number>;
+  inGroup: ReadonlyMap<string, number>;
+  inFlight: number;
+  now: number;
+  stopped?: boolean;
+}
+
+/**
+ * Shared scheduling policy used by both the real executor and the deterministic feasibility simulator.
+ * It is deliberately pure: callers apply the returned starts and advance either real completion events or
+ * simulated fixed-duration events. This keeps task order, tier barriers and both concurrency limits identical.
+ */
+export function decidePrewarmStarts(tasks: readonly PrewarmTask[], policy: PrewarmPolicy, state: PrewarmDecisionState): { start: PrewarmTask[]; nextWake?: number } {
+  if (state.stopped) return { start: [] };
+  const queue=[...tasks].sort((a,b)=>a.tier-b.tier||a.order-b.order),tiers=[...new Set(queue.map(task=>task.tier))].sort((a,b)=>a-b);
+  const started=new Set(state.started),settled=new Set(state.settled),inGroup=new Map(state.inGroup),tierStartedAt=new Map(state.tierStartedAt);
+  let inFlight=state.inFlight,nextWake:number|undefined;
+  const unlocked=(tier:number):{open:boolean;wakeAt?:number}=>{
+    const index=tiers.indexOf(tier);if(index<=0)return {open:true};
+    const previous=tiers[index-1]!;const prior=unlocked(previous);if(!prior.open)return prior;
+    if(queue.every(task=>task.tier>=tier||settled.has(task.id)))return {open:true};
+    const at=tierStartedAt.get(previous);if(at===undefined)return {open:false};
+    const wakeAt=at+policy.tierBarrierTimeoutMs;return state.now>=wakeAt?{open:true}:{open:false,wakeAt};
+  };
+  const start:PrewarmTask[]=[];
+  for(const task of queue){
+    if(inFlight>=policy.concurrency)break;if(started.has(task.id)||settled.has(task.id))continue;
+    const gate=unlocked(task.tier);if(!gate.open){if(gate.wakeAt!==undefined)nextWake=Math.min(nextWake??Infinity,gate.wakeAt);continue;}
+    if((inGroup.get(task.group)??0)>=policy.perGroupConcurrency)continue;
+    start.push(task);started.add(task.id);inFlight++;inGroup.set(task.group,(inGroup.get(task.group)??0)+1);
+    if(!tierStartedAt.has(task.tier))tierStartedAt.set(task.tier,state.now);
+  }
+  return {start,...(nextWake!==undefined&&Number.isFinite(nextWake)?{nextWake}:{})};
+}
+
 /** `run` resolves true when the child is ready, false (or rejects) when it failed. It is called at most once per task. */
 export function schedulePrewarm(tasks: readonly PrewarmTask[], run: (task: PrewarmTask) => Promise<boolean>, policy: PrewarmPolicy,
   clock: PrewarmClock = realPrewarmClock, onChange?: (status: TierStatus[]) => void): PrewarmSchedule {
@@ -56,29 +94,12 @@ export function schedulePrewarm(tasks: readonly PrewarmTask[], run: (task: Prewa
     if (entry.settled) return;
     entry.settled = true; entry.ok = ok; entry.omitted = omitted; entry.resolve(ok);
   };
-  /** Tier t is unlocked when every earlier tier settled, or the previous tier started ≥ barrier timeout ago. */
-  const unlocked = (tier: number): { open: boolean; wakeAt?: number } => {
-    const index = tiers.indexOf(tier);
-    if (index <= 0) return { open: true };
-    const previous = tiers[index - 1]!;
-    if (!unlocked(previous).open) return { open: false };
-    const earlierSettled = queue.every(task => task.tier >= tier || readiness.get(task.id)!.settled);
-    if (earlierSettled) return { open: true };
-    const started = tierStartedAt.get(previous);
-    if (started === undefined) return { open: false };
-    const wakeAt = started + policy.tierBarrierTimeoutMs;
-    return clock.now() >= wakeAt ? { open: true } : { open: false, wakeAt };
-  };
   const pump = () => {
     if (stopped) return;
-    let nextWake: number | undefined;
-    for (const task of queue) {
-      if (inFlight >= policy.concurrency) break;
+    const decision=decidePrewarmStarts(queue,policy,{started:new Set(queue.filter(task=>readiness.get(task.id)!.started).map(task=>task.id)),
+      settled:new Set(queue.filter(task=>readiness.get(task.id)!.settled).map(task=>task.id)),tierStartedAt,inGroup,inFlight,now:clock.now()});
+    for (const task of decision.start) {
       const entry = readiness.get(task.id)!;
-      if (entry.started || entry.settled) continue;
-      const gate = unlocked(task.tier);
-      if (!gate.open) { if (gate.wakeAt !== undefined) nextWake = Math.min(nextWake ?? Infinity, gate.wakeAt); continue; }
-      if ((inGroup.get(task.group) ?? 0) >= policy.perGroupConcurrency) continue;
       entry.started = true; inFlight++; inGroup.set(task.group, (inGroup.get(task.group) ?? 0) + 1);
       if (!tierStartedAt.has(task.tier)) tierStartedAt.set(task.tier, clock.now());
       void Promise.resolve().then(() => run(task)).then(ok => ok === true, () => false).then(ok => {
@@ -87,7 +108,7 @@ export function schedulePrewarm(tasks: readonly PrewarmTask[], run: (task: Prewa
       });
     }
     timer?.cancel(); timer = undefined;
-    if (nextWake !== undefined && Number.isFinite(nextWake)) timer = clock.setTimer(pump, nextWake - clock.now());
+    if (decision.nextWake !== undefined) timer = clock.setTimer(pump, decision.nextWake - clock.now());
   };
   const status = (): TierStatus[] => tiers.map(tier => {
     const entries = queue.filter(task => task.tier === tier).map(task => readiness.get(task.id)!);
@@ -125,11 +146,13 @@ export function describeTierStatus(status: readonly TierStatus[]): string {
 export const BASE_PREWARM_LEAD_MS = 15_000;
 // Leave at least 15 seconds between the earliest possible preparation and the 120-second freshness boundary.
 export const MAX_PREWARM_LEAD_MS = 105_000;
+export const PREWARM_FALLBACK_DURATION_MS = 12_000;
+export const PREPARED_CONTEXT_FRESHNESS_MS = 120_000;
 export function adaptivePrewarmLeadMs(input: { tiers: number; workers: number; concurrency: number; prepP95Ms: number | null; baseLeadMs?: number; marginMs?: number }): number {
   const base = input.baseLeadMs ?? BASE_PREWARM_LEAD_MS, margin = input.marginMs ?? 15_000;
   if (!(input.tiers > 1)) return base;
   // Without a compatible history, reserve a conservative preparation round per tier; never silently use the single-shot 15 s lead.
-  const prepP95Ms=input.prepP95Ms!==null&&input.prepP95Ms>0?input.prepP95Ms:12_000;
+  const prepP95Ms=input.prepP95Ms!==null&&input.prepP95Ms>0?input.prepP95Ms:PREWARM_FALLBACK_DURATION_MS;
   const children = input.tiers * Math.max(1, input.workers);
   const waves = Math.ceil(children / Math.max(1, Math.min(input.concurrency, children)));
   // Each tier waits for the previous one, so at least one preparation round per tier.
