@@ -4,7 +4,7 @@ import { parse as parseEnv } from 'dotenv';
 import { existsSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { reconcileBookingSetupFallbacks, reconcileFallbackTimes, type FallbackReconciliation } from './booking-setup.js';
-import { PRECISION_FAN_OUT_ATTEMPTS, PRECISION_MAX_ATTEMPTS, PRECISION_MAX_FAN_OUT, PRECISION_MAX_SENDS, WORKER_IDS, type CourtCount, type WorkerId } from './workers.js';
+import { PRECISION_MAX_ATTEMPTS, PRECISION_MAX_FAN_OUT, PRECISION_MAX_SENDS, WORKER_IDS, type CourtCount, type WorkerId } from './workers.js';
 import {networkNowMs} from './network-clock.js';
 import { PRECISION_MAX_CANDIDATES } from './api-booking/precision-phase3.js';
 import { isReleaseOffsetMs } from './release-offset.js';
@@ -18,7 +18,7 @@ const offsetValue = z.number().int().refine(isReleaseOffsetMs, 'Release offset m
 const attemptOffset = offsetValue.optional();
 /** One exact Precision target: one court, one start, 1-3 hours. Workers A-G follow row order. */
 export const PrecisionTargetSchema = z.object({ court: z.number().int().min(1).max(7), start: hour, durationHours: z.number().int().min(1).max(3),
-  releaseOffsetMs: attemptOffset, fanOutReleaseOffsetsMs:z.array(offsetValue).length(PRECISION_FAN_OUT_ATTEMPTS).optional() }).strict();
+  releaseOffsetMs: attemptOffset, fanOutReleaseOffsetsMs:z.array(offsetValue).min(2).max(PRECISION_MAX_FAN_OUT).optional() }).strict();
 const precisionFanOut = z.boolean().default(false);
 const releaseStrategy = z.enum(['general','precision']).default('general');
 // Saved plan only (never read from the environment); see release-offset.ts.
@@ -56,7 +56,7 @@ export const StrategyV2Schema=z.object({version:z.literal(1),preset:z.enum(['BAL
     evidenceStrength:z.enum(['NONE','LIMITED','USABLE','STRONG']),generatedAt:z.iso.datetime().optional(),
     deskew:z.object({capMs:z.number().int().min(0).max(50),source:z.enum(['LIVE_CALIBRATION','INSUFFICIENT_EVIDENCE']),
       corrections:z.array(z.object({workerId:precisionWorker,fanOutIndex:z.number().int().min(0).max(PRECISION_MAX_FAN_OUT-1),correctionMs:z.number().int().min(-50).max(50),
-        matchingReleases:z.number().int().min(0),evidenceStrength:z.enum(['NONE','LIMITED','USABLE','STRONG'])}).strict()).max(28)}).strict().optional()}).strict().optional(),
+        matchingReleases:z.number().int().min(0),evidenceStrength:z.enum(['NONE','LIMITED','USABLE','STRONG'])}).strict()).max(PRECISION_MAX_ATTEMPTS*PRECISION_MAX_FAN_OUT)}).strict().optional()}).strict().optional(),
   // Reset baseline only. It never authorizes execution; the sibling PRECISION_PHASE3 remains the sole current authority.
   acceptedPhase3:PrecisionPhase3Schema.optional(),
   lineage:z.object({immediate:z.array(z.string().regex(/^I\d+$/).nullable()).max(7),backups:z.array(z.string().regex(/^B\d+$/).nullable()).max(21)}).strict().optional(),
@@ -102,7 +102,9 @@ function checkPrecision(c:{RELEASE_STRATEGY:'general'|'precision';BOOKING_METHOD
   }
   const t=c.PRECISION_TARGETS;
   if(t.length<1||t.length>PRECISION_MAX_ATTEMPTS)ctx.addIssue({code:'custom',message:`Configure 1 to ${PRECISION_MAX_ATTEMPTS} Precision attempts.`,path:['PRECISION_TARGETS']});
-  if(c.PRECISION_FAN_OUT&&t.some(value=>value.fanOutReleaseOffsetsMs?.length!==PRECISION_FAN_OUT_ATTEMPTS))ctx.addIssue({code:'custom',message:`Fan-out requires exactly ${PRECISION_FAN_OUT_ATTEMPTS} offsets per worker.`,path:['PRECISION_TARGETS']});
+  if(c.PRECISION_FAN_OUT&&t.some(value=>value.fanOutReleaseOffsetsMs!==undefined&&
+    (value.fanOutReleaseOffsetsMs.length<2||value.fanOutReleaseOffsetsMs.length>PRECISION_MAX_FAN_OUT)))
+    ctx.addIssue({code:'custom',message:`Fan-out requires 2 to ${PRECISION_MAX_FAN_OUT} offsets per fanned-out worker.`,path:['PRECISION_TARGETS']});
   if(!c.PRECISION_FAN_OUT&&t.some(value=>value.fanOutReleaseOffsetsMs!==undefined))ctx.addIssue({code:'custom',message:'Fan-out offsets require Fixed Precision fan-out.',path:['PRECISION_TARGETS']});
   const end=(x:{start:string;durationHours:number})=>Number(x.start.slice(0,2))+x.durationHours;
   if(t.some(x=>end(x)>24))ctx.addIssue({code:'custom',message:'A Precision attempt would end after midnight.',path:['PRECISION_TARGETS']});

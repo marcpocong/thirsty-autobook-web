@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { PRECISION_FAN_OUT_ATTEMPTS, PRECISION_MAX_ATTEMPTS, PRECISION_WORKER_IDS, type WorkerId } from '../workers.js';
+import { PRECISION_MAX_FAN_OUT, PRECISION_MAX_ATTEMPTS, PRECISION_WORKER_IDS, type WorkerId } from '../workers.js';
 import { COURT_TO_SPACE_ID } from './availability-parser.js';
 import { DurableSubmissionJournal, type SubmissionState } from './durable-submission-journal.js';
 import { SubmissionDispatchError } from './submission-errors.js';
@@ -20,7 +20,7 @@ export interface PrecisionTargetInput {
   court: number; start: string; durationHours: number;
   /** Operator Release Offset for this attempt only (release-offset.ts); absent means 0 ms (normal). */
   releaseOffsetMs?: number;
-  /** Fixed fan-out only: the four independently scheduled child offsets for this worker/browser. */
+  /** Fixed fan-out only: independently scheduled child offsets for this worker/browser. */
   fanOutReleaseOffsetsMs?: readonly number[];
 }
 export interface PrecisionTarget extends PrecisionTargetInput {
@@ -57,7 +57,8 @@ export function validatePrecisionTargets(inputs: readonly PrecisionTargetInput[]
       ...(input.releaseOffsetMs ? { releaseOffsetMs: input.releaseOffsetMs } : {}),
       ...(input.fanOutReleaseOffsetsMs ? { fanOutReleaseOffsetsMs:Object.freeze([...input.fanOutReleaseOffsetsMs]) } : {}) } satisfies PrecisionTarget;
   });
-  if (fanOut && targets.some(target => target.fanOutReleaseOffsetsMs?.length !== PRECISION_FAN_OUT_ATTEMPTS)) throw Error('PRECISION_FAN_OUT_OFFSETS_INVALID');
+  if (fanOut && targets.some(target => target.fanOutReleaseOffsetsMs !== undefined &&
+    (target.fanOutReleaseOffsetsMs.length < 2 || target.fanOutReleaseOffsetsMs.length > PRECISION_MAX_FAN_OUT))) throw Error('PRECISION_FAN_OUT_OFFSETS_INVALID');
   if (!fanOut && targets.some(target => target.fanOutReleaseOffsetsMs !== undefined)) throw Error('PRECISION_FAN_OUT_DISABLED');
   for (const [index, target] of targets.entries()) for (const other of targets.slice(index + 1)) {
     if (target.targetKey === other.targetKey) throw Error('PRECISION_TARGET_DUPLICATE');
@@ -66,9 +67,9 @@ export function validatePrecisionTargets(inputs: readonly PrecisionTargetInput[]
   return targets;
 }
 
-/** Expands each configured worker goal into either one ordinary attempt or four fan-out children. */
+/** Expands each configured worker goal into independently tracked child attempts. */
 export function precisionAttemptSet(targets:readonly PrecisionTarget[],date:string,fanOut:boolean):Array<{target:PrecisionTarget;plan:BookingPlan}>{
-  return targets.flatMap(target=>(fanOut?target.fanOutReleaseOffsetsMs??[]:[target.releaseOffsetMs??0]).map(releaseOffsetMs=>{
+  return targets.flatMap(target=>(fanOut?target.fanOutReleaseOffsetsMs??[target.releaseOffsetMs??0]:[target.releaseOffsetMs??0]).map(releaseOffsetMs=>{
     const {fanOutReleaseOffsetsMs:_fanOut,releaseOffsetMs:_single,...base}=target;
     const child={...base,...(releaseOffsetMs?{releaseOffsetMs}:{})} as PrecisionTarget;
     return {target:child,plan:precisionTargetPlan(child,date)};

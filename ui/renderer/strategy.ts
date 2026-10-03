@@ -50,6 +50,7 @@ export interface StrategyV2Meta { version: 1; preset: StrategyPreset; goal: Stra
   provenance?: { source: 'SMART_SUGGESTED' | 'EXISTING_SMART_PLAN' | 'OPERATOR_BUILT'; operatorModifications: number } }
 export interface StrategyHost {
   state(): Dashboard | undefined;
+  mainCourtOrder(): number[];
   draft(): SmartDraft;
   unready(): Set<string>;
   /** Replaces the Smart draft with the suggestion (switching the plan to Smart Precision) and keeps `meta` to save with it. */
@@ -70,6 +71,7 @@ let suggestionGeneration = 0;
 let pendingSuggestionGeneration: number | null = null;
 let intelligenceMode: SuggestionIntelligenceMode = 'AUTO';
 let loadedKey = '';
+let courtsOverridden = false;
 const hourLabel = (hour: number) => hour === 24 ? '12:00 MN' : `${hour % 12 || 12}:00 ${hour < 12 ? 'AM' : 'PM'}`;
 const hourText = (hour: number) => `${String(hour).padStart(2, '0')}:00`;
 const sameWindow = (a: Window, b: Window) => a.court === b.court && a.start === b.start && a.durationHours === b.durationHours;
@@ -127,7 +129,8 @@ export function initStrategy(value: StrategyHost): void {
     option.value = hour === 24 ? '24:00' : hourText(hour); return option; }));
   writeGoal(goal);
   for (const id of ['strategy-prime-from', 'strategy-prime-until', 'strategy-durations', 'strategy-courts'])
-    byId(id).addEventListener('change', () => { goal = readGoal(); invalidate(); });
+    byId(id).addEventListener('change', () => { goal = readGoal(); if(id==='strategy-courts')courtsOverridden=true; invalidate(); });
+  byId('strategy-sync-courts').addEventListener('click',()=>{courtsOverridden=false;strategyMainCourtOrderChanged();});
   for (const radio of document.querySelectorAll<HTMLInputElement>('input[name="strategy-preset"]'))
     radio.addEventListener('change', () => { if (radio.checked) { preset = radio.value as StrategyPreset; invalidate(); } });
   byId('strategy-fanout').addEventListener('change', invalidate);
@@ -256,7 +259,7 @@ function renderSchedule(state: Dashboard | undefined) {
 function renderPreset(state: Dashboard | undefined) {
   const machine = recommendation(state), width = chosenWidth(state), note = byId('strategy-fanout-note');
   const parts: HTMLElement[] = [el('strong', '', machine.profile ? `Machine recommendation: ${machine.width} attempt${machine.width === 1 ? '' : 's'} per target` : 'No Fan-out Capacity Profile on this machine: 1 attempt per target')];
-  if (width.source === 'OPERATOR_OVERRIDE') parts.push(el('span', 'warn-text', ` · Operator override: ${width.width} per target`));
+  if (width.source === 'OPERATOR_OVERRIDE') parts.push(el('span', 'warn-text', ` · Operator override: ${width.width} per target${width.width>machine.width?' exceeds the current machine recommendation; inspect readiness and local timing limits':''}`));
   const reasons = el('ul', 'strategy-children'); reasons.append(...machine.reasons.map(reason => el('li', '', reason)), ...machine.notes.map(text => el('li', 'warn-text', text)),
     el('li', '', 'A local dispatch measurement, not a prediction that more attempts win a booking.'));
   note.replaceChildren(...parts, reasons);
@@ -335,16 +338,18 @@ function editableRow(kind: 'immediate' | 'backups', slot: SmartSlot, index: numb
     editorSelect(`strategy-${kind}-duration-${index}`, 'Duration', [['1 hour', '1'], ['2 hours', '2'], ['3 hours', '3']], String(slot.durationHours), value => patch({ durationHours: Number(value) })));
   if (immediate) {
     const offsets = smartSlotOffsets(slot);
-    fields.append(editorSelect(`strategy-immediate-width-${index}`, 'Fan-out', [1, 2, 3, 4].map(value => [`${value} child${value === 1 ? '' : 'ren'}`, String(value)]), String(offsets.length), value => {
+    fields.append(editorSelect(`strategy-immediate-width-${index}`, 'Fan-out', [1, 2, 3, 4, 5, 6].map(value => [`${value} child${value === 1 ? '' : 'ren'}`, String(value)]), String(offsets.length), value => {
       const width = Number(value), defaults = resizeDefaults(state, width); host.edit(draft => { draft.immediate[index] = resizeSmartFanOut(draft.immediate[index]!, width, defaults); });
     }));
     const worker = el('span', 'strategy-worker', `Worker ${letter} · automatically assigned`); fields.append(worker);
     const timing = el('div', 'strategy-child-timing'); timing.append(el('strong', '', 'Timing'));
     offsets.forEach((offset, child) => {
-      const label = el('label'), input = document.createElement('input'); input.type = 'number'; input.min = '0'; input.max = '2000'; input.step = '1';
+      const label = el('label'), input = document.createElement('input'); input.type = 'text'; input.inputMode = 'numeric';
       input.id = `strategy-immediate-offset-${index}-${child}`; input.value = String(-offset);
-      input.addEventListener('change', () => { const early = Number(input.value), next = Number.isSafeInteger(early) && early >= 0 && early <= 2000 ? -early : Number.NaN;
-        host.edit(draft => { draft.immediate[index] = inputTiming(draft.immediate[index]!, child, next); }); });
+      const commit=()=>{const early=input.value.trim()===''?Number.NaN:Number(input.value),next=Number.isSafeInteger(early)&&early>=0&&early<=2000?-early:Number.NaN;
+        if(!Number.isFinite(next)){input.setCustomValidity('Enter a whole number from 0 to 2000.');input.reportValidity();return;}input.setCustomValidity('');
+        if(next!==offset)host.edit(draft => { draft.immediate[index] = inputTiming(draft.immediate[index]!, child, next); });};
+      input.addEventListener('input',()=>input.setCustomValidity(''));input.addEventListener('blur',commit);input.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();input.blur();}});
       const childModified = !original || acceptedTiming(original)?.[child] !== offset;
       label.append(offsets.length === 1 ? 'Send early by ' : `${letter}${child} `, input, ' ms early ', el('span', `strategy-source ${childModified ? 'modified' : ''}`, childModified ? 'Modified' : 'Suggested'));
       timing.append(label);
@@ -368,6 +373,7 @@ function renderEditable(state: Dashboard | undefined) {
   const section = byId('strategy-editable'), smart = state?.booking && (document.getElementById('precision-strategy') as HTMLSelectElement | null)?.value === 'precision'
     && (document.getElementById('precision-mode-smart') as HTMLInputElement | null)?.checked;
   section.hidden = !smart; if (!smart) return;
+  if(document.activeElement instanceof HTMLInputElement&&document.activeElement.id.startsWith('strategy-immediate-offset-'))return;
   const draft = host.draft(), accepted = host.accepted(), compiled = compileSmartPlan(draft, { targetDate: state?.booking?.targetDate ?? '', unavailable: host.unready() });
   const lineage = host.lineage(), modifications = strategyModificationCount(draft, accepted, lineage);
   byId('strategy-edit-provenance').textContent = accepted ? `Source: Smart generated · Operator modifications: ${modifications}` : 'Source: Existing Smart plan';
@@ -406,21 +412,27 @@ export function renderStrategy(state: Dashboard | undefined): void {
   if (key !== loadedKey) {
     suggestionGeneration++; pendingSuggestionGeneration = null; suggestion = null; byId('strategy-apply').toggleAttribute('disabled', true);
     loadedKey = key;
-    if (saved) { goal = { ...saved.goal }; preset = saved.preset; selectById('strategy-fanout').value = saved.fanOut.source === 'OPERATOR_OVERRIDE' ? String(saved.fanOut.width) : 'auto';
+    if (saved) { goal = { ...saved.goal }; courtsOverridden=JSON.stringify(saved.goal.courts)!==JSON.stringify(host.mainCourtOrder());preset = saved.preset; selectById('strategy-fanout').value = saved.fanOut.source === 'OPERATOR_OVERRIDE' ? String(saved.fanOut.width) : 'auto';
       intelligenceMode = saved.intelligenceMode ?? 'AUTO'; selectById('strategy-intelligence').value = intelligenceMode;
       if (saved.fanOut.timing !== 'CUSTOM') selectById('strategy-timing').value = saved.fanOut.timing;
       else if (saved.fanOut.basedOnTiming) selectById('strategy-timing').value = saved.fanOut.basedOnTiming;
       selectById('strategy-anchor-mode').value = saved.timingCalibration?.anchorSource === 'OPERATOR_OVERRIDE' ? 'MANUAL' : 'AUTO';
       inputById('strategy-anchor-shift').value = String(Math.max(0, -(saved.timingCalibration?.groupShiftMs ?? 0)));
       byId('strategy-anchor-shift-label').hidden = selectById('strategy-anchor-mode').value !== 'MANUAL'; }
-    else if (state?.booking?.setup.PREFERRED_COURTS?.length) goal = { ...goal, courts: [...state.booking.setup.PREFERRED_COURTS] };
+    else {courtsOverridden=false;goal = { ...goal, courts: host.mainCourtOrder() };}
     writeGoal(goal);
     for (const radio of document.querySelectorAll<HTMLInputElement>('input[name="strategy-preset"]')) radio.checked = radio.value === preset;
   }
+  strategyMainCourtOrderChanged();
   byId('strategy-target-date').textContent = state?.booking?.targetDate ?? '—';
   byId('strategy-goal-problems').textContent = validateGoal(goal).join(' ');
   (byId('strategy-suggest') as HTMLButtonElement).disabled = preset === 'CUSTOM' || validateGoal(goal).length > 0;
   render();
+}
+export function strategyMainCourtOrderChanged():void {
+  if(!host||courtsOverridden)return;
+  const courts=host.mainCourtOrder();if(JSON.stringify(goal.courts)===JSON.stringify(courts))return;
+  goal={...goal,courts:[...courts]};writeGoal(goal);invalidate();
 }
 function render() {
   const state = host.state();

@@ -1,0 +1,84 @@
+{
+  "schema": "sanitized-release-archive/v1",
+  "runId": "8bdbde81-c127-46ae-96cf-bdb17564a385",
+  "targetDate": "2026-10-05",
+  "watchId": "2026-10-05_3985a823-0d0e-463e-acb7-230c39819df2",
+  "redactions": 5462,
+  "files": [
+    {
+      "path": "booking-activity.ndjson",
+      "bytes": 292927,
+      "sha256": "3bccaf25630585eb5c5e928f00ca4b033be0bc1a00674b19f8e13e592d10c50b"
+    },
+    {
+      "path": "clock-10m.json",
+      "bytes": 1569,
+      "sha256": "06443c0a482b0cec8cc87abbe81607f8fd3850a58cf21c6209ceca110278b117"
+    },
+    {
+      "path": "clock-30s.json",
+      "bytes": 1564,
+      "sha256": "154f96bad7ebdb86bf7e058d6561841d60e5a9741e41e0e3fdca99111860fb77"
+    },
+    {
+      "path": "clock-60s.json",
+      "bytes": 1566,
+      "sha256": "dec05fa36862083937cc290e1bf72c29cd7e94f33b934aa64a22217ca0c67ea4"
+    },
+    {
+      "path": "critical-path.ndjson",
+      "bytes": 8600,
+      "sha256": "aa379c6d9d1b4bbacfd4aaa8fd95d9be6ecc9f5c81134a4382a20d156095a5b4"
+    },
+    {
+      "path": "forensics-report.txt",
+      "bytes": 11550,
+      "sha256": "7e9a145cd4960238801589ff1ce63057a6c17e1630e560524fcee78bd833c150"
+    },
+    {
+      "path": "forensics-summary.json",
+      "bytes": 34608,
+      "sha256": "03687fc90d10b2090f5299a89c27c6307c5fade405853f0366aec7e34504c9e2"
+    },
+    {
+      "path": "phase3-freeze.json",
+      "bytes": 14913,
+      "sha256": "8b1970d4f69974915b16d3655afb40b17c1fd6c8548f2a105e1635d4ed61193c"
+    },
+    {
+      "path": "provider-trace.ndjson",
+      "bytes": 12524,
+      "sha256": "a9dd0a4edae4f5bb19e6498dda2952a447ddcd2b4781ed58f0075ed68c25ea29"
+    },
+    {
+      "path": "REPORT.md",
+      "bytes": 3445,
+      "sha256": "b28008bf27772ff4abbd639bbdc2358f88f8f05bf9b09ddb0c3dcbfd6ee14c22"
+    },
+    {
+      "path": "run-progress.ndjson",
+      "bytes": 459930,
+      "sha256": "a82925bc29bc2a4e658b59c596894be438ef95b163ef796da778157b7b6343d5"
+    },
+    {
+      "path": "slot-watch.ndjson",
+      "bytes": 445284,
+      "sha256": "7ea1b046f7d558f374473d26d82fde52f9f50264c7609fb8fcf7041bd008219b"
+    },
+    {
+      "path": "slot-watch.quality.json",
+      "bytes": 20684,
+      "sha256": "065858653ebd43548e4989e537edfe1cc3e73dd54c00a9ce9c12ecfe2be901ca"
+    },
+    {
+      "path": "slot-watch.summary.json",
+      "bytes": 330895,
+      "sha256": "c3f91fa400b2db2974b09b542b7ed4936e86584b4099f0ece7d37e0a6765c152"
+    },
+    {
+      "path": "slot-watch.txt",
+      "bytes": 19192,
+      "sha256": "35c3935707e41e1d28b6ad2a745098f039de0a64d11c83b6f77142e26d75addb"
+    }
+  ]
+}

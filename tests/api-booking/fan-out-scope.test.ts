@@ -10,8 +10,8 @@ describe('fan-out scope in the desktop runner', () => {
     expect(source).toContain('const precisionFanOut=!!precisionTargets&&config.PRECISION_FAN_OUT;');
     expect(source.match(/config\.PRECISION_FAN_OUT/g)).toHaveLength(2);
   });
-  it('opens one tab per child (Fixed four, Smart per target) and keys tab 0 by the worker ID', () => {
-    expect(source).toContain('prepareWorker(worker,precisionFanOut?PRECISION_FAN_OUT_ATTEMPTS:smartTabs.get(worker)??1)');
+  it('opens one tab per configured child and keys tab 0 by the worker ID', () => {
+    expect(source).toContain('prepareWorker(worker,precisionFanOut?fixedTabs.get(worker)??1:smartTabs.get(worker)??1)');
     expect(source).toContain('const transportKeyOf=(workerId:WorkerId,fanOutIndex:number)=>fanOutIndex===0?workerId:`${workerId}:${fanOutIndex}`;');
     expect(source).toContain('const transportKey=transportKeyOf(workerId,pageIndex);');
     // No path builds a "W:0" key any more.

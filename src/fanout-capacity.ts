@@ -11,7 +11,7 @@ import { z } from 'zod';
  * stays inside the gates is merely one whose extra children do not measurably degrade the local send timing.
  */
 export const FANOUT_PROFILE_SCHEMA = 'fanout-capacity-profile/v1';
-export const FANOUT_MAX_WIDTH = 4;
+export const FANOUT_MAX_WIDTH = 6;
 
 export interface Stats { n: number; p50: number | null; p95: number | null; p99: number | null; max: number | null; min: number | null; mean: number | null }
 const round = (value: number) => Math.round(value * 100) / 100;

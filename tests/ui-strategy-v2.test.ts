@@ -319,6 +319,23 @@ describe('Strategy view (Goal → Known schedule → Preset → Suggested plan �
     expect(await page.locator('#strategy-apply').isDisabled()).toBe(true);await page.close();
   });
 
+  it('tracks the main court order, preserves a Strategy override, and invalidates pending suggestions on reorder', async()=>{
+    const page=await openRenderer(browser,{booking:smartBooking(),blockAudit:blockAudit([])},'strategy');await controlStrategyEvidence(page);
+    await showRendererView(page,'plan');
+    const move=page.locator('#court-order li').first().getByRole('button',{name:/down/i});
+    expect(await page.locator('#strategy-courts').inputValue()).toBe('7,6,5,4,3,2,1');
+    await page.locator('#strategy-suggest').click();await expect.poll(()=>evidenceRequestCount(page)).toBe(1);
+    await move.click();
+    expect(await page.locator('#strategy-courts').inputValue()).toBe('6,7,5,4,3,2,1');
+    await settleEvidence(page,0);expect(await page.locator('#strategy-apply').isDisabled()).toBe(true);
+    await page.locator('#strategy-courts').fill('1,2');await page.locator('#strategy-courts').dispatchEvent('change');
+    await page.locator('#court-order li').first().getByRole('button',{name:/down/i}).click();
+    expect(await page.locator('#strategy-courts').inputValue()).toBe('1,2');
+    await page.locator('#strategy-sync-courts').click();
+    expect(await page.locator('#strategy-courts').inputValue()).toBe('7,6,5,4,3,2,1');
+    await page.close();
+  });
+
   it('keeps the newest suggestion authoritative when successful requests finish out of order', async () => {
     const page=await openRenderer(browser,{booking:smartBooking(),blockAudit:blockAudit([])},'strategy');await controlStrategyEvidence(page);
     await page.locator('#strategy-courts').fill('7');await page.locator('#strategy-courts').dispatchEvent('change');await page.locator('#strategy-suggest').click();

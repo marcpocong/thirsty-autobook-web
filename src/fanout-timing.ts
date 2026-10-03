@@ -38,7 +38,7 @@ export interface FanOutTimingPlan {
 
 const nearest = (value: number, step: number) => Math.ceil(value / step) * step;
 const width = (profile: FanOutProfile | null, count: number): WidthSummary | undefined =>
-  profile?.widths.find(value => value.width === count) ?? profile?.widths.filter(value => value.width <= count).sort((a, b) => b.width - a.width)[0];
+  profile?.widths.find(value => value.width === count);
 
 /**
  * The smallest spacing this machine can meaningfully preserve between children at this width: the larger of the loaded
@@ -47,7 +47,7 @@ const width = (profile: FanOutProfile | null, count: number): WidthSummary | und
  */
 export function minimumMeaningfulSpacingMs(profile: FanOutProfile | null, fanOutWidth: number): { spacingMs: number; basis: string } {
   const summary = width(profile, fanOutWidth);
-  if (!summary) return { spacingMs: UNMEASURED_MIN_SPACING_MS, basis: `No Fan-out Capacity Profile: conservative ${UNMEASURED_MIN_SPACING_MS} ms spacing. Run the capacity benchmark.` };
+  if (!summary) return { spacingMs: UNMEASURED_MIN_SPACING_MS, basis: `No measured profile at width ${fanOutWidth}: conservative ${UNMEASURED_MIN_SPACING_MS} ms spacing. Run the capacity benchmark.` };
   const lag = summary.triggerToChromeStart;
   const jitter = lag.p95 !== null && lag.p50 !== null ? lag.p95 - lag.p50 : 0;
   const steps = summary.perChildIndex.slice(1).map((value, index) => (value.triggerToChromeStart.p95 ?? 0) - (summary.perChildIndex[index]!.triggerToChromeStart.p95 ?? 0));
@@ -70,7 +70,7 @@ function predict(summary: WidthSummary | undefined, fanOutIndex: number, configu
  * children step back by the preset spacing; a spacing never goes below the machine's minimum meaningful spacing.
  */
 export function fanOutTimingPlan(preset: Exclude<FanOutTimingPreset, 'CUSTOM'>, fanOutWidth: number, profile: FanOutProfile | null): FanOutTimingPlan {
-  if (!Number.isInteger(fanOutWidth) || fanOutWidth < 1 || fanOutWidth > 4) throw Error('FANOUT_WIDTH_INVALID');
+  if (!Number.isInteger(fanOutWidth) || fanOutWidth < 1 || fanOutWidth > 6) throw Error('FANOUT_WIDTH_INVALID');
   const minimum = minimumMeaningfulSpacingMs(profile, fanOutWidth);
   const spacing = Math.max(minimum.spacingMs, nearest(minimum.spacingMs * SPACING_FACTOR[preset], 5));
   const summary = width(profile, fanOutWidth);
@@ -80,17 +80,17 @@ export function fanOutTimingPlan(preset: Exclude<FanOutTimingPreset, 'CUSTOM'>, 
     return { fanOutIndex: index, configuredOffsetMs: configured, predictedChromeStartMs: predict(summary, index, configured) };
   });
   return { preset, width: fanOutWidth, spacingMs: fanOutWidth > 1 ? spacing : 0, minSpacingMs: minimum.spacingMs, children, basis: minimum.basis,
-    warnings: profile ? [] : ['No Fan-out Capacity Profile for this machine: spacing is a conservative default, not a measurement.'] };
+    warnings: summary ? [] : [`Width ${fanOutWidth} has no measured capacity profile: spacing is a conservative default, not a measurement.`] };
 }
 
 /** An operator's own offsets, validated and annotated with the same local predictions and spacing warnings. */
 export function customFanOutTiming(offsets: readonly number[], profile: FanOutProfile | null): FanOutTimingPlan {
-  if (!offsets.length || offsets.length > 4) throw Error('FANOUT_WIDTH_INVALID');
+  if (!offsets.length || offsets.length > 6) throw Error('FANOUT_WIDTH_INVALID');
   if (offsets.some(value => !Number.isSafeInteger(value) || value < OFFSET_MIN_MS || value > OFFSET_MAX_MS)) throw Error('FANOUT_OFFSET_INVALID');
   const minimum = minimumMeaningfulSpacingMs(profile, offsets.length), summary = width(profile, offsets.length);
   const sorted = [...offsets].sort((a, b) => a - b);
   const closest = sorted.slice(1).reduce((min, value, index) => Math.min(min, value - sorted[index]!), Infinity);
-  const warnings = [...(profile ? [] : ['No Fan-out Capacity Profile for this machine: predictions are unavailable.']),
+  const warnings = [...(summary ? [] : [`Width ${offsets.length} has no measured capacity profile: predictions are unavailable.`]),
     ...(offsets.length > 1 && closest < minimum.spacingMs ? [`Two children are ${closest} ms apart; this machine cannot reliably keep children closer than ${minimum.spacingMs} ms apart.`] : [])];
   return { preset: 'CUSTOM', width: offsets.length, spacingMs: Number.isFinite(closest) ? closest : 0, minSpacingMs: minimum.spacingMs,
     children: offsets.map((configured, index) => ({ fanOutIndex: index, configuredOffsetMs: configured, predictedChromeStartMs: predict(summary, index, configured) })),

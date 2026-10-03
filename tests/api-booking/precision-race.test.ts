@@ -84,15 +84,16 @@ describe('Precision v1 target model', () => {
       [[0, 4], [1, 4], [2, 4], [3, 4], [0, 4], [1, 4], [2, 4], [3, 4]]);
     expect(frozen.attempts.map(attempt => attempt.target.releaseOffsetMs ?? 0)).toEqual([-25, -10, 0, -100, -20, 0, -250, -500]);
   });
-  it('requires four offsets for every fan-out worker while allowing different worker goals', () => {
+  it('allows mixed widths through six while rejecting invalid widths', () => {
     expect(() => validatePrecisionTargets([{ ...abc[0]!, fanOutReleaseOffsetsMs: [0, -10, -20, -30] }], date, true)).not.toThrow();
     expect(() => validatePrecisionTargets([
       { ...abc[0]!, fanOutReleaseOffsetsMs: [0, -10, -20, -30] },
       { ...abc[1]!, fanOutReleaseOffsetsMs: [0, -5, -15, -25] },
     ], date, true)).not.toThrow();
-    expect(() => validatePrecisionTargets([{ ...abc[0]!, fanOutReleaseOffsetsMs: [0, -10, -20] }], date, true))
-      .toThrow('PRECISION_FAN_OUT_OFFSETS_INVALID');
-    expect(() => validatePrecisionTargets([abc[0]!], date, true)).toThrow('PRECISION_FAN_OUT_OFFSETS_INVALID');
+    const mixed=validatePrecisionTargets([{ ...abc[0]!, fanOutReleaseOffsetsMs: [0, -10, -20] },abc[1]!], date, true);
+    expect(precisionAttemptSet(mixed,date,true).map(attempt=>attempt.target.releaseOffsetMs??0)).toEqual([0,-10,-20,0]);
+    expect(() => validatePrecisionTargets([{ ...abc[0]!, fanOutReleaseOffsetsMs: [0, -10, -20, -30, -40, -50] }], date, true)).not.toThrow();
+    expect(() => validatePrecisionTargets([{ ...abc[0]!, fanOutReleaseOffsetsMs: [0, -10, -20, -30, -40, -50, -60] }], date, true)).toThrow('PRECISION_FAN_OUT_OFFSETS_INVALID');
   });
   it('saved-plan schema enforces Proofless Standard and no same-court overlap', () => {
     const base = { BOOKING_METHOD: 'proofless', BOOKING_TYPE: 'standard', COURT_COUNT: 1, START_TIME: '17:00', DURATION_HOURS: 3,
@@ -106,8 +107,8 @@ describe('Precision v1 target model', () => {
       { ...abc[1]!, fanOutReleaseOffsetsMs: [0, -5, -15, -25] },
     ];
     expect(BookingSetupSchema.safeParse({ ...base, PRECISION_FAN_OUT: true, PRECISION_TARGETS: fanOutTargets }).success).toBe(true);
-    expect(BookingSetupSchema.safeParse({ ...base, PRECISION_FAN_OUT: true, PRECISION_TARGETS: [{ ...abc[0]!, fanOutReleaseOffsetsMs: [0, -10, -20] }] }).success).toBe(false);
-    expect(BookingSetupSchema.safeParse({ ...base, PRECISION_FAN_OUT: true, PRECISION_TARGETS: [abc[0]] }).success).toBe(false);
+    expect(BookingSetupSchema.safeParse({ ...base, PRECISION_FAN_OUT: true, PRECISION_TARGETS: [{ ...abc[0]!, fanOutReleaseOffsetsMs: [0, -10, -20] }] }).success).toBe(true);
+    expect(BookingSetupSchema.safeParse({ ...base, PRECISION_FAN_OUT: true, PRECISION_TARGETS: [abc[0]] }).success).toBe(true);
     expect(BookingSetupSchema.safeParse({ ...base, RELEASE_STRATEGY: 'general', PRECISION_FAN_OUT: true }).success).toBe(false);
     const general = BookingSetupSchema.parse({ ...base, RELEASE_STRATEGY: undefined, PRECISION_TARGETS: undefined, BOOKING_METHOD: 'api-first' });
     expect(general.RELEASE_STRATEGY).toBe('general');
