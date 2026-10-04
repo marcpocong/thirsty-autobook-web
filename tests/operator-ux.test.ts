@@ -106,9 +106,10 @@ it('shows the ready preflight from fixture engine state, without calling Terms o
 });
 it('renders verified, rejected, throttle and unknown Live outcomes from fixture events',async()=>{
   const page=await openRenderer(browser,{booking:booking(false),playerStatus:players},'live');
-  for(const [state,code,title] of [['HOLD_VERIFIED','','HOLD VERIFIED'],['REJECTED','','ALL RELEASE ATTEMPTS REJECTED'],['REJECTED','HTTP_429','PROVIDER THROTTLED'],['UNKNOWN','','OUTCOME UNKNOWN']]){
+  for(const [state,code,title] of [['ARMED','','WAITING FOR RELEASE'],['HOLD_VERIFIED','','HOLD VERIFIED'],['REJECTED','','ALL RELEASE ATTEMPTS REJECTED'],['REJECTED','HTTP_429','PROVIDER THROTTLED'],['UNKNOWN','','OUTCOME UNKNOWN']]){
     await page.evaluate(({state,code})=>{const w=window as any;w.fixtureState.live={parents:[{key:'fixture',wave:'WAVE_1',court:7,startTime:'19:00',endTime:'22:00',children:[{attemptId:'fixture',label:'A',fanOutIndex:0,fanOutCount:1,state,code}]}],predictions:[],notes:[]};w.fixturePublish(w.fixtureState);},{state,code});
     expect(await page.locator('#live-result').innerText()).toBe(title);
+    if(state==='ARMED')expect(await page.locator('#live-ready').innerText()).toBe('0');
   }
   expect(await page.evaluate(()=>(window as any).fixtureCalls)).toEqual([]);
   await page.close();
