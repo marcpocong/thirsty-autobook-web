@@ -128,6 +128,7 @@ function showView(view:View){
   if(latest)render(latest);
 }
 for(const button of document.querySelectorAll<HTMLButtonElement>('[data-view]'))button.onclick=()=>showView(button.dataset.view as View);
+byId('edit-strategy').onclick=()=>showView('strategy');
 input('test-date').value=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Manila',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 
 const endFriendly=(start:string,duration:number)=>Number(start.slice(0,2))+duration===24?'12:00 MN':friendly(`${String(Number(start.slice(0,2))+duration).padStart(2,'0')}:00`);
@@ -734,6 +735,7 @@ function render(state: Dashboard) {
   byId('headline').textContent = state.headline; byId('detail').textContent = state.detail;
   const armed=!!state.scheduledRelease;
   const busy = state.operation !== 'idle'&&state.operation!=='scheduled';
+  byId('stop').hidden=!busy;
   const playerStatus=state.playerStatus??{primary:!!state.booking?.playerConfigured,extended:!!state.booking?.extendedPlayerConfigured,third:!!state.booking?.thirdPlayerConfigured,fourth:!!state.booking?.fourthPlayerConfigured,fifth:!!state.booking?.fifthPlayerConfigured,sixth:!!state.booking?.sixthPlayerConfigured,seventh:!!state.booking?.seventhPlayerConfigured,eighth:!!state.booking?.eighthPlayerConfigured};
   const dual=state.booking?.setup.BOOKING_TYPE==='standard'&&state.booking.setup.COURT_COUNT===2;
   // Keep the dual practice entry point visible in the safe single-court
@@ -956,10 +958,12 @@ function render(state: Dashboard) {
   const action=input('main-action'),hold=!!state.handoff||!!state.lock,blockedHold=hold&&!state.canPrepareOverHold;
   const apiWaiting=state.operation==='full'&&state.apiStage?.stage==='WAITING_FOR_RELEASE';
   const actionState=apiWaiting?'armed':busy?'running':blockedHold?'hold':armed?'armed':state.ready&&!dirty?'review':'prepare';
-  action.textContent=actionState==='prepare'&&unresolvedCheckout?'Reset & Prepare':actionState==='prepare'&&state.canPrepareOverHold?'Prepare New Run':{hold:'Review Hold',running:'Running',armed:'Armed',review:'Review & Arm',prepare:'Prepare'}[actionState];
-  action.disabled=actionState==='running'||actionState==='armed'||actionState==='prepare'&&!!input('prepare').disabled;
-  byId('main-action-hint').textContent=unresolvedCheckout?'Inspects every required browser; it will not clear the lock unless the old worker is dead and all Onda state is clean.':state.canPrepareOverHold?'The verified hold stays recorded. Prepare a fresh schedule in the same bot before another run.':blockedHold?'Review the retained lock before any new action.':actionState==='review'?'Review Terms and authorize this exact run before arming.':actionState==='armed'?'Release is scheduled. Use Emergency Stop to cancel.':actionState==='running'?'Current booking operation is in progress.':'Check the plan, then prepare the required browser or browsers.';
-  byId('primary-actions').hidden=currentView!=='tests'&&!state.selection&&!state.handoff&&!state.bookingResult&&!armed;
+  action.textContent=actionState==='prepare'&&unresolvedCheckout?'Reset & Prepare':actionState==='prepare'&&state.canPrepareOverHold?'Prepare New Run':{hold:'Review Hold',running:'Preparing…',armed:'Emergency Stop',review:'Arm Release',prepare:'Prepare for Release'}[actionState];
+  action.disabled=actionState==='running'||actionState==='prepare'&&!!input('prepare').disabled;
+  byId('release-action-title').textContent=actionState==='armed'?'Armed':actionState==='running'?'Preparing browsers and release contexts…':actionState==='review'?'Ready to arm':'Prepare for release';
+  byId('main-action-hint').textContent=unresolvedCheckout?'Inspects every required browser; it will not clear the lock unless the old worker is dead and all Onda state is clean.':state.canPrepareOverHold?'The verified hold stays recorded. Prepare a fresh schedule in the same bot before another run.':blockedHold?'Review the retained lock before any new action.':actionState==='review'?'Authorize Terms for this exact saved strategy, then arm.':actionState==='armed'?'Release is scheduled. Emergency Stop cancels the armed release.':actionState==='running'?'Preparing the required browsers. Wait for readiness to finish.':'Check the saved strategy, then prepare its required browsers.';
+  input('terms').parentElement!.hidden=currentView==='release'?actionState!=='review':false;
+  byId('primary-actions').hidden=currentView!=='tests'&&!state.selection&&!state.handoff&&!state.bookingResult;
   const testDate=input('test-date').value;
   input('test-date').disabled=busy;
   const testPrepared=!!state.ready&&!testDirty&&state.workflow==='test'&&!!b&&(
@@ -992,7 +996,7 @@ function render(state: Dashboard) {
   testResults.hidden=!!byId('observed-price').hidden&&!!byId('selection-result').hidden&&!!byId('handoff-result').hidden;
    syncViableControls();tick();
 }
-byId('main-action').onclick=()=>{if(!latest)return;if((latest.lock||latest.handoff)&&!latest.canPrepareOverHold){void window.thirsty.reviewLock().catch(()=>{});return;}if(latest.ready&&!dirty){if(input('terms').checked)input('arm').click();else byId('terms').focus();}else input('prepare').click();};
+byId('main-action').onclick=()=>{if(!latest)return;if((latest.lock||latest.handoff)&&!latest.canPrepareOverHold){void window.thirsty.reviewLock().catch(()=>{});return;}if(latest.scheduledRelease||latest.operation==='full'&&latest.apiStage?.stage==='WAITING_FOR_RELEASE'){input('arm').click();return;}if(latest.ready&&!dirty){if(input('terms').checked)input('arm').click();else byId('terms').focus();}else input('prepare').click();};
 byId('test-main-action').onclick=()=>{if(!latest)return;if((latest.lock||latest.handoff)&&!latest.canPrepareOverHold){void window.thirsty.reviewLock().catch(()=>{});return;}if(input('test-main-action').textContent==='Review & Test'){if(input('terms').checked)input('test-booking').click();else byId('terms').focus();}else input('prepare').click();};
 function tick() {
   // Display only; never launches a command. Authoritative release plan comes from main/CLI.

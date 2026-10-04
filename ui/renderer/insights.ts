@@ -98,6 +98,13 @@ export function renderReopenAccuracy(state: Dashboard): void {
 }
 
 export function renderInsights(state: Dashboard): void {
+  const summaryHost=byId('history-summary'),latest=state.telemetry?.[0];
+  if(!latest)summaryHost.replaceChildren(empty('No recorded release summary yet. Raw evidence will remain available below after a run.'));
+  else {
+    const dense=latest.summary.denseCore??{configuredAttempts:0,actuallyDispatched:0,suppressed:0,rejections:latest.children.filter(value=>value.finalState==='REJECTED').length,successOrHold:0,unknown:latest.children.filter(value=>value.finalState==='UNKNOWN').length,throttled:0,localCollisions:0,chromeStartOrderingPreserved:null,providerReceiptOrder:'UNKNOWN' as const,regions:[]},holds=latest.children.filter(value=>['QR_READY','VERIFIED','HOLD_VERIFIED','HOLD_VERIFIED_QR_ATTENTION'].includes(value.finalState??'')).length;
+    const facts=el('dl','insight-facts'),rows:[string,string][]=[['Release',latest.date??latest.generatedAt.slice(0,10)],['Strategy',dense.configuredAttempts?`Dense Core · ${dense.configuredAttempts}`:`Normal · ${latest.children.length} attempts`],['Dispatched',`${dense.configuredAttempts?dense.actuallyDispatched:latest.children.filter(value=>value.dispatched).length}/${dense.configuredAttempts||latest.children.length}`],['Provider throttle',dense.throttled?`Detected · ${dense.throttled}`:'None recorded'],['Verified hold',holds?`Yes · ${holds}`:'No'],['Provider responses',`${dense.rejections} rejected · ${dense.unknown} unknown`],['Local timing',dense.chromeStartOrderingPreserved===null?'Not measured':dense.chromeStartOrderingPreserved?'Configured order preserved':'Configured order not fully preserved'],['Trigger → Chrome p95',ms(latest.summary.configuredToChrome.p95)]];
+    facts.append(...rows.map(([label,value])=>{const row=el('div','');row.append(el('dt','',label),el('dd','',value));return row;}));summaryHost.replaceChildren(facts,el('p','small','Local timing is not provider receipt or arbitration order.'));
+  }
   renderFanOutBenchmark(state);
   renderOffsetCalibration(state);
   renderLiveAnchorCalibration(state);

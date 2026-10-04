@@ -51,6 +51,7 @@ describe('Phase 4 operator UI', () => {
     await page.locator('#run-network-check').click();
     // Analysis moved out of Tools (UI reorganization): intelligence and replay live under History & Insights.
     await showRendererView(page, 'history');
+    await page.locator('.history-forensics').evaluate(element=>element.setAttribute('open',''));
     await page.locator('#rebuild-intelligence').click(); await page.locator('#clear-intelligence').click();
     await page.locator('#intelligence-history > summary').click();
     expect(await visible(page, '#intelligence-list')).toContain('Connection warmth: INSUFFICIENT EVIDENCE.');

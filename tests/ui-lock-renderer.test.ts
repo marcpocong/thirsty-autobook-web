@@ -43,6 +43,7 @@ it('shows the five operator views with a wide grid and stacked narrow layout',as
   expect(await page.locator('#live-attempts-card').isVisible()).toBe(true);
   expect(await page.locator('#slot-watch-card').isVisible()).toBe(true);
   await showRendererView(page,'history');
+  await page.locator('.history-forensics').evaluate(element=>element.setAttribute('open',''));
   expect(await page.locator('.activity').isVisible()).toBe(true);
   expect(await page.locator('.run-history').isVisible()).toBe(true);
   expect(await page.locator('#release-lab-card').isVisible()).toBe(true);
@@ -105,9 +106,9 @@ it('shows API-first browser readiness and the state-based release action',async(
   expect(await page.locator('#release-readiness .gate.good').filter({hasText:'Browser A prepared'}).count()).toBe(1);
   expect(await page.locator('#release-readiness .gate.good').filter({hasText:'Browser B prepared'}).count()).toBe(1);
   expect(await page.locator('#release-readiness').innerText()).not.toContain('All Courts verified');
-  expect(await page.locator('#main-action').innerText()).toBe('Review & Arm');
+  expect(await page.locator('#main-action').innerText()).toBe('Arm Release');
   await page.evaluate(()=>{const w=window as any;w.fixtureState.scheduledRelease={releaseMs:Date.now()+60000,targetDate:'2026-09-24'};w.fixtureState.operation='scheduled';w.fixturePublish(w.fixtureState);});
-  expect(await page.locator('#main-action').innerText()).toBe('Armed');
+  expect(await page.locator('#main-action').innerText()).toBe('Emergency Stop');
   await page.close();
 });
 
@@ -327,6 +328,7 @@ it('shows the live release slot watch with request/response windows, observer he
   expect(await page.locator('#watch-next-release').isVisible()).toBe(false);
   // Runs: concise forensic card; raw detail stays in the local report.
   await showRendererView(page,'history');
+  await page.locator('.history-forensics').evaluate(element=>element.setAttribute('open',''));
   const card=page.locator('#release-forensics-list .forensic-item');
   expect(await card.count()).toBe(1);
   const summary=await card.locator('summary').innerText();
