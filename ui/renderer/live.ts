@@ -1,4 +1,5 @@
 import type { Dashboard, LiveParentView } from '../types.js';
+import { liveOutcome, offsetText } from './operator-status.js';
 import { byId, el, empty } from './dom.js';
 
 /**
@@ -18,14 +19,16 @@ function parentSummary(parent: LiveParentView): string {
 
 export function renderLive(state: Dashboard): void {
   const live = state.live, host = byId('live-attempts');
-  const children=live?.parents.flatMap(value=>value.children)??[],planned=state.booking?.setup.STRATEGY_V2?.shotgun?.exactSchedule.length??children.length;
-  const ready=children.filter(value=>value.state==='READY').length,dispatched=children.filter(value=>['IN_FLIGHT','REJECTED','UNKNOWN','QR_READY','VERIFIED','HOLD_VERIFIED','HOLD_VERIFIED_QR_ATTENTION'].includes(value.state)).length;
-  const pending=children.filter(value=>['PREPARING','READY','ARMED','IN_FLIGHT'].includes(value.state)).length,first=live?.parents.find(value=>value.wave==='WAVE_1')??live?.parents[0];
+  const children=live?.parents.flatMap(value=>value.children)??[],planned=state.booking?.setup.PRECISION_PHASE3?.wave1.reduce((count,group)=>count+(group.fanOutOffsetsMs?.length??1),0)??state.booking?.setup.STRATEGY_V2?.shotgun?.exactSchedule.length??children.length;
+  const releaseChildren=live?.parents.filter(parent=>parent.wave==='WAVE_1').flatMap(parent=>parent.children)??[];
+  const ready=releaseChildren.filter(value=>['READY','ARMED','IN_FLIGHT','REJECTED','UNKNOWN','QR_READY','VERIFIED','HOLD_VERIFIED','HOLD_VERIFIED_QR_ATTENTION'].includes(value.state)).length,dispatched=releaseChildren.filter(value=>['IN_FLIGHT','REJECTED','UNKNOWN','QR_READY','VERIFIED','HOLD_VERIFIED','HOLD_VERIFIED_QR_ATTENTION'].includes(value.state)).length;
+  const pending=releaseChildren.filter(value=>value.state==='IN_FLIGHT').length,first=live?.parents.find(value=>value.wave==='WAVE_1')??live?.parents[0];
   byId('live-primary-target').textContent=first?`${first.court?`Court ${first.court}`:'Target'} · ${hour(first.startTime)}–${hour(first.endTime)}`:'Waiting for a release';
   byId('live-planned').textContent=String(planned);byId('live-ready').textContent=String(ready);byId('live-dispatched').textContent=String(dispatched);byId('live-pending').textContent=String(pending);
   const unknown=children.some(value=>value.state==='UNKNOWN'),hold=children.some(value=>['QR_READY','VERIFIED','HOLD_VERIFIED','HOLD_VERIFIED_QR_ATTENTION'].includes(value.state)),throttle=children.some(value=>value.code?.includes('429')||value.code?.includes('THROTTLE')),
     allRejected=children.length>0&&children.every(value=>['REJECTED','NOT_DISPATCHED','FAILED','PREWARM_FAILED','WINDOW_MISSED'].includes(value.state));
-  const result=hold?'HOLD VERIFIED':throttle?'PROVIDER THROTTLE DETECTED':unknown?'OUTCOME UNKNOWN — DO NOT RETRY':allRejected?'ALL ATTEMPTS REJECTED':dispatched?'WAITING FOR PROVIDER':ready?'READY FOR RELEASE':state.operation!=='idle'&&state.operation!=='scheduled'?'PREPARING':'WAITING FOR A RUN';
+  const result=liveOutcome(state);
+  byId('live-attempt-counts').textContent=`${planned} planned · ${ready} prepared · ${dispatched} dispatched · ${pending} still in flight · ${releaseChildren.filter(child=>child.state==='REJECTED').length} rejected`;
   const tone=hold?'ok':unknown||throttle?'danger':allRejected?'warn':dispatched||ready?'running':'muted';
   byId('live-result').textContent=result;byId('live-result').dataset.tone=tone;
   byId('live-guidance').textContent=hold?'Review the verified QR browser and booking details. Payment remains manual.':throttle?'Remaining same-target Dense Core attempts were stopped. Do not manually retry.':unknown?'Reconcile the provider state before any retry. The safety lock remains authoritative.':allRejected?'No hold was verified. Review details after the run completes.':dispatched?'Requests have left; wait for provider outcomes.':ready?'Attempts are prepared. Keep the PC awake and do not change the saved plan.':'Prepare and arm from Next Release. No action is needed here.';
@@ -47,7 +50,7 @@ export function renderLive(state: Dashboard): void {
     details.append(el('summary', '', `${title} — ${parentSummary(parent)}`));
     const chips = el('div', 'live-children');
     chips.append(...parent.children.map(child => {
-      const chip = el('span', 'live-child', `${child.shotIndex!==undefined?`#${child.shotIndex+1}`:child.label} ${stateText(child.state)}${child.offsetMs!==undefined ? ` · ${child.offsetMs>=0?'+':''}${child.offsetMs} ms` : ''}${child.code?.startsWith('SHOTGUN_')?` · ${stateText(child.code)}`:''}`);
+      const chip = el('span', 'live-child', `${child.shotIndex!==undefined?`#${child.shotIndex+1}`:child.label} ${stateText(child.state)}${child.offsetMs!==undefined ? ` · ${offsetText(child.offsetMs)}` : ''}${child.code?.startsWith('SHOTGUN_')?` · ${stateText(child.code)}`:''}`);
       chip.dataset.state = child.state; if (child.code) chip.title = child.code;
       return chip;
     }));

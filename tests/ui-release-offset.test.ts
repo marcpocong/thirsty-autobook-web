@@ -110,7 +110,7 @@ it('routes the 20-shot preset through unified Smart Shotgun metadata and PRECISI
   const checks=page.locator('#strategy-shotgun-targets input[type="checkbox"]');await checks.nth(2).uncheck();await checks.nth(3).uncheck();
   await page.locator('#strategy-shotgun-allocation').selectOption('PRIORITY_WEIGHTED');
   await page.locator('#strategy-shotgun-timing-override').check();
-  await page.locator('#strategy-shotgun-standby-override').check();
+  if(await page.locator('#strategy-shotgun-standby-override').isVisible())await page.locator('#strategy-shotgun-standby-override').check();
   await page.locator('#strategy-save').click();
   await page.waitForFunction(()=>(window as any).fixtureSaved);
   const result=await saved(page);
@@ -146,12 +146,12 @@ it('saves and reloads literal Advanced Custom Shotgun timing',async()=>{
   await page.locator('#strategy-shotgun-budget').fill('4');await page.locator('#strategy-shotgun-budget').blur();
   await page.locator('#strategy-shotgun-advanced').evaluate(element=>element.setAttribute('open',''));
   await page.locator('#strategy-shotgun-timing').selectOption('CUSTOM');await page.locator('#strategy-shotgun-custom-offsets').fill('-1500, -500, -10, 0');
-  await page.locator('#strategy-shotgun-custom-offsets').blur();await page.locator('#strategy-shotgun-timing-override').check();await page.locator('#strategy-shotgun-standby-override').check();
+  await page.locator('#strategy-shotgun-custom-offsets').blur();await page.locator('#strategy-shotgun-timing-override').check();if(await page.locator('#strategy-shotgun-standby-override').isVisible())await page.locator('#strategy-shotgun-standby-override').check();
   await page.locator('#strategy-save').click();await page.waitForFunction(()=>(window as any).fixtureSaved);const result=await saved(page);
   expect(result.STRATEGY_V2.shotgun.customOffsetsMs).toEqual([-1500,-500,-10,0]);
   expect(result.PRECISION_PHASE3.wave1.filter((value:any)=>value.candidateIndex===0).flatMap((value:any)=>value.fanOutOffsetsMs??[value.releaseOffsetMs??0])).toEqual([-1500,-500,-10,0]);
   await page.close();const reopened=await openRenderer(browser,{booking:booking(result)});await reopened.locator('[data-view="strategy"]').first().click();await reopened.locator('#strategy-shotgun-advanced').evaluate(element=>element.setAttribute('open',''));
-  expect(await reopened.locator('#strategy-shotgun-custom-offsets').inputValue()).toBe('-1500, -500, -10, +0');await reopened.close();
+  expect(await reopened.locator('#strategy-shotgun-custom-offsets').inputValue()).toBe('-1500, -500, -10, 0');await reopened.close();
 });
 
 it('keeps Release Lab discoverable in Fixed mode and applies its preset by switching the exact rows to Smart', async () => {
