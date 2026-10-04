@@ -66,9 +66,9 @@ Shotgun is not another engine. `STRATEGY_V2.shotgun` stores versioned UX/provena
 - Stable logical target IDs are derived from court/start/duration, so reordering rows cannot move a selection to another target.
 - The Shotgun budget counts attempts on selected targets. Unselected immediate targets remain one normal Wave 1 target (with their normal configured fan-out).
 - Equal uses quotient/remainder in priority order. Priority weighted uses deterministic weights `N+1, N, ..., 2` and largest remainder; with two targets, 20 becomes 12/8. Custom persists exact non-negative integers and never rewrites them.
-- A target allocation is split into worker groups of at most `PRECISION_MAX_FAN_OUT`; for example ten shots become groups of six and four. This preserves one authoritative per-browser/tab ceiling.
-- One aggregate timing schedule is distributed fairly across selected targets, so targets do not create coincident hidden bursts. Auto and Custom span the full signed window. Tight, Balanced and Wide request 1x, 2x and 4x the machine's meaningful spacing and end at `windowEndMs`; when that cannot fit, the full window plus a capacity warning applies. The existing fresh learned/manual group anchor is then added uniformly; Save fails if it would move a final trigger outside the signed range. There is no learned offset per child.
-- The capacity planner compares requested spacing with the local meaningful-spacing input, reports a recommended maximum and blocks Save unless an explicit capacity override is present.
+- A target allocation is split into worker groups of at most `PRECISION_MAX_FAN_OUT`; for example 20 shots become groups of six, six, six and two. This preserves one authoritative per-browser/tab ceiling.
+- One aggregate timing schedule is distributed fairly across selected targets, so targets do not create coincident hidden bursts. Experimental Dense Core concentrates most positions near T0 and reproduces the exact documented 20-shot preset. Other budgets are generated deterministically. Auto and Custom span the configured window. Tight, Balanced and Wide request 1x, 2x and 4x the machine's meaningful spacing. No Shotgun mode can schedule after release.
+- The capacity planner reports machine timing evidence separately from the operator-authorized schedule. Dense Core may be tighter than 105 ms only with an explicit capacity override; the compiler never widens saved offsets.
 - A verified hold, UNKNOWN, or recognized provider throttle suppresses remaining unsent same-target shots. Confirmed rejection permits later scheduled shots. Suppression is `NOT_DISPATCHED` with a specific `SHOTGUN_*` reason.
 - Review is generated from the compiled object and lists allocation, window, exact triggers, standby workers, Wave 2, Rescue and maximum sends.
 
@@ -118,7 +118,7 @@ Auto uses the robust median local lag and centers the predicted local Chrome-sta
 
 September 28 is the regression case: configured offsets `[-50, -25, -10, -5, 0, 0, 0]` mapped to Chrome starts `[-45.59, -20.92, -5.98, -0.78, 4.23, 4.29, 4.83]`, a median local lag of about `+4.23 ms` and range `+4.02..+4.83 ms`. That supports roughly `-4 ms` for a width-1 release-centered attempt. It does **not** justify `-25 ms` as a default: Worker B's HTTP 409 happened to return first, but response order did not follow send order. For a width-2 base `[-10, 0]`, the same lag already approximately straddles release and implies no material extra shift; in any event, width-1 history is not matching width-2 evidence, so current width-2 Auto uses the deterministic release-centered fallback until enough width-2 releases exist.
 
-**Signed offsets.** Legacy Normal/Fixed controls remain `-2000..0`. Shotgun windows use `-2000..+2000`: negative means before release, 0 at release, positive after release. The UI never converts this to the legacy positive “send early by” convention. Existing saved plans need no migration.
+**Signed offsets.** Legacy Normal/Fixed controls remain `-2000..0`. Shotgun also uses `-2000..0`: negative means before release and 0 means at release. A positive Shotgun offset is incompatible and must be reviewed; it is never clamped, deleted or silently converted to Dense Core.
 
 ## Rescue V2 and Slot Watch
 
@@ -128,9 +128,9 @@ See [RESCUE_V2.md](RESCUE_V2.md).
 
 Every critical-path row (`.local/release-forensics/<run>/critical-path.ndjson`) records one attempt:
 
-- identity: parent goal, worker, fan-out index/count, Shotgun shot index/count, configured offset, timing bucket, wave;
-- timing: scheduler wake, worker invocation, transport entry, renderer entry, fetch(), Chrome request start, Playwright request event, response;
-- outcome: final state and prewarm-ready time.
+- identity: parent goal, worker, worker group, fan-out index/count, Shotgun shot index/count, configured offset, timing bucket, wave;
+- timing: scheduler wake, worker invocation, transport entry, renderer entry, fetch(), Chrome request start, Playwright request event, response and response latency;
+- outcome: HTTP status, final state, suppression reason, throttle signal and prewarm-ready time.
 
 `release-telemetry.ts` summarizes recent runs and retains up to 64 for live calibration:
 
@@ -140,6 +140,7 @@ Every critical-path row (`.local/release-forensics/<run>/critical-path.ndjson`) 
 - prewarm headroom;
 - Wave 2 / Rescue selection → POST;
 - predicted → observed reopen error.
+- Dense Core configured/dispatched/suppressed totals, fine pre-release regions, p50/p95 trigger→Chrome by region, local collisions and whether local Chrome starts preserved configured order. Provider receipt/arbitration order is always labelled unknown.
 
 History & Insights shows a separate Live Timing Calibration table by width, with samples, distinct releases, median/p95/range, evidence level, freshness and a secondary run-by-run table. The warning that HTTP response order is not arrival order is part of that panel.
 

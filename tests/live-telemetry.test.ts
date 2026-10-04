@@ -71,6 +71,8 @@ describe('release dispatch telemetry summary', () => {
     expect(summary.summary.prewarmHeadroomMs.min).toBe(8_965);
     expect(summary.summary.adaptiveSelectionToPost.p50).toBe(400);
     expect(summary.summary.reopenPredictionErrorMs.p50).toBe(1500);
+    expect(summary.summary.denseCore).toMatchObject({configuredAttempts:1,actuallyDispatched:1,suppressed:0,localCollisions:0,chromeStartOrderingPreserved:null,providerReceiptOrder:'UNKNOWN'});
+    expect(summary.summary.denseCore.regions.find(value=>value.region==='-50 to -20 ms')).toMatchObject({configured:1,dispatched:1});
     expect(summary.children[0]).toMatchObject({shotIndex:4,shotCount:6,timingBucket:'-100 to 0 ms',httpStatus:429,providerThrottleSignal:true,
       suppressionReason:'SHOTGUN_PROVIDER_THROTTLE_STOP',stopCondition:'SHOTGUN_PROVIDER_THROTTLE_STOP',logicalTargetOutcome:'REJECTED'});
     expect(JSON.stringify(summary)).not.toMatch(/token|cookie|customer/i);

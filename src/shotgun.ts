@@ -1,12 +1,14 @@
 import { PRECISION_MAX_FAN_OUT, PRECISION_MAX_SENDS } from './workers.js';
 
 export type ShotgunAllocationMode = 'EQUAL' | 'PRIORITY_WEIGHTED' | 'CUSTOM';
-export type ShotgunTimingMode = 'AUTO' | 'TIGHT' | 'BALANCED' | 'WIDE' | 'CUSTOM';
+export type ShotgunTimingMode = 'AUTO' | 'DENSE_CORE' | 'TIGHT' | 'BALANCED' | 'WIDE' | 'CUSTOM';
 export type ShotgunReadiness = 'PREPARING' | 'READY' | 'FAILED' | 'OMITTED';
 export type ShotgunSuppressionReason = 'SHOTGUN_TARGET_ALREADY_ACHIEVED' | 'SHOTGUN_TARGET_OUTCOME_UNKNOWN' | 'SHOTGUN_PROVIDER_THROTTLE_STOP';
 /** Installation evidence from the 2026-10-03 intercepted spaced run; live compatible profiles may only raise this floor. */
 export const SHOTGUN_MEANINGFUL_SPACING_MS=105;
-export const isShotgunOffsetMs=(value:unknown):value is number=>typeof value==='number'&&Number.isSafeInteger(value)&&value>=-2_000&&value<=2_000;
+/** Shotgun is deliberately pre-release-only. Positive offsets are invalid, never clamped. */
+export const isShotgunOffsetMs=(value:unknown):value is number=>typeof value==='number'&&Number.isSafeInteger(value)&&value>=-2_000&&value<=0;
+export const EXPERIMENTAL_DENSE_CORE_20=Object.freeze([-1000,-700,-500,-300,-250,-200,-175,-150,-125,-100,-80,-60,-45,-30,-20,-10,-5,-2,-1,0] as const);
 export function shotgunTriggerMs(releaseMs:number,offsetMs:number){if(!Number.isSafeInteger(releaseMs)||!isShotgunOffsetMs(offsetMs))throw Error('SHOTGUN_OFFSET_INVALID');return releaseMs+offsetMs;}
 
 export interface ShotgunTarget {
@@ -113,10 +115,28 @@ export function shotgunOffsets(count: number, startMs: number, endMs: number): n
   return Array.from({ length: count }, (_, index) => Math.round(startMs + (endMs - startMs) * index / (count - 1)));
 }
 
+/**
+ * Deterministic experimental schedule. Reduced budgets retain both early and near-zero representatives.
+ * Larger budgets retain the exact 20-shot hypothesis and add unique positions inside the final 250 ms,
+ * nearest T0 first. This is an operator-authorized schedule, not a claim about provider arbitration.
+ */
+export function denseCoreOffsets(count:number):number[]{
+  if(!Number.isSafeInteger(count)||count<0||count>PRECISION_MAX_SENDS)throw Error('SHOTGUN_BUDGET_INVALID');
+  if(count===0)return [];
+  if(count===1)return [0];
+  if(count<EXPERIMENTAL_DENSE_CORE_20.length){
+    const indexes=Array.from({length:count},(_,index)=>Math.round(index*(EXPERIMENTAL_DENSE_CORE_20.length-1)/(count-1)));
+    return indexes.map(index=>EXPERIMENTAL_DENSE_CORE_20[index]!);
+  }
+  const offsets:number[]=[...EXPERIMENTAL_DENSE_CORE_20];
+  for(let distance=1;offsets.length<count&&distance<=250;distance++)if(!offsets.includes(-distance))offsets.push(-distance);
+  return offsets.sort((a,b)=>a-b);
+}
+
 export function planShotgun(settings: ShotgunSettings, targets: readonly ShotgunTarget[], capacity: ShotgunCapacityInput): ShotgunPlan {
   const allocated = allocateShotgun(settings, targets), problems = [...allocated.problems];
-  if (!Number.isSafeInteger(settings.windowStartMs) || !Number.isSafeInteger(settings.windowEndMs) || settings.windowStartMs < -2_000 || settings.windowEndMs > 2_000 || settings.windowStartMs > settings.windowEndMs)
-    problems.push('Shotgun timing window must use whole milliseconds from -2000 through +2000, with start no later than end.');
+  if (!Number.isSafeInteger(settings.windowStartMs) || !Number.isSafeInteger(settings.windowEndMs) || settings.windowStartMs < -2_000 || settings.windowEndMs > 0 || settings.windowStartMs > settings.windowEndMs)
+    problems.push('Shotgun timing window must use whole milliseconds from -2000 through 0, with start no later than end. Shotgun never sends after release.');
   const spacing = Number.isFinite(capacity.meaningfulSpacingMs) && capacity.meaningfulSpacingMs > 0 ? Math.ceil(capacity.meaningfulSpacingMs) : SHOTGUN_MEANINGFUL_SPACING_MS;
   const span = Math.max(0, settings.windowEndMs - settings.windowStartMs);
   const recommendedMaximum = Math.max(1, Math.floor(span / spacing) + 1);
@@ -125,19 +145,19 @@ export function planShotgun(settings: ShotgunSettings, targets: readonly Shotgun
   const desiredSpan=timingFactor===null?span:spacing*timingFactor*Math.max(0,allocatedCount-1);
   const scheduleStart=timingFactor!==null&&desiredSpan<=span?settings.windowEndMs-desiredSpan:settings.windowStartMs;
   const configuredAnchorMs=Number.isSafeInteger(capacity.groupAnchorMs)?capacity.groupAnchorMs!:0;
-  const custom=settings.timingMode==='CUSTOM';
-  const groupAnchorMs=custom?0:configuredAnchorMs;
+  const custom=settings.timingMode==='CUSTOM',dense=settings.timingMode==='DENSE_CORE';
+  const groupAnchorMs=custom||dense?0:configuredAnchorMs;
   if(custom&&settings.customOffsetsMs?.length!==allocatedCount)problems.push(`Custom Shotgun timing requires exactly ${allocatedCount} signed offsets.`);
-  if(custom&&settings.customOffsetsMs?.some(value=>!isShotgunOffsetMs(value)))problems.push('Custom Shotgun offsets must be whole milliseconds from -2000 through +2000.');
+  if(custom&&settings.customOffsetsMs?.some(value=>!isShotgunOffsetMs(value)))problems.push('Custom Shotgun offsets must be whole milliseconds from -2000 through 0. Positive offsets are not allowed.');
   // Custom values are final operator-entered triggers: anchors must never silently rewrite them.
-  const offsets=custom?[...(settings.customOffsetsMs??[])]:shotgunOffsets(allocatedCount,scheduleStart,settings.windowEndMs).map(value=>value+groupAnchorMs);
-  if(offsets.some(value=>!isShotgunOffsetMs(value)))problems.push(`The ${groupAnchorMs>=0?'+':''}${groupAnchorMs} ms group anchor moves a Shotgun trigger outside -2000 through +2000 ms.`);
+  const offsets=custom?[...(settings.customOffsetsMs??[])]:dense?denseCoreOffsets(allocatedCount):shotgunOffsets(allocatedCount,scheduleStart,settings.windowEndMs).map(value=>value+groupAnchorMs);
+  if(offsets.some(value=>!isShotgunOffsetMs(value)))problems.push(`The ${groupAnchorMs>=0?'+':''}${groupAnchorMs} ms group anchor moves a Shotgun trigger outside -2000 through 0 ms.`);
   const chronological=[...offsets].sort((a,b)=>a-b);
   const requestedSpacingMs = chronological.length>1?Math.min(...chronological.slice(1).map((value,index)=>value-chronological[index]!)):null;
   const coincident=[...new Map(offsets.map(offset=>[offset,offsets.filter(value=>value===offset).length])).entries()].filter(([,count])=>count>1).sort((a,b)=>b[1]-a[1]||a[0]-b[0]);
   const coincidentWarning=coincident.length?coincident.map(([offset,count])=>`${custom?'CUSTOM timing':'Timing'} contains ${count} attempts at ${offset>=0?'+':''}${offset} ms.`).join(' '):null;
-  const capacityWarning = custom&&requestedSpacingMs!==null&&requestedSpacingMs<spacing
-    ? `Requested Custom spacing reaches ${requestedSpacingMs} ms; measured meaningful spacing is ${spacing} ms.`
+  const capacityWarning = (custom||dense)&&requestedSpacingMs!==null&&requestedSpacingMs<spacing
+    ? `Requested ${dense?'Dense Core':'Custom'} spacing reaches ${requestedSpacingMs} ms; machine meaningful-spacing evidence is ${spacing} ms.`
     : allocatedCount > recommendedMaximum
     ? `Requested ${allocatedCount}; recommended maximum for this window is about ${recommendedMaximum} at ${spacing} ms meaningful spacing.` : null;
   if (capacityWarning && !(settings.timingCapacityOverride??settings.capacityOverride??false)) problems.push(`${capacityWarning} Enable the timing capacity override or reduce the budget.`);
@@ -165,14 +185,24 @@ export function shotgunTimingBucket(offsetMs: number): ShotgunTimingBucket {
   return '> +250 ms';
 }
 
+export type DenseCoreTimingRegion='< -500 ms'|'-500 to -100 ms'|'-100 to -50 ms'|'-50 to -20 ms'|'-20 to -5 ms'|'-5 to 0 ms';
+export function denseCoreTimingRegion(offsetMs:number):DenseCoreTimingRegion{
+  if(offsetMs< -500)return '< -500 ms';
+  if(offsetMs< -100)return '-500 to -100 ms';
+  if(offsetMs< -50)return '-100 to -50 ms';
+  if(offsetMs< -20)return '-50 to -20 ms';
+  if(offsetMs< -5)return '-20 to -5 ms';
+  return '-5 to 0 ms';
+}
+
 /** Telemetry topology comes only from the saved exact schedule, never from fan-out shape. */
 export function deriveShotgunTopology(attempts:readonly {id:string;logicalTargetId:string;configuredOffsetMs:number}[],schedule:readonly {logicalTargetId:string;shotIndex:number;configuredOffsetMs:number}[]){
-  const result=new Map<string,{shotIndex:number;shotCount:number;timingBucket:ShotgunTimingBucket}>();
+  const result=new Map<string,{shotIndex:number;shotCount:number;workerGroupIndex:number;timingBucket:ShotgunTimingBucket}>();
   for(const logicalTargetId of new Set(schedule.map(value=>value.logicalTargetId))){
     const planned=schedule.filter(value=>value.logicalTargetId===logicalTargetId).sort((a,b)=>a.shotIndex-b.shotIndex);
     const actual=attempts.filter(value=>value.logicalTargetId===logicalTargetId);
     const used=new Set<number>();actual.forEach(attempt=>{const index=planned.findIndex((shot,shotIndex)=>!used.has(shotIndex)&&shot.configuredOffsetMs===attempt.configuredOffsetMs),shot=planned[index];
-      if(shot){used.add(index);result.set(attempt.id,{shotIndex:shot.shotIndex,shotCount:planned.length,timingBucket:shotgunTimingBucket(shot.configuredOffsetMs)});}});
+      if(shot){used.add(index);result.set(attempt.id,{shotIndex:shot.shotIndex,shotCount:planned.length,workerGroupIndex:Math.floor(shot.shotIndex/PRECISION_MAX_FAN_OUT),timingBucket:shotgunTimingBucket(shot.configuredOffsetMs)});}});
   }
   return result;
 }

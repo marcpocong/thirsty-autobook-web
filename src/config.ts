@@ -16,7 +16,7 @@ const hour = z.string().regex(/^(0[89]|1[0-9]|2[0-3]):00$/);
 const courts = z.array(z.number().int().min(1).max(7));
 /** Release Offset of one Precision attempt; absent means 0 ms (normal). */
 const offsetValue = z.number().int().refine(isReleaseOffsetMs, 'Release offset must be from -2000 ms through 0 ms.');
-const phase3OffsetValue=z.number().int().refine(isShotgunOffsetMs,'Shotgun trigger must be from -2000 ms through +2000 ms.');
+const phase3OffsetValue=z.number().int().refine(isShotgunOffsetMs,'Shotgun trigger must be from -2000 ms through 0 ms. Positive offsets are not allowed.');
 const attemptOffset = offsetValue.optional();
 /** One exact Precision target: one court, one start, 1-3 hours. Workers A-G follow row order. */
 export const PrecisionTargetSchema = z.object({ court: z.number().int().min(1).max(7), start: hour, durationHours: z.number().int().min(1).max(3),
@@ -64,8 +64,8 @@ export const StrategyV2Schema=z.object({version:z.literal(1),preset:z.enum(['BAL
   lineage:z.object({immediate:z.array(z.string().regex(/^I\d+$/).nullable()).max(7),backups:z.array(z.string().regex(/^B\d+$/).nullable()).max(21)}).strict().optional(),
   shotgun:z.object({version:z.literal(1),enabled:z.boolean(),budget:z.number().int().min(1).max(PRECISION_MAX_SENDS),
     allocationMode:z.enum(['EQUAL','PRIORITY_WEIGHTED','CUSTOM']),selectedTargetIds:z.array(z.string().min(1).max(100)).min(1).max(7),
-    customCounts:z.record(z.string(),z.number().int().nonnegative()).optional(),windowStartMs:z.number().int().min(-2000).max(2000),
-    windowEndMs:z.number().int().min(-2000).max(2000),timingMode:z.enum(['AUTO','TIGHT','BALANCED','WIDE','CUSTOM']),
+    customCounts:z.record(z.string(),z.number().int().nonnegative()).optional(),windowStartMs:z.number().int().min(-2000).max(0),
+    windowEndMs:z.number().int().min(-2000).max(0),timingMode:z.enum(['AUTO','DENSE_CORE','TIGHT','BALANCED','WIDE','CUSTOM']),
     customOffsetsMs:z.array(phase3OffsetValue).max(PRECISION_MAX_SENDS).optional(),timingCapacityOverride:z.boolean().optional(),allowStandbyConsumption:z.boolean().optional(),
     capacityOverride:z.boolean().optional(),counts:z.record(z.string(),z.number().int().nonnegative()),
     exactSchedule:z.array(z.object({logicalTargetId:z.string().min(1).max(100),shotIndex:z.number().int().nonnegative(),configuredOffsetMs:phase3OffsetValue}).strict()).max(PRECISION_MAX_SENDS),
@@ -107,9 +107,6 @@ function checkPrecision(c:{RELEASE_STRATEGY:'general'|'precision';BOOKING_METHOD
         Object.entries(shotgun.counts).some(([id,count])=>count>0&&!scheduled.has(id)))
         ctx.addIssue({code:'custom',message:'Shotgun exact schedule does not match PRECISION_PHASE3 authorization.',path:['STRATEGY_V2','shotgun','exactSchedule']});
     }
-    const shotgunIds=new Set(shotgun?.enabled?shotgun.exactSchedule.map(value=>value.logicalTargetId):[]);
-    if(p.wave1.some(value=>(value.fanOutOffsetsMs??[value.releaseOffsetMs??0]).some(offset=>offset>0)&&!shotgunIds.has(logicalTargetId(p.candidates[value.candidateIndex]!))))
-      ctx.addIssue({code:'custom',message:'Positive Wave 1 offsets are allowed only for saved Shotgun assignments.',path:['PRECISION_PHASE3','wave1']});
     if(new Set(workers).size!==workers.length)ctx.addIssue({code:'custom',message:'Precision workers must be unique across Wave 1 and standby.',path:['PRECISION_PHASE3']});
     if(p.wave1.some(value=>!p.candidates[value.candidateIndex]?.permissions.wave1))ctx.addIssue({code:'custom',message:'Wave 1 assignment must name a Wave 1 eligible candidate.',path:['PRECISION_PHASE3']});
     if(p.wave1.some(value=>p.candidates[value.candidateIndex]?.rateEvidence.status==='REFERENCE'||
@@ -254,7 +251,30 @@ function parseConfig(includeSaved:boolean,test?:TestRuntimeSetup):{config:Config
   return {config:parsed.data,fallbackReconciliation};
 }
 export function loadConfig():Config{return parseConfig(true).config;}
-export function loadConfigWithReconciliation(){return parseConfig(true);}
+export function legacyShotgunReviewShadow(setup:unknown):unknown{
+  const shadow=structuredClone(setup) as Record<string,any>;
+  const neutralizePhase3=(phase3:any)=>{for(const assignment of phase3?.wave1??[]){if(typeof assignment.releaseOffsetMs==='number'&&assignment.releaseOffsetMs>0)assignment.releaseOffsetMs=0;
+    if(Array.isArray(assignment.fanOutOffsetsMs))assignment.fanOutOffsetsMs=assignment.fanOutOffsetsMs.map((value:unknown)=>typeof value==='number'&&value>0?0:value);}};
+  neutralizePhase3(shadow.PRECISION_PHASE3);neutralizePhase3(shadow.STRATEGY_V2?.acceptedPhase3);
+  const shotgun=shadow.STRATEGY_V2?.shotgun;if(shotgun){if(shotgun.windowStartMs>0)shotgun.windowStartMs=0;if(shotgun.windowEndMs>0)shotgun.windowEndMs=0;
+    if(Array.isArray(shotgun.customOffsetsMs))shotgun.customOffsetsMs=shotgun.customOffsetsMs.map((value:unknown)=>typeof value==='number'&&value>0?0:value);
+    if(Array.isArray(shotgun.exactSchedule))for(const shot of shotgun.exactSchedule)if(shot.configuredOffsetMs>0)shot.configuredOffsetMs=0;}
+  return shadow;
+}
+/**
+ * The editor may display a previously valid post-release Shotgun plan, but execution and Save use the strict schemas.
+ * Validate a neutralized shadow to prove that positive Shotgun offsets are the only incompatibility, then return the
+ * untouched legacy values for review. Nothing is written and no authorization is silently changed.
+ */
+export function loadConfigWithReconciliation(){
+  try{return parseConfig(true);}catch(strictError){
+    if(!existsSync('config.local.json'))throw strictError;
+    const repaired=reconcileBookingSetupFallbacks(JSON.parse(readFileSync('config.local.json','utf8'))),shadow=legacyShotgunReviewShadow(repaired.setup);
+    if(!BookingSetupSchema.safeParse(shadow).success)throw strictError;
+    const base=parseConfig(false).config;
+    return {config:{...base,...(repaired.setup as Record<string,unknown>)} as Config,fallbackReconciliation:repaired.reconciliation};
+  }
+}
 // Test Now uses environment/player/runtime settings without parsing or applying
 // the saved Release draft in config.local.json.
 export function loadTestRuntimeConfig(test:TestRuntimeSetup):Config{return parseConfig(false,test).config;}

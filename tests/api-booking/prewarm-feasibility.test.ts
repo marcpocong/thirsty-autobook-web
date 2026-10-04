@@ -21,14 +21,14 @@ describe('exact-plan prewarm feasibility',()=>{
     expect(ready(phase3([2]),{prepP95Ms:2_000,sampleCount:31})).toMatchObject({preparationP95Ms:2_000,p95Source:'COMPATIBLE_MEASURED_HISTORY',sampleCount:31});});
   it('grows for slow history and caps exact lead at 105 seconds',()=>{const fast=ready(phase3([4]),{prepP95Ms:2_000}),slow=ready(phase3([6]),{prepP95Ms:30_000});
     expect(slow.prewarmLeadMs).toBe(MAX_PREWARM_LEAD_MS);expect(slow.prewarmLeadMs).toBeGreaterThan(fast.prewarmLeadMs);});
-  it('reports prepared-context freshness as a limiting constraint',()=>{const value=ready(phase3([1],[[2_000]]),{prepP95Ms:1,preparedContextFreshnessMs:10_000});
+  it('reports prepared-context freshness as a limiting constraint',()=>{const value=ready(phase3([1],[[0]]),{prepP95Ms:1,preparedContextFreshnessMs:5_000});
     expect(value).toMatchObject({projectedOmitted:1,verdict:'NOT_FEASIBLE'});expect(value.attempts[0]?.reason).toBe('PREWARM_FRESHNESS_LIMIT');});
   it('marks an unavailable worker without silently removing its configured task',()=>{const value=ready(phase3([1,1]),{availableWorkers:new Set(['A'])});
     expect(value).toMatchObject({configuredWave1Attempts:2,projectedOmitted:1,verdict:'NOT_FEASIBLE'});expect(value.attempts[1]).toMatchObject({reason:'PREWARM_WORKER_UNAVAILABLE'});});
   it('honours per-group concurrency 1 and a global limit below worker count',()=>{const plan=phase3([3,3,3]);const perGroup=ready(plan,{perGroupConcurrency:1}),global=ready(plan,{globalConcurrency:1});
     expect(perGroup.concurrency.perGroup).toBe(1);expect(global.concurrency.global).toBe(1);expect(global.prewarmLeadMs).toBeGreaterThanOrEqual(perGroup.prewarmLeadMs);});
-  it('uses each child signed trigger, including negative, positive and mixed triggers',()=>{const value=ready(phase3([3],[[-2_000,0,2_000]]));
-    expect(value.attempts.map(item=>item.triggerTimeMs)).toEqual([-2_000,0,2_000]);expect(value.predictedPreparationStartMs).toBe(-2_000-value.prewarmLeadMs);});
+  it('uses each child pre-release signed trigger',()=>{const value=ready(phase3([3],[[-2_000,-1_000,0]]));
+    expect(value.attempts.map(item=>item.triggerTimeMs)).toEqual([-2_000,-1_000,0]);expect(value.predictedPreparationStartMs).toBe(-2_000-value.prewarmLeadMs);});
   it('projects omissions when the stop-starting cutoff exhausts capacity',()=>{const value=ready(phase3([6,6]),{prepP95Ms:30_000,globalConcurrency:1});
     expect(value.projectedOmitted).toBeGreaterThan(0);expect(value.limitingConstraints).toContain('PREWARM_CAPACITY_EXCEEDED');});
   it('represents the October 3 class: 8 configured, 6 prepared, primaries preserved, two lower-tier omissions',()=>{const value=ready(phase3([2,2,2,2]),{prepP95Ms:30_000,globalConcurrency:2});

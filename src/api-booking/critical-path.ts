@@ -29,7 +29,7 @@ interface WorkerRecord {
 }
 /** Per-attempt identity and outcome (Phase 13): parent goal, worker, fan-out position, configured offset, wave and final state. Never private data. */
 export type CriticalPathMeta = Partial<{ parentGoalId: string; workerId: string; fanOutIndex: number; fanOutCount: number; configuredOffsetMs: number;
-  shotIndex:number;shotCount:number;timingBucket:string;wave: string; finalState: string; finalCode: string; prewarmReadyMs: number;
+  shotIndex:number;shotCount:number;workerGroupIndex:number;timingBucket:string;wave: string; finalState: string; finalCode: string; prewarmReadyMs: number;
   httpStatus:number;providerThrottleSignal:boolean }>;
 
 export interface CriticalPathRow {

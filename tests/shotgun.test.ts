@@ -1,11 +1,11 @@
 import {describe,expect,it} from 'vitest';
-import {allocateShotgun,deriveShotgunTopology,logicalTargetId,migrateShotgunSettings,planShotgun,shotgunOffsets,shotgunStopReason,shotgunTimingBucket,shotgunWorkerGroups,type ShotgunSettings} from '../src/shotgun.js';
+import {allocateShotgun,denseCoreOffsets,denseCoreTimingRegion,deriveShotgunTopology,EXPERIMENTAL_DENSE_CORE_20,logicalTargetId,migrateShotgunSettings,planShotgun,shotgunOffsets,shotgunStopReason,shotgunTimingBucket,shotgunWorkerGroups,type ShotgunSettings} from '../src/shotgun.js';
 import {compileSmartPlan,confirmSmartRates,emptySmartDraft,type SmartDraft} from '../src/precision-simple.js';
 import {authorizePrecision,precisionCandidateId,wave1SendCount} from '../src/api-booking/precision-phase3.js';
 import {UiEventSchema} from '../src/ui-events.js';
 import {reduceLiveRun} from '../ui/live-run.js';
 import {bookingView,defaultSetup,describePrecisionPlan} from '../ui/booking.js';
-import {ConfigSchema} from '../src/config.js';
+import {ConfigSchema,legacyShotgunReviewShadow} from '../src/config.js';
 import {shotgunReadinessText} from '../ui/renderer/next-release.js';
 
 const targetDate='2026-10-03';
@@ -13,7 +13,7 @@ const targets=[
   {logicalTargetId:'c6',priority:1},{logicalTargetId:'c7',priority:2},{logicalTargetId:'c1',priority:3},{logicalTargetId:'c2',priority:4},
 ];
 const settings=(patch:Partial<ShotgunSettings>={}):ShotgunSettings=>({enabled:true,budget:20,allocationMode:'EQUAL',selectedTargetIds:['c6','c7'],
-  windowStartMs:-1500,windowEndMs:250,timingMode:'AUTO',timingCapacityOverride:true,allowStandbyConsumption:true,...patch});
+  windowStartMs:-1500,windowEndMs:0,timingMode:'AUTO',timingCapacityOverride:true,allowStandbyConsumption:true,...patch});
 
 describe('Shotgun allocation and timing',()=>{
   it('allocates 20 / 2 equally as 10 / 10',()=>expect(allocateShotgun(settings(),targets)).toEqual({counts:{c6:10,c7:10},problems:[]}));
@@ -25,7 +25,7 @@ describe('Shotgun allocation and timing',()=>{
     expect(allocateShotgun(settings({allocationMode:'CUSTOM',customCounts:{c6:-1,c7:8}}),targets).problems.join(' ')).toMatch(/non-negative whole number/);
   });
   it('generates a monotonic inclusive signed release-relative schedule',()=>{
-    const values=shotgunOffsets(20,-1500,250);expect(values).toHaveLength(20);expect(values[0]).toBe(-1500);expect(values.at(-1)).toBe(250);
+    const values=shotgunOffsets(20,-1500,0);expect(values).toHaveLength(20);expect(values[0]).toBe(-1500);expect(values.at(-1)).toBe(0);
     expect(values.every((value,index)=>index===0||value>=values[index-1]!)).toBe(true);
   });
   it('uses one globally spaced schedule across targets instead of coincident per-target bursts',()=>{
@@ -45,15 +45,15 @@ describe('Shotgun allocation and timing',()=>{
   it('applies one group anchor to the deterministic relative schedule and refuses out-of-range final triggers',()=>{
     const anchored=planShotgun(settings({budget:3,selectedTargetIds:['c6'],windowStartMs:-300,windowEndMs:-100}),targets,{meaningfulSpacingMs:100,groupAnchorMs:50});
     expect(anchored.groupAnchorMs).toBe(50);expect(anchored.shots.map(value=>value.configuredOffsetMs)).toEqual([-250,-150,-50]);
-    expect(planShotgun(settings({budget:2,selectedTargetIds:['c6'],windowStartMs:1900,windowEndMs:2000}),targets,{meaningfulSpacingMs:100,groupAnchorMs:50}).problems.join(' ')).toMatch(/outside -2000 through \+2000/);
+    expect(planShotgun(settings({budget:2,selectedTargetIds:['c6'],windowStartMs:-100,windowEndMs:0}),targets,{meaningfulSpacingMs:100,groupAnchorMs:50}).problems.join(' ')).toMatch(/outside -2000 through 0/);
   });
   it('warns and blocks when requested spacing is tighter than measured capacity unless explicitly overridden',()=>{
-    const blocked=planShotgun(settings({budget:30,windowStartMs:-1750,windowEndMs:250,timingCapacityOverride:false}),targets,{meaningfulSpacingMs:95});
+    const blocked=planShotgun(settings({budget:30,windowStartMs:-2000,windowEndMs:0,timingCapacityOverride:false}),targets,{meaningfulSpacingMs:95});
     expect(blocked.recommendedMaximum).toBe(22);expect(blocked.capacityWarning).toMatch(/Requested 30/);expect(blocked.problems.join(' ')).toMatch(/timing capacity override/);
-    expect(planShotgun(settings({budget:30,windowStartMs:-1750,windowEndMs:250,timingCapacityOverride:true}),targets,{meaningfulSpacingMs:95}).problems).toEqual([]);
+    expect(planShotgun(settings({budget:30,windowStartMs:-2000,windowEndMs:0,timingCapacityOverride:true}),targets,{meaningfulSpacingMs:95}).problems).toEqual([]);
   });
   it('preserves exact Custom offsets and requires one per allocated shot',()=>{
-    const custom=[-1500,-800,0,100];const plan=planShotgun(settings({budget:4,selectedTargetIds:['c6'],timingMode:'CUSTOM',customOffsetsMs:custom}),targets,{meaningfulSpacingMs:95,groupAnchorMs:-40});
+    const custom=[-1500,-800,-100,0];const plan=planShotgun(settings({budget:4,selectedTargetIds:['c6'],timingMode:'CUSTOM',customOffsetsMs:custom}),targets,{meaningfulSpacingMs:95,groupAnchorMs:-40});
     expect(plan.shots.map(value=>value.configuredOffsetMs)).toEqual(custom);expect(plan.groupAnchorMs).toBe(0);expect(plan.problems).toEqual([]);
     expect(planShotgun(settings({budget:4,selectedTargetIds:['c6'],timingMode:'CUSTOM',customOffsetsMs:[-1,0]}),targets,{meaningfulSpacingMs:95}).problems.join(' ')).toMatch(/exactly 4/);
   });
@@ -64,9 +64,16 @@ describe('Shotgun allocation and timing',()=>{
     expect(migrateShotgunSettings(settings({capacityOverride:true,timingCapacityOverride:undefined,allowStandbyConsumption:undefined}))).toMatchObject({timingCapacityOverride:true,allowStandbyConsumption:false});
     expect(migrateShotgunSettings(settings({capacityOverride:true,timingCapacityOverride:false,allowStandbyConsumption:true}))).toMatchObject({timingCapacityOverride:false,allowStandbyConsumption:true});
   });
-  it('splits a logical target into authoritative six-child worker groups',()=>expect(shotgunWorkerGroups(shotgunOffsets(12,-1500,250)).map(value=>value.length)).toEqual([6,6]));
+  it('reproduces the exact experimental 20-shot Dense Core preset',()=>expect(denseCoreOffsets(20)).toEqual([...EXPERIMENTAL_DENSE_CORE_20]));
+  it.each([1,2,5,10,20,30,56])('generates deterministic pre-release Dense Core for budget %i',(budget)=>{const first=denseCoreOffsets(budget),second=denseCoreOffsets(budget);
+    expect(first).toEqual(second);expect(first).toHaveLength(budget);expect(first.at(-1)).toBe(0);expect(first.every(value=>value<=0&&value>=-2000)).toBe(true);
+    if(budget>1)expect(first[0]).toBe(-1000);});
+  it('requires an explicit capacity override for deliberately tight Dense Core timing',()=>{const dense=planShotgun(settings({budget:20,selectedTargetIds:['c6'],windowStartMs:-1000,timingMode:'DENSE_CORE',timingCapacityOverride:false}),targets,{meaningfulSpacingMs:105});
+    expect(dense.shots.map(value=>value.configuredOffsetMs)).toEqual([...EXPERIMENTAL_DENSE_CORE_20]);expect(dense.capacityWarning).toMatch(/machine meaningful-spacing evidence/);expect(dense.problems.join(' ')).toMatch(/override/);});
+  it('splits a 20-shot logical target into authoritative six-child worker groups',()=>expect(shotgunWorkerGroups(denseCoreOffsets(20)).map(value=>value.length)).toEqual([6,6,6,2]));
   it('derives forensic timing buckets and deterministic stop reasons',()=>{
     expect([-700,-300,-50,0,200,300].map(shotgunTimingBucket)).toEqual(['< -500 ms','-500 to -100 ms','-100 to 0 ms','0 to +100 ms','+100 to +250 ms','> +250 ms']);
+    expect([-700,-300,-80,-30,-10,-2,0].map(denseCoreTimingRegion)).toEqual(['< -500 ms','-500 to -100 ms','-100 to -50 ms','-50 to -20 ms','-20 to -5 ms','-5 to 0 ms','-5 to 0 ms']);
     expect(shotgunStopReason({state:'QR_READY'})).toBe('SHOTGUN_TARGET_ALREADY_ACHIEVED');
     expect(shotgunStopReason({state:'UNKNOWN'})).toBe('SHOTGUN_TARGET_OUTCOME_UNKNOWN');
     expect(shotgunStopReason({state:'REJECTED'})).toBeNull();
@@ -87,7 +94,7 @@ describe('unified Strategy compiler',()=>{
     STRATEGY_V2:{version:1,preset:'BALANCED',goal:{primeFrom:'16:00',primeUntil:'24:00',durations:[2],courts:[1,2,6,7]},
       fanOut:{width:2,source:'OPERATOR_OVERRIDE',recommendedWidth:2,timing:'BALANCED',profileCreatedAt:null},shotgun:{
         version:1,enabled:true,budget:plan.shots.length,allocationMode:'EQUAL',selectedTargetIds:[...new Set(plan.shots.map(value=>value.logicalTargetId))],counts:plan.counts,
-        windowStartMs:-1500,windowEndMs:250,timingMode:'CUSTOM',customOffsetsMs:plan.shots.map(value=>value.configuredOffsetMs),timingCapacityOverride:true,allowStandbyConsumption:true,
+        windowStartMs:-1500,windowEndMs:0,timingMode:'CUSTOM',customOffsetsMs:plan.shots.map(value=>value.configuredOffsetMs),timingCapacityOverride:true,allowStandbyConsumption:true,
         exactSchedule:plan.shots.map(({logicalTargetId,shotIndex,configuredOffsetMs})=>({logicalTargetId,shotIndex,configuredOffsetMs})),
         capacity:{meaningfulSpacingMs:plan.meaningfulSpacingMs,recommendedMaximum:plan.recommendedMaximum,warning:plan.capacityWarning,groupAnchorMs:plan.groupAnchorMs}}}}};
   it('keeps unselected targets in normal Wave 1 and concentrates Shotgun only on stable selected IDs',()=>{
@@ -109,36 +116,49 @@ describe('unified Strategy compiler',()=>{
     const id=logicalTargetId(immediate[0]!),first=draft(settings({budget:6,selectedTargetIds:[id]})),reordered={...first,immediate:[first.immediate[2]!,first.immediate[0]!,first.immediate[1]!,first.immediate[3]! ]};
     expect(compileSmartPlan(reordered,{targetDate}).shotgun?.counts).toEqual({[id]:6});
   });
+  it('keeps Dense Core preview, saved metadata, Phase 3 and runtime authorization offsets identical',()=>{
+    const id=logicalTargetId(immediate[0]!),compiled=compileSmartPlan(draft(settings({budget:20,selectedTargetIds:[id],windowStartMs:-1000,timingMode:'DENSE_CORE'})),{targetDate});
+    expect(compiled.problems).toEqual([]);const preview=compiled.shotgun!.shots.map(value=>value.configuredOffsetMs),phase3=compiled.phase3!;
+    const savedOffsets=compiled.shotgun!.shots.map(value=>value.configuredOffsetMs),phase3Offsets=phase3.wave1.filter(value=>value.candidateIndex===0).flatMap(value=>value.fanOutOffsetsMs??[value.releaseOffsetMs??0]);
+    const auth=authorizePrecision({date:targetDate,releaseMs:Date.parse('2026-10-03T00:00:00Z'),candidates:phase3.candidates,wave1:phase3.wave1.map(value=>({workerId:value.workerId,
+      candidateId:precisionCandidateId(targetDate,phase3.candidates[value.candidateIndex]!),...(value.fanOutOffsetsMs?{fanOutOffsetsMs:value.fanOutOffsetsMs}:{releaseOffsetMs:value.releaseOffsetMs??0})})),
+      standby:phase3.standby,budgets:phase3.budgets,concurrentWave2:phase3.concurrentWave2,rescueEnabled:phase3.rescueEnabled,authorizedAt:'2026-10-03T00:00:00Z'});
+    const runtime=auth.wave1.filter(value=>value.candidateId===precisionCandidateId(targetDate,phase3.candidates[0]!)).flatMap(value=>value.fanOutOffsetsMs??[value.releaseOffsetMs??0]);
+    expect(preview).toEqual([...EXPERIMENTAL_DENSE_CORE_20]);expect(savedOffsets).toEqual(preview);expect(phase3Offsets).toEqual(preview);expect(runtime).toEqual(preview);
+  });
   it('keeps standby protection independent from timing-capacity consent',()=>{
     const selected=immediate.slice(0,2).map(logicalTargetId),protectedPlan=compileSmartPlan(draft(settings({selectedTargetIds:selected,allowStandbyConsumption:false})),{targetDate});
     expect(protectedPlan.problems.join(' ')).toMatch(/standby consumption/i);
     expect(compileSmartPlan(draft(settings({selectedTargetIds:selected,allowStandbyConsumption:true})),{targetDate}).problems).toEqual([]);
   });
   it('round-trips exact Custom timing and rejects schedule/authorization disagreement',()=>{
-    const id=logicalTargetId(immediate[0]!),offsets=[-1500,-500,0,100],compiled=compileSmartPlan(draft(settings({budget:4,selectedTargetIds:[id],timingMode:'CUSTOM',customOffsetsMs:offsets})),{targetDate});
+    const id=logicalTargetId(immediate[0]!),offsets=[-1500,-500,-10,0],compiled=compileSmartPlan(draft(settings({budget:4,selectedTargetIds:[id],timingMode:'CUSTOM',customOffsetsMs:offsets})),{targetDate});
     expect(compiled.problems).toEqual([]);const document=saved(compiled),parsed=ConfigSchema.parse(JSON.parse(JSON.stringify(document)));
     expect(parsed.STRATEGY_V2?.shotgun?.customOffsetsMs).toEqual(offsets);expect(parsed.STRATEGY_V2?.shotgun?.exactSchedule.map(value=>value.configuredOffsetMs)).toEqual(offsets);
     const mismatch=structuredClone(document);mismatch.STRATEGY_V2.shotgun.exactSchedule[0]!.configuredOffsetMs++;
     expect(ConfigSchema.safeParse(mismatch).error?.issues.map(value=>value.message)).toContain('Shotgun exact schedule does not match PRECISION_PHASE3 authorization.');
   });
-  it('allows positive offsets only on genuine selected Shotgun assignments',()=>{
-    const id=logicalTargetId(immediate[0]!),compiled=compileSmartPlan(draft(settings({budget:1,selectedTargetIds:[id],timingMode:'CUSTOM',customOffsetsMs:[100]})),{targetDate});
-    const valid=saved(compiled);expect(ConfigSchema.safeParse(valid).success).toBe(true);
-    const ordinary:any=structuredClone(valid);delete ordinary.STRATEGY_V2.shotgun;
-    expect(ConfigSchema.safeParse(ordinary).error?.issues.map(value=>value.message)).toContain('Positive Wave 1 offsets are allowed only for saved Shotgun assignments.');
-    const mixed=structuredClone(valid),normal=mixed.PRECISION_PHASE3!.wave1.find(value=>value.candidateIndex===2)!;normal.releaseOffsetMs=100;
-    expect(ConfigSchema.safeParse(mixed).error?.issues.map(value=>value.message)).toContain('Positive Wave 1 offsets are allowed only for saved Shotgun assignments.');
+  it.each([1,25,100])('rejects positive Shotgun offset +%i without clamping',(positive)=>{
+    const id=logicalTargetId(immediate[0]!),compiled=compileSmartPlan(draft(settings({budget:1,selectedTargetIds:[id],timingMode:'CUSTOM',customOffsetsMs:[positive]})),{targetDate});
+    expect(compiled.phase3).toBeNull();expect(compiled.problems.join(' ')).toMatch(/Positive offsets are not allowed/);
+  });
+  it('preserves an old positive exact schedule only for incompatible review',()=>{
+    const id=logicalTargetId(immediate[0]!),compiled=compileSmartPlan(draft(settings({budget:2,selectedTargetIds:[id],timingMode:'CUSTOM',customOffsetsMs:[-100,0]})),{targetDate}),legacy:any=saved(compiled);
+    legacy.STRATEGY_V2.shotgun.windowEndMs=100;legacy.STRATEGY_V2.shotgun.customOffsetsMs[1]=100;legacy.STRATEGY_V2.shotgun.exactSchedule[1].configuredOffsetMs=100;
+    const assignment=legacy.PRECISION_PHASE3.wave1.find((value:any)=>value.candidateIndex===0);(assignment.fanOutOffsetsMs??[assignment.releaseOffsetMs])[1]=100;
+    expect(ConfigSchema.safeParse(legacy).success).toBe(false);expect(ConfigSchema.safeParse(legacyShotgunReviewShadow(legacy)).success).toBe(true);
+    expect(legacy.STRATEGY_V2.shotgun.exactSchedule[1].configuredOffsetMs).toBe(100);
   });
 });
 
 describe('six-child schemas and Live grouping',()=>{
   it('derives Shotgun topology only for saved C6/C7 schedule members, never normal C1/C2 fan-out',()=>{
-    const attempts=[{id:'c6-0',logicalTargetId:'c6',configuredOffsetMs:-100},{id:'c7-0',logicalTargetId:'c7',configuredOffsetMs:100},
+    const attempts=[{id:'c6-0',logicalTargetId:'c6',configuredOffsetMs:-100},{id:'c7-0',logicalTargetId:'c7',configuredOffsetMs:-1},
       {id:'c1-0',logicalTargetId:'c1',configuredOffsetMs:-10},{id:'c1-1',logicalTargetId:'c1',configuredOffsetMs:0},{id:'c2-0',logicalTargetId:'c2',configuredOffsetMs:0}];
-    const topology=deriveShotgunTopology(attempts,[{logicalTargetId:'c6',shotIndex:0,configuredOffsetMs:-100},{logicalTargetId:'c7',shotIndex:0,configuredOffsetMs:100}]);
-    expect([...topology.keys()]).toEqual(['c6-0','c7-0']);expect(topology.get('c7-0')).toMatchObject({shotIndex:0,shotCount:1,timingBucket:'0 to +100 ms'});
+    const topology=deriveShotgunTopology(attempts,[{logicalTargetId:'c6',shotIndex:0,configuredOffsetMs:-100},{logicalTargetId:'c7',shotIndex:0,configuredOffsetMs:-1}]);
+    expect([...topology.keys()]).toEqual(['c6-0','c7-0']);expect(topology.get('c7-0')).toMatchObject({shotIndex:0,shotCount:1,timingBucket:'-100 to 0 ms'});
     expect(topology.has('c1-0')).toBe(false);expect(topology.has('c1-1')).toBe(false);
-    expect(deriveShotgunTopology([{id:'later',logicalTargetId:'c6',configuredOffsetMs:100}],[{logicalTargetId:'c6',shotIndex:0,configuredOffsetMs:-100},{logicalTargetId:'c6',shotIndex:1,configuredOffsetMs:100}]).get('later')).toMatchObject({shotIndex:1,shotCount:2});
+    expect(deriveShotgunTopology([{id:'later',logicalTargetId:'c6',configuredOffsetMs:0}],[{logicalTargetId:'c6',shotIndex:0,configuredOffsetMs:-100},{logicalTargetId:'c6',shotIndex:1,configuredOffsetMs:0}]).get('later')).toMatchObject({shotIndex:1,shotCount:2});
   });
   it('uses the saved planned denominator and retains omitted and missing categories',()=>{
     const ready=(count:number)=>Array.from({length:count},(_,shotIndex)=>({shotIndex,state:'READY'}));
