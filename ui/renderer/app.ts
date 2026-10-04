@@ -7,10 +7,10 @@ import {applyDurationOffsetPreset,compileSmartPlan,confirmSmartRates,describeSma
   type SmartDraft,type SmartSlot,type SmartWorker,type SmartPhase3,type SmartReleaseOffset} from '../../src/precision-simple.js';
 import {fanOutTimingPlan,minimumMeaningfulSpacingMs} from '../../src/fanout-timing.js';
 import {migrateShotgunSettings,SHOTGUN_MEANINGFUL_SPACING_MS} from '../../src/shotgun.js';
-import {initStrategy,reconstructLineage,renderStrategy,strategyMainCourtOrderChanged,strategyModificationCount,suggestionLineage,type EditableSuggestionLineage,type StrategyV2Meta} from './strategy.js';
+import {initStrategy,reconstructLineage,renderStrategy,strategySaved,strategySaveSnapshot,strategyMainCourtOrderChanged,strategyModificationCount,suggestionLineage,type EditableSuggestionLineage,type StrategyV2Meta} from './strategy.js';
 import {renderLive} from './live.js';
 import {renderInsights} from './insights.js';
-import {renderNextRelease} from './next-release.js';
+import {renderNextRelease,renderReleasePreflight} from './next-release.js';
 import {initSlotWatchView,renderSlotWatch,selectWatch,setSlotMatrixMode} from './slot-watch-view.js';
 import {dateLabel,evidenceLabel,evidenceSlot,friendly,hourlySlots,hours,readText,relative,slotStateInfo} from './format.js';
 import {PRECISION_MAX_ATTEMPTS,PRECISION_MAX_FAN_OUT} from '../../src/workers.js';
@@ -963,6 +963,7 @@ function render(state: Dashboard) {
   byId('release-action-title').textContent=actionState==='armed'?'Armed':actionState==='running'?'Preparing browsers and release contexts…':actionState==='review'?'Ready to arm':'Prepare for release';
   byId('main-action-hint').textContent=unresolvedCheckout?'Inspects every required browser; it will not clear the lock unless the old worker is dead and all Onda state is clean.':state.canPrepareOverHold?'The verified hold stays recorded. Prepare a fresh schedule in the same bot before another run.':blockedHold?'Review the retained lock before any new action.':actionState==='review'?'Authorize Terms for this exact saved strategy, then arm.':actionState==='armed'?'Release is scheduled. Emergency Stop cancels the armed release.':actionState==='running'?'Preparing the required browsers. Wait for readiness to finish.':'Check the saved strategy, then prepare its required browsers.';
   input('terms').parentElement!.hidden=currentView==='release'?actionState!=='review':false;
+  renderReleasePreflight(state);
   byId('primary-actions').hidden=currentView!=='tests'&&!state.selection&&!state.handoff&&!state.bookingResult;
   const testDate=input('test-date').value;
   input('test-date').disabled=busy;
@@ -1063,8 +1064,9 @@ byId('add-fallback').onclick=()=>{const h=input('fallback-time').value;if(h===in
 byId('save-booking').onclick=()=>{void(async()=>{
   if(precisionSelected()&&precisionMode==='smart'){const compiled=smartCompiled();if(!compiled.phase3){byId('edit-status').textContent=compiled.problems[0]??'Resolve the Smart backups items first.';renderSmart(true);return;}}
    const setup:BookingSetup={...strategyFields(),RELEASE_OFFSET_MS:releaseOffsetValue(),BOOKING_METHOD:input('booking-method').value as 'browser'|'hybrid'|'api-first'|'proofless',BOOKING_TYPE:input('booking-type').value as 'standard'|'extended',COURT_COUNT:Number(input('court-count').value) as CourtCount,START_TIME:input('start-time').value,DURATION_HOURS:Number(input('duration').value),PREFERRED_COURTS:courtOrder,FALLBACK_COURTS:[],FALLBACK_TIMES:fallbackTimes,MAX_SELECTION_ATTEMPTS:Number(input('attempts').value)};
+  const savedStrategyKey=strategySaveSnapshot();
   await window.thirsty.saveBooking(setup);const state=await window.thirsty.getStatus();
-  if(state.headline==='Booking plan saved'){releaseDirty=false;if(workflow==='release')dirty=false;loadedPlan='';byId('edit-status').textContent='BOOKING PLAN SAVED';render(state);}else byId('edit-status').textContent='Plan rejected. Check duration and unique times.';
+  if(state.headline==='Booking plan saved'){releaseDirty=false;if(workflow==='release')dirty=false;loadedPlan='';byId('edit-status').textContent='BOOKING PLAN SAVED';strategySaved(savedStrategyKey);render(state);}else byId('edit-status').textContent='Plan rejected. Check duration and unique times.';
 })().catch(()=>{byId('edit-status').textContent='Could not save booking setup.';});};
 byId('dual-dry').onclick=()=>{void window.thirsty.runDualPractice({kind:'dualDry',date:input('dual-date').value}).catch(()=>{});};
 for(const [id,kind] of [['dual-selection','dualPractice'],['dual-full','dualFullPractice']] as const)byId(id).onclick=()=>{

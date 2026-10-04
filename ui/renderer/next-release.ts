@@ -1,7 +1,7 @@
 import type { Dashboard } from '../types.js';
 import { describeSmartPlan, smartImmediateSends, type SmartPhase3, type SmartWorker } from '../../src/precision-simple.js';
 import { STRATEGY_PRESET_LABEL } from '../../src/strategy-engine.js';
-import { byId, facts } from './dom.js';
+import { byId, el, facts } from './dom.js';
 
 /**
  * NEXT RELEASE summary, generated only from the SAVED authorization (never from the editor draft), so it always states
@@ -77,4 +77,21 @@ export function renderNextRelease(state: Dashboard): void {
   facts(target, [['Target date', targetDate], ['Courts', String(setup.COURT_COUNT)], ['Start', setup.START_TIME], ['Duration', `${setup.DURATION_HOURS} h`], ['Build', build]]);
   technical.replaceChildren();
   note.textContent = '';
+}
+
+/** Human-facing mirror of the existing arm control after app.ts applies all engine gates. */
+export function renderReleasePreflight(state:Dashboard):void {
+  const card=byId('next-preflight'),setup=state.booking?.setup,plan=setup?.PRECISION_PHASE3;
+  const arm=byId('arm') as HTMLButtonElement,armed=!!state.scheduledRelease;
+  byId('release-action-title').textContent=armed?'Armed':'Release pre-flight';
+  const title=armed?'WAITING FOR RELEASE':!arm.disabled?'✓ READY FOR RELEASE':'✕ NOT READY';
+  const workers=[...new Set(plan?.wave1.map(value=>value.workerId)??[])];
+  const children=state.live?.parents.filter(parent=>parent.wave==='WAVE_1').flatMap(parent=>parent.children)??[];
+  const required=setup?.STRATEGY_V2?.shotgun?.exactSchedule.length??(plan?smartImmediateSends(plan.wave1):0);
+  const ready=children.filter(child=>child.state==='READY').length;
+  const issues=workers.filter(worker=>!state.browserHealth?.[worker]).map(worker=>`✕ Browser ${worker} disconnected`);
+  const reason=byId('blocked-reason').textContent;
+  const first=plan?.wave1[0],candidate=first?plan?.candidates[first.candidateIndex]:undefined,offsets=setup?.STRATEGY_V2?.shotgun?.exactSchedule.map(shot=>shot.configuredOffsetMs)??[];
+  const details=el('dl','fact-grid');facts(details,[['Target',candidate?`Court ${candidate.court} · ${candidate.start} · ${candidate.durationHours} h`:'No saved Smart target'],['Strategy',setup?.STRATEGY_V2?.shotgun?.enabled?`${setup.STRATEGY_V2.shotgun.timingMode.replaceAll('_',' ')} · ${required} attempts`:'Saved release strategy'],['Timing',offsets.length?`${Math.min(...offsets)} → ${Math.max(...offsets)} ms`:'Saved release timing'],['Preparation',children.length?`Live readiness: ${ready}/${required} READY`:state.ready?'Engine preparation complete · child readiness counts not reported':'Live readiness: not yet prepared'],['Browsers',`${workers.filter(worker=>state.browserHealth?.[worker]).length}/${workers.length} connected`],['Terms',state.termsAuthorized?'AUTHORIZED':'Needs authorization']]);
+  card.replaceChildren(el('h3','',title),details,...(!armed&&arm.disabled?[el('p','warn-text',reason||'Review preparation, saved plan and Terms before arming.'),...issues.map(issue=>el('p','warn-text',issue))]:[]));
 }

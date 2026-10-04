@@ -712,3 +712,23 @@ footer > div { display: flex; align-items: center; gap: 8px; font-size: 11px; co
   .primary-strategy-choice .plan-mode, #strategy-shotgun-preview, .live-overview { grid-template-columns: 1fr 1fr; }
   .strategy-step { padding: 16px; }
 }
+
+/* Operator acknowledgements and allocation remain usable without Advanced. */
+.release-priority { display:grid; gap:10px; margin:16px 0; border:1px solid var(--line); border-radius:8px; }
+.release-priority label { display:block; color:var(--text-2); }
+.release-priority small { display:block; margin-left:24px; color:var(--muted); }
+.allocation-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(50px,.7fr) auto; gap:10px; align-items:center; margin:8px 0; font-size:12px; }
+.allocation-row meter { width:100%; }
+.shotgun-timeline-regions { display:flex; justify-content:space-between; gap:10px; margin-top:16px; font-size:10px; color:var(--muted); }
+.gate-link { display:block; width:100%; margin:8px 0; text-align:left; white-space:normal; }
+#strategy-current-plan { font-size:13px; line-height:1.7; overflow-wrap:anywhere; }
+#strategy-gate { margin:14px 0; }
+#shotgun-preparation, #shotgun-resource-effect { line-height:1.6; }
+#next-preflight { margin:12px 0; padding:14px; border:1px solid var(--line); border-radius:8px; }
+.strategy-view #strategy-review { align-self:start; max-height:calc(100vh - 24px); overflow-y:auto; }
+.strategy-step, .dense-core-card, .allocation-row > * { min-width:0; }
+@media(max-width:900px) { .strategy-view #strategy-review { max-height:none; overflow:visible; } }
+@media(max-width:640px) { .dense-primary-controls, .allocation-row { grid-template-columns:1fr; } }
+.strategy-view:has(#strategy-advanced[open]) #strategy-review { position:static; max-height:none; overflow:visible; }
+
+.strategy-review > .section-title { position:sticky; top:0; z-index:1; background:var(--surface); padding:8px 0; }

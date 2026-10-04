@@ -18,6 +18,8 @@ export const RENDERER_ORIGIN = 'http://renderer.test';
 const LEGACY_VIEWS: Record<string, string> = { plan: 'strategy', slots: 'live', runs: 'history' };
 
 async function serve(page: Page): Promise<void> {
+  // Offline renderer fixtures fail closed for every real network destination.
+  await page.route('**/*', route => route.abort('blockedbyclient'));
   await page.route(`${RENDERER_ORIGIN}/**`, async route => {
     const path = decodeURIComponent(new URL(route.request().url()).pathname).replace(/^\/+/, '');
     const file = resolve(path);
