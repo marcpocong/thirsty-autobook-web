@@ -5,7 +5,14 @@ import { ConfigSchema } from '../src/config.js';
 import { compileSmartPlan, confirmSmartRates, describeSmartPlan, emptySmartDraft, type SmartDraft } from '../src/precision-simple.js';
 import { FanOutProfileSchema, recommendFanOutWidth, summarizeWidth, type ChildSample, type RunSample } from '../src/fanout-capacity.js';
 import type { LiveRunView } from '../ui/types.js';
-import { openRenderer, showRendererView } from './renderer-harness.js';
+import { openRenderer as openRendererBase, showRendererView } from './renderer-harness.js';
+
+async function openRenderer(...args:Parameters<typeof openRendererBase>){
+  const page=await openRendererBase(...args),view=args[2];
+  if(view==='strategy')await page.evaluate(()=>{for(const id of ['strategy-schedule','strategy-normal-settings'])document.getElementById(id)?.setAttribute('open','');document.querySelector('.strategy-review .technical-drawer')?.setAttribute('open','');});
+  if(view==='history')await page.locator('.history-forensics').evaluate(element=>element.setAttribute('open',''));
+  return page;
+}
 
 let browser: Browser;
 beforeAll(async () => { browser = await chromium.launch({ headless: true, ...(process.platform === 'win32' ? { channel: 'chrome' } : {}) }); });
@@ -66,6 +73,14 @@ async function settleEvidence(page: Page, index: number, reject = false) {
 }
 
 describe('Strategy view (Goal → Known schedule → Preset → Suggested plan → Review)', () => {
+  it('keeps secondary evidence and engine controls collapsed by default',async()=>{
+    const page=await openRendererBase(browser,{booking:smartBooking()},'strategy');
+    expect(await page.locator('#strategy-schedule').getAttribute('open')).toBeNull();
+    expect(await page.locator('#strategy-normal-settings').getAttribute('open')).toBeNull();
+    expect(await page.locator('#strategy-shotgun').isHidden()).toBe(true);
+    await page.locator('input[name="strategy-intensity"][value="SHOTGUN"]').check();
+    await page.close();
+  });
   it('suggests a diversified plan avoiding a known public booking, keeps a force-include with a visible warning, and saves one authorization', async () => {
     const digest = fanOutDigest();
     expect(digest.latest.recommendedWidth).toBe(2);
@@ -96,7 +111,7 @@ describe('Strategy view (Goal → Known schedule → Preset → Suggested plan �
     await page.locator('#strategy-immediate-offset-1-1').fill('5');
     await page.locator('#strategy-immediate-offset-1-1').press('Tab');
     expect(await page.locator('#strategy-immediate-offset-1-0').inputValue()).toBe('5');
-    expect(await page.locator('#strategy-review-body').innerText()).toContain('B1 5 ms early');
+    expect(await page.locator('#strategy-review-technical').innerText()).toContain('B1 5 ms early');
     await page.locator('#strategy-reset-all').click();
     expect(await page.locator('#strategy-immediate-offset-1-1').inputValue()).toBe('0');
     expect(await page.locator('#strategy-edit-provenance').innerText()).toBe('Source: Smart generated · Operator modifications: 0');
@@ -112,7 +127,7 @@ describe('Strategy view (Goal → Known schedule → Preset → Suggested plan �
     expect(await page.locator('#strategy-immediate-offset-1-1').inputValue()).toBe('0');
     expect(await page.locator('#strategy-immediate-offset-1-2').inputValue()).toBe('0');
     expect(await page.locator('#strategy-review-warnings').innerText()).toMatch(/Court 6 · 7:00 PM–10:00 PM .*force-included despite a known public booking/);
-    expect(await page.locator('#strategy-review-body').innerText()).toContain('independently tracked attempts (fan-out)');
+    expect(await page.locator('#strategy-review-technical').innerText()).toContain('independently tracked attempts (fan-out)');
     await page.locator('#strategy-save').click();
     await page.waitForFunction(() => !!(window as any).fixtureSaved);
     const setup = await saved(page);
@@ -132,7 +147,7 @@ describe('Strategy view (Goal → Known schedule → Preset → Suggested plan �
     expect(await reloaded.locator('#strategy-immediate-offset-1-0').inputValue()).toBe('5');
     expect(await reloaded.locator('#strategy-immediate-offset-1-1').inputValue()).toBe('0');
     expect(await reloaded.locator('#strategy-immediate-offset-1-2').inputValue()).toBe('0');
-    expect(await reloaded.locator('#strategy-review-body').innerText()).toContain('B0 5 ms early, B1 at release, B2 at release');
+    expect(await reloaded.locator('#strategy-review-technical').innerText()).toContain('B0 5 ms early, B1 at release, B2 at release');
     expect(await reloaded.locator('#strategy-edit-provenance').innerText()).toBe('Source: Smart generated · Operator modifications: 1');
     await reloaded.getByRole('button', { name: 'Reset editable target 2 timing' }).click();
     expect(await reloaded.locator('#strategy-immediate-width-1').inputValue()).toBe('2');
@@ -160,7 +175,7 @@ describe('Strategy view (Goal → Known schedule → Preset → Suggested plan �
     const assignment = (await saved(fanOut)).PRECISION_PHASE3.wave1[0];
     expect(assignment.fanOutOffsetsMs).toEqual([-25, -5]);
     expect(assignment).not.toHaveProperty('releaseOffsetMs');
-    expect(await fanOut.locator('#strategy-review-body').innerText()).toContain('A0 25 ms early, A1 5 ms early');
+    expect(await fanOut.locator('#strategy-review-technical').innerText()).toContain('A0 25 ms early, A1 5 ms early');
     await fanOut.close();
   });
 
@@ -206,7 +221,7 @@ describe('Strategy view (Goal → Known schedule → Preset → Suggested plan �
     await page.locator('#strategy-apply').click();
     expect(await page.locator('#strategy-immediate-offset-0-0').inputValue()).toBe('10');
     expect(await page.locator('#strategy-immediate-offset-0-1').inputValue()).toBe('5');
-    expect(await page.locator('#strategy-review-body').innerText()).toContain('A0 10 ms early, A1 5 ms early');
+    expect(await page.locator('#strategy-review-technical').innerText()).toContain('A0 10 ms early, A1 5 ms early');
     await page.locator('#strategy-save').click(); await page.waitForFunction(() => !!(window as any).fixtureSaved);
     const setup = await saved(page);
     expect(setup.STRATEGY_V2.timingCalibration).toMatchObject({ anchorSource: 'OPERATOR_OVERRIDE', groupShiftMs: -5, spacingSource: 'MACHINE_PROFILE' });
@@ -236,7 +251,7 @@ describe('Strategy view (Goal → Known schedule → Preset → Suggested plan �
     await page.locator('#strategy-apply').click();
     expect(await page.locator('#strategy-immediate-offset-0-0').inputValue()).toBe('16');
     expect(await page.locator('#strategy-immediate-offset-0-1').inputValue()).toBe('11');
-    expect(await page.locator('#strategy-review-body').innerText()).toContain('A0 16 ms early, A1 11 ms early');
+    expect(await page.locator('#strategy-review-technical').innerText()).toContain('A0 16 ms early, A1 11 ms early');
     await page.locator('#strategy-save').click(); await page.waitForFunction(() => !!(window as any).fixtureSaved);
     const setup = await saved(page);
     expect(setup.PRECISION_PHASE3.wave1[0].fanOutOffsetsMs).toEqual([-16, -11]);
@@ -410,9 +425,9 @@ describe('Next Release, Live and History & Insights', () => {
     const page = await openRenderer(browser, { live }, 'live');
     expect(await page.locator('#live-attempts .live-parent').count()).toBe(7);
     expect(await page.locator('#live-attempts .live-child').count()).toBe(28);
-    expect(await page.locator('#live-attempts .live-parent').first().locator('summary').innerText()).toBe('Court 7 · 7 PM–10 PM · Worker A · Immediate — 2 rejected, 1 in flight, 1 not dispatched');
-    // Only the target with work in flight starts expanded.
-    expect(await page.locator('#live-attempts .live-parent[open]').count()).toBe(1);
+    expect(await page.locator('#live-attempts .live-parent').first().locator('summary').innerText()).toBe('Court 7 · 7 PM–10 PM · Worker A · Release attempts — 2 rejected, 1 in flight, 1 not dispatched');
+    // Dense attempt groups stay collapsed until the operator requests detail.
+    expect(await page.locator('#live-attempts .live-parent[open]').count()).toBe(0);
     expect(await page.locator('#live-prewarm').innerText()).toContain('Tier 4 ready: 0/7 (7 omitted)');
     expect(await page.locator('#live-rescue').innerText()).toContain('may reopen +9:58…+10:10');
     expect(await page.locator('#live-rescue').innerText()).toContain('Predictions only prepare a Rescue worker');

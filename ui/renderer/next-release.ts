@@ -20,9 +20,9 @@ export function shotgunReadinessText(planned:number,children:Array<{shotIndex?:n
 }
 
 export function renderNextRelease(state: Dashboard): void {
-  const setup = state.booking?.setup, name = byId('next-strategy-name'), target = byId('next-strategy-facts'), note = byId('next-strategy-note');
+  const setup = state.booking?.setup, name = byId('next-strategy-name'), target = byId('next-strategy-facts'), technical=byId('next-strategy-technical'), note = byId('next-strategy-note');
   const build = state.build ? `${state.build.gitSha.slice(0, 7)}${state.build.dirty ? ' + uncommitted' : ''}` : 'unknown';
-  if (!setup) { name.textContent = 'Not configured'; facts(target, [['Build', build]]); note.textContent = 'Save a plan under Strategy.'; return; }
+  if (!setup) { name.textContent = 'Not configured'; facts(target, [['Status','No saved strategy']]); facts(technical,[['Build', build]]); note.textContent = 'Save a strategy before preparing a release.'; return; }
   const targetDate = state.booking?.targetDate ?? '—';
   if (setup.RELEASE_STRATEGY === 'precision' && setup.PRECISION_PHASE3) {
     const plan = setup.PRECISION_PHASE3 as SmartPhase3, meta = setup.STRATEGY_V2;
@@ -36,8 +36,10 @@ export function renderNextRelease(state: Dashboard): void {
     const description = describeSmartPlan(plan);
     const fanOutSource = meta ? meta.fanOut.source === 'OPERATOR_OVERRIDE' ? ` · operator override (machine: ${meta.fanOut.recommendedWidth ?? '—'})`
       : meta.fanOut.source === 'MACHINE_RECOMMENDED' ? ' · machine recommendation' : ' · no capacity profile' : '';
-    name.textContent = meta ? `Smart · ${STRATEGY_PRESET_LABEL[meta.preset]}` : 'Smart (custom)';
-    facts(target, [
+    name.textContent = meta?.shotgun?.enabled ? 'Dense Core' : meta ? `Normal · ${STRATEGY_PRESET_LABEL[meta.preset]}` : 'Smart (custom)';
+    const firstTarget=plan.wave1[0],firstCandidate=firstTarget?plan.candidates[firstTarget.candidateIndex]:undefined,range=meta?.shotgun?.exactSchedule.length?`${meta.shotgun.exactSchedule[0]!.configuredOffsetMs} → ${meta.shotgun.exactSchedule.at(-1)!.configuredOffsetMs} ms`:'Measured timing';
+    facts(target, [['Primary target',firstCandidate?`Court ${firstCandidate.court} · ${firstCandidate.start} · ${firstCandidate.durationHours} h`:'—'],['Strategy',meta?.shotgun?.enabled?`Dense Core · ${sends} attempts`:`Normal · ${sends} attempts`],['Timing',range],['Browsers',`${new Set(plan.wave1.map(value=>value.workerId)).size} release groups`],['Backup attempts',plan.budgets.wave2>0?`Up to ${plan.budgets.wave2}`:'Off'],['Reopened-slot rescue',plan.rescueEnabled&&plan.budgets.rescue>0?`ON · up to ${plan.budgets.rescue}`:'OFF']]);
+    facts(technical, [
       ['Release readiness', state.releaseReadiness?.verdict.replaceAll('_',' ') ?? 'checking'],
       ['Build integrity', state.releaseReadiness?.checks.find(value=>value.id==='build')?.detail ?? build],
       ['Trusted clock', state.releaseReadiness?.checks.find(value=>value.id==='clock')?.detail ?? 'checking'],
@@ -60,17 +62,19 @@ export function renderNextRelease(state: Dashboard): void {
       ['Ready workers', state.releaseReadiness ? `${state.releaseReadiness.readyWorkers.length}/${workers.length}${state.releaseReadiness.degradedWorkers.length?` · degraded ${state.releaseReadiness.degradedWorkers.join(', ')}`:''}` : `${ready.length}/${workers.length}`],
       ['Build', build],
     ]);
-    note.textContent = description.summary;
+    note.textContent = `${description.summary} Payment remains manual; the bot stops at QR.`;
     return;
   }
   if (setup.RELEASE_STRATEGY === 'precision') {
     name.textContent = 'Fixed Precision (legacy)';
     facts(target, [['Target date', targetDate], ['Attempts', String(setup.PRECISION_TARGETS.length)], ['Fan-out', setup.PRECISION_FAN_OUT ? `${setup.PRECISION_TARGETS.reduce((sum,value)=>sum+(value.fanOutReleaseOffsetsMs?.length??1),0)} total` : 'off'],
       ['Wave 2 / Rescue', 'not available in Fixed mode'], ['Build', build]]);
+    technical.replaceChildren();
     note.textContent = 'Fixed attempts are sent exactly as listed. The Strategy view builds a Smart plan with backups and Rescue.';
     return;
   }
   name.textContent = 'General';
   facts(target, [['Target date', targetDate], ['Courts', String(setup.COURT_COUNT)], ['Start', setup.START_TIME], ['Duration', `${setup.DURATION_HOURS} h`], ['Build', build]]);
+  technical.replaceChildren();
   note.textContent = '';
 }

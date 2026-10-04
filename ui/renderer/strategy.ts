@@ -177,6 +177,10 @@ export function initStrategy(value: StrategyHost): void {
       allowStandbyConsumption:(byId('strategy-shotgun-standby-override') as HTMLInputElement).checked};delete draft.shotgun.capacityOverride;}));
   byId('strategy-shotgun-preset').addEventListener('click',()=>host.edit(draft=>{draft.shotgun={...(draft.shotgun??defaultShotgun(draft.immediate)),enabled:true,budget:20,
     windowStartMs:-1000,windowEndMs:0,allocationMode:'EQUAL',timingMode:'DENSE_CORE',selectedTargetIds:draft.immediate.map(logicalTargetId)};}));
+  byId('strategy-shotgun-focus').addEventListener('click',()=>host.edit(draft=>{
+    const primary=draft.immediate[0];if(!primary)return;const current=draft.shotgun??defaultShotgun(draft.immediate),id=logicalTargetId(primary);
+    draft.shotgun={...current,enabled:true,allocationMode:'CUSTOM',selectedTargetIds:[id],customCounts:{[id]:current.budget}};
+  }));
   byId('strategy-check-schedule').addEventListener('click', () => {
     const date = host.state()?.booking?.targetDate; if (!date) return;
     byId('strategy-schedule-status').textContent = `Reading public bookings for ${date} (read only)…`;
@@ -428,13 +432,15 @@ function renderEditable(state: Dashboard | undefined) {
 function renderShotgun(state:Dashboard|undefined){
   const draft=host.draft(),settings=draft.shotgun;
   for(const radio of document.querySelectorAll<HTMLInputElement>('input[name="strategy-intensity"]'))radio.checked=radio.value===(settings?.enabled?'SHOTGUN':'NORMAL');
-  byId('strategy-shotgun').hidden=!settings?.enabled;if(!settings?.enabled)return;
+  byId('strategy-shotgun').hidden=!settings?.enabled;
+  byId('strategy-normal-settings').hidden=!!settings?.enabled;
+  if(!settings?.enabled)return;
   inputById('strategy-shotgun-budget').value=String(settings.budget);selectById('strategy-shotgun-allocation').value=settings.allocationMode;
   inputById('strategy-shotgun-start').value=String(settings.windowStartMs);inputById('strategy-shotgun-end').value=String(settings.windowEndMs);
   selectById('strategy-shotgun-timing').value=settings.timingMode;
   (byId('strategy-shotgun-timing-override') as HTMLInputElement).checked=!!(settings.timingCapacityOverride??settings.capacityOverride);
   (byId('strategy-shotgun-standby-override') as HTMLInputElement).checked=!!settings.allowStandbyConsumption;
-  byId('strategy-shotgun-advanced').toggleAttribute('open',settings.timingMode==='CUSTOM');
+  if(settings.timingMode==='CUSTOM')byId('strategy-shotgun-advanced').setAttribute('open','');
   const customInput=byId('strategy-shotgun-custom-offsets') as HTMLTextAreaElement;if(document.activeElement!==customInput)customInput.value=(settings.customOffsetsMs??[]).map(value=>value>=0?`+${value}`:String(value)).join(', ');
   const targets=byId('strategy-shotgun-targets');targets.replaceChildren(...draft.immediate.map((slot,index)=>{
     const id=logicalTargetId(slot),label=el('label','strategy-shotgun-target'),check=document.createElement('input');check.type='checkbox';check.checked=settings.selectedTargetIds.includes(id);
@@ -448,18 +454,15 @@ function renderShotgun(state:Dashboard|undefined){
   const feasibility=draftFeasibility(state,compiled.phase3);
   const groupCount=Object.values(plan?.counts??{}).reduce((sum,count)=>sum+Math.ceil(count/6),0),ordered=[...(plan?.shots??[])].sort((a,b)=>a.configuredOffsetMs-b.configuredOffsetMs||a.logicalTargetId.localeCompare(b.logicalTargetId));
   const labels=new Map(draft.immediate.map(slot=>[logicalTargetId(slot),`Court ${slot.court} · ${smartRange(slot.start,slot.durationHours)}`]));
-  const lines=[settings.timingMode==='DENSE_CORE'?'Experimental Dense Core · current release hypothesis, not provider-side proof':'Shotgun exact schedule',
-    `${plan?.shots.length??settings.budget} Shotgun attempts · budget ${settings.budget}`,...Object.entries(plan?.counts??{}).map(([id,count])=>`${labels.get(id)??id} → ${count}`),
-    'Shotgun never sends after release.',
-    `Window: ${settings.windowStartMs>=0?'+':''}${settings.windowStartMs} ms → ${settings.windowEndMs>=0?'+':''}${settings.windowEndMs} ms`,
-    ...(ordered.length?[`Exact earliest/latest: ${ordered[0]!.configuredOffsetMs} ms → ${ordered.at(-1)!.configuredOffsetMs} ms`,`Exact attempts: ${ordered.length} · worker groups: ${groupCount}`]:[]),
-    `Minimum requested spacing: ${plan?.requestedSpacingMs===null?'n/a':`${Math.round(plan?.requestedSpacingMs??0)} ms`}`,
-    `Machine meaningful-spacing evidence: ${plan?.meaningfulSpacingMs??'—'} ms · capacity-only, not a competitive floor`,
-    `Timing capacity override: ${(settings.timingCapacityOverride??settings.capacityOverride)?'ACTIVE':'off'} · Standby consumption: ${settings.allowStandbyConsumption?'ACTIVE':'protected'}`,
-    `Standby workers: ${compiled.standby.join(' / ')||'none'} · Wave 2 max ${compiled.budgets.wave2} · Rescue max ${compiled.budgets.rescue}`,
-    ...(plan?.capacityWarning?[plan.capacityWarning]:[]),...(plan?.coincidentWarning?[plan.coincidentWarning]:[]),...feasibilityLines(feasibility),
-    ...ordered.map((shot,index)=>`#${index+1}  ${shot.configuredOffsetMs} ms  · ${labels.get(shot.logicalTargetId)??shot.logicalTargetId} · target shot ${shot.shotIndex+1}/${shot.shotCount}`),...compiled.problems];
-  byId('strategy-shotgun-preview').replaceChildren(...lines.map((line,index)=>el('p',index>=lines.length-compiled.problems.length&&compiled.problems.length?'warn-text':'small',line)));
+  const primary=ordered[0]&&labels.get(ordered[0].logicalTargetId),first=ordered[0]?.configuredOffsetMs??settings.windowStartMs,last=ordered.at(-1)?.configuredOffsetMs??settings.windowEndMs;
+  const readiness=feasibility?`${feasibility.projectedReady}/${feasibility.configuredWave1Attempts} can be prepared`:'Preparation forecast pending';
+  const facts=[['Target',primary??'Choose a target'],['Attempts',String(ordered.length||settings.budget)],['Timing',settings.timingMode==='DENSE_CORE'?'Pre-release Dense Core':settings.timingMode.replaceAll('_',' ')],['First attempt',`${first} ms`],['Last attempt',`${last>=0?'+':''}${last} ms`],['Browsers required',String(groupCount||'—')],['Preparation status',readiness]];
+  const preview=byId('strategy-shotgun-preview');preview.replaceChildren(...facts.map(([label,value])=>{const row=el('div','dense-fact');row.append(el('span','',label),el('strong','',value));return row;}));
+  if(plan?.capacityWarning){const risk=el('div','plain-warning');risk.append(el('strong','','⚠ AGGRESSIVE TIMING'),el('p','',`Some attempts are closer together than this PC has demonstrated. The exact schedule will not be changed.`),el('small','',`Machine timing reference: ${plan.meaningfulSpacingMs} ms · acknowledge under Advanced Shotgun settings.`));preview.append(risk);}
+  for(const problem of compiled.problems)preview.append(el('p','warn-text',`✕ BLOCKED · ${problem}`));
+  const track=byId('strategy-shotgun-timeline'),range=Math.max(1,last-first);track.replaceChildren(...ordered.map((shot,index)=>{const dot=el('span','shotgun-dot');dot.style.left=`${Math.max(0,Math.min(100,(shot.configuredOffsetMs-first)/range*100))}%`;dot.title=`Attempt ${index+1}: ${shot.configuredOffsetMs} ms`;return dot;}));
+  byId('strategy-shotgun-first').textContent=`${first} ms`;
+  byId('strategy-shotgun-exact-list').replaceChildren(...ordered.map((shot,index)=>el('span','',`#${index+1} · ${shot.configuredOffsetMs>=0?'+':''}${shot.configuredOffsetMs} ms · ${labels.get(shot.logicalTargetId)??shot.logicalTargetId}`)));
 }
 
 function renderReview(state: Dashboard | undefined) {
@@ -468,10 +471,13 @@ function renderReview(state: Dashboard | undefined) {
   const feasibility=draftFeasibility(state,compiled.phase3);
   const warnings = [...draft.immediate, ...draft.backups].filter(slot => slot.publicEvidence?.override).map(slot =>
     `${windowText(slot)} was force-included despite ${slot.publicEvidence!.evidence === 'UNKNOWN_PUBLIC_QUERY_FAILED' ? 'a failed public-booking read' : 'a known public booking'} (OPERATOR_OVERRIDE_PUBLIC_CONFLICT).`);
-  byId('strategy-review-warnings').replaceChildren(...[...warnings, ...compiled.problems].map(text => el('li', '', text)));
-  const body = byId('strategy-review-body');
-  if (!smart) { body.replaceChildren(empty('The current plan is not a Smart plan. Use a suggestion, or edit under Advanced overrides.')); return; }
-  if (!compiled.phase3) { body.replaceChildren(empty('Fix the problems above to see what will happen.')); return; }
+  const plainProblem=(text:string)=>/meaningful-spacing|spacing reaches/i.test(text)
+    ? 'Aggressive Dense Core timing needs your acknowledgement. The exact schedule will not be changed; review the machine timing reference under Advanced Shotgun settings.'
+    : /standby consumption/i.test(text)?'This Dense Core plan needs more initial browsers than are currently available without reducing backup capacity. Review the standby choice under Advanced Shotgun settings.':text;
+  byId('strategy-review-warnings').replaceChildren(...[...warnings, ...compiled.problems].map(text => el('li', '', plainProblem(text))));
+  const body = byId('strategy-review-body'),technical=byId('strategy-review-technical');
+  if (!smart) { body.replaceChildren(empty('The current plan is not a Smart plan. Use a suggestion, or edit under Advanced overrides.'));technical.replaceChildren(); return; }
+  if (!compiled.phase3) { body.replaceChildren(empty('Fix the problems above to see what will happen.'));technical.replaceChildren(); return; }
   const description = describeSmartPlan(compiled.phase3, { unavailable: host.unready() });
   const shotgun=compiled.shotgun,shotgunReview=shotgun&&draft.shotgun?[el('h4','','Shotgun'),
     el('p','small',`Enabled · budget ${draft.shotgun.budget} · ${draft.shotgun.allocationMode.replaceAll('_',' ').toLowerCase()} · window ${draft.shotgun.windowStartMs>=0?'+':''}${draft.shotgun.windowStartMs} ms → ${draft.shotgun.windowEndMs>=0?'+':''}${draft.shotgun.windowEndMs} ms · ${draft.shotgun.timingMode.replaceAll('_',' ').toLowerCase()} · group anchor ${shotgun.groupAnchorMs>=0?'+':''}${shotgun.groupAnchorMs} ms (${host.meta()?.timingCalibration?.anchorSource??'no fresh anchor evidence'})`),
@@ -487,7 +493,11 @@ function renderReview(state: Dashboard | undefined) {
       const correction=savedMeta?.deskew?.corrections.find(value=>value.workerId===assignment.workerId&&value.fanOutIndex===index)?.correctionMs??0;
       return el('p','small',`${assignment.workerId}${(assignment.fanOutOffsetsMs?.length??1)>1?index:''} · base + group anchor ${final-correction} ms · worker/index correction ${correction>=0?'+':''}${correction} ms · FINAL SAVED TRIGGER ${final} ms`);
     })):[];
-  body.replaceChildren(...shotgunReview,...description.sections.flatMap(section => [el('h4', '', section.title), ...section.lines.map(line => el('p', 'small', line))]),
+  const primary=draft.immediate[0],attempts=shotgun?.shots.length??compiled.phase3.wave1.reduce((sum,value)=>sum+(value.fanOutOffsetsMs?.length??1),0);
+  const range=shotgun?.shots.length?`${shotgun.shots[0]!.configuredOffsetMs} ms → ${shotgun.shots.at(-1)!.configuredOffsetMs} ms`:'Measured release timing';
+  const checklist=[['Target valid',compiled.problems.length===0],['Rates confirmed',!compiled.problems.some(value=>/rate/i.test(value))],[`${attempts} attempts authorized`,attempts>0],[`${feasibility?.projectedReady??attempts} attempts can be prepared`,!feasibility||feasibility.projectedOmitted===0],['No positive offsets',!shotgun||shotgun.shots.every(value=>value.configuredOffsetMs<=0)]];
+  body.replaceChildren(el('h4','','Primary target'),el('p','',primary?`Court ${primary.court} · ${smartRange(primary.start,primary.durationHours)}`:'No target'),el('h4','','Release'),el('p','',shotgun?`${attempts} Dense Core attempts · ${range} · nothing will be sent after release.`:`${attempts} normal measured attempts.`),el('h4','','Browsers'),el('p','',`${new Set(compiled.phase3.wave1.map(value=>value.workerId)).size} browser groups · ${feasibility?`${feasibility.projectedReady}/${feasibility.configuredWave1Attempts} attempts projected ready`:'preparation checked before arming'}`),el('h4','','Backup attempts'),el('p','',`Up to ${compiled.budgets.wave2} fresh backup attempts · reopened-slot rescue ${compiled.phase3.rescueEnabled?'ON':'OFF'}.`),el('h4','','Payment'),el('p','','The bot stops at QR. Payment remains manual.'),...checklist.map(([label,ok])=>el('p',ok?'check-ok':'warn-text',`${ok?'✓ READY':'✕ BLOCKED'} · ${label}`)));
+  technical.replaceChildren(...shotgunReview,...description.sections.flatMap(section => [el('h4', '', section.title), ...section.lines.map(line => el('p', 'small', line))]),
     ...(decomposition.length?[el('h4','','Saved timing decomposition'),...decomposition]:[]),
     el('p', '', `${description.summary} · Maximum possible sends: ${description.maxSends}`));
 }

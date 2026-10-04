@@ -5,11 +5,27 @@ Windows 11 / Node 24 / TypeScript / Playwright / dedicated Chrome. All files liv
 The existing single-court booking flow has live evidence, including the [September 12 production run](RELEASE_RUN_REPORT_2026-09-12.md). That is the only release win on record, and no competing bot was contesting that release. It does not show that the proof-backed lane wins contested releases ([why](REVIEW_GUIDE.md#read-first-the-one-release-win-was-uncontested)). Automation stops at the verified QR payment hold; payment remains manual. The current tree adds API-first booking, up to seven courts, per-checkout worker isolation, richer run/QR history, a read-only release slot watch, and a one-click close for all bot browsers. Precision Release Phases 1–3 add fast pre-armed Wave 1 dispatch, release forensics, and an explicitly authorized adaptive candidate pool; they have offline verification but no live 08:00 validation. The one-off Special Friday session experiment is archived under [archive/special-friday](archive/special-friday/README.md). Start with [the current Phase 1–3 review guide](REVIEW_PHASES_1_TO_3_2026-09-24.md) for human or AI review; [REVIEW_GUIDE.md](REVIEW_GUIDE.md) covers the broader desktop application at an earlier checkpoint.
 
 
+## Operator flow
+
+Configure:
+
+1. Open **Strategy** and choose the target date, preferred time, duration and court priority.
+2. Choose **Normal** or **Dense Core**. Dense Core starts with the exact 20-attempt pre-release preset; its timing and machine-risk controls stay under **Advanced Shotgun settings**.
+3. Read **What will happen at 8:00 AM?**, resolve any clearly labelled blocked item, then **Save strategy**.
+
+Run:
+
+1. Open **Next Release** and confirm the compact **Saved strategy** card.
+2. Select **Prepare for Release**. When preparation is complete, authorize Onda Terms for that exact run and select **Arm Release**.
+3. Use **Live** for the human-readable result and grouped target attempts. Payment always remains manual; the bot stops at QR.
+
+Normal operator choices are visible first. Exact timing, worker groups, preparation assumptions, compiled authorization, calibration and raw forensics remain available in collapsed technical drawers. The saved compiled plan—not the summary text—is authoritative.
+
 ## Strategy Engine V2 (current)
 
 The normal Precision workflow is one strategy: immediate logical targets with independently tracked fan-out children, adaptive Wave 2 backups and Reopen Rescue, all compiled into the single saved authorization (`PRECISION_PHASE3`).
 
-- **Strategy** view: Goal → Known schedule → Preset → Release intensity (**Normal** or **Shotgun**) → Suggested plan → Editable Smart plan → compiled Review & save. Shotgun is a bounded, independently tracked, resource-aware release-attempt schedule concentrated on selected immediate targets. Its budget, Equal / Priority weighted / Custom allocation, signed timing window and exact triggers compile into the same `PRECISION_PHASE3`; unselected immediate targets remain normal Wave 1. Matching real-release telemetry calibrates the group anchor without using HTTP response order.
+- **Strategy** view: Target → Release strategy (**Normal** or **Dense Core**) → plain-English Review & Save. Suggestions and editable targets share the Target step. Dense Core is a bounded, independently tracked, resource-aware release-attempt schedule concentrated on selected immediate targets. Its budget, Equal / Priority weighted / Custom allocation, signed timing window and exact triggers compile into the same `PRECISION_PHASE3`; unselected immediate targets remain normal Wave 1. Matching real-release telemetry calibrates the group anchor without using HTTP response order.
 - Smart plans use the venue's fixed PHP 700 hourly schedule for every covered hour from 4 PM onward, regardless of day, so an evening-only plan needs no rate review. A plan containing any hour before 4 PM still requires a confirmed daytime rate for its target date.
 - **Next Release** states the saved strategy; **Live** shows attempts by logical target with children, prewarm tiers and Rescue predictions; **History & Insights** holds runs, forensics, Release Lab, fan-out capacity, offset calibration and reopen-prediction accuracy; **Tools** holds diagnostics, build information and test booking tools.
 - **Release Precision V3** keeps that architecture and tightens local execution: only fresh (≤30 days) real-release timing calibrates Auto, with one vote per release; a bounded (±12 ms) worker/index de-skew learned only from each worker's own invocation → Chrome lag; a `RELEASE_CRITICAL_LOCKDOWN` window that defers nonessential runner work from T−1 s until the POSTs have left; Slot Watch in its own observer process; and a Release Readiness Gate (READY / READY WITH WARNINGS / NOT READY) on Next Release. Auto fan-out stays at the machine recommendation and renderer-resident dispatch stays experimental. See [docs/RELEASE_PRECISION_V3.md](docs/RELEASE_PRECISION_V3.md).
