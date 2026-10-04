@@ -46,7 +46,7 @@ export interface ArmedAttempt {
   readonly request: ProoflessCheckoutRequest;
   readonly journal: DurableSubmissionJournal;
   readonly permit: SubmissionPermit;
-  /** Scheduled trigger: the release instant plus this attempt's signed Shotgun offset (-2000 through +2000 ms). */
+  /** Scheduled trigger: the release instant plus this attempt's pre-release Shotgun offset (-2000 through 0 ms). */
   readonly triggerMs: number;
   /** 'armed' until the one in-memory transition; 'fired' is set synchronously before the transport call. */
   state: ArmedAttemptState;

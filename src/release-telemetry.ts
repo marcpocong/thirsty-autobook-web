@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { stats, type Stats } from './fanout-capacity.js';
 import { liveTimingSamples, type LiveTimingOrigin } from './live-anchor-calibration.js';
-import {shotgunTimingBucket,type ShotgunTimingBucket} from './shotgun.js';
+import {denseCoreTimingRegion,shotgunTimingBucket,type DenseCoreTimingRegion,type ShotgunTimingBucket} from './shotgun.js';
 
 /**
  * Release dispatch telemetry for History & Insights (Phase 13), derived only from local files written after each run:
@@ -11,10 +11,10 @@ import {shotgunTimingBucket,type ShotgunTimingBucket} from './shotgun.js';
  * Rows carry no tokens, cookies or customer data. Nothing here predicts a booking outcome.
  */
 export interface TelemetryChild { attemptId: string; label: string; workerId: string; parentGoalId: string | null; fanOutIndex: number; fanOutCount: number;
-  shotIndex:number|null;shotCount:number|null;timingBucket:ShotgunTimingBucket|null;suppressionReason:string|null;
+  shotIndex:number|null;shotCount:number|null;workerGroupIndex:number|null;timingBucket:ShotgunTimingBucket|null;denseCoreRegion:DenseCoreTimingRegion|null;suppressionReason:string|null;
   httpStatus:number|null;providerThrottleSignal:boolean;logicalTargetOutcome:string|null;stopCondition:string|null;
   configuredOffsetMs: number | null; workerInvokedMs: number | null; fetchInvokedMs: number | null; chromeStartMs: number | null; requestEventMs: number | null;
-  responseMs: number | null; errorMs: number | null; prewarmReadyMs: number | null; finalState: string | null;
+  responseMs: number | null; responseLatencyMs:number|null;triggerToWorkerMs:number|null;errorMs: number | null; prewarmReadyMs: number | null; finalState: string | null;
   dispatchMode?: string; trustedClockValid?: boolean; dispatched?: boolean }
 export interface RunTelemetry {
   runId: string; date: string | null; generatedAt: string; releaseMs?: number | null;
@@ -34,6 +34,8 @@ export interface RunTelemetry {
     prewarmHeadroomMs: Stats;
     /** Wave 2 / Rescue: selection → POST request (ms), and predicted → observed reopening error (ms). */
     adaptiveSelectionToPost: Stats; reopenPredictionErrorMs: Stats;
+    denseCore: {configuredAttempts:number;actuallyDispatched:number;suppressed:number;rejections:number;successOrHold:number;unknown:number;throttled:number;
+      localCollisions:number;chromeStartOrderingPreserved:boolean|null;providerReceiptOrder:'UNKNOWN';regions:Array<{region:DenseCoreTimingRegion;configured:number;dispatched:number;triggerToChrome:Stats}>};
   };
 }
 
@@ -67,13 +69,15 @@ export function summarizeRun(runId: string, rows: Array<Record<string, unknown>>
     const chrome = num(row.browserRequestStartMs), index = num(meta.fanOutIndex) ?? childTopology?.index ?? legacyIndex ?? 0;
     const count = num(meta.fanOutCount) ?? childTopology?.count ?? (legacyIndex !== null ? scheduledOffsets?.length ?? 1 : 1);
     const calibration = row.calibration as Record<string, unknown> | null | undefined;
+    const workerInvoked=num(row.workerInvokedMs),response=num(row.responseObservedMs);
     return { attemptId: String(row.workerId), label: `${workerId}${count > 1 ? index : ''}`, workerId, parentGoalId: str(meta.parentGoalId), fanOutIndex: index, fanOutCount: count,
-      shotIndex:num(meta.shotIndex),shotCount:num(meta.shotCount),timingBucket:configured===null?null:shotgunTimingBucket(configured),
+      shotIndex:num(meta.shotIndex),shotCount:num(meta.shotCount),workerGroupIndex:num(meta.workerGroupIndex),timingBucket:configured===null?null:shotgunTimingBucket(configured),denseCoreRegion:configured===null?null:denseCoreTimingRegion(configured),
       suppressionReason:/^SHOTGUN_/.test(str(meta.finalCode)??'')?str(meta.finalCode):null,
       httpStatus:num(meta.httpStatus),providerThrottleSignal:meta.providerThrottleSignal===true,logicalTargetOutcome:str(meta.finalState),
       stopCondition:/^SHOTGUN_/.test(str(meta.finalCode)??'')?str(meta.finalCode):null,
-      configuredOffsetMs: configured, workerInvokedMs: num(row.workerInvokedMs), fetchInvokedMs: num((row.fetchInvokedMs as { ms?: unknown } | null)?.ms),
-      chromeStartMs: chrome, requestEventMs: num(row.requestObservedMs), responseMs: num(row.responseObservedMs),
+      configuredOffsetMs: configured, workerInvokedMs:workerInvoked, fetchInvokedMs: num((row.fetchInvokedMs as { ms?: unknown } | null)?.ms),
+      chromeStartMs: chrome, requestEventMs: num(row.requestObservedMs), responseMs:response,responseLatencyMs:chrome!==null&&response!==null?Math.round((response-chrome)*100)/100:null,
+      triggerToWorkerMs:configured!==null&&workerInvoked!==null?Math.round((workerInvoked-configured)*100)/100:null,
       errorMs: configured !== null && chrome !== null ? Math.round((chrome - configured) * 100) / 100 : null, prewarmReadyMs: num(meta.prewarmReadyMs), finalState: str(meta.finalState),
       dispatchMode: str(row.dispatchMode) ?? 'unknown', trustedClockValid: num(header?.releaseMs) !== null && num(header?.wallToTrustedMs) !== null && calibration?.consistent !== false,
       dispatched: didDispatch };
@@ -84,6 +88,10 @@ export function summarizeRun(runId: string, rows: Array<Record<string, unknown>>
   const configuredSpread = configured.length > 1 ? Math.max(...configured) - Math.min(...configured) : 0;
   const indices = [...new Set(children.map(child => child.fanOutIndex))].sort((a, b) => a - b);
   const workers = [...new Set(children.map(child => child.workerId))].sort();
+  const shotgunChildren=children.filter(child=>child.shotIndex!==null),regions:DenseCoreTimingRegion[]=['< -500 ms','-500 to -100 ms','-100 to -50 ms','-50 to -20 ms','-20 to -5 ms','-5 to 0 ms'];
+  const chromeOrdered=[...shotgunChildren].filter(child=>child.chromeStartMs!==null&&child.configuredOffsetMs!==null).sort((a,b)=>a.configuredOffsetMs!-b.configuredOffsetMs!||a.shotIndex!-b.shotIndex!);
+  const chromeStartOrderingPreserved=chromeOrdered.length<2?null:chromeOrdered.every((child,index)=>index===0||child.chromeStartMs!>=chromeOrdered[index-1]!.chromeStartMs!);
+  const actualStarts=chromeOrdered.map(child=>child.chromeStartMs!).sort((a,b)=>a-b),localCollisions=actualStarts.slice(1).filter((value,index)=>value-actualStarts[index]!<1).length;
   // Adaptive selection → POST, per (worker, candidate, wave), and prediction errors, from the run's progress log.
   const selected = new Map<string, number>(), posts: number[] = [], errors: number[] = [];
   for (const line of progress) {
@@ -101,7 +109,12 @@ export function summarizeRun(runId: string, rows: Array<Record<string, unknown>>
       spreadMs: spread === null ? null : Math.round(spread * 100) / 100,
       compression: spread !== null && configuredSpread > 0 ? Math.round(spread / configuredSpread * 100) / 100 : null,
       prewarmHeadroomMs: stats(children.map(child => child.prewarmReadyMs !== null && child.configuredOffsetMs !== null ? child.configuredOffsetMs - child.prewarmReadyMs : null)),
-      adaptiveSelectionToPost: stats(posts), reopenPredictionErrorMs: stats(errors) } };
+      adaptiveSelectionToPost: stats(posts), reopenPredictionErrorMs: stats(errors),denseCore:{configuredAttempts:shotgunChildren.length,
+        actuallyDispatched:shotgunChildren.filter(child=>child.dispatched).length,suppressed:shotgunChildren.filter(child=>!!child.suppressionReason&&!child.dispatched).length,
+        rejections:shotgunChildren.filter(child=>child.finalState==='REJECTED').length,successOrHold:shotgunChildren.filter(child=>['QR_READY','HOLD_VERIFIED','HOLD_VERIFIED_QR_ATTENTION'].includes(child.finalState??'')).length,
+        unknown:shotgunChildren.filter(child=>child.finalState==='UNKNOWN').length,throttled:shotgunChildren.filter(child=>child.providerThrottleSignal||child.stopCondition==='SHOTGUN_PROVIDER_THROTTLE_STOP').length,
+        localCollisions,chromeStartOrderingPreserved,providerReceiptOrder:'UNKNOWN',regions:regions.map(region=>{const values=shotgunChildren.filter(child=>child.denseCoreRegion===region);return {region,configured:values.length,
+          dispatched:values.filter(child=>child.dispatched).length,triggerToChrome:stats(values.map(child=>child.errorMs))};})} } };
 }
 
 export { liveTimingSamples };

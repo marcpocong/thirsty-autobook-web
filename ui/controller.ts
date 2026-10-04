@@ -71,6 +71,7 @@ const errors: Record<string, string> = {
   PRECISION_NO_ELIGIBLE_TARGET:'No Precision target is currently eligible (public booking or unknown evidence on every target). Edit the targets.',
   PRECISION_TOO_LATE_TO_ARM:'Precision Release must be armed at least 3 minutes before release so the target set can be frozen at T-2 min.',
   PREWARM_PLAN_NOT_FEASIBLE:'The exact saved Wave 1 plan has projected preparation omissions. Edit the Strategy and save a new PRECISION_PHASE3 authorization before arming.',
+  SHOTGUN_PLAN_INCOMPATIBLE_POSITIVE_OFFSET:'This saved Shotgun plan contains a post-release offset. It remains visible for review but cannot be armed. Edit it to -2000 through 0 ms and save a new exact schedule.',
   PREWARM_FEASIBILITY_UNAVAILABLE:'Preparation feasibility for the exact saved Wave 1 plan is unavailable. Reset & Prepare, then recheck Release Readiness before arming.',
   ARBITRATION_MANIFEST_STORAGE_FAILED:'Investigation setup could not be saved. Nothing was armed. Check that the app can write to its local data folder, then try again.',
   ARBITRATION_MANIFEST_MISMATCH:'An investigation setup already exists for this release but does not match the current release. Nothing was armed.',
@@ -991,6 +992,8 @@ export class Controller {
     if(!authorized)throw Error('TERMS_AUTHORIZATION_REQUIRED');
     await this.noLock();
     const plan=this.deps.booking();
+    if(plan.setup.STRATEGY_V2?.shotgun?.exactSchedule.some(shot=>shot.configuredOffsetMs>0)||plan.setup.PRECISION_PHASE3?.wave1.some(assignment=>(assignment.fanOutOffsetsMs??[assignment.releaseOffsetMs??0]).some(offset=>offset>0)))
+      throw Error('SHOTGUN_PLAN_INCOMPATIBLE_POSITIVE_OFFSET');
     // Arming refreshes the Google offset itself; the runner refreshes it again at T-10 min.
     try{await this.deps.syncClock?.();}catch{/* judged below by freshness */}
     const clock=this.deps.clock();
