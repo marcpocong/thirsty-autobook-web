@@ -21,7 +21,7 @@ export function renderLive(state: Dashboard): void {
   const live = state.live, host = byId('live-attempts');
   const children=live?.parents.flatMap(value=>value.children)??[],planned=state.booking?.setup.PRECISION_PHASE3?.wave1.reduce((count,group)=>count+(group.fanOutOffsetsMs?.length??1),0)??state.booking?.setup.STRATEGY_V2?.shotgun?.exactSchedule.length??children.length;
   const releaseChildren=live?.parents.filter(parent=>parent.wave==='WAVE_1').flatMap(parent=>parent.children)??[];
-  const ready=releaseChildren.filter(value=>['READY','ARMED','IN_FLIGHT','REJECTED','UNKNOWN','QR_READY','VERIFIED','HOLD_VERIFIED','HOLD_VERIFIED_QR_ATTENTION'].includes(value.state)).length,dispatched=releaseChildren.filter(value=>['IN_FLIGHT','REJECTED','UNKNOWN','QR_READY','VERIFIED','HOLD_VERIFIED','HOLD_VERIFIED_QR_ATTENTION'].includes(value.state)).length;
+  const ready=releaseChildren.filter(value=>['READY','IN_FLIGHT','REJECTED','UNKNOWN','QR_READY','VERIFIED','HOLD_VERIFIED','HOLD_VERIFIED_QR_ATTENTION'].includes(value.state)).length,dispatched=releaseChildren.filter(value=>['IN_FLIGHT','REJECTED','UNKNOWN','QR_READY','VERIFIED','HOLD_VERIFIED','HOLD_VERIFIED_QR_ATTENTION'].includes(value.state)).length;
   const pending=releaseChildren.filter(value=>value.state==='IN_FLIGHT').length,first=live?.parents.find(value=>value.wave==='WAVE_1')??live?.parents[0];
   byId('live-primary-target').textContent=first?`${first.court?`Court ${first.court}`:'Target'} · ${hour(first.startTime)}–${hour(first.endTime)}`:'Waiting for a release';
   byId('live-planned').textContent=String(planned);byId('live-ready').textContent=String(ready);byId('live-dispatched').textContent=String(dispatched);byId('live-pending').textContent=String(pending);
