@@ -88,6 +88,14 @@ export function strategySaved(key:string):void{savedDraftKey=key;}
 const focusControl=(id:string)=>{const node=byId(id);for(let parent:HTMLElement|null=node.parentElement;parent;parent=parent.parentElement)if(parent instanceof HTMLDetailsElement)parent.open=true;if(!node.matches('input,select,button,textarea,a'))node.tabIndex=-1;node.scrollIntoView({block:'center',behavior:'smooth'});node.focus();};
 const defaultShotgun=(targets:readonly SmartSlot[]):ShotgunSettings=>({enabled:true,budget:20,allocationMode:'EQUAL',
   selectedTargetIds:targets.map(logicalTargetId),windowStartMs:-1000,windowEndMs:0,timingMode:'DENSE_CORE',timingCapacityOverride:false,allowStandbyConsumption:false});
+const QUICK_SHOTGUN_MAX_ATTEMPTS=20;
+const primaryShotgunTarget=(draft:SmartDraft):SmartSlot|undefined=>draft.immediate.map((slot,index)=>({slot,index}))
+  .sort((a,b)=>(a.slot.priority??a.index+1)-(b.slot.priority??b.index+1)||a.index-b.index)[0]?.slot;
+const quickShotgunSettings=(draft:SmartDraft,budget:number):ShotgunSettings|null=>{
+  const primary=primaryShotgunTarget(draft);if(!primary)return null;const id=logicalTargetId(primary);
+  return {enabled:true,budget,allocationMode:'CUSTOM',selectedTargetIds:[id],customCounts:{[id]:budget},windowStartMs:-1000,windowEndMs:0,
+    timingMode:'DENSE_CORE',timingCapacityOverride:true,allowStandbyConsumption:true};
+};
 const hourLabel = (hour: number) => hour === 24 ? '12:00 MN' : `${hour % 12 || 12}:00 ${hour < 12 ? 'AM' : 'PM'}`;
 const hourText = (hour: number) => `${String(hour).padStart(2, '0')}:00`;
 const sameWindow = (a: Window, b: Window) => a.court === b.court && a.start === b.start && a.durationHours === b.durationHours;
@@ -108,6 +116,18 @@ const draftFeasibility=(state:Dashboard|undefined,phase3:ReturnType<typeof compi
   return evaluatePrewarmFeasibility({phase3,prepP95Ms:prior?.p95Source==='COMPATIBLE_MEASURED_HISTORY'?prior.preparationP95Ms:null,sampleCount:prior?.sampleCount??0,
     availableWorkers:available,globalConcurrency:Math.max(1,new Set(phase3.wave1.map(value=>value.workerId)).size)});
 };
+function quickShotgunFit(state:Dashboard|undefined,draft:SmartDraft):{settings:ShotgunSettings;feasibility:PrewarmFeasibilityResult|null}|null{
+  for(let budget=Math.min(QUICK_SHOTGUN_MAX_ATTEMPTS,PRECISION_MAX_SENDS);budget>=1;budget--){
+    const settings=quickShotgunSettings(draft,budget);if(!settings)return null;
+    const candidate:SmartDraft={...structuredClone(draft),advanced:{},shotgun:settings};
+    const compiled=compileSmartPlan(candidate,{targetDate:state?.booking?.targetDate??'',unavailable:host.unready(),
+      shotgunCapacity:shotgunCapacity(state,budget,host.meta()?.timingCalibration?.groupShiftMs??0)});
+    if(!compiled.phase3||compiled.problems.length)continue;
+    const feasibility=draftFeasibility(state,compiled.phase3);
+    if(!feasibility||feasibility.projectedOmitted===0)return {settings,feasibility};
+  }
+  return null;
+}
 const feasibilityLines=(value:PrewarmFeasibilityResult|null):string[]=>value?[`Preparation feasibility: ${value.verdict.replaceAll('_',' ')}`,
   `Configured Wave 1 attempts: ${value.configuredWave1Attempts} · tasks ${value.preparationTaskCount} · tiers ${value.tiers} · worker groups ${value.groups}`,
   `Prewarm lead ${(value.prewarmLeadMs/1000).toFixed(1)} s · prep p95 ${(value.preparationP95Ms/1000).toFixed(1)} s · ${value.p95Source==='FALLBACK'?'fallback':`${value.sampleCount} compatible samples`}`,
@@ -173,6 +193,12 @@ export function initStrategy(value: StrategyHost): void {
   for(const radio of document.querySelectorAll<HTMLInputElement>('input[name="strategy-intensity"]'))radio.addEventListener('change',()=>{
     if(!radio.checked)return;host.ensureMeta();host.edit(draft=>{if(radio.value==='SHOTGUN')draft.shotgun=draft.shotgun??defaultShotgun(draft.immediate);else delete draft.shotgun;});
 });
+  byId('strategy-shotgun-quick-ready').addEventListener('click',()=>{
+    host.ensureMeta();const fit=quickShotgunFit(host.state(),host.draft());
+    if(!fit){byId('strategy-shotgun-quick-status').textContent='✕ One-click Shotgun could not build a fully preparable plan from the current targets/browser state. The normal blockers remain in force.';return;}
+    priorityProposal=true;
+    host.edit(draft=>{draft.shotgun=fit.settings;draft.advanced={};});
+  });
 
   for(const id of ['strategy-shotgun-budget','strategy-shotgun-allocation','strategy-shotgun-start','strategy-shotgun-end','strategy-shotgun-timing','strategy-shotgun-timing-override','strategy-shotgun-standby-override','strategy-shotgun-custom-offsets'])
     byId(id).addEventListener('change',()=>host.edit(draft=>{const current=draft.shotgun??defaultShotgun(draft.immediate);draft.shotgun={...current,
@@ -461,10 +487,19 @@ function shotgunPresentation(state:Dashboard|undefined){
   return {preview,normal,feasibility:draftFeasibility(state,preview.phase3)};
 }
 function renderShotgun(state:Dashboard|undefined){
-  const draft=host.draft(),settings=draft.shotgun;
+  const draft=host.draft(),settings=draft.shotgun,quickPrimary=primaryShotgunTarget(draft),quickPrimaryId=quickPrimary?logicalTargetId(quickPrimary):null;
   for(const radio of document.querySelectorAll<HTMLInputElement>('input[name="strategy-intensity"]'))radio.checked=radio.value===(settings?.enabled?'SHOTGUN':'NORMAL');
   byId('strategy-shotgun').hidden=!settings?.enabled;
   byId('strategy-normal-settings').hidden=!!settings?.enabled;
+  const quickActive=!!settings?.enabled&&!!quickPrimaryId&&settings.allocationMode==='CUSTOM'&&settings.selectedTargetIds.length===1&&
+    settings.selectedTargetIds[0]===quickPrimaryId&&(settings.customCounts?.[quickPrimaryId]??-1)===settings.budget&&settings.timingMode==='DENSE_CORE'&&
+    !!(settings.timingCapacityOverride??settings.capacityOverride)&&!!settings.allowStandbyConsumption;
+  const quickButton=byId('strategy-shotgun-quick-ready') as HTMLButtonElement;quickButton.disabled=!quickPrimary;
+  quickButton.textContent=quickActive?'REBUILD ONE-CLICK SHOTGUN':'USE ONE-CLICK SHOTGUN';
+  byId('strategy-shotgun-quick-status').textContent=!quickPrimary?'Add at least one release target first.':quickActive
+    ?`✓ One-click Shotgun active · ${settings!.budget} attempts on Court ${quickPrimary!.court} · ${smartRange(quickPrimary!.start,quickPrimary!.durationHours)} · fully preparable at the last forecast.`
+    :settings?.enabled?'Manual Dense Core setup is active. One-click will replace it with an auto-fitted priority-#1 release plan.'
+    :'One click handles target focus, attempt count, aggressive timing acknowledgement and release-first resource setup.';
   if(!settings?.enabled)return;
   inputById('strategy-shotgun-budget').value=String(settings.budget);selectById('strategy-shotgun-allocation').value=settings.allocationMode;
   inputById('strategy-shotgun-start').value=String(settings.windowStartMs);inputById('strategy-shotgun-end').value=String(settings.windowEndMs);
