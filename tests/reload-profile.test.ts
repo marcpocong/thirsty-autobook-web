@@ -69,8 +69,12 @@ it('does not retry a reload failure', async () => {
 it('does not retry missing shell controls and retains partial milestones', async () => {
   await page.route('**/*', route => route.fulfill({ body: '<body><h1 data-testid="public-booking-hero-title">Thirsty Pickle | SM Seaside</h1></body>', contentType: 'text/html' }));
   const reload = vi.spyOn(page, 'reload'), t = new Telemetry();
-  await expect(profileReload(page, new Safety(), t, 150)).rejects.toThrow();
+  // Give the real browser time to reach the intended missing-picker stage on busy CI.
+  // A 150 ms reload can fail before the venue attaches, testing a different failure.
+  await expect(profileReload(page, new Safety(), t, 2000)).rejects.toThrow('RELEASE_DATE_PICKER_MISSING');
   expect(reload).toHaveBeenCalledOnce();
+  expect(t.events.map(e => e.event)).toContain('profileVenueVerified');
+  expect(t.events.map(e => e.event)).not.toContain('profilePickerAttached');
   expect(reloadProfileReport(t.events).commitToVenueAttachedMs).not.toBeNull();
   expect(reloadProfileReport(t.events).commitToShellReadyMs).toBeNull();
 });
