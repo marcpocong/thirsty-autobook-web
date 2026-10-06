@@ -738,6 +738,7 @@ function render(state: Dashboard) {
   renderForensics(state);
   renderPhase4(state);
   byId('headline').textContent = state.headline; byId('detail').textContent = state.detail;
+  const apiRelease=state.operation==='full'?state.activeApiRelease:null;
   const armed=!!state.scheduledRelease;
   const busy = state.operation !== 'idle'&&state.operation!=='scheduled';
   byId('stop').hidden=!busy;
@@ -910,6 +911,7 @@ function render(state: Dashboard) {
    if(workflow==='release'){input('arm').disabled ||= dirty||!state.ready||!input('terms').checked||!state.clock?.networkSynced||(!apiFirst&&!fullReady);byId('blocked-reason').textContent=state.lock?'RESET REQUIRED':dirty?'SETTINGS CHANGED · Press Reset & Prepare.':!state.clock?.networkSynced?'Sync with Google Time before arming.':!state.ready?'Reset & Prepare before arming.':!input('terms').checked?'Authorize Terms, then Arm Next Release.':'';}
   if(workflow==='test')byId('blocked-reason').textContent=state.lock?'RESET REQUIRED':dirty?'SETTINGS CHANGED · Press Reset & Prepare.':!state.ready?'Reset & Prepare before running a test.':!input('terms').checked?'Authorize Terms, then run your test.':'';
   if(workflow==='release'&&armed){input('arm').disabled=false;byId('blocked-reason').textContent='';}
+  if(apiRelease)byId('blocked-reason').textContent='';
   if(state.bookingResult){byId('handoff-result').hidden=false;byId('handoff-result').textContent=state.bookingResult.description+'\n'+state.bookingResult.outcomes.map((v,i)=>`Checkout ${i+1}: ${v}`).join('\n');}
    const duration=Number(input('duration').value),start=Number(input('start-time').value.slice(0,2)),strategy=input('booking-type').value;
   const count=Number(input('court-count').value),releaseText=state.clock?new Date(state.clock.releaseMs).toLocaleString('en-US',{timeZone:state.clock.timezone,month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'Calculating';
@@ -933,10 +935,11 @@ function render(state: Dashboard) {
   renderBlockAudit(byId('block-audit-result'),audit,blockAuditDate);
   if(releaseMode&&state.clock){
     byId('release-passed').textContent=state.clock.todayReleasePassed?`TODAY'S ${friendly(state.clock.releaseTime.slice(0,5))} RELEASE HAS PASSED`:'';
-    byId('next-release').textContent=new Date(armed?state.scheduledRelease!.releaseMs:state.clock.releaseMs).toLocaleString('en-US',{timeZone:state.clock.timezone,month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
-    byId('next-target').textContent=dateLabel(armed?state.scheduledRelease!.targetDate:state.clock.targetDate);
-    const finalAt=(armed?state.scheduledRelease!.releaseMs:state.clock.releaseMs)-state.clock.preflightSecondsBefore*1000;
-    byId('schedule-meta').textContent=`Final preflight: ${new Date(finalAt).toLocaleTimeString('en-US',{timeZone:state.clock.timezone,hour:'numeric',minute:'2-digit',second:'2-digit'})} | System: ${state.scheduleStatus??(armed?'WAITING':'NOT ARMED')}`;
+    const release=state.scheduledRelease??apiRelease;
+    byId('next-release').textContent=new Date(release?.releaseMs??state.clock.releaseMs).toLocaleString('en-US',{timeZone:state.clock.timezone,month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
+    byId('next-target').textContent=dateLabel(release?.targetDate??state.clock.targetDate);
+    const finalAt=(release?.releaseMs??state.clock.releaseMs)-state.clock.preflightSecondsBefore*1000;
+    byId('schedule-meta').textContent=`Final preflight: ${new Date(finalAt).toLocaleTimeString('en-US',{timeZone:state.clock.timezone,hour:'numeric',minute:'2-digit',second:'2-digit'})} | System: ${apiRelease?{PREPARING:'ARMED · PREPARING',WAITING:'WAITING FOR RELEASE',RUNNING:'RUNNING',FAILED:'NEEDS ATTENTION'}[apiRelease.phase]:state.scheduleStatus??(armed?'WAITING':'NOT ARMED')}`;
   }
   const apiPrepared=!!state.apiFirstReady&&!!state.ready&&!!state.booking&&['api-first','proofless'].includes(state.booking.setup.BOOKING_METHOD)&&!state.lock;
   const prepared=apiPrepared||!!state.preparedContext&&state.preparedContext.workflow==='release'&&state.preparedContext.configFingerprint===state.booking?.fingerprint;
@@ -945,9 +948,15 @@ function render(state: Dashboard) {
     ? [['Onda venue verified',apiPrepared],[proofless?'Court/hour block audit complete':'Availability checked',proofless?state.assumedPrice!==undefined&&state.assumedPrice!==null:state.apiStage?.stage==='CANDIDATE_READY'||!!state.observedPrice]]
     : [['Onda verified',prepared],['All Courts verified',prepared],['Selected slots: 0',prepared],['Payment holds: none',prepared&&!state.lock]];
   const gates:Gate[]=[['Configuration valid',!draftProblem],['Google network clock synchronized',!!state.clock?.networkSynced],['Next release calculated',!!state.clock],['Booking target calculated',!!state.clock?.targetDate],...required.map(id=>[`${workerLabel(id)} configured`,!!playerReadyByWorker[id]] as [string,boolean]),...required.map(id=>[`Browser ${id} prepared`,apiFirst?apiPrepared&&!!state.browserHealth?.[id]:prepared&&!!state.preparedContext?.browsers.some(b=>b.id===id)] as [string,boolean]),...verificationGates,['Automation lock clear',!state.lock],['Prepared fingerprint matches',prepared],['Terms authorized for this run',state.termsAuthorized||armed],
-    ...(apiFirst?[manifestGate(state,armed?state.scheduledRelease!.releaseMs:state.clock?.releaseMs)]:[]),['Armed for next release',armed||state.apiStage?.stage==='WAITING_FOR_RELEASE']];
+    ...(apiFirst?[manifestGate(state,state.scheduledRelease?.releaseMs??apiRelease?.releaseMs??state.clock?.releaseMs)]:[]),['Armed for next release',armed||!!apiRelease||state.apiStage?.stage==='WAITING_FOR_RELEASE']];
+  if(apiRelease){
+    for(const gate of gates){
+      if(gate[0]==='Terms authorized for this run')gate[1]=true;
+      if(gate[0]==='Automation lock clear'){gate[0]='Active release owns automation lock';gate[1]=true;}
+    }
+  }
   byId('release-readiness').replaceChildren(...gateRows(gates));
-  byId('release-readiness-card').dataset.state=armed?'armed':prepared?'prepared':'draft';byId('sleep-warning').hidden=!armed;byId('sleep-warning').textContent=`Sleep protection: ${state.sleepProtection?'ACTIVE':'NOT AVAILABLE'} | Keep the PC powered on. Do not hibernate or close the laptop lid if Windows sleeps on lid close.`;
+  byId('release-readiness-card').dataset.state=armed||apiRelease?'armed':prepared?'prepared':'draft';byId('sleep-warning').hidden=!armed&&!apiRelease;byId('sleep-warning').textContent=`Sleep protection: ${state.sleepProtection?'ACTIVE':'NOT AVAILABLE'} | Keep the PC powered on. Do not hibernate or close the laptop lid if Windows sleeps on lid close.`;
    const savedSetup=state.booking?.setup;
    if(savedSetup?.RELEASE_STRATEGY==='precision'){
      const p=savedSetup.PRECISION_PHASE3;
@@ -962,12 +971,13 @@ function render(state: Dashboard) {
      'Payment stays manual.'].filter(Boolean).join('\n');
   const action=input('main-action'),hold=!!state.handoff||!!state.lock,blockedHold=hold&&!state.canPrepareOverHold;
   const apiWaiting=state.operation==='full'&&state.apiStage?.stage==='WAITING_FOR_RELEASE';
-  const actionState=apiWaiting?'armed':busy?'running':blockedHold?'hold':armed?'armed':state.ready&&!dirty?'review':'prepare';
+  const actionState=apiRelease||apiWaiting?'armed':busy?'running':blockedHold?'hold':armed?'armed':state.ready&&!dirty?'review':'prepare';
   action.textContent=actionState==='prepare'&&unresolvedCheckout?'Reset & Prepare':actionState==='prepare'&&state.canPrepareOverHold?'Prepare New Run':{hold:'Review Hold',running:'Preparing…',armed:'Emergency Stop',review:'Arm Release',prepare:'Prepare for Release'}[actionState];
   action.disabled=actionState==='running'||actionState==='prepare'&&!!input('prepare').disabled;
   byId('release-action-title').textContent=actionState==='armed'?'Armed':actionState==='running'?'Preparing browsers and release contexts…':actionState==='review'?'Ready to arm':'Prepare for release';
   byId('main-action-hint').textContent=unresolvedCheckout?'Inspects every required browser; it will not clear the lock unless the old worker is dead and all Onda state is clean.':state.canPrepareOverHold?'The verified hold stays recorded. Prepare a fresh schedule in the same bot before another run.':blockedHold?'Review the retained lock before any new action.':actionState==='review'?'Authorize Terms for this exact saved strategy, then arm.':actionState==='armed'?'Release is scheduled. Emergency Stop cancels the armed release.':actionState==='running'?'Preparing the required browsers. Wait for readiness to finish.':'Check the saved strategy, then prepare its required browsers.';
   input('terms').parentElement!.hidden=currentView==='release'?actionState!=='review':false;
+  if(apiRelease)byId('main-action-hint').textContent='The authorized release runner is active. Emergency Stop cancels it; child preparation is reported separately.';
   renderReleasePreflight(state);
   byId('primary-actions').hidden=currentView!=='tests'&&!state.selection&&!state.handoff&&!state.bookingResult;
   const testDate=input('test-date').value;
@@ -1002,7 +1012,7 @@ function render(state: Dashboard) {
   testResults.hidden=!!byId('observed-price').hidden&&!!byId('selection-result').hidden&&!!byId('handoff-result').hidden;
    syncViableControls();tick();
 }
-byId('main-action').onclick=()=>{if(!latest)return;if((latest.lock||latest.handoff)&&!latest.canPrepareOverHold){void window.thirsty.reviewLock().catch(()=>{});return;}if(latest.scheduledRelease||latest.operation==='full'&&latest.apiStage?.stage==='WAITING_FOR_RELEASE'){input('arm').click();return;}if(latest.ready&&!dirty){if(input('terms').checked)input('arm').click();else byId('terms').focus();}else input('prepare').click();};
+byId('main-action').onclick=()=>{if(!latest)return;if(latest.operation==='full'&&(latest.activeApiRelease||latest.apiStage?.stage==='WAITING_FOR_RELEASE')){void window.thirsty.abortAutomation().catch(()=>{});return;}if(latest.scheduledRelease){input('arm').click();return;}if((latest.lock||latest.handoff)&&!latest.canPrepareOverHold){void window.thirsty.reviewLock().catch(()=>{});return;}if(latest.ready&&!dirty){if(input('terms').checked)input('arm').click();else byId('terms').focus();}else input('prepare').click();};
 byId('test-main-action').onclick=()=>{if(!latest)return;if((latest.lock||latest.handoff)&&!latest.canPrepareOverHold){void window.thirsty.reviewLock().catch(()=>{});return;}if(input('test-main-action').textContent==='Review & Test'){if(input('terms').checked)input('test-booking').click();else byId('terms').focus();}else input('prepare').click();};
 function tick() {
   // Display only; never launches a command. Authoritative release plan comes from main/CLI.
@@ -1027,7 +1037,7 @@ function tick() {
     return;
   }
   if (!latest.clock) return;
-  const release = latest.scheduledRelease?.releaseMs??(latest.plan && ['observe','dry','selection','full'].includes(latest.operation) ? latest.plan.releaseMs : latest.clock.releaseMs);
+  const release = latest.scheduledRelease?.releaseMs??latest.activeApiRelease?.releaseMs??(latest.plan && ['observe','dry','selection','full'].includes(latest.operation) ? latest.plan.releaseMs : latest.clock.releaseMs);
   const seconds = Math.max(0, Math.ceil((release - effectiveNow) / 1000));
   byId('countdown').textContent = [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60].map(v => String(v).padStart(2, '0')).join(':');
   byId('countdown-label').textContent = latest.operation === 'observe' ? 'SCHEDULED RELEASE IN' : 'NEXT RELEASE IN';

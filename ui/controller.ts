@@ -640,6 +640,11 @@ export class Controller {
   }
   private event = (event: UiEvent) => {
     if(event.type==='apiStage'){
+      if(this.state.activeApiRelease){
+        if(['WAITING_FOR_RELEASE','PRECISION_ARMED','WAITING_FOR_BLOCK_AUDIT','PHASE3_AUTHORIZATION'].includes(event.stage))this.state.activeApiRelease.phase='WAITING';
+        else if(['RELEASE_TRIGGERED','PRECISION_DISPATCHING','PRIMARY_PROOFLESS_DISPATCHING','PHASE3_WAVE1_STARTED','PHASE3_DISPATCH'].includes(event.stage))this.state.activeApiRelease.phase='RUNNING';
+        else if(event.stage==='FAILED')this.state.activeApiRelease.phase='FAILED';
+      }
       this.trackIdentity(event);
        if(event.price!==undefined)this.state.observedPrice=event.price;
        if(event.assumedPrice!==undefined)this.state.assumedPrice=event.assumedPrice;
@@ -756,6 +761,8 @@ export class Controller {
     if(this.state.runTiming&&!this.state.runTiming.endedAt&&!this.state.runTiming.label.startsWith('release ·'))this.state.runTiming.label=typeof command==='object'&&command.kind==='testBooking'?`${(command.input.method??'browser').toUpperCase()} TEST`:typeof command==='object'&&command.kind==='apiRun'?`API ${command.mode.toUpperCase()}`:descriptor;
     this.log(`Process started: ${descriptor}`);
     const runnerBefore=this.runnerRunId;
+    if(typeof command==='object'&&command.kind==='apiRun'&&command.mode==='live'&&command.releaseMs!==undefined)
+      this.state.activeApiRelease={releaseMs:command.releaseMs,targetDate:command.date,phase:'PREPARING'};
     const active = this.deps.runner(command, this.event, (line, error) => this.log(line, error),async plan=>{if(generation!==this.generation)return false;const answer=await this.deps.confirmBooking?.(plan,typeof command==='object'&&command.kind==='testBooking'?command.input.maximum:0)??false;return generation===this.generation&&answer;});
     this.active = active;
     try {
@@ -765,6 +772,7 @@ export class Controller {
       this.log(`Process completed: ${descriptor} · exit code ${code}`);
     } finally {
       if (this.active === active) this.active = undefined;
+      if(typeof command==='object'&&command.kind==='apiRun'&&command.mode==='live')this.state.activeApiRelease=null;
       // The runner process has exited: every POST it made has settled, so the forensic report can be built.
       if(typeof command==='object'&&command.kind==='apiRun'&&(command.mode==='live'||command.mode==='live-now')&&this.runnerRunId&&this.runnerRunId!==runnerBefore)
         this.scheduleForensics(this.runnerRunId,command.date,command.releaseMs);
@@ -794,7 +802,7 @@ export class Controller {
         this.log(code, true);
       }
     } finally {
-      if (generation === this.generation) { this.finishRun(outcome);this.state.operation = 'idle'; this.state.termsAuthorized=false; await this.refresh(); this.publish(); }
+      if (generation === this.generation) { this.finishRun(outcome);this.state.operation = 'idle'; this.state.termsAuthorized=false;this.state.activeApiRelease=null; await this.refresh(); this.publish(); }
     }
   }
   private async noLock() { this.state.lock = await this.deps.lock(); if (this.state.lock) throw new Error('AUTOMATION_LOCK_EXISTS'); }
@@ -1190,7 +1198,7 @@ export class Controller {
     this.stopReleaseSlotWatchBeforeRelease('release aborted');
     ++this.generation; this.state.ready = false; this.state.operation = 'stopping'; this.publish();
     try {
-      await this.active?.stop(); this.active = undefined;
+      await this.active?.stop(); this.active = undefined;this.state.activeApiRelease=null;
       this.state.operation = 'idle'; this.state.headline = 'Automation aborted'; this.state.detail = 'USER CONTROL RESTORED. Chrome remains open. Check the retained lock manually before another run.';
       this.log('AUTOMATION ABORTED — USER CONTROL RESTORED');this.finishRun('aborted'); await this.refresh();
     } catch { this.state.headline = 'Stop not confirmed'; this.state.detail = 'The automation process has not exited. Retry Emergency Stop; check Task Manager.'; this.log('STOP_NOT_CONFIRMED', true); }

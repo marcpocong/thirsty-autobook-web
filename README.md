@@ -18,6 +18,7 @@ Run:
 
 1. Open **Next Release** and confirm the compact **Saved strategy** card.
 2. Select **Prepare for Release**. When preparation is complete, authorize Onda Terms for that exact run and select **Arm Release**.
+   Once the API runner starts, Next Release retains the exact authorized date and release time, shows armed/preparing or waiting status separately from child readiness, and keeps Emergency Stop available. The active runner's lock is not a request to reset; after it exits, any retained lock still requires review.
 3. Use **Live** for the human-readable result and grouped target attempts. Payment always remains manual; the bot stops at QR.
 
 Normal operator choices are visible first. Exact timing, worker groups, preparation assumptions, compiled authorization, calibration and raw forensics remain available in collapsed technical drawers. The saved compiled plan—not the summary text—is authoritative.

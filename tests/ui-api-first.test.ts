@@ -9,6 +9,33 @@ import type { Command } from '../ui/types.js';
 import { preregistered } from './arbitration-manifest-stub.js';
 
 describe('API-first UI boundary', () => {
+  it('tracks the authorized API release independently of consumed Terms and transient stages, then clears it on exit',async()=>{
+    const old=process.env.THIRSTY_API_INSTALLATION;process.env.THIRSTY_API_INSTALLATION='1';
+    try{
+      const view=bookingView(ConfigSchema.parse({...defaultSetup,BOOKING_METHOD:'api-first',PLAYER_FULL_NAME:'Fixture',PLAYER_PHONE:'09123456789',PLAYER_EMAIL:'fixture@example.invalid'}));
+      const clock=clockStatus(ObservationSchema.parse({}),DateTime.now());
+      const synced={...clock,networkSynced:true,releaseMs:Date.now()+3600_000,targetDate:view.targetDate,clockOffsetMs:0};
+      let emit:Parameters<Runner>[1]|undefined,finish:((code:number)=>void)|undefined;
+      const runner:Runner=(command,event)=>{if(typeof command==='object'&&command.kind==='apiRun'&&command.mode==='live'){
+        emit=event;return {pid:1,done:new Promise<number>(resolve=>{finish=resolve;}),stop:async()=>{finish?.(0);}};
+      }return {pid:1,done:Promise.resolve(0),stop:async()=>undefined};};
+      const controller=new Controller({runner,lock:async()=>false,cdp:async()=>true,browserHealth:async()=>({A:true}),playerStatus:()=>({primary:true,extended:false}),
+        clock:()=>synced,confirm:async()=>true,publish:()=>undefined,booking:()=>view,saveBooking:()=>view,ensureArbitrationManifest:preregistered});
+      await controller.resetPrepare({workflow:'release',strategy:'standard',setup:view.setup});
+      await controller.authorizeTerms(true);
+      const armed=controller.armFullBooking();
+      for(let n=0;n<20&&!emit;n++)await new Promise(resolve=>setTimeout(resolve,0));
+      expect(controller.state.activeApiRelease).toEqual({releaseMs:synced.releaseMs,targetDate:view.targetDate,phase:'PREPARING'});
+      expect(controller.state.termsAuthorized).toBe(false);
+      emit!({type:'apiStage',stage:'PHASE3_AUTHORIZATION',elapsedMs:1});
+      emit!({type:'apiStage',stage:'PHASE3_DIVERSIFICATION_WARNING',elapsedMs:2});
+      expect(controller.state.activeApiRelease?.phase).toBe('WAITING');
+      emit!({type:'apiStage',stage:'PHASE3_WAVE1_STARTED',elapsedMs:3});
+      expect(controller.state.activeApiRelease?.phase).toBe('RUNNING');
+      finish!(0);await armed;
+      expect(controller.state.activeApiRelease).toBeNull();
+    }finally{if(old===undefined)delete process.env.THIRSTY_API_INSTALLATION;else process.env.THIRSTY_API_INSTALLATION=old;}
+  });
   it('starts extended API run timing only after both dedicated browsers are ready',async()=>{
     const view=bookingView(ConfigSchema.parse({...defaultSetup,BOOKING_METHOD:'api-first',BOOKING_TYPE:'extended',DURATION_HOURS:4,
       PLAYER_FULL_NAME:'Fixture Player',PLAYER_PHONE:'09123456789',PLAYER_EMAIL:'fixture@example.invalid',
