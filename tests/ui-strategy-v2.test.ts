@@ -456,21 +456,22 @@ it('lets the operator skip a new public read, retains known conflicts, and saves
  await reopened.close();
 });
 
-it('explains a pinned limit blocker and repairs it only through an explicit operator action',async()=>{
+it('saves Normal with stale pinned limits through its single visible action',async()=>{
  const page=await openRendererBase(browser,{booking:smartBooking({retryReopened:true,maxReopenedAttempts:1,advanced:{total:1}}),playerStatus:{primary:true,extended:true,third:true,fourth:true,fifth:true,sixth:true,seventh:true}},'strategy');
  await page.locator('#strategy-advanced').evaluate(node=>(node as HTMLDetailsElement).open=true);await page.locator('#strategy-public-data').selectOption('CACHED_ONLY');
  await page.locator('#strategy-suggest').click();
- await expect.poll(()=>page.locator('#strategy-normal-status').innerText()).toContain('Attempt limits are inconsistent');
- expect(await page.locator('#strategy-normal-save').isDisabled()).toBe(true);
- expect(await page.locator('#strategy-normal-auto-limits').isVisible()).toBe(true);
+ await expect.poll(()=>page.locator('#strategy-normal-status').innerText()).toContain('Saving will use automatic limits');
+ expect(await page.locator('#strategy-normal-save').isEnabled()).toBe(true);
+ expect(await page.locator('#strategy-normal-summary').innerText()).toContain('Release attempts: 4');
+ expect(await page.locator('#strategy-review-body').innerText()).toContain('4 normal measured attempts');
  const before=await page.evaluate<SmartDraft>("(async()=>JSON.parse((await import(new URL('strategy.js',location.href).href)).strategySaveSnapshot()))()");
  expect(before.advanced.total).toBe(1);
- await page.locator('#strategy-normal-auto-limits').click();
- expect(await page.locator('#strategy-normal-save').isEnabled()).toBe(true);
+ await page.locator('#strategy-advanced > summary').click();
+ await page.locator('#strategy-normal-save').click();await page.waitForFunction(()=>(window as any).fixtureSaved);
  const after=await page.evaluate<SmartDraft>("(async()=>JSON.parse((await import(new URL('strategy.js',location.href).href)).strategySaveSnapshot()))()");
  expect(after.immediate).toEqual(before.immediate);expect(after.backups).toEqual(before.backups);
- expect(after.advanced.total).toBeUndefined();
- await page.locator('#strategy-normal-save').click();await page.waitForFunction(()=>(window as any).fixtureSaved);
+ expect((await saved(page)).PRECISION_PHASE3.budgets.total).not.toBe(1);
+ expect(await page.locator('#strategy-advanced').getAttribute('open')).toBeNull();
  expect(await page.locator('#strategy-normal-status').innerText()).toContain('NORMAL STRATEGY SAVED');
  expect((await saved(page)).PRECISION_PHASE3.budgets.total).toBeGreaterThan(1);
  expect(await page.evaluate(()=>(window as any).fixtureCalls.filter((name:string)=>['prepare','authorizeTerms','armFullBooking','testBooking'].includes(name)))).toEqual([]);
