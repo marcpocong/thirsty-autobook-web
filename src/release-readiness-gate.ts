@@ -1,3 +1,4 @@
+import {SHOTGUN_MAX_TRIGGER_LATENESS_MS} from './shotgun.js';
 import { existsSync, readFileSync } from 'node:fs';
 import { cpus, freemem, totalmem } from 'node:os';
 import { join } from 'node:path';
@@ -24,6 +25,7 @@ export function readLastReleaseBuild(root:string):{gitSha:string;dirty:boolean|n
 export function evaluateReleaseReadiness(input:{build:BuildInfo|null;testedBuild:{gitSha:string;dirty:boolean|null;finishedAt:string;packaged:boolean}|null;configValid:boolean;authorizationValid:boolean;
   clock:{synced:boolean;ageMs:number|null;uncertaintyMs:number|null;offsetMs:number|null};machine:MachineHealth;workers:Record<string,{connected:boolean;identityValid:boolean;securityReady:boolean;targetReady?:boolean;tabCount?:number;latencyP95Ms?:number|null}>;
   observer:{online:boolean;lastReadAgeMs:number|null;availabilityLatencyMs:number|null};fanOut:{compatible:boolean;stale:boolean;width:number}|null;prewarm:boolean;
+  shotgun?:{tabsPerWorker:Record<string,number>;shotCount:number;timingStatus?:string}|null;
   prewarmFeasibility?:PrewarmFeasibilityResult|null}):ReleaseReadinessGate{
   const checks:ReadinessCheck[]=[];const add=(check:ReadinessCheck)=>checks.push(check);
   const buildMatch=!!input.build&&!!input.testedBuild&&input.build.gitSha===input.testedBuild.gitSha&&input.testedBuild.packaged;
@@ -33,8 +35,8 @@ export function evaluateReleaseReadiness(input:{build:BuildInfo|null;testedBuild
   const clockGood=input.clock.synced&&input.clock.ageMs!==null&&input.clock.ageMs<=15*60_000&&input.clock.uncertaintyMs!==null&&input.clock.uncertaintyMs<=25;
   add({id:'clock',label:'Trusted clock',level:clockGood?'GOOD':input.clock.synced?'DEGRADED':'UNAVAILABLE',hardBlock:!input.clock.synced,
     detail:input.clock.synced?`offset ${input.clock.offsetMs?.toFixed(1)??'?'} ms · uncertainty ${input.clock.uncertaintyMs?.toFixed(1)??'?'} ms · age ${input.clock.ageMs===null?'?':Math.round(input.clock.ageMs/1000)+' s'}`:'No valid trusted clock'});
-  const machineBad=input.machine.memoryUsedPct>=92||input.machine.eventLoopP95Ms>=50,machineWarn=input.machine.memoryUsedPct>=85||input.machine.eventLoopP95Ms>=20;
-  add({id:'machine',label:'Machine',level:machineBad?'UNAVAILABLE':machineWarn?'DEGRADED':'GOOD',hardBlock:false,detail:`memory ${input.machine.memoryUsedPct}% · event-loop p95 ${input.machine.eventLoopP95Ms} ms · app RSS ${input.machine.processRssMb} MB`});
+  const machineBad=input.machine.memoryUsedPct>=92||input.machine.eventLoopP95Ms>=SHOTGUN_MAX_TRIGGER_LATENESS_MS,machineWarn=input.machine.memoryUsedPct>=85||input.machine.eventLoopP95Ms>=20;
+  add({id:'machine',label:'Machine',level:machineBad?'UNAVAILABLE':machineWarn?'DEGRADED':'GOOD',hardBlock:!!input.shotgun&&machineBad,detail:`memory ${input.machine.memoryUsedPct}% · event-loop p95 ${input.machine.eventLoopP95Ms} ms · app RSS ${input.machine.processRssMb} MB`});
   const readyWorkers:string[]=[],degradedWorkers:string[]=[],unavailableWorkers:string[]=[];
   for(const [id,value] of Object.entries(input.workers).sort()){
     const level:ReadinessLevel=!value.connected||!value.identityValid?'UNAVAILABLE':!value.securityReady||value.targetReady===false||value.tabCount===0||(value.latencyP95Ms??0)>20?'DEGRADED':'GOOD';
@@ -45,8 +47,13 @@ export function evaluateReleaseReadiness(input:{build:BuildInfo|null;testedBuild
   add({id:'fanout',label:'Fan-out profile',level:input.fanOut?.compatible&&!input.fanOut.stale?'GOOD':input.fanOut?'DEGRADED':'UNAVAILABLE',hardBlock:false,detail:input.fanOut?`${input.fanOut.width} per target${input.fanOut.stale?' · stale':''}${input.fanOut.compatible?'':' · incompatible'}`:'Auto falls back to width 1'});
   const feasibility=input.prewarmFeasibility;
   if(feasibility)add({id:'wave1-preparation-capacity',label:'Wave 1 preparation capacity',
-    level:feasibility.verdict==='READY'?'GOOD':feasibility.verdict==='AT_RISK'?'DEGRADED':'UNAVAILABLE',hardBlock:feasibility.projectedOmitted>0,
+    level:feasibility.verdict==='READY'?'GOOD':feasibility.verdict==='AT_RISK'?'DEGRADED':'UNAVAILABLE',hardBlock:feasibility.projectedOmitted>0||!!input.shotgun&&(feasibility.projectedAtRisk>0||feasibility.projectedReady!==input.shotgun.shotCount),
     detail:`${feasibility.verdict.replaceAll('_',' ')} · ${feasibility.configuredWave1Attempts} configured · ${feasibility.projectedReady} projected ready · ${feasibility.projectedAtRisk} at risk · ${feasibility.projectedOmitted} projected omitted`});
+  if(input.shotgun && !feasibility)add({id:'wave1-preparation-capacity',label:'Wave 1 preparation capacity',level:'UNAVAILABLE',hardBlock:true,detail:'Shotgun requires a complete exact-plan preparation forecast.'});
+  if(input.shotgun){const missing=Object.entries(input.shotgun.tabsPerWorker).some(([worker,count])=>{const w=input.workers[worker];return !w?.connected||!w.targetReady||(w.tabCount??0)<count;});
+    add({id:'shotgun-topology',label:'Exact Shotgun topology',level:missing?'UNAVAILABLE':'GOOD',hardBlock:missing,detail:`${input.shotgun.shotCount} shots · tabs ${Object.values(input.shotgun.tabsPerWorker).join('/')} · strict tolerance ${SHOTGUN_MAX_TRIGGER_LATENESS_MS} ms`});
+    const status=input.shotgun.timingStatus??'NOT_TESTED';add({id:'shotgun-timing',label:'Local Shotgun timing test',level:status==='READY'?'GOOD':status==='NOT_TESTED'?'DEGRADED':'UNAVAILABLE',hardBlock:status==='FAILED'||status==='AT_RISK',detail:`${status} · configured trigger to local Chrome only; provider outcome unknown`});
+  }
   add({id:'prewarm',label:'Prewarm',level:input.prewarm?'GOOD':'DEGRADED',hardBlock:false,detail:input.prewarm?'release preparation complete':'not yet prepared'});
   const hard=checks.some(value=>value.hardBlock&&value.level!=='GOOD'),warnings=checks.some(value=>value.level!=='GOOD');
   return {verdict:hard?'NOT_READY':warnings?'READY_WITH_WARNINGS':'READY',measuredAt:new Date().toISOString(),checks,readyWorkers,degradedWorkers,unavailableWorkers};

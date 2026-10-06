@@ -104,3 +104,11 @@ describe('release readiness gate',()=>{
     expect(check(omitted,'wave1-preparation-capacity')).toMatchObject({level:'UNAVAILABLE',hardBlock:true});expect(evaluateReleaseReadiness(omitted).verdict).toBe('NOT_READY');
   });
 });
+
+it('Shotgun hard-blocks incomplete exact tabs, failed timing and severe load without changing ordinary Precision warnings',()=>{
+  const input=base();input.workers.A!.tabCount=1;input.machine.eventLoopP95Ms=80;
+  expect(evaluateReleaseReadiness(input).verdict).toBe('READY_WITH_WARNINGS');
+  input.shotgun={tabsPerWorker:{A:6,B:6,C:6,D:2},shotCount:20,timingStatus:'FAILED'};
+  expect(evaluateReleaseReadiness(input).verdict).toBe('NOT_READY');
+  expect(check(input,'shotgun-topology').hardBlock).toBe(true);expect(check(input,'shotgun-timing').hardBlock).toBe(true);expect(check(input,'machine').hardBlock).toBe(true);
+});

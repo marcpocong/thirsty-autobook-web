@@ -51,7 +51,8 @@
     "replay:strategy": "tsx scripts/replay-strategy-v2.ts",
     "replay:live-anchor": "tsx scripts/replay-live-anchor.ts",
     "bench:fanout": "tsx scripts/benchmark-fanout-capacity.ts",
-    "bench:critical-path": "tsx scripts/benchmark-critical-path-overhead.ts"
+    "bench:critical-path": "tsx scripts/benchmark-critical-path-overhead.ts",
+    "bench:shotgun": "tsx scripts/benchmark-fanout-capacity.ts"
   },
   "dependencies": {
     "@fingerprintjs/fingerprintjs": "5.2.0",

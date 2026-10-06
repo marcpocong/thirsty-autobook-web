@@ -117,7 +117,7 @@ export class CriticalPathRecorder {
 
   /** Hot-path safe: one clock read and one property write. First value wins. */
   mark(worker: string, name: CriticalMarkName, at = this.perf()): void {
-    if (name === 'schedulerFired') { this.schedulerFired ??= at; return; }
+    if (name === 'schedulerFired' && worker==='*') { this.schedulerFired ??= at; return; }
     const node = this.entry(worker).node;
     if (node[name] === undefined) node[name] = at;
   }
@@ -169,7 +169,7 @@ export class CriticalPathRecorder {
       const prePost = rel(node.prePost), requestObserved = rel(node.requestObserved);
       const diff = (a: number | null | undefined, b: number | null | undefined) => a === null || a === undefined || b === null || b === undefined ? null : round(b - a);
       return { schema: 'critical-path/v1', workerId, dispatchMode: record.dispatchMode,
-        schedulerFiredMs: rel(this.schedulerFired), workerInvokedMs: rel(node.workerInvoked), transportEnteredMs: rel(node.transportEntered), prePostMs: prePost,
+        schedulerFiredMs: rel(node.schedulerFired??this.schedulerFired), workerInvokedMs: rel(node.workerInvoked), transportEnteredMs: rel(node.transportEntered), prePostMs: prePost,
         rendererArmSentMs: rel(node.rendererArmSent), rendererArmedMs: mapped(record.renderer?.armedAt),
         evaluateEnteredMs: evaluateEntered, fetchInvokedMs: fetchInvoked, browserRequestStartMs: browserRequestStart, requestObservedMs: requestObserved,
         responseHeadersMs: mapped(record.renderer?.headersAt), responseCompleteMs: mapped(record.renderer?.completedAt), responseObservedMs: rel(node.responseObserved),

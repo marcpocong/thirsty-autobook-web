@@ -1,3 +1,4 @@
+import {exactShotgunTopology,assertShotgunSchedule,summarizeShotgunTiming,shotgunMachineKey,type ShotgunTopologyInput} from '../src/shotgun-timing.js';
 /**
  * Fan-out Capacity Benchmark (offline; it NEVER contacts Onda — see scripts/bench-support.ts).
  *
@@ -21,7 +22,7 @@
  *   --lockdown (production final-second HIGH priority plus in-memory RELEASE_CRITICAL_LOCKDOWN lifecycle)
  *   --chrome <path>  --label <text>  --out <dir>
  */
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { constants as osConstants, cpus, getPriority, platform, release as osRelease, setPriority, totalmem } from 'node:os';
 import { join, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
@@ -33,13 +34,18 @@ for (let index = 2; index < process.argv.length; index++) {
   const key = process.argv[index]!.replace(/^--/, ''), next = process.argv[index + 1];
   if (next !== undefined && !next.startsWith('--')) { args.set(key, next); index++; } else args.set(key, 'true');
 }
-const workerCount = Number(args.get('workers') ?? 7);
-const widths = (args.get('widths') ?? '1,2,3,4,5,6').split(',').map(Number);
+const savedInput=args.has('saved-plan')?JSON.parse(await readFile(resolve(args.get('saved-plan')!), 'utf8')) as {PRECISION_PHASE3:ShotgunTopologyInput;STRATEGY_V2:{shotgun:{enabled:boolean;exactSchedule:Array<{logicalTargetId:string;configuredOffsetMs:number}>}}}:null;
+if(savedInput && !savedInput.STRATEGY_V2?.shotgun?.enabled)throw Error('BENCH_SAVED_SHOTGUN_REQUIRED');
+const savedTopology=savedInput?exactShotgunTopology(savedInput.PRECISION_PHASE3,savedInput.STRATEGY_V2.shotgun.exactSchedule):null;
+if(savedTopology)assertShotgunSchedule(savedTopology,savedInput!.STRATEGY_V2.shotgun.exactSchedule);
+const workerCount = savedTopology?Object.keys(savedTopology.tabsPerWorker).length:Number(args.get('workers') ?? 7);
+const widths = savedTopology?[Math.max(...Object.values(savedTopology.tabsPerWorker))]:(args.get('widths') ?? '1,2,3,4,5,6').split(',').map(Number);
 const runs = Number(args.get('runs') ?? 30), warmup = Number(args.get('warmup') ?? 2);
-const pattern = args.get('pattern') ?? 'burst';
+const pattern = savedTopology?'exact-saved-shotgun':args.get('pattern') ?? 'burst';
 const dispatcher = (args.get('dispatcher') ?? 'central') as 'central' | 'coordinator' | 'renderer';
-const prewarmLeadMs = Number(args.get('prewarm-lead') ?? 1500);
-const prewarmConcurrency = args.has('prewarm-concurrency') ? Number(args.get('prewarm-concurrency')) : null;
+const prewarmLeadMs = Number(args.get('prewarm-lead') ?? (savedTopology?15000:1500));
+if(savedTopology && dispatcher==='coordinator')throw Error('BENCH_SAVED_COORDINATOR_UNSUPPORTED');
+const prewarmConcurrency = args.has('prewarm-concurrency') ? Number(args.get('prewarm-concurrency')) : savedTopology?workerCount:null;
 const syntheticPrewarm = args.get('synthetic-prewarm') ?? 'cpu:0,wait:0';
 const pageBusy = args.get('page-busy') ?? '0';
 const headed = args.get('headed') === 'true';
@@ -105,20 +111,24 @@ async function runOnce(width: number, runIndex: number): Promise<RunSample> {
   const runDir = join(scratch, 'runs', `${label}-${width}x-${runIndex}-${Date.now()}`);
   await mkdir(runDir, { recursive: true });
   process.chdir(runDir);
-  const targets = race.validatePrecisionTargets(Array.from({ length: workerCount }, (_, index) => ({ court: index + 1, start: '17:00', durationHours: 3 })), date);
+  const targets = savedInput?savedInput.PRECISION_PHASE3.wave1.map(a=>{const candidate=savedInput.PRECISION_PHASE3.candidates[a.candidateIndex]!;
+    return {...race.validatePrecisionTargets([candidate],date)[0]!,workerId:a.workerId as import('../src/workers.js').WorkerId};})
+    :race.validatePrecisionTargets(Array.from({ length: workerCount }, (_, index) => ({ court: index + 1, start: '17:00', durationHours: 3 })), date);
   const lock = await ApiAutomationLock.acquire('standard', targets.map(target => target.workerId));
   const trusted = clockModule.TrustedReleaseClock.fromOffset(0, { method: 'bench-system-clock', sampleCount: 0 });
-  const releaseMs = Date.now() + prewarmLeadMs + 700 + Math.floor(Math.random() * 50);
-  const attempts = targets.flatMap(target => Array.from({ length: width }, (_, child) => {
-    const offset = childOffset(child, width);
+  const releaseMs = Date.now() + prewarmLeadMs + (savedTopology?3000:700) + Math.floor(Math.random() * 50);
+  const attempts = targets.flatMap((target,index) => {const assignment=savedInput?.PRECISION_PHASE3.wave1[index];
+    const offsets=assignment?(assignment.fanOutOffsetsMs??[assignment.releaseOffsetMs??0]):Array.from({length:width},(_,child)=>childOffset(child,width));
+    return offsets.map(offset=>{
     const childTarget = { ...target, ...(offset ? { releaseOffsetMs: offset } : {}) };
-    return { target: childTarget, plan: race.precisionTargetPlan(childTarget, date) };
-  }));
+    return { target: childTarget, plan: race.precisionTargetPlan(childTarget, date),...(savedTopology?.shots.some(s=>s.shotgun&&s.workerId===target.workerId&&s.configuredOffsetMs===offset)?{dispatchTimingPolicy:'SHOTGUN_STRICT' as const}:{}) };
+  });});
   const frozen = race.freezePrecisionRace(date, releaseMs, attempts);
   const pageOf = (attempt: { target: { workerId: string }; fanOutIndex: number }) =>
     sessions[targets.findIndex(target => target.workerId === attempt.target.workerId)]!.pages[attempt.fanOutIndex]!;
   const recorder = new cp.CriticalPathRecorder(releaseMs, trusted.monotonicDeadline(releaseMs), trusted.offsetMs - trusted.wallDisagreementMs(),
     frozen.attempts.map(attempt => attempt.id));
+  const prepFailures=new Map<string,string>();
   const prewarm = new Map<string, { started: number; ended?: number }>();
   // Production attaches a passive DevTools session to every tab before release and enables Network only after that tab's POST.
   const traces = traceModule ? new traceModule.ProviderTraceSet(`bench-${runIndex}`, 'release', releaseMs, () => trusted.nowMs() - releaseMs) : undefined;
@@ -148,11 +158,15 @@ async function runOnce(width: number, runIndex: number): Promise<RunSample> {
       prewarm.set(attempt.attempt.id, entry);
       cpuBefore ??= cpuSnapshot(); nodeCpuBefore ??= process.cpuUsage();
       await transports.get(attempt.attempt.id)!.prepareCheckoutContext();
-      entry.ended = performance.now();
+      if(!savedTopology)entry.ended = performance.now();
     },
-    onWake: () => recorder.mark('*', 'schedulerFired'),
+    onEvent:(event: {kind:string;attemptId:string;code?:string;actualReadyOffsetMs?:number;prepDurationMs?:number})=>{
+      if(event.kind==='prewarm-failed')prepFailures.set(event.attemptId,event.code??'PREWARM_FAILED');
+      if(event.kind==='prewarm-ready'){const p=prewarm.get(event.attemptId);if(p && event.actualReadyOffsetMs!==undefined){p.ended=trusted.monotonicDeadline(releaseMs+event.actualReadyOffsetMs);if(event.prepDurationMs!==undefined)p.started=p.ended-event.prepDurationMs;}}
+    },
+    onWake: (triggerMs:number) => {for(const attempt of armed.attempts)if(attempt.triggerMs===triggerMs)recorder.mark(attempt.attempt.id,'schedulerFired');},
     onMark: (_worker: string, name: string, attempt: { attempt: { id: string } }) => {
-      if (name === 'transportCall') recorder.mark(attempt.attempt.id, 'workerInvoked'); else if (name === 'rendererArm') recorder.mark(attempt.attempt.id, 'rendererArmSent');
+      if (name === 'transportCall') {recorder.mark(attempt.attempt.id, 'workerInvoked');} else if (name === 'rendererArm') recorder.mark(attempt.attempt.id, 'rendererArmSent');
     },
     afterFire: async () => { await lock.dispatching(); },
     ...(lockdown?{onFinalApproach:()=>{lockdown.enter();try{previousPriority=getPriority();setPriority(osConstants.priority.PRIORITY_HIGH);}catch{previousPriority=undefined;}},
@@ -187,7 +201,7 @@ async function runOnce(width: number, runIndex: number): Promise<RunSample> {
       fanOutIndex: attempt.fanOutIndex, fanOutCount: attempt.fanOutCount, configuredOffsetMs: attempt.target.releaseOffsetMs ?? 0,
       schedulerWakeMs: row?.schedulerFiredMs ?? null, workerInvokedMs: row?.workerInvokedMs ?? null, transportEnteredMs: row?.transportEnteredMs ?? null,
       prePostMs: row?.prePostMs ?? null, evaluateEnteredMs: row?.evaluateEnteredMs?.ms ?? null, fetchInvokedMs: row?.fetchInvokedMs?.ms ?? null,
-      chromeStartMs: row?.browserRequestStartMs ?? null, requestEventMs: row?.requestObservedMs ?? null, responseMs: row?.responseObservedMs ?? null, state, ...(result?.code ? { code: result.code } : {}),
+      chromeStartMs: row?.browserRequestStartMs ?? null, requestEventMs: row?.requestObservedMs ?? null, responseMs: row?.responseObservedMs ?? null, state, ...(result?.code ? { code: result.code } : {}),...(prepFailures.has(attempt.id)?{prewarmFailureCode:prepFailures.get(attempt.id)}:{}),
       prewarmDurationMs: prep?.ended !== undefined ? Math.round((prep.ended - prep.started) * 10) / 10 : null, prewarmReadyMs: toRelease(prep?.ended) };
   });
   const summary = race.reducePrecisionOutcome(results.map(result => result.state as import('../src/api-booking/precision-race.js').PrecisionAttemptState));
@@ -201,7 +215,7 @@ const raw: RunSample[] = [];
 const summaries: import('../src/fanout-capacity.js').WidthSummary[] = [];
 try {
   for (let index = 0; index < workerCount; index++) {
-    const session = await launchOfflineChrome({ chromium, chromePath, scratch, index, tabs: maxWidth, headed });
+    const session = await launchOfflineChrome({ chromium, chromePath, scratch, index, tabs: savedTopology?Object.values(savedTopology.tabsPerWorker)[index]!:maxWidth, headed });
     sessions.push(session);
     for (const page of session.pages) await startPageBusyWork(page, pageBusyMs);
   }
@@ -223,8 +237,12 @@ try {
       + `codes ${JSON.stringify(countCodes(records))} · per child ${summary.perChildIndex.map(value => `#${value.fanOutIndex} p95 ${value.triggerToChromeStart.p95}`).join(', ')} · states ${JSON.stringify(summary.states)}\n`);
   }
   const recommendation = capacity.recommendFanOutWidth(summaries);
-  const gitInfo = (await import(moduleUrl('scripts/build-support.mjs')) as { gitInfo: () => { gitSha: string; dirty: boolean | null } }).gitInfo();
+  const gitInfo = (await import(moduleUrl('scripts/build-support.mjs')) as { gitInfo: (root?:string) => { gitSha: string; dirty: boolean | null } }).gitInfo(sourceRoot);
   const createdAt = new Date().toISOString();
+  if(savedTopology){const result=summarizeShotgunTiming(savedTopology,raw.flatMap(r=>r.children),{machineKey:shotgunMachineKey(),buildKey:gitInfo.gitSha+(gitInfo.dirty?'+dirty':''),dispatcher,chromeVersion:sessions[0]?.version??null},runs);
+    await mkdir(outDir,{recursive:true});await writeFile(join(outDir,'latest.json'),JSON.stringify(result,null,2));
+    process.stdout.write(`Exact Shotgun timing: ${JSON.stringify(result)}\n`);
+  }
   const profile = { schema: capacity.FANOUT_PROFILE_SCHEMA, createdAt,
     build: { gitSha: gitInfo.gitSha, buildId: `${gitInfo.gitSha.slice(0, 7)}${gitInfo.dirty ? '+dirty' : ''}`, dirty: gitInfo.dirty },
     machine: { cpuModel: cpus()[0]?.model ?? 'unknown', logicalCores: cpus().length, totalMemGb: Math.round(totalmem() / 2 ** 30), platform: platform(), osRelease: osRelease(),
@@ -236,8 +254,8 @@ try {
   const stamp = createdAt.replace(/[:.]/g, '-');
   await writeFile(join(outDir, `${stamp}-${label}-raw.json`), JSON.stringify(raw));
   await writeFile(join(outDir, `${stamp}-${label}-summary.json`), JSON.stringify(profile, null, 2));
-  if (saveProfile) await writeFile(join(outDir, `profile-${stamp}.json`), JSON.stringify(profile, null, 2));
-  process.stdout.write(`\nMachine recommendation (local dispatch only): ${recommendation.width} attempt(s) per target\n${recommendation.reasons.map(reason => `  - ${reason}`).join('\n')}\n`);
+  if (saveProfile && !savedTopology) await writeFile(join(outDir, `profile-${stamp}.json`), JSON.stringify(profile, null, 2));
+  if(!savedTopology)process.stdout.write(`\nMachine recommendation (local dispatch only): ${recommendation.width} attempt(s) per target\n${recommendation.reasons.map(reason => `  - ${reason}`).join('\n')}\n`);
   process.stdout.write(`${JSON.stringify({ summary: join(outDir, `${stamp}-${label}-summary.json`), ...(saveProfile ? { profile: join(outDir, `profile-${stamp}.json`) } : {}) })}\n`);
 } finally {
   await coordinatorPool?.close();

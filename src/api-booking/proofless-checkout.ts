@@ -168,7 +168,7 @@ export interface DirectDispatchOptions {
   /** Scheduled trigger for the release window check (release-offset.ts); defaults to the release instant. */
   triggerMs?:number;
 }
-export type DirectTransport=Pick<OndaBrowserSessionTransport,'publicCheckoutProofless'>;
+export type DirectTransport=Pick<OndaBrowserSessionTransport,'publicCheckoutProofless'> & Partial<Pick<OndaBrowserSessionTransport,'prepareStrictTiming'>>;
 export function prooflessPlanFingerprint(plan:BookingPlan):string{
   return createHash('sha256').update(JSON.stringify({courts:plan.courts.map(court=>court.court),date:plan.targetDate,
     start:plan.startTime,end:plan.endTime,price:plan.totalPrice,method:'direct-proofless'})).digest('hex');

@@ -1,3 +1,5 @@
+import {SHOTGUN_MAX_TRIGGER_LATENESS_MS,shotgunCriticalInterval} from '../src/shotgun.js';
+import {exactShotgunTopology,assertShotgunSchedule,assertShotgunPrewarm,assertShotgunTabs,readShotgunTiming,shotgunBrowserVersion} from '../src/shotgun-timing.js';
 import { PreparationSchema, TestBookingSchema, type BookingPlan } from '../src/booking-plan.js';
 import { z } from 'zod';
 import { DualPracticeSchema, requireDualFullAuthorization } from '../src/dual-practice.js';
@@ -72,6 +74,10 @@ const errors: Record<string, string> = {
   PRECISION_TOO_LATE_TO_ARM:'Precision Release must be armed at least 3 minutes before release so the target set can be frozen at T-2 min.',
   PREWARM_PLAN_NOT_FEASIBLE:'The exact saved Wave 1 plan has projected preparation omissions. Edit the Strategy and save a new PRECISION_PHASE3 authorization before arming.',
   SHOTGUN_PLAN_INCOMPATIBLE_POSITIVE_OFFSET:'This saved Shotgun plan contains a post-release offset. It remains visible for review but cannot be armed. Edit it to -2000 through 0 ms and save a new exact schedule.',
+  SHOTGUN_PREWARM_NOT_FULLY_READY:'Shotgun timing is not fully ready on this machine. Reduce the shot count, widen the timing schedule, or prepare again.',
+  SHOTGUN_TOPOLOGY_NOT_READY:'The exact Shotgun browser tabs are not ready. Reset & Prepare, then check every required browser group.',
+  SHOTGUN_TIMING_NOT_READY:'The matching local Shotgun timing test failed or showed compression. Reduce the shot count, widen the schedule, or test again.',
+  SHOTGUN_MACHINE_NOT_READY:'Machine load exceeds the strict Shotgun timing allowance. Prepare again when the machine is less busy.',
   PREWARM_FEASIBILITY_UNAVAILABLE:'Preparation feasibility for the exact saved Wave 1 plan is unavailable. Reset & Prepare, then recheck Release Readiness before arming.',
   ARBITRATION_MANIFEST_STORAGE_FAILED:'Investigation setup could not be saved. Nothing was armed. Check that the app can write to its local data folder, then try again.',
   ARBITRATION_MANIFEST_MISMATCH:'An investigation setup already exists for this release but does not match the current release. Nothing was armed.',
@@ -168,7 +174,7 @@ export interface Dependencies {
   recentQrHandoffs?(expiresAt:string):Promise<QrHandoffSummary[]>;
   previousHolds?():Promise<Dashboard['previousHolds']>;
   browserHealth?():Promise<Partial<Record<WorkerId,boolean>>>;
-  browserReadiness?():Promise<Partial<Record<WorkerId,{connected:boolean;commandLatencyMs:number|null;tabCount:number;targetReady:boolean}>>>;
+  browserReadiness?():Promise<Partial<Record<WorkerId,{connected:boolean;commandLatencyMs:number|null;tabCount:number;targetReady:boolean;chromeVersion?:string|null}>>>;
   playerStatus?():Pick<NonNullable<Dashboard['playerStatus']>,'primary'|'extended'> & Partial<NonNullable<Dashboard['playerStatus']>>;
   confirm(kind?: 'observe'|'selection'|'dry'|'full', plan?:BookingView): Promise<boolean>; publish(status: Dashboard): void;
   booking(): BookingView; saveBooking(input:unknown): BookingView;
@@ -238,7 +244,7 @@ export class Controller {
   private lastLogMono = 0;
   private runReadyMono?:number;
   private apiReadyWorkers=new Set<WorkerId>();
-  private workerProbes:Partial<Record<WorkerId,{connected:boolean;commandLatencyMs:number|null;tabCount:number;targetReady:boolean}>>={};
+  private workerProbes:Partial<Record<WorkerId,{connected:boolean;commandLatencyMs:number|null;tabCount:number;targetReady:boolean;chromeVersion?:string|null}>>={};
   private slotWatch?:SlotWatchHandle;
   /** The watch shown in the UI; it keeps showing its final state after it ends until another watch replaces it. */
   private displayedSlotWatchId?:string;
@@ -569,14 +575,20 @@ export class Controller {
     this.publish();
   }
   async refresh() {
+    if(this.state.booking?.setup.STRATEGY_V2?.shotgun?.enabled && this.state.activeApiRelease && shotgunCriticalInterval(this.state.activeApiRelease.releaseMs,Date.now()+(this.state.clock?.clockOffsetMs??0)))return;
     if (this.polling) return;
     this.polling = true;
     try {
       const wasReady = this.state.ready;
       const [lock, observedHealth,workerProbes] = await Promise.all([this.deps.lock(), this.deps.browserHealth?this.deps.browserHealth():this.deps.cdp().then(A=>({A,B:A,C:false,D:false})),
-        this.deps.browserReadiness?.()??Promise.resolve({} as Partial<Record<WorkerId,{connected:boolean;commandLatencyMs:number|null;tabCount:number;targetReady:boolean}>>)]);
+        this.deps.browserReadiness?.()??Promise.resolve({} as Partial<Record<WorkerId,{connected:boolean;commandLatencyMs:number|null;tabCount:number;targetReady:boolean;chromeVersion?:string|null}>>)]);
       const health:Record<WorkerId,boolean>={A:false,B:false,C:false,D:false,E:false,F:false,G:false,H:false,...observedHealth};
       this.workerProbes=workerProbes;
+      const savedSetup=this.state.booking?.setup;
+      if(savedSetup?.STRATEGY_V2?.shotgun?.enabled && savedSetup.PRECISION_PHASE3){
+        try{const topology=exactShotgunTopology(savedSetup.PRECISION_PHASE3,savedSetup.STRATEGY_V2.shotgun.exactSchedule);
+          this.state.shotgunTiming=readShotgunTiming('.local/shotgun-timing/latest.json',topology,this.state.build?.dirty?'dirty':this.state.build?.gitSha??'unknown',shotgunBrowserVersion(topology,workerProbes));}catch{this.state.shotgunTiming=null;}
+      }else this.state.shotgunTiming=null;
       this.state.lock = lock; this.state.browserHealth=health;this.state.cdp = !!health.A;this.state.playerStatus=this.players();
       const retained=lock&&this.state.operation==='idle'?await this.deps.retainedHold?.():null;
       if(retained?.stage==='HOLD_VERIFIED'&&retained.expiresAt&&!this.qrRecoveryChecked&&!this.state.qrHandoffs?.length){
@@ -624,7 +636,8 @@ export class Controller {
       this.state.releaseReadiness=evaluateReleaseReadiness({build:this.state.build??null,testedBuild:this.deps.testedBuild?.()??null,configValid:!!this.state.booking,
         authorizationValid:!!this.state.booking&&(this.state.booking.setup.RELEASE_STRATEGY!=='precision'||!!this.state.booking.setup.PRECISION_PHASE3),
         clock:{synced:!!clock?.networkSynced,ageMs:Number.isFinite(clockAt)?Date.now()-clockAt:null,uncertaintyMs:clockRoundTrip===null||clockRoundTrip===undefined?null:clockRoundTrip/2,offsetMs:clock?.clockOffsetMs??null},
-        machine:this.deps.machineHealth?.()??fallbackMachine,workers,observer:{online:!!this.slotWatch&&!!observerView&&['waiting','watching'].includes(observerView.status),
+        machine:this.deps.machineHealth?.()??fallbackMachine,workers,
+        ...(this.state.booking?.setup.STRATEGY_V2?.shotgun?.enabled&&this.state.booking.setup.PRECISION_PHASE3?{shotgun:{...(()=>{const t=exactShotgunTopology(this.state.booking!.setup.PRECISION_PHASE3!,this.state.booking!.setup.STRATEGY_V2!.shotgun!.exactSchedule);return {tabsPerWorker:t.tabsPerWorker,shotCount:t.shots.length};})(),timingStatus:this.state.shotgunTiming?.status}}:{}),observer:{online:!!this.slotWatch&&!!observerView&&['waiting','watching'].includes(observerView.status),
           lastReadAgeMs:Number.isFinite(latestRead)?Date.now()-latestRead:null,availabilityLatencyMs:observerView?.lastLatencyMs??null},
         fanOut:latestProfile?{compatible:latestProfile.compatible,stale:latestProfile.stale,width:latestProfile.recommendedWidth}:null,prewarm:!!this.state.apiFirstReady,
         prewarmFeasibility:this.state.prewarmFeasibility});
@@ -1008,6 +1021,18 @@ export class Controller {
     this.requirePlayers(planWorkerIds(plan.setup));
     if(!clock.networkSynced)throw Error('NETWORK_CLOCK_SYNC_REQUIRED');
     if(plan.setup.RELEASE_STRATEGY==='precision'&&clock.releaseMs-(Date.now()+clock.clockOffsetMs)<3*60_000)throw Error('PRECISION_TOO_LATE_TO_ARM');
+    if(plan.setup.STRATEGY_V2?.shotgun?.enabled && plan.setup.PRECISION_PHASE3){
+      const topology=exactShotgunTopology(plan.setup.PRECISION_PHASE3,plan.setup.STRATEGY_V2.shotgun.exactSchedule);
+      assertShotgunSchedule(topology,plan.setup.STRATEGY_V2.shotgun.exactSchedule);
+      const probes=await this.deps.browserReadiness?.();
+      this.workerProbes=probes??{};
+      assertShotgunTabs(topology,probes??{});
+      const machine=this.deps.machineHealth?.();
+      if(!machine || machine.eventLoopP95Ms>=SHOTGUN_MAX_TRIGGER_LATENESS_MS || machine.memoryUsedPct>=92)throw Error('SHOTGUN_MACHINE_NOT_READY');
+      assertShotgunPrewarm(this.forecastPrewarm(plan),topology.shots.length);
+      const timing=readShotgunTiming('.local/shotgun-timing/latest.json',topology,this.state.build?.dirty?'dirty':this.state.build?.gitSha??'unknown',shotgunBrowserVersion(topology,probes??{}));
+      if(timing && timing.status!=='READY')throw Error('SHOTGUN_TIMING_NOT_READY');
+    }
     if(plan.setup.PRECISION_PHASE3){this.state.prewarmFeasibility=this.forecastPrewarm(plan);if(!this.state.prewarmFeasibility)throw Error('PREWARM_FEASIBILITY_UNAVAILABLE');
       if(this.state.prewarmFeasibility.projectedOmitted)throw Error('PREWARM_PLAN_NOT_FEASIBLE');}
     if(clock.releaseMs<=Date.now()+clock.clockOffsetMs)throw Error('RELEASE_MISSED');

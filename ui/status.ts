@@ -76,7 +76,7 @@ async function probePort(port:number):Promise<boolean>{
   } catch { return false; }
 }
 export async function probeBrowserHealth(){const ids=['A','B','C','D','E','F','G','H'] as const;const values=await Promise.all(ids.map(id=>probePort(browserIdentity(id).port)));return Object.fromEntries(ids.map((id,index)=>[id,!!values[index]])) as Record<import('../src/workers.js').WorkerId,boolean>;}
-export interface BrowserReadinessProbe {connected:boolean;commandLatencyMs:number|null;tabCount:number;targetReady:boolean}
+export interface BrowserReadinessProbe {chromeVersion?:string|null;connected:boolean;commandLatencyMs:number|null;tabCount:number;targetReady:boolean}
 export async function probeBrowserReadiness(){
   const ids=['A','B','C','D','E','F','G','H'] as const;
   const values=await Promise.all(ids.map(async id=>{const start=performance.now(),port=browserIdentity(id).port;
@@ -85,7 +85,7 @@ export async function probeBrowserReadiness(){
       const versionBody=await version.json() as {Browser?:unknown},tabBody=await tabs.json() as Array<{type?:unknown;url?:unknown}>;
       const connected=version.ok&&typeof versionBody.Browser==='string'&&versionBody.Browser.startsWith('Chrome/');
       const pages=Array.isArray(tabBody)?tabBody.filter(tab=>tab.type==='page'):[];
-      return {connected,commandLatencyMs:Math.round((performance.now()-start)*10)/10,tabCount:pages.length,targetReady:pages.some(tab=>typeof tab.url==='string'&&tab.url.startsWith('https://app.onda.fit/book/thirsty-pickle'))};
+      return {connected,chromeVersion:connected?String(versionBody.Browser):null,commandLatencyMs:Math.round((performance.now()-start)*10)/10,tabCount:pages.filter(tab=>tab.url==='https://app.onda.fit/book/thirsty-pickle').length,targetReady:pages.some(tab=>tab.url==='https://app.onda.fit/book/thirsty-pickle')};
     }catch{return {connected:false,commandLatencyMs:null,tabCount:0,targetReady:false};}}));
   return Object.fromEntries(ids.map((id,index)=>[id,values[index]!])) as Record<import('../src/workers.js').WorkerId,BrowserReadinessProbe>;
 }

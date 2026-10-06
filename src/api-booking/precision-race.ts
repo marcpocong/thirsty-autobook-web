@@ -84,9 +84,10 @@ export function precisionTargetPlan(target: PrecisionTarget, date: string): Book
     courtCount: 1, exactCourts: [[target.court]], maximumTotalPrice: Infinity, currency: 'PHP' });
 }
 
-export function precisionFingerprint(date: string, releaseMs: number, targets: readonly PrecisionTarget[], fanOut = false): string {
+export function precisionFingerprint(date: string, releaseMs: number, targets: readonly PrecisionTarget[], fanOut = false, policies:readonly (string|undefined)[]=[]): string {
   // A non-zero Release Offset is appended, so a set without offsets keeps its previous fingerprint.
   return createHash('sha256').update(JSON.stringify({ kind: fanOut ? 'precision-fan-out-v1' : 'precision-v1', date, releaseMs, desiredHolds: PRECISION_DESIRED_HOLDS,
+    ...(policies.some(Boolean)?{dispatchTimingPolicies:policies}:{}),
     targets: targets.map(target => [target.workerId, target.court, target.start, target.end, target.assumedAmount,
       ...(target.releaseOffsetMs ? [target.releaseOffsetMs] : [])]) })).digest('hex');
 }
@@ -179,6 +180,7 @@ export async function classifyPrecisionDispatchError(error: unknown,
 export interface PrecisionAttempt {
   /** Stable child identity, distinct even when fan-out children share one logical target key. */
   id: string;
+  dispatchTimingPolicy?: 'SHOTGUN_STRICT';
   target: PrecisionTarget;
   plan: BookingPlan;
   fanOutIndex: number;
@@ -206,16 +208,17 @@ export function freezePrecisionRace(date: string, releaseMs: number,
   const copy = Object.freeze(attempts.map((attempt, index) => {
     const key=groupKey(attempt),fanOutIndex = seen.get(key) ?? 0; seen.set(key, fanOutIndex + 1);
     return Object.freeze({ id: attempt.id ?? precisionAttemptId(date, releaseMs, attempt.target, index),
+      ...(attempt.dispatchTimingPolicy ? {dispatchTimingPolicy:attempt.dispatchTimingPolicy} : {}),
       target: Object.freeze({ ...attempt.target }), plan: attempt.plan, fanOutIndex, fanOutCount: counts.get(key)! });
   }));
   const logicalCounts=new Map<string,number>();for(const attempt of attempts)logicalCounts.set(attempt.target.targetKey,(logicalCounts.get(attempt.target.targetKey)??0)+1);
   const fanOut = [...logicalCounts.values()].some(count => count > 1);
   return Object.freeze({ date, releaseMs, attempts: copy, fanOut,
-    fingerprint: precisionFingerprint(date, releaseMs, copy.map(attempt => attempt.target), fanOut) });
+    fingerprint: precisionFingerprint(date, releaseMs, copy.map(attempt => attempt.target), fanOut, copy.map(attempt=>attempt.dispatchTimingPolicy)) });
 }
 
 export function assertPrecisionFreezeIntact(race: FrozenPrecisionRace): void {
-  if (precisionFingerprint(race.date, race.releaseMs, race.attempts.map(attempt => attempt.target), race.fanOut) !== race.fingerprint)
+  if (precisionFingerprint(race.date, race.releaseMs, race.attempts.map(attempt => attempt.target), race.fanOut, race.attempts.map(attempt=>attempt.dispatchTimingPolicy)) !== race.fingerprint)
     throw Error('PRECISION_FROZEN_SET_CHANGED');
 }
 

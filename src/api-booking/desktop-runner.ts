@@ -52,7 +52,7 @@ import { describeTierStatus, type PrewarmTask, type TierStatus } from './prewarm
 import {exactPrewarmLeadMs} from './prewarm-feasibility.js';
 import { securityPrepHistory } from '../security-prep-history.js';
 import { currentMachineIdentity } from '../fanout-capacity.js';
-import {deriveShotgunTopology,logicalTargetId} from '../shotgun.js';
+import {deriveShotgunTopology,logicalTargetId,shotgunCriticalInterval} from '../shotgun.js';
 import { predictionError, predictReopenings, RESCUE_CONTEXT_REUSE_MS, RESCUE_PREWARM_MAX_PER_RELEASE, rescuePrewarmDue, type ReopenPrediction } from './reopen-prediction.js';
 import { readPublicBookingRecords } from './public-bookings.js';
 import {API_SECURITY_PREWARM_LEAD_MS,safeApiFailureCode} from './run-observability.js';
@@ -475,13 +475,13 @@ try {
       }
       if(observation.event==='CHECKOUT_HTTP_POST_INITIATED'){
         // This worker's POST has left its page. Once every traced POST has, the passive traces enable Network (later macrotask).
-        providerTraces?.postInitiated(transportKey);
+        if(config.STRATEGY_V2?.shotgun?.enabled)releaseLockdown?.defer(()=>providerTraces?.postInitiated(transportKey));else providerTraces?.postInitiated(transportKey);
         const waveContext=activeWaveContexts.get(workerId);
         // The effective evidence is read at the POST itself: the pre-POST gate may have rebased it.
         const evidenceSeq=waveContext?.evidenceSeq?.();
-        if(waveContext)setImmediate(()=>stage('PHASE3_DISPATCH',{workerId,candidateId:waveContext.candidateId,
+        if(waveContext)setImmediate(()=>deferrableStage('PHASE3_DISPATCH',{workerId,candidateId:waveContext.candidateId,
           wave:waveContext.wave,attemptId:context.attemptId??'unknown',...(evidenceSeq!==undefined?{evidenceSeq}:{})}));
-        beginTransport(`${transportKey}:checkout`,'checkout',observation.event,context,observation);return;
+        if(config.STRATEGY_V2?.shotgun?.enabled)releaseLockdown?.defer(()=>beginTransport(`${transportKey}:checkout`,'checkout',observation.event,context,observation));else beginTransport(`${transportKey}:checkout`,'checkout',observation.event,context,observation);return;
       }
       if(observation.event==='CHECKOUT_RESPONSE_COMPLETED'){
         endTransport(`${transportKey}:checkout`,observation.event,context,observation);return;
@@ -845,7 +845,7 @@ try {
           const outcome=await dispatchArmedPrecisionRace(armed,{clock:releaseClock,spinTailMs:DEFAULT_SPIN_TAIL_MS,
             ...fanOutPrewarm(armed.attempts),
             isAborted:()=>abort.signal.aborted,sleep:pause,transportFor:(_worker,attempt)=>releaseTransports.get(transportKeyFor(attempt.attempt)),
-            onWake:()=>{recorder.mark('*','schedulerFired');releaseLockdown?.mark('scheduler-wake');},onMark:(_worker,name,attempt)=>{if(name==='transportCall'){recorder.mark(attempt.attempt.id,'workerInvoked');releaseLockdown?.mark(`transport:${attempt.attempt.id}`);}
+            onWake:triggerMs=>{for(const attempt of armed.attempts)if(attempt.triggerMs===triggerMs)recorder.mark(attempt.attempt.id,'schedulerFired');releaseLockdown?.mark('scheduler-wake');},onMark:(_worker,name,attempt)=>{if(name==='transportCall'){recorder.mark(attempt.attempt.id,'workerInvoked');releaseLockdown?.mark(`transport:${attempt.attempt.id}`);}
               else if(name==='rendererArm')recorder.mark(attempt.attempt.id,'rendererArmSent');},
             ...experimentalRendererDispatch(attempt=>sessionFor(attempt.attempt)?.page,attempt=>releaseTransports.get(transportKeyFor(attempt.attempt))),
             prewarm:async attempt=>{
@@ -952,7 +952,7 @@ try {
           stage('PHASE3_WAVE1_EXCLUDED',{workerId:assignment.workerId,candidateId:candidate.id,evidence:result.evidence,code:'PUBLIC_BOOKING_CONFLICT_AT_FREEZE'});}
         else if(result.evidence==='UNKNOWN')stage('PHASE3_EVIDENCE_UNKNOWN',{workerId:assignment.workerId,candidateId:candidate.id,evidence:result.evidence});
       }
-      const wave1:Array<Pick<PrecisionAttempt,'target'|'plan'>>=[];
+      const wave1:Array<Pick<PrecisionAttempt,'target'|'plan'|'dispatchTimingPolicy'>>=[];
       // Each immediate target's Release Offset(s) come from the saved plan (covered by the plan and authorization fingerprints).
       // A fan-out target becomes one independently tracked child per offset (fan-out index = offset order), each on its own tab.
       const wave1Offsets=new Map<WorkerId,number>(authorization.wave1.map(value=>[value.workerId,value.fanOutOffsetsMs?.[0]??value.releaseOffsetMs??0]));
@@ -973,13 +973,19 @@ try {
           if(!releaseTransports.has(transportKeyOf(assignment.workerId,child))){
             stage('PHASE3_WORKER_EXCLUDED',{workerId:assignment.workerId,candidateId:candidate.id,fanOutIndex:child,code:'FAN_OUT_TAB_MISSING'});continue;
           }
-          wave1.push({target:{court:candidate.court,start:candidate.start,durationHours:candidate.durationHours,
+          wave1.push({...(config.STRATEGY_V2?.shotgun?.enabled && config.STRATEGY_V2.shotgun.exactSchedule.some(s=>s.logicalTargetId===logicalTargetId(candidate)&&s.configuredOffsetMs===offset)?{dispatchTimingPolicy:'SHOTGUN_STRICT' as const}:{}),target:{court:candidate.court,start:candidate.start,durationHours:candidate.durationHours,
             end:candidate.end,workerId:assignment.workerId,targetKey:candidate.logicalKey,assumedAmount:candidate.expectedAmount,
             ...(offset?{releaseOffsetMs:offset}:{})},plan});
         }
         stage('PHASE3_WAVE1_PRICE',{workerId:assignment.workerId,candidateId:candidate.id,amount:candidate.expectedAmount,
           source:candidate.rateEvidence.source,rateStatus:candidate.rateEvidence.status,capturedAt:candidate.rateEvidence.capturedAt,
           ...(offsets.length>1?{fanOutCount:offsets.length}:{})});
+      }
+      if(config.STRATEGY_V2?.shotgun?.enabled){
+        const required=authorization.wave1.reduce((n,a)=>n+(a.fanOutOffsetsMs?.length??1),0);
+        if(wave1.length!==required)throw Error('SHOTGUN_TOPOLOGY_NOT_READY');
+        for(const a of authorization.wave1){const browser=sessions.find(s=>s.workerId===a.workerId);
+          if(!browser || browser.pages.length<(a.fanOutOffsetsMs?.length??1) || browser.pages.some(p=>p.isClosed()||p.url()!==ONDA_URL))throw Error('SHOTGUN_TOPOLOGY_NOT_READY');}
       }
       const frozen=freezePrecisionRace(date,releaseMs,wave1);
       const savedShotgun=config.STRATEGY_V2?.shotgun;
@@ -1097,6 +1103,11 @@ try {
       };
       const adaptiveLoop=(async()=>{
         while(!abort.signal.aborted&&nowMs()<releaseMs+15*60_000){
+          // Slot Watch keeps collecting in its isolated process. Defer adaptive calculations, logs
+          // and standby work until the strict initial-release timing interval has ended.
+          if(config.STRATEGY_V2?.shotgun?.enabled && shotgunCriticalInterval(releaseMs,nowMs())){
+            await pause(Math.min(250,Math.max(1,releaseMs+1000-nowMs()))).catch(()=>undefined);continue;
+          }
           for(const observation of phase3Observations.splice(0)){
             receivedEvidence.push(observation);
             const operational=freshestAvailabilityObservation(receivedEvidence);
@@ -1158,7 +1169,7 @@ try {
         const transportOf=(attempt:ArmedAttempt)=>releaseTransports.get(transportKeyOf(attempt.target.workerId,attempt.attempt.fanOutIndex));
         const outcome=await dispatchArmedPrecisionRace(armed,{clock:releaseClock,spinTailMs:DEFAULT_SPIN_TAIL_MS,isAborted:()=>abort.signal.aborted,sleep:pause,
           ...fanOutPrewarm(armed.attempts),
-          onWake:()=>{recorder.mark('*','schedulerFired');releaseLockdown?.mark('scheduler-wake');},onMark:(_worker,name,attempt)=>{if(name==='transportCall'){recorder.mark(attempt.attempt.id,'workerInvoked');releaseLockdown?.mark(`transport:${attempt.attempt.id}`);}
+          onWake:triggerMs=>{for(const attempt of armed.attempts)if(attempt.triggerMs===triggerMs)recorder.mark(attempt.attempt.id,'schedulerFired');releaseLockdown?.mark('scheduler-wake');},onMark:(_worker,name,attempt)=>{if(name==='transportCall'){recorder.mark(attempt.attempt.id,'workerInvoked');releaseLockdown?.mark(`transport:${attempt.attempt.id}`);}
             else if(name==='rendererArm')recorder.mark(attempt.attempt.id,'rendererArmSent');},
           ...experimentalRendererDispatch(attempt=>pageOf(attempt.attempt),transportOf),
           transportFor:(_worker,attempt)=>transportOf(attempt),prewarm:async attempt=>{
@@ -1173,12 +1184,12 @@ try {
           onReleaseWindowEnd:exitReleaseLockdown,
           onEvent:event=>{const binding=bindings.get(event.attemptId),child=frozen.attempts.find(value=>value.id===event.attemptId);
             if(event.kind==='prewarm-ready'){recorder.describe(event.attemptId,{prewarmReadyMs:Math.round((releaseClock?.nowMs()??nowMs())-releaseMs)});
-              if(binding&&child)stage('SECURITY_PREWARM_READY',{workerId:event.workerId,candidateId:candidateOf(child).id,attemptId:binding.correlation.attemptId,
+              if(binding&&child)deferrableStage('SECURITY_PREWARM_READY',{workerId:event.workerId,candidateId:candidateOf(child).id,attemptId:binding.correlation.attemptId,
                 fanOutIndex:child.fanOutIndex,fanOutCount:child.fanOutCount,
                 ...(event.predictedReadyOffsetMs!==undefined?{predictedReadyOffsetMs:event.predictedReadyOffsetMs}:{}),...(event.actualReadyOffsetMs!==undefined?{actualReadyOffsetMs:event.actualReadyOffsetMs}:{}),
                 ...(event.predictionErrorMs!==undefined?{predictionErrorMs:event.predictionErrorMs}:{}),...(event.queueDelayMs!==undefined?{queueDelayMs:event.queueDelayMs}:{}),
                 ...(event.prepDurationMs!==undefined?{prepDurationMs:event.prepDurationMs}:{}),...shotgunTopology.get(child.id)!});}
-            if(event.kind==='prewarm-failed'&&binding&&child)stage('SECURITY_PREWARM_FAILED',{workerId:event.workerId,candidateId:candidateOf(child).id,attemptId:binding.correlation.attemptId,code:event.code??'SECURITY_PREWARM_FAILED',
+            if(event.kind==='prewarm-failed'&&binding&&child)deferrableStage('SECURITY_PREWARM_FAILED',{workerId:event.workerId,candidateId:candidateOf(child).id,attemptId:binding.correlation.attemptId,code:event.code??'SECURITY_PREWARM_FAILED',
               fanOutIndex:child.fanOutIndex,fanOutCount:child.fanOutCount,...shotgunTopology.get(child.id)!});
             const fanOut:Record<string,number|string>=child?{...(child.fanOutCount>1?{fanOutIndex:child.fanOutIndex,fanOutCount:child.fanOutCount}:{}),...shotgunTopology.get(child.id)!}:{};
             if(event.kind==='dispatch-start'&&binding&&child){wave1Fired=true;const candidate=candidateOf(child);

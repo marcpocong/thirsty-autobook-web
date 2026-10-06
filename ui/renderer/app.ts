@@ -1,3 +1,4 @@
+import {shotgunCriticalInterval} from '../../src/shotgun.js';
 import type { Bridge, Dashboard, RunHistoryEntry } from '../types.js';
 import type { BookingSetup } from '../../src/config.js';
 import {bookingSetupProblem,reconcileFallbackTimes,type FallbackReconciliation} from '../../src/booking-setup.js';
@@ -1016,7 +1017,9 @@ byId('main-action').onclick=()=>{if(!latest)return;if(latest.operation==='full'&
 byId('test-main-action').onclick=()=>{if(!latest)return;if((latest.lock||latest.handoff)&&!latest.canPrepareOverHold){void window.thirsty.reviewLock().catch(()=>{});return;}if(input('test-main-action').textContent==='Review & Test'){if(input('terms').checked)input('test-booking').click();else byId('terms').focus();}else input('prepare').click();};
 function tick() {
   // Display only; never launches a command. Authoritative release plan comes from main/CLI.
-  const effectiveNow=Date.now()+(latest?.clock?.clockOffsetMs??0),now=new Date(effectiveNow);
+  const effectiveNow=Date.now()+(latest?.clock?.clockOffsetMs??0);
+  if(latest?.booking?.setup.STRATEGY_V2?.shotgun?.enabled && latest.activeApiRelease && shotgunCriticalInterval(latest.activeApiRelease.releaseMs,effectiveNow))return;
+  const now=new Date(effectiveNow);
   byId('clock').textContent = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Manila', hourCycle: 'h23' }).format(now);
   byId('clock-date').textContent = new Intl.DateTimeFormat('en-US', { weekday:'long',month:'long',day:'numeric',year:'numeric',timeZone:'Asia/Manila' }).format(now);
   byId('status-clock').textContent = byId('clock').textContent;
