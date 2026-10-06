@@ -1,3 +1,4 @@
+import {calibrateRendererClockAdaptive,assertCalibrationUsable,type RendererClockCalibration} from './renderer-clock.js';
 import type { Page } from 'playwright';
 import { ONDA_URL } from '../config.js';
 import { consumeSubmissionPermit, DurableSubmissionJournal, type SubmissionPermit } from './durable-submission-journal.js';
@@ -73,6 +74,10 @@ export interface CheckoutDispatchOptions {
   requirePreparedContext?: boolean;
   /** Throws (for example SubmissionDispatchError with dispatched=false) to stop before the POST. */
   beforePost?: () => void;
+  strictTiming?: {notBeforeNodeMs:number;notAfterNodeMs:number};
+  /** In-memory safety signal before optional response persistence is deferred. */
+  onResponseSafety?:(raw:unknown,error?:SubmissionDispatchError)=>void;
+  beforeResponseBookkeeping?:()=>Promise<void>;
 }
 
 export { armCheckoutRequest } from './armed-request.js';
@@ -150,6 +155,12 @@ export function isPayloadRejection(result: Pick<CheckoutHttpResponse, 'status' |
 
 /** Sends only the two observed POSTs in an existing, verified browser page. It never launches a browser. */
 export class OndaBrowserSessionTransport implements TwoHourTransport {
+  private strictCalibration?:RendererClockCalibration;
+  /** Preparation only: map the already existing page clock; no calibration at dispatch. */
+  async prepareStrictTiming():Promise<void>{
+    this.assertPage();this.strictCalibration=await calibrateRendererClockAdaptive(this.page,{targetUncertaintyMs:1.5,maxSamples:32});
+    assertCalibrationUsable(this.strictCalibration,performance.now(),{maxAgeMs:120_000,maxUncertaintyMs:2});
+  }
   private preparedHeaders?: CurrentCheckoutHeaders;
   private preparedAt?: number;
   private preparation?: Promise<void>;
@@ -158,6 +169,7 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
     private readonly observer?: BrowserTransportObserver) {
     page.on?.('framenavigated',frame=>{
       if(frame===page.mainFrame()){
+        this.strictCalibration=undefined;
         this.preparedHeaders=undefined;
         this.preparedAt=undefined;
       }
@@ -255,7 +267,7 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
   }
 
   private async post(path: typeof SLOT_PATH | typeof CHECKOUT_PATH, body: unknown,
-    extraHeaders?: Record<string, string>, bodyText?: string, rendererPlan?: RendererFirePlan): Promise<unknown> {
+    extraHeaders?: Record<string, string>, bodyText?: string, rendererPlan?: RendererFirePlan, strictTiming?:{notBeforeRendererMs:number;notAfterRendererMs:number}, lifecycle:Pick<CheckoutDispatchOptions,'onResponseSafety'|'beforeResponseBookkeeping'>={}): Promise<unknown> {
     this.assertPage();
     const checkout = path === CHECKOUT_PATH;
     const networkStarted = performance.now();
@@ -280,12 +292,16 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
           { ...rendererPlan, url: `${ORIGIN}${path}`, text: bodyText, headers: extraHeaders ?? {} });
         if ('refused' in outcome) refused = typeof outcome.refused === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/.test(outcome.refused) ? outcome.refused : 'RENDERER_DISPATCH_REFUSED';
         else { const { fired: _fired, ...response } = outcome; result = response; }
-      } else result = await this.page.evaluate(async ({ url, payload, text, headers }) => {
+      } else { const outcome=await this.page.evaluate(async ({ url, payload, text, headers, strictTiming }) => {
         const enteredAt = performance.now();
         const init: RequestInit = { method: 'POST', credentials: 'same-origin', redirect: 'error',
           cache: 'no-store', headers: { 'Content-Type': 'application/json', ...headers },
           body: typeof text === 'string' ? text : JSON.stringify(payload) };
         const started = performance.now();
+        if(strictTiming){
+          if(started<strictTiming.notBeforeRendererMs)return {refused:'DIRECT_RELEASE_NOT_REACHED'};
+          if(started>strictTiming.notAfterRendererMs)return {refused:'SHOTGUN_TRIGGER_MISSED'};
+        }
         const response = await fetch(url, init);
         const headersAt = performance.now();
         const body = await response.text();
@@ -304,10 +320,13 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
           serverTiming: response.headers.get('server-timing') ?? '', responseReceivedMs: headersAt - started,
           responseCompletedMs: completedAt - started, body, headers: kept,
           renderer: { timeOrigin: performance.timeOrigin, enteredAt, fetchAt: started, headersAt, completedAt } };
-      }, bodyText === undefined ? { url: `${ORIGIN}${path}`, payload: body, text: undefined, headers: extraHeaders ?? {} }
-        : { url: `${ORIGIN}${path}`, payload: null, text: bodyText, headers: extraHeaders ?? {} });
+      }, bodyText === undefined ? { url: `${ORIGIN}${path}`, payload: body, text: undefined, headers: extraHeaders ?? {},strictTiming }
+        : { url: `${ORIGIN}${path}`, payload: null, text: bodyText, headers: extraHeaders ?? {},strictTiming });
+        if('refused' in outcome)refused=outcome.refused;else result=outcome;
+      }
     } catch (error) {
       if (error instanceof BrowserSessionTransportError && !error.dispatched) throw error;
+      if(checkout){lifecycle.onResponseSafety?.(undefined,new BrowserSessionTransportError('ONDA_TRANSPORT_FAILED',true));await lifecycle.beforeResponseBookkeeping?.();}
       if (checkout) this.observe({ event: 'CHECKOUT_RESPONSE_COMPLETED',
         networkDurationMs: Math.max(0, Math.round(performance.now() - networkStarted)), dispatchState: 'UNKNOWN',
         failureCategory: 'ONDA_TRANSPORT_FAILED' });
@@ -321,6 +340,12 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
       throw new BrowserSessionTransportError(refused, false);
     }
     const networkDurationMs = Math.max(0, Math.round(performance.now() - networkStarted));
+    if(checkout && lifecycle.onResponseSafety){
+      let raw:unknown;try{if(result.status===200 && result.body.length<=MAX_RESPONSE_BYTES)raw=JSON.parse(result.body);}catch{}
+      lifecycle.onResponseSafety(raw,result.status===200?undefined:new BrowserSessionTransportError('ONDA_HTTP_STATUS_INVALID',true,
+        {status:result.status,category:'http-rejection',contentKind:'json',responseSource:'application',errorHint:'other'},isPayloadRejection(result)||confirmedApplicationConflict(result)));
+    }
+    await lifecycle.beforeResponseBookkeeping?.();
     const diagnostic = result.status === 200 ? undefined : checkoutDiagnostic(result);
     const payloadRejected = checkout && diagnostic !== undefined && isPayloadRejection(result);
     // A rejection keeps structure-first evidence (never text); private request values are redacted exactly.
@@ -383,7 +408,7 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
    * prove the arm is happening before release and inside the arm lead. Requires a deep-frozen armed request.
    */
   async publicCheckoutProoflessRendererArmed(request: ProoflessCheckoutRequest, permit: SubmissionPermit, plan: RendererFirePlan,
-    options: { beforeArm?: () => void } = {}): Promise<unknown> {
+    options: Pick<CheckoutDispatchOptions,'onResponseSafety'|'beforeResponseBookkeeping'> & { beforeArm?: () => void } = {}): Promise<unknown> {
     if (request.items.some(item => item.availabilityProof !== null)) throw new BrowserSessionTransportError('DIRECT_PROOFLESS_SHAPE_INVALID');
     this.assertPage();
     if (process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT !== 'SUPERVISED_ONE_SHOT') throw new BrowserSessionTransportError('LIVE_SUBMISSION_DISABLED');
@@ -405,7 +430,7 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
     options.beforeArm?.();
     this.observe({ event: 'RENDERER_DISPATCH_ARMED', preparedContextAgeMs: Math.max(0, Date.now() - preparedAt), calibrationUncertaintyMs: plan.calibrationUncertaintyMs });
     return this.post(CHECKOUT_PATH, request, { 'X-Turnstile-Token': current.turnstileToken, 'X-Onda-Public-Fingerprint': current.publicFingerprint },
-      armed.body, plan);
+      armed.body, plan,undefined,options);
   }
 
   /** Best-effort disarm of an armed page (effective until the page's final ≤ 1 ms spin). Never throws. */
@@ -448,12 +473,21 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
     const armed = armedRequestFor(request);
     consumeSubmissionPermit(permit, armed?.key ?? checkoutRequestKey(request));
     // Last gate before the network: a late dispatch stops here, still provably unsent.
+    let strictTiming:{notBeforeRendererMs:number;notAfterRendererMs:number}|undefined;
+    if(options.strictTiming){
+      try{assertCalibrationUsable(this.strictCalibration,performance.now(),{maxAgeMs:120_000,maxUncertaintyMs:2});}
+      catch{throw new BrowserSessionTransportError('SHOTGUN_TIMING_CLOCK_NOT_READY');}
+      const {notBeforeNodeMs,notAfterNodeMs}=options.strictTiming;
+      if(!Number.isFinite(notBeforeNodeMs)||!Number.isFinite(notAfterNodeMs))throw new BrowserSessionTransportError('SHOTGUN_TIMING_CLOCK_NOT_READY');
+      strictTiming={notBeforeRendererMs:notBeforeNodeMs-this.strictCalibration.offsetLowMs,notAfterRendererMs:notAfterNodeMs-this.strictCalibration.offsetHighMs};
+    }
+    if(options.strictTiming && !armed)throw new BrowserSessionTransportError('SHOTGUN_REQUEST_NOT_ARMED');
     options.beforePost?.();
     this.observe({ event: 'CHECKOUT_PRE_POST', preparedContextAgeMs: Math.max(0, Date.now() - preparedAt), securitySource });
     // The header values are ephemeral and never logged or stored by this adapter.
     return this.post(CHECKOUT_PATH, request, {
       'X-Turnstile-Token': current.turnstileToken,
       'X-Onda-Public-Fingerprint': current.publicFingerprint,
-    }, armed?.body);
+    }, armed?.body,undefined,strictTiming,options);
   }
 }

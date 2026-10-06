@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { performance } from 'node:perf_hooks';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { armedNothingFired, armedWindow, armPrecisionRace, disarmAttempt, disarmUnfired, dispatchArmedPrecisionRace, fireArmedAttempt, settleArmedAttempt,
   type ArmedAttempt, type ArmedPrecisionRace } from '../../src/api-booking/armed-dispatch.js';
 import { BrowserSessionTransportError } from '../../src/api-booking/browser-session-transport.js';
@@ -12,6 +12,17 @@ import { classifyPrecisionDispatchError, freezePrecisionRace, precisionAttemptSe
 import type { DirectTransport, ProoflessCheckoutRequest } from '../../src/api-booking/proofless-checkout.js';
 import { TrustedReleaseClock } from '../../src/release-clock.js';
 import type { BookingPlan } from '../../src/api-booking/types.js';
+
+
+const hotPathAudit=vi.hoisted(()=>({deny:false,calls:[] as string[]}));
+vi.mock('node:fs/promises',async importOriginal=>{
+  const original=await importOriginal<typeof import('node:fs/promises')>();
+  return Object.fromEntries(Object.entries(original).map(([name,value])=>[name,typeof value==='function'?((...args:unknown[])=>{if(hotPathAudit.deny){hotPathAudit.calls.push(name);throw Error('HOT_PATH_FILESYSTEM_ACCESS');}return (value as (...args:unknown[])=>unknown)(...args);}):value]));
+});
+vi.mock('node:crypto',async importOriginal=>{
+  const original=await importOriginal<typeof import('node:crypto')>();
+  return {...original,createHash:(...args:Parameters<typeof original.createHash>)=>{if(hotPathAudit.deny){hotPathAudit.calls.push('createHash');throw Error('HOT_PATH_HASHING');}return original.createHash(...args);}};
+});
 
 const date = '2026-09-26';
 const customer = { clientId: '00000000-0000-4000-8000-00000000c11e', customerId: '00000000-0000-4000-8000-000000000b00',
@@ -491,5 +502,63 @@ describe('Release Offset (per attempt)', () => {
     expect(outcome.results.map(result => [result.attempt.target.workerId, result.state, result.code])).toEqual([['A', 'REJECTED', 'ONDA_HTTP_STATUS_INVALID'], ['B', 'NOT_DISPATCHED', 'USER_ABORT']]);
     const b = armed.attempts[1]!;
     expect(await journalAt(b.key).read(b.key)).toMatchObject({ state: 'rejected' });
+  });
+});
+
+describe('strict Shotgun deadlines',()=>{
+  async function strict(offsets:number[]=[-500],lead=60000){
+    const releaseMs=Date.now()+lead,target=validatePrecisionTargets([{court:7,start:'17:00',durationHours:3}],date)[0]!;
+    const race=freezePrecisionRace(date,releaseMs,offsets.map(releaseOffsetMs=>{const child={...target,releaseOffsetMs};return {target:child,plan:precisionTargetPlan(child,date),dispatchTimingPolicy:'SHOTGUN_STRICT' as const};}));
+    const armed=await armPrecisionRace(race,{customerFor:()=>customer,journalRoot:root,releaseMs,now:Date.now});
+    return {armed,releaseMs,clock:TrustedReleaseClock.fromOffset(0,{method:'test',sampleCount:5})};
+  }
+  it('freezes explicit policy and per-shot deadline; negative Precision offsets stay generic',async()=>{
+    const {armed,releaseMs}=await strict();expect(armed.attempts[0]!.attempt.dispatchTimingPolicy).toBe('SHOTGUN_STRICT');
+    expect(armed.attempts[0]!.shotDeadlineMs).toBe(releaseMs-450);expect(armedWindow(armed,armed.attempts[0]!).dispatchDeadlineMs).toBe(releaseMs-450);
+    expect(Object.isFrozen(armed.attempts[0]!.attempt)).toBe(true);
+    expect((await armed.attempts[0]!.journal.read(armed.attempts[0]!.key)).attempt).toMatchObject({dispatchTimingPolicy:'SHOTGUN_STRICT',triggerMs:releaseMs-500,shotDeadlineMs:releaseMs-450});
+    const generic=await arm(1,60000,[-500]);expect(generic.armed.attempts[0]!.shotDeadlineMs).toBeUndefined();
+  });
+  it.each([-500,0])('sends at trigger %s within 50 ms, retaining exact prebuilt request',async offset=>{
+    const {armed,releaseMs}=await strict([offset]),attempt=armed.attempts[0]!,{transport,calls}=fakeTransport(conflict);
+    await expect(fireArmedAttempt(attempt,transport,clockAt(releaseMs,offset+20),armedWindow(armed,attempt),()=>false)).rejects.toThrow('ONDA_HTTP_STATUS_INVALID');expect(calls).toHaveLength(1);
+  });
+  it.each([[-500,-420],[0,80]])('refuses trigger %s at %s as provably unsent',async(offset,wake)=>{
+    const {armed,releaseMs}=await strict([offset!]),attempt=armed.attempts[0]!,{transport,calls}=fakeTransport(conflict);
+    const error=await fireArmedAttempt(attempt,transport,clockAt(releaseMs,wake!),armedWindow(armed,attempt),()=>false).catch(e=>e);
+    expect(await classify(attempt,error)).toEqual({state:'NOT_DISPATCHED',code:'SHOTGUN_TRIGGER_MISSED'});expect(calls).toHaveLength(0);expect(isSubmissionPermitUnspent(attempt.permit)).toBe(false);
+  });
+  it('the armed trigger-to-POST pass performs no filesystem access, hashing or request serialization',async()=>{
+    const {armed,releaseMs}=await strict(),attempt=armed.attempts[0]!;let posts=0;
+    const transport:DirectTransport={publicCheckoutProofless:async(request,permit,options)=>{expect(request).toBe(attempt.request);consumeSubmissionPermit(permit,attempt.key);options?.beforePost?.();posts++;return {};}};
+    const stringify=vi.spyOn(JSON,'stringify').mockImplementation(()=>{throw Error('HOT_PATH_SERIALIZATION');});hotPathAudit.calls=[];hotPathAudit.deny=true;
+    try{await fireArmedAttempt(attempt,transport,clockAt(releaseMs,-490),armedWindow(armed,attempt),()=>false);expect(posts).toBe(1);expect(hotPathAudit.calls).toEqual([]);expect(stringify).not.toHaveBeenCalled();}
+    finally{hotPathAudit.deny=false;stringify.mockRestore();}
+  });
+  it('rechecks trusted time immediately before POST after a transport delay',async()=>{
+    const {armed,releaseMs}=await strict(),attempt=armed.attempts[0]!;let now=releaseMs-490,posts=0;
+    const transport:DirectTransport={publicCheckoutProofless:async(request,permit,options)=>{consumeSubmissionPermit(permit,requestKey(request));now=releaseMs-420;options?.beforePost?.();posts++;return {};}};
+    const error=await fireArmedAttempt(attempt,transport,{nowMs:()=>now},armedWindow(armed,attempt),()=>false).catch(e=>e);
+    expect(await classify(attempt,error)).toEqual({state:'NOT_DISPATCHED',code:'SHOTGUN_TRIGGER_MISSED'});expect(posts).toBe(0);
+  });
+  it('can become ready inside its own allowance without clock sampling on the trigger-to-POST path',async()=>{
+    const {armed,clock,releaseMs}=await strict([-500],1800),{transport,calls}=fakeTransport(conflict);const samples:number[]=[];
+    transport.prepareStrictTiming=async()=>{samples.push(clock.nowMs());};
+    const outcome=await dispatchArmedPrecisionRace(armed,{clock,prewarmLeadMs:1500,spinTailMs:0,isAborted:()=>false,transportFor:()=>transport,prewarm:()=>new Promise(done=>setTimeout(done,Math.max(0,releaseMs-480-clock.nowMs())))});
+    expect(calls).toHaveLength(1);expect(outcome.results[0]!.state).toBe('REJECTED');expect(samples).toHaveLength(1);expect(samples[0]!).toBeLessThan(releaseMs-1500);
+  });
+  it('late tier 0 and tier 1 never use generic readiness recovery',async()=>{
+    const {armed,clock}=await strict([-500,0],1400),{transport,calls}=fakeTransport(conflict);
+    const outcome=await dispatchArmedPrecisionRace(armed,{clock,prewarmLeadMs:1300,spinTailMs:0,isAborted:()=>false,prewarm:()=>new Promise(done=>setTimeout(done,1500)),transportFor:()=>transport,onWake:trigger=>{if(trigger===armed.releaseMs)expect(isSubmissionPermitUnspent(armed.attempts[0]!.permit)).toBe(false);}});
+    expect(calls).toHaveLength(0);expect(outcome.results.map(r=>[r.attempt.fanOutIndex,r.state,r.code])).toEqual([[0,'NOT_DISPATCHED','SHOTGUN_TRIGGER_MISSED'],[1,'NOT_DISPATCHED','SHOTGUN_TRIGGER_MISSED']]);
+    for(const a of armed.attempts)expect((await a.journal.read(a.key)).failureCode).toBe('SHOTGUN_TRIGGER_MISSED');
+  });
+  it('independent ready shots dispatch separately; journals and QR callbacks wait until T+1000',async()=>{
+    const {armed,clock,releaseMs}=await strict([-500,0],1800);const stamps:number[]=[],writeTimes:number[]=[];
+    for(const a of armed.attempts){const original=a.journal.mark.bind(a.journal);a.journal.mark=async(...args)=>{writeTimes.push(clock.nowMs());return original(...args);};}
+    const {transport}=fakeTransport(conflict);
+    await dispatchArmedPrecisionRace(armed,{clock,prewarmLeadMs:1500,spinTailMs:0,isAborted:()=>false,prewarm:async()=>{},transportFor:()=>({publicCheckoutProofless:(...args)=>{stamps.push(clock.nowMs());return transport.publicCheckoutProofless(...args);}})});
+    expect(stamps).toHaveLength(2);expect(stamps[0]!-releaseMs).toBeGreaterThanOrEqual(-500);expect(stamps[0]!-releaseMs).toBeLessThanOrEqual(-450);expect(stamps[1]!-releaseMs).toBeGreaterThanOrEqual(0);expect(stamps[1]!-releaseMs).toBeLessThanOrEqual(50);
+    expect(writeTimes.length).toBeGreaterThan(0);expect(writeTimes.every(t=>t>=releaseMs+1000)).toBe(true);
   });
 });

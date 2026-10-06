@@ -43,6 +43,9 @@ export const DEFAULT_RENDERER_DISPATCH_OPTIONS: RendererDispatchOptions = Object
 /** Everything the page needs, all in the page's own clock domains. */
 export interface RendererFirePlan {
   key: string;
+  trustedTriggerMs?:number;
+  trustedDeadlineMs?:number;
+  missedCode?:'SHOTGUN_TRIGGER_MISSED';
   pageUrl: string;
   /** Renderer performance.now() at or after which Node's clock is certainly ≥ release. */
   fireAtRendererMs: number;
@@ -69,7 +72,7 @@ export function planRendererFire(input: { key: string; pageUrl: string; calibrat
   const releaseMono = input.clock.monotonicDeadline(input.releaseMs), deadlineMono = input.clock.monotonicDeadline(input.dispatchDeadlineMs);
   // trusted(wall) = wall + offset − disagreement  ⇒  wall at release = release − offset + disagreement.
   const releaseWallMs = input.releaseMs - input.clock.offsetMs + input.clock.wallDisagreementMs();
-  return { key: input.key, pageUrl: input.pageUrl, fireAtRendererMs: earliestSafeRendererTime(calibration, releaseMono),
+  return { key: input.key,trustedTriggerMs:input.releaseMs,trustedDeadlineMs:input.dispatchDeadlineMs, pageUrl: input.pageUrl, fireAtRendererMs: earliestSafeRendererTime(calibration, releaseMono),
     notAfterRendererMs: deadlineMono - calibration.offsetHighMs, releaseWallMs, wallGuardToleranceMs: options.wallGuardToleranceMs,
     syncSpinMs: options.syncSpinMs, maxArmAheadMs: options.maxArmAheadMs, calibrationUncertaintyMs: calibration.uncertaintyMs };
 }
@@ -109,10 +112,10 @@ export const RENDERER_ARMED_CHECKOUT_SOURCE = `async (args) => {
   if (slot.disarmed) return refuse('RENDERER_DISARMED');
   while (performance.now() < args.fireAtRendererMs) { /* final synchronous spin, at most syncSpinMs */ }
   while (Date.now() < args.releaseWallMs - args.wallGuardToleranceMs) {
-    if (performance.now() > args.notAfterRendererMs) return refuse('RENDERER_WALL_GUARD');
+    if (performance.now() > args.notAfterRendererMs) return refuse(args.missedCode || 'RENDERER_WALL_GUARD');
   }
   const firedAt = performance.now();
-  if (firedAt > args.notAfterRendererMs) return refuse('RENDERER_WINDOW_MISSED', firedAt);
+  if (firedAt > args.notAfterRendererMs) return refuse(args.missedCode || 'RENDERER_WINDOW_MISSED', firedAt);
   if (location.href !== args.pageUrl) return refuse('RENDERER_PAGE_INVALID');
   slot.fired = true;
   const response = await fetch(args.url, { method: 'POST', credentials: 'same-origin', redirect: 'error', cache: 'no-store',

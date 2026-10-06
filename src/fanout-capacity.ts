@@ -37,6 +37,7 @@ export interface ChildSample {
   state: string;
   /** The dispatcher's result code, when any (raw samples only). */
   code?: string;
+  prewarmFailureCode?:string;
   /** Security preparation of this child: duration and completion time (release-relative), null when it never finished. */
   prewarmDurationMs: number | null; prewarmReadyMs: number | null;
 }
@@ -84,7 +85,7 @@ export function summarizeWidth(width: number, runs: readonly RunSample[]): Width
   const workerIds = [...new Set(children.map(child => child.workerId))].sort();
   const busy = runs.flatMap((run, index) => run.systemBusyPct !== null && spreads[index] !== null ? [[run.systemBusyPct, spreads[index]!] as const] : []);
   return {
-    width, workers: runs[0]?.workers ?? 0, attempts: (runs[0]?.workers ?? 0) * width, runs: runs.length,
+    width, workers: runs[0]?.workers ?? 0, attempts: runs[0]?.children.length ?? 0, runs: runs.length,
     triggerToTransport: stats(children.map(child => error(child, child.workerInvokedMs))),
     triggerToFetch: stats(children.map(child => error(child, child.fetchInvokedMs))),
     triggerToChromeStart: stats(children.map(child => error(child, child.chromeStartMs))),

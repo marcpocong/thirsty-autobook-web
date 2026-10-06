@@ -6,6 +6,10 @@ export type ShotgunReadiness = 'PREPARING' | 'READY' | 'FAILED' | 'OMITTED';
 export type ShotgunSuppressionReason = 'SHOTGUN_TARGET_ALREADY_ACHIEVED' | 'SHOTGUN_TARGET_OUTCOME_UNKNOWN' | 'SHOTGUN_PROVIDER_THROTTLE_STOP';
 /** Installation evidence from the 2026-10-03 intercepted spaced run; live compatible profiles may only raise this floor. */
 export const SHOTGUN_MEANINGFUL_SPACING_MS=105;
+/** Local trigger-to-dispatch tolerance, independent of request count; not provider arrival evidence. */
+export const SHOTGUN_MAX_TRIGGER_LATENESS_MS=50;
+/** Display/polling deferral only; never an authorization clock. */
+export const shotgunCriticalInterval=(releaseMs:number|undefined,nowMs:number)=>releaseMs!==undefined && nowMs>=releaseMs-1000 && nowMs<=releaseMs+1000;
 /** Shotgun is deliberately pre-release-only. Positive offsets are invalid, never clamped. */
 export const isShotgunOffsetMs=(value:unknown):value is number=>typeof value==='number'&&Number.isSafeInteger(value)&&value>=-2_000&&value<=0;
 export const EXPERIMENTAL_DENSE_CORE_20=Object.freeze([-1000,-700,-500,-300,-250,-200,-175,-150,-125,-100,-80,-60,-45,-30,-20,-10,-5,-2,-1,0] as const);
@@ -136,7 +140,7 @@ export function denseCoreOffsets(count:number):number[]{
 export function planShotgun(settings: ShotgunSettings, targets: readonly ShotgunTarget[], capacity: ShotgunCapacityInput): ShotgunPlan {
   const allocated = allocateShotgun(settings, targets), problems = [...allocated.problems];
   if (!Number.isSafeInteger(settings.windowStartMs) || !Number.isSafeInteger(settings.windowEndMs) || settings.windowStartMs < -2_000 || settings.windowEndMs > 0 || settings.windowStartMs > settings.windowEndMs)
-    problems.push('Shotgun timing window must use whole milliseconds from -2000 through 0, with start no later than end. Shotgun never sends after release.');
+    problems.push('Shotgun timing window must use whole milliseconds from -2000 through 0, with start no later than end. Shotgun target triggers are pre-release; each has a strict bounded local dispatch allowance.');
   const spacing = Number.isFinite(capacity.meaningfulSpacingMs) && capacity.meaningfulSpacingMs > 0 ? Math.ceil(capacity.meaningfulSpacingMs) : SHOTGUN_MEANINGFUL_SPACING_MS;
   const span = Math.max(0, settings.windowEndMs - settings.windowStartMs);
   const recommendedMaximum = Math.max(1, Math.floor(span / spacing) + 1);

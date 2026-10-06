@@ -305,3 +305,9 @@ describe('real Chromium: renderer-armed checkout never leaves the page before re
     } finally { delete process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT; await rm(root, { recursive: true, force: true }); }
   }, 120_000);
 });
+
+it('strict Shotgun renderer refuses an 80 ms stalled wake without calling fetch',async()=>{
+  const realm=pageRealm({start:1090,step:0.1});
+  const outcome=await realm.armed(args(1010,{notAfterRendererMs:1060,missedCode:'SHOTGUN_TRIGGER_MISSED'}));
+  expect(outcome.refused).toBe('SHOTGUN_TRIGGER_MISSED');expect(realm.fetches).toHaveLength(0);
+});

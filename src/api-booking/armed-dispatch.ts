@@ -7,17 +7,17 @@ import { assertPrecisionFreezeIntact, classifyPrecisionDispatchError, type Froze
   type PrecisionAttemptState, type PrecisionDispatchResult, type PrecisionTarget } from './precision-race.js';
 import { assertDirectDispatchWindow, DIRECT_MAX_DISPATCH_LATENESS_MS, prooflessPlanFingerprint, prooflessRequest,
   recordDirectCheckoutOutcome, type DirectTransport, type ProoflessCheckoutRequest } from './proofless-checkout.js';
-import type { VerifiedPublicCheckout } from './public-checkout.js';
+import {validatePublicCheckoutResponse,type PublicCheckoutRequest,type VerifiedPublicCheckout} from './public-checkout.js';
 import { SubmissionDispatchError } from './submission-errors.js';
 import { standardPlanJournalKeys, type CheckoutCustomer } from './two-hour-reservation.js';
 import type { BookingPlan } from './types.js';
 import { DEFAULT_SPIN_TAIL_MS, waitForMonotonicDeadline, type TrustedReleaseClock } from '../release-clock.js';
 import type { WorkerId } from '../workers.js';
-import type { OndaBrowserSessionTransport } from './browser-session-transport.js';
+import type { CheckoutDispatchOptions,OndaBrowserSessionTransport } from './browser-session-transport.js';
 import type { RendererClockCalibration } from './renderer-clock.js';
 import { DEFAULT_RENDERER_DISPATCH_OPTIONS, planRendererFire, type RendererDispatchOptions, type RendererFirePlan } from './renderer-dispatch.js';
 import { schedulePrewarm, UNBOUNDED_PREWARM, type PrewarmPolicy, type PrewarmSchedule, type TierStatus } from './prewarm-scheduler.js';
-import { shotgunStopReason, shotgunTriggerMs, type ShotgunSuppressionReason } from '../shotgun.js';
+import { SHOTGUN_MAX_TRIGGER_LATENESS_MS, shotgunStopReason, shotgunTriggerMs, type ShotgunSuppressionReason } from '../shotgun.js';
 
 /**
  * Durable pre-armed Precision dispatch.
@@ -48,6 +48,7 @@ export interface ArmedAttempt {
   readonly permit: SubmissionPermit;
   /** Scheduled trigger: the release instant plus this attempt's pre-release Shotgun offset (-2000 through 0 ms). */
   readonly triggerMs: number;
+  readonly shotDeadlineMs?: number;
   /** 'armed' until the one in-memory transition; 'fired' is set synchronously before the transport call. */
   state: ArmedAttemptState;
 }
@@ -132,7 +133,8 @@ export async function armPrecisionRace(race: FrozenPrecisionRace, deps: ArmDeps)
       courtIds: attempt.plan.courts.map(court => court.court),
       hourlyBoundaries: attempt.plan.courts.flatMap(court => court.slots.map(slot => ({ startTime: slot.startTime, endTime: slot.endTime }))),
       expectedBookingCount: request.items.length, maximumAmount: attempt.plan.totalPrice, stage: 'armed',
-      releaseMs: deps.releaseMs, dispatchDeadlineMs });
+      releaseMs: deps.releaseMs, dispatchDeadlineMs,
+      ...(attempt.dispatchTimingPolicy==='SHOTGUN_STRICT'?{dispatchTimingPolicy:attempt.dispatchTimingPolicy,triggerMs,shotDeadlineMs:triggerMs+SHOTGUN_MAX_TRIGGER_LATENESS_MS}:{}) });
     let permit: SubmissionPermit;
     try { permit = await journal.claimArmedOneShot(key, new Date(deps.now())); }
     catch (error) {
@@ -140,7 +142,7 @@ export async function armPrecisionRace(race: FrozenPrecisionRace, deps: ArmDeps)
       await journal.mark(key, 'rejected', new Date(deps.now()), undefined, undefined, 'ARMED_NOT_DISPATCHED').catch(() => undefined);
       throw error;
     }
-    return { attempt, target: attempt.target, plan: attempt.plan, key, request, journal, permit, triggerMs, state: 'armed' };
+    return { attempt, target: attempt.target, plan: attempt.plan, key, request, journal, permit, triggerMs, ...(attempt.dispatchTimingPolicy==='SHOTGUN_STRICT'?{shotDeadlineMs:triggerMs+SHOTGUN_MAX_TRIGGER_LATENESS_MS}:{}), state: 'armed' };
   }));
   const attempts: ArmedAttempt[] = [], unarmed: Array<{ attempt: PrecisionAttempt; state: PrecisionAttemptState; code: string }> = [];
   settled.forEach((result, index) => {
@@ -163,8 +165,8 @@ export async function armPrecisionRace(race: FrozenPrecisionRace, deps: ArmDeps)
  * call and in-memory only. Refusals happen before the one-shot flips and before the
  * transport is invoked, so they are provably unsent. Never throws synchronously.
  */
-export function fireArmedAttempt(attempt: ArmedAttempt, transport: DirectTransport, clock: Pick<TrustedReleaseClock, 'nowMs'>,
-  window: { releaseMs: number; triggerMs?: number; dispatchDeadlineMs: number }, isAborted: () => boolean): Promise<unknown> {
+export function fireArmedAttempt(attempt: ArmedAttempt, transport: DirectTransport, clock: Pick<TrustedReleaseClock, 'nowMs'> & Partial<Pick<TrustedReleaseClock,'monotonicDeadline'>>,
+  window: { releaseMs: number; triggerMs?: number; dispatchDeadlineMs: number }, isAborted: () => boolean, lifecycle:Pick<CheckoutDispatchOptions,'onResponseSafety'|'beforeResponseBookkeeping'>={}): Promise<unknown> {
   const triggerMs = window.triggerMs ?? window.releaseMs;
   const refuse = (code: string) => {
     if (attempt.state === 'armed') { attempt.state = 'refused'; revokeSubmissionPermit(attempt.permit); }
@@ -176,14 +178,20 @@ export function fireArmedAttempt(attempt: ArmedAttempt, transport: DirectTranspo
     const now = clock.nowMs();
     // Final trusted no-early / maximum-lateness gate (same anchored clock as the wait).
     if (now < triggerMs) return refuse('DIRECT_RELEASE_NOT_REACHED');
+    if (attempt.shotDeadlineMs!==undefined && now>attempt.shotDeadlineMs) return refuse('SHOTGUN_TRIGGER_MISSED');
     if (now > window.dispatchDeadlineMs) return refuse('DIRECT_RELEASE_WINDOW_MISSED');
     attempt.state = 'fired';
     // Checked once more as the transport's last step before the network.
     const beforePost = () => {
-      try { assertDirectDispatchWindow(window.releaseMs, clock.nowMs(), triggerMs,true); }
-      catch { throw new SubmissionDispatchError('DIRECT_RELEASE_WINDOW_MISSED', false); }
+      try { const at=clock.nowMs();
+        if(attempt.shotDeadlineMs!==undefined && at>attempt.shotDeadlineMs) throw new SubmissionDispatchError('SHOTGUN_TRIGGER_MISSED',false);
+        assertDirectDispatchWindow(window.releaseMs, at, triggerMs,true);
+        if(at>window.dispatchDeadlineMs)throw Error('DIRECT_RELEASE_WINDOW_MISSED'); }
+      catch(error) { if(error instanceof SubmissionDispatchError)throw error; throw new SubmissionDispatchError('DIRECT_RELEASE_WINDOW_MISSED', false); }
     };
-    return transport.publicCheckoutProofless(attempt.request, attempt.permit, { requirePreparedContext: true, beforePost });
+    return transport.publicCheckoutProofless(attempt.request, attempt.permit, { ...lifecycle,requirePreparedContext: true, beforePost, ...(attempt.shotDeadlineMs!==undefined ? {strictTiming: {
+      notBeforeNodeMs: clock.monotonicDeadline?.(triggerMs) ?? NaN,
+      notAfterNodeMs: clock.monotonicDeadline?.(Math.min(attempt.shotDeadlineMs,window.dispatchDeadlineMs)) ?? NaN}} : {}) });
   } catch (error) {
     // Only reachable if the transport threw synchronously; it may already have been invoked.
     return Promise.reject(error);
@@ -199,7 +207,7 @@ export type RendererTransport = Pick<OndaBrowserSessionTransport, 'publicCheckou
  * clock must read BEFORE the trigger and inside the arm lead, both here and as the transport's last step.
  */
 export function fireArmedAttemptRenderer(attempt: ArmedAttempt, transport: RendererTransport, clock: Pick<TrustedReleaseClock, 'nowMs'>,
-  window: { releaseMs: number; triggerMs?: number }, plan: RendererFirePlan, isAborted: () => boolean, armLeadMs: number): Promise<unknown> {
+  window: { releaseMs: number; triggerMs?: number;dispatchDeadlineMs?:number }, plan: RendererFirePlan, isAborted: () => boolean, armLeadMs: number, lifecycle:Pick<CheckoutDispatchOptions,'onResponseSafety'|'beforeResponseBookkeeping'>={}): Promise<unknown> {
   const triggerMs = window.triggerMs ?? window.releaseMs;
   const refuse = (code: string) => {
     if (attempt.state === 'armed') { attempt.state = 'refused'; revokeSubmissionPermit(attempt.permit); }
@@ -209,10 +217,12 @@ export function fireArmedAttemptRenderer(attempt: ArmedAttempt, transport: Rende
   try {
     if (attempt.state !== 'armed') return Promise.reject(new SubmissionDispatchError('SUPERVISED_ONE_SHOT_ALREADY_USED', false));
     if (isAborted()) return refuse('USER_ABORT');
+    if(attempt.shotDeadlineMs!==undefined && (plan.trustedTriggerMs!==triggerMs || plan.trustedDeadlineMs!==Math.min(attempt.shotDeadlineMs,window.dispatchDeadlineMs??Infinity) || plan.notAfterRendererMs-plan.fireAtRendererMs>SHOTGUN_MAX_TRIGGER_LATENESS_MS)) return refuse('SHOTGUN_TIMING_POLICY_MISMATCH');
     if (!inArmWindow(clock.nowMs())) return refuse('RENDERER_ARM_WINDOW_MISSED');
     attempt.state = 'fired';
     const beforeArm = () => { if (!inArmWindow(clock.nowMs())) throw new SubmissionDispatchError('RENDERER_ARM_WINDOW_MISSED', false); };
-    return transport.publicCheckoutProoflessRendererArmed(attempt.request, attempt.permit, plan, { beforeArm });
+    return transport.publicCheckoutProoflessRendererArmed(attempt.request, attempt.permit,
+      {...plan,...(attempt.shotDeadlineMs!==undefined?{missedCode:'SHOTGUN_TRIGGER_MISSED' as const}:{})}, { ...lifecycle,beforeArm });
   } catch (error) {
     return Promise.reject(error);
   }
@@ -246,9 +256,9 @@ export async function disarmUnfired(armed: ArmedPrecisionRace, code: string, now
 }
 /** True when no armed attempt ever reached the transport (every one refused or disarmed). */
 export const armedNothingFired = (armed: ArmedPrecisionRace) => armed.attempts.every(attempt => attempt.state !== 'fired');
-/** The dispatch window of one armed attempt: from its own trigger to the race's deadline. */
+/** Effective dispatch window: strict Shotgun deadline bounded by the outer race deadline. */
 export const armedWindow = (armed: ArmedPrecisionRace, attempt: ArmedAttempt) =>
-  ({ releaseMs: armed.releaseMs, triggerMs: attempt.triggerMs, dispatchDeadlineMs: armed.dispatchDeadlineMs });
+  ({ releaseMs: armed.releaseMs, triggerMs: attempt.triggerMs, dispatchDeadlineMs: Math.min(armed.dispatchDeadlineMs,attempt.shotDeadlineMs??Infinity) });
 /** The earliest trigger of an armed race (the release instant when nothing was armed). */
 export const firstArmedTrigger = (armed: ArmedPrecisionRace) =>
   armed.attempts.length ? Math.min(...armed.attempts.map(attempt => attempt.triggerMs)) : armed.releaseMs;
@@ -268,7 +278,7 @@ export interface ArmedDispatchDeps {
   onVerifiedHold?: (attempt: ArmedAttempt, verified: VerifiedPublicCheckout) => Promise<PrecisionDispatchResult>;
   onEvent?: (event: { kind: 'prewarm-ready' | 'prewarm-failed' | 'prewarm-retry' | 'dispatch-start' | 'settled'; workerId: WorkerId; attemptId: string; state?: PrecisionAttemptState; code?: string;
     predictedReadyOffsetMs?:number;actualReadyOffsetMs?:number;predictionErrorMs?:number;queueDelayMs?:number;prepDurationMs?:number }) => void;
-  onWake?: () => void;
+  onWake?: (triggerMs:number) => void;
   /**
    * Priority-aware prewarm (prewarm-scheduler.ts): children are prepared tier by tier (fan-out index 0 first) with bounded
    * concurrency. Absent means the previous behavior (every attempt prepares at once). With a policy, a lower-tier child
@@ -328,8 +338,11 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
   const now = () => clock.nowMs();
   const retryCutoff = firstTriggerMs - (deps.prewarmRetryCutoffMs ?? 7_000);
   const spinTailMs = deps.spinTailMs ?? DEFAULT_SPIN_TAIL_MS;
+  const deferredEvents:Array<()=>void>=[];
+  const strictDispatch=armed.attempts.some(a=>a.shotDeadlineMs!==undefined);
+  const observe=(callback:()=>void)=>{if(strictDispatch && now()>=firstTriggerMs-FINAL_APPROACH_MS && now()<=armed.releaseMs+FINAL_APPROACH_MS)deferredEvents.push(callback);else {try{callback();}catch{}}};
   // Observers must never change an outcome (a failed trace write is not a failed prewarm or an unknown POST).
-  const emit = (event: Parameters<NonNullable<ArmedDispatchDeps['onEvent']>>[0]) => { try { deps.onEvent?.(event); } catch { /* observability only */ } };
+  const emit = (event: Parameters<NonNullable<ArmedDispatchDeps['onEvent']>>[0]) => {observe(()=>deps.onEvent?.(event));};
   const waitFor = (epochMs: number, isAborted = deps.isAborted, sleep = deps.sleep) =>
     waitForMonotonicDeadline(() => clock.monotonicDeadline(epochMs), { spinTailMs, isAborted, ...(sleep ? { sleep } : {}) });
   // A plain timer: after something was sent, a wait must never throw (the runner's abort-aware sleep does).
@@ -342,22 +355,37 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
   const outcomes:Array<Promise<PrecisionDispatchResult>|undefined>=new Array(armed.attempts.length);
   const suppressed:Array<ShotgunSuppressionReason|undefined>=new Array(armed.attempts.length);
   const targetStops=new Map<string,ShotgunSuppressionReason>();
+  const strictRace=strictDispatch;
+  // Preserve cheap safety signals immediately; defer journals, diagnostics and QR navigation until T+1 s.
+  const criticalEndMs=armed.releaseMs+FINAL_APPROACH_MS;
+  const afterCritical=()=>strictRace?waitFor(criticalEndMs,()=>false,timerSleep):Promise.resolve();
+  const safety=(attempt:ArmedAttempt,raw:unknown,error?:SubmissionDispatchError)=>{
+    let reason:ShotgunSuppressionReason|undefined;
+    if(error){if(!error.dispatched)return;reason=error.diagnostic?.status===429?'SHOTGUN_PROVIDER_THROTTLE_STOP':error.confirmedRejected?undefined:'SHOTGUN_TARGET_OUTCOME_UNKNOWN';}
+    else {try{validatePublicCheckoutResponse(raw,attempt.request as unknown as PublicCheckoutRequest,attempt.plan,new Date(now()),attempt.plan.totalPrice);reason='SHOTGUN_TARGET_ALREADY_ACHIEVED';}
+      catch{reason='SHOTGUN_TARGET_OUTCOME_UNKNOWN';}}
+    if(reason){targetStops.set(attempt.target.targetKey,reason);
+      for(const otherIndex of rendererArmed){const other=armed.attempts[otherIndex]!;if(other.target.targetKey===attempt.target.targetKey && other.triggerMs>now()){suppressed[otherIndex]=reason;void renderer?.transportFor(other.target.workerId,other)?.disarmRendererCheckout(other.key).catch(()=>undefined);}}}
+  };
+  const lifecycle=(attempt:ArmedAttempt):Pick<CheckoutDispatchOptions,'onResponseSafety'|'beforeResponseBookkeeping'>=>attempt.shotDeadlineMs===undefined?{}:{onResponseSafety:(raw,error)=>safety(attempt,raw,error),beforeResponseBookkeeping:afterCritical};
   const renderer = deps.rendererDispatch;
   const rendererOptions = { ...DEFAULT_RENDERER_DISPATCH_OPTIONS, ...(renderer?.options ?? {}) };
   const rendererArmed: number[] = [];
-  const emitPlan = (event: Parameters<NonNullable<NonNullable<ArmedDispatchDeps['rendererDispatch']>['onPlan']>>[0]) => { try { renderer?.onPlan?.(event); } catch { /* observability only */ } };
+  const emitPlan = (event: Parameters<NonNullable<NonNullable<ArmedDispatchDeps['rendererDispatch']>['onPlan']>>[0]) => {observe(()=>renderer?.onPlan?.(event));};
   // One step per distinct trigger (plus its renderer arm step), in time order; at a tie a fire goes first.
   // With nothing armed it still waits for the release instant, as before.
   const triggers = [...new Set([firstTriggerMs, ...armed.attempts.map(attempt => attempt.triggerMs)])].sort((a, b) => a - b);
   const steps = triggers.flatMap(triggerMs => [{ at: triggerMs, kind: 'fire' as const, triggerMs },
-    ...(renderer ? [{ at: triggerMs - rendererOptions.armLeadMs, kind: 'arm' as const, triggerMs }] : [])])
+    ...(renderer ? [{ at: triggerMs - rendererOptions.armLeadMs, kind: 'arm' as const, triggerMs }] : []),
+    ...(armed.attempts.some(a=>a.triggerMs===triggerMs && a.shotDeadlineMs!==undefined)?[{at:triggerMs+SHOTGUN_MAX_TRIGGER_LATENESS_MS+0.01,kind:'expire' as const,triggerMs}]:[])])
     .sort((a, b) => a.at - b.at || (a.kind === b.kind ? 0 : a.kind === 'fire' ? -1 : 1));
   const groupOf = (triggerMs: number) => armed.attempts.flatMap((attempt, index) => attempt.triggerMs === triggerMs ? [index] : []);
   let calibrations = new Map<number, RendererClockCalibration>();
   const settleSent=(index:number,sent:Promise<unknown>)=>{
     const attempt=armed.attempts[index]!;
     const outcome=(async():Promise<PrecisionDispatchResult>=>{
-      try { const verified=await settleArmedAttempt(attempt,sent,now);return deps.onVerifiedHold?await deps.onVerifiedHold(attempt,verified):{state:'QR_READY'}; }
+      try { const gated=attempt.shotDeadlineMs===undefined?sent:sent.then(async raw=>{safety(attempt,raw);await afterCritical();return raw;},async error=>{if(error instanceof SubmissionDispatchError)safety(attempt,undefined,error);await afterCritical();throw error;});
+        const verified=await settleArmedAttempt(attempt,gated,now);return deps.onVerifiedHold?await deps.onVerifiedHold(attempt,verified):{state:'QR_READY'}; }
       catch(error){return classifyPrecisionDispatchError(error,async()=>{try{return (await attempt.journal.read(attempt.key)).state;}catch(readError){if((readError as NodeJS.ErrnoException).code==='ENOENT')return undefined;throw readError;}});}
     })().catch(():PrecisionDispatchResult=>({state:'UNKNOWN',code:'PRECISION_DISPATCH_UNCLASSIFIED'})).then(async result=>{
       const reason=shotgunStopReason({state:result.state,throttle:!!result.code&&/(?:429|THROTTL|RATE_LIMIT)/.test(result.code)});
@@ -382,12 +410,12 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
       if (!transport) { emitPlan({ workerId: attempt.target.workerId, attemptId:attempt.attempt.id, mode: 'node-fallback', code: 'RENDERER_TRANSPORT_MISSING' }); continue; }
       let plan: RendererFirePlan;
       // The page fires at the trigger, so the trigger is the "release" it plans for.
-      try { plan = planRendererFire({ key: attempt.key, pageUrl: renderer!.pageUrl, calibration, clock, releaseMs: triggerMs, dispatchDeadlineMs, nodeNowMs: performance.now(), options: rendererOptions }); }
+      try { plan = planRendererFire({ key: attempt.key, pageUrl: renderer!.pageUrl, calibration, clock, releaseMs: triggerMs, dispatchDeadlineMs:armedWindow(armed,attempt).dispatchDeadlineMs, nodeNowMs: performance.now(), options: rendererOptions }); }
       catch (error) { emitPlan({ workerId: attempt.target.workerId, attemptId:attempt.attempt.id, mode: 'node-fallback', code: safeCode(error, 'RENDERER_PLAN_FAILED'), calibration }); continue; }
       // Too close to (or past) the trigger to arm safely: leave it to the Node path at its trigger.
       if (!(now() < triggerMs - 1)) { emitPlan({ workerId: attempt.target.workerId, attemptId:attempt.attempt.id, mode: 'node-fallback', code: 'RENDERER_ARM_TOO_LATE', calibration }); continue; }
       deps.onMark?.(attempt.target.workerId,'rendererArm',attempt);
-      const sent = fireArmedAttemptRenderer(attempt, transport, clock, armedWindow(armed, attempt), plan, deps.isAborted, rendererOptions.armLeadMs);
+      const sent = fireArmedAttemptRenderer(attempt, transport, clock, armedWindow(armed, attempt), {...plan,...(attempt.shotDeadlineMs!==undefined?{missedCode:'SHOTGUN_TRIGGER_MISSED' as const}:{})}, deps.isAborted, rendererOptions.armLeadMs,lifecycle(attempt));
       sent.catch(() => undefined);
       sends[index] = sent;
       settleSent(index,sent);
@@ -396,15 +424,23 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
     }
   };
   /** ---- Trigger: one synchronous, in-memory pass. No I/O, hashing or request building here. ---- */
-  const fireGroup = (triggerMs: number) => {
+  const strictMissed=new Set<number>();
+  const fireGroup = (triggerMs: number, retry=false) => {
     for (const index of groupOf(triggerMs)) {
       const attempt = armed.attempts[index]!, ready = readiness[index]!;
-      if (sends[index] || !ready.settled || !ready.ok) continue;
+      if(sends[index] || strictMissed.has(index) || attempt.state!=='armed')continue;
+      if(attempt.shotDeadlineMs!==undefined && now()>attempt.shotDeadlineMs){strictMissed.add(index);continue;}
+      if(!ready.settled || !ready.ok){
+        if(attempt.shotDeadlineMs!==undefined && !retry){
+          void ready.promise.then(()=>{if(now()<=attempt.shotDeadlineMs! && !sends[index])fireGroup(triggerMs,true);else if(!sends[index])strictMissed.add(index);});
+        }
+        continue;
+      }
       const stop=targetStops.get(attempt.target.targetKey);if(stop){suppressed[index]=stop;continue;}
       const transport = deps.transportFor(attempt.target.workerId,attempt);
       if (!transport) continue;
       deps.onMark?.(attempt.target.workerId,'transportCall',attempt);
-      const sent = fireArmedAttempt(attempt, transport, clock, armedWindow(armed, attempt), deps.isAborted);
+      const sent = fireArmedAttempt(attempt, transport, clock, armedWindow(armed, attempt), deps.isAborted,lifecycle(attempt));
       sent.catch(() => undefined); // observed below; marked handled so a refusal is never an unhandled rejection meanwhile
       sends[index] = sent;
       settleSent(index,sent);
@@ -427,7 +463,14 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
     const prepare = async (attempt: ArmedAttempt): Promise<boolean> => {
       const startedAt=now(),queueDelayMs=startedAt-(firstTriggerMs-deps.prewarmLeadMs);
       for (let round = 1; round <= 2; round++) {
-        try { await deps.prewarm(attempt); }
+        try {
+          if(attempt.shotDeadlineMs!==undefined){
+            if(now()>=firstTriggerMs-FINAL_APPROACH_MS)throw Error('SHOTGUN_TRIGGER_MISSED');
+            await deps.transportFor(attempt.target.workerId,attempt)?.prepareStrictTiming?.();
+          }
+          // Sampling is already finished. A pending security preparation may become ready inside
+          // the shot's allowance without starting new clock/CDP work at its trigger.
+          await deps.prewarm(attempt); }
         catch (error) {
           emit({ kind: 'prewarm-failed', workerId: attempt.target.workerId, attemptId: attempt.attempt.id, code: safeCode(error, 'SECURITY_PREWARM_FAILED') });
           if (round === 1 && now() < retryCutoff) { emit({ kind: 'prewarm-retry', workerId: attempt.target.workerId, attemptId: attempt.attempt.id }); continue; }
@@ -445,9 +488,9 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
     const byId = new Map(armed.attempts.map(attempt => [attempt.attempt.id, attempt] as const));
     prewarmSchedule = schedulePrewarm(armed.attempts.map((attempt, index) => ({ id: attempt.attempt.id, tier: attempt.attempt.fanOutIndex, order: index,
       group: attempt.target.workerId })), task => prepare(byId.get(task.id)!), deps.prewarmPolicy ?? UNBOUNDED_PREWARM, undefined,
-    status => { try { deps.onPrewarmStatus?.(status); } catch { /* observability only */ } });
+    status => {observe(()=>deps.onPrewarmStatus?.(status));});
     readiness = armed.attempts.map(attempt => prewarmSchedule!.readiness.get(attempt.attempt.id)!);
-    if (tiered) {
+    if (tiered || strictRace) {
       // No new preparation starts late in the countdown; anything not started by then is omitted (never sent).
       const stopAt = firstTriggerMs - Math.max(FINAL_APPROACH_MS, deps.prewarmStopStartingLeadMs ?? 3_000);
       void waitFor(stopAt, () => false, timerSleep).then(() => prewarmSchedule?.stopStarting(), () => prewarmSchedule?.stopStarting());
@@ -480,8 +523,12 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
     for (const step of steps) {
       if (sends.some(Boolean)) await waitFor(step.at, committedAbort, timerSleep);
       else await waitFor(step.at);
-      if (step.kind === 'arm') armRendererGroup(step.triggerMs);
-      else { deps.onWake?.(); fireGroup(step.triggerMs); }
+      if(step.kind==='expire'){for(const index of groupOf(step.triggerMs)){const attempt=armed.attempts[index]!;
+        if(!sends[index] && attempt.shotDeadlineMs!==undefined && now()>attempt.shotDeadlineMs && attempt.state==='armed'){
+          revokeSubmissionPermit(attempt.permit);attempt.state='refused';strictMissed.add(index);
+        }}
+      }else if (step.kind === 'arm') armRendererGroup(step.triggerMs);
+      else { deps.onWake?.(step.triggerMs); fireGroup(step.triggerMs); }
     }
   } catch (error) {
     prewarmSchedule?.stopStarting();
@@ -494,6 +541,9 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
   await new Promise<void>(done => setImmediate(done));
   // Every trigger has passed: nothing else may start preparing.
   prewarmSchedule?.stopStarting();
+  if(strictRace)await afterCritical();
+  for(const callback of deferredEvents){try{callback();}catch{}}
+  deferredEvents.length=0;
   try { deps.onReleaseWindowEnd?.(); } catch { /* optional tuning */ }
   // ---- Everything below runs after every ready POST has been started. ----
   const afterFire = deps.afterFire && sends.some(Boolean)
@@ -503,6 +553,13 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
     const attempt = armed.attempts[index]!, ready = readiness[index]!;
     if(suppressed[index]){await disarmAttempt(attempt,suppressed[index]!,now).catch(()=>undefined);return {state:'NOT_DISPATCHED',code:suppressed[index]};}
     if(outcomes[index]){emit({kind:'dispatch-start',workerId:attempt.target.workerId,attemptId:attempt.attempt.id});return outcomes[index]!;}
+    if(attempt.shotDeadlineMs!==undefined && !sends[index]){
+      if(!ready.settled && now()<=attempt.shotDeadlineMs)await Promise.race([ready.promise,waitFor(attempt.shotDeadlineMs,()=>false,timerSleep)]);
+      if(outcomes[index])return outcomes[index]!;
+      if(attempt.state==='refused')await attempt.journal.mark(attempt.key,'rejected',new Date(now()),undefined,undefined,'SHOTGUN_TRIGGER_MISSED').catch(()=>undefined);
+      else await disarmAttempt(attempt,'SHOTGUN_TRIGGER_MISSED',now).catch(()=>undefined);
+      return {state:'NOT_DISPATCHED',code:'SHOTGUN_TRIGGER_MISSED'};
+    }
     let sent = sends[index];
     if (!sent) {
       // A lower-tier fan-out child that was not ready (or never started) at its trigger is omitted, never sent late.
@@ -522,7 +579,7 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
       if(stop){await disarmAttempt(attempt,stop,now).catch(()=>undefined);return {state:'NOT_DISPATCHED',code:stop};}
       const transport = deps.transportFor(attempt.target.workerId,attempt);
       if (!transport) { await disarmAttempt(attempt, 'API_CHECKOUT_WORKER_MISSING', now).catch(() => undefined); return { state: 'NOT_DISPATCHED', code: 'API_CHECKOUT_WORKER_MISSING' }; }
-      sent = fireArmedAttempt(attempt, transport, clock, armedWindow(armed, attempt), deps.isAborted);
+      sent = fireArmedAttempt(attempt, transport, clock, armedWindow(armed, attempt), deps.isAborted,lifecycle(attempt));
       sends[index]=sent;
     }
     emit({ kind: 'dispatch-start', workerId: attempt.target.workerId, attemptId: attempt.attempt.id });

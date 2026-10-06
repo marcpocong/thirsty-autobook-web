@@ -119,3 +119,9 @@ describe('adaptive renderer clock calibration', () => {
     expect(calls).toBe(8);
   });
 });
+
+it('records independent scheduler wakes while preserving generic shared-wake compatibility',()=>{
+  const recorder=new CriticalPathRecorder(1000,1000,0,['a','b'],()=>0);
+  recorder.mark('*','schedulerFired',900);recorder.mark('a','schedulerFired',500);recorder.mark('b','schedulerFired',995);
+  expect(recorder.rows().map(r=>r.schedulerFiredMs)).toEqual([-500,-5]);
+});

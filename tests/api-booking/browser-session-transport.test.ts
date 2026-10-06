@@ -352,3 +352,39 @@ describe('midnight-ending proofless checkout keys', () => {
     expect(armCheckoutRequest(request).key).toBe(standardPlanJournalKeys(plan, facilityId)[0]);
   });
 });
+
+describe('strict Shotgun page gate and prepared hot path',()=>{
+  const plan=prooflessReleasePlan({mode:'standard',targetDate:date,durationHours:2,preferredStartTimes:['12:00'],fallbackStartTimes:[],courtPriority:[3],fallbackCourts:[],courtCount:1,maximumTotalPrice:Infinity,currency:'PHP'});
+  const customer={clientId:'synthetic-client',customerId:'synthetic-customer',customerEmail:'fixture@example.invalid',customerPhone:'0000000000',customerFirstName:'Fixture',customerLastName:'Player'};
+  it('a CDP evaluation delayed past the strict deadline never fetches, creates a page, navigates, acquires security or constructs a body',async()=>{
+    const fetcher=vi.fn(),newPage=vi.fn(()=>{throw Error('NO_NEW_PAGE');}),goto=vi.fn(()=>{throw Error('NO_NAVIGATION');});
+    const current=vi.fn(async()=>({turnstileToken:'synthetic-token',publicFingerprint:'synthetic-print'}));
+    let delay=false;
+    const evaluate=vi.fn(async(fn:(args?:any)=>unknown,arg?:unknown)=>{if(delay)await new Promise(done=>setTimeout(done,80));return fn(arg);});
+    const page={isClosed:()=>false,url:()=> 'https://app.onda.fit/book/thirsty-pickle',evaluate,newPage,goto} as unknown as Page;
+    const transport=new OndaBrowserSessionTransport(page,current);process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT='SUPERVISED_ONE_SHOT';
+    const directory=await mkdtemp(join(tmpdir(),'shotgun-page-'));directories.push(directory);
+    const journal=new DurableSubmissionJournal(directory),key=standardPlanJournalKeys(plan,facilityId)[0]!;
+    await journal.begin(key);const token=await journal.claimSupervisedOneShot(key);
+    const request=prooflessRequest(plan,customer);request.items.forEach(Object.freeze);Object.freeze(request.items);Object.freeze(request);armCheckoutRequest(request,{plan,key});
+    await transport.prepareCheckoutContext();await transport.prepareStrictTiming();current.mockClear();
+    const stringify=vi.spyOn(JSON,'stringify').mockImplementation(()=>{throw Error('NO_HOT_PATH_SERIALIZATION');});vi.stubGlobal('fetch',fetcher);delay=true;
+    try{const trigger=performance.now();await expect(transport.publicCheckoutProofless(request,token,{requirePreparedContext:true,beforePost:()=>{},strictTiming:{notBeforeNodeMs:trigger-1,notAfterNodeMs:trigger+50}})).rejects.toMatchObject({code:'SHOTGUN_TRIGGER_MISSED',dispatched:false});
+      expect(fetcher).not.toHaveBeenCalled();expect(current).not.toHaveBeenCalled();expect(newPage).not.toHaveBeenCalled();expect(goto).not.toHaveBeenCalled();expect(stringify).not.toHaveBeenCalled();
+    }finally{stringify.mockRestore();vi.unstubAllGlobals();}
+  });
+  it('fails closed without pre-release page calibration',async()=>{
+    const {page}=fakePage(),transport=new OndaBrowserSessionTransport(page,async()=>({turnstileToken:'synthetic-token',publicFingerprint:'synthetic-print'}));
+    process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT='SUPERVISED_ONE_SHOT';await transport.prepareCheckoutContext();
+    await expect(transport.publicCheckout(checkout,await permit())).resolves.toBeDefined();
+    await transport.prepareCheckoutContext();
+    await expect(transport.publicCheckoutProofless({...checkout,items:checkout.items.map(i=>({...i,availabilityProof:null}))},await permit(),{requirePreparedContext:true,strictTiming:{notBeforeNodeMs:0,notAfterNodeMs:100}})).rejects.toMatchObject({code:'SHOTGUN_TIMING_CLOCK_NOT_READY',dispatched:false});
+  });
+});
+
+it('keeps known payload rejection conclusive before deferred response persistence',async()=>{
+  const {page,evaluate}=fakePage();evaluate.mockResolvedValue({status:400,contentType:'application/json',body:'{"success":false,"error":"Invalid booking session time"}'});
+  const safety=vi.fn(),capture=vi.fn(async()=>{}),transport=new OndaBrowserSessionTransport(page,async()=>({turnstileToken:'synthetic-token',publicFingerprint:'synthetic-print'}),capture);
+  process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT='SUPERVISED_ONE_SHOT';await transport.prepareCheckoutContext();
+  await expect(transport.publicCheckoutProofless({...checkout,items:checkout.items.map(i=>({...i,availabilityProof:null}))},await permit(),{requirePreparedContext:true,onResponseSafety:safety,beforeResponseBookkeeping:async()=>{expect(safety).toHaveBeenCalledWith(undefined,expect.objectContaining({confirmedRejected:true}));expect(capture).not.toHaveBeenCalled();}})).rejects.toMatchObject({code:'ONDA_PAYLOAD_REJECTED',confirmedRejected:true});
+});

@@ -1,3 +1,4 @@
+import {SHOTGUN_MAX_TRIGGER_LATENESS_MS} from '../shotgun.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { link, mkdir, open, readFile, rename, rmdir, unlink } from 'node:fs/promises';
 import { resolve, join, dirname } from 'node:path';
@@ -21,6 +22,9 @@ export interface SanitizedSubmissionAttempt {
   /** Armed records only: the authorized release instant and the last instant a POST may start (epoch ms, trusted clock). */
   releaseMs?: number;
   dispatchDeadlineMs?: number;
+  dispatchTimingPolicy?:'SHOTGUN_STRICT';
+  triggerMs?:number;
+  shotDeadlineMs?:number;
 }
 export interface SubmissionRecord {
   key: string;
@@ -71,6 +75,7 @@ function validAttempt(attempt: SanitizedSubmissionAttempt, stage: SanitizedSubmi
     !attempt.courtIds.some(court => !Number.isInteger(court) || court < 1 || court > 7) &&
     Number.isInteger(attempt.expectedBookingCount) && attempt.expectedBookingCount >= 1 &&
     Number.isFinite(attempt.maximumAmount) && attempt.maximumAmount >= 0 && attempt.stage === stage &&
+    (attempt.dispatchTimingPolicy===undefined || attempt.dispatchTimingPolicy==='SHOTGUN_STRICT' && Number.isSafeInteger(attempt.triggerMs) && Number.isSafeInteger(attempt.shotDeadlineMs) && attempt.shotDeadlineMs===attempt.triggerMs!+SHOTGUN_MAX_TRIGGER_LATENESS_MS) &&
     (stage !== 'armed' || Number.isSafeInteger(attempt.releaseMs) && Number.isSafeInteger(attempt.dispatchDeadlineMs) &&
       attempt.releaseMs! > 0 && attempt.dispatchDeadlineMs! >= attempt.releaseMs!);
 }
