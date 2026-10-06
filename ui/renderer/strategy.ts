@@ -1,3 +1,4 @@
+import { fitNormalAttemptLimits } from '../../src/normal-strategy.js';
 import {primaryShotgunTarget,fitQuickShotgun,shotgunSettingsKey,forecastPreparation,configurationFingerprint} from '../../src/quick-shotgun.js';
 import type { Dashboard } from '../types.js';
 import { compileSmartPlan, describeSmartPlan, resizeSmartFanOut, setSmartChildOffset, smartRange, smartSlotOffsets, SMART_WORKERS, SMART_MAX_SLOTS,
@@ -197,7 +198,10 @@ export function initStrategy(value: StrategyHost): void {
     normalError='';host.edit(draft=>{delete draft.advanced.wave2;delete draft.advanced.rescue;delete draft.advanced.total;});
   });
   byId('strategy-normal-save').addEventListener('click',()=>{void(async()=>{
-    try {normalError='';host.activateSmart();if(!await host.save())normalError='Could not save. Review Advanced strategy settings for the blocker.';}
+    try {normalError='';const fit=fitNormalAttemptLimits(host.draft(),{targetDate:host.state()?.booking?.targetDate??'',unavailable:host.unready()});
+      if(!fit.compiled.phase3||fit.compiled.problems.length){normalError=fit.compiled.problems[0]??'Review your targets before saving.';return;}
+      if(fit.normalized.length)host.edit(draft=>{draft.advanced=fit.draft.advanced;});
+      host.activateSmart();if(!await host.save())normalError='Could not save. Review Advanced strategy settings for the blocker.';}
     catch {normalError='Could not save. Try again.';}render();
   })();});
   selectById('strategy-prime-from').replaceChildren(...Array.from({ length: 16 }, (_, index) => { const option = el('option', '', hourLabel(index + 8)); option.value = hourText(index + 8); return option; }));
@@ -621,7 +625,8 @@ function renderShotgun(state:Dashboard|undefined){
 }
 
 function renderReview(state: Dashboard | undefined) {
-  const draft = host.draft(), compiled = compileSmartPlan(draft, { targetDate: state?.booking?.targetDate ?? '', unavailable: host.unready(),shotgunCapacity:shotgunCapacity(state,draft.shotgun?.budget??1,host.meta()?.timingCalibration?.groupShiftMs??0) });
+  const draft=host.draft(),context={targetDate:state?.booking?.targetDate??'',unavailable:host.unready(),shotgunCapacity:shotgunCapacity(state,draft.shotgun?.budget??1,host.meta()?.timingCalibration?.groupShiftMs??0)};
+  const compiled=draft.shotgun?.enabled?compileSmartPlan(draft,context):fitNormalAttemptLimits(draft,context).compiled;
   const smart = state?.booking && (document.getElementById('precision-strategy') as HTMLSelectElement | null)?.value === 'precision' && (document.getElementById('precision-mode-smart') as HTMLInputElement | null)?.checked;
   const feasibility=draftFeasibility(state,compiled.phase3);
   const warnings = [...draft.immediate, ...draft.backups].filter(slot => slot.publicEvidence?.override).map(slot =>
@@ -632,7 +637,7 @@ function renderReview(state: Dashboard | undefined) {
   for(const text of [...new Set(compiled.problems)])items.push({label:acknowledgementKind(text)==='timing'?'Aggressive timing acknowledgement':acknowledgementKind(text)==='standby'?'Initial-release resource trade-off acknowledgement':text,control:acknowledgementKind(text)==='timing'?'strategy-shotgun-timing-override':acknowledgementKind(text)==='standby'?'strategy-shotgun-standby-override':/rate/i.test(text)?'smart-review-rates':draft.shotgun?.enabled?'strategy-shotgun-budget':'strategy-edit-immediate'});
   if(!draft.immediate.length&&!items.length)items.push({label:'Target required',control:'strategy-edit-immediate'});
   if(presentation.feasibility?.projectedOmitted)items.push({label:`Preparation forecast incomplete: ${presentation.feasibility.projectedReady}/${presentation.feasibility.configuredWave1Attempts} feasible · ${presentation.feasibility.projectedOmitted} omitted`,control:'shotgun-preparation'});
-  const valid=!!smart&&!!compiled.phase3,saveDisabled=(byId('save-booking') as HTMLButtonElement).disabled;
+  const valid=!!smart&&!!compiled.phase3,saveDisabled=draft.shotgun?.enabled?(byId('save-booking') as HTMLButtonElement).disabled:state?.operation!=='idle'||!compiled.phase3||compiled.problems.length>0;
   const remaining=items.length,status=remaining?`${unknown.length||presentation.feasibility?.projectedOmitted?'✕ BLOCKED':'⚠ NEEDS ATTENTION'} · ${remaining} item${remaining===1?'':'s'} remaining`:valid&&savedDraftKey===JSON.stringify(draft)?'✓ STRATEGY SAVED':valid&&!saveDisabled?'✓ READY TO SAVE':valid?'INFO · SAVE UNAVAILABLE':'⚠ NEEDS ATTENTION';
   gate.replaceChildren(el('h4','','RELEASE PLAN STATUS'),el('strong','',status),...items.map(item=>{const button=el('button','secondary gate-link',item.label);button.type='button';button.addEventListener('click',()=>focusControl(item.control));return button;}));
   if(valid)gate.append(el('p','check-ok','✓ Target configured · Rates confirmed · Attempts authorized'),el('p','check-ok',draft.shotgun?.enabled?'✓ No post-release Shotgun offsets':'✓ Literal release timing configured'),...(!presentation.feasibility?.projectedOmitted?[el('p','',preparationText(presentation.feasibility,draft.shotgun?.budget??presentation.preview.phase3?.wave1.length??0))]:[]),...(draft.shotgun?.enabled?[el('p','check-ok',`${draft.shotgun.timingCapacityOverride?'✓ Aggressive timing acknowledged':'INFO · Machine timing respected'} · ${draft.shotgun.allowStandbyConsumption?'✓ Initial-release trade-off acknowledged':'INFO · Backup capacity protected'}`)]:[]));
@@ -711,11 +716,11 @@ export const strategySnapshot = () => ({ goal: { ...goal }, preset, forced: [...
 export const conflictsIn = (plan: SuggestedPlan) => plan.immediate.filter(window => isConflict(window.evidence));
 
 function renderNormal(state:Dashboard|undefined){
- const draft=host.draft(),compiled=compileSmartPlan(draft,{targetDate:state?.booking?.targetDate??'',unavailable:host.unready()});
+ const draft=host.draft(),fit=fitNormalAttemptLimits(draft,{targetDate:state?.booking?.targetDate??'',unavailable:host.unready()}),compiled=fit.compiled;
  const saved=savedDraftKey!==''&&savedDraftKey===JSON.stringify(draft)&&savedGoalKey===goalSettingsKey();
  byId('strategy-normal-summary').textContent=`Immediate targets: ${draft.immediate.length} · Release attempts: ${compiled.phase3?.wave1.reduce((n,a)=>n+(a.fanOutOffsetsMs?.length??1),0)??0} · Backup choices: ${draft.backups.length} · Reopened-slot rescue: ${draft.retryReopened?'ON':'OFF'}`;
  const busy=state?.operation!=='idle';
- byId('strategy-normal-status').textContent=normalError||(saved?'NORMAL STRATEGY SAVED ✓':compiled.problems.length?`UNSAVED CHANGES · Cannot save: ${compiled.problems.join(' ')}`:busy?'Wait for the current operation to finish before saving.':'UNSAVED CHANGES');
+ byId('strategy-normal-status').textContent=normalError||(saved?'NORMAL STRATEGY SAVED ✓':compiled.problems.length?`UNSAVED CHANGES · Cannot save: ${compiled.problems.join(' ')}`:busy?'Wait for the current operation to finish before saving.':fit.normalized.length?`UNSAVED CHANGES · Old attempt limits no longer fit. Saving will use automatic limits: ${compiled.budgets.total} total (${compiled.budgets.wave2} backup + ${compiled.budgets.rescue} rescue).`:'UNSAVED CHANGES');
  const autoDraft=structuredClone(draft);delete autoDraft.advanced.wave2;delete autoDraft.advanced.rescue;delete autoDraft.advanced.total;
  const automatic=compileSmartPlan(autoDraft,{targetDate:state?.booking?.targetDate??'',unavailable:host.unready()});
  const repair=byId('strategy-normal-auto-limits') as HTMLButtonElement;
