@@ -105,6 +105,8 @@ export interface Dashboard {
   runHistory?:RunHistoryEntry[];
   bookingAdjustment?:FallbackReconciliation|null;
   scheduledRelease?:ScheduledReleaseContext|null;
+  /** Display-only record of the authorized API release owned by the active runner. */
+  activeApiRelease?:{releaseMs:number;targetDate:string;phase:'PREPARING'|'WAITING'|'RUNNING'|'FAILED'}|null;
   sleepProtection?:boolean;
   arbitrationManifest?:ArbitrationManifestView|null;
   scheduleStatus?:'WAITING'|'WAKE / RECONNECT'|'FINAL PREFLIGHT'|'RUNNING'|'MISSED'|null;

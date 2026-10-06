@@ -17,6 +17,28 @@ function booking(backups=true,multi=false){
   return bookingView(ConfigSchema.parse({...defaultSetup,BOOKING_METHOD:'proofless',RELEASE_STRATEGY:'precision',PRECISION_TARGETS:[],PRECISION_PHASE3:compileSmartPlan(draft,{targetDate}).phase3!,PLAYER_FULL_NAME:'Fixture',PLAYER_PHONE:'09123456789',PLAYER_EMAIL:'fixture@example.invalid'}));
 }
 const players={primary:true,extended:true,third:true,fourth:true,fifth:true,sixth:true,seventh:true};
+it('keeps API release ownership visible across stage updates and stops the runner before reviewing its lock',async()=>{
+  const clock=clockStatus(ObservationSchema.parse({}),DateTime.now());
+  const page=await openRenderer(browser,{booking:booking(false),playerStatus:players,clock,operation:'full',lock:true,ready:false,termsAuthorized:false,
+    activeApiRelease:{releaseMs:clock.releaseMs,targetDate:clock.targetDate,phase:'PREPARING'},
+    apiStage:{type:'apiStage',stage:'PHASE3_DIVERSIFICATION_WARNING',elapsedMs:5696}},'release');
+  expect(await page.locator('#schedule-meta').innerText()).toContain('ARMED · PREPARING');
+  expect(await page.locator('#next-preflight').innerText()).toContain('ARMED · PREPARING RELEASE CONTEXTS');
+  expect(await page.locator('#next-preflight').innerText()).toContain('AUTHORIZED FOR THIS RUN');
+  expect(await page.locator('#next-preflight').innerText()).toContain('not yet prepared');
+  expect(await page.locator('#next-preflight').innerText()).not.toContain('RESET REQUIRED');
+  expect(await page.locator('#main-action-hint').innerText()).not.toContain('retained lock');
+  expect(await page.locator('#main-action').innerText()).toBe('Emergency Stop');
+  await page.evaluate(()=>{const w=window as any;w.fixtureState.activeApiRelease.phase='WAITING';w.fixturePublish(w.fixtureState);});
+  expect(await page.locator('#next-preflight h3').innerText()).toBe('WAITING FOR RELEASE');
+  await page.screenshot({path:'.local/operator-ux/api-release-waiting.png',fullPage:true});
+  await page.locator('#main-action').click();
+  expect(await page.evaluate(()=>(window as any).fixtureCalls)).toEqual(['abortAutomation']);
+  await page.evaluate(()=>{const w=window as any;w.fixtureState.operation='idle';w.fixtureState.activeApiRelease=null;w.fixturePublish(w.fixtureState);});
+  expect(await page.locator('#schedule-meta').innerText()).toContain('NOT ARMED');
+  expect(await page.locator('#main-action').innerText()).toBe('Review Hold');
+  await page.close();
+});
 it('resolves both acknowledgements without Advanced, keeps priority explicit, saves literal timing and passes keyboard checks',async()=>{
   const page=await openRenderer(browser,{booking:booking(),playerStatus:players},'strategy',{width:1440,height:1000});
   await page.locator('input[name="strategy-intensity"][value="SHOTGUN"]').check();
