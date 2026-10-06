@@ -649,6 +649,13 @@ function renderReview(state: Dashboard | undefined) {
   byId('strategy-current-plan').textContent=`CURRENT PLAN · ${primarySlot?windowText(primarySlot):'Choose a target'} · ${draft.shotgun?.enabled?`${draft.shotgun.timingMode.replaceAll('_',' ')} · ${schedule.length} attempts · ${groups} browsers · ${offsetText(schedule.length?Math.min(...schedule.map(value=>value.configuredOffsetMs)):draft.shotgun.windowStartMs)} → ${offsetText(schedule.length?Math.max(...schedule.map(value=>value.configuredOffsetMs)):draft.shotgun.windowEndMs)}`:'Normal measured timing'} · ${status}`;
   const save=byId('strategy-save') as HTMLButtonElement;save.disabled=!valid||saveDisabled||remaining>0;
   save.hidden=!draft.shotgun?.enabled||host.meta()?.quickShotgun?.settingsKey===quickSettingsKey()||quickChoice||savedDraftKey===JSON.stringify(draft);
+  // Invalid Custom settings must not strand the normal workflow behind a disabled Save.
+  // Offer the existing explicit replacement action; building targets never replaces them.
+  const blockedCustom=!save.hidden&&save.disabled;
+  if(blockedCustom){
+    save.hidden=true;
+    if(!quickError)byId('strategy-shotgun-quick-status').textContent='CUSTOM SHOTGUN NEEDS UPDATE · These settings cannot be saved with the current plan. Replace with Quick Shotgun for your #1 target, or edit Custom settings in Advanced.';
+  }
   byId('strategy-shotgun-quick-ready').hidden=byId('strategy-shotgun-quick-ready').hidden||(!save.hidden);
   if(draft.shotgun?.enabled && host.meta()?.quickShotgun?.settingsKey!==quickSettingsKey() && !quickChoice)byId('strategy-shotgun-next').hidden=savedDraftKey!==JSON.stringify(draft);
   save.textContent=savedDraftKey===JSON.stringify(draft)?'✓ STRATEGY SAVED':'SAVE CUSTOM SHOTGUN';
