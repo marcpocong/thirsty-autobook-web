@@ -370,7 +370,9 @@ initStrategy({state:()=>latest,mainCourtOrder:()=>[...courtOrder],draft:()=>smar
   resetAll:()=>{if(!acceptedSmartDraft)return;smartDraft=cloneSmart(acceptedSmartDraft);smartLineage=suggestionLineage(acceptedSmartDraft);if(strategyMeta)strategyMeta={...strategyMeta,lineage:structuredClone(smartLineage),fanOut:{...strategyMeta.fanOut,
     width:smartDraft.immediate[0]?smartSlotOffsets(smartDraft.immediate[0]).length:strategyMeta.fanOut.width,source:strategyMeta.fanOut.acceptedSource??strategyMeta.fanOut.source,
     ...(strategyMeta.fanOut.basedOnTiming?{timing:strategyMeta.fanOut.basedOnTiming}: {})}};renderSmart(true);changed();},
-  save:()=>byId('save-booking').click()});
+  save:()=>saveBookingPlan(),
+  activateSmart:()=>{input('precision-strategy').value='precision';precisionMode='smart';syncStrategy();},
+  nextRelease:()=>showView('release')});
 byId('smart-add-immediate').onclick=()=>smartEdit(draft=>{draft.immediate.push(smartNewSlot());});
 byId('smart-add-backup').onclick=()=>smartEdit(draft=>{draft.backups.push(smartNewSlot());});
 byId('release-lab-preset').onclick=()=>{
@@ -1064,13 +1066,16 @@ for(const id of ['precision-mode-fixed','precision-mode-smart'])byId(id).addEven
   syncStrategy();renderSmart(true);changed();});
 byId('booking-type').addEventListener('change',()=>{const extended=input('booking-type').value==='extended',d=Number(input('duration').value);if(extended&&d<4)input('duration').value='4';if(!extended&&d>3)input('duration').value='3';syncViableControls();changed();});
 byId('add-fallback').onclick=()=>{const h=input('fallback-time').value;if(h===input('start-time').value||fallbackTimes.includes(h)){byId('edit-status').textContent='Choose a different fallback start.';return;}if(workflow==='release'){const reconciliation=reconcileFallbackTimes(input('start-time').value,Number(input('duration').value),[...fallbackTimes,h]);if(reconciliation.removed.length){releaseAdjustment=reconciliation;byId('edit-status').textContent=bookingSetupProblem({...currentSetup(),FALLBACK_TIMES:[...fallbackTimes,h]})??'That fallback does not fit the current booking.';if(latest)render(latest);return;}}fallbackTimes.push(h);editors();changed();};
-byId('save-booking').onclick=()=>{void(async()=>{
-  if(precisionSelected()&&precisionMode==='smart'){const compiled=smartCompiled();if(!compiled.phase3){byId('edit-status').textContent=compiled.problems[0]??'Resolve the Smart backups items first.';renderSmart(true);return;}}
+async function saveBookingPlan():Promise<boolean>{
+  if(precisionSelected()&&precisionMode==='smart'){const compiled=smartCompiled();if(!compiled.phase3||compiled.problems.length){byId('edit-status').textContent=compiled.problems[0]??'Resolve the Smart backups items first.';renderSmart(true);return false;}}
    const setup:BookingSetup={...strategyFields(),RELEASE_OFFSET_MS:releaseOffsetValue(),BOOKING_METHOD:input('booking-method').value as 'browser'|'hybrid'|'api-first'|'proofless',BOOKING_TYPE:input('booking-type').value as 'standard'|'extended',COURT_COUNT:Number(input('court-count').value) as CourtCount,START_TIME:input('start-time').value,DURATION_HOURS:Number(input('duration').value),PREFERRED_COURTS:courtOrder,FALLBACK_COURTS:[],FALLBACK_TIMES:fallbackTimes,MAX_SELECTION_ATTEMPTS:Number(input('attempts').value)};
   const savedStrategyKey=strategySaveSnapshot();
   await window.thirsty.saveBooking(setup);const state=await window.thirsty.getStatus();
-  if(state.headline==='Booking plan saved'){releaseDirty=false;if(workflow==='release')dirty=false;loadedPlan='';byId('edit-status').textContent='BOOKING PLAN SAVED';strategySaved(savedStrategyKey);render(state);}else byId('edit-status').textContent='Plan rejected. Check duration and unique times.';
-})().catch(()=>{byId('edit-status').textContent='Could not save booking setup.';});};
+  if(strategySaveSnapshot()!==savedStrategyKey){byId('edit-status').textContent='Draft changed while saving. Review and save again.';render(state);return false;}
+  if(state.headline==='Booking plan saved'){releaseDirty=false;if(workflow==='release')dirty=false;loadedPlan='';byId('edit-status').textContent='BOOKING PLAN SAVED';strategySaved(savedStrategyKey);render(state);strategySaved(strategySaveSnapshot());renderStrategy(state);return true;}else byId('edit-status').textContent='Plan rejected. Check duration and unique times.';
+  return false;
+}
+byId('save-booking').onclick=()=>{void saveBookingPlan().catch(()=>{byId('edit-status').textContent='Could not save booking setup.';});};
 byId('dual-dry').onclick=()=>{void window.thirsty.runDualPractice({kind:'dualDry',date:input('dual-date').value}).catch(()=>{});};
 for(const [id,kind] of [['dual-selection','dualPractice'],['dual-full','dualFullPractice']] as const)byId(id).onclick=()=>{
   const authorized=input('dual-terms').checked;input('dual-terms').checked=false;

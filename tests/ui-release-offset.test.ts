@@ -127,7 +127,7 @@ it('focuses the full Dense Core budget on the first target with one operator act
   const targetDate=booking().targetDate,rates=confirmSmartRates(600,700,'VENUE_SCHEDULE',targetDate,new Date());
   const draft:SmartDraft={...emptySmartDraft(),rates,immediate:[{court:7,start:'19:00',durationHours:3},{court:6,start:'19:00',durationHours:3}],backups:[]};
   const page=await openRenderer(browser,{booking:booking({RELEASE_STRATEGY:'precision',PRECISION_TARGETS:[],PRECISION_PHASE3:compileSmartPlan(draft,{targetDate}).phase3!})});
-  await page.locator('[data-view="strategy"]').first().click();await page.locator('input[name="strategy-intensity"][value="SHOTGUN"]').check();await page.locator('#strategy-shotgun-focus').click();
+  await page.locator('[data-view="strategy"]').first().click();await page.locator('input[name="strategy-intensity"][value="SHOTGUN"]').check();await page.locator('#strategy-shotgun-advanced').evaluate(node=>(node as HTMLDetailsElement).open=true);await page.locator('#strategy-shotgun-focus').click();
   expect(await page.locator('#strategy-shotgun-allocation').inputValue()).toBe('CUSTOM');
   const checks=page.locator('#strategy-shotgun-targets input[type="checkbox"]');expect(await checks.nth(0).isChecked()).toBe(true);expect(await checks.nth(1).isChecked()).toBe(false);
   expect(await page.locator('#strategy-shotgun-targets input[type="number"]').first().inputValue()).toBe('20');
