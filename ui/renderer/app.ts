@@ -6,7 +6,7 @@ import {formatReleaseOffset,isReleaseOffsetMs} from '../../src/release-offset.js
 import {applyDurationOffsetPreset,compileSmartPlan,confirmSmartRates,describeSmartPlan,emptySmartDraft,resizeSmartFanOut,setSmartChildOffset,smartDraftFromPhase3,smartPeso,smartRange,smartSlotOffsets,smartSlotText,SMART_EVENING_RATE,SMART_MAX_SLOTS,SMART_WORKERS,
   type SmartDraft,type SmartSlot,type SmartWorker,type SmartPhase3,type SmartReleaseOffset} from '../../src/precision-simple.js';
 import {fanOutTimingPlan,minimumMeaningfulSpacingMs} from '../../src/fanout-timing.js';
-import {migrateShotgunSettings,SHOTGUN_MEANINGFUL_SPACING_MS} from '../../src/shotgun.js';
+import {logicalTargetId,migrateShotgunSettings,SHOTGUN_MEANINGFUL_SPACING_MS} from '../../src/shotgun.js';
 import {initStrategy,reconstructLineage,renderStrategy,strategySaved,strategySaveSnapshot,strategyMainCourtOrderChanged,strategyModificationCount,suggestionLineage,type EditableSuggestionLineage,type StrategyV2Meta} from './strategy.js';
 import {renderLive} from './live.js';
 import {renderInsights} from './insights.js';
@@ -364,6 +364,9 @@ initStrategy({state:()=>latest,mainCourtOrder:()=>[...courtOrder],draft:()=>smar
     fanOut:{width:1,source:'NO_PROFILE',recommendedWidth:null,timing:'BALANCED',basedOnTiming:'BALANCED',profileCreatedAt:null},
     provenance:{source:'OPERATOR_BUILT',operatorModifications:0}};},
   edit:mutate=>smartEdit(mutate),
+  addTarget:(slot,kind)=>{input('precision-strategy').value='precision';precisionMode='smart';syncStrategy();smartEdit(draft=>{
+    draft[kind].push(slot);if(kind==='immediate'&&draft.shotgun&&!draft.shotgun.selectedTargetIds.includes(logicalTargetId(slot)))draft.shotgun.selectedTargetIds.push(logicalTargetId(slot));
+  });},
   resetAll:()=>{if(!acceptedSmartDraft)return;smartDraft=cloneSmart(acceptedSmartDraft);smartLineage=suggestionLineage(acceptedSmartDraft);if(strategyMeta)strategyMeta={...strategyMeta,lineage:structuredClone(smartLineage),fanOut:{...strategyMeta.fanOut,
     width:smartDraft.immediate[0]?smartSlotOffsets(smartDraft.immediate[0]).length:strategyMeta.fanOut.width,source:strategyMeta.fanOut.acceptedSource??strategyMeta.fanOut.source,
     ...(strategyMeta.fanOut.basedOnTiming?{timing:strategyMeta.fanOut.basedOnTiming}: {})}};renderSmart(true);changed();},
@@ -453,7 +456,7 @@ function strategyFields():Pick<BookingSetup,'RELEASE_STRATEGY'|'PRECISION_TARGET
       groupAnchorMs:compiled.shotgun.groupAnchorMs}}:undefined;
   const meta=strategyMeta?{...strategyMeta,fanOut:{...strategyMeta.fanOut,width:currentWidth,source:widthModified?'OPERATOR_OVERRIDE' as const:strategyMeta.fanOut.acceptedSource??strategyMeta.fanOut.source,
       timing:timingModified?'CUSTOM' as const:strategyMeta.fanOut.basedOnTiming??(strategyMeta.fanOut.timing==='CUSTOM'?'BALANCED':strategyMeta.fanOut.timing)},
-    ...(shotgunMeta?{shotgun:shotgunMeta}:{shotgun:undefined}),lineage:structuredClone(smartLineage),provenance:{source:acceptedSmartDraft?'SMART_SUGGESTED' as const:'EXISTING_SMART_PLAN' as const,operatorModifications:strategyModificationCount(smartDraft,acceptedSmartDraft,smartLineage)}}:undefined;
+    ...(shotgunMeta?{shotgun:shotgunMeta}:{shotgun:undefined}),lineage:structuredClone(smartLineage),provenance:{source:acceptedSmartDraft?'SMART_SUGGESTED' as const:strategyMeta.provenance?.source??'EXISTING_SMART_PLAN' as const,operatorModifications:strategyModificationCount(smartDraft,acceptedSmartDraft,smartLineage)}}:undefined;
   return {RELEASE_STRATEGY:'precision',PRECISION_TARGETS:[],PRECISION_FAN_OUT:false,...(compiled.phase3?{PRECISION_PHASE3:compiled.phase3}:{}),
     ...(smartDraft.releaseLab?{RELEASE_LAB:smartDraft.releaseLab}:{}),...(compiled.phase3&&meta?{STRATEGY_V2:meta}:{})};
 }

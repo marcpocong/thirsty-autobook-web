@@ -1,5 +1,5 @@
 import type { Dashboard } from '../types.js';
-import { compileSmartPlan, describeSmartPlan, resizeSmartFanOut, setSmartChildOffset, smartRange, smartSlotOffsets, SMART_WORKERS,
+import { compileSmartPlan, describeSmartPlan, resizeSmartFanOut, setSmartChildOffset, smartRange, smartSlotOffsets, SMART_WORKERS, SMART_MAX_SLOTS,
   type SmartDraft, type SmartSlot } from '../../src/precision-simple.js';
 import {evaluatePrewarmFeasibility,type PrewarmFeasibilityResult} from '../../src/api-booking/prewarm-feasibility.js';
 import { DEFAULT_STRATEGY_GOAL, draftFromSuggestion, enumeratePrimeWindows, isConflict, knownScheduleFromCells, presetAllocation, suggestPlan, validateGoal, windowEvidence, WINDOW_EVIDENCE_LABEL,
@@ -65,6 +65,7 @@ export interface StrategyHost {
   lineage(): EditableSuggestionLineage;
   edit(mutate: (draft: SmartDraft, lineage: EditableSuggestionLineage) => void): void;
   ensureMeta():void;
+  addTarget(slot: SmartSlot, kind: 'immediate' | 'backups'): void;
   meta():StrategyV2Meta|undefined;
   resetAll(): void;
   save(): void;
@@ -221,6 +222,15 @@ export function initStrategy(value: StrategyHost): void {
     render();
   });
   byId('strategy-reset-all').addEventListener('click', () => host.resetAll());
+  for (const kind of ['immediate', 'backups'] as const) byId(`strategy-add-${kind}`).addEventListener('click', () => {
+    goal = readGoal(); if (validateGoal(goal).length) { render(); return; }
+    const slot = { court: goal.courts[0]!, start: goal.primeFrom, durationHours: goal.durations[0]! };
+    const evidence = windowEvidence(slot, schedule(host.state())).evidence;
+    host.ensureMeta();
+    host.addTarget({ ...slot, publicEvidence: { evidence, ...(isConflict(evidence) || evidence === 'UNKNOWN_PUBLIC_QUERY_FAILED'
+      ? { override: 'OPERATOR_OVERRIDE_PUBLIC_CONFLICT' as const } : {}) } }, kind);
+    render();
+  });
   byId('strategy-save').addEventListener('click', () => host.save());
   byId('strategy-suggestion').addEventListener('click', event => {
     const button = (event.target as HTMLElement).closest<HTMLButtonElement>('button[data-window]'); if (!button) return;
@@ -425,11 +435,14 @@ function editableRow(kind: 'immediate' | 'backups', slot: SmartSlot, index: numb
 function renderEditable(state: Dashboard | undefined) {
   const section = byId('strategy-editable'), smart = state?.booking && (document.getElementById('precision-strategy') as HTMLSelectElement | null)?.value === 'precision'
     && (document.getElementById('precision-mode-smart') as HTMLInputElement | null)?.checked;
-  section.hidden = !smart; if (!smart) return;
+  section.hidden = false;
+  const count = host.draft().immediate.length + host.draft().backups.length;
+  (byId('strategy-add-immediate') as HTMLButtonElement).disabled = validateGoal(goal).length > 0 || count >= SMART_MAX_SLOTS || host.draft().immediate.length >= SMART_WORKERS.length;
+  (byId('strategy-add-backups') as HTMLButtonElement).disabled = validateGoal(goal).length > 0 || count >= SMART_MAX_SLOTS;
   if(document.activeElement instanceof HTMLInputElement&&document.activeElement.id.startsWith('strategy-immediate-offset-'))return;
   const draft = host.draft(), accepted = host.accepted(), compiled = compileSmartPlan(draft, { targetDate: state?.booking?.targetDate ?? '', unavailable: host.unready(),shotgunCapacity:shotgunCapacity(state,draft.shotgun?.budget??1,host.meta()?.timingCalibration?.groupShiftMs??0) });
   const lineage = host.lineage(), modifications = strategyModificationCount(draft, accepted, lineage);
-  byId('strategy-edit-provenance').textContent = accepted ? `Source: Smart generated · Operator modifications: ${modifications}` : 'Source: Existing Smart plan';
+  byId('strategy-edit-provenance').textContent = accepted ? `Source: Smart generated · Operator modifications: ${modifications}` : host.meta()?.provenance?.source === 'OPERATOR_BUILT' || !smart ? 'Source: Operator built' : 'Source: Existing Smart plan';
   (byId('strategy-reset-all') as HTMLButtonElement).disabled = !accepted || modifications === 0;
   byId('strategy-edit-immediate').replaceChildren(...draft.immediate.map((slot, index) => editableRow('immediate', slot, index, state, compiled, accepted)));
   byId('strategy-edit-backups').replaceChildren(...draft.backups.map((slot, index) => editableRow('backups', slot, index, state, compiled, accepted)));
@@ -573,6 +586,7 @@ export function strategyMainCourtOrderChanged():void {
 }
 function render() {
   const state = host.state();
+  byId('strategy-target-date').textContent = state?.booking?.targetDate ?? state?.clock?.targetDate ?? '—';
   (byId('strategy-suggest') as HTMLButtonElement).disabled = preset === 'CUSTOM' || validateGoal(goal).length > 0;
   renderSchedule(state); renderPreset(state); renderSuggestion(state); renderEditable(state); renderShotgun(state); renderReview(state);
 }
