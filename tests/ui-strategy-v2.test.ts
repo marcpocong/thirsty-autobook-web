@@ -415,3 +415,25 @@ describe('Next Release, Live and History & Insights', () => {
     await page.close();
   });
 });
+
+// Real-release history reaches the de-skew panel even while another view is selected.
+it.each([5,6])('keeps Strategy controls responsive with saved width %i and live timing history',async width=>{
+ const stamp=new Date().toISOString(),stats={n:1,p50:5,p95:5,p99:5,max:5,min:5,mean:5},none={n:0,p50:null,p95:null,p99:null,max:null,min:null,mean:null};
+ const telemetry=[{runId:'wide-topology-fixture',date:targetDate,generatedAt:stamp,releaseMs:Date.parse(stamp),origin:'REAL_RELEASE',mode:'live',machineKey:null,runtimeKey:null,
+   children:[{attemptId:'A0',label:'A0',workerId:'A',parentGoalId:null,fanOutIndex:0,fanOutCount:2,configuredOffsetMs:0,workerInvokedMs:1,fetchInvokedMs:2,chromeStartMs:5,requestEventMs:6,responseMs:10,errorMs:5,prewarmReadyMs:-1400,finalState:'REJECTED',dispatchMode:'node',trustedClockValid:true,dispatched:true}],
+   summary:{configuredToChrome:stats,perChildIndex:[],perWorker:{},spreadMs:0,compression:null,prewarmHeadroomMs:none,adaptiveSelectionToPost:none,reopenPredictionErrorMs:none}}];
+ const page=await openRendererBase(browser,{booking:smartBooking({immediate:[{court:7,start:'19:00',durationHours:3,fanOutOffsetsMs:Array.from({length:width},(_,i)=>(i-width+1)*10)}]}),telemetry},'strategy');
+ const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
+ expect(await page.locator('#strategy-suggest').isEnabled()).toBe(true);
+ await page.locator('input[name="strategy-intensity"][value="SHOTGUN"]').check();
+ expect(await page.locator('#strategy-shotgun-fast-path').isVisible()).toBe(true);
+ await page.locator('input[name="strategy-intensity"][value="NORMAL"]').check();
+ expect(await page.locator('#strategy-normal-fast-path').isVisible()).toBe(true);
+ await page.locator('#strategy-edit-targets > summary').click();expect(await page.locator('#strategy-add-immediate').isVisible()).toBe(true);
+ await page.locator('#strategy-ideal-start').selectOption('20:00');await page.locator('#strategy-suggest').click();
+ await expect.poll(()=>page.locator('.target-primary').innerText()).toContain('8:00 PM');
+ expect(await page.locator('#strategy-normal-save').isEnabled()).toBe(true);
+ expect(errors).toEqual([]);
+ expect(await page.evaluate(()=>(window as any).fixtureCalls.filter((name:string)=>['prepare','authorizeTerms','armFullBooking','testBooking'].includes(name)))).toEqual([]);
+ await page.close();
+});
