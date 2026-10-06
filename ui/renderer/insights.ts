@@ -1,3 +1,4 @@
+import {PRECISION_MAX_FAN_OUT} from '../../src/workers.js';
 import type { Dashboard } from '../types.js';
 import { byId, el, empty, table } from './dom.js';
 import { calibrateLiveAnchor, liveTimingSamples } from '../../src/live-anchor-calibration.js';
@@ -60,7 +61,7 @@ export function renderLiveAnchorCalibration(state: Dashboard): void {
   const machine = state.fanOut?.latest?.profile.machine;
   const machineKey = machine ? JSON.stringify({ cpuModel: machine.cpuModel, logicalCores: machine.logicalCores, totalMemGb: machine.totalMemGb,
     platform: machine.platform, osRelease: machine.osRelease }) : null;
-  const rows = [1, 2, 3, 4].map(width => calibrateLiveAnchor(samples, { dispatchMode: 'node', fanOutWidth: width, machineKey, runtimeKey: machine?.chromeVersion ?? null }));
+  const rows = Array.from({length:PRECISION_MAX_FAN_OUT},(_,index)=>index+1).map(width => calibrateLiveAnchor(samples, { dispatchMode: 'node', fanOutWidth: width, machineKey, runtimeKey: machine?.chromeVersion ?? null }));
   if (!rows.some(row => row.sampleCount||row.staleSampleCount)) { host.replaceChildren(empty('No valid real-release samples with configured offset, trusted-clock Chrome start, and confirmed dispatch.')); return; }
   const parts: HTMLElement[] = [table(['Topology', 'Fresh samples', 'Fresh releases', 'Old excluded', 'Median release lag', 'p95 releases', 'Range', 'Evidence', 'Freshness'], rows.map(row => [
     `Node · width ${row.fanOutWidth}`, String(row.sampleCount), String(row.releaseCount), String(row.staleSampleCount),ms(row.medianLagMs), ms(row.p95LagMs),
