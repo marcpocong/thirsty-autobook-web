@@ -76,7 +76,6 @@ const hourText = (hour: number) => `${String(hour).padStart(2, '0')}:00`;
 export interface Window { court: number; start: string; durationHours: number }
 export const windowEnd = (window: Window) => hourText(hourOf(window.start) + window.durationHours);
 export const windowKey = (window: Window) => `${window.court}/${window.start}/${window.durationHours}`;
-const overlaps = (a: Window, b: Window) => a.court === b.court && hourOf(a.start) < hourOf(b.start) + b.durationHours && hourOf(b.start) < hourOf(a.start) + a.durationHours;
 
 export function validateGoal(goal: StrategyGoal): string[] {
   const problems: string[] = [];
@@ -118,7 +117,7 @@ export function scoreWindow(window: Window, goal: StrategyGoal, evidence: Window
   const court = courtRank < 0 ? 0 : 25 * (goal.courts.length - courtRank) / goal.courts.length;
   const span = Math.max(1, hourOf(goal.primeUntil) - hourOf(goal.primeFrom));
   const primeFit = 20 * Math.max(0, 1 - Math.abs(hourOf(window.start) - preferredStartFor(goal, window.durationHours)) / span);
-  const evidenceScore = evidence === 'PUBLISHED_OPEN' ? 15 : evidence === 'NO_KNOWN_PUBLIC_CONFLICT' ? 12 : 0;
+  const evidenceScore = evidence === 'PUBLISHED_OPEN' ? 15 : evidence === 'NO_KNOWN_PUBLIC_CONFLICT' ? 12 : evidence === 'UNKNOWN_PUBLIC_QUERY_FAILED' ? -15 : 0;
   const round = (value: number) => Math.round(value * 10) / 10;
   return { total: round(duration + primeFit + court + evidenceScore), duration: round(duration), primeFit: round(primeFit), court: round(court), evidence: evidenceScore };
 }
@@ -197,7 +196,7 @@ function aggregateRisk(window: Window, selected: readonly Window[], history: Str
     const staticOverlap = rangeClockOverlap(window, other), sameCourt = window.court === other.court;
     sharedCells += sameCourt ? staticOverlap : 0; overlappingHours += staticOverlap;
     const item = history?.sharedRisk.find(value => `${value.a}|${value.b}` === riskKey(window, other));
-    if (item) { coUnavailable += item.coUnavailable; sameEarlyLoss += item.sameEarlyLoss; }
+    if (item && item.bothObserved>=3) { coUnavailable += item.coUnavailable; sameEarlyLoss += item.sameEarlyLoss; }
   }
   return { sharedCells, overlappingHours, coUnavailable, sameEarlyLoss };
 }
@@ -220,100 +219,16 @@ function affinity(item: HistoricalRangeEvidence | undefined): RoleAffinity {
   return wave2 && rescue ? 'SUITABLE_FOR_EITHER' : rescue ? 'STRONG_RESCUE' : wave2 ? 'STRONG_WAVE_2' : 'GENERAL_BACKUP';
 }
 
-/**
- * Legacy evidence/replay allocator. The operator workflow uses rankTargetPlan then buildExecutionStrategy.
- * Suggests immediate targets and the backup/Rescue pool.
- * - Known public conflicts are avoided; unknown or failed public reads are excluded (fail closed) unless force-included.
- * - Immediate targets use distinct courts in priority order and are DIVERSIFIED across start times: each court takes
- *   its best window whose start is not yet used by another immediate target, so one time-wide unavailable block
- *   cannot take out every immediate attempt. Only when no unused start remains is a start reused.
- * - The pool (Wave 2 + Rescue) is filled by score up to the 21-candidate authorization.
- */
+/** Legacy evidence/replay adapter. Uses the current shared ranking and portfolio allocator,
+ * retaining the replay contract that unknown public reads fail closed unless explicitly included. */
 export function suggestPlan(input: SuggestInput): SuggestedPlan {
-  const { goal, allocation } = input;
-  const requested = input.intelligenceMode ?? 'AUTO', suppliedHistory = input.historicalEvidence ?? null;
-  const strength = suppliedHistory?.strength ?? 'NONE';
-  const history = requested === 'AUTO' && (strength === 'USABLE' || strength === 'STRONG') ? suppliedHistory : null;
-  const applied = history ? 'HISTORY_ASSISTED' as const : 'PREFERENCE_BASED' as const;
-  const rangeHistory = new Map((suppliedHistory?.ranges ?? []).map(value => [windowKey(value), value] as const));
-  const removed = new Set((input.exclude ?? []).map(windowKey)), forced = new Set((input.forceInclude ?? []).map(windowKey));
-  const scored: ScoredWindow[] = enumeratePrimeWindows(goal).filter(window => !removed.has(windowKey(window))).map(window => {
-    const { evidence } = windowEvidence(window, input.schedule);
-    const historical = rangeHistory.get(windowKey(window));
-    return { ...window, end: windowEnd(window), evidence, score: scoreWindow(window, goal, evidence), forced: forced.has(windowKey(window)), historical,
-      rationale: [`Preferred duration rank ${goal.durations.indexOf(window.durationHours) + 1}.`, WINDOW_EVIDENCE_LABEL[evidence], ...historyLines(historical, suppliedHistory?.dayOfWeek ?? 'same-weekday', strength)] };
-    // Equal scores: court priority first, then the later start (deeper into the prime evening), so the order is deterministic.
-  }).sort((a, b) => b.score.total - a.score.total || goal.courts.indexOf(a.court) - goal.courts.indexOf(b.court) || b.start.localeCompare(a.start));
-  const excluded: SuggestedPlan['excluded'] = [];
-  const usable = scored.filter(window => {
-    if (window.forced) return true;
-    if (isConflict(window.evidence)) { excluded.push({ ...window, reason: 'KNOWN_CONFLICT' }); return false; }
-    if (window.evidence === 'UNKNOWN_PUBLIC_QUERY_FAILED') { excluded.push({ ...window, reason: 'EVIDENCE_UNKNOWN' }); return false; }
-    return true;
-  });
-  const immediate: ScoredWindow[] = [], usedStarts = new Set<string>();
-  // Forced windows the operator chose are honoured first, in their court's priority order.
-  for (const window of usable.filter(value => value.forced)) {
-    if (immediate.length >= allocation.immediateTargets) break;
-    if (immediate.some(value => value.court === window.court)) continue;
-    immediate.push(window); usedStarts.add(window.start);
-  }
-  if (!history) for (const windows of goal.courts.map(court => usable.filter(window => window.court === court))) {
-    if (immediate.length >= allocation.immediateTargets) break;
-    if (!windows.length || immediate.some(value => value.court === windows[0]!.court)) continue;
-    const preferredDuration = goal.durations.find(duration => windows.some(window => window.durationHours === duration));
-    const sameDuration = windows.filter(window => window.durationHours === preferredDuration);
-    const pick = sameDuration.find(window => !usedStarts.has(window.start)) ?? sameDuration[0];
-    if (pick) { immediate.push(pick); usedStarts.add(pick.start); }
-  }
-  while (history && immediate.length < allocation.immediateTargets) {
-    const choices = usable.filter(window => !immediate.some(value => value.court === window.court));
-    if (!choices.length) break;
-    const ranked = choices.map(window => {
-      const h = window.historical, risk = aggregateRisk(window, immediate, history);
-      return { window, keys: [goal.durations.indexOf(window.durationHours), window.evidence === 'PUBLISHED_OPEN' ? 0 : 1,
-        history ? -share(h?.fullyOpenFirst ?? 0, h?.wellObserved ?? 0) : 0, history ? -share(h?.stillOpenAt1s.open ?? 0, h?.stillOpenAt1s.observed ?? 0) : 0,
-        risk.sharedCells, risk.overlappingHours, risk.coUnavailable, risk.sameEarlyLoss, usedStarts.has(window.start) ? 1 : 0,
-        goal.courts.indexOf(window.court), -window.score.primeFit, -hourOf(window.start)] };
-    }).sort((a, b) => compareNumbers(a.keys, b.keys));
-    const pick = ranked[0]?.window;
-    if (!pick) break;
-    if (immediate.length && !usedStarts.has(pick.start)) pick.rationale.push('Adds a different start time from earlier immediate targets.');
-    immediate.push(pick); usedStarts.add(pick.start);
-  }
-  const reasons: string[] = [];
-  const starts = [...new Set(immediate.map(window => window.start))];
-  if (immediate.length > 1 && starts.length > 1) reasons.push('Diversified across start times to reduce one-window concentration.');
-  if (immediate.length > 1 && starts.length === 1) reasons.push(`Every immediate target shares ${immediate[0]!.start}–${immediate[0]!.end}: no other start time is available under the current goal and evidence.`);
-  if (immediate.length < allocation.immediateTargets) reasons.push(`Only ${immediate.length} of ${allocation.immediateTargets} immediate targets could be filled from courts without known conflicts.`);
-  const capacity = Math.max(0, STRATEGY_MAX_CANDIDATES - immediate.length);
-  const backups: ScoredWindow[] = [];
-  const remaining = usable.filter(window => !immediate.some(value => windowKey(value) === windowKey(window)));
-  if (!history) while (backups.length < capacity && remaining.length) backups.push(remaining.shift()!);
-  while (history && backups.length < capacity && remaining.length) {
-    const selected = [...immediate, ...backups];
-    const ranked = remaining.map(window => { const h = window.historical, risk = aggregateRisk(window, selected, history), role = affinity(h);
-      return { window, role, keys: [goal.durations.indexOf(window.durationHours), window.evidence === 'PUBLISHED_OPEN' ? 0 : 1,
-        history ? -share(h?.stillOpenAt1s.open ?? 0, h?.stillOpenAt1s.observed ?? 0) : 0, history ? -share(h?.stillOpenAt5s.open ?? 0, h?.stillOpenAt5s.observed ?? 0) : 0,
-        history ? -share(h?.fullyOpenFirst ?? 0, h?.wellObserved ?? 0) : 0, risk.sharedCells, risk.overlappingHours, risk.coUnavailable,
-        role === 'STRONG_RESCUE' || role === 'SUITABLE_FOR_EITHER' ? -1 : 0, goal.courts.indexOf(window.court), -window.score.primeFit, -hourOf(window.start)] }; })
-      .sort((a, b) => compareNumbers(a.keys, b.keys));
-    const best = ranked[0]!; best.window.roleAffinity = best.role;
-    if (selected.length && aggregateRisk(best.window, selected, history).overlappingHours === 0) best.window.rationale.push('Adds a different clock-hour block from earlier selections.');
-    backups.push(best.window); remaining.splice(remaining.indexOf(best.window), 1);
-  }
-  for (const window of remaining) excluded.push({ ...window, reason: 'CAPACITY' });
-  const conflicts = excluded.filter(window => window.reason === 'KNOWN_CONFLICT').length, unknown = excluded.filter(window => window.reason === 'EVIDENCE_UNKNOWN').length;
-  if (conflicts) reasons.push(`${conflicts} window${conflicts === 1 ? '' : 's'} left out because a known public booking conflicts.`);
-  if (unknown) reasons.push(`${unknown} window${unknown === 1 ? '' : 's'} left out because the public-booking read failed or is missing (fail closed).`);
-  const capacityExcluded = excluded.filter(window => window.reason === 'CAPACITY').length;
-  if (capacityExcluded) reasons.push(`${capacityExcluded} window${capacityExcluded === 1 ? '' : 's'} excluded by the candidate-capacity limit after diversification.`);
-  const forcedCount = [...immediate, ...backups].filter(window => window.forced && (isConflict(window.evidence) || window.evidence === 'UNKNOWN_PUBLIC_QUERY_FAILED')).length;
-  if (forcedCount) reasons.push(`${forcedCount} window${forcedCount === 1 ? ' was' : 's were'} force-included by the operator despite a conflict or failed read.`);
-  const legacy = suppliedHistory?.historicalPrePhase3 ? ` · includes ${suppliedHistory.historicalPrePhase3} pre-Phase-3 release${suppliedHistory.historicalPrePhase3 === 1 ? '' : 's'}` : '';
-  const label = applied === 'HISTORY_ASSISTED' ? `History-assisted · ${strength.toLowerCase()} same-weekday evidence${legacy}`
-    : requested === 'PREFERENCE_ONLY' ? 'Preference-based · operator selected' : `Preference-based · ${strength === 'LIMITED' ? 'insufficient historical evidence' : 'no suitable historical evidence'}`;
-  return { immediate, backups, excluded, reasons, allocation, intelligence: { requested, applied, strength, label } };
+  const targets=rankTargetPlan(input);
+  const unknown=targets.ranked.filter(w=>w.evidence==='UNKNOWN_PUBLIC_QUERY_FAILED'&&!w.forced);
+  targets.ranked=targets.ranked.filter(w=>!unknown.includes(w));
+  targets.excluded.push(...unknown.map(w=>({...w,reason:'EVIDENCE_UNKNOWN' as const})));
+  const result=buildExecutionStrategy(targets,input.allocation);
+  if(unknown.length)result.reasons.push(`${unknown.length} windows excluded because the public read failed (fail closed).`);
+  return result;
 }
 
 /** Per-slot public-evidence override marker persisted with the authorization (OPERATOR_OVERRIDE_PUBLIC_CONFLICT). */
@@ -342,31 +257,69 @@ export function normalizeStrategyGoal(goal: StrategyGoal): StrategyGoal {
 export interface RankedTargetPlan {
   ranked: ScoredWindow[]; excluded: SuggestedPlan['excluded'];
   intelligence: SuggestedPlan['intelligence']; comparableReleases: number;
+  goal?: StrategyGoal; history?: StrategyHistoricalEvidence | null;
 }
 /** Preference/evidence ranking has no workers, timing, allocation or release-mode input. */
 export function rankTargetPlan(input: Omit<SuggestInput, 'allocation'>): RankedTargetPlan {
   const goal=normalizeStrategyGoal(input.goal), supplied=input.historicalEvidence;
-  const history=input.intelligenceMode!=='PREFERENCE_ONLY' && (supplied?.strength==='USABLE'||supplied?.strength==='STRONG') ? supplied : null;
+  const history=input.intelligenceMode!=='PREFERENCE_ONLY' && (supplied?.strength==='USABLE'||supplied?.strength==='STRONG') && supplied.wellObservedReleases>=3 ? supplied : null;
   const excluded: SuggestedPlan['excluded']=[], removed=new Set((input.exclude??[]).map(windowKey));
   const ranked=enumeratePrimeWindows(goal).filter(w=>!removed.has(windowKey(w))).map(w=>{
     const evidence=windowEvidence(w,input.schedule).evidence, forced=(input.forceInclude??[]).some(v=>windowKey(v)===windowKey(w));
-    return {...w,end:windowEnd(w),evidence,forced,score:scoreWindow(w,goal,evidence),historical:history?.ranges.find(h=>windowKey(h)===windowKey(w)),rationale:[WINDOW_EVIDENCE_LABEL[evidence]]};
+    return {...w,end:windowEnd(w),evidence,forced,score:scoreWindow(w,goal,evidence),historical:history?.ranges.find(h=>windowKey(h)===windowKey(w)),rationale:[WINDOW_EVIDENCE_LABEL[evidence],...historyLines(history?.ranges.find(h=>windowKey(h)===windowKey(w)),supplied?.dayOfWeek??'same-weekday',supplied?.strength??'NONE')]};
   }).filter(w=>{if(isConflict(w.evidence)&&!w.forced){excluded.push({...w,reason:'KNOWN_CONFLICT'});return false;}return true;});
   ranked.sort((a,b)=>{
-    const evidenceKeys=(w:ScoredWindow)=>[w.forced?0:1,goal.durations.indexOf(w.durationHours),
+    const evidenceKeys=(w:ScoredWindow)=>[w.forced?0:1,goal.durations.indexOf(w.durationHours), evidenceQuality(w.evidence),
       history?-share(w.historical?.fullyOpenFirst??0,w.historical?.wellObserved??0):0,
       history?-share(w.historical?.stillOpenAt1s.open??0,w.historical?.stillOpenAt1s.observed??0):0,
       Math.abs(hourOf(w.start)-preferredStartFor(goal,w.durationHours)),goal.courts.indexOf(w.court),hourOf(w.start)];
     return compareNumbers(evidenceKeys(a),evidenceKeys(b));
   });
-  return {ranked:ranked.slice(0,STRATEGY_MAX_CANDIDATES),excluded,comparableReleases:history?.wellObservedReleases??0,
+  return {goal,history,ranked,excluded,comparableReleases:history?.wellObservedReleases??0,
     intelligence:{requested:input.intelligenceMode??'AUTO',applied:history?'HISTORY_ASSISTED':'PREFERENCE_BASED',strength:supplied?.strength??'NONE',
       label:history?`Historical evidence used · ${history.wellObservedReleases} comparable releases`:'Historical evidence insufficient · preference ranking used'}};
 }
-/** Execution allocation consumes ranked candidates without changing their ordering or primary. */
+/** Explicit quality ordering; unknown reads are preference-only evidence with a ranking penalty. */
+export const evidenceQuality = (value: WindowEvidence): number =>
+  ['PUBLISHED_OPEN','NO_KNOWN_PUBLIC_CONFLICT','NOT_CHECKED','UNKNOWN_PUBLIC_QUERY_FAILED','KNOWN_PUBLIC_BOOKING_CONFLICT','PUBLISHED_UNAVAILABLE'].indexOf(value);
+
+/** Allocate a bounded portfolio from the full ranking. Primary is immutable; duration and evidence
+ * stay ahead of diversification. Nearby alternatives (within one preference-score band) reduce
+ * shared failure without sending a preferred evening goal to a distant window just for variety. */
 export function buildExecutionStrategy(targets:RankedTargetPlan,allocation:PresetAllocation):SuggestedPlan {
-  const immediate:ScoredWindow[]=[];
-  for(const target of targets.ranked)if(immediate.length<Math.max(1,allocation.immediateTargets)&&!immediate.some(w=>w.court===target.court))immediate.push(target);
-  const backups=targets.ranked.filter(w=>!immediate.includes(w));
-  return {ranked:targets.ranked,immediate,backups,excluded:targets.excluded,allocation,intelligence:targets.intelligence,reasons:[]};
+  const immediate:ScoredWindow[]=targets.ranked.length?[targets.ranked[0]!]:[];
+  const reasons:string[]=[];
+  while(immediate.length<Math.max(1,allocation.immediateTargets)) {
+    const choices=targets.ranked.filter(w=>!immediate.some(v=>v.court===w.court));
+    if(!choices.length)break;
+    const best=choices[0]!;
+    const eligible=choices.filter(w=>w.durationHours===best.durationHours && evidenceQuality(w.evidence)<=evidenceQuality(best.evidence)
+      && w.score.total>=best.score.total-10);
+    const keys=(w:ScoredWindow)=>{
+      const risk=aggregateRisk(w,immediate,targets.history??null);
+      const h=w.historical;
+      return [evidenceQuality(w.evidence),targets.history?-share(h?.fullyOpenFirst??0,h?.wellObserved??0):0,
+        targets.history?-share(h?.stillOpenAt1s.open??0,h?.stillOpenAt1s.observed??0):0,
+        risk.coUnavailable,risk.sameEarlyLoss,immediate.some(v=>v.start===w.start)?1:0,
+        risk.overlappingHours,-w.score.total,targets.ranked.indexOf(w)];
+    };
+    const pick=[...eligible].sort((a,b)=>compareNumbers(keys(a),keys(b)))[0]??best;
+    immediate.push(pick);
+  }
+  const starts=new Set(immediate.map(w=>w.start));
+  if(immediate.length>1)reasons.push(starts.size>1?'Diversified across start times to reduce one-window concentration.':
+    'Immediate targets share a start: no comparable alternative start is available within the duration, evidence and preference limits.');
+  const selected=new Set(immediate.map(windowKey));
+  const remaining=targets.ranked.filter(w=>!selected.has(windowKey(w)));
+  if(targets.history)remaining.sort((a,b)=>{
+    const keys=(w:ScoredWindow)=>{const h=w.historical,risk=aggregateRisk(w,immediate,targets.history??null);return [targets.goal?.durations.indexOf(w.durationHours)??0,evidenceQuality(w.evidence),
+      -share(h?.stillOpenAt1s.open??0,h?.stillOpenAt1s.observed??0),-share(h?.stillOpenAt5s.open??0,h?.stillOpenAt5s.observed??0),risk.coUnavailable,-w.score.total];};
+    return compareNumbers(keys(a),keys(b));
+  });
+  const backups=remaining.slice(0,STRATEGY_MAX_CANDIDATES-immediate.length).map(w=>({...w,roleAffinity:affinity(w.historical)}));
+  if([...immediate,...backups].some(w=>w.forced))reasons.push('Conflicting targets were force-included by the operator.');
+  const kept=new Set([...immediate,...backups].map(windowKey));
+  return {ranked:targets.ranked.filter(w=>kept.has(windowKey(w))),immediate,backups,
+    excluded:[...targets.excluded,...targets.ranked.filter(w=>!kept.has(windowKey(w))).map(w=>({...w,reason:'CAPACITY' as const}))],
+    allocation,intelligence:targets.intelligence,reasons};
 }

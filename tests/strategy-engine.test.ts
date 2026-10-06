@@ -5,7 +5,7 @@ import { authorizePrecision, precisionCandidateId, wave1SendCount } from '../src
 import { PRECISION_MAX_FAN_OUT, PRECISION_MAX_SENDS } from '../src/workers.js';
 import { ConfigSchema } from '../src/config.js';
 import { defaultSetup } from '../ui/booking.js';
-import { rankTargetPlan, buildExecutionStrategy, normalizeStrategyGoal, DEFAULT_STRATEGY_GOAL, draftFromSuggestion, enumeratePrimeWindows, knownScheduleFromCells, presetAllocation, PUBLIC_CONFLICT_OVERRIDE, scoreWindow,
+import { rankTargetPlan, buildExecutionStrategy, normalizeStrategyGoal, DEFAULT_STRATEGY_GOAL, draftFromSuggestion, enumeratePrimeWindows, isConflict, knownScheduleFromCells, presetAllocation, PUBLIC_CONFLICT_OVERRIDE, scoreWindow,
   suggestPlan, validateGoal, windowEvidence, STRATEGY_MAX_CANDIDATES, STRATEGY_MAX_ENUMERATED_WINDOWS, type BlockAuditCell, type HistoricalRangeEvidence, type KnownSchedule, type StrategyGoal,
   type StrategyHistoricalEvidence } from '../src/strategy-engine.js';
 
@@ -150,7 +150,7 @@ describe('Prime Strategy Generator', () => {
     const best = scoreWindow({ court: 7, start: '19:00', durationHours: 3 }, goal, 'NO_KNOWN_PUBLIC_CONFLICT');
     expect(best.total).toBeGreaterThan(scoreWindow({ court: 7, start: '19:00', durationHours: 2 }, goal, 'NO_KNOWN_PUBLIC_CONFLICT').total);
     expect(best.total).toBeGreaterThan(scoreWindow({ court: 1, start: '19:00', durationHours: 3 }, goal, 'NO_KNOWN_PUBLIC_CONFLICT').total);
-    expect(scoreWindow({ court: 7, start: '19:00', durationHours: 3 }, goal, 'UNKNOWN_PUBLIC_QUERY_FAILED').evidence).toBe(0);
+    expect(scoreWindow({ court: 7, start: '19:00', durationHours: 3 }, goal, 'UNKNOWN_PUBLIC_QUERY_FAILED').evidence).toBe(-15);
   });
 });
 
@@ -158,7 +158,7 @@ describe('suggestions, diversification and overrides', () => {
   const balanced = presetAllocation('BALANCED', { readyWorkers: 7, recommendedFanOutWidth: 2 });
   it('diversifies immediate targets across start times instead of one shared window', () => {
     const plan = suggestPlan({ goal: DEFAULT_STRATEGY_GOAL, schedule: schedule(), allocation: balanced });
-    expect(plan.immediate.map(window => `C${window.court} ${window.start}-${window.end}`)).toEqual(['C7 17:00-20:00', 'C6 18:00-21:00', 'C5 19:00-22:00', 'C4 20:00-23:00']);
+    expect(plan.immediate[0]).toMatchObject({court:7,start:'17:00'});expect(new Set(plan.immediate.map(w=>w.start)).size).toBeGreaterThan(1);expect(new Set(plan.immediate.map(w=>w.court)).size).toBe(4);
     expect(plan.reasons).toContain('Diversified across start times to reduce one-window concentration.');
   });
   it('avoids known public conflicts and fails closed on failed public reads', () => {
@@ -304,5 +304,47 @@ describe('separate target planning and execution',()=>{
     ranges:[{court:6,start:'20:00',durationHours:3,wellObserved:5,fullyOpenFirst:5,stillOpenAt1s:{observed:5,open:5},stillOpenAt5s:{observed:5,open:5},reopened:0,good:5,fair:0}]};
   expect(rankTargetPlan({goal,schedule:null,historicalEvidence:history}).ranked[0]).toMatchObject({court:6,start:'20:00'});
   expect(rankTargetPlan({goal,schedule:null,historicalEvidence:{...history,strength:'LIMITED'}}).ranked[0]).toMatchObject({court:7,start:'19:00'});
+ });
+});
+
+
+describe('current rankTargetPlan to execution portfolio',()=>{
+ const goal={...DEFAULT_STRATEGY_GOAL,idealStart:'19:00',primeFrom:'18:00',primeUntil:'24:00',durations:[3]};
+ const allocation=presetAllocation('BALANCED',{readyWorkers:7,recommendedFanOutWidth:1});
+ it('keeps primary and diversifies comparable windows on distinct courts before applying capacity',()=>{
+  const targets=rankTargetPlan({goal,schedule:schedule()});
+  const plan=buildExecutionStrategy(targets,allocation);
+  expect(plan.immediate[0]).toEqual(targets.ranked[0]);
+  expect(new Set(plan.immediate.map(w=>w.start)).size).toBeGreaterThan(1);
+  expect(new Set(plan.immediate.map(w=>w.court)).size).toBe(plan.immediate.length);
+  expect(plan.immediate.every(w=>w.durationHours===3)).toBe(true);
+  expect(plan.immediate.length+plan.backups.length).toBeLessThanOrEqual(21);
+ });
+ it('permits and explains one viable start without sacrificing duration',()=>{
+  const plan=buildExecutionStrategy(rankTargetPlan({goal:{...goal,primeFrom:'19:00',primeUntil:'22:00'},schedule:schedule()}),allocation);
+  expect(new Set(plan.immediate.map(w=>w.start)).size).toBe(1);
+  expect(plan.reasons.join(' ')).toContain('no comparable alternative');
+ });
+ it('excludes booked and published unavailable hours from every normal target',()=>{
+  const known=schedule([[7,'19:00']]);const hours=new Map(known.hours);hours.set('6/20:00','PUBLISHED_UNAVAILABLE');
+  const plan=buildExecutionStrategy(rankTargetPlan({goal,schedule:{...known,hours}}),allocation);
+  expect([...plan.immediate,...plan.backups].every(w=>!isConflict(w.evidence))).toBe(true);
+ });
+ it('ranks verified nearby windows above UNKNOWN and unchecked above failed reads',()=>{
+  const targets=rankTargetPlan({goal,schedule:schedule([], [7])});
+  expect(targets.ranked[0]).toMatchObject({court:6,start:'19:00',evidence:'NO_KNOWN_PUBLIC_CONFLICT'});
+  expect(scoreWindow({court:7,start:'19:00',durationHours:3},goal,'NOT_CHECKED').total)
+    .toBeGreaterThan(scoreWindow({court:7,start:'19:00',durationHours:3},goal,'UNKNOWN_PUBLIC_QUERY_FAILED').total);
+ });
+ it('uses sufficient history and shared failure but ignores insufficient pair observations',()=>{
+  const range=(court:number,start:string):HistoricalRangeEvidence=>({court,start,durationHours:3,wellObserved:5,fullyOpenFirst:5,
+   stillOpenAt1s:{observed:5,open:5},stillOpenAt5s:{observed:5,open:5},reopened:0,good:5,fair:0});
+  const history:StrategyHistoricalEvidence={targetDate,dayOfWeek:'Thursday',releasesConsidered:5,wellObservedReleases:5,realReleases:5,historicalPrePhase3:0,
+   strength:'STRONG',ranges:[range(7,'19:00'),range(6,'18:00'),range(6,'20:00')],sharedRisk:[{a:'6/18:00/3',b:'7/19:00/3',sharedCells:0,overlappingHours:2,bothObserved:5,coUnavailable:5,sameEarlyLoss:4}]};
+  const targets=rankTargetPlan({goal,schedule:schedule(),historicalEvidence:history});
+  expect(buildExecutionStrategy(targets,{...allocation,immediateTargets:2}).immediate[1]).toMatchObject({court:6,start:'20:00'});
+  const insufficient=rankTargetPlan({goal,schedule:schedule(),historicalEvidence:{...history,wellObservedReleases:1}});
+  expect(insufficient.intelligence.applied).toBe('PREFERENCE_BASED');
+  expect(insufficient.ranked.map(windowKeyForTest)).toEqual(rankTargetPlan({goal,schedule:schedule()}).ranked.map(windowKeyForTest));
  });
 });

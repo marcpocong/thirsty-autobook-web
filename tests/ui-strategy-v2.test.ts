@@ -9,7 +9,7 @@ import { openRenderer as openRendererBase, showRendererView } from './renderer-h
 
 async function openRenderer(...args:Parameters<typeof openRendererBase>){
   const page=await openRendererBase(...args),view=args[2];
-  if(view==='strategy')await page.evaluate(()=>{for(const id of ['strategy-advanced','strategy-edit-targets','strategy-schedule','strategy-normal-settings'])document.getElementById(id)?.setAttribute('open','');document.querySelector('.strategy-review .technical-drawer')?.setAttribute('open','');});
+  if(view==='strategy')await page.evaluate(()=>{for(const id of ['strategy-advanced','strategy-edit-targets','strategy-schedule','strategy-normal-settings'])document.getElementById(id)?.setAttribute('open','');document.getElementById('strategy-review-technical')?.closest('details')?.setAttribute('open','');});
   if(view==='history')await page.locator('.history-forensics').evaluate(element=>element.setAttribute('open',''));
   return page;
 }
@@ -83,8 +83,8 @@ describe('Strategy view (Goal → Known schedule → Preset → Suggested plan �
     await page.locator('#strategy-add-immediate').click();
     expect(await page.locator('#strategy-edit-immediate .strategy-edit-row').count()).toBe(1);
     expect(await page.locator('#strategy-review-warnings').innerText()).not.toContain('failed public-booking read');
-    expect(await page.locator('#strategy-save').isEnabled()).toBe(true);
-    await page.locator('#strategy-save').click();
+    expect(await page.locator('#strategy-normal-save').isEnabled()).toBe(true);
+    await page.locator('#strategy-normal-save').click();
     await page.waitForFunction(() => !!(window as any).fixtureSaved);
     const setup = await saved(page);
     expect(setup.PRECISION_PHASE3.candidates[0]).toMatchObject({court:7,start:'19:00',durationHours:3,
@@ -128,7 +128,7 @@ describe('Strategy view (Goal → Known schedule → Preset → Suggested plan �
     expect(await single.locator('#strategy-immediate-offset-0-0').inputValue()).toBe('25');
     expect(await single.locator('[id^="strategy-immediate-offset-0-"]').count()).toBe(1);
     await single.locator('#strategy-immediate-offset-0-0').fill('10'); await single.locator('#strategy-immediate-offset-0-0').press('Tab');
-    await single.locator('#strategy-save').click(); await single.waitForFunction(() => !!(window as any).fixtureSaved);
+    await single.locator('#strategy-normal-save').click(); await single.waitForFunction(() => !!(window as any).fixtureSaved);
     expect((await saved(single)).PRECISION_PHASE3.wave1[0]).toMatchObject({ releaseOffsetMs: -10 });
     await single.close();
 
@@ -136,7 +136,7 @@ describe('Strategy view (Goal → Known schedule → Preset → Suggested plan �
     expect(await fanOut.locator('#strategy-immediate-offset-0-0').inputValue()).toBe('25');
     expect(await fanOut.locator('#strategy-immediate-offset-0-1').inputValue()).toBe('10');
     await fanOut.locator('#strategy-immediate-offset-0-1').fill('5'); await fanOut.locator('#strategy-immediate-offset-0-1').press('Tab');
-    await fanOut.locator('#strategy-save').click(); await fanOut.waitForFunction(() => !!(window as any).fixtureSaved);
+    await fanOut.locator('#strategy-normal-save').click(); await fanOut.waitForFunction(() => !!(window as any).fixtureSaved);
     const assignment = (await saved(fanOut)).PRECISION_PHASE3.wave1[0];
     expect(assignment.fanOutOffsetsMs).toEqual([-25, -5]);
     expect(assignment).not.toHaveProperty('releaseOffsetMs');
@@ -152,12 +152,12 @@ describe('Strategy view (Goal → Known schedule → Preset → Suggested plan �
     const added=page.locator('#strategy-edit-immediate .strategy-edit-row').last();
     expect(await added.locator('.strategy-source').first().innerText()).toBe('OPERATOR ADDED');
     expect(await added.getByRole('button',{name:'Reset editable target 2',exact:true}).isDisabled()).toBe(true);
-    await page.locator('#strategy-save').click();await page.waitForFunction(()=>!!(window as any).fixtureSaved);
+    await page.locator('#strategy-normal-save').click();await page.waitForFunction(()=>!!(window as any).fixtureSaved);
     const setup=await saved(page);expect(setup.STRATEGY_V2).toBeUndefined();
     // Remove the manual edit and save the original old plan: opening alone never creates a Smart-generated baseline.
     await added.getByRole('button',{name:/Remove editable target/}).click();
     (await page.evaluate(()=>(window as any).fixtureSaved=null));
-    await page.locator('#strategy-save').click();await page.waitForFunction(()=>!!(window as any).fixtureSaved);
+    await page.locator('#strategy-normal-save').click();await page.waitForFunction(()=>!!(window as any).fixtureSaved);
     expect((await saved(page)).PRECISION_PHASE3).toEqual(before);
     await page.close();
   });
@@ -168,7 +168,7 @@ describe('Strategy view (Goal → Known schedule → Preset → Suggested plan �
     expect(await page.locator('#strategy-fanout-note').innerText()).toContain('Operator override: 3 per target');
     await page.locator('#strategy-suggest').click();
     await page.waitForFunction(()=>!document.getElementById('strategy-suggest')?.hasAttribute('disabled'));
-    await page.locator('#strategy-save').click();
+    await page.locator('#strategy-normal-save').click();
     await page.waitForFunction(() => !!(window as any).fixtureSaved);
     expect((await saved(page)).STRATEGY_V2.fanOut).toMatchObject({ width: 3, source: 'OPERATOR_OVERRIDE', recommendedWidth: 2 });
     await page.locator('input[name="strategy-preset"][value="CUSTOM"]').check();
@@ -186,7 +186,7 @@ describe('Strategy view (Goal → Known schedule → Preset → Suggested plan �
     expect(await page.locator('#strategy-immediate-offset-0-0').inputValue()).toBe('10');
     expect(await page.locator('#strategy-immediate-offset-0-1').inputValue()).toBe('5');
     expect(await page.locator('#strategy-review-technical').innerText()).toContain('A0 10 ms early, A1 5 ms early');
-    await page.locator('#strategy-save').click(); await page.waitForFunction(() => !!(window as any).fixtureSaved);
+    await page.locator('#strategy-normal-save').click(); await page.waitForFunction(() => !!(window as any).fixtureSaved);
     const setup = await saved(page);
     expect(setup.STRATEGY_V2.timingCalibration).toMatchObject({ anchorSource: 'OPERATOR_OVERRIDE', groupShiftMs: -5, spacingSource: 'MACHINE_PROFILE' });
     expect(setup.PRECISION_PHASE3.wave1[0].fanOutOffsetsMs).toEqual([-10, -5]);
@@ -216,7 +216,7 @@ describe('Strategy view (Goal → Known schedule → Preset → Suggested plan �
     expect(await page.locator('#strategy-immediate-offset-0-0').inputValue()).toBe('16');
     expect(await page.locator('#strategy-immediate-offset-0-1').inputValue()).toBe('11');
     expect(await page.locator('#strategy-review-technical').innerText()).toContain('A0 16 ms early, A1 11 ms early');
-    await page.locator('#strategy-save').click(); await page.waitForFunction(() => !!(window as any).fixtureSaved);
+    await page.locator('#strategy-normal-save').click(); await page.waitForFunction(() => !!(window as any).fixtureSaved);
     const setup = await saved(page);
     expect(setup.PRECISION_PHASE3.wave1[0].fanOutOffsetsMs).toEqual([-16, -11]);
     expect(setup.STRATEGY_V2.timingCalibration.deskew.corrections).toContainEqual({ workerId: 'A', fanOutIndex: 0, correctionMs: -6, matchingReleases: 2, evidenceStrength: 'USABLE' });
@@ -268,7 +268,7 @@ describe('Strategy view (Goal → Known schedule → Preset → Suggested plan �
 
     await page.locator('#strategy-reset-all').click();await target(1).getByRole('button',{name:'Move editable target 2 up'}).click();
     await page.locator('#strategy-immediate-offset-0-0').fill('25');await page.locator('#strategy-immediate-offset-0-0').press('Tab');
-    await page.locator('#strategy-save').click();await page.waitForFunction(()=>!!(window as any).fixtureSaved);
+    await page.locator('#strategy-normal-save').click();await page.waitForFunction(()=>!!(window as any).fixtureSaved);
     const setup=await saved(page);expect(setup.STRATEGY_V2.lineage.immediate.slice(0,2)).toEqual(['I1','I0']);await page.close();
     const reloaded=await openRenderer(browser,{booking:bookingView(ConfigSchema.parse({...defaultSetup,...setup,...players})),blockAudit:audit,fanOut:digest},'strategy');
     const first=reloaded.locator('#strategy-edit-immediate .strategy-edit-row').first();
@@ -281,7 +281,7 @@ describe('Strategy view (Goal → Known schedule → Preset → Suggested plan �
     const page=await openRendererBase(browser,{booking:smartBooking()},'strategy');
     await page.evaluate(()=>{(window as any).thirsty.checkReleaseBlocks=async()=>{throw new Error('403')};});
     await page.locator('#strategy-suggest').click();
-    await expect.poll(()=>page.locator('#strategy-target-summary').innerText()).toContain('Public schedule could not be verified');
+    await expect.poll(()=>page.locator('#strategy-target-summary').innerText()).toContain('Public schedule could not be fully verified');
     expect(await page.locator('#strategy-target-summary').innerText()).toContain('preference ranking used');
     expect(await page.locator('#strategy-edit-immediate .strategy-edit-row').count()).toBeGreaterThan(0);
     expect(await page.locator('#strategy-target-summary').innerText()).not.toContain('confirmed open');await page.close();
@@ -429,7 +429,7 @@ it.each([5,6])('keeps Strategy controls responsive with saved width %i and live 
  expect(await page.locator('#strategy-shotgun-fast-path').isVisible()).toBe(true);
  await page.locator('input[name="strategy-intensity"][value="NORMAL"]').check();
  expect(await page.locator('#strategy-normal-fast-path').isVisible()).toBe(true);
- await page.locator('#strategy-edit-targets > summary').click();expect(await page.locator('#strategy-add-immediate').isVisible()).toBe(true);
+ await page.locator('#strategy-advanced > summary').click();await page.locator('#strategy-edit-targets > summary').click();expect(await page.locator('#strategy-add-immediate').isVisible()).toBe(true);
  await page.locator('#strategy-ideal-start').selectOption('20:00');await page.locator('#strategy-suggest').click();
  await expect.poll(()=>page.locator('.target-primary').innerText()).toContain('8:00 PM');
  expect(await page.locator('#strategy-normal-save').isEnabled()).toBe(true);
@@ -442,7 +442,7 @@ it.each([5,6])('keeps Strategy controls responsive with saved width %i and live 
 it('lets the operator skip a new public read, retains known conflicts, and saves the choice',async()=>{
  const page=await openRendererBase(browser,{booking:smartBooking(),blockAudit:blockAudit([[7,'19:00']])},'strategy');
  await page.locator('#strategy-ideal-start').selectOption('19:00');
- await page.locator('#strategy-public-data').selectOption('CACHED_ONLY');
+ await page.locator('#strategy-advanced').evaluate(node=>(node as HTMLDetailsElement).open=true);await page.locator('#strategy-public-data').selectOption('CACHED_ONLY');
  await page.locator('#strategy-suggest').click();
  await expect.poll(()=>page.locator('.target-primary').innerText()).toContain('Court 6');
  expect(await page.locator('#strategy-target-summary').innerText()).toContain('No new public-booking check requested');
@@ -458,7 +458,7 @@ it('lets the operator skip a new public read, retains known conflicts, and saves
 
 it('explains a pinned limit blocker and repairs it only through an explicit operator action',async()=>{
  const page=await openRendererBase(browser,{booking:smartBooking({retryReopened:true,maxReopenedAttempts:1,advanced:{total:1}}),playerStatus:{primary:true,extended:true,third:true,fourth:true,fifth:true,sixth:true,seventh:true}},'strategy');
- await page.locator('#strategy-public-data').selectOption('CACHED_ONLY');
+ await page.locator('#strategy-advanced').evaluate(node=>(node as HTMLDetailsElement).open=true);await page.locator('#strategy-public-data').selectOption('CACHED_ONLY');
  await page.locator('#strategy-suggest').click();
  await expect.poll(()=>page.locator('#strategy-normal-status').innerText()).toContain('Attempt limits are inconsistent');
  expect(await page.locator('#strategy-normal-save').isDisabled()).toBe(true);

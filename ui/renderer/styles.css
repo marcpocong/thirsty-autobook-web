@@ -759,3 +759,10 @@ footer > div { display: flex; align-items: center; gap: 8px; font-size: 11px; co
 .strategy-view select { max-width: 100%; }
 .strategy-public-choice { display: grid; gap: 6px; min-width: 0; margin-top: 12px; }
 .strategy-public-choice select { width: 100%; }
+
+/* Linear operator flow with a visible read-only review. */
+.strategy-view #strategy-review { grid-column:1; grid-row:auto; position:static; max-height:none; overflow:visible; }
+.strategy-review > .section-title { position:static; }
+.strategy-view #strategy-preset, .strategy-view #strategy-review { min-width:0; }
+
+.strategy-view #strategy-preset[hidden], .strategy-view #strategy-review[hidden] { display:none; }

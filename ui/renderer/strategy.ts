@@ -3,7 +3,7 @@ import type { Dashboard } from '../types.js';
 import { compileSmartPlan, describeSmartPlan, resizeSmartFanOut, setSmartChildOffset, smartRange, smartSlotOffsets, SMART_WORKERS, SMART_MAX_SLOTS,
   type SmartDraft, type SmartSlot } from '../../src/precision-simple.js';
 import {type PrewarmFeasibilityResult} from '../../src/api-booking/prewarm-feasibility.js';
-import { rankTargetPlan, buildExecutionStrategy, normalizeStrategyGoal, DEFAULT_STRATEGY_GOAL, draftFromSuggestion, enumeratePrimeWindows, isConflict, knownScheduleFromCells, presetAllocation, suggestPlan, validateGoal, windowEvidence, WINDOW_EVIDENCE_LABEL,
+import { rankTargetPlan, buildExecutionStrategy, normalizeStrategyGoal, DEFAULT_STRATEGY_GOAL, draftFromSuggestion, enumeratePrimeWindows, isConflict, knownScheduleFromCells, presetAllocation, validateGoal, windowEvidence, WINDOW_EVIDENCE_LABEL,
   type KnownSchedule, type ScoredWindow, type StrategyGoal, type StrategyHistoricalEvidence, type StrategyPreset, type SuggestedPlan, type SuggestionIntelligenceMode, type Window } from '../../src/strategy-engine.js';
 import { describeChildTiming, fanOutTimingPlan, minimumMeaningfulSpacingMs } from '../../src/fanout-timing.js';
 import { applyLiveAnchor, calibrateLiveAnchor, liveTimingSamples, type AnchoredTimingPlan, type LiveAnchorSource } from '../../src/live-anchor-calibration.js';
@@ -50,7 +50,7 @@ export interface StrategyV2Meta { targetPlan?: {ranked:Window[];date?:string;his
   timingCalibration?: { spacingSource: 'MACHINE_PROFILE' | 'FALLBACK'; anchorSource: LiveAnchorSource; groupShiftMs: number;
     matchingReleases: number; matchingSamples: number; evidenceStrength: 'NONE' | 'LIMITED' | 'USABLE' | 'STRONG'; generatedAt?: string;
     deskew?: { capMs:number; source:'LIVE_CALIBRATION'|'INSUFFICIENT_EVIDENCE'; corrections:Array<{workerId:'A'|'B'|'C'|'D'|'E'|'F'|'G';fanOutIndex:number;correctionMs:number;matchingReleases:number;evidenceStrength:'NONE'|'LIMITED'|'USABLE'|'STRONG'}> } };
-  quickShotgun?: {version:1;settingsKey:string};
+  quickShotgun?: {version:1;settingsKey:string;normalized?:Array<'total'|'wave2'|'rescue'|'standby'>};
   acceptedPhase3?: NonNullable<ReturnType<typeof compileSmartPlan>['phase3']>;
   shotgun?: ShotgunSettings & {version:1;counts:Record<string,number>;exactSchedule:Array<{logicalTargetId:string;shotIndex:number;configuredOffsetMs:number}>;
     capacity:{meaningfulSpacingMs:number;recommendedMaximum:number;warning:string|null;groupAnchorMs:number}};
@@ -124,7 +124,7 @@ function quickShotgunFit(state:Dashboard|undefined,draft:SmartDraft){
     shotgunCapacity:shotgunCapacity(state,budget,host.meta()?.timingCalibration?.groupShiftMs??0)}),phase3=>draftFeasibility(state,phase3));
 }
 let quickProof: {draft:string;dependencies:string}|null=null;
-let lastShotgunMode=false;
+let rememberedShotgun:ShotgunSettings|undefined;
 let quickBusy=false,quickError='',quickChoice=false;
 const quickSettingsKey=()=>shotgunSettingsKey(host.draft().shotgun);
 const quickEnvironment=()=>{const state=host.state(),prior=state?.prewarmFeasibility;return configurationFingerprint({
@@ -183,7 +183,9 @@ export function initStrategy(value: StrategyHost): void {
   host = value;
   // One secondary expert area; the normal workflow never exposes compiled internals.
   const advanced=byId('strategy-advanced');
-  for(const id of ['strategy-normal-settings','strategy-shotgun-advanced','strategy-schedule','strategy-review','strategy-sync-courts'])advanced.append(byId(id));
+  for(const id of ['strategy-normal-settings','strategy-shotgun-advanced','strategy-sync-courts','strategy-edit-targets','strategy-normal-auto-limits'])advanced.append(byId(id));
+  advanced.append(byId('strategy-public-data').closest('label')!,byId('strategy-review-technical').closest('details')!,byId('strategy-gate'),byId('strategy-current-plan'));
+  const replace=el('button','secondary','REPLACE WITH QUICK SHOTGUN');replace.id='strategy-replace-quick';replace.type='button';advanced.append(replace);replace.addEventListener('click',()=>byId('strategy-shotgun-quick-ready').click());
   const overrides=el('div');overrides.id='strategy-evidence-overrides';advanced.append(overrides);
   selectById('strategy-ideal-start').replaceChildren(...Array.from({length:16},(_,i)=>new Option(hourLabel(i+8),hourText(i+8))));
   byId('strategy-normal-next').addEventListener('click',()=>host.nextRelease());
@@ -214,7 +216,22 @@ export function initStrategy(value: StrategyHost): void {
   byId('strategy-anchor-mode').addEventListener('change', () => { byId('strategy-anchor-shift-label').hidden = selectById('strategy-anchor-mode').value !== 'MANUAL'; invalidate(); });
   byId('strategy-anchor-shift').addEventListener('change', invalidate);
   for(const radio of document.querySelectorAll<HTMLInputElement>('input[name="strategy-intensity"]'))radio.addEventListener('change',()=>{
-    if(!radio.checked)return;quickChoice=radio.value==='SHOTGUN';host.ensureMeta();host.edit(draft=>{if(radio.value==='SHOTGUN')draft.shotgun=draft.shotgun??defaultShotgun(draft.immediate);else delete draft.shotgun;});
+    if(!radio.checked)return;
+    quickChoice=radio.value==='SHOTGUN'&&!rememberedShotgun&&!host.draft().shotgun;savedDraftKey='';quickProof=null;host.ensureMeta();
+    host.edit((draft,lineage)=>{
+      if(radio.value==='SHOTGUN')draft.shotgun=draft.shotgun??(rememberedShotgun?structuredClone(rememberedShotgun):defaultShotgun(draft.immediate));
+      else {
+        rememberedShotgun=draft.shotgun?structuredClone(draft.shotgun):undefined;
+        const accepted=host.accepted(),currentTargets=new Set([...draft.immediate,...draft.backups].map(logicalTargetId));
+        // Normal restores the accepted portfolio after Quick concentration only when every original
+        // target still exists. Manual target changes never trigger a hidden reset.
+        if(host.meta()?.quickShotgun && accepted && new Set([...accepted.immediate,...accepted.backups].map(logicalTargetId)).size===currentTargets.size && [...accepted.immediate,...accepted.backups].every(slot=>currentTargets.has(logicalTargetId(slot)))) {
+          draft.immediate=structuredClone(accepted.immediate);draft.backups=structuredClone(accepted.backups);draft.advanced=structuredClone(accepted.advanced);
+          const restored=suggestionLineage(draft);lineage.immediate=restored.immediate;lineage.backups=restored.backups;
+        }
+        delete draft.shotgun;
+      }
+    });
 });
   byId('strategy-shotgun-next').addEventListener('click',()=>host.nextRelease());
   byId('strategy-shotgun-quick-ready').addEventListener('click',()=>{void(async()=>{
@@ -222,9 +239,9 @@ export function initStrategy(value: StrategyHost): void {
     try {
       render();
       host.ensureMeta();const {fit,reason}=quickShotgunFit(host.state(),host.draft());
-      if(!fit){quickError=`SHOTGUN NOT READY · No fully preparable Shotgun configuration is available. ${reason}`;return;}
-      quickChoice=false;priorityProposal=true;host.activateSmart();host.edit((draft,lineage)=>{lineage.immediate=[null];lineage.backups=fit.draft.backups.map(()=>null);draft.immediate=fit.draft.immediate;draft.backups=fit.draft.backups;draft.shotgun=fit.settings;delete draft.advanced.total;});
-      host.meta()!.quickShotgun={version:1,settingsKey:quickSettingsKey()};
+      if(!fit){quickError=`SHOTGUN NOT READY · Shotgun needs one setting resolved: ${reason}`;return;}
+      quickChoice=false;priorityProposal=true;host.activateSmart();host.edit((draft,lineage)=>{lineage.immediate=[null];lineage.backups=fit.draft.backups.map(()=>null);draft.immediate=fit.draft.immediate;draft.backups=fit.draft.backups;draft.shotgun=fit.settings;draft.advanced=fit.draft.advanced;});
+      host.meta()!.quickShotgun={version:1,settingsKey:quickSettingsKey(),normalized:fit.normalized};
       const dependencies=quickEnvironment();
       if(!await host.save()){quickError='SHOTGUN NOT SAVED · Resolve the save blocker and try again.';return;}
       const saved=host.state()?.booking?.setup.STRATEGY_V2?.shotgun;
@@ -238,13 +255,13 @@ export function initStrategy(value: StrategyHost): void {
   })();});
 
   for(const id of ['strategy-shotgun-budget','strategy-shotgun-allocation','strategy-shotgun-start','strategy-shotgun-end','strategy-shotgun-timing','strategy-shotgun-timing-override','strategy-shotgun-standby-override','strategy-shotgun-custom-offsets'])
-    byId(id).addEventListener('change',()=>host.edit(draft=>{const current=draft.shotgun??defaultShotgun(draft.immediate);draft.shotgun={...current,
+    byId(id).addEventListener('change',()=>{quickChoice=false;host.edit(draft=>{const current=draft.shotgun??defaultShotgun(draft.immediate);draft.shotgun={...current,
       budget:Number(inputById('strategy-shotgun-budget').value),allocationMode:selectById('strategy-shotgun-allocation').value as ShotgunSettings['allocationMode'],
       windowStartMs:Number(inputById('strategy-shotgun-start').value),windowEndMs:Number(inputById('strategy-shotgun-end').value),
       timingMode:selectById('strategy-shotgun-timing').value as ShotgunSettings['timingMode'],
       customOffsetsMs:(byId('strategy-shotgun-custom-offsets') as HTMLTextAreaElement).value.split(',').map(value=>value.trim()).filter(Boolean).map(Number),
       timingCapacityOverride:(byId('strategy-shotgun-timing-override') as HTMLInputElement).checked,
-      allowStandbyConsumption:(byId('strategy-shotgun-standby-override') as HTMLInputElement).checked};delete draft.shotgun.capacityOverride;}));
+      allowStandbyConsumption:(byId('strategy-shotgun-standby-override') as HTMLInputElement).checked};delete draft.shotgun.capacityOverride;});});
   for(const radio of document.querySelectorAll<HTMLInputElement>('input[name="release-priority"]'))radio.addEventListener('change',()=>{priorityProposal=radio.value==='MAXIMUM';if(!priorityProposal)host.edit(draft=>{if(draft.shotgun)draft.shotgun.allowStandbyConsumption=false;});else render();});
   byId('shotgun-restore-balanced').addEventListener('click',()=>{priorityProposal=false;host.edit(draft=>{if(draft.shotgun){draft.shotgun.timingMode='BALANCED';draft.shotgun.timingCapacityOverride=false;draft.shotgun.allowStandbyConsumption=false;delete draft.shotgun.capacityOverride;}draft.advanced={};});});
   byId('strategy-shotgun-preset').addEventListener('click',()=>host.edit(draft=>{draft.shotgun={...(draft.shotgun??defaultShotgun(draft.immediate)),enabled:true,budget:20,
@@ -269,11 +286,12 @@ export function initStrategy(value: StrategyHost): void {
     // Worker assignment is deterministic (A..G) and the final literal values are copied into the
     // draft. From here through Review, Save and backend authorization there is nothing left to add.
     const shotgunOn=document.querySelector<HTMLInputElement>('input[name="strategy-intensity"]:checked')?.value==='SHOTGUN';
-    const draft = { ...base, ...(shotgunOn?{shotgun:defaultShotgun(base.immediate)}:{}), immediate: base.immediate.map((slot, index) => {
+    const draft = { ...base, ...(shotgunOn?{shotgun:base.shotgun??defaultShotgun(base.immediate)}:{}), immediate: base.immediate.map((slot, index) => {
       const workerId = String.fromCharCode(65 + index), plan = applyTimingDeskew(timing, calibration, workerId);
       const offsets = plan.children.map(child => child.finalConfiguredOffsetMs), next = { ...slot }; delete next.releaseOffsetMs; delete next.fanOutOffsetsMs;
       if (offsets.length > 1) next.fanOutOffsetsMs = offsets; else if (offsets[0] !== 0) next.releaseOffsetMs = offsets[0]; return next;
     }) };
+    if(!shotgunOn)rememberedShotgun=undefined;
     host.useSuggestion(draft, { version: 1, publicScheduleMode, targetPlan:{date:state?.booking?.targetDate,historyLabel:historyPlanLabel,publicWarning:publicPlanWarning,ranked:(suggestion.ranked??[...suggestion.immediate,...suggestion.backups]).map(({court,start,durationHours})=>({court,start,durationHours}))}, preset, goal: { ...goal }, lineage: suggestionLineage(draft), intelligenceMode,
       fanOut: { width: width.width, source: width.source, acceptedSource: width.source, recommendedWidth: machine.profile ? machine.width : null, timing: timing.preset,
         basedOnTiming: selectById('strategy-timing').value as 'TIGHT' | 'BALANCED' | 'WIDE', profileCreatedAt: machine.createdAt },
@@ -320,11 +338,11 @@ async function suggest(): Promise<void> {
   const snapshot = { goal: structuredClone(goal), schedule: schedule(state), allocation, forceInclude: structuredClone(forced), exclude: structuredClone(removed),
     intelligenceMode, publicScheduleMode, targetDate: state?.booking?.targetDate };
   render();
-  let readWarning='';
-  if(snapshot.publicScheduleMode==='CHECK'&&snapshot.targetDate)try {await window.thirsty.checkReleaseBlocks(snapshot.targetDate);} catch {readWarning='Public schedule could not be verified. Recommendations are based on your preferences and available history.';}
+  let readWarning='',readFailed=false;
+  if(snapshot.publicScheduleMode==='CHECK'&&snapshot.targetDate)try {await window.thirsty.checkReleaseBlocks(snapshot.targetDate);} catch {readFailed=true;readWarning='Public schedule could not be fully verified. Some targets are ranked from preferences/history only.';}
   if(generation!==suggestionGeneration)return;
-  const currentSchedule=schedule(host.state());
-  if(snapshot.publicScheduleMode==='CHECK'&&(!currentSchedule||[...currentSchedule.hours.values()].some(v=>v==='UNKNOWN_PUBLIC_QUERY_FAILED')))readWarning='Public schedule could not be verified. Recommendations are based on your preferences and available history.';
+  const currentSchedule=readFailed?{date:snapshot.targetDate!,checkedAt:'failed read',hours:new Map<string,import('../../src/strategy-engine.js').HourEvidence>()}:schedule(host.state());
+  if(snapshot.publicScheduleMode==='CHECK'&&(!currentSchedule||[...currentSchedule.hours.values()].some(v=>v==='UNKNOWN_PUBLIC_QUERY_FAILED')))readWarning='Public schedule could not be fully verified. Some targets are ranked from preferences/history only.';
   if(snapshot.publicScheduleMode==='CACHED_ONLY')readWarning='No new public-booking check requested. Preferences and available history used; already-known public conflicts remain excluded.';
   // Keep previously known conflicts even if a subsequent partial read fails.
   if(currentSchedule&&snapshot.schedule)for(const [key,evidence] of snapshot.schedule.hours)if(isConflict(evidence))(currentSchedule.hours as Map<string,typeof evidence>).set(key,evidence);
@@ -357,13 +375,11 @@ function renderSuggestion(state: Dashboard | undefined) {
   byId('strategy-suggestion').replaceChildren(...(pendingSuggestionGeneration!==null?[el('p','','Building target plan…')]:[]));
   const draft=host.draft(),targets=[...draft.immediate,...draft.backups];
   const primary=primaryShotgunTarget(draft);
-  const ranking=suggestion?.ranked??host.meta()?.targetPlan?.ranked;
-  const ordered=ranking?[...ranking.flatMap(w=>{const slot=targets.find(t=>sameWindow(t,w));return slot?[slot]:[];}),...targets.filter(t=>!ranking.some(w=>sameWindow(t,w)))]:targets;
   const summary=byId('strategy-target-summary');
   const conflicts=suggestion?.excluded.filter(w=>w.reason==='KNOWN_CONFLICT')??[];
   byId('strategy-evidence-overrides').replaceChildren(el('h3','','Public conflict overrides'),...conflicts.map(w=>windowItem(w,[['force','Force include']])));
   summary.replaceChildren(...(primary?[el('h3','','PRIMARY'),el('p','target-primary',windowText(primary)),el('h4','','BACKUPS'),
-    ...ordered.filter(t=>t!==primary).slice(0,3).map((t,i)=>el('p','',`${i+1}. ${windowText(t)}`)),
+    ...[...draft.immediate.filter(t=>t!==primary),...draft.backups].slice(0,3).map((t,i)=>el('p','',`${i+1}. ${windowText(t)}`)),
     ...(targets.length>4?[el('p','small',`${targets.length-4} more choices in Edit targets`)]:[]),
     el('p','small',publicPlanWarning|| (schedule(state)?`Known conflicts excluded${targets.some(t=>t.publicEvidence?.override)?' except your explicit overrides':''}. Public records do not promise availability at release.`:'Public schedule not checked.')),
     el('p','small',historyPlanLabel)]:[empty('Tell us what you want, then build your target plan.') ]));
@@ -539,6 +555,7 @@ function shotgunPresentation(state:Dashboard|undefined){
 }
 function renderShotgun(state:Dashboard|undefined){
   const draft=host.draft(),settings=draft.shotgun,quickPrimary=primaryShotgunTarget(draft);
+  byId('strategy-preset').hidden=!draft.immediate.length;byId('strategy-review').hidden=!draft.immediate.length;
   for(const radio of document.querySelectorAll<HTMLInputElement>('input[name="strategy-intensity"]'))radio.checked=radio.value===(settings?.enabled?'SHOTGUN':'NORMAL');
   byId('strategy-shotgun-fast-path').hidden=!settings?.enabled;
   byId('strategy-normal-fast-path').hidden=!!settings?.enabled;
@@ -546,6 +563,7 @@ function renderShotgun(state:Dashboard|undefined){
   byId('strategy-normal-settings').hidden=false;
   const knownQuick=host.meta()?.quickShotgun?.settingsKey===quickSettingsKey();
   const custom=!!settings?.enabled&&!knownQuick&&!quickChoice;
+  byId('strategy-replace-quick').hidden=!custom;
   const stale=!!settings?.enabled&&knownQuick&&(!quickProof||quickProof.draft!==quickSettingsKey()||quickProof.dependencies!==quickDependencies());
   const current=!!quickProof&&!custom&&!stale&&savedDraftKey!=='';
   const quickButton=byId('strategy-shotgun-quick-ready') as HTMLButtonElement;quickButton.disabled=!quickPrimary||quickBusy;quickButton.hidden=current;
@@ -556,7 +574,7 @@ function renderShotgun(state:Dashboard|undefined){
   if(current){
     const forecast=shotgunPresentation(state).feasibility;
     byId('strategy-shotgun-quick-status').replaceChildren(el('strong','','SHOTGUN SAVED ✓'),el('p','',`Court ${quickPrimary!.court} · ${smartRange(quickPrimary!.start,quickPrimary!.durationHours)}`),
-      el('p','',`${settings!.budget} attempts · Dense Core · −1000 → 0 ms`),el('p','',`Preparation forecast · ${forecast?.projectedReady}/${forecast?.configuredWave1Attempts} READY${(forecast?.configuredWave1Attempts??0)>settings!.budget?' (includes other release targets)':''}`),el('p','','Next: Prepare for Release'));
+      el('p','',`${settings!.budget} attempts · Dense Core · −1000 → 0 ms`),el('p','',`Preparation forecast · ${forecast?.projectedReady}/${forecast?.configuredWave1Attempts} READY${(forecast?.configuredWave1Attempts??0)>settings!.budget?' (includes other release targets)':''}`),el('p','','Next: Prepare for Release'),...(host.meta()?.quickShotgun?.normalized?.length?[el('p','small',`Returned incompatible ${host.meta()!.quickShotgun!.normalized!.map(key=>({total:'total attempt limit',wave2:'backup attempt limit',rescue:'Rescue attempt limit',standby:'reserved browser groups'}[key])).join(', ')} to automatic settings.`)]:[]));
   }
   byId('strategy-shotgun-next').hidden=!current;
   if(!settings?.enabled)return;
@@ -621,8 +639,10 @@ function renderReview(state: Dashboard | undefined) {
   const primarySlot=draft.immediate[0],schedule=presentation.preview.shotgun?.shots??[],groups=new Set(presentation.preview.phase3?.wave1.map(value=>value.workerId)??[]).size;
   byId('strategy-current-plan').textContent=`CURRENT PLAN · ${primarySlot?windowText(primarySlot):'Choose a target'} · ${draft.shotgun?.enabled?`${draft.shotgun.timingMode.replaceAll('_',' ')} · ${schedule.length} attempts · ${groups} browsers · ${offsetText(schedule.length?Math.min(...schedule.map(value=>value.configuredOffsetMs)):draft.shotgun.windowStartMs)} → ${offsetText(schedule.length?Math.max(...schedule.map(value=>value.configuredOffsetMs)):draft.shotgun.windowEndMs)}`:'Normal measured timing'} · ${status}`;
   const save=byId('strategy-save') as HTMLButtonElement;save.disabled=!valid||saveDisabled||remaining>0;
-  save.hidden=savedDraftKey!==''&&savedDraftKey===JSON.stringify(draft);
-  save.textContent=savedDraftKey===JSON.stringify(draft)?'✓ STRATEGY SAVED':'SAVE STRATEGY';
+  save.hidden=!draft.shotgun?.enabled||host.meta()?.quickShotgun?.settingsKey===quickSettingsKey()||quickChoice||savedDraftKey===JSON.stringify(draft);
+  byId('strategy-shotgun-quick-ready').hidden=byId('strategy-shotgun-quick-ready').hidden||(!save.hidden);
+  if(draft.shotgun?.enabled && host.meta()?.quickShotgun?.settingsKey!==quickSettingsKey() && !quickChoice)byId('strategy-shotgun-next').hidden=savedDraftKey!==JSON.stringify(draft);
+  save.textContent=savedDraftKey===JSON.stringify(draft)?'✓ STRATEGY SAVED':'SAVE CUSTOM SHOTGUN';
   byId('strategy-review-status').textContent=remaining?`${remaining} items need attention before saving.`:saveDisabled?'Saving is unavailable during the current operation.':'Saving does not prepare, authorize Terms or arm the release.';
   const body = byId('strategy-review-body'),technical=byId('strategy-review-technical');
   if (!smart) { body.replaceChildren(empty('The current plan is not a Smart plan. Use a suggestion, or edit under Advanced overrides.'));technical.replaceChildren(); return; }
@@ -644,7 +664,7 @@ function renderReview(state: Dashboard | undefined) {
     })):[];
   const primary=draft.immediate[0],attempts=shotgun?.shots.length??compiled.phase3.wave1.reduce((sum,value)=>sum+(value.fanOutOffsetsMs?.length??1),0);
   const range=shotgun?.shots.length?`${shotgun.shots[0]!.configuredOffsetMs} ms → ${shotgun.shots.at(-1)!.configuredOffsetMs} ms`:'Measured release timing';
-  body.replaceChildren(el('h4','','Primary target'),el('p','',primary?`Court ${primary.court} · ${smartRange(primary.start,primary.durationHours)}`:'No target'),el('h4','','Release'),el('p','',shotgun?`${attempts} Dense Core attempts · ${range} · nothing will be sent after release.`:`${attempts} normal measured attempts.`),el('h4','','Browsers'),el('p','',`${new Set(compiled.phase3.wave1.map(value=>value.workerId)).size} browser groups · ${feasibility?`${feasibility.projectedReady}/${feasibility.configuredWave1Attempts} attempts projected ready`:'preparation checked before arming'}`),el('h4','','Backup attempts'),el('p','',`Up to ${compiled.budgets.wave2} fresh backup attempts · reopened-slot rescue ${compiled.phase3.rescueEnabled?'ON':'OFF'}.`),el('h4','','Payment'),el('p','','The bot stops at QR. Payment remains manual.'),);
+  body.replaceChildren(el('p','',`${draft.immediate.length} immediate target${draft.immediate.length===1?'':'s'} · ${draft.backups.length} backup choices`),el('h4','','Primary target'),el('p','',primary?`Court ${primary.court} · ${smartRange(primary.start,primary.durationHours)}`:'No target'),el('h4','','Release'),el('p','',shotgun?`${attempts} Dense Core attempts · ${range} · nothing will be sent after release.`:`${attempts} normal measured attempts.`),el('h4','','Browsers'),el('p','',`${new Set(compiled.phase3.wave1.map(value=>value.workerId)).size} browser groups · ${feasibility?`${feasibility.projectedReady}/${feasibility.configuredWave1Attempts} attempts projected ready`:'preparation checked before arming'}`),el('h4','','Backup attempts'),el('p','',`Up to ${compiled.budgets.wave2} fresh backup attempts · reopened-slot rescue ${compiled.phase3.rescueEnabled?'ON':'OFF'}.`),el('h4','','Payment'),el('p','','The bot stops at QR. Payment remains manual.'),);
   technical.replaceChildren(...compiled.problems.map(text=>el('p','small',text)),...shotgunReview,...description.sections.flatMap(section => [el('h4', '', section.title), ...section.lines.map(line => el('p', 'small', line))]),
     ...(decomposition.length?[el('h4','','Saved timing decomposition'),...decomposition]:[]),
     el('p', '', `${description.summary} · Maximum possible sends: ${description.maxSends}`),el('p','small',`Saved fingerprint: ${state?.booking?.fingerprint??'none'} · Build: ${state?.build?.gitSha??'unknown'}${state?.build?.dirty?' (uncommitted)':''}`));

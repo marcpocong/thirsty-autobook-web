@@ -14,14 +14,14 @@ it('reviews the complete goal to saved release flow at every required viewport w
  await shot('01-fresh');
  await page.locator('#strategy-ideal-start').selectOption('19:00');await page.locator('#strategy-prime-from').selectOption('18:00');await shot('02-goal');
  await page.evaluate(()=>{const w=window as any;w.thirsty.strategyEvidence=async(input:any)=>{w.fixtureCalls.push('strategyEvidence');return {...input,dayOfWeek:'Thursday',releasesConsidered:0,wellObservedReleases:0,strength:'NONE',ranges:[],sharedRisk:[]};};});
- await page.locator('#strategy-suggest').click();await page.waitForFunction(()=>document.getElementById('strategy-target-summary')?.textContent?.includes('Public schedule could not be verified'));
+ await page.locator('#strategy-suggest').click();await page.waitForFunction(()=>document.getElementById('strategy-target-summary')?.textContent?.includes('Public schedule could not be fully verified'));
  expect(await page.locator('.target-primary').innerText()).toContain('7:00 PM');
  await shot('03-plan');await shot('04-public-failed');await shot('05-no-history');await shot('07-editor-closed');
- await page.locator('#strategy-edit-targets > summary').click();await shot('08-editor-open');await page.locator('#strategy-edit-targets > summary').click();
+ await page.locator('#strategy-advanced > summary').click();await page.locator('#strategy-edit-targets > summary').click();await shot('08-editor-open');await page.locator('#strategy-edit-targets > summary').click();await page.locator('#strategy-advanced > summary').click();
  await shot('09-normal');await page.locator('#strategy-normal-save').click();await page.waitForFunction(()=>document.getElementById('strategy-normal-status')?.textContent?.includes('SAVED'));await shot('10-normal-saved');
  expect(await page.locator('#strategy-normal-save').isVisible()).toBe(false);expect(await page.locator('#strategy-save').isVisible()).toBe(false);
- await page.locator('#strategy-edit-targets > summary').click();await page.locator('#strategy-immediate-start-0').selectOption('20:00');
- expect(await page.locator('#strategy-normal-status').innerText()).toContain('UNSAVED CHANGES');await page.locator('#strategy-edit-targets > summary').click();
+ await page.locator('#strategy-advanced > summary').click();await page.locator('#strategy-edit-targets > summary').click();await page.locator('#strategy-immediate-start-0').selectOption('20:00');
+ expect(await page.locator('#strategy-normal-status').innerText()).toContain('UNSAVED CHANGES');await page.locator('#strategy-edit-targets > summary').click();await page.locator('#strategy-advanced > summary').click();
  // A usable release fixture changes ranking and reports actual comparable releases.
  await page.evaluate(()=>{const w=window as any;w.thirsty.strategyEvidence=async(input:any)=>({...input,dayOfWeek:'Thursday',releasesConsidered:5,wellObservedReleases:5,strength:'USABLE',ranges:[{court:6,start:'19:00',durationHours:3,wellObserved:5,fullyOpenFirst:5,stillOpenAt1s:{observed:5,open:5},stillOpenAt5s:{observed:5,open:5},reopened:0,good:5,fair:0}],sharedRisk:[]});});
  await page.locator('#strategy-suggest').click();await page.waitForFunction(()=>document.getElementById('strategy-target-summary')?.textContent?.includes('5 comparable releases'));await shot('06-usable-history');
@@ -41,3 +41,52 @@ it('reviews the complete goal to saved release flow at every required viewport w
  expect(await page.evaluate(()=>(window as any).fixtureCalls.filter((v:string)=>['authorizeTerms','prepare','armFullBooking','testBooking'].includes(v)))).toEqual([]);
  await page.close();
 },30000);
+
+
+it('automatically checks public bookings, exposes partial uncertainty, keeps primary stable through Shotgun, and has one save action',async()=>{
+ const page=await openRenderer(browser,{booking:booking(),playerStatus:{primary:true,extended:true,third:true,fourth:true,fifth:true,sixth:true,seventh:true}},'strategy');
+ await page.locator('#strategy-ideal-start').selectOption('19:00');await page.locator('#strategy-prime-from').selectOption('18:00');
+ await page.evaluate(()=>{const w=window as any;w.thirsty.checkReleaseBlocks=async(date:string)=>{
+  w.fixtureCalls.push('checkReleaseBlocks');w.fixtureState.blockAudit={date,cells:Array.from({length:7},(_,i)=>i+1).flatMap(court=>Array.from({length:16},(_,i)=>({court,hour:`${String(i+8).padStart(2,'0')}:00`,status:court===7&&i+8===19?'BLOCKED':'UNRELEASED',source:court===7&&i+8===19?'PUBLIC_BOOKING':'DATE_UNRELEASED'})))};w.fixturePublish(w.fixtureState);
+ };});
+ await page.locator('#strategy-suggest').click();await page.waitForFunction(()=>document.getElementById('strategy-target-summary')?.textContent?.includes('Known conflicts excluded'));
+ const primary=await page.locator('.target-primary').innerText();expect(primary).toContain('Court 6');
+ expect(await page.locator('#strategy-advanced').getAttribute('open')).toBeNull();
+ expect(await page.locator('#strategy-review').isVisible()).toBe(true);
+ expect(await page.locator('#strategy-review button').count()).toBe(0);
+ expect(await page.locator('#strategy-normal-save').isVisible()).toBe(true);expect(await page.locator('#strategy-save').isVisible()).toBe(false);
+ const steps=await page.locator('#view-strategy .eyebrow').evaluateAll(nodes=>nodes.filter(n=>n.getBoundingClientRect().width>0).map(n=>n.textContent));
+ expect(steps.filter(t=>t?.startsWith('Step'))).toEqual(['Step 1 · Booking goal','Step 2 · Target plan','Step 3 · Release mode','Step 4 · Review & Continue']);
+ await page.locator('input[name="strategy-intensity"][value="SHOTGUN"]').check();
+ expect(await page.locator('#strategy-normal-save').isVisible()).toBe(false);expect(await page.locator('#strategy-shotgun-quick-ready').isVisible()).toBe(true);
+ await page.locator('#strategy-shotgun-quick-ready').click();await page.waitForFunction(()=>document.getElementById('strategy-shotgun-quick-status')?.textContent?.includes('SHOTGUN SAVED'));
+ expect(await page.locator('.target-primary').innerText()).toBe(primary);
+ expect(await page.locator('#strategy-review-body').innerText()).toContain('20 Dense Core attempts');
+ const saved=await page.evaluate(()=>(window as any).fixtureSaved);expect(saved.PRECISION_PHASE3.candidates[0].court).toBe(6);
+ await page.locator('input[name="strategy-intensity"][value="NORMAL"]').check();expect(await page.locator('#strategy-normal-save').isVisible(),JSON.stringify(await page.locator('#strategy-normal-fast-path').evaluate(n=>({hidden:(n as HTMLElement).hidden,text:n.textContent})))).toBe(true);
+ await page.locator('#strategy-normal-save').click();await page.waitForFunction(()=>document.getElementById('strategy-normal-status')?.textContent?.includes('SAVED'));
+ await page.locator('#strategy-ideal-start').selectOption('20:00');expect(await page.locator('#strategy-normal-next').isVisible()).toBe(false);
+ await page.evaluate(()=>{const w=window as any;w.thirsty.checkReleaseBlocks=async()=>{w.fixtureCalls.push('checkReleaseBlocks');for(const c of w.fixtureState.blockAudit.cells)if(c.court===6)c.status='UNKNOWN';w.fixturePublish(w.fixtureState);};});
+ await page.locator('#strategy-suggest').click();await page.waitForFunction(()=>document.getElementById('strategy-target-summary')?.textContent?.includes('could not be fully verified'));
+ expect(await page.locator('.target-primary').innerText()).not.toContain('Court 6');
+ expect(await page.evaluate(()=>(window as any).fixtureCalls.filter((v:string)=>['authorizeTerms','prepare','armFullBooking','testBooking'].includes(v)))).toEqual([]);
+ await page.close();
+});
+
+
+it('normalizes stale hidden resource overrides through the real Quick save and records only necessary changes',async()=>{
+ const page=await openRenderer(browser,{booking:booking(),playerStatus:{primary:true,extended:true,third:true,fourth:true,fifth:true,sixth:true,seventh:true}},'plan');
+ await page.locator('#strategy-suggest').click();await page.waitForFunction(()=>document.querySelector('.target-primary'));
+ await page.locator('#smart-advanced').evaluate(node=>(node as HTMLDetailsElement).open=true);
+ await page.locator('#smart-adv-wave2').fill('8');await page.locator('#smart-adv-wave2').blur();
+ await page.locator('#strategy-advanced > summary').click();
+ await page.locator('input[name="strategy-intensity"][value="SHOTGUN"]').check();
+ await page.locator('#strategy-shotgun-quick-ready').click();await page.waitForFunction(()=>document.getElementById('strategy-shotgun-quick-status')?.textContent?.includes('SHOTGUN SAVED'));
+ expect(await page.locator('#strategy-advanced').getAttribute('open')).toBeNull();
+ expect(await page.locator('#strategy-shotgun-quick-status').innerText()).toContain('backup attempt limit');
+ const saved=await page.evaluate(()=>(window as any).fixtureSaved);
+ expect(saved.STRATEGY_V2.quickShotgun.normalized).toContain('wave2');
+ expect(saved.STRATEGY_V2.shotgun.budget).toBe(20);
+ expect(await page.evaluate(()=>(window as any).fixtureState.playerStatus.primary)).toBe(true);
+ await page.close();
+});

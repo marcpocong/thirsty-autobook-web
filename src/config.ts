@@ -64,7 +64,7 @@ export const StrategyV2Schema=z.object({version:z.literal(1),preset:z.enum(['BAL
   // Reset baseline only. It never authorizes execution; the sibling PRECISION_PHASE3 remains the sole current authority.
   acceptedPhase3:PrecisionPhase3Schema.optional(),
   // UI provenance only; requires a new session forecast before displaying ready.
-  quickShotgun:z.object({version:z.literal(1),settingsKey:z.string().max(4000)}).strict().optional(),
+  quickShotgun:z.object({version:z.literal(1),settingsKey:z.string().max(4000),normalized:z.array(z.enum(['total','wave2','rescue','standby'])).max(4).optional()}).strict().optional(),
   lineage:z.object({immediate:z.array(z.string().regex(/^I\d+$/).nullable()).max(7),backups:z.array(z.string().regex(/^B\d+$/).nullable()).max(21)}).strict().optional(),
   shotgun:z.object({version:z.literal(1),enabled:z.boolean(),budget:z.number().int().min(1).max(PRECISION_MAX_SENDS),
     allocationMode:z.enum(['EQUAL','PRIORITY_WEIGHTED','CUSTOM']),selectedTargetIds:z.array(z.string().min(1).max(100)).min(1).max(7),

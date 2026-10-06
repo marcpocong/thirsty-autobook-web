@@ -20,19 +20,28 @@ export function primaryOnlyShotgunDraft(draft:SmartDraft):SmartDraft {
   candidate.immediate=[primary];candidate.backups=[...others,...candidate.backups];
   return candidate;
 }
-/** Recalculate only the total send budget for the new Wave 1. Preserve explicit standby, Wave 2 and Rescue overrides. */
+/** Search largest READY budget. Normalize the smallest set of incompatible resource overrides
+ * using compiler results. Rates, identities, targets, provider authorization and safety gates
+ * never participate in normalization. The input is immutable. */
 export function fitQuickShotgun(draft: SmartDraft, context: (budget:number)=>Parameters<typeof compileSmartPlan>[1],
   forecast:(phase3:NonNullable<ReturnType<typeof compileSmartPlan>['phase3']>)=>PrewarmFeasibilityResult|null) {
   let reason='No immediate target. Add a release target first.';
+  const keys=(['total','wave2','rescue','standby'] as const).filter(key=>draft.advanced[key]!==undefined);
+  const masks=Array.from({length:2**keys.length},(_,i)=>i).sort((a,b)=>a.toString(2).replaceAll('0','').length-b.toString(2).replaceAll('0','').length||a-b);
   for(let budget=Math.min(20,PRECISION_MAX_SENDS);budget>=1;budget--){
     const settings=quickShotgunSettings(draft,budget); if(!settings)break;
-    const candidate={...primaryOnlyShotgunDraft(draft),shotgun:settings};
-    delete candidate.advanced.total;
-    const compiled=compileSmartPlan(candidate,context(budget));
-    if(!compiled.phase3||compiled.problems.length){reason=compiled.problems[0]??'Plan compilation failed.';continue;}
-    const feasibility=forecast(compiled.phase3);
-    if(feasibility && fullyReady(feasibility))return {fit:{settings,feasibility,compiled,draft:candidate},reason:''};
-    reason=feasibility?`${feasibility.verdict.replaceAll('_',' ')}: ${feasibility.projectedReady}/${feasibility.configuredWave1Attempts} READY, ${feasibility.projectedAtRisk} AT RISK, ${feasibility.projectedOmitted} omitted.`:'Preparation forecast unavailable.';
+    for(const mask of masks){
+      const candidate={...primaryOnlyShotgunDraft(draft),shotgun:settings};
+      const normalized=keys.filter((_,i)=>mask & (1<<i));
+      for(const key of normalized)delete candidate.advanced[key];
+      const compiled=compileSmartPlan(candidate,context(budget));
+      if(!compiled.phase3||compiled.problems.length){reason=compiled.problems[0]??'Plan compilation failed.';continue;}
+      const feasibility=forecast(compiled.phase3);
+      if(feasibility && fullyReady(feasibility))return {fit:{settings,feasibility,compiled,draft:candidate,normalized},reason:''};
+      reason=feasibility?'Preparation cannot ready every attempt. Check browser availability in Next Release.':'Preparation forecast unavailable. Check browser availability in Next Release.';
+      // Removing otherwise valid overrides cannot repair a readiness forecast.
+      break;
+    }
   }
   return {fit:null,reason};
 }
