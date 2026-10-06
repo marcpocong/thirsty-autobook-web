@@ -41,3 +41,12 @@ describe('Quick Shotgun policy',()=>{
     value.advanced.wave2=8;expect(fitQuickShotgun(value,context,forecast(12000)).fit).toBeNull();expect(value.advanced.wave2).toBe(8);
   });
 });
+
+it('Quick Wave 1 is exactly the fitted primary budget and preserves every other target as backup',()=>{
+ const value=draft();value.immediate.push({court:6,start:'19:00',durationHours:3},{court:5,start:'20:00',durationHours:3});
+ const before=structuredClone(value),fit=fitQuickShotgun(value,context,forecast(12000)).fit!;
+ expect(fit).not.toBeNull();expect(fit.draft.immediate).toHaveLength(1);expect(fit.draft.backups).toEqual([...before.immediate.slice(1),...before.backups]);
+ expect(fit.feasibility.configuredWave1Attempts).toBe(fit.settings.budget);
+ expect(fit.compiled.phase3!.wave1.reduce((n,a)=>n+(a.fanOutOffsetsMs?.length??1),0)).toBe(fit.settings.budget);
+ expect(value).toEqual(before);
+});

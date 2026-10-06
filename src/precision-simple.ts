@@ -34,7 +34,7 @@ export interface SmartRateEvidence { source: string; capturedAt: string; status:
 export interface SmartRateTable { day: number | null; evening: number | null; status: 'OPERATOR_CONFIRMED' | 'VENUE_SCHEDULE'; source: string; capturedAt: string; date: string }
 export interface SmartPermissions { wave1: boolean; wave2: boolean; rescue: boolean }
 /** Public-booking evidence seen when the slot was planned; `override` records a deliberate force-include despite a conflict or failed read. */
-export interface SmartPublicEvidence { evidence: 'NO_KNOWN_PUBLIC_CONFLICT' | 'KNOWN_PUBLIC_BOOKING_CONFLICT' | 'UNKNOWN_PUBLIC_QUERY_FAILED' | 'PUBLISHED_OPEN' | 'PUBLISHED_UNAVAILABLE';
+export interface SmartPublicEvidence { evidence: 'NOT_CHECKED' | 'NO_KNOWN_PUBLIC_CONFLICT' | 'KNOWN_PUBLIC_BOOKING_CONFLICT' | 'UNKNOWN_PUBLIC_QUERY_FAILED' | 'PUBLISHED_OPEN' | 'PUBLISHED_UNAVAILABLE';
   override?: 'OPERATOR_OVERRIDE_PUBLIC_CONFLICT' }
 /** Structural copy of release-offset.ts's guarded range (this module stays import-free for the renderer). */
 export type SmartReleaseOffset = number;

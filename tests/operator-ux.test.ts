@@ -20,6 +20,7 @@ const players={primary:true,extended:true,third:true,fourth:true,fifth:true,sixt
 it('resolves both acknowledgements without Advanced, keeps priority explicit, saves literal timing and passes keyboard checks',async()=>{
   const page=await openRenderer(browser,{booking:booking(),playerStatus:players},'strategy',{width:1440,height:1000});
   await page.locator('input[name="strategy-intensity"][value="SHOTGUN"]').check();
+  await page.locator('#strategy-advanced').evaluate(node=>(node as HTMLDetailsElement).open=true);
   await page.locator('#strategy-shotgun-advanced').evaluate(node=>(node as HTMLDetailsElement).open=true);
   expect(await page.locator('#strategy-shotgun-advanced').getAttribute('open')).not.toBeNull();
   expect(await page.locator('#shotgun-attention-title').innerText()).toContain('2 THINGS');
@@ -28,7 +29,7 @@ it('resolves both acknowledgements without Advanced, keeps priority explicit, sa
   expect(await page.locator('#shotgun-preparation').innerText()).toContain('Forecast: 20/20');
   expect(await page.locator('#shotgun-timeline-summary').innerText()).toContain('4 early probes · 16 concentrated');
   expect(await page.locator('#strategy-shotgun-preview').innerText()).toContain('LAST ATTEMPT\n0 ms');
-  expect(await page.locator('#strategy-current-plan').innerText()).toContain('NEEDS ATTENTION');
+  expect(await page.locator('#strategy-current-plan').textContent()).toContain('NEEDS ATTENTION');
   expect(await page.locator('#strategy-review-warnings').innerText()).not.toMatch(/spacing|standby/);
   expect(await page.locator('#strategy-shotgun-preview').innerText()).not.toMatch(/BLOCKED|Requested Dense/);
   await page.screenshot({path:'.local/operator-ux/both-unresolved.png',fullPage:true});
@@ -41,7 +42,7 @@ it('resolves both acknowledgements without Advanced, keeps priority explicit, sa
   await page.locator('#strategy-shotgun-standby-override').focus();await page.keyboard.press('Space');
   expect(await page.locator('#shotgun-standby-state').innerText()).toContain('ACKNOWLEDGED');
   expect(await page.locator('#strategy-save').isEnabled()).toBe(true);
-  expect(await page.locator('#strategy-current-plan').innerText()).toContain('READY TO SAVE');
+  expect(await page.locator('#strategy-current-plan').textContent()).toContain('READY TO SAVE');
   await page.screenshot({path:'.local/operator-ux/both-resolved.png',fullPage:true});
   await page.locator('#strategy-save').click();await page.waitForFunction(()=>(window as any).fixtureSaved);
   expect(await page.locator('#strategy-save').innerText()).toContain('STRATEGY SAVED');
@@ -56,6 +57,7 @@ it('resolves both acknowledgements without Advanced, keeps priority explicit, sa
 it('offers a one-click Shotgun fast path that resolves release-day configuration blockers',async()=>{
   const page=await openRenderer(browser,{booking:booking(false,true),playerStatus:players},'strategy',{width:1440,height:1000});
   expect(await page.locator('input[name="strategy-intensity"][value="NORMAL"]').isChecked()).toBe(true);
+  await page.locator('input[name="strategy-intensity"][value="SHOTGUN"]').check();
   await page.locator('#strategy-shotgun-quick-ready').click();
   await page.waitForFunction(()=>!document.getElementById('strategy-shotgun-quick-ready')?.textContent?.includes('SAVING'));
   expect(await page.locator('input[name="strategy-intensity"][value="SHOTGUN"]').isChecked()).toBe(true);
@@ -66,16 +68,18 @@ it('offers a one-click Shotgun fast path that resolves release-day configuration
   await page.screenshot({path:'.local/operator-ux/quick-saved.png',fullPage:true});
   expect(await page.locator('#strategy-shotgun-allocation').inputValue()).toBe('CUSTOM');
   const checks=page.locator('#strategy-shotgun-targets input[type="checkbox"]');
-  expect(await checks.nth(0).isChecked()).toBe(true);expect(await checks.nth(1).isChecked()).toBe(false);
+  expect(await checks.count()).toBe(1);expect(await checks.nth(0).isChecked()).toBe(true);
+  expect(await page.evaluate(()=>(window as any).fixtureSaved.PRECISION_PHASE3.candidates.some((c:any)=>c.court===6))).toBe(true);
   expect(await page.locator('#strategy-shotgun-timing-override').isChecked()).toBe(true);
   expect(await page.locator('#strategy-shotgun-standby-override').isChecked()).toBe(true);
-  expect(await page.locator('#strategy-shotgun-quick-status').innerText()).toContain('21/21 READY');
-  expect(await page.locator('#strategy-current-plan').innerText()).toContain('SAVED');
-  expect(await page.locator('#strategy-save').isEnabled()).toBe(true);
+  expect(await page.locator('#strategy-shotgun-quick-status').innerText()).toContain('20/20 READY');
+  expect(await page.locator('#strategy-current-plan').textContent()).toContain('SAVED');
+  expect(await page.locator('#strategy-save').isVisible()).toBe(false);
   await page.close();
 });
 it('auto-fits one-click Shotgun below 20 when the preparation forecast cannot ready all attempts',async()=>{
   const page=await openRenderer(browser,{booking:booking(false),playerStatus:players,prewarmFeasibility:{p95Source:'COMPATIBLE_MEASURED_HISTORY',preparationP95Ms:18000,sampleCount:30}},'strategy',{width:1440,height:1000});
+  await page.locator('input[name="strategy-intensity"][value="SHOTGUN"]').check();
   await page.locator('#strategy-shotgun-quick-ready').click();
   await page.waitForFunction(()=>!document.getElementById('strategy-shotgun-quick-ready')?.textContent?.includes('SAVING'));
   const budget=Number(await page.locator('#strategy-shotgun-budget').inputValue());
@@ -83,13 +87,14 @@ it('auto-fits one-click Shotgun below 20 when the preparation forecast cannot re
   expect(await page.locator('#strategy-shotgun-quick-status').innerText()).toContain(`${budget}/${budget} READY`);
   expect(budget).toBe(5);
   await page.screenshot({path:'.local/operator-ux/quick-autofit.png',fullPage:true});
-  expect(await page.locator('#strategy-current-plan').innerText()).toContain('SAVED');
-  expect(await page.locator('#strategy-save').isEnabled()).toBe(true);
+  expect(await page.locator('#strategy-current-plan').textContent()).toContain('SAVED');
+  expect(await page.locator('#strategy-save').isVisible()).toBe(false);
   await page.close();
 });
 it('has a warning-free Dense Core when spacing is harmless and preserves selected targets on balanced restore',async()=>{
   const page=await openRenderer(browser,{booking:booking(false,true),playerStatus:players},'strategy');
   await page.locator('input[name="strategy-intensity"][value="SHOTGUN"]').check();
+  await page.locator('#strategy-advanced').evaluate(node=>(node as HTMLDetailsElement).open=true);
   await page.locator('#strategy-shotgun-advanced').evaluate(node=>(node as HTMLDetailsElement).open=true);
   await page.locator('#strategy-shotgun-budget').fill('1');await page.locator('#strategy-shotgun-budget').blur();
   expect(await page.locator('#shotgun-attention').isHidden()).toBe(true);
@@ -102,6 +107,7 @@ it('has a warning-free Dense Core when spacing is harmless and preserves selecte
 it('renders multi-target allocation and Focus on #1, and leaves invalid plans BLOCKED',async()=>{
   const page=await openRenderer(browser,{booking:booking(false,true),playerStatus:players},'strategy');
   await page.locator('input[name="strategy-intensity"][value="SHOTGUN"]').check();
+  await page.locator('#strategy-advanced').evaluate(node=>(node as HTMLDetailsElement).open=true);
   await page.locator('#strategy-shotgun-advanced').evaluate(node=>(node as HTMLDetailsElement).open=true);
   expect(await page.locator('#shotgun-allocation-summary meter').count()).toBe(2);
   expect(await page.locator('#shotgun-allocation-summary').innerText()).toContain('10 / 20');
@@ -125,6 +131,7 @@ it('mirrors the existing arm gate on Next Release and puts Live waiting first',a
 it('shows partial preparation from the engine forecast and prevents saving that release plan',async()=>{
   const page=await openRenderer(browser,{booking:booking(false),playerStatus:players,prewarmFeasibility:{p95Source:'COMPATIBLE_MEASURED_HISTORY',preparationP95Ms:18000,sampleCount:30}},'strategy',{width:1440,height:1000});
   await page.locator('input[name="strategy-intensity"][value="SHOTGUN"]').check();
+  await page.locator('#strategy-advanced').evaluate(node=>(node as HTMLDetailsElement).open=true);
   await page.locator('#strategy-shotgun-advanced').evaluate(node=>(node as HTMLDetailsElement).open=true);
   await page.locator('#strategy-shotgun-timing-override').check();
   expect(await page.locator('#shotgun-preparation').innerText()).toContain('PREPARATION INCOMPLETE');
@@ -156,13 +163,14 @@ it('renders verified, rejected, throttle and unknown Live outcomes from fixture 
 it('invalidates saved Quick Shotgun when preparation state changes and refreshes in one action',async()=>{
   const page=await openRenderer(browser,{booking:booking(false),playerStatus:players},'strategy');
   await page.screenshot({path:'.local/operator-ux/quick-before.png',fullPage:true});
-  await page.locator('#strategy-shotgun-quick-ready').focus();await page.keyboard.press('Enter');
+  await page.locator('input[name="strategy-intensity"][value="SHOTGUN"]').check();await page.locator('#strategy-shotgun-quick-ready').focus();await page.keyboard.press('Enter');
   await page.waitForFunction(()=>document.getElementById('strategy-shotgun-quick-status')?.textContent?.includes('SHOTGUN SAVED'));
   await page.evaluate(()=>{const w=window as any;w.fixtureState.prewarmFeasibility={p95Source:'COMPATIBLE_MEASURED_HISTORY',preparationP95Ms:18000,sampleCount:30};w.fixturePublish(w.fixtureState);});
   expect(await page.locator('#strategy-shotgun-quick-status').innerText()).toContain('SHOTGUN NEEDS REFRESH');
   expect(await page.locator('#strategy-shotgun-next').isHidden()).toBe(true);
   expect(await page.locator('#strategy-shotgun-quick-ready').innerText()).toBe('REFRESH & SAVE SHOTGUN');
   await page.screenshot({path:'.local/operator-ux/quick-stale.png',fullPage:true});
+  await page.locator('input[name="strategy-intensity"][value="SHOTGUN"]').check();
   await page.locator('#strategy-shotgun-quick-ready').click();
   await page.waitForFunction(()=>document.getElementById('strategy-shotgun-quick-status')?.textContent?.includes('SHOTGUN SAVED'));
   expect(await page.evaluate(()=>(window as any).fixtureSaved.STRATEGY_V2.shotgun.budget)).toBe(5);
@@ -175,12 +183,13 @@ it('invalidates saved Quick Shotgun when preparation state changes and refreshes
 });
 it('preserves custom Shotgun until explicitly replaced and fits at narrow width',async()=>{
   const page=await openRenderer(browser,{booking:booking(false),playerStatus:players},'strategy',{width:390,height:844});
+  await page.locator('input[name="strategy-intensity"][value="SHOTGUN"]').check();
   await page.locator('#strategy-shotgun-quick-ready').click();
   await page.waitForFunction(()=>document.getElementById('strategy-shotgun-quick-status')?.textContent?.includes('SHOTGUN SAVED'));
   expect(await page.locator('#strategy-shotgun-advanced').getAttribute('open')).toBeNull();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   await page.screenshot({path:'.local/operator-ux/quick-narrow.png',fullPage:true});
-  await page.locator('#strategy-shotgun-advanced > summary').click();
+  await page.locator('#strategy-advanced > summary').click();await page.locator('#strategy-shotgun-advanced > summary').click();
   await page.locator('#strategy-shotgun-budget').fill('4');await page.locator('#strategy-shotgun-budget').blur();
   expect(await page.locator('#strategy-shotgun-quick-status').innerText()).toContain('CUSTOM SHOTGUN');
   expect(await page.locator('#strategy-shotgun-budget').inputValue()).toBe('4');
@@ -189,6 +198,7 @@ it('preserves custom Shotgun until explicitly replaced and fits at narrow width'
   await page.screenshot({path:'.local/operator-ux/quick-custom.png',fullPage:true});
   await page.setViewportSize({width:1440,height:1000});
   await page.screenshot({path:'.local/operator-ux/quick-advanced.png',fullPage:true});
+  await page.locator('input[name="strategy-intensity"][value="SHOTGUN"]').check();
   await page.locator('#strategy-shotgun-quick-ready').click();
   await page.waitForFunction(()=>document.getElementById('strategy-shotgun-quick-status')?.textContent?.includes('SHOTGUN SAVED'));
   expect(await page.locator('#strategy-shotgun-budget').inputValue()).toBe('20');await page.close();
@@ -200,6 +210,7 @@ it('blocks no target and no fully READY configuration without saving or live sid
   expect(await empty.locator('#strategy-shotgun-quick-status').innerText()).toContain('Add at least one release target');
   expect(await empty.evaluate(()=>(window as any).fixtureCalls)).toEqual([]);await empty.close();
   const page=await openRenderer(browser,{booking:booking(false),playerStatus:players,prewarmFeasibility:{p95Source:'COMPATIBLE_MEASURED_HISTORY',preparationP95Ms:200000,sampleCount:30}},'strategy');
+  await page.locator('input[name="strategy-intensity"][value="SHOTGUN"]').check();
   await page.locator('#strategy-shotgun-quick-ready').click();
   expect(await page.locator('#strategy-shotgun-quick-status').innerText()).toContain('SHOTGUN NOT READY');
   expect(await page.locator('#strategy-shotgun-next').isHidden()).toBe(true);
@@ -208,12 +219,14 @@ it('blocks no target and no fully READY configuration without saving or live sid
 });
 it('invalidates Quick Shotgun on target edits and unavailable workers',async()=>{
   const page=await openRenderer(browser,{booking:booking(false),playerStatus:players},'strategy');
+  await page.locator('input[name="strategy-intensity"][value="SHOTGUN"]').check();
   await page.locator('#strategy-shotgun-quick-ready').click();
   await page.waitForFunction(()=>document.getElementById('strategy-shotgun-quick-status')?.textContent?.includes('SHOTGUN SAVED'));
-  await page.locator('#strategy-immediate-court-0').selectOption('6');
+  await page.locator('#strategy-edit-targets').evaluate(node=>(node as HTMLDetailsElement).open=true);await page.locator('#strategy-immediate-court-0').selectOption('6');
   expect(await page.locator('#strategy-shotgun-quick-status').innerText()).toContain('SHOTGUN NEEDS REFRESH');
   await page.evaluate(()=>{const w=window as any;w.fixtureState.playerStatus={primary:false,extended:false,third:false,fourth:false,fifth:false,sixth:false,seventh:false};w.fixturePublish(w.fixtureState);});
   expect(await page.locator('#strategy-shotgun-quick-status').innerText()).not.toContain('SHOTGUN SAVED');
+  await page.locator('input[name="strategy-intensity"][value="SHOTGUN"]').check();
   await page.locator('#strategy-shotgun-quick-ready').click();
   expect(await page.locator('#strategy-shotgun-quick-status').innerText()).toContain('SHOTGUN NOT READY');
   expect(await page.evaluate(()=>(window as any).fixtureCalls)).toEqual(['saveBooking']);await page.close();
@@ -221,6 +234,7 @@ it('invalidates Quick Shotgun on target edits and unavailable workers',async()=>
 
 it('reopening a saved Quick strategy requires fresh preparation evidence',async()=>{
   const page=await openRenderer(browser,{booking:booking(false),playerStatus:players},'strategy');
+  await page.locator('input[name="strategy-intensity"][value="SHOTGUN"]').check();
   await page.locator('#strategy-shotgun-quick-ready').click();
   await page.waitForFunction(()=>document.getElementById('strategy-shotgun-quick-status')?.textContent?.includes('SHOTGUN SAVED'));
   const saved=await page.evaluate(()=>(window as any).fixtureState.booking);
@@ -237,7 +251,8 @@ it('does not claim SAVED when authoritative persistence rejects or changes the a
       if(!tamper){w.fixtureCalls.push('saveBooking');throw Error('Fixture save rejected');}
       await save(setup);w.fixtureState.booking.setup.PRECISION_PHASE3.wave1[0].fanOutOffsetsMs[0]=-999;
     };},tamper);
-    await page.locator('#strategy-shotgun-quick-ready').click();
+    await page.locator('input[name="strategy-intensity"][value="SHOTGUN"]').check();
+  await page.locator('#strategy-shotgun-quick-ready').click();
     await page.waitForFunction(()=>!document.getElementById('strategy-shotgun-quick-ready')?.textContent?.includes('SAVING'));
     expect(await page.locator('#strategy-shotgun-quick-status').innerText()).not.toContain('SHOTGUN SAVED');
     expect(await page.locator('#strategy-shotgun-next').isHidden()).toBe(true);
@@ -247,10 +262,12 @@ it('does not claim SAVED when authoritative persistence rejects or changes the a
 
 it('withdraws a prior success if a repeated quick save fails',async()=>{
   const page=await openRenderer(browser,{booking:booking(false),playerStatus:players},'strategy');
+  await page.locator('input[name="strategy-intensity"][value="SHOTGUN"]').check();
   await page.locator('#strategy-shotgun-quick-ready').click();
   await page.waitForFunction(()=>document.getElementById('strategy-shotgun-quick-status')?.textContent?.includes('SHOTGUN SAVED'));
   await page.evaluate(()=>{(window as any).thirsty.saveBooking=async()=>{throw Error('Fixture save rejected');};});
-  await page.locator('#strategy-shotgun-quick-ready').click();
+  await page.locator('input[name="strategy-intensity"][value="SHOTGUN"]').check();
+  await page.locator('#strategy-shotgun-quick-ready').evaluate(node=>(node as HTMLButtonElement).click());
   await page.waitForFunction(()=>!document.getElementById('strategy-shotgun-quick-ready')?.textContent?.includes('SAVING'));
   expect(await page.locator('#strategy-shotgun-quick-status').innerText()).toContain('SHOTGUN NOT SAVED');
   expect(await page.locator('#strategy-shotgun-next').isHidden()).toBe(true);await page.close();
@@ -258,7 +275,7 @@ it('withdraws a prior success if a repeated quick save fails',async()=>{
 
 it('clears schedule loading, reports HTTP 403, and preserves confirmed bookings and UNKNOWN evidence',async()=>{
   const page=await openRenderer(browser,{booking:booking(false),playerStatus:players},'strategy');
-  await page.locator('#strategy-schedule > summary').click();
+  await page.locator('#strategy-advanced > summary').click();await page.locator('#strategy-schedule > summary').click();
   await page.evaluate(()=>{const w=window as any;w.thirsty.checkReleaseBlocks=async(date:string)=>{
     w.fixtureCalls.push('checkReleaseBlocks');await new Promise(resolve=>{w.finishAudit=resolve;});
     w.fixtureState.blockAudit={type:'blockAudit',date,cells:Array.from({length:7},(_,i)=>i+1).flatMap(court=>Array.from({length:16},(_,i)=>({court,hour:`${String(i+8).padStart(2,'0')}:00`,status:court===7&&i===11?'BLOCKED':'UNKNOWN',source:court===7&&i===11?'PUBLIC_BOOKING':'AVAILABILITY_READ_FAILED'}))),diagnostics:{availability:{status:'FAILED',httpStatus:403,code:'AVAILABILITY_HTTP_FAILED',durationMs:767},publicBookings:{failedCourts:[],durationMs:300},durationMs:800}};

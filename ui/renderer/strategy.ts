@@ -3,7 +3,7 @@ import type { Dashboard } from '../types.js';
 import { compileSmartPlan, describeSmartPlan, resizeSmartFanOut, setSmartChildOffset, smartRange, smartSlotOffsets, SMART_WORKERS, SMART_MAX_SLOTS,
   type SmartDraft, type SmartSlot } from '../../src/precision-simple.js';
 import {type PrewarmFeasibilityResult} from '../../src/api-booking/prewarm-feasibility.js';
-import { DEFAULT_STRATEGY_GOAL, draftFromSuggestion, enumeratePrimeWindows, isConflict, knownScheduleFromCells, presetAllocation, suggestPlan, validateGoal, windowEvidence, WINDOW_EVIDENCE_LABEL,
+import { rankTargetPlan, buildExecutionStrategy, normalizeStrategyGoal, DEFAULT_STRATEGY_GOAL, draftFromSuggestion, enumeratePrimeWindows, isConflict, knownScheduleFromCells, presetAllocation, suggestPlan, validateGoal, windowEvidence, WINDOW_EVIDENCE_LABEL,
   type KnownSchedule, type ScoredWindow, type StrategyGoal, type StrategyHistoricalEvidence, type StrategyPreset, type SuggestedPlan, type SuggestionIntelligenceMode, type Window } from '../../src/strategy-engine.js';
 import { describeChildTiming, fanOutTimingPlan, minimumMeaningfulSpacingMs } from '../../src/fanout-timing.js';
 import { applyLiveAnchor, calibrateLiveAnchor, liveTimingSamples, type AnchoredTimingPlan, type LiveAnchorSource } from '../../src/live-anchor-calibration.js';
@@ -14,7 +14,7 @@ import { acknowledgementKind, offsetText, preparationText } from './operator-sta
 import { byId, el, empty, inputById, selectById } from './dom.js';
 
 /**
- * STRATEGY: Goal → Known schedule → Preset → Suggested plan → Review & save; everything else is under Advanced overrides.
+ * STRATEGY: Booking Goal → Target Plan → Release Mode → Save → Next Release.
  * Suggestions only fill the Smart draft; the saved PRECISION_PHASE3 (compiled by precision-simple.ts) is the one authority,
  * and the review text is generated from it.
  */
@@ -44,7 +44,7 @@ export function resetSuggestionRow(draft: SmartDraft, accepted: SmartDraft, line
   const original = acceptedByOrigin(accepted, kind, lineage[kind][index]); if (!original) return false;
   draft[kind][index] = structuredClone(original); return true;
 }
-export interface StrategyV2Meta { version: 1; preset: StrategyPreset; goal: StrategyGoal;
+export interface StrategyV2Meta { targetPlan?: {ranked:Window[];date?:string;historyLabel?:string;publicWarning?:string}; version: 1; preset: StrategyPreset; goal: StrategyGoal;
   fanOut: { width: number; source: 'MACHINE_RECOMMENDED' | 'OPERATOR_OVERRIDE' | 'NO_PROFILE'; acceptedSource?: 'MACHINE_RECOMMENDED' | 'OPERATOR_OVERRIDE' | 'NO_PROFILE'; recommendedWidth: number | null; timing: 'TIGHT' | 'BALANCED' | 'WIDE' | 'CUSTOM';
     basedOnTiming?: 'TIGHT' | 'BALANCED' | 'WIDE'; profileCreatedAt: string | null };
   timingCalibration?: { spacingSource: 'MACHINE_PROFILE' | 'FALLBACK'; anchorSource: LiveAnchorSource; groupShiftMs: number;
@@ -86,11 +86,15 @@ let intelligenceMode: SuggestionIntelligenceMode = 'AUTO';
 let loadedKey = '';
 let scheduleCheckingDate:string|null=null;
 let scheduleCheckError='';
+let publicPlanWarning='';
+let historyPlanLabel='Historical evidence insufficient · preference ranking used';
+let normalError='';
 let courtsOverridden = false;
 let priorityProposal = false;
 let savedDraftKey = '';
+let savedGoalKey='';
 export function strategySaveSnapshot():string{return JSON.stringify(host.draft());}
-export function strategySaved(key:string):void{savedDraftKey=key;}
+export function strategySaved(key:string):void{savedDraftKey=key;savedGoalKey=JSON.stringify(goal);}
 const focusControl=(id:string)=>{const node=byId(id);for(let parent:HTMLElement|null=node.parentElement;parent;parent=parent.parentElement)if(parent instanceof HTMLDetailsElement)parent.open=true;if(!node.matches('input,select,button,textarea,a'))node.tabIndex=-1;node.scrollIntoView({block:'center',behavior:'smooth'});node.focus();};
 const defaultShotgun=(targets:readonly SmartSlot[]):ShotgunSettings=>({enabled:true,budget:20,allocationMode:'EQUAL',
   selectedTargetIds:targets.map(logicalTargetId),windowStartMs:-1000,windowEndMs:0,timingMode:'DENSE_CORE',timingCapacityOverride:false,allowStandbyConsumption:false});
@@ -118,10 +122,10 @@ function quickShotgunFit(state:Dashboard|undefined,draft:SmartDraft){
 }
 let quickProof: {draft:string;dependencies:string}|null=null;
 let lastShotgunMode=false;
-let quickBusy=false,quickError='';
+let quickBusy=false,quickError='',quickChoice=false;
 const quickSettingsKey=()=>shotgunSettingsKey(host.draft().shotgun);
 const quickEnvironment=()=>{const state=host.state(),prior=state?.prewarmFeasibility;return configurationFingerprint({
-  date:state?.booking?.targetDate,unavailable:[...host.unready()].sort(),browserHealth:state?.browserHealth,cdp:state?.cdp,
+  goal,date:state?.booking?.targetDate,unavailable:[...host.unready()].sort(),browserHealth:state?.browserHealth,cdp:state?.cdp,
   history:{p95Source:prior?.p95Source,p95Ms:prior?.preparationP95Ms,samples:prior?.sampleCount},fanOut:state?.fanOut,
   calibration:host.meta()?.timingCalibration});};
 const quickDependencies=()=>configurationFingerprint({draft:{...host.draft(),shotgun:undefined},environment:quickEnvironment(),
@@ -162,10 +166,11 @@ function schedule(state: Dashboard | undefined): KnownSchedule | null {
   return audit && date && audit.date === date ? knownScheduleFromCells(date, 'latest check', audit.cells) : null;
 }
 function readGoal(): StrategyGoal {
-  return { primeFrom: selectById('strategy-prime-from').value, primeUntil: selectById('strategy-prime-until').value,
+  return { idealStart: selectById('strategy-ideal-start').value, primeFrom: selectById('strategy-prime-from').value, primeUntil: selectById('strategy-prime-until').value,
     durations: parseList(inputById('strategy-durations').value), courts: parseList(inputById('strategy-courts').value) };
 }
 function writeGoal(value: StrategyGoal) {
+  selectById('strategy-ideal-start').value = normalizeStrategyGoal(value).idealStart!;
   selectById('strategy-prime-from').value = value.primeFrom; selectById('strategy-prime-until').value = value.primeUntil;
   inputById('strategy-durations').value = value.durations.join(','); inputById('strategy-courts').value = value.courts.join(',');
 }
@@ -173,14 +178,23 @@ function invalidate() { suggestionGeneration++; pendingSuggestionGeneration = nu
 
 export function initStrategy(value: StrategyHost): void {
   host = value;
+  // One secondary expert area; the normal workflow never exposes compiled internals.
+  const advanced=byId('strategy-advanced');
+  for(const id of ['strategy-normal-settings','strategy-shotgun-advanced','strategy-schedule','strategy-review','strategy-sync-courts'])advanced.append(byId(id));
+  const overrides=el('div');overrides.id='strategy-evidence-overrides';advanced.append(overrides);
+  selectById('strategy-ideal-start').replaceChildren(...Array.from({length:16},(_,i)=>new Option(hourLabel(i+8),hourText(i+8))));
+  byId('strategy-normal-next').addEventListener('click',()=>host.nextRelease());
+  byId('strategy-normal-save').addEventListener('click',()=>{void(async()=>{
+    normalError='';host.activateSmart();if(!await host.save())normalError='Could not save. Review Advanced strategy settings for the blocker.';render();
+  })();});
   selectById('strategy-prime-from').replaceChildren(...Array.from({ length: 16 }, (_, index) => { const option = el('option', '', hourLabel(index + 8)); option.value = hourText(index + 8); return option; }));
   selectById('strategy-prime-until').replaceChildren(...Array.from({ length: 16 }, (_, index) => { const hour = index + 9, option = el('option', '', hour === 24 ? 'Midnight' : hourLabel(hour));
     option.value = hour === 24 ? '24:00' : hourText(hour); return option; }));
   writeGoal(goal);
   selectById('strategy-fanout').replaceChildren(new Option('Machine recommendation','auto'),...Array.from({length:PRECISION_MAX_FAN_OUT},(_,index)=>new Option(`${index+1} attempt${index?'s':''} (override)`,String(index+1))));
   inputById('strategy-shotgun-budget').max=String(PRECISION_MAX_SENDS);
-  for (const id of ['strategy-prime-from', 'strategy-prime-until', 'strategy-durations', 'strategy-courts'])
-    byId(id).addEventListener('change', () => { goal = readGoal(); if(id==='strategy-courts')courtsOverridden=true; invalidate(); });
+  for (const id of ['strategy-ideal-start', 'strategy-prime-from', 'strategy-prime-until', 'strategy-durations', 'strategy-courts'])
+    byId(id).addEventListener('change', () => { goal = readGoal(); if(id==='strategy-courts')courtsOverridden=true; host.ensureMeta();host.meta()!.goal=structuredClone(goal);host.edit(()=>{}); invalidate(); });
   byId('strategy-sync-courts').addEventListener('click',()=>{courtsOverridden=false;strategyMainCourtOrderChanged();});
   for (const radio of document.querySelectorAll<HTMLInputElement>('input[name="strategy-preset"]'))
     radio.addEventListener('change', () => { if (radio.checked) { preset = radio.value as StrategyPreset; invalidate(); } });
@@ -189,7 +203,7 @@ export function initStrategy(value: StrategyHost): void {
   byId('strategy-anchor-mode').addEventListener('change', () => { byId('strategy-anchor-shift-label').hidden = selectById('strategy-anchor-mode').value !== 'MANUAL'; invalidate(); });
   byId('strategy-anchor-shift').addEventListener('change', invalidate);
   for(const radio of document.querySelectorAll<HTMLInputElement>('input[name="strategy-intensity"]'))radio.addEventListener('change',()=>{
-    if(!radio.checked)return;host.ensureMeta();host.edit(draft=>{if(radio.value==='SHOTGUN')draft.shotgun=draft.shotgun??defaultShotgun(draft.immediate);else delete draft.shotgun;});
+    if(!radio.checked)return;quickChoice=radio.value==='SHOTGUN';host.ensureMeta();host.edit(draft=>{if(radio.value==='SHOTGUN')draft.shotgun=draft.shotgun??defaultShotgun(draft.immediate);else delete draft.shotgun;});
 });
   byId('strategy-shotgun-next').addEventListener('click',()=>host.nextRelease());
   byId('strategy-shotgun-quick-ready').addEventListener('click',()=>{void(async()=>{
@@ -198,7 +212,7 @@ export function initStrategy(value: StrategyHost): void {
       render();
       host.ensureMeta();const {fit,reason}=quickShotgunFit(host.state(),host.draft());
       if(!fit){quickError=`SHOTGUN NOT READY · No fully preparable Shotgun configuration is available. ${reason}`;return;}
-      priorityProposal=true;host.activateSmart();host.edit(draft=>{draft.shotgun=fit.settings;delete draft.advanced.total;});
+      quickChoice=false;priorityProposal=true;host.activateSmart();host.edit((draft,lineage)=>{lineage.immediate=[null];lineage.backups=fit.draft.backups.map(()=>null);draft.immediate=fit.draft.immediate;draft.backups=fit.draft.backups;draft.shotgun=fit.settings;delete draft.advanced.total;});
       host.meta()!.quickShotgun={version:1,settingsKey:quickSettingsKey()};
       const dependencies=quickEnvironment();
       if(!await host.save()){quickError='SHOTGUN NOT SAVED · Resolve the save blocker and try again.';return;}
@@ -249,7 +263,7 @@ export function initStrategy(value: StrategyHost): void {
       const offsets = plan.children.map(child => child.finalConfiguredOffsetMs), next = { ...slot }; delete next.releaseOffsetMs; delete next.fanOutOffsetsMs;
       if (offsets.length > 1) next.fanOutOffsetsMs = offsets; else if (offsets[0] !== 0) next.releaseOffsetMs = offsets[0]; return next;
     }) };
-    host.useSuggestion(draft, { version: 1, preset, goal: { ...goal }, lineage: suggestionLineage(draft), intelligenceMode,
+    host.useSuggestion(draft, { version: 1, targetPlan:{date:state?.booking?.targetDate,historyLabel:historyPlanLabel,publicWarning:publicPlanWarning,ranked:(suggestion.ranked??[...suggestion.immediate,...suggestion.backups]).map(({court,start,durationHours})=>({court,start,durationHours}))}, preset, goal: { ...goal }, lineage: suggestionLineage(draft), intelligenceMode,
       fanOut: { width: width.width, source: width.source, acceptedSource: width.source, recommendedWidth: machine.profile ? machine.width : null, timing: timing.preset,
         basedOnTiming: selectById('strategy-timing').value as 'TIGHT' | 'BALANCED' | 'WIDE', profileCreatedAt: machine.createdAt },
       timingCalibration: { spacingSource: machine.profile ? 'MACHINE_PROFILE' : 'FALLBACK', anchorSource: timing.anchorSource, groupShiftMs: timing.groupShiftMs,
@@ -272,7 +286,7 @@ export function initStrategy(value: StrategyHost): void {
     render();
   });
   byId('strategy-save').addEventListener('click', () => host.save());
-  byId('strategy-suggestion').addEventListener('click', event => {
+  byId('strategy-evidence-overrides').addEventListener('click', event => {
     const button = (event.target as HTMLElement).closest<HTMLButtonElement>('button[data-window]'); if (!button) return;
     const [court, start, duration] = button.dataset.window!.split('/'), window = { court: Number(court), start: start!, durationHours: Number(duration) };
     if (button.dataset.action === 'force') { forced = [...forced.filter(value => !sameWindow(value, window)), window]; removed = removed.filter(value => !sameWindow(value, window)); }
@@ -287,23 +301,34 @@ async function suggest(): Promise<void> {
   const generation = ++suggestionGeneration;
   suggestion = null; pendingSuggestionGeneration = generation;
   byId('strategy-apply').toggleAttribute('disabled', true);
-  if (preset === 'CUSTOM' || validateGoal(goal).length) { pendingSuggestionGeneration = null; return; }
+  if (!state?.booking?.targetDate || validateGoal(goal).length) { pendingSuggestionGeneration = null; return; }
   const ready = 7 - [...host.unready()].filter(worker => 'ABCDEFG'.includes(worker)).length;
   const width = chosenWidth(state);
-  const allocation = presetAllocation(preset, { readyWorkers: ready, recommendedFanOutWidth: recommendation(state).width,
+  const allocation = presetAllocation(preset==='CUSTOM'?'BALANCED':preset, { readyWorkers: ready, recommendedFanOutWidth: recommendation(state).width,
     ...(width.source === 'OPERATOR_OVERRIDE' ? { fanOutWidthOverride: width.width } : {}) });
   const snapshot = { goal: structuredClone(goal), schedule: schedule(state), allocation, forceInclude: structuredClone(forced), exclude: structuredClone(removed),
     intelligenceMode, targetDate: state?.booking?.targetDate };
   render();
+  let readWarning='';
+  if(snapshot.targetDate)try {await window.thirsty.checkReleaseBlocks(snapshot.targetDate);} catch {readWarning='Public schedule could not be verified. Recommendations are based on your preferences and available history.';}
+  if(generation!==suggestionGeneration)return;
+  const currentSchedule=schedule(host.state());
+  if(!currentSchedule||[...currentSchedule.hours.values()].some(v=>v==='UNKNOWN_PUBLIC_QUERY_FAILED'))readWarning='Public schedule could not be verified. Recommendations are based on your preferences and available history.';
+  // Keep previously known conflicts even if a subsequent partial read fails.
+  if(currentSchedule&&snapshot.schedule)for(const [key,evidence] of snapshot.schedule.hours)if(isConflict(evidence))(currentSchedule.hours as Map<string,typeof evidence>).set(key,evidence);
   let historicalEvidence: StrategyHistoricalEvidence | null = null;
   if (snapshot.intelligenceMode === 'AUTO' && snapshot.targetDate) try {
     historicalEvidence = await window.thirsty.strategyEvidence({ targetDate: snapshot.targetDate, ranges: enumeratePrimeWindows(snapshot.goal) });
   } catch { historicalEvidence = null; }
   if (generation !== suggestionGeneration) return;
-  suggestion = suggestPlan({ goal: snapshot.goal, schedule: snapshot.schedule, allocation: snapshot.allocation, forceInclude: snapshot.forceInclude,
-    exclude: snapshot.exclude, intelligenceMode: snapshot.intelligenceMode, historicalEvidence });
+  const targets=rankTargetPlan({goal:snapshot.goal,schedule:currentSchedule??snapshot.schedule??(readWarning?{date:snapshot.targetDate!,checkedAt:'failed read',hours:new Map()}:null),forceInclude:snapshot.forceInclude,
+    exclude:snapshot.exclude,intelligenceMode:snapshot.intelligenceMode,historicalEvidence});
+  publicPlanWarning=readWarning;
+  historyPlanLabel=targets.intelligence.label;
+  suggestion=buildExecutionStrategy(targets,snapshot.allocation);
   pendingSuggestionGeneration = null;
   byId('strategy-apply').toggleAttribute('disabled', !suggestion.immediate.length);
+  if(suggestion.immediate.length)(byId('strategy-apply') as HTMLButtonElement).click();
 }
 
 function windowItem(window: ScoredWindow, actions: Array<['force' | 'unforce' | 'remove', string]>, extra = ''): HTMLElement {
@@ -316,28 +341,20 @@ function windowItem(window: ScoredWindow, actions: Array<['force' | 'unforce' | 
 }
 
 function renderSuggestion(state: Dashboard | undefined) {
-  const target = byId('strategy-suggestion');
-  if (preset === 'CUSTOM') { target.replaceChildren(empty('Custom: build every attempt yourself under 6. Advanced overrides.')); return; }
-  if (pendingSuggestionGeneration !== null) { target.replaceChildren(empty('Building suggestion…')); return; }
-  if (!suggestion) { target.replaceChildren(empty(schedule(state) ? 'Choose a goal and preset, then Suggest plan.' : 'Tip: check public bookings first (step 2). Without it every window is unknown and nothing is suggested automatically (fail closed).')); return; }
-  const timing = childOffsets(state), children = timing.children.map(child => `${child.configuredOffsetMs ? `−${-child.configuredOffsetMs}` : '0'} ms`).join(', ');
-  const parts: HTMLElement[] = [];
-  parts.push(el('p', 'small', suggestion.intelligence.label));
-  parts.push(el('h3', '', `Immediate logical targets (${suggestion.immediate.length}) · ${suggestion.allocation.fanOutWidth} attempt${suggestion.allocation.fanOutWidth === 1 ? '' : 's'} each`));
-  const immediate = el('ol'); immediate.append(...suggestion.immediate.map(window => windowItem(window, window.forced ? [['unforce', 'Remove override'], ['remove', 'Remove']] : [['remove', 'Remove']],
-    suggestion!.allocation.fanOutWidth > 1 ? ` · children at ${children}` : ''))); parts.push(immediate);
-  parts.push(el('p', 'small', `${suggestion.allocation.standby} standby worker${suggestion.allocation.standby === 1 ? '' : 's'} · Wave 2 ${suggestion.allocation.wave2 ? 'on' : 'off'} · Rescue ${suggestion.allocation.rescue ? `on (up to ${suggestion.allocation.rescueMax})` : 'off'}`));
-  for (const reason of suggestion.reasons) parts.push(el('p', 'small', reason));
-  const pool = el('details'); pool.append(el('summary', '', `Backup and Rescue pool (${suggestion.backups.length})`));
-  const backups = el('ol'); backups.append(...suggestion.backups.map(window => windowItem(window, window.forced ? [['unforce', 'Remove override']] : [['remove', 'Remove']]))); pool.append(backups);
-  parts.push(pool);
-  const conflicts = suggestion.excluded.filter(window => window.reason === 'KNOWN_CONFLICT' || window.reason === 'EVIDENCE_UNKNOWN');
-  if (conflicts.length) {
-    const known = el('details'); known.append(el('summary', '', `Left out: known conflicts or unknown evidence (${conflicts.length})`));
-    const list = el('ul'); list.append(...conflicts.map(window => windowItem(window, [['force', 'Force include']]))); known.append(list);
-    parts.push(known);
-  }
-  target.replaceChildren(...parts);
+  byId('strategy-suggested').querySelector('h3')!.textContent='Build your target plan';
+  byId('strategy-suggestion').replaceChildren(...(pendingSuggestionGeneration!==null?[el('p','','Building target plan…')]:[]));
+  const draft=host.draft(),targets=[...draft.immediate,...draft.backups];
+  const primary=primaryShotgunTarget(draft);
+  const ranking=suggestion?.ranked??host.meta()?.targetPlan?.ranked;
+  const ordered=ranking?[...ranking.flatMap(w=>{const slot=targets.find(t=>sameWindow(t,w));return slot?[slot]:[];}),...targets.filter(t=>!ranking.some(w=>sameWindow(t,w)))]:targets;
+  const summary=byId('strategy-target-summary');
+  const conflicts=suggestion?.excluded.filter(w=>w.reason==='KNOWN_CONFLICT')??[];
+  byId('strategy-evidence-overrides').replaceChildren(el('h3','','Public conflict overrides'),...conflicts.map(w=>windowItem(w,[['force','Force include']])));
+  summary.replaceChildren(...(primary?[el('h3','','PRIMARY'),el('p','target-primary',windowText(primary)),el('h4','','BACKUPS'),
+    ...ordered.filter(t=>t!==primary).slice(0,3).map((t,i)=>el('p','',`${i+1}. ${windowText(t)}`)),
+    ...(targets.length>4?[el('p','small',`${targets.length-4} more choices in Edit targets`)]:[]),
+    el('p','small',publicPlanWarning|| (schedule(state)?`Known conflicts excluded${targets.some(t=>t.publicEvidence?.override)?' except your explicit overrides':''}. Public records do not promise availability at release.`:'Public schedule not checked.')),
+    el('p','small',historyPlanLabel)]:[empty('Tell us what you want, then build your target plan.') ]));
 }
 
 function renderSchedule(state: Dashboard | undefined) {
@@ -355,7 +372,7 @@ function renderSchedule(state: Dashboard | undefined) {
   const from = Number(goal.primeFrom.slice(0, 2)), until = goal.primeUntil === '24:00' ? 24 : Number(goal.primeUntil.slice(0, 2));
   const cells: HTMLElement[] = [el('span', 'head', ''), ...goal.courts.map(court => el('span', 'head', `C${court}`))];
   grid.style.gridTemplateColumns = `64px repeat(${goal.courts.length}, minmax(0, 1fr))`;
-  const short: Record<string, string> = { NO_KNOWN_PUBLIC_CONFLICT: 'no record', KNOWN_PUBLIC_BOOKING_CONFLICT: 'booked', UNKNOWN_PUBLIC_QUERY_FAILED: 'unknown', PUBLISHED_OPEN: 'open', PUBLISHED_UNAVAILABLE: 'taken' };
+  const short: Record<string, string> = { NOT_CHECKED:'not checked', NO_KNOWN_PUBLIC_CONFLICT: 'no record', KNOWN_PUBLIC_BOOKING_CONFLICT: 'booked', UNKNOWN_PUBLIC_QUERY_FAILED: 'unknown', PUBLISHED_OPEN: 'open', PUBLISHED_UNAVAILABLE: 'taken' };
   for (let hour = from; hour < until; hour++) {
     cells.push(el('span', 'head', hourLabel(hour)));
     for (const court of goal.courts) {
@@ -511,14 +528,15 @@ function shotgunPresentation(state:Dashboard|undefined){
 function renderShotgun(state:Dashboard|undefined){
   const draft=host.draft(),settings=draft.shotgun,quickPrimary=primaryShotgunTarget(draft);
   for(const radio of document.querySelectorAll<HTMLInputElement>('input[name="strategy-intensity"]'))radio.checked=radio.value===(settings?.enabled?'SHOTGUN':'NORMAL');
-  if(lastShotgunMode!==!!settings?.enabled){(byId('strategy-target-preferences') as HTMLDetailsElement).open=!settings?.enabled;lastShotgunMode=!!settings?.enabled;}
+  byId('strategy-shotgun-fast-path').hidden=!settings?.enabled;
+  byId('strategy-normal-fast-path').hidden=!!settings?.enabled;
   byId('strategy-shotgun').hidden=!settings?.enabled;
-  byId('strategy-normal-settings').hidden=!!settings?.enabled;
+  byId('strategy-normal-settings').hidden=false;
   const knownQuick=host.meta()?.quickShotgun?.settingsKey===quickSettingsKey();
-  const custom=!!settings?.enabled&&!knownQuick;
+  const custom=!!settings?.enabled&&!knownQuick&&!quickChoice;
   const stale=!!settings?.enabled&&knownQuick&&(!quickProof||quickProof.draft!==quickSettingsKey()||quickProof.dependencies!==quickDependencies());
   const current=!!quickProof&&!custom&&!stale&&savedDraftKey!=='';
-  const quickButton=byId('strategy-shotgun-quick-ready') as HTMLButtonElement;quickButton.disabled=!quickPrimary||quickBusy;
+  const quickButton=byId('strategy-shotgun-quick-ready') as HTMLButtonElement;quickButton.disabled=!quickPrimary||quickBusy;quickButton.hidden=current;
   quickButton.textContent=quickBusy?'SAVING SHOTGUN…':stale?'REFRESH & SAVE SHOTGUN':custom?'REPLACE WITH QUICK SHOTGUN':'APPLY & SAVE SHOTGUN';
   byId('strategy-shotgun-quick-status').textContent=quickError||(!quickPrimary?'SHOTGUN NOT READY · Add at least one release target first.':current
     ?`SHOTGUN SAVED ✓ · Court ${quickPrimary.court} · ${smartRange(quickPrimary.start,quickPrimary.durationHours)} · ${settings!.budget} attempts · Dense Core · −1000 → 0 ms · Preparation forecast · ${shotgunPresentation(state).feasibility?.projectedReady}/${shotgunPresentation(state).feasibility?.configuredWave1Attempts} READY · Next: Prepare for Release`
@@ -591,6 +609,7 @@ function renderReview(state: Dashboard | undefined) {
   const primarySlot=draft.immediate[0],schedule=presentation.preview.shotgun?.shots??[],groups=new Set(presentation.preview.phase3?.wave1.map(value=>value.workerId)??[]).size;
   byId('strategy-current-plan').textContent=`CURRENT PLAN · ${primarySlot?windowText(primarySlot):'Choose a target'} · ${draft.shotgun?.enabled?`${draft.shotgun.timingMode.replaceAll('_',' ')} · ${schedule.length} attempts · ${groups} browsers · ${offsetText(schedule.length?Math.min(...schedule.map(value=>value.configuredOffsetMs)):draft.shotgun.windowStartMs)} → ${offsetText(schedule.length?Math.max(...schedule.map(value=>value.configuredOffsetMs)):draft.shotgun.windowEndMs)}`:'Normal measured timing'} · ${status}`;
   const save=byId('strategy-save') as HTMLButtonElement;save.disabled=!valid||saveDisabled||remaining>0;
+  save.hidden=savedDraftKey!==''&&savedDraftKey===JSON.stringify(draft);
   save.textContent=savedDraftKey===JSON.stringify(draft)?'✓ STRATEGY SAVED':'SAVE STRATEGY';
   byId('strategy-review-status').textContent=remaining?`${remaining} items need attention before saving.`:saveDisabled?'Saving is unavailable during the current operation.':'Saving does not prepare, authorize Terms or arm the release.';
   const body = byId('strategy-review-body'),technical=byId('strategy-review-technical');
@@ -626,7 +645,7 @@ export function renderStrategy(state: Dashboard | undefined): void {
   if (key !== loadedKey) {
     suggestionGeneration++; pendingSuggestionGeneration = null; suggestion = null; byId('strategy-apply').toggleAttribute('disabled', true);
     loadedKey = key;
-    if (saved) { goal = { ...saved.goal }; courtsOverridden=JSON.stringify(saved.goal.courts)!==JSON.stringify(host.mainCourtOrder());preset = saved.preset; selectById('strategy-fanout').value = saved.fanOut.source === 'OPERATOR_OVERRIDE' ? String(saved.fanOut.width) : 'auto';
+    if (saved) { historyPlanLabel=saved.targetPlan?.date===state?.booking?.targetDate?saved.targetPlan?.historyLabel??'Historical evidence insufficient · preference ranking used':'Historical evidence insufficient · preference ranking used';publicPlanWarning=saved.targetPlan?.date===state?.booking?.targetDate?saved.targetPlan?.publicWarning??'':'';goal = normalizeStrategyGoal(saved.goal); courtsOverridden=JSON.stringify(saved.goal.courts)!==JSON.stringify(host.mainCourtOrder());preset = saved.preset; selectById('strategy-fanout').value = saved.fanOut.source === 'OPERATOR_OVERRIDE' ? String(saved.fanOut.width) : 'auto';
       intelligenceMode = saved.intelligenceMode ?? 'AUTO'; selectById('strategy-intelligence').value = intelligenceMode;
       if (saved.fanOut.timing !== 'CUSTOM') selectById('strategy-timing').value = saved.fanOut.timing;
       else if (saved.fanOut.basedOnTiming) selectById('strategy-timing').value = saved.fanOut.basedOnTiming;
@@ -640,7 +659,7 @@ export function renderStrategy(state: Dashboard | undefined): void {
   strategyMainCourtOrderChanged();
   byId('strategy-target-date').textContent = state?.booking?.targetDate ?? '—';
   byId('strategy-goal-problems').textContent = validateGoal(goal).join(' ');
-  (byId('strategy-suggest') as HTMLButtonElement).disabled = preset === 'CUSTOM' || validateGoal(goal).length > 0;
+  (byId('strategy-suggest') as HTMLButtonElement).disabled = pendingSuggestionGeneration!==null || !state?.booking?.targetDate || validateGoal(goal).length > 0;
   render();
 }
 export function strategyMainCourtOrderChanged():void {
@@ -651,9 +670,18 @@ export function strategyMainCourtOrderChanged():void {
 function render() {
   const state = host.state();
   byId('strategy-target-date').textContent = state?.booking?.targetDate ?? state?.clock?.targetDate ?? '—';
-  (byId('strategy-suggest') as HTMLButtonElement).disabled = preset === 'CUSTOM' || validateGoal(goal).length > 0;
-  renderSchedule(state); renderPreset(state); renderSuggestion(state); renderEditable(state); renderShotgun(state); renderReview(state);
+  (byId('strategy-suggest') as HTMLButtonElement).disabled = pendingSuggestionGeneration!==null || !state?.booking?.targetDate || validateGoal(goal).length > 0;
+  renderSchedule(state); renderPreset(state); renderSuggestion(state); renderEditable(state); renderShotgun(state); renderReview(state); renderNormal(state);
 }
 /** Exposed for tests and the Next Release summary. */
 export const strategySnapshot = () => ({ goal: { ...goal }, preset, forced: [...forced], suggestion, suggestionGeneration, pendingSuggestionGeneration });
 export const conflictsIn = (plan: SuggestedPlan) => plan.immediate.filter(window => isConflict(window.evidence));
+
+function renderNormal(state:Dashboard|undefined){
+ const draft=host.draft(),compiled=compileSmartPlan(draft,{targetDate:state?.booking?.targetDate??'',unavailable:host.unready()});
+ const saved=savedDraftKey!==''&&savedDraftKey===JSON.stringify(draft)&&savedGoalKey===JSON.stringify(goal);
+ byId('strategy-normal-summary').textContent=`Immediate targets: ${draft.immediate.length} · Release attempts: ${compiled.phase3?.wave1.reduce((n,a)=>n+(a.fanOutOffsetsMs?.length??1),0)??0} · Backup choices: ${draft.backups.length} · Reopened-slot rescue: ${draft.retryReopened?'ON':'OFF'}`;
+ byId('strategy-normal-status').textContent=normalError||(saved?'NORMAL STRATEGY SAVED ✓':'UNSAVED CHANGES');
+ (byId('strategy-normal-save') as HTMLButtonElement).disabled=saved||!compiled.phase3||compiled.problems.length>0||host.state()?.operation!=='idle';
+ byId('strategy-normal-save').hidden=saved;byId('strategy-normal-next').hidden=!saved;
+}

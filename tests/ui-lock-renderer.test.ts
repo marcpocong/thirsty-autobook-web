@@ -25,8 +25,8 @@ it('shows the five operator views with a wide grid and stacked narrow layout',as
   expect(await page.locator('#booking-method').isVisible()).toBe(false);
   await mkdir('.local',{recursive:true});await page.screenshot({path:'.local/ui-redesign-release.png'});
   await showRendererView(page,'strategy');
-  // Normal setup is Goal → Known schedule → Preset → Suggested plan → Review; raw fields sit under Advanced overrides.
-  for(const id of ['#strategy-goal','#strategy-schedule','#strategy-preset','#strategy-suggested','#strategy-review'])expect(await page.locator(id).isVisible()).toBe(true);
+  // Booking goal → Target plan → Release mode; evidence and technical review are secondary.
+  for(const id of ['#strategy-goal','#strategy-target-plan','#strategy-preset','#strategy-suggested'])expect(await page.locator(id).isVisible()).toBe(true);
   expect(await page.locator('#booking-method').isVisible()).toBe(false);
   await page.locator('#strategy-advanced > summary').click();
   expect(await page.locator('#booking-method').isVisible()).toBe(true);
