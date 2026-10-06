@@ -290,13 +290,17 @@ export function initStrategy(value: StrategyHost): void {
     // Worker assignment is deterministic (A..G) and the final literal values are copied into the
     // draft. From here through Review, Save and backend authorization there is nothing left to add.
     const shotgunOn=document.querySelector<HTMLInputElement>('input[name="strategy-intensity"]:checked')?.value==='SHOTGUN';
+    // A rebuilt target plan invalidates preparation, not Quick-vs-Custom provenance.
+    // Keep the marker only while the literal settings still match the accepted Quick settings.
+    const quickProvenance=shotgunOn&&host.meta()?.quickShotgun?.settingsKey===shotgunSettingsKey(base.shotgun)
+      ?structuredClone(host.meta()!.quickShotgun):undefined;
     const draft = { ...base, ...(shotgunOn?{shotgun:base.shotgun??defaultShotgun(base.immediate)}:{}), immediate: base.immediate.map((slot, index) => {
       const workerId = String.fromCharCode(65 + index), plan = applyTimingDeskew(timing, calibration, workerId);
       const offsets = plan.children.map(child => child.finalConfiguredOffsetMs), next = { ...slot }; delete next.releaseOffsetMs; delete next.fanOutOffsetsMs;
       if (offsets.length > 1) next.fanOutOffsetsMs = offsets; else if (offsets[0] !== 0) next.releaseOffsetMs = offsets[0]; return next;
     }) };
     if(!shotgunOn)rememberedShotgun=undefined;
-    host.useSuggestion(draft, { version: 1, publicScheduleMode, targetPlan:{date:state?.booking?.targetDate,historyLabel:historyPlanLabel,publicWarning:publicPlanWarning,ranked:(suggestion.ranked??[...suggestion.immediate,...suggestion.backups]).map(({court,start,durationHours})=>({court,start,durationHours}))}, preset, goal: { ...goal }, lineage: suggestionLineage(draft), intelligenceMode,
+    host.useSuggestion(draft, { version: 1, publicScheduleMode, ...(quickProvenance?{quickShotgun:quickProvenance}:{}), targetPlan:{date:state?.booking?.targetDate,historyLabel:historyPlanLabel,publicWarning:publicPlanWarning,ranked:(suggestion.ranked??[...suggestion.immediate,...suggestion.backups]).map(({court,start,durationHours})=>({court,start,durationHours}))}, preset, goal: { ...goal }, lineage: suggestionLineage(draft), intelligenceMode,
       fanOut: { width: width.width, source: width.source, acceptedSource: width.source, recommendedWidth: machine.profile ? machine.width : null, timing: timing.preset,
         basedOnTiming: selectById('strategy-timing').value as 'TIGHT' | 'BALANCED' | 'WIDE', profileCreatedAt: machine.createdAt },
       timingCalibration: { spacingSource: machine.profile ? 'MACHINE_PROFILE' : 'FALLBACK', anchorSource: timing.anchorSource, groupShiftMs: timing.groupShiftMs,
@@ -574,7 +578,7 @@ function renderShotgun(state:Dashboard|undefined){
   quickButton.textContent=quickBusy?'SAVING SHOTGUN…':stale?'REFRESH & SAVE SHOTGUN':custom?'REPLACE WITH QUICK SHOTGUN':'APPLY & SAVE SHOTGUN';
   byId('strategy-shotgun-quick-status').textContent=quickError||(!quickPrimary?'SHOTGUN NOT READY · Add at least one release target first.':current
     ?`SHOTGUN SAVED ✓ · Court ${quickPrimary.court} · ${smartRange(quickPrimary.start,quickPrimary.durationHours)} · ${settings!.budget} attempts · Dense Core · −1000 → 0 ms · Preparation forecast · ${shotgunPresentation(state).feasibility?.projectedReady}/${shotgunPresentation(state).feasibility?.configuredWave1Attempts} READY · Next: Prepare for Release`
-    :stale?'SHOTGUN NEEDS REFRESH · Preparation dependencies changed.':custom?'CUSTOM SHOTGUN · Your manual settings are preserved. Replace only when you choose.':'Choose your target, then apply and save Shotgun.');
+    :stale?'SHOTGUN NEEDS REFRESH · Refresh for your current #1 target and preparation state.':custom?'CUSTOM SHOTGUN · Your manual settings are preserved. Replace only when you choose.':'Choose your target, then apply and save Shotgun.');
   if(current){
     const forecast=shotgunPresentation(state).feasibility;
     byId('strategy-shotgun-quick-status').replaceChildren(el('strong','','SHOTGUN SAVED ✓'),el('p','',`Court ${quickPrimary!.court} · ${smartRange(quickPrimary!.start,quickPrimary!.durationHours)}`),
