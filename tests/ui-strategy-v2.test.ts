@@ -73,6 +73,25 @@ async function settleEvidence(page: Page, index: number, reject = false) {
 }
 
 describe('Strategy view (Goal → Known schedule → Preset → Suggested plan → Review)', () => {
+  it('creates and saves a manual target from an empty general plan with unknown schedule evidence', async () => {
+    const page = await openRenderer(browser, { booking: base }, 'strategy');
+    const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+    expect(await page.locator('#strategy-target-date').innerText()).toBe(targetDate);
+    expect(await page.locator('#strategy-add-immediate').isVisible()).toBe(true);
+    await page.locator('#strategy-prime-from').selectOption('19:00');
+    await page.locator('#strategy-add-immediate').click();
+    expect(await page.locator('#strategy-edit-immediate .strategy-edit-row').count()).toBe(1);
+    expect(await page.locator('#strategy-review-warnings').innerText()).toContain('failed public-booking read');
+    expect(await page.locator('#strategy-save').isEnabled()).toBe(true);
+    await page.locator('#strategy-save').click();
+    await page.waitForFunction(() => !!(window as any).fixtureSaved);
+    const setup = await saved(page);
+    expect(setup.PRECISION_PHASE3.candidates[0]).toMatchObject({court:7,start:'19:00',durationHours:3,
+      publicEvidence:{evidence:'UNKNOWN_PUBLIC_QUERY_FAILED',override:'OPERATOR_OVERRIDE_PUBLIC_CONFLICT'}});
+    expect(setup.STRATEGY_V2.provenance.source).toBe('OPERATOR_BUILT');
+    expect(errors).toEqual([]);
+    await page.close();
+  });
   it('keeps secondary evidence and engine controls collapsed by default',async()=>{
     const page=await openRendererBase(browser,{booking:smartBooking()},'strategy');
     expect(await page.locator('#strategy-schedule').getAttribute('open')).toBeNull();
