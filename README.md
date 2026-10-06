@@ -243,3 +243,5 @@ Use `npm run availability:compare -- --date YYYY-MM-DD` for a read-only comparis
 See [Phase 7.1 validation and evidence](PHASE7_1_REPORT.md) for player routing and Payment Summary quantity checks, and [Phase 7.2](PHASE7_2_REPORT.md) for the one-button readiness transaction, independent drafts, and hold recovery model.
 
 Quick Shotgun does not prepare, authorize Terms, arm or send requests. Continue through the existing Next Release flow: **Prepare for Release → Authorize Terms → Arm Release**. Provider throttle/HTTP 429, UNKNOWN and target-success stops, send/fan-out limits, the arm gate, automation lock and manual payment boundary are unchanged.
+
+The read-only known-bookings check reports completion time and availability failures, including HTTP 403/429. Confirmed public bookings remain visible; missing or failed availability stays UNKNOWN. The check makes one parallel batch without automatic retries or access-control bypasses. Its button is disabled while a check runs and its loading label clears on completion or failure.

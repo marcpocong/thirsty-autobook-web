@@ -84,6 +84,8 @@ let suggestionGeneration = 0;
 let pendingSuggestionGeneration: number | null = null;
 let intelligenceMode: SuggestionIntelligenceMode = 'AUTO';
 let loadedKey = '';
+let scheduleCheckingDate:string|null=null;
+let scheduleCheckError='';
 let courtsOverridden = false;
 let priorityProposal = false;
 let savedDraftKey = '';
@@ -226,11 +228,13 @@ export function initStrategy(value: StrategyHost): void {
     const primary=[...draft.immediate].filter(slot=>draft.shotgun?.selectedTargetIds.includes(logicalTargetId(slot))).sort((a,b)=>(a.priority??draft.immediate.indexOf(a)+1)-(b.priority??draft.immediate.indexOf(b)+1))[0];if(!primary)return;const current=draft.shotgun??defaultShotgun(draft.immediate),id=logicalTargetId(primary);
     draft.shotgun={...current,enabled:true,allocationMode:'CUSTOM',selectedTargetIds:[id],customCounts:{[id]:current.budget}};
   }));
-  byId('strategy-check-schedule').addEventListener('click', () => {
-    const date = host.state()?.booking?.targetDate; if (!date) return;
-    byId('strategy-schedule-status').textContent = `Reading public bookings for ${date} (read only)…`;
-    void window.thirsty.checkReleaseBlocks(date).catch(() => { byId('strategy-schedule-status').textContent = 'The public-booking check failed; evidence stays unknown.'; });
-  });
+  byId('strategy-check-schedule').addEventListener('click',()=>{void(async()=>{
+    const date=host.state()?.booking?.targetDate;if(!date||scheduleCheckingDate)return;
+    scheduleCheckingDate=date;scheduleCheckError='';renderSchedule(host.state());
+    try {await window.thirsty.checkReleaseBlocks(date);if(host.state()?.blockAudit?.date!==date)scheduleCheckError='Check did not return a schedule. Review Activity and try again.';}
+    catch {scheduleCheckError='Public-booking check failed. Review Activity and try again; unresolved cells remain UNKNOWN.';}
+    finally {scheduleCheckingDate=null;renderSchedule(host.state());}
+  })();});
   byId('strategy-intelligence').addEventListener('change', () => { intelligenceMode = selectById('strategy-intelligence').value as SuggestionIntelligenceMode; invalidate(); });
   byId('strategy-suggest').addEventListener('click', () => { void suggest().then(render); });
   byId('strategy-apply').addEventListener('click', () => {
@@ -338,8 +342,15 @@ function renderSuggestion(state: Dashboard | undefined) {
 
 function renderSchedule(state: Dashboard | undefined) {
   const grid = byId('strategy-schedule-grid'), known = schedule(state), date = state?.booking?.targetDate;
-  byId('strategy-schedule-status').textContent = !date ? 'No target date yet.' : known ? `Public-booking evidence for ${date} (latest check).`
-    : state?.blockAudit ? `The latest check was for ${state.blockAudit.date}; check ${date}.` : `Not checked yet for ${date}.`;
+  const checking=!!scheduleCheckingDate||state?.operation==='blockAudit',audit=state?.blockAudit&&state.blockAudit.date===date?state.blockAudit:null;
+  const button=byId('strategy-check-schedule') as HTMLButtonElement;button.disabled=checking||!!state&&state?.operation!=='idle';
+  button.textContent=checking?'Checking…':'Check public bookings';
+  const diagnostic=audit?.diagnostics,availability=diagnostic?.availability,unknown=audit?.cells.filter(cell=>cell.status==='UNKNOWN').length??0;
+  byId('strategy-schedule-status').textContent=checking?`Reading public bookings for ${scheduleCheckingDate??date} (read only)…`:scheduleCheckError||(!date?'No target date yet.':audit
+    ? availability?.status==='FAILED'
+      ?`Check finished in ${(diagnostic!.durationMs/1000).toFixed(2)} s. Availability read failed${availability.httpStatus?` — provider returned HTTP ${availability.httpStatus}`:` (${availability.code})`}. Confirmed bookings are shown; ${unknown} cells remain UNKNOWN.${availability.httpStatus===403?' Repeated checks cannot resolve access denial.':availability.httpStatus===429?' Provider rate limited this read. Wait before checking again.':''}`
+      :`Public-booking evidence for ${date}${diagnostic?` · checked in ${(diagnostic.durationMs/1000).toFixed(2)} s`:''}.${unknown?` ${unknown} cells remain UNKNOWN; no usable availability evidence for those hours.`:''}${diagnostic?.publicBookings.failedCourts.length?` Public booking reads failed for courts ${diagnostic.publicBookings.failedCourts.join(', ')}.`:''}`
+    :state?.blockAudit?`The latest check was for ${state.blockAudit.date}; check ${date}.`:`Not checked yet for ${date}.`);
   if (validateGoal(goal).length) { grid.replaceChildren(); return; }
   const from = Number(goal.primeFrom.slice(0, 2)), until = goal.primeUntil === '24:00' ? 24 : Number(goal.primeUntil.slice(0, 2));
   const cells: HTMLElement[] = [el('span', 'head', ''), ...goal.courts.map(court => el('span', 'head', `C${court}`))];

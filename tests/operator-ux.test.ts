@@ -255,3 +255,25 @@ it('withdraws a prior success if a repeated quick save fails',async()=>{
   expect(await page.locator('#strategy-shotgun-quick-status').innerText()).toContain('SHOTGUN NOT SAVED');
   expect(await page.locator('#strategy-shotgun-next').isHidden()).toBe(true);await page.close();
 });
+
+it('clears schedule loading, reports HTTP 403, and preserves confirmed bookings and UNKNOWN evidence',async()=>{
+  const page=await openRenderer(browser,{booking:booking(false),playerStatus:players},'strategy');
+  await page.locator('#strategy-schedule > summary').click();
+  await page.evaluate(()=>{const w=window as any;w.thirsty.checkReleaseBlocks=async(date:string)=>{
+    w.fixtureCalls.push('checkReleaseBlocks');await new Promise(resolve=>{w.finishAudit=resolve;});
+    w.fixtureState.blockAudit={type:'blockAudit',date,cells:Array.from({length:7},(_,i)=>i+1).flatMap(court=>Array.from({length:16},(_,i)=>({court,hour:`${String(i+8).padStart(2,'0')}:00`,status:court===7&&i===11?'BLOCKED':'UNKNOWN',source:court===7&&i===11?'PUBLIC_BOOKING':'AVAILABILITY_READ_FAILED'}))),diagnostics:{availability:{status:'FAILED',httpStatus:403,code:'AVAILABILITY_HTTP_FAILED',durationMs:767},publicBookings:{failedCourts:[],durationMs:300},durationMs:800}};
+    w.fixturePublish(w.fixtureState);
+  };});
+  await page.locator('#strategy-check-schedule').click();
+  expect(await page.locator('#strategy-check-schedule').isDisabled()).toBe(true);
+  expect(await page.locator('#strategy-schedule-status').innerText()).toContain('Reading public bookings');
+  await page.evaluate(()=>{(window as any).finishAudit();});
+  await page.waitForFunction(()=>document.getElementById('strategy-schedule-status')?.textContent?.includes('HTTP 403'));
+  expect(await page.locator('#strategy-check-schedule').isEnabled()).toBe(true);
+  expect(await page.locator('#strategy-schedule-status').innerText()).toContain('0.80 s');
+  expect(await page.locator('#strategy-schedule-status').innerText()).not.toContain('Reading public bookings');
+  expect(await page.locator('#strategy-schedule-grid').innerText()).toContain('booked');
+  expect(await page.locator('#strategy-schedule-grid').innerText()).toContain('unknown');
+  expect(await page.evaluate(()=>(window as any).fixtureCalls)).toEqual(['checkReleaseBlocks']);
+  await page.screenshot({path:'.local/operator-ux/schedule-http403.png',fullPage:true});await page.close();
+});
