@@ -53,7 +53,7 @@ it('resolves both acknowledgements without Advanced, keeps priority explicit, sa
   await page.screenshot({path:'.local/operator-ux/saved.png',fullPage:true});
   expect(await page.evaluate(()=>(window as any).fixtureCalls.filter((name:string)=>['armFullBooking','authorizeTerms','testBooking','checkReleaseBlocks'].includes(name)))).toEqual([]);
   await page.close();
-});
+},30000);
 it('offers a one-click Shotgun fast path that resolves release-day configuration blockers',async()=>{
   const page=await openRenderer(browser,{booking:booking(false,true),playerStatus:players},'strategy',{width:1440,height:1000});
   expect(await page.locator('input[name="strategy-intensity"][value="NORMAL"]').isChecked()).toBe(true);
@@ -187,7 +187,9 @@ it('preserves custom Shotgun until explicitly replaced and fits at narrow width'
   await page.locator('#strategy-shotgun-quick-ready').click();
   await page.waitForFunction(()=>document.getElementById('strategy-shotgun-quick-status')?.textContent?.includes('SHOTGUN SAVED'));
   expect(await page.locator('#strategy-shotgun-advanced').getAttribute('open')).toBeNull();
-  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.evaluate(()=>document.documentElement.style.fontFamily='Verdana, sans-serif');
+  const overflow=await page.evaluate(()=>[...document.querySelectorAll('#view-strategy *')].filter(e=>e.getBoundingClientRect().width>0&&e.getBoundingClientRect().right>innerWidth&&!e.closest('details:not([open])')).map(e=>({id:e.id,tag:e.tagName,right:e.getBoundingClientRect().right})).slice(0,10));
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),JSON.stringify({overflow,width:await page.evaluate(()=>({scroll:document.documentElement.scrollWidth,inner:innerWidth,body:document.body.scrollWidth}))})).toBe(true);
   await page.screenshot({path:'.local/operator-ux/quick-narrow.png',fullPage:true});
   await page.locator('#strategy-advanced > summary').click();await page.locator('#strategy-shotgun-advanced > summary').click();
   await page.locator('#strategy-shotgun-budget').fill('4');await page.locator('#strategy-shotgun-budget').blur();

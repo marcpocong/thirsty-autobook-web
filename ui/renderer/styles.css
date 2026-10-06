@@ -753,3 +753,9 @@ footer > div { display: flex; align-items: center; gap: 8px; font-size: 11px; co
 @media(max-width:760px){.strategy-view .setup-grid{grid-template-columns:minmax(0,1fr)}.strategy-view .plan-mode{grid-template-columns:minmax(0,1fr)}.strategy-view button{max-width:100%;white-space:normal}.strategy-view .section-title{flex-wrap:wrap}}
 
 .strategy-view .build-plan-action .section-title{display:block}.strategy-view .build-plan-action h3{display:none}.strategy-view .build-plan-action .button-row{display:block}.strategy-view #strategy-suggest{width:100%}
+
+/* Keep intrinsic control widths and saved identifiers inside the Strategy column on every system font. */
+.strategy-view { overflow-wrap: anywhere; }
+.strategy-view select { max-width: 100%; }
+.strategy-public-choice { display: grid; gap: 6px; min-width: 0; margin-top: 12px; }
+.strategy-public-choice select { width: 100%; }
