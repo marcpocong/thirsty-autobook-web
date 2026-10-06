@@ -90,3 +90,44 @@ it('normalizes stale hidden resource overrides through the real Quick save and r
  expect(await page.evaluate(()=>(window as any).fixtureState.playerStatus.primary)).toBe(true);
  await page.close();
 });
+
+
+it('keeps saved Quick Shotgun refreshable after rebuilding targets instead of mislabelling it Custom',async()=>{
+ const players={primary:true,extended:true,third:true,fourth:true,fifth:true,sixth:true,seventh:true};
+ const first=await openRenderer(browser,{booking:booking(),playerStatus:players},'strategy');
+ await first.locator('#strategy-ideal-start').selectOption('19:00');await first.locator('#strategy-suggest').click();
+ await first.waitForFunction(()=>document.querySelector('.target-primary'));
+ await first.locator('input[name="strategy-intensity"][value="SHOTGUN"]').check();
+ await first.locator('#strategy-shotgun-quick-ready').click();
+ await first.waitForFunction(()=>document.getElementById('strategy-shotgun-quick-status')?.textContent?.includes('SHOTGUN SAVED'));
+ const setup=await first.evaluate(()=>(window as any).fixtureSaved);await first.close();
+ const page=await openRenderer(browser,{booking:bookingView(ConfigSchema.parse({...setup,PLAYER_FULL_NAME:'Fixture',PLAYER_PHONE:'09123456789',PLAYER_EMAIL:'fixture@example.invalid'})),playerStatus:players},'strategy');
+ await page.locator('#strategy-ideal-start').selectOption('17:00');await page.locator('#strategy-suggest').click();
+ await page.waitForFunction(()=>document.querySelector('.target-primary')?.textContent?.includes('5:00 PM'));
+ expect(await page.locator('#strategy-advanced').getAttribute('open')).toBeNull();
+ expect(await page.locator('#strategy-shotgun-quick-status').innerText()).toContain('NEEDS REFRESH');
+ expect(await page.locator('#strategy-shotgun-quick-status').innerText()).not.toContain('CUSTOM SHOTGUN');
+ expect(await page.locator('#strategy-shotgun-quick-ready').isVisible()).toBe(true);
+ expect(await page.locator('#strategy-shotgun-quick-ready').isEnabled()).toBe(true);
+ expect(await page.locator('#strategy-save').isVisible()).toBe(false);
+ // The old target/settings stay untouched until the operator explicitly refreshes and saves.
+ const snapshot=await page.evaluate<import('../src/precision-simple.js').SmartDraft>("(async()=>JSON.parse((await import(new URL('strategy.js',location.href).href)).strategySaveSnapshot()))()");
+ expect(snapshot.shotgun!.selectedTargetIds).toEqual(['court-7:19:00:3h']);
+ await page.locator('#strategy-shotgun-quick-ready').click();
+ await page.waitForFunction(()=>document.getElementById('strategy-shotgun-quick-status')?.textContent?.includes('SHOTGUN SAVED'));
+ const saved=await page.evaluate(()=>(window as any).fixtureSaved);
+ expect(saved.STRATEGY_V2.shotgun.selectedTargetIds).toEqual(['court-7:17:00:3h']);
+ expect(saved.PRECISION_PHASE3.wave1.every((a:any)=>saved.PRECISION_PHASE3.candidates[a.candidateIndex].start==='17:00')).toBe(true);
+ expect(await page.locator('#strategy-shotgun-next').isVisible()).toBe(true);
+ expect(await page.evaluate(()=>(window as any).fixtureCalls.filter((v:string)=>['authorizeTerms','prepare','armFullBooking','testBooking'].includes(v)))).toEqual([]);
+ // A genuine manual edit must still remain Custom when another target plan is built.
+ await page.locator('#strategy-advanced > summary').click();await page.locator('#strategy-shotgun-advanced > summary').click();
+ await page.locator('#strategy-shotgun-budget').fill('4');await page.locator('#strategy-shotgun-budget').blur();
+ await page.locator('#strategy-advanced > summary').click();
+ await page.locator('#strategy-ideal-start').selectOption('20:00');await page.locator('#strategy-suggest').click();
+ await page.waitForFunction(()=>document.querySelector('.target-primary')?.textContent?.includes('8:00 PM'));
+ expect(await page.locator('#strategy-shotgun-quick-status').innerText()).toContain('CUSTOM SHOTGUN');
+ const custom=await page.evaluate<import('../src/precision-simple.js').SmartDraft>("(async()=>JSON.parse((await import(new URL('strategy.js',location.href).href)).strategySaveSnapshot()))()");
+ expect(custom.shotgun!.budget).toBe(4);expect(custom.shotgun!.selectedTargetIds).toEqual(['court-7:17:00:3h']);
+ await page.close();
+});
