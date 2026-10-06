@@ -1,0 +1,43 @@
+import {afterAll,beforeAll,expect,it} from 'vitest';
+import {chromium,type Browser} from 'playwright';
+import {mkdir} from 'node:fs/promises';
+import {bookingView,defaultSetup} from '../ui/booking.js';
+import {ConfigSchema} from '../src/config.js';
+import {openRenderer} from './renderer-harness.js';
+let browser:Browser;
+beforeAll(async()=>{browser=await chromium.launch({headless:true,...(process.platform==='win32'?{channel:'chrome'}:{})});await mkdir('.local/strategy-flow',{recursive:true});});
+afterAll(async()=>{await browser.close();});
+const booking=()=>bookingView(ConfigSchema.parse({...defaultSetup,BOOKING_METHOD:'proofless',PLAYER_FULL_NAME:'Fixture',PLAYER_PHONE:'09123456789',PLAYER_EMAIL:'fixture@example.invalid'}));
+it('reviews the complete goal to saved release flow at every required viewport with no execution side effects',async()=>{
+ const page=await openRenderer(browser,{booking:booking(),playerStatus:{primary:true,extended:true,third:true,fourth:true,fifth:true,sixth:true,seventh:true}},'strategy',{width:1440,height:1000});
+ const shot=async(name:string)=>page.screenshot({path:`.local/strategy-flow/${name}.png`,fullPage:true});
+ await shot('01-fresh');
+ await page.locator('#strategy-ideal-start').selectOption('19:00');await page.locator('#strategy-prime-from').selectOption('18:00');await shot('02-goal');
+ await page.evaluate(()=>{const w=window as any;w.thirsty.strategyEvidence=async(input:any)=>{w.fixtureCalls.push('strategyEvidence');return {...input,dayOfWeek:'Thursday',releasesConsidered:0,wellObservedReleases:0,strength:'NONE',ranges:[],sharedRisk:[]};};});
+ await page.locator('#strategy-suggest').click();await page.waitForFunction(()=>document.getElementById('strategy-target-summary')?.textContent?.includes('Public schedule could not be verified'));
+ expect(await page.locator('.target-primary').innerText()).toContain('7:00 PM');
+ await shot('03-plan');await shot('04-public-failed');await shot('05-no-history');await shot('07-editor-closed');
+ await page.locator('#strategy-edit-targets > summary').click();await shot('08-editor-open');await page.locator('#strategy-edit-targets > summary').click();
+ await shot('09-normal');await page.locator('#strategy-normal-save').click();await page.waitForFunction(()=>document.getElementById('strategy-normal-status')?.textContent?.includes('SAVED'));await shot('10-normal-saved');
+ expect(await page.locator('#strategy-normal-save').isVisible()).toBe(false);expect(await page.locator('#strategy-save').isVisible()).toBe(false);
+ await page.locator('#strategy-edit-targets > summary').click();await page.locator('#strategy-immediate-start-0').selectOption('20:00');
+ expect(await page.locator('#strategy-normal-status').innerText()).toContain('UNSAVED CHANGES');await page.locator('#strategy-edit-targets > summary').click();
+ // A usable release fixture changes ranking and reports actual comparable releases.
+ await page.evaluate(()=>{const w=window as any;w.thirsty.strategyEvidence=async(input:any)=>({...input,dayOfWeek:'Thursday',releasesConsidered:5,wellObservedReleases:5,strength:'USABLE',ranges:[{court:6,start:'19:00',durationHours:3,wellObserved:5,fullyOpenFirst:5,stillOpenAt1s:{observed:5,open:5},stillOpenAt5s:{observed:5,open:5},reopened:0,good:5,fair:0}],sharedRisk:[]});});
+ await page.locator('#strategy-suggest').click();await page.waitForFunction(()=>document.getElementById('strategy-target-summary')?.textContent?.includes('5 comparable releases'));await shot('06-usable-history');
+ expect(await page.locator('.target-primary').innerText()).toContain('Court 6');
+ await page.locator('input[name="strategy-intensity"][value="SHOTGUN"]').check();await shot('11-shotgun-before');
+ await page.locator('#strategy-shotgun-quick-ready').click();await page.waitForFunction(()=>document.getElementById('strategy-shotgun-quick-status')?.textContent?.includes('SHOTGUN SAVED'));await shot('12-shotgun-saved');
+ expect(await page.locator('#strategy-shotgun-quick-ready').isVisible()).toBe(false);
+ const setup=await page.evaluate(()=>(window as any).fixtureSaved);
+ const sends=setup.PRECISION_PHASE3.wave1.reduce((n:number,a:any)=>n+(a.fanOutOffsetsMs?.length??1),0);expect(sends).toBe(setup.STRATEGY_V2.shotgun.budget);
+ expect(new Set(setup.PRECISION_PHASE3.wave1.map((a:any)=>a.candidateId)).size).toBe(1);
+ expect(setup.PRECISION_PHASE3.candidates.length).toBeGreaterThan(1);
+ await page.locator('#strategy-shotgun-next').click();await shot('16-next-release');await page.locator('nav [data-view="strategy"]').click();
+ await page.evaluate(()=>{const w=window as any;w.fixtureState.prewarmFeasibility={p95Source:'COMPATIBLE_MEASURED_HISTORY',preparationP95Ms:18000,sampleCount:30};w.fixturePublish(w.fixtureState);});
+ expect(await page.locator('#strategy-shotgun-quick-status').innerText()).toContain('NEEDS REFRESH');await shot('13-shotgun-stale');
+ await page.locator('#strategy-advanced > summary').click();await shot('14-advanced');await page.locator('#strategy-advanced > summary').click();
+ for(const width of [1440,1024,760,390]){await page.setViewportSize({width,height:900});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);expect(await page.locator('#strategy-suggest').isVisible()).toBe(true);expect(await page.locator('#strategy-shotgun-quick-ready').isVisible()).toBe(true);await shot(`15-narrow-${width}`);}
+ expect(await page.evaluate(()=>(window as any).fixtureCalls.filter((v:string)=>['authorizeTerms','prepare','armFullBooking','testBooking'].includes(v)))).toEqual([]);
+ await page.close();
+},30000);

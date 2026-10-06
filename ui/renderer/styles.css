@@ -734,10 +734,22 @@ footer > div { display: flex; align-items: center; gap: 8px; font-size: 11px; co
 .strategy-review > .section-title { position:sticky; top:0; z-index:1; background:var(--surface); padding:8px 0; }
 
 /* The quick card is the release-day summary; manual review remains available under Advanced. */
-.strategy-view:has(input[name="strategy-intensity"][value="SHOTGUN"]:checked):not(:has(#strategy-shotgun-advanced[open])) #strategy-review { display:none; }
 #strategy-shotgun-quick-status { font-size:14px; line-height:1.5; }
 #strategy-shotgun-quick-status p { margin:5px 0; }
 #strategy-shotgun-quick-status strong { font-size:18px; }
 
 .strategy-view:has(input[name="strategy-intensity"][value="SHOTGUN"]:checked):not(:has(#strategy-shotgun-advanced[open])) #strategy-goal,
 .strategy-view:has(input[name="strategy-intensity"][value="SHOTGUN"]:checked):not(:has(#strategy-shotgun-advanced[open])) #strategy-preset { grid-column:1 / -1; }
+
+/* Booking intent, target result and execution decision form one readable column. */
+.strategy-view{grid-template-columns:minmax(0,1fr)}
+.strategy-view>.panel,.strategy-view>details{grid-column:1 / -1;min-width:0}
+.strategy-view #strategy-review{display:block}
+.strategy-view .target-primary{font-size:1.25rem;font-weight:700}
+.strategy-view #strategy-suggested .small{display:none}
+.strategy-view #strategy-suggestion:empty{display:none}
+.strategy-view #smart-advisor{display:none}
+.strategy-view #strategy-shotgun-fast-path[hidden],.strategy-view #strategy-normal-fast-path[hidden]{display:none}
+@media(max-width:760px){.strategy-view .setup-grid{grid-template-columns:minmax(0,1fr)}.strategy-view .plan-mode{grid-template-columns:minmax(0,1fr)}.strategy-view button{max-width:100%;white-space:normal}.strategy-view .section-title{flex-wrap:wrap}}
+
+.strategy-view .build-plan-action .section-title{display:block}.strategy-view .build-plan-action h3{display:none}.strategy-view .build-plan-action .button-row{display:block}.strategy-view #strategy-suggest{width:100%}

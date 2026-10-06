@@ -150,7 +150,7 @@ After the release reload commits, the engine waits only for the verified venue a
 
 ## Booking configuration
 
-Use **Strategy** (normally Goal → Preset → Suggested plan → Editable Smart plan → Review; raw engine controls under **Advanced overrides**) for session type, booking method, booking type, court count, start, duration, court order, fallback starts and maximum candidate attempts. Saved release settings live in ignored `config.local.json`; the CLI loads this same object. Defaults are 08:00, 2 hours, courts 7 through 1 and 3 candidate attempts. Save invalidates readiness. Confirmation and the worker compare a plan fingerprint so the authorized plan cannot silently change.
+Use **Strategy** (normally Booking Goal → Target Plan → Release Mode → Save → Next Release; raw engine controls under **Advanced strategy settings**) for session type, booking method, booking type, court count, start, duration, court order, fallback starts and maximum candidate attempts. Saved release settings live in ignored `config.local.json`; the CLI loads this same object. Defaults are 08:00, 2 hours, courts 7 through 1 and 3 candidate attempts. Save invalidates readiness. Confirmation and the worker compare a plan fingerprint so the authorized plan cannot silently change.
 
 Choose Standard or Extended independently of the court count. Use Reset & Prepare in the normal workflow. The `dual:*` commands below are retained Phase 6 diagnostics; they are not prerequisites for normal bookings.
 
@@ -245,3 +245,13 @@ See [Phase 7.1 validation and evidence](PHASE7_1_REPORT.md) for player routing a
 Quick Shotgun does not prepare, authorize Terms, arm or send requests. Continue through the existing Next Release flow: **Prepare for Release → Authorize Terms → Arm Release**. Provider throttle/HTTP 429, UNKNOWN and target-success stops, send/fan-out limits, the arm gate, automation lock and manual payment boundary are unchanged.
 
 The read-only known-bookings check reports completion time and availability failures, including HTTP 403/429. Confirmed public bookings remain visible; missing or failed availability stays UNKNOWN. The check makes one parallel batch without automatic retries or access-control bypasses. Its button is disabled while a check runs and its loading label clears on completion or failure.
+
+### Strategy operator flow
+
+Set **Ideal start**, **Earliest acceptable start**, **Latest finish**, duration preference and court priority, then press **BUILD BEST TARGET PLAN**. This single action attempts the read-only public schedule check, loads usable same-weekday history, ranks targets and applies the plan. Ideal start is explicit; older goals migrate to their previously displayed start (or explicit preferred start). Target ranking has no worker, fan-out, preset or release-mode input.
+
+Confirmed conflicts are excluded. Unchecked evidence is `NOT_CHECKED`; failed reads remain unverified and produce a warning while preference/history planning continues. No missing public record is called open. NONE/LIMITED history leaves preference ranking unchanged; usable history reports its comparable-release count. Manual target editing is behind **EDIT TARGETS**; conflict overrides and technical execution controls remain in the closed **Advanced strategy settings** area.
+
+Choose **NORMAL** and **SAVE NORMAL STRATEGY**, or **SHOTGUN** and **APPLY & SAVE SHOTGUN**. Quick Shotgun concentrates Wave 1 on rank #1: all other immediate choices move to backups/rescue. Its N attempts mean N total initial sends. Expert custom Shotgun can retain extra immediate targets; inspect the total configured Wave 1 forecast in Advanced. Quick fitting still requires every configured attempt READY, with no AT_RISK or omitted attempts, and verifies the saved authorization and unchanged dependencies. Edits invalidate saved status; changed Quick dependencies require refresh.
+
+After saving, use **GO TO NEXT RELEASE**. Prepare → Authorize Terms → Arm → Waiting remains in Next Release. Building and saving Strategy never prepares browsers, authorizes Terms, arms, books or pays.

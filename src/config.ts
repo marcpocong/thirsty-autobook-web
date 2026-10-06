@@ -33,7 +33,7 @@ export const PrecisionPhase3Schema=z.object({
   candidates:z.array(z.object({court:z.number().int().min(1).max(7),start:hour,durationHours:z.number().int().min(1).max(3),
     priority:z.number().int().min(1),permissions:z.object({wave1:z.boolean(),wave2:z.boolean(),rescue:z.boolean()}).strict(),rateEvidence,
     // Planning-time public evidence; the override marker keeps a deliberately force-included conflicting slot at freeze.
-    publicEvidence:z.object({evidence:z.enum(['NO_KNOWN_PUBLIC_CONFLICT','KNOWN_PUBLIC_BOOKING_CONFLICT','UNKNOWN_PUBLIC_QUERY_FAILED','PUBLISHED_OPEN','PUBLISHED_UNAVAILABLE']),
+    publicEvidence:z.object({evidence:z.enum(['NOT_CHECKED','NO_KNOWN_PUBLIC_CONFLICT','KNOWN_PUBLIC_BOOKING_CONFLICT','UNKNOWN_PUBLIC_QUERY_FAILED','PUBLISHED_OPEN','PUBLISHED_UNAVAILABLE']),
       override:z.literal('OPERATOR_OVERRIDE_PUBLIC_CONFLICT').optional()}).strict().optional()}).strict()).min(1).max(PRECISION_MAX_CANDIDATES),
   // fanOutOffsetsMs: 2-PRECISION_MAX_FAN_OUT independently tracked children, one signed trigger each (index order).
   wave1:z.array(z.object({workerId:precisionWorker,candidateIndex:z.number().int().min(0).max(PRECISION_MAX_CANDIDATES-1),releaseOffsetMs:phase3OffsetValue.optional(),
@@ -47,8 +47,9 @@ export const PrecisionPhase3Schema=z.object({
  * this object is not part of the plan fingerprint.
  */
 export const StrategyV2Schema=z.object({version:z.literal(1),preset:z.enum(['BALANCED','RELEASE_FOCUSED','RESCUE_FOCUSED','CUSTOM']),
+  targetPlan:z.object({date:z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),historyLabel:z.string().max(512).optional(),publicWarning:z.string().max(512).optional(),ranked:z.array(z.object({court:z.number().int().min(1).max(7),start:hour,durationHours:z.number().int().min(1).max(3)}).strict()).max(21)}).strict().optional(),
   goal:z.object({primeFrom:hour,primeUntil:z.string().regex(/^(09|1\d|2[0-3]):00$|^24:00$/),durations:z.array(z.number().int().min(1).max(3)).min(1).max(3),
-    courts:z.array(z.number().int().min(1).max(7)).min(1).max(7),preferredStart:hour.optional()}).strict(),
+    courts:z.array(z.number().int().min(1).max(7)).min(1).max(7),preferredStart:hour.optional(),idealStart:hour.optional()}).strict(),
   fanOut:z.object({width:z.number().int().min(1).max(PRECISION_MAX_FAN_OUT),source:z.enum(['MACHINE_RECOMMENDED','OPERATOR_OVERRIDE','NO_PROFILE']),
     acceptedSource:z.enum(['MACHINE_RECOMMENDED','OPERATOR_OVERRIDE','NO_PROFILE']).optional(),
     recommendedWidth:z.number().int().min(1).max(PRECISION_MAX_FAN_OUT).nullable(),timing:z.enum(['TIGHT','BALANCED','WIDE','CUSTOM']),

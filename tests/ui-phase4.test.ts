@@ -76,7 +76,8 @@ describe('Phase 4 operator UI', () => {
       rule: 'Order: fully open in the first well-observed snapshot, then still open at +1 s.', notes: ['Suggestions change only the draft. Review, then save the plan yourself.'],
       candidatesConsidered: 8, suggestions: [{ role: 'BACKUP', court: 3, start: '18:00', durationHours: 3, title: 'Court 3 · 6:00 PM–9:00 PM', sharedWithPicks: [],
         evidence: {}, lines: ['Fully open in first usable snapshot: 4 of 5 well-observed Saturdays', 'Still observed open at +1 s: 3 of 5', 'Evidence quality: 3 good, 2 fair'] }] }; });
-    await page.locator('#smart-suggest').click();
+    expect(await page.locator('#smart-suggest').isHidden()).toBe(true);
+    await page.evaluate(()=>{document.getElementById('smart-suggest')?.click();document.getElementById('smart-advisor')!.style.display='block';});
     await page.locator('#advisor-courts').fill('3,4'); await page.locator('#advisor-exclude').fill('4@19:00');
     await page.locator('#advisor-run').click();
     await page.waitForFunction(() => document.querySelector('.advisor-card'));

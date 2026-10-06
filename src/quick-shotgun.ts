@@ -12,18 +12,26 @@ export function quickShotgunSettings(draft: SmartDraft, budget: number): Shotgun
 }
 export const fullyReady = (value: PrewarmFeasibilityResult | null | undefined): boolean =>
   !!value && value.verdict==='READY' && value.projectedReady===value.configuredWave1Attempts && value.projectedAtRisk===0 && value.projectedOmitted===0;
+/** Quick mode concentrates Wave 1 on one target and preserves every other choice as backup. */
+export function primaryOnlyShotgunDraft(draft:SmartDraft):SmartDraft {
+  const candidate=structuredClone(draft),primary=primaryShotgunTarget(candidate);
+  if(!primary)return candidate;
+  const others=candidate.immediate.filter(slot=>slot!==primary).map(({fanOutOffsetsMs,releaseOffsetMs,priority,...slot})=>slot);
+  candidate.immediate=[primary];candidate.backups=[...others,...candidate.backups];
+  return candidate;
+}
 /** Recalculate only the total send budget for the new Wave 1. Preserve explicit standby, Wave 2 and Rescue overrides. */
 export function fitQuickShotgun(draft: SmartDraft, context: (budget:number)=>Parameters<typeof compileSmartPlan>[1],
   forecast:(phase3:NonNullable<ReturnType<typeof compileSmartPlan>['phase3']>)=>PrewarmFeasibilityResult|null) {
   let reason='No immediate target. Add a release target first.';
   for(let budget=Math.min(20,PRECISION_MAX_SENDS);budget>=1;budget--){
     const settings=quickShotgunSettings(draft,budget); if(!settings)break;
-    const candidate={...structuredClone(draft),shotgun:settings};
+    const candidate={...primaryOnlyShotgunDraft(draft),shotgun:settings};
     delete candidate.advanced.total;
     const compiled=compileSmartPlan(candidate,context(budget));
     if(!compiled.phase3||compiled.problems.length){reason=compiled.problems[0]??'Plan compilation failed.';continue;}
     const feasibility=forecast(compiled.phase3);
-    if(feasibility && fullyReady(feasibility))return {fit:{settings,feasibility,compiled},reason:''};
+    if(feasibility && fullyReady(feasibility))return {fit:{settings,feasibility,compiled,draft:candidate},reason:''};
     reason=feasibility?`${feasibility.verdict.replaceAll('_',' ')}: ${feasibility.projectedReady}/${feasibility.configuredWave1Attempts} READY, ${feasibility.projectedAtRisk} AT RISK, ${feasibility.projectedOmitted} omitted.`:'Preparation forecast unavailable.';
   }
   return {fit:null,reason};

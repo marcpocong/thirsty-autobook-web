@@ -32,19 +32,22 @@ export interface StrategyGoal {
   durations: number[];
   /** Court priority, most preferred first. */
   courts: number[];
-  /** Preferred start within the prime window; default: its middle for the preferred duration. */
+  /** Legacy explicit preferred start, retained for old saved metadata. New plans use idealStart. */
   preferredStart?: string;
+  /** Explicit ideal start. Old metadata defaults to its earliest accepted hour. */
+  idealStart?: string;
 }
-export const DEFAULT_STRATEGY_GOAL: StrategyGoal = Object.freeze({ primeFrom: '17:00', primeUntil: '24:00', durations: [3, 2, 1], courts: [7, 6, 5, 4, 3, 2, 1] }) as StrategyGoal;
+export const DEFAULT_STRATEGY_GOAL: StrategyGoal = Object.freeze({ idealStart: '17:00', primeFrom: '17:00', primeUntil: '24:00', durations: [3, 2, 1], courts: [7, 6, 5, 4, 3, 2, 1] }) as StrategyGoal;
 
 /**
  * Hour-level evidence for the target date, from the read-only block audit (public-booking records plus the
  * availability feed). Unreleased date: a hour with no public record is NO_KNOWN_PUBLIC_CONFLICT, never OPEN.
  */
-export type HourEvidence = 'NO_KNOWN_PUBLIC_CONFLICT' | 'KNOWN_PUBLIC_BOOKING_CONFLICT' | 'UNKNOWN_PUBLIC_QUERY_FAILED' | 'PUBLISHED_OPEN' | 'PUBLISHED_UNAVAILABLE';
+export type HourEvidence = 'NOT_CHECKED' | 'NO_KNOWN_PUBLIC_CONFLICT' | 'KNOWN_PUBLIC_BOOKING_CONFLICT' | 'UNKNOWN_PUBLIC_QUERY_FAILED' | 'PUBLISHED_OPEN' | 'PUBLISHED_UNAVAILABLE';
 export type WindowEvidence = HourEvidence;
 export interface KnownSchedule { date: string; checkedAt: string; hours: ReadonlyMap<string, HourEvidence> }
 export const WINDOW_EVIDENCE_LABEL: Record<WindowEvidence, string> = {
+  NOT_CHECKED: 'Public schedule not checked',
   NO_KNOWN_PUBLIC_CONFLICT: 'No known public conflict',
   KNOWN_PUBLIC_BOOKING_CONFLICT: 'Known public booking conflict',
   UNKNOWN_PUBLIC_QUERY_FAILED: 'Unknown · public query failed',
@@ -52,7 +55,7 @@ export const WINDOW_EVIDENCE_LABEL: Record<WindowEvidence, string> = {
   PUBLISHED_UNAVAILABLE: 'Published unavailable',
 };
 /** Severity order: a window is as bad as its worst hour. */
-const SEVERITY: readonly WindowEvidence[] = ['KNOWN_PUBLIC_BOOKING_CONFLICT', 'PUBLISHED_UNAVAILABLE', 'UNKNOWN_PUBLIC_QUERY_FAILED', 'NO_KNOWN_PUBLIC_CONFLICT', 'PUBLISHED_OPEN'];
+const SEVERITY: readonly WindowEvidence[] = ['KNOWN_PUBLIC_BOOKING_CONFLICT', 'PUBLISHED_UNAVAILABLE', 'UNKNOWN_PUBLIC_QUERY_FAILED', 'NOT_CHECKED', 'NO_KNOWN_PUBLIC_CONFLICT', 'PUBLISHED_OPEN'];
 const CONFLICTS: ReadonlySet<WindowEvidence> = new Set(['KNOWN_PUBLIC_BOOKING_CONFLICT', 'PUBLISHED_UNAVAILABLE']);
 export const isConflict = (evidence: WindowEvidence) => CONFLICTS.has(evidence);
 
@@ -84,6 +87,7 @@ export function validateGoal(goal: StrategyGoal): string[] {
     problems.push('Choose one or more distinct durations from 1 to 3 hours.');
   if (!goal.courts.length || goal.courts.some(value => !Number.isInteger(value) || value < 1 || value > 7) || new Set(goal.courts).size !== goal.courts.length)
     problems.push('Choose one or more distinct courts from 1 to 7.');
+  if (goal.idealStart !== undefined && (!/^(0[89]|1\d|2[0-3]):00$/.test(goal.idealStart) || hourOf(goal.idealStart) < from || hourOf(goal.idealStart) >= until)) problems.push('Ideal start must be inside the acceptable window.');
   if (goal.preferredStart !== undefined && !/^(0[89]|1\d|2[0-3]):00$/.test(goal.preferredStart)) problems.push('The preferred start must be a whole hour.');
   return problems;
 }
@@ -98,7 +102,7 @@ export function enumeratePrimeWindows(goal: StrategyGoal): Window[] {
 
 export function windowEvidence(window: Window, schedule: KnownSchedule | null): { evidence: WindowEvidence; hours: Array<{ hour: string; evidence: HourEvidence }> } {
   const hours = Array.from({ length: window.durationHours }, (_, offset) => hourText(hourOf(window.start) + offset))
-    .map(hour => ({ hour, evidence: schedule?.hours.get(`${window.court}/${hour}`) ?? 'UNKNOWN_PUBLIC_QUERY_FAILED' as HourEvidence }));
+    .map(hour => ({ hour, evidence: schedule?.hours.get(`${window.court}/${hour}`) ?? (schedule ? 'UNKNOWN_PUBLIC_QUERY_FAILED' : 'NOT_CHECKED') as HourEvidence }));
   const evidence = SEVERITY.find(level => hours.some(hour => hour.evidence === level)) ?? 'UNKNOWN_PUBLIC_QUERY_FAILED';
   return { evidence, hours };
 }
@@ -106,9 +110,7 @@ export function windowEvidence(window: Window, schedule: KnownSchedule | null): 
 /** Explicit, explainable preference score (0–100). It ranks the operator's preferences; it predicts nothing about winning. */
 export interface WindowScore { total: number; duration: number; primeFit: number; court: number; evidence: number }
 export function preferredStartFor(goal: StrategyGoal, durationHours: number): number {
-  if (goal.preferredStart) return hourOf(goal.preferredStart);
-  const from = hourOf(goal.primeFrom), lastStart = hourOf(goal.primeUntil) - durationHours;
-  return Math.floor((from + Math.max(from, lastStart)) / 2);
+  return hourOf(goal.idealStart ?? goal.preferredStart ?? goal.primeFrom);
 }
 export function scoreWindow(window: Window, goal: StrategyGoal, evidence: WindowEvidence): WindowScore {
   const durationRank = goal.durations.indexOf(window.durationHours), courtRank = goal.courts.indexOf(window.court);
@@ -164,6 +166,8 @@ export type RoleAffinity = 'STRONG_WAVE_2' | 'STRONG_RESCUE' | 'SUITABLE_FOR_EIT
 export interface ScoredWindow extends Window { end: string; evidence: WindowEvidence; score: WindowScore; forced: boolean;
   historical?: HistoricalRangeEvidence; rationale: string[]; roleAffinity?: RoleAffinity }
 export interface SuggestedPlan {
+  /** Target ranking, independent of which choices receive initial execution. */
+  ranked?: ScoredWindow[];
   immediate: ScoredWindow[]; backups: ScoredWindow[];
   /** Windows left out and why (known conflicts, failed reads, capacity). */
   excluded: Array<ScoredWindow & { reason: 'KNOWN_CONFLICT' | 'EVIDENCE_UNKNOWN' | 'CAPACITY' | 'OVERLAPS_IMMEDIATE' }>;
@@ -217,6 +221,7 @@ function affinity(item: HistoricalRangeEvidence | undefined): RoleAffinity {
 }
 
 /**
+ * Legacy evidence/replay allocator. The operator workflow uses rankTargetPlan then buildExecutionStrategy.
  * Suggests immediate targets and the backup/Rescue pool.
  * - Known public conflicts are avoided; unknown or failed public reads are excluded (fail closed) unless force-included.
  * - Immediate targets use distinct courts in priority order and are DIVERSIFIED across start times: each court takes
@@ -327,5 +332,41 @@ export function draftFromSuggestion(plan: SuggestedPlan, base: SmartDraft, fanOu
   return { ...base, immediate: plan.immediate.map(window => ({ ...withOverride(window), ...fanOut })), backups: plan.backups.map(withOverride),
     useBackupsImmediately: plan.allocation.concurrentWave2, retryReopened: plan.allocation.rescue,
     maxReopenedAttempts: Math.max(1, plan.allocation.rescueMax || 1),
-    advanced: { ...(plan.allocation.standby ? {} : { standby: [] }) } };
+    advanced: { ...base.advanced, ...(plan.allocation.standby ? {} : { standby: [] }) } };
+}
+
+/** Backward compatible goal migration: the old visible start becomes the explicit ideal. */
+export function normalizeStrategyGoal(goal: StrategyGoal): StrategyGoal {
+  return {...goal, idealStart: goal.idealStart ?? goal.preferredStart ?? goal.primeFrom};
+}
+export interface RankedTargetPlan {
+  ranked: ScoredWindow[]; excluded: SuggestedPlan['excluded'];
+  intelligence: SuggestedPlan['intelligence']; comparableReleases: number;
+}
+/** Preference/evidence ranking has no workers, timing, allocation or release-mode input. */
+export function rankTargetPlan(input: Omit<SuggestInput, 'allocation'>): RankedTargetPlan {
+  const goal=normalizeStrategyGoal(input.goal), supplied=input.historicalEvidence;
+  const history=input.intelligenceMode!=='PREFERENCE_ONLY' && (supplied?.strength==='USABLE'||supplied?.strength==='STRONG') ? supplied : null;
+  const excluded: SuggestedPlan['excluded']=[], removed=new Set((input.exclude??[]).map(windowKey));
+  const ranked=enumeratePrimeWindows(goal).filter(w=>!removed.has(windowKey(w))).map(w=>{
+    const evidence=windowEvidence(w,input.schedule).evidence, forced=(input.forceInclude??[]).some(v=>windowKey(v)===windowKey(w));
+    return {...w,end:windowEnd(w),evidence,forced,score:scoreWindow(w,goal,evidence),historical:history?.ranges.find(h=>windowKey(h)===windowKey(w)),rationale:[WINDOW_EVIDENCE_LABEL[evidence]]};
+  }).filter(w=>{if(isConflict(w.evidence)&&!w.forced){excluded.push({...w,reason:'KNOWN_CONFLICT'});return false;}return true;});
+  ranked.sort((a,b)=>{
+    const evidenceKeys=(w:ScoredWindow)=>[w.forced?0:1,goal.durations.indexOf(w.durationHours),
+      history?-share(w.historical?.fullyOpenFirst??0,w.historical?.wellObserved??0):0,
+      history?-share(w.historical?.stillOpenAt1s.open??0,w.historical?.stillOpenAt1s.observed??0):0,
+      Math.abs(hourOf(w.start)-preferredStartFor(goal,w.durationHours)),goal.courts.indexOf(w.court),hourOf(w.start)];
+    return compareNumbers(evidenceKeys(a),evidenceKeys(b));
+  });
+  return {ranked:ranked.slice(0,STRATEGY_MAX_CANDIDATES),excluded,comparableReleases:history?.wellObservedReleases??0,
+    intelligence:{requested:input.intelligenceMode??'AUTO',applied:history?'HISTORY_ASSISTED':'PREFERENCE_BASED',strength:supplied?.strength??'NONE',
+      label:history?`Historical evidence used · ${history.wellObservedReleases} comparable releases`:'Historical evidence insufficient · preference ranking used'}};
+}
+/** Execution allocation consumes ranked candidates without changing their ordering or primary. */
+export function buildExecutionStrategy(targets:RankedTargetPlan,allocation:PresetAllocation):SuggestedPlan {
+  const immediate:ScoredWindow[]=[];
+  for(const target of targets.ranked)if(immediate.length<Math.max(1,allocation.immediateTargets)&&!immediate.some(w=>w.court===target.court))immediate.push(target);
+  const backups=targets.ranked.filter(w=>!immediate.includes(w));
+  return {ranked:targets.ranked,immediate,backups,excluded:targets.excluded,allocation,intelligence:targets.intelligence,reasons:[]};
 }

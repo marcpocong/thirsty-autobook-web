@@ -5,7 +5,7 @@ import { authorizePrecision, precisionCandidateId, wave1SendCount } from '../src
 import { PRECISION_MAX_FAN_OUT, PRECISION_MAX_SENDS } from '../src/workers.js';
 import { ConfigSchema } from '../src/config.js';
 import { defaultSetup } from '../ui/booking.js';
-import { DEFAULT_STRATEGY_GOAL, draftFromSuggestion, enumeratePrimeWindows, knownScheduleFromCells, presetAllocation, PUBLIC_CONFLICT_OVERRIDE, scoreWindow,
+import { rankTargetPlan, buildExecutionStrategy, normalizeStrategyGoal, DEFAULT_STRATEGY_GOAL, draftFromSuggestion, enumeratePrimeWindows, knownScheduleFromCells, presetAllocation, PUBLIC_CONFLICT_OVERRIDE, scoreWindow,
   suggestPlan, validateGoal, windowEvidence, STRATEGY_MAX_CANDIDATES, STRATEGY_MAX_ENUMERATED_WINDOWS, type BlockAuditCell, type HistoricalRangeEvidence, type KnownSchedule, type StrategyGoal,
   type StrategyHistoricalEvidence } from '../src/strategy-engine.js';
 
@@ -141,7 +141,7 @@ describe('Prime Strategy Generator', () => {
     expect(windowEvidence({ court: 7, start: '21:00', durationHours: 3 }, known).evidence).toBe('KNOWN_PUBLIC_BOOKING_CONFLICT');
     expect(windowEvidence({ court: 7, start: '20:00', durationHours: 3 }, known).evidence).toBe('NO_KNOWN_PUBLIC_CONFLICT');
     expect(windowEvidence({ court: 3, start: '19:00', durationHours: 3 }, known).evidence).toBe('UNKNOWN_PUBLIC_QUERY_FAILED');
-    expect(windowEvidence({ court: 7, start: '19:00', durationHours: 3 }, null).evidence).toBe('UNKNOWN_PUBLIC_QUERY_FAILED');
+    expect(windowEvidence({ court: 7, start: '19:00', durationHours: 3 }, null).evidence).toBe('NOT_CHECKED');
     const cells = [...known.hours.values()];
     expect(cells).not.toContain('PUBLISHED_OPEN');
   });
@@ -158,7 +158,7 @@ describe('suggestions, diversification and overrides', () => {
   const balanced = presetAllocation('BALANCED', { readyWorkers: 7, recommendedFanOutWidth: 2 });
   it('diversifies immediate targets across start times instead of one shared window', () => {
     const plan = suggestPlan({ goal: DEFAULT_STRATEGY_GOAL, schedule: schedule(), allocation: balanced });
-    expect(plan.immediate.map(window => `C${window.court} ${window.start}-${window.end}`)).toEqual(['C7 19:00-22:00', 'C6 20:00-23:00', 'C5 18:00-21:00', 'C4 21:00-24:00']);
+    expect(plan.immediate.map(window => `C${window.court} ${window.start}-${window.end}`)).toEqual(['C7 17:00-20:00', 'C6 18:00-21:00', 'C5 19:00-22:00', 'C4 20:00-23:00']);
     expect(plan.reasons).toContain('Diversified across start times to reduce one-window concentration.');
   });
   it('avoids known public conflicts and fails closed on failed public reads', () => {
@@ -169,8 +169,8 @@ describe('suggestions, diversification and overrides', () => {
     }
     expect(plan.excluded.some(window => window.reason === 'KNOWN_CONFLICT' && window.court === 7 && window.start === '19:00')).toBe(true);
     expect(plan.excluded.some(window => window.reason === 'EVIDENCE_UNKNOWN' && window.court === 5)).toBe(true);
-    // C7's best non-conflicting 3-hour window: 17:00 and 21:00 tie on prime fit; the later one is taken.
-    expect(plan.immediate[0]).toMatchObject({ court: 7, start: '21:00', durationHours: 3 });
+    // The explicit default ideal is 17:00, rather than the old implicit midpoint.
+    expect(plan.immediate[0]).toMatchObject({ court: 7, start: '17:00', durationHours: 3 });
   });
   it('a force-included conflicting window stays in the plan with a persisted override marker, and the backend keeps the marker', () => {
     const known = schedule([[7, '19:00']]);
@@ -278,3 +278,31 @@ describe('Strategy V2.1 evidence-assisted role ranking', () => {
 });
 
 const windowKeyForTest=(window:{court:number;start:string;durationHours:number})=>`${window.court}/${window.start}/${window.durationHours}`;
+
+describe('separate target planning and execution',()=>{
+ const goal={...DEFAULT_STRATEGY_GOAL,idealStart:'19:00',primeFrom:'18:00',primeUntil:'24:00',durations:[3]};
+ it('strongly prefers the explicit ideal and migrates old goals without a midpoint',()=>{
+  expect(rankTargetPlan({goal,schedule:null}).ranked[0]).toMatchObject({court:7,start:'19:00'});
+  // The old midpoint is 18:00 for 18:00–22:00 and a 3h booking; ideal 19:00 must win.
+  expect(rankTargetPlan({goal:{...goal,primeUntil:'22:00'},schedule:null}).ranked[0]).toMatchObject({court:7,start:'19:00'});
+  expect(rankTargetPlan({goal,schedule:null}).ranked.findIndex(w=>w.start==='18:00')).toBeGreaterThan(0);
+  expect(normalizeStrategyGoal({primeFrom:'17:00',primeUntil:'24:00',durations:[3],courts:[7]}).idealStart).toBe('17:00');
+ });
+ it('preserves rank #1 through different worker allocations and excludes conflicts despite failed hours',()=>{
+  const targets=rankTargetPlan({goal,schedule:schedule([[7,'19:00']])});
+  expect(targets.ranked[0]).toMatchObject({court:6,start:'19:00'});
+  for(const readyWorkers of [0,1,4,7])for(const preset of ['BALANCED','RELEASE_FOCUSED','RESCUE_FOCUSED'] as const)
+    expect(buildExecutionStrategy(targets,presetAllocation(preset,{readyWorkers,recommendedFanOutWidth:2})).immediate[0]).toEqual(targets.ranked[0]);
+ });
+ it('accepts failed and unchecked evidence for preferences without claiming published open',()=>{
+  const unchecked=rankTargetPlan({goal,schedule:null}),failed=rankTargetPlan({goal,schedule:{date:targetDate,checkedAt:'now',hours:new Map()}});
+  expect(unchecked.ranked[0]!.evidence).toBe('NOT_CHECKED');expect(failed.ranked[0]!.evidence).toBe('UNKNOWN_PUBLIC_QUERY_FAILED');
+  expect(failed.ranked[0]!.start).toBe('19:00');
+ });
+ it('uses only usable history, while limited history leaves preference ranking unchanged',()=>{
+  const history:StrategyHistoricalEvidence={targetDate,dayOfWeek:'Thursday',releasesConsidered:5,wellObservedReleases:5,realReleases:5,historicalPrePhase3:0,strength:'USABLE',sharedRisk:[],
+    ranges:[{court:6,start:'20:00',durationHours:3,wellObserved:5,fullyOpenFirst:5,stillOpenAt1s:{observed:5,open:5},stillOpenAt5s:{observed:5,open:5},reopened:0,good:5,fair:0}]};
+  expect(rankTargetPlan({goal,schedule:null,historicalEvidence:history}).ranked[0]).toMatchObject({court:6,start:'20:00'});
+  expect(rankTargetPlan({goal,schedule:null,historicalEvidence:{...history,strength:'LIMITED'}}).ranked[0]).toMatchObject({court:7,start:'19:00'});
+ });
+});
