@@ -437,3 +437,42 @@ it.each([5,6])('keeps Strategy controls responsive with saved width %i and live 
  expect(await page.evaluate(()=>(window as any).fixtureCalls.filter((name:string)=>['prepare','authorizeTerms','armFullBooking','testBooking'].includes(name)))).toEqual([]);
  await page.close();
 });
+
+
+it('lets the operator skip a new public read, retains known conflicts, and saves the choice',async()=>{
+ const page=await openRendererBase(browser,{booking:smartBooking(),blockAudit:blockAudit([[7,'19:00']])},'strategy');
+ await page.locator('#strategy-ideal-start').selectOption('19:00');
+ await page.locator('#strategy-public-data').selectOption('CACHED_ONLY');
+ await page.locator('#strategy-suggest').click();
+ await expect.poll(()=>page.locator('.target-primary').innerText()).toContain('Court 6');
+ expect(await page.locator('#strategy-target-summary').innerText()).toContain('No new public-booking check requested');
+ expect(await page.evaluate(()=>(window as any).fixtureCalls.includes('checkReleaseBlocks'))).toBe(false);
+ await page.locator('#strategy-normal-save').click();await page.waitForFunction(()=>(window as any).fixtureSaved);
+ const setup=await saved(page);expect(setup.STRATEGY_V2.publicScheduleMode).toBe('CACHED_ONLY');
+ ConfigSchema.parse({...setup,...players});
+ await page.close();
+ const reopened=await openRendererBase(browser,{booking:bookingView(ConfigSchema.parse({...setup,...players}))},'strategy');
+ expect(await reopened.locator('#strategy-public-data').inputValue()).toBe('CACHED_ONLY');
+ await reopened.close();
+});
+
+it('explains a pinned limit blocker and repairs it only through an explicit operator action',async()=>{
+ const page=await openRendererBase(browser,{booking:smartBooking({retryReopened:true,maxReopenedAttempts:1,advanced:{total:1}}),playerStatus:{primary:true,extended:true,third:true,fourth:true,fifth:true,sixth:true,seventh:true}},'strategy');
+ await page.locator('#strategy-public-data').selectOption('CACHED_ONLY');
+ await page.locator('#strategy-suggest').click();
+ await expect.poll(()=>page.locator('#strategy-normal-status').innerText()).toContain('Attempt limits are inconsistent');
+ expect(await page.locator('#strategy-normal-save').isDisabled()).toBe(true);
+ expect(await page.locator('#strategy-normal-auto-limits').isVisible()).toBe(true);
+ const before=await page.evaluate<SmartDraft>("(async()=>JSON.parse((await import(new URL('strategy.js',location.href).href)).strategySaveSnapshot()))()");
+ expect(before.advanced.total).toBe(1);
+ await page.locator('#strategy-normal-auto-limits').click();
+ expect(await page.locator('#strategy-normal-save').isEnabled()).toBe(true);
+ const after=await page.evaluate<SmartDraft>("(async()=>JSON.parse((await import(new URL('strategy.js',location.href).href)).strategySaveSnapshot()))()");
+ expect(after.immediate).toEqual(before.immediate);expect(after.backups).toEqual(before.backups);
+ expect(after.advanced.total).toBeUndefined();
+ await page.locator('#strategy-normal-save').click();await page.waitForFunction(()=>(window as any).fixtureSaved);
+ expect(await page.locator('#strategy-normal-status').innerText()).toContain('NORMAL STRATEGY SAVED');
+ expect((await saved(page)).PRECISION_PHASE3.budgets.total).toBeGreaterThan(1);
+ expect(await page.evaluate(()=>(window as any).fixtureCalls.filter((name:string)=>['prepare','authorizeTerms','armFullBooking','testBooking'].includes(name)))).toEqual([]);
+ await page.close();
+});

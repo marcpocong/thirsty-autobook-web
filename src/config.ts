@@ -47,6 +47,7 @@ export const PrecisionPhase3Schema=z.object({
  * this object is not part of the plan fingerprint.
  */
 export const StrategyV2Schema=z.object({version:z.literal(1),preset:z.enum(['BALANCED','RELEASE_FOCUSED','RESCUE_FOCUSED','CUSTOM']),
+  publicScheduleMode:z.enum(['CHECK','CACHED_ONLY']).optional(),
   targetPlan:z.object({date:z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),historyLabel:z.string().max(512).optional(),publicWarning:z.string().max(512).optional(),ranked:z.array(z.object({court:z.number().int().min(1).max(7),start:hour,durationHours:z.number().int().min(1).max(3)}).strict()).max(21)}).strict().optional(),
   goal:z.object({primeFrom:hour,primeUntil:z.string().regex(/^(09|1\d|2[0-3]):00$|^24:00$/),durations:z.array(z.number().int().min(1).max(3)).min(1).max(3),
     courts:z.array(z.number().int().min(1).max(7)).min(1).max(7),preferredStart:hour.optional(),idealStart:hour.optional()}).strict(),
