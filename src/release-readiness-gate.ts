@@ -46,7 +46,7 @@ export function evaluateReleaseReadiness(input:{build:BuildInfo|null;testedBuild
   const feasibility=input.prewarmFeasibility;
   if(feasibility)add({id:'wave1-preparation-capacity',label:'Wave 1 preparation capacity',
     level:feasibility.verdict==='READY'?'GOOD':feasibility.verdict==='AT_RISK'?'DEGRADED':'UNAVAILABLE',hardBlock:feasibility.projectedOmitted>0,
-    detail:`${feasibility.configuredWave1Attempts} configured · ${feasibility.projectedReady} projected ready · ${feasibility.projectedAtRisk} at risk · ${feasibility.projectedOmitted} projected omitted`});
+    detail:`${feasibility.verdict.replaceAll('_',' ')} · ${feasibility.configuredWave1Attempts} configured · ${feasibility.projectedReady} projected ready · ${feasibility.projectedAtRisk} at risk · ${feasibility.projectedOmitted} projected omitted`});
   add({id:'prewarm',label:'Prewarm',level:input.prewarm?'GOOD':'DEGRADED',hardBlock:false,detail:input.prewarm?'release preparation complete':'not yet prepared'});
   const hard=checks.some(value=>value.hardBlock&&value.level!=='GOOD'),warnings=checks.some(value=>value.level!=='GOOD');
   return {verdict:hard?'NOT_READY':warnings?'READY_WITH_WARNINGS':'READY',measuredAt:new Date().toISOString(),checks,readyWorkers,degradedWorkers,unavailableWorkers};

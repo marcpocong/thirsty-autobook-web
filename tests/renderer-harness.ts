@@ -48,9 +48,9 @@ export async function openRenderer(browser: Browser, extra: Record<string, unkno
     const record = (name: string) => async (...args: unknown[]) => { w.fixtureCalls.push(name); w.fixtureArgs = { ...(w.fixtureArgs ?? {}), [name]: args[0] }; };
     w.thirsty = { getStatus: async () => w.fixtureState, onStatus: (callback: any) => { w.fixturePublish = callback; return () => {}; },
       setWorkflow: async (workflow: string) => { w.fixtureState.workflow = workflow; w.fixtureState.ready = false; }, invalidatePreparation: async () => {},
-      authorizeTerms: async (authorized: boolean) => { w.fixtureState.termsAuthorized = authorized; w.fixturePublish?.(w.fixtureState); },
+      authorizeTerms: async (authorized: boolean) => { w.fixtureCalls.push('authorizeTerms'); w.fixtureState.termsAuthorized = authorized; w.fixturePublish?.(w.fixtureState); },
       focusBrowser: async (request: unknown) => { w.fixtureFocusedBrowser = request; return w.fixtureFocusResult ?? 'focused'; },
-      saveBooking: async (setup: unknown) => { w.fixtureCalls.push('saveBooking'); w.fixtureSaved = setup; w.fixtureState = { ...w.fixtureState, headline: 'Booking plan saved' }; },
+      saveBooking: async (setup: unknown) => { w.fixtureCalls.push('saveBooking'); w.fixtureSaved = setup; w.fixtureState = { ...w.fixtureState, booking: {...w.fixtureState.booking,setup}, headline: 'Booking plan saved' }; },
       resetPrepare: record('resetPrepare'), armFullBooking: record('armFullBooking'), prepare: record('prepare'), dryRace: record('dryRace'), reviewLock: record('reviewLock'),
       checkReleaseBlocks: record('checkReleaseBlocks'), testBooking: record('testBooking'), cancelScheduledRelease: record('cancelScheduledRelease'),
       rebuildIntelligence: record('rebuildIntelligence'), clearIntelligence: record('clearIntelligence'), runNetworkCheck: record('runNetworkCheck'),

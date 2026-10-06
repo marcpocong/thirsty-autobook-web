@@ -1,3 +1,4 @@
+import {forecastPreparation} from '../../src/quick-shotgun.js';
 import type { Dashboard } from '../types.js';
 import { describeSmartPlan, smartImmediateSends, type SmartPhase3, type SmartWorker } from '../../src/precision-simple.js';
 import { STRATEGY_PRESET_LABEL } from '../../src/strategy-engine.js';
@@ -32,13 +33,14 @@ export function renderNextRelease(state: Dashboard): void {
     const widths = [...new Set(plan.wave1.map(value => value.fanOutOffsetsMs?.length ?? 1))];
     const sends = smartImmediateSends(plan.wave1),logicalTargets=new Set(plan.wave1.map(value=>value.candidateIndex)).size;
     const liveChildren=state.live?.parents.filter(value=>value.wave==='WAVE_1').flatMap(value=>value.children)??[];
-    const feasibility=state.prewarmFeasibility,observedReady=liveChildren.filter(value=>value.state==='READY').length;
+    const unavailable=new Set(Object.entries(PLAYER_KEYS).filter(([worker,key])=>state.playerStatus?.[key]===false||(state.identityIssues??[]).some(issue=>issue.startsWith(`Worker ${worker} `))).map(([worker])=>worker));
+    const feasibility=forecastPreparation(plan,unavailable,state.prewarmFeasibility),observedReady=liveChildren.filter(value=>value.state==='READY').length;
     const description = describeSmartPlan(plan);
     const fanOutSource = meta ? meta.fanOut.source === 'OPERATOR_OVERRIDE' ? ` · operator override (machine: ${meta.fanOut.recommendedWidth ?? '—'})`
       : meta.fanOut.source === 'MACHINE_RECOMMENDED' ? ' · machine recommendation' : ' · no capacity profile' : '';
-    name.textContent = meta?.shotgun?.enabled ? 'Dense Core' : meta ? `Normal · ${STRATEGY_PRESET_LABEL[meta.preset]}` : 'Smart (custom)';
+    name.textContent = meta?.shotgun?.enabled ? 'Shotgun' : meta ? `Normal · ${STRATEGY_PRESET_LABEL[meta.preset]}` : 'Smart (custom)';
     const firstTarget=plan.wave1[0],firstCandidate=firstTarget?plan.candidates[firstTarget.candidateIndex]:undefined,range=meta?.shotgun?.exactSchedule.length?`${meta.shotgun.exactSchedule[0]!.configuredOffsetMs} → ${meta.shotgun.exactSchedule.at(-1)!.configuredOffsetMs} ms`:'Measured timing';
-    facts(target, [['Primary target',firstCandidate?`Court ${firstCandidate.court} · ${firstCandidate.start} · ${firstCandidate.durationHours} h`:'—'],['Strategy',meta?.shotgun?.enabled?`Dense Core · ${sends} attempts`:`Normal · ${sends} attempts`],['Timing',range],['Browsers',`${new Set(plan.wave1.map(value=>value.workerId)).size} release groups`],['Backup attempts',plan.budgets.wave2>0?`Up to ${plan.budgets.wave2}`:'Off'],['Reopened-slot rescue',plan.rescueEnabled&&plan.budgets.rescue>0?`ON · up to ${plan.budgets.rescue}`:'OFF']]);
+    facts(target, [['Primary target',firstCandidate?`Court ${firstCandidate.court} · ${firstCandidate.start} · ${firstCandidate.durationHours} h`:'—'],['Strategy',meta?.shotgun?.enabled?`Shotgun · Dense Core · ${sends} attempts`:`Normal · ${sends} attempts`],['Timing',range],['Preparation forecast',feasibility?`${feasibility.projectedReady}/${feasibility.configuredWave1Attempts} ${feasibility.verdict?.replaceAll('_',' ')??'checking'}`:'Checked during Prepare for Release'],['Browsers',`${new Set(plan.wave1.map(value=>value.workerId)).size} release groups`],['Backup attempts',plan.budgets.wave2>0?`Up to ${plan.budgets.wave2}`:'Off'],['Reopened-slot rescue',plan.rescueEnabled&&plan.budgets.rescue>0?`ON · up to ${plan.budgets.rescue}`:'OFF']]);
     facts(technical, [
       ['Release readiness', state.releaseReadiness?.verdict.replaceAll('_',' ') ?? 'checking'],
       ['Build integrity', state.releaseReadiness?.checks.find(value=>value.id==='build')?.detail ?? build],
@@ -92,6 +94,6 @@ export function renderReleasePreflight(state:Dashboard):void {
   const issues=workers.filter(worker=>!state.browserHealth?.[worker]).map(worker=>`✕ Browser ${worker} disconnected`);
   const reason=byId('blocked-reason').textContent;
   const first=plan?.wave1[0],candidate=first?plan?.candidates[first.candidateIndex]:undefined,offsets=setup?.STRATEGY_V2?.shotgun?.exactSchedule.map(shot=>shot.configuredOffsetMs)??[];
-  const details=el('dl','fact-grid');facts(details,[['Target',candidate?`Court ${candidate.court} · ${candidate.start} · ${candidate.durationHours} h`:'No saved Smart target'],['Strategy',setup?.STRATEGY_V2?.shotgun?.enabled?`${setup.STRATEGY_V2.shotgun.timingMode.replaceAll('_',' ')} · ${required} attempts`:'Saved release strategy'],['Timing',offsets.length?`${Math.min(...offsets)} → ${Math.max(...offsets)} ms`:'Saved release timing'],['Preparation',children.length?`Live readiness: ${ready}/${required} READY`:state.ready?'Engine preparation complete · child readiness counts not reported':'Live readiness: not yet prepared'],['Browsers',`${workers.filter(worker=>state.browserHealth?.[worker]).length}/${workers.length} connected`],['Terms',state.termsAuthorized?'AUTHORIZED':'Needs authorization']]);
+  const details=el('dl','fact-grid');facts(details,[['Target',candidate?`Court ${candidate.court} · ${candidate.start} · ${candidate.durationHours} h`:'No saved Smart target'],['Strategy',setup?.STRATEGY_V2?.shotgun?.enabled?`Shotgun · ${setup.STRATEGY_V2.shotgun.timingMode.replaceAll('_',' ')} · ${required} attempts`:'Saved release strategy'],['Timing',offsets.length?`${Math.min(...offsets)} → ${Math.max(...offsets)} ms`:'Saved release timing'],['Preparation',children.length?`Live readiness: ${ready}/${required} READY`:state.ready?'Engine preparation complete · child readiness counts not reported':'Live readiness: not yet prepared'],['Browsers',`${workers.filter(worker=>state.browserHealth?.[worker]).length}/${workers.length} connected`],['Terms',state.termsAuthorized?'AUTHORIZED':'Needs authorization']]);
   card.replaceChildren(el('h3','',title),details,...(!armed&&arm.disabled?[el('p','warn-text',reason||'Review preparation, saved plan and Terms before arming.'),...issues.map(issue=>el('p','warn-text',issue))]:[]));
 }
