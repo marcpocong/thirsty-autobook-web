@@ -13,7 +13,7 @@ function validDate(value: string) {
 }
 
 export class LiveAvailabilityError extends Error {
-  constructor(readonly code: string) { super(code); this.name = 'LiveAvailabilityError'; }
+  constructor(readonly code: string, readonly httpStatus?: number) { super(code); this.name = 'LiveAvailabilityError'; }
 }
 
 export interface LiveAvailabilityOptions {
@@ -53,7 +53,7 @@ export class OndaLiveAvailabilityProvider implements AvailabilityProvider {
       response = await this.fetcher(url, { method: 'GET', redirect: 'error', credentials: 'omit',
         headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(this.timeoutMs) });
     } catch { throw new LiveAvailabilityError('AVAILABILITY_TRANSPORT_FAILED'); }
-    if (!response.ok) throw new LiveAvailabilityError(response.status === 429 ? 'AVAILABILITY_RATE_LIMITED' : 'AVAILABILITY_HTTP_FAILED');
+    if (!response.ok) throw new LiveAvailabilityError(response.status === 429 ? 'AVAILABILITY_RATE_LIMITED' : 'AVAILABILITY_HTTP_FAILED', response.status);
     if (!response.headers.get('content-type')?.toLowerCase().includes('application/json')) throw new LiveAvailabilityError('AVAILABILITY_CONTENT_TYPE_INVALID');
     const length = Number(response.headers.get('content-length'));
     if (Number.isFinite(length) && length > MAX_RESPONSE_BYTES) throw new LiveAvailabilityError('AVAILABILITY_RESPONSE_TOO_LARGE');
