@@ -26,7 +26,9 @@ it('shows the five operator views with a wide grid and stacked narrow layout',as
   await mkdir('.local',{recursive:true});await page.screenshot({path:'.local/ui-redesign-release.png'});
   await showRendererView(page,'strategy');
   // Booking goal → Target plan → Release mode; evidence and technical review are secondary.
-  for(const id of ['#strategy-goal','#strategy-target-plan','#strategy-preset','#strategy-suggested'])expect(await page.locator(id).isVisible()).toBe(true);
+  for(const id of ['#strategy-goal','#strategy-target-plan','#strategy-suggested'])expect(await page.locator(id).isVisible()).toBe(true);
+  expect(await page.locator('#strategy-preset').isVisible()).toBe(false);
+  expect(await page.locator('#strategy-review').isVisible()).toBe(false);
   expect(await page.locator('#booking-method').isVisible()).toBe(false);
   await page.locator('#strategy-advanced > summary').click();
   expect(await page.locator('#booking-method').isVisible()).toBe(true);

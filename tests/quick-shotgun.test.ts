@@ -34,11 +34,11 @@ describe('Quick Shotgun policy',()=>{
     const value=draft();value.immediate=[];expect(fitQuickShotgun(value,context,forecast(12000)).fit).toBeNull();
     expect(fitQuickShotgun(draft(),()=>({...context(),unavailable:new Set('ABCDEFG')}),forecast(12000)).fit).toBeNull();
   });
-  it('preserves unrelated advanced settings and rejects incompatible overrides',()=>{
+  it('preserves compatible overrides and normalizes only incompatible overrides',()=>{
     const value=draft();value.advanced={wave2:0,rescue:0};const before=structuredClone(value);
     expect(fitQuickShotgun(value,context,forecast(12000)).fit).not.toBeNull();expect(value).toEqual(before);
     value.advanced.total=0;expect(fitQuickShotgun(value,context,forecast(12000)).fit).not.toBeNull();expect(value.advanced.total).toBe(0);
-    value.advanced.wave2=8;expect(fitQuickShotgun(value,context,forecast(12000)).fit).toBeNull();expect(value.advanced.wave2).toBe(8);
+    value.advanced.wave2=8;const fit=fitQuickShotgun(value,context,forecast(12000)).fit!;expect(fit).not.toBeNull();expect(fit.normalized).toContain('wave2');expect(fit.draft.advanced.rescue).toBe(0);expect(value.advanced.wave2).toBe(8);
   });
 });
 
@@ -48,5 +48,15 @@ it('Quick Wave 1 is exactly the fitted primary budget and preserves every other 
  expect(fit).not.toBeNull();expect(fit.draft.immediate).toHaveLength(1);expect(fit.draft.backups).toEqual([...before.immediate.slice(1),...before.backups]);
  expect(fit.feasibility.configuredWave1Attempts).toBe(fit.settings.budget);
  expect(fit.compiled.phase3!.wave1.reduce((n,a)=>n+(a.fanOutOffsetsMs?.length??1),0)).toBe(fit.settings.budget);
+ expect(value).toEqual(before);
+});
+
+
+it('normalizes incompatible Rescue and standby reservations without altering unrelated choices',()=>{
+ const value=draft();value.immediate[0]!.worker='A';value.advanced={standby:['A','B','C','D','E','F','G'],rescue:3};
+ const before=structuredClone(value),fit=fitQuickShotgun(value,context,forecast(12000)).fit!;
+ expect(fit).not.toBeNull();expect(fit.normalized).toEqual(['rescue','standby']);
+ expect(fit.draft.rates).toEqual(before.rates);expect(fit.draft.immediate[0]).toEqual(before.immediate[0]);
+ expect(fit.draft.retryReopened).toBe(before.retryReopened);expect(fit.draft.maxReopenedAttempts).toBe(before.maxReopenedAttempts);
  expect(value).toEqual(before);
 });
