@@ -13,6 +13,7 @@ import { assertQrOrderSummary } from '../src/api-booking/qr-order-summary.js';
 import { TestBookingSchema } from '../src/booking-plan.js';
 import type { BookingPreferences } from '../src/api-booking/types.js';
 import { expectedPreparationFingerprint } from '../src/prepared-context.js';
+import { commandSpec } from '../ui/processes.js';
 
 // Synthetic fixture matching the public shape observed in the authorized Buko
 // UI checkout. No live proof, customer, booking ID or checkout token is retained.
@@ -55,6 +56,18 @@ describe('exact Buko Normal authorization and provider identities',()=>{
     expect(expectedPreparationFingerprint(input)).not.toBe(expectedPreparationFingerprint({...input,request:{...input.request,wing:'MANGO'}}));
     expect(TestBookingSchema.safeParse({method:input.method,request:input.request,authorizeTerms:true}).success).toBe(true);
     expect(TestBookingSchema.safeParse({method:'proofless',request:input.request,authorizeTerms:true}).success).toBe(false);
+  });
+  it('carries the exact Buko target through the UI launcher to every Normal runner mode',()=>{
+    const previous=process.env.THIRSTY_API_INSTALLATION;
+    process.env.THIRSTY_API_INSTALLATION='1';
+    try{
+      const preferences={wing:'BUKO' as const,strategy:'standard' as const,date,start:'16:00',duration:1,courtCount:1 as const,priority:[4],fallbackStarts:[],exact:[[4]]};
+      for(const mode of ['prepare','dry','live-now'] as const){
+        const spec=commandSpec({kind:'apiRun',mode,date,fingerprint:'a'.repeat(64),checkoutMethod:'proof-based',preferences},process.cwd(),process.execPath);
+        expect(JSON.parse(spec.args.at(-1)!)).toMatchObject({mode,checkoutMethod:'proof-based',preferences});
+        expect(spec.apiLive).toBe(mode==='live-now');
+      }
+    }finally{if(previous===undefined)delete process.env.THIRSTY_API_INSTALLATION;else process.env.THIRSTY_API_INSTALLATION=previous;}
   });
   it('requires matching court, wing, date, time and amount at QR',()=>{
     const text='Checkout QRPH Pending October 14, 2026 4:00 PM - 5:00 PM 🥥 Buko Wing: Court 4 ₱700.00';
