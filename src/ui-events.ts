@@ -23,7 +23,7 @@ export const UiEventSchema = z.discriminatedUnion('type', [
     releaseOffsetMs:z.number().int().min(-2000).max(2000).optional(),triggerMs:z.number().int().optional(),
     bookingMethod:z.enum(['browser','hybrid','api-first','proofless']).optional(),
     prewarmLeadMs:z.number().int().positive().optional(),
-    date:z.iso.date().optional(),court:z.number().int().min(1).max(7).optional(),courtB:z.number().int().min(1).max(7).optional(),startTime:z.string().optional(),
+    wing:z.enum(['MANGO','BUKO']).optional(),date:z.iso.date().optional(),court:z.number().int().min(1).max(7).optional(),courtB:z.number().int().min(1).max(7).optional(),startTime:z.string().optional(),
     durationHours:z.number().int().min(1).max(6).optional(),price:z.number().finite().optional(),assumedPrice:z.number().finite().optional(),
     status:z.enum(['fulfilled','rejected']).optional(),
     attempt:z.enum(['initial','retry']).optional(),workerCount:z.number().int().optional(),completedWorkers:z.number().int().optional(),

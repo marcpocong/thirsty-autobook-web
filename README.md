@@ -7,7 +7,7 @@ The existing single-court booking flow has live evidence, including the [Septemb
 
 ## Operator flow
 
-**Wing compatibility:** saved court numbers and all automated booking strategies refer to **Mango Wing**. Onda now publishes seven Buko courts under the same facility; they are recorded separately in a verified registry and excluded safely from Mango availability/grid parsing. Buko automation remains visibly disabled pending availability-response, checkout and release-policy verification. See [wing compatibility](docs/WING_COMPATIBILITY.md).
+**Wing compatibility:** saved court numbers and release strategies refer to **Mango Wing**. Test Now also supports an explicit **Buko Wing → Book Available Now** request for one exact court, 1–3 hours, using fresh browser-session availability and proofs. Buko release scheduling, Shotgun and Proofless remain disabled. Official Mango and Buko UI flows were verified to QR; the new bot path is separately identified as offline validated. See [wing compatibility](docs/WING_COMPATIBILITY.md).
 
 Configure:
 

@@ -22,7 +22,7 @@ export const BUKO_SPACE_IDS = Object.freeze({
   6: '778c8116-1b51-43f0-a0ce-1945df16c0ef',
   7: 'ca22630b-5550-41b2-a818-99928fa3074a',
 });
-export const BUKO_DISABLED_REASON = 'Buko courts verified; automated booking disabled until its availability responses, checkout adapter and release policy are verified. Use the official Onda page for available dates.';
+export const BUKO_DISABLED_REASON = 'Buko scheduled releases and Shotgun are disabled: recurring release policy is unverified. For an open date, use Test Now → Buko Wing → Book Available Now (one exact court, Normal only).';
 export interface RegisteredCourt {
   id: `${Wing}:${number}`; wing: Wing; number: number; displayName: string;
   facilityId: string; spaceId: string; bookingMethods: readonly string[];
@@ -42,7 +42,7 @@ export const COURT_REGISTRY: readonly RegisteredCourt[] = Object.freeze(
       scheduleSummary: wing === 'MANGO' ? 'Daily 08:00–24:00; court/date maintenance may apply'
         : 'Mon–Thu 16:00–24:00; Fri–Sun 08:00–24:00; court/date maintenance may apply',
       releasePolicyId: wing,
-      bookingMethods: Object.freeze(wing === 'MANGO' ? ['browser', 'hybrid', 'api-first', 'proofless'] : []),
+      bookingMethods: Object.freeze(wing === 'MANGO' ? ['browser', 'hybrid', 'api-first', 'proofless'] : ['api-first-normal']),
       ...(wing === 'BUKO' ? { disabledReason: BUKO_DISABLED_REASON } : {}),
     }))));
 export function courtBySpace(spaceId: string): RegisteredCourt | undefined {

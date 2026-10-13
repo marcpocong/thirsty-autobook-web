@@ -1,28 +1,25 @@
 # Wing compatibility (October 14, 2026)
 
-The public Onda page now contains fourteen courts. `court-registry.ts` records their verified facility/space identities as `MANGO:1` through `MANGO:7` and `BUKO:1` through `BUKO:7`. A display number is not a provider ID. Every historical numeric booking court remains Mango; no saved configuration or strategy is rewritten.
+The registry records fourteen distinct provider spaces as MANGO:1–7 and BUKO:1–7. Saved numeric strategies remain Mango. Choosing Buko in Test Now creates an explicit independent test request; it never edits the saved Mango strategy.
 
-Mango automation remains the supported adapter. Buko identities are verified, but automated Buko booking is **disabled**: its actual availability response body and checkout compatibility could not be verified, and its recurring release policy is unknown. The Strategy view states this and disables Buko selection. Buko is not automatically added to a Normal or Shotgun authorization.
+## Normal bookings on an open date
 
-## Public observations
+Test Now → Wing → Buko → exact court → date → Prepare → review and Terms → Run to QR. Buko supports one exact court and 1–3 consecutive hours, with no fallback court or time. The time and duration come from the saved plan and are displayed in the test review. The existing customer validation, browser preparation, lock, fresh proofs, durable journals and response checks remain mandatory. No payment is automated.
 
-On [Onda's public booking page](https://app.onda.fit/book/thirsty-pickle), both wings share facility `5f8786bd-dc61-4509-b893-74cda8f783f7`. Mango court names gained a mango emoji. Buko has overlapping court numbers and seven separate UUIDs; see the registry and investigation report for the full inventory.
+`BookingPreferences.wing` and `BookingPlan.wing` carry Buko identity through the shared API planner, standard checkout chunks, payloads, response validation, journal keys and QR summary. Missing wing means Mango. Unknown or mismatched UUIDs fail closed. An explicit Buko snapshot without Buko booking authorization is refused. The observed Buko activity is pickleball / Pickleball; Mango serialization remains unchanged.
 
-Observed metadata: Mango daily 08:00–24:00; Buko Monday–Thursday 16:00–24:00 and Friday–Sunday 08:00–24:00. Maintenance varies by court/date, so these hours never establish availability. Mango weekend daytime metadata is PHP 700; Buko weekend daytime metadata is PHP 600; both show PHP 700 evening pricing. The registry's metadata is informational. Existing per-slot/checkout amount validation remains authoritative.
+The official site was verified to genuine QR for Mango Court 2 (October 14, 12:00–13:00, PHP 600) and Buko Court 4 (October 14, 16:00–17:00, PHP 700). These were supervised official UI workflows in separate dedicated Chrome profiles, not executions of the newly modified desktop runner. The new Buko bot path has offline regression coverage; see the Phase 2 report for the independent readiness verdicts.
 
-At approximately 02:07 Manila on October 14, the page said Mango bookings open through October 15 and Buko through October 19. Facility metadata says `3 days` / `08:00:00`. This agrees with Mango's existing two-calendar-day target offset: before today's 08:00 release, yesterday's target is today + 1; today's next target is today + 2. It does not prove Buko's recurring release instant or inclusive counting. Buko stays unknown rather than assigning it five days or inheriting 08:00.
+## Availability transport
 
-## Boundaries
+The unchanged read query returns 403 from independent Node and 200 from the normal authorized browser session. `OndaBrowserAvailabilityProvider` uses one same-origin GET in an already verified browser, with no copied credentials/security headers, no route guessing, no checkout, no retry and a bounded response size. The existing strict pricing/freshness parser is shared. The desktop runner uses this adapter after browser preparation. Browserless tools and isolated Slot Watch retain their current transport and can remain blocked by 403; they do not borrow dispatch-session credentials.
 
-- The strict API parser defaults to Mango and excludes only registry-verified Buko spaces. It reports `excludedSpaceIds`. Any truly unknown UUID still raises `AVAILABILITY_UNKNOWN_COURT`; malformed Mango records still fail closed.
-- `parseAvailability(..., { wing: 'BUKO' })` supports read-only, explicitly scoped inspection with overlapping display numbers. `planBooking` rejects a Buko snapshot as `BOOKING_WING_NOT_ENABLED`. Checkout mappings, worker topology and journals stay Mango-only.
-- Browser grid validation checks all column identities, then validates the original complete 112-cell Mango subset. It accepts old and new Mango names, rejects unknown columns, and rejects any preselected Buko cell. Missing/ambiguous Mango state remains unknown.
-- Read-only availability URLs now include the observed `slotDateMode=web-operating-day`. This does not bypass access controls; direct GETs returned HTTP 403 in this investigation. No successful live API response is claimed.
-- `wing-release-policy.ts` provides independent, explicitly evidenced policies, Manila target-date calculation and fresh cell-based workflow classification. Only an exact empty response before a verified release permits `PREPARE_FOR_RELEASE`. Already-open cells select `BOOK_AVAILABLE_NOW`; partial/missing cells remain unknown; fully booked requires explicit records for every requested cell. This foundation does not enable Buko or replace existing Mango scheduling.
-- Existing Mango defaults, operator-configured release settings, saved `PRECISION_PHASE3`, court priorities, prices, customer profiles and emergency controls remain unchanged. There is no data migration or private configuration write.
+`/api/public/spaces/bookings` works from Node and the browser for both wings in the observed samples. It establishes occupancy only, never openness, publication, prices or proof authority. The legacy numeric occupancy observer stays Mango scoped.
 
-## Before Buko automation can be enabled
+## Release and safety boundaries
 
-Capture sanitized successful responses from the authorized normal Chrome session, compare per-space publication/pricing/slot proofs, verify an independently evidenced release policy, and implement the wing identity throughout setup, compiled authorization, proofs, frozen payloads, response validation, QR summary, locks and recovery. Use intercepted checkout fixtures to verify the exact Buko UUIDs. A real transaction requires separate owner authorization. Registry discovery alone is insufficient.
+Mango's existing today + 2 / 08:00 Manila policy is unchanged. Buko's recurring release policy is unknown. Its release Strategy option stays disabled; Buko cannot enter scheduled release, Shotgun or Proofless authorization. October 15, 16 and 19 were compared live. Buko was open on October 16 and 19 while Mango had zero open slots. This does not prove a recurring release mechanism.
 
-Do not widen the Mango numeric mapping to 1–14 or insert Buko at the front of a saved seven-court priority array. Do not interpret a facility-wide available date as proof that both wings have published every court.
+Whole targets require every requested hour to be open. Missing or partially open targets remain unknown. Explicit closed Mango cells before a verified future release are not mislabeled fully booked. A facility-wide available flag is never treated as wing-wide slot publication.
+
+The site's existing-payment 409 was observed when trying Buko in the first customer's pending checkout context. The independent configured Worker B normal flow succeeded. Never treat this message as ordinary slot contention or automatically retry it. Unknown outcomes retain reconciliation requirements. Saved profiles, configurations, journals, release budgets and offsets are preserved.

@@ -8,6 +8,7 @@ import {FullPracticeSchema,type FullPracticeInput} from '../src/full-practice.js
 import type {LockReview} from './locks.js';
 import type { UiEvent } from '../src/ui-events.js';
 import type { Runner, RunningCommand } from './processes.js';
+import { assertWingNormalRequest } from '../src/wing-normal-booking.js';
 import type { ApiRunPreferences, Command, Dashboard, QrHandoffSummary } from './types.js';
 import type { ActivityJournal } from './activity-journal.js';
 import { randomUUID } from 'node:crypto';
@@ -166,7 +167,7 @@ export interface Dependencies {
   activityJournal?:Pick<ActivityJournal,'begin'|'record'|'ready'|'handoff'|'end'|'history'>;
   confirmStopPrepare?:()=>Promise<boolean>;
   confirmBooking?:(plan:BookingPlan,maximum?:number)=>Promise<boolean>;
-  confirmApiTest?:(input:{method:'api-first'|'proofless';strategy:'standard'|'extended';date:string;start:string;duration:number;courtCount:CourtCount;maximum?:number;priority:number[]})=>Promise<boolean>;
+  confirmApiTest?:(input:{wing?:'MANGO'|'BUKO';method:'api-first'|'proofless';strategy:'standard'|'extended';date:string;start:string;duration:number;courtCount:CourtCount;maximum?:number;priority:number[]})=>Promise<boolean>;
   runner: Runner; lock(): Promise<boolean>; cdp(): Promise<boolean>; clock: typeof readClock; syncClock?():Promise<void>;
   /** Creates or verifies the Wave 1 preregistration manifest in the app's .local (main process), before the runner starts. */
   ensureArbitrationManifest?(input:{targetDate:string;releaseMs:number;clockOffsetMs:number}):EnsureManifestResult;
@@ -708,7 +709,7 @@ export class Controller {
       const timing=`${event.elapsedMs} ms total · +${event.sincePreviousMs??0} ms since prior stage`;
       this.state.detail+=` · ${timing}`;
       if(['PENDING_HOLD','OFFICIAL_QRPH_HANDOFF'].includes(event.stage)&&event.date&&event.court&&event.startTime&&event.durationHours&&event.price!==undefined){
-        this.rememberQrHandoff({checkout:event.workerId,status:event.stage==='OFFICIAL_QRPH_HANDOFF'?'qr-ready':'hold-created',courts:[event.court,...(event.courtB?[event.courtB]:[])],date:event.date,startTime:event.startTime,
+        this.rememberQrHandoff({...(event.wing?{wing:event.wing}:{}),checkout:event.workerId,status:event.stage==='OFFICIAL_QRPH_HANDOFF'?'qr-ready':'hold-created',courts:[event.court,...(event.courtB?[event.courtB]:[])],date:event.date,startTime:event.startTime,
           endTime:`${String(Number(event.startTime.slice(0,2))+event.durationHours).padStart(2,'0')}:00`,amount:event.price,verifiedAt:event.at??new Date().toISOString(),
           ...(event.holdExpiresAt?{holdExpiresAt:event.holdExpiresAt}:{}),...(event.bookingId?{bookingId:event.bookingId}:{}),...(event.bookingNo?{bookingNo:event.bookingNo}:{})});
       }
@@ -861,6 +862,7 @@ export class Controller {
     this.resetting=true;this.clearPreparation();this.preparationResult=undefined;this.pendingPreparation=undefined;this.state.identityIssues=[];
     try{
       const input=PreparationSchema.parse(value);
+      if(input.workflow==='test')assertWingNormalRequest({...input.request,method:input.method,mode:'prepare'});
       this.state.qrHandoffs=[];this.state.handoff=null;
       if(this.state.operation!=='idle'){
         const active=this.active;
@@ -882,7 +884,7 @@ export class Controller {
           await this.reconcileLockForApiPrepare(gen,input);
           const fingerprint=expectedPreparationFingerprint(input);
           this.state.workflow='test';this.state.headline='PREPARING API BROWSER';this.publish();
-          const preferences:ApiRunPreferences={strategy:input.request.strategy,date:input.request.date,start:input.request.start,duration:input.request.duration,courtCount:input.request.courtCount,
+          const preferences:ApiRunPreferences={...(input.request.wing?{wing:input.request.wing}:{}),strategy:input.request.strategy,date:input.request.date,start:input.request.start,duration:input.request.duration,courtCount:input.request.courtCount,
             maximum:input.maximum,priority:input.request.priority,fallbackStarts:input.request.fallbackStarts,...(input.request.exact?{exact:input.request.exact}:{})};
           await this.run({kind:'apiRun',mode:'prepare',date:input.request.date,fingerprint,checkoutMethod:input.method==='proofless'?'proofless':'proof-based',preferences},gen);
           if(input.method==='proofless')await this.run({kind:'apiRun',mode:'dry',date:input.request.date,fingerprint,checkoutMethod:'proofless',preferences},gen);
@@ -938,12 +940,12 @@ export class Controller {
       const fingerprint=expectedPreparationFingerprint(preparation);
       if(!this.state.apiFirstReady||this.apiTestFingerprint!==fingerprint)throw Error('RESET_REQUIRED');
       if(!authorized)throw Error('TERMS_AUTHORIZATION_REQUIRED');
-      if(!await this.deps.confirmApiTest?.({method:input.method==='proofless'?'proofless':'api-first',strategy:input.request.strategy,date:input.request.date,start:input.request.start,duration:input.request.duration,courtCount:input.request.courtCount,
+      if(!await this.deps.confirmApiTest?.({method:input.method==='proofless'?'proofless':'api-first',...(input.request.wing?{wing:input.request.wing}:{}),strategy:input.request.strategy,date:input.request.date,start:input.request.start,duration:input.request.duration,courtCount:input.request.courtCount,
         maximum:input.maximum,priority:input.request.priority}))return;
       await this.noLock();this.state.handoff=null;this.state.bookingResult=undefined;
       this.state.headline='Checking API availability';this.state.detail='The dedicated API browser remains visible while availability and proofs are checked.';
       await this.run({kind:'apiRun',mode:'live-now',date:input.request.date,fingerprint,checkoutMethod:input.method==='proofless'?'proofless':'proof-based',
-        preferences:{strategy:input.request.strategy,date:input.request.date,start:input.request.start,duration:input.request.duration,courtCount:input.request.courtCount,
+        preferences:{...(input.request.wing?{wing:input.request.wing}:{}),strategy:input.request.strategy,date:input.request.date,start:input.request.start,duration:input.request.duration,courtCount:input.request.courtCount,
           maximum:input.maximum,priority:input.request.priority,fallbackStarts:input.request.fallbackStarts,...(input.request.exact?{exact:input.request.exact}:{})}},gen);
       return;
     }

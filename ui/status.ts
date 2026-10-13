@@ -60,7 +60,8 @@ export async function readLatestQrHandoffs(root:string,expiresAt:string):Promise
       const worker=entry.workerId;
       if(!['A','B','C','D','E','F','G','H'].includes(String(worker))||typeof entry.date!=='string'||typeof entry.startTime!=='string'||typeof entry.court!=='number'||typeof entry.durationHours!=='number'||typeof entry.price!=='number'||typeof entry.at!=='string')continue;
       const courts=[entry.court,...(typeof entry.courtB==='number'?[entry.courtB]:[])];
-      results.set(String(worker),{checkout:worker as import('../src/workers.js').WorkerId,courts,date:entry.date,startTime:entry.startTime,endTime:`${String(Number(entry.startTime.slice(0,2))+entry.durationHours).padStart(2,'0')}:00`,amount:entry.price,verifiedAt:entry.at,...(typeof entry.holdExpiresAt==='string'?{holdExpiresAt:entry.holdExpiresAt}:{})});
+      if(entry.wing!==undefined&&entry.wing!=='MANGO'&&entry.wing!=='BUKO')continue;
+      results.set(String(worker),{...(entry.wing?{wing:entry.wing as 'MANGO'|'BUKO'}:{}),checkout:worker as import('../src/workers.js').WorkerId,courts,date:entry.date,startTime:entry.startTime,endTime:`${String(Number(entry.startTime.slice(0,2))+entry.durationHours).padStart(2,'0')}:00`,amount:entry.price,verifiedAt:entry.at,...(typeof entry.holdExpiresAt==='string'?{holdExpiresAt:entry.holdExpiresAt}:{})});
     }
     return [...results.values()].sort((a,b)=>a.checkout!.localeCompare(b.checkout!));
   }catch{return [];}

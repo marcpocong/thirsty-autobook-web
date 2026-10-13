@@ -14,7 +14,7 @@ export function standardCheckoutChunks(plan: BookingPlan): BookingPlan[] {
     return groups.map(courts=>{
       const totalPrice=courts.reduce((sum,court)=>sum+court.price,0);
       const checkoutChunk={...chunk,courts,totalPrice};
-      return { mode:'standard' as const,targetDate:plan.targetDate,startTime:chunk.startTime,endTime:chunk.endTime,
+      return { ...(plan.wing ? {wing:plan.wing} : {}), mode:'standard' as const,targetDate:plan.targetDate,startTime:chunk.startTime,endTime:chunk.endTime,
         durationHours:chunk.durationHours,courts,chunks:[checkoutChunk],totalPrice,currency:plan.currency };
     });
   });

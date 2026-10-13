@@ -101,7 +101,7 @@ const workerLabel=(worker:WorkerId)=>worker==='A'?'Primary player':`Player ${'AB
 const ALL_WORKERS:WorkerId[]=['A','B','C','D','E','F','G','H'];
 type PrecisionRow={court:number;start:string;durationHours:number;releaseOffsetMs?:SmartReleaseOffset;fanOutReleaseOffsetsMs?:SmartReleaseOffset[]};
 type PrecisionMode='fixed'|'smart';
-interface FormDraft {releaseStrategy:'general'|'precision';precisionCount:number;precisionTargets:PrecisionRow[];precisionFanOut?:boolean;precisionMode?:PrecisionMode;smart?:SmartDraft;releaseOffsetMs?:number;method:'browser'|'hybrid'|'api-first'|'proofless';strategy:'standard'|'extended';date:string;courtCount:CourtCount;start:string;duration:number;attempts:number;courtOrder:number[];fallbackTimes:string[];exactA:string;exactB:string}
+interface FormDraft {testWing?:'MANGO'|'BUKO';bukoCourt?:number;releaseStrategy:'general'|'precision';precisionCount:number;precisionTargets:PrecisionRow[];precisionFanOut?:boolean;precisionMode?:PrecisionMode;smart?:SmartDraft;releaseOffsetMs?:number;method:'browser'|'hybrid'|'api-first'|'proofless';strategy:'standard'|'extended';date:string;courtCount:CourtCount;start:string;duration:number;attempts:number;courtOrder:number[];fallbackTimes:string[];exactA:string;exactB:string}
 let testDraft:FormDraft|undefined,releaseDraft:FormDraft|undefined,testDirty=false,releaseDirty=false;
 let releaseAdjustment:FallbackReconciliation|undefined;
 // The layout is static in index.html; only these few controls move with the active view.
@@ -121,7 +121,7 @@ function showView(view:View){
   currentView=view;
   for(const id of VIEWS){byId(`view-${id}`).hidden=id!==view;for(const tab of document.querySelectorAll(`[data-view="${id}"]`))tab.setAttribute('aria-current',id===view||(id==='tools'&&view==='tests')?'page':'false');}
   const nextWorkflow=view==='tests'?'test':OBSERVER_VIEWS.includes(view)?workflow:'release';
-  if(nextWorkflow!==workflow){storeDraft();workflow=nextWorkflow;if(workflow==='test'&&latest?.booking){const s=latest.booking.setup;applyDraft({releaseStrategy:'general',precisionCount:1,precisionTargets:[],method:s.BOOKING_METHOD,strategy:s.BOOKING_TYPE,date:testDraft?.date??input('test-date').value,courtCount:s.COURT_COUNT,start:s.START_TIME,duration:s.DURATION_HOURS,attempts:s.MAX_SELECTION_ATTEMPTS,courtOrder:[...s.PREFERRED_COURTS],fallbackTimes:[...s.FALLBACK_TIMES],exactA:'',exactB:''});testDirty=false;}if(workflow==='release'&&releaseDraft)applyDraft(releaseDraft);dirty=workflow==='test'?testDirty:releaseDirty;input('terms').checked=false;void window.thirsty.setWorkflow(workflow).then(()=>window.thirsty.getStatus()).then(render);}
+  if(nextWorkflow!==workflow){storeDraft();workflow=nextWorkflow;if(workflow==='test'&&latest?.booking){const s=latest.booking.setup;applyDraft({testWing:testDraft?.testWing??'MANGO',bukoCourt:testDraft?.bukoCourt??1,releaseStrategy:'general',precisionCount:1,precisionTargets:[],method:s.BOOKING_METHOD,strategy:s.BOOKING_TYPE,date:testDraft?.date??input('test-date').value,courtCount:s.COURT_COUNT,start:s.START_TIME,duration:s.DURATION_HOURS,attempts:s.MAX_SELECTION_ATTEMPTS,courtOrder:[...s.PREFERRED_COURTS],fallbackTimes:[...s.FALLBACK_TIMES],exactA:'',exactB:''});testDirty=false;}if(workflow==='release'&&releaseDraft)applyDraft(releaseDraft);dirty=workflow==='test'?testDirty:releaseDirty;input('terms').checked=false;void window.thirsty.setWorkflow(workflow).then(()=>window.thirsty.getStatus()).then(render);}
   const terms=byId('terms').parentElement!;
   (view==='tests'?testAction:releaseAction).append(terms);
   (view==='tests'?testResults:primary).append(byId('observed-price'),byId('selection-result'),byId('handoff-result'));
@@ -478,8 +478,8 @@ function syncStrategy(){
   byId('release-offset').hidden=!releaseOffsetApplies();
   renderReleaseLab();
 }
-function formDraft():FormDraft{return {releaseStrategy:input('precision-strategy').value==='precision'?'precision':'general',precisionCount:Number(input('precision-count').value)||1,precisionTargets:precisionRows(),precisionFanOut:precisionFanOut(),precisionMode,smart:cloneSmart(smartDraft),releaseOffsetMs:releaseOffsetValue(),method:input('booking-method').value as 'browser'|'hybrid'|'api-first'|'proofless',strategy:input('booking-type').value as 'standard'|'extended',date:input('test-date').value,courtCount:Number(input('court-count').value) as CourtCount,start:input('start-time').value,duration:Number(input('duration').value),attempts:Number(input('attempts').value),courtOrder:[...courtOrder],fallbackTimes:[...fallbackTimes],exactA:input('exact-a').value,exactB:input('exact-b').value};}
-function applyDraft(d:FormDraft){input('precision-strategy').value=d.releaseStrategy;input('precision-count').value=String(Math.min(PRECISION_WORKERS.length,Math.max(1,d.precisionCount)));
+function formDraft():FormDraft{return {testWing:input('test-wing').value as 'MANGO'|'BUKO',bukoCourt:Number(input('test-buko-court').value),releaseStrategy:input('precision-strategy').value==='precision'?'precision':'general',precisionCount:Number(input('precision-count').value)||1,precisionTargets:precisionRows(),precisionFanOut:precisionFanOut(),precisionMode,smart:cloneSmart(smartDraft),releaseOffsetMs:releaseOffsetValue(),method:input('booking-method').value as 'browser'|'hybrid'|'api-first'|'proofless',strategy:input('booking-type').value as 'standard'|'extended',date:input('test-date').value,courtCount:Number(input('court-count').value) as CourtCount,start:input('start-time').value,duration:Number(input('duration').value),attempts:Number(input('attempts').value),courtOrder:[...courtOrder],fallbackTimes:[...fallbackTimes],exactA:input('exact-a').value,exactB:input('exact-b').value};}
+function applyDraft(d:FormDraft){if(workflow==='test'){input('test-wing').value=d.testWing??'MANGO';input('test-buko-court').value=String(d.bukoCourt??1);}input('precision-strategy').value=d.releaseStrategy;input('precision-count').value=String(Math.min(PRECISION_WORKERS.length,Math.max(1,d.precisionCount)));
   input('precision-fan-out').checked=d.precisionFanOut??false;
   for(let i=0;i<PRECISION_WORKERS.length;i++){input(`precision-width-${i}`).value=String(Math.min(4,PRECISION_MAX_FAN_OUT));for(let child=0;child<PRECISION_MAX_FAN_OUT;child++){const id=child?`precision-offset-${i}-${child}`:`precision-offset-${i}`;input(id).value='0';fixedCommittedOffsets.set(id,'0');}}
   d.precisionTargets.slice(0,PRECISION_WORKERS.length).forEach((t,i)=>{input(`precision-court-${i}`).value=String(t.court);input(`precision-start-${i}`).value=t.start;input(`precision-duration-${i}`).value=String(t.durationHours);
@@ -572,7 +572,7 @@ function buildHandoffCard(hold:import('../types.js').QrHandoffSummary,players:Re
   const heading=document.createElement('strong');heading.textContent=worker?`Browser ${worker} · ${player?.fullName||`Player ${worker}`}`:'QR checkout';
   const phase=document.createElement('div');phase.className=`qr-summary-phase ${(hold.status??'qr-ready')==='qr-ready'?'ready':'pending'}`;phase.textContent=(hold.status??'qr-ready')==='qr-ready'?'QR READY · VERIFY DETAILS BEFORE PAYING':'PAYMENT HOLD ACTIVE · OPENING QR PAGE';
   const identity=document.createElement('div');identity.className='qr-summary-email';identity.textContent=player?.email||'Player email unavailable';
-  const booking=document.createElement('div');booking.className='qr-summary-booking';booking.textContent=`Court${hold.courts.length===1?'':'s'} ${hold.courts.join(' + ')}\nDate: ${dateLabel(hold.date)} (${hold.date})\nTime: ${hold.startTime}–${hold.endTime}\nSlots: ${hourlySlots(hold.startTime,hold.endTime).join(' · ')}`;
+  const booking=document.createElement('div');booking.className='qr-summary-booking';booking.textContent=`${hold.wing==='BUKO'?'Buko Wing':'Mango Wing'} · Court${hold.courts.length===1?'':'s'} ${hold.courts.join(' + ')}\nDate: ${dateLabel(hold.date)} (${hold.date})\nTime: ${hold.startTime}–${hold.endTime}\nSlots: ${hourlySlots(hold.startTime,hold.endTime).join(' · ')}`;
   const amount=document.createElement('div');amount.className='qr-summary-amount';amount.textContent=`Amount: ₱${hold.amount.toLocaleString()} · ${holdExpired(hold)?'Recorded hold timer elapsed; check Chrome':'Payment pending'}`;
   card.append(heading,phase,identity,booking,amount);
   if(hold.bookingNo){const reference=document.createElement('div');reference.className='small';reference.textContent=`Booking reference: ${hold.bookingNo}`;card.append(reference);}
@@ -984,9 +984,9 @@ function render(state: Dashboard) {
   const testDate=input('test-date').value;
   input('test-date').disabled=busy;
   const testPrepared=!!state.ready&&!testDirty&&state.workflow==='test'&&!!b&&(
-    ['api-first','proofless'].includes(b.setup.BOOKING_METHOD)&&!!state.apiFirstReady ||
+    (input('test-wing').value==='BUKO'||['api-first','proofless'].includes(b.setup.BOOKING_METHOD))&&!!state.apiFirstReady ||
     !!state.preparedContext&&state.preparedContext.workflow==='test'&&state.preparedContext.date===testDate);
-  const testBrowsers=b?requiredWorkers(b.setup.BOOKING_TYPE,b.setup.COURT_COUNT):['A'] as WorkerId[];
+  const testBrowsers=input('test-wing').value==='BUKO'?['A'] as WorkerId[]:b?requiredWorkers(b.setup.BOOKING_TYPE,b.setup.COURT_COUNT):['A'] as WorkerId[];
   const testGates:[string,boolean][]=[
     ['Test date selected',!!testDate],['Saved booking plan',!!b],...testBrowsers.map(id=>[`${workerLabel(id)} configured`,!!playerReadyByWorker[id]] as [string,boolean]),
     ...testBrowsers.map(id=>[`Browser ${id} prepared`,testPrepared&&!!state.browserHealth?.[id]] as [string,boolean]),
@@ -994,6 +994,7 @@ function render(state: Dashboard) {
     ['Terms authorized for this test',!!state.termsAuthorized]
   ];
   byId('test-readiness').replaceChildren(...gateRows(testGates));
+   byId('test-buko-court-label').hidden=input('test-wing').value!=='BUKO';
    byId('test-plan-summary').textContent=b?`${b.setup.BOOKING_METHOD.toUpperCase()} · ${b.setup.BOOKING_TYPE.toUpperCase()} · ${b.setup.COURT_COUNT} court${b.setup.COURT_COUNT===1?'':'s'}\n${friendly(b.setup.START_TIME)}–${endFriendly(b.setup.START_TIME,b.setup.DURATION_HOURS)} · ${b.setup.DURATION_HOURS} hours\nCourt priority: ${b.setup.PREFERRED_COURTS.join(' → ')}\nFallback starts: ${b.setup.FALLBACK_TIMES.map(friendly).join(', ')||'None'}\nTest date: ${testDate?dateLabel(testDate):'Choose a date'}${input('exact-a').value.trim()||input('exact-b').value.trim()?`\nAdvanced exact court override: ${[input('exact-a').value,input('exact-b').value].filter(Boolean).join(' / ')}`:''}`:'No saved booking plan available.';
   const liveTestHandoffs=workflow==='test'&&state.workflow==='test'?activeHandoffs(state):[];
   const readyTestHandoffs=liveTestHandoffs.filter(hold=>(hold.status??'qr-ready')==='qr-ready').length;
@@ -1008,7 +1009,8 @@ function render(state: Dashboard) {
   const testState=busy?'running':blockedHold?'hold':testPrepared?'review':'prepare';
   const testButton=input('test-main-action');
   testButton.textContent=testState==='prepare'&&unresolvedCheckout?'Reset & Prepare':testState==='prepare'&&state.canPrepareOverHold?'Prepare New Run':{running:'Running',hold:'Review Hold',review:'Review & Test',prepare:'Prepare'}[testState];
-   testButton.disabled=testState==='running'||testState==='prepare'&&(!b||!testDate||blockedHold);
+   if(input('test-wing').value==='BUKO')byId('test-plan-summary').textContent=`Buko Wing · Court ${input('test-buko-court').value} · Normal booking\n${testDate?dateLabel(testDate):'Choose a date'} · ${b?friendly(b.setup.START_TIME):''} · ${b?.setup.DURATION_HOURS??'?'} hour(s)\nAvailability is checked in your dedicated Chrome before submission.\nExact court and time; no fallback substitution. Stops at QR.\nScheduled releases and Shotgun are disabled for Buko.${b&&b.setup.DURATION_HOURS>3?'\nChoose a duration of 1–3 hours in Strategy.':''}`;
+   testButton.disabled=testState==='running'||testState==='prepare'&&(!b||!testDate||blockedHold||input('test-wing').value==='BUKO'&&b.setup.DURATION_HOURS>3);
    byId('test-main-action-hint').textContent=unresolvedCheckout?'Inspects both API browsers and clears the retained safety lock only after clean-state verification.':state.canPrepareOverHold?'The verified hold stays recorded. Preparing opens a fresh schedule in the same bot.':blockedHold?'Review the retained lock before another test.':testState==='review'?'This test can create real temporary payment holds. Review Terms and confirm the test before continuing.':testState==='running'?'The current test is in progress.':'Prepare the required browser or browsers for the selected date.';
   testResults.hidden=!!byId('observed-price').hidden&&!!byId('selection-result').hidden&&!!byId('handoff-result').hidden;
    syncViableControls();tick();
@@ -1066,7 +1068,7 @@ for(const id of ['full-date','full-court','full-start','full-duration'])byId(id)
 byId('mode-full').addEventListener('change',()=>{void window.thirsty.setMode('full').catch(()=>{});});
 byId('mode-selection').addEventListener('change',()=>{void window.thirsty.setMode('selection').catch(()=>{});});
 byId('terms').addEventListener('change',()=>{void window.thirsty.authorizeTerms(input('terms').checked).catch(()=>{input('terms').checked=false;});});
- for(const id of ['booking-method','test-date','court-count','start-time','duration','attempts','exact-a','exact-b'])byId(id).addEventListener('change',changed);
+ for(const id of ['test-wing','test-buko-court','booking-method','test-date','court-count','start-time','duration','attempts','exact-a','exact-b'])byId(id).addEventListener('change',changed);
 byId('booking-method').addEventListener('change',()=>{byId('release-offset').hidden=!releaseOffsetApplies();});
 byId('release-offset-ms').addEventListener('change',changed);
 for(const id of ['precision-strategy','precision-count',...PRECISION_WORKERS.map((_,i)=>i).flatMap(i=>[`precision-court-${i}`,`precision-start-${i}`,`precision-duration-${i}`,`precision-width-${i}`])])
@@ -1101,6 +1103,11 @@ for(const [id,mode] of [['workflow-test','test'],['workflow-release','release']]
 function testRequest(){
   const setup=latest?.booking?.setup;
   if(!setup)throw Error('BOOKING_PLAN_MISSING');
+  if(input('test-wing').value==='BUKO'){
+    if(setup.DURATION_HOURS>3)throw Error('BUKO_EXACT_NORMAL_PLAN_REQUIRED');
+    const court=Number(input('test-buko-court').value);
+    return {method:'api-first' as const,request:{wing:'BUKO' as const,strategy:'standard' as const,date:input('test-date').value,start:setup.START_TIME,duration:setup.DURATION_HOURS,courtCount:1 as const,priority:[court],fallbackStarts:[],exact:[[court]]}};
+  }
   const exactA=input('exact-a').value.trim(),exactB=input('exact-b').value.trim();
   const exact=exactA||exactB?{exact:(setup.BOOKING_TYPE==='extended'?[exactA,exactB]:[exactA]).map(value=>value.split(',').map(court=>Number(court.trim())))}:{};
   return {method:setup.BOOKING_METHOD,request:{strategy:setup.BOOKING_TYPE,date:input('test-date').value,start:setup.START_TIME,duration:setup.DURATION_HOURS,courtCount:setup.COURT_COUNT,priority:[...setup.PREFERRED_COURTS],fallbackStarts:[...setup.FALLBACK_TIMES],...exact}};

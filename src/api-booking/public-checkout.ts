@@ -1,6 +1,7 @@
 import type { BookingPlan, PlannedCourt } from './types.js';
 import type { FreshSlotProof } from './slot-proofs.js';
 import { ondaWireBoundary } from '../time-range.js';
+import { courtBySpace, FACILITY_ID } from '../court-registry.js';
 
 export interface ResolvedGuestCustomer {
   clientId: string;
@@ -22,8 +23,8 @@ export interface PublicCheckoutItem {
   chargedAmount: number;
   guestCount: 1;
   promotionId: null;
-  activityKey: null;
-  activityLabel: null;
+  activityKey: null | 'pickleball';
+  activityLabel: null | 'Pickleball';
   sessionRef: `session_${number}`;
   availabilityProof: string;
 }
@@ -77,6 +78,8 @@ function validCustomer(customer: ResolvedGuestCustomer): void {
 }
 
 function standardCourts(plan: BookingPlan): PlannedCourt[] {
+  if (plan.wing !== undefined && !['MANGO','BUKO'].includes(plan.wing)) fail('CHECKOUT_WING_INVALID');
+  if (plan.wing === 'BUKO' && plan.courts.length !== 1) fail('BUKO_EXACT_NORMAL_PLAN_REQUIRED');
   const chunk = plan.chunks[0];
   if (plan.mode !== 'standard' || plan.durationHours < 1 || plan.durationHours > 3 ||
     ![1, 2].includes(plan.courts.length) || plan.chunks.length !== 1 ||
@@ -84,6 +87,8 @@ function standardCourts(plan: BookingPlan): PlannedCourt[] {
     fail('CHECKOUT_PLAN_UNSUPPORTED');
   const validChunk = chunk!;
   const courts = plan.courts;
+  if (courts.some(court => { const registered = courtBySpace(court.spaceId);
+    return registered?.wing !== (plan.wing ?? 'MANGO') || registered.number !== court.court; })) fail('CHECKOUT_WING_IDENTITY_MISMATCH');
   if (new Set(courts.map(court => court.spaceId)).size !== courts.length ||
     courts.some((court, courtIndex) => validChunk.courts[courtIndex]?.spaceId !== court.spaceId ||
       court.date !== plan.targetDate || court.startTime !== plan.startTime || court.endTime !== plan.endTime ||
@@ -104,7 +109,7 @@ export function buildStandardPublicCheckoutRequest(
   facilityId: string,
   proofs: readonly FreshSlotProof[],
 ): PublicCheckoutRequest {
-  if (!nonempty(facilityId)) fail('CHECKOUT_FACILITY_INVALID');
+  if (!nonempty(facilityId) || (plan.wing === 'BUKO' && facilityId !== FACILITY_ID)) fail('CHECKOUT_FACILITY_INVALID');
   validCustomer(customer);
   const courts = [...standardCourts(plan)].sort((a, b) =>
     a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime) || a.spaceId.localeCompare(b.spaceId));
@@ -118,7 +123,8 @@ export function buildStandardPublicCheckoutRequest(
     const validProof = proof!;
     return { spaceId: slot.spaceId, facilityId, date: slot.date, startTime: slot.startTime, endTime: ondaCheckoutBoundary(slot.endTime),
       duration: 60, rate: slot.price, chargedAmount: slot.price, guestCount: 1, promotionId: null,
-      activityKey: null, activityLabel: null, sessionRef: `session_${courtIndex + 1}`, availabilityProof: validProof.availabilityProof };
+      activityKey: plan.wing === 'BUKO' ? 'pickleball' : null, activityLabel: plan.wing === 'BUKO' ? 'Pickleball' : null,
+      sessionRef: `session_${courtIndex + 1}`, availabilityProof: validProof.availabilityProof };
   }));
   return { bookingType: 'online', clientId: customer.clientId, customerId: customer.customerId,
     customerFirstName: null, customerLastName: null,

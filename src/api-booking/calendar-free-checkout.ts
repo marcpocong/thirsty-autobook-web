@@ -32,7 +32,7 @@ export async function submitCalendarFreeTwoHourCheckout(input: {
   const hours = selectedStandardHours(plan);
   const first = hours[0]!, last = hours.at(-1)!;
   const age = Date.now() - Date.parse(availability.capturedAt);
-  if (availability.fixtureKind !== 'live' || !Number.isFinite(age) || age < 0 || age > 15_000 ||
+  if ((availability.wing ?? 'MANGO') !== (plan.wing ?? 'MANGO') || availability.fixtureKind !== 'live' || !Number.isFinite(age) || age < 0 || age > 15_000 ||
     availability.incompleteDates.includes(plan.targetDate) || availability.returnedDates[plan.targetDate] !== true ||
     !plan.courts.every(court => court.slots.every(slot => availability.slots.some(current =>
       current.spaceId === slot.spaceId && current.date === slot.date && current.startTime === slot.startTime &&

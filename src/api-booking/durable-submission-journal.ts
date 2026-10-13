@@ -1,4 +1,5 @@
 import {SHOTGUN_MAX_TRIGGER_LATENESS_MS} from '../shotgun.js';
+import { courtBySpace, type Wing } from '../court-registry.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { link, mkdir, open, readFile, rename, rmdir, unlink } from 'node:fs/promises';
 import { resolve, join, dirname } from 'node:path';
@@ -11,6 +12,8 @@ import type { CheckoutDiagnostic } from './checkout-diagnostics.js';
  */
 export type SubmissionState = 'dispatching' | 'armed' | 'unknown' | 'verified' | 'rejected';
 export interface SanitizedSubmissionAttempt {
+  wing?: Wing;
+  spaceIds?: string[];
   attemptId: string;
   planFingerprint: string;
   targetDate: string;
@@ -70,6 +73,10 @@ export function delegatedSubmissionPermit(key: string): SubmissionPermit {
 const ONE_SHOT_FILE = 'supervised-one-shot.json';
 
 function validAttempt(attempt: SanitizedSubmissionAttempt, stage: SanitizedSubmissionAttempt['stage']): boolean {
+  if (attempt.wing !== undefined && !['MANGO','BUKO'].includes(attempt.wing)) return false;
+  if (attempt.wing === 'BUKO' && (stage !== 'dispatching' || attempt.courtIds?.length !== 1 ||
+      attempt.spaceIds?.length !== 1 || courtBySpace(attempt.spaceIds[0]!)?.wing !== 'BUKO' ||
+      courtBySpace(attempt.spaceIds[0]!)?.number !== attempt.courtIds[0])) return false;
   return /^[a-f0-9]{64}$/.test(attempt.attemptId) && /^[a-f0-9]{64}$/.test(attempt.planFingerprint) &&
     /^\d{4}-\d{2}-\d{2}$|^unknown$/.test(attempt.targetDate) && Array.isArray(attempt.courtIds) &&
     !attempt.courtIds.some(court => !Number.isInteger(court) || court < 1 || court > 7) &&

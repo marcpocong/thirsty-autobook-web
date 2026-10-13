@@ -1,7 +1,7 @@
 import { parseAvailability } from './availability-parser.js';
 import type { AvailabilityProvider } from './availability-provider.js';
 import type { AvailabilityEnvelope, AvailabilityQuery } from './types.js';
-import { FACILITY_ID } from '../court-registry.js';
+import { FACILITY_ID, type Wing } from '../court-registry.js';
 
 // Confirmed historical facility ID; the live provider does not import Chrome bot code.
 export const THIRSTY_PICKLE_FACILITY_ID = FACILITY_ID;
@@ -18,6 +18,8 @@ export class LiveAvailabilityError extends Error {
 }
 
 export interface LiveAvailabilityOptions {
+  /** Scope validation only; Buko booking authorization is a separate boundary. */
+  wing?: Wing;
   fetcher?: typeof fetch;
   clock?: () => Date;
   timeoutMs?: number;
@@ -33,6 +35,7 @@ export class OndaLiveAvailabilityProvider implements AvailabilityProvider {
   private readonly timeoutMs: number;
   private readonly maximumAgeMs: number;
   private readonly allowIncompleteRange: boolean;
+  private readonly wing: Wing;
 
   constructor(options: LiveAvailabilityOptions = {}) {
     this.fetcher = options.fetcher ?? fetch;
@@ -40,6 +43,8 @@ export class OndaLiveAvailabilityProvider implements AvailabilityProvider {
     this.timeoutMs = options.timeoutMs ?? 10_000;
     this.maximumAgeMs = options.maximumAgeMs ?? 15_000;
     this.allowIncompleteRange = options.allowIncompleteRange ?? false;
+    this.wing = options.wing ?? 'MANGO';
+    if (!['MANGO', 'BUKO'].includes(this.wing)) throw new LiveAvailabilityError('AVAILABILITY_WING_INVALID');
     if (!Number.isFinite(this.timeoutMs) || this.timeoutMs <= 0 || !Number.isFinite(this.maximumAgeMs) || this.maximumAgeMs < 0)
       throw new LiveAvailabilityError('AVAILABILITY_OPTIONS_INVALID');
   }
@@ -68,7 +73,7 @@ export class OndaLiveAvailabilityProvider implements AvailabilityProvider {
     const capturedAt = this.clock().toISOString();
     const envelope: AvailabilityEnvelope = { raw, capturedAt, fixtureKind: 'live', label: 'ONDA LIVE READ-ONLY AVAILABILITY' };
     // Validate before handing data to the coordinator. The coordinator rechecks freshness.
-    parseAvailability(raw, { ...query, capturedAt, fixtureKind: 'live', label: envelope.label,
+    parseAvailability(raw, { ...query, wing: this.wing, capturedAt, fixtureKind: 'live', label: envelope.label,
       now: this.clock(), maximumAgeMs: this.maximumAgeMs, requireCompleteRange:!this.allowIncompleteRange });
     return envelope;
   }

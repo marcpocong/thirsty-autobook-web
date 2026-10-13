@@ -23,13 +23,13 @@ import type {ReplaySummary} from './controller.js';
 import type {ReleaseLabDigest} from '../src/release-lab-analysis.js';
 export type DualPracticeCommand = { kind:'dualDry'; date:string } | { kind:'dualPractice'|'dualFullPractice'; input:DualPracticeInput };
 export interface ConfirmRequest { id:string; tone:'question'|'warning'; title:string; message:string; detail:string; confirmLabel:string; cancelLabel?:string }
-export interface ApiRunPreferences {strategy:'standard'|'extended';date:string;start:string;duration:number;courtCount:CourtCount;maximum?:number;priority:number[];fallbackStarts:string[];exact?:number[][]}
+export interface ApiRunPreferences {wing?:'MANGO'|'BUKO';strategy:'standard'|'extended';date:string;start:string;duration:number;courtCount:CourtCount;maximum?:number;priority:number[];fallbackStarts:string[];exact?:number[][]}
 export type Command = {kind:'resetPrepare';input:PreparationInput} | {kind:'testBooking';input:TestBookingInput} | {kind:'apiRun';mode:'prepare'|'dry'|'audit'|'live'|'live-now';date:string;fingerprint:string;checkoutMethod?:'proof-based'|'proofless';clockOffsetMs?:number;releaseMs?:number;preferences?:ApiRunPreferences} | {kind:'blockAudit';date:string} | {kind:'apiPreview';date:string} | DualPracticeCommand | 'chromeDual' | 'dualReadiness' | 'dualPrepare' | {kind:'fullPractice';input:FullPracticeInput} | 'chrome' | 'inspect' | 'observe' | { kind:'selection' | 'dry'; planHash:string } | {kind:'full';context:ScheduledReleaseContext;authorizeTerms:true} | { kind:'practice'; input:PracticeInput };
 export type Inspection = Extract<UiEvent, { type: 'inspection' }>;
 export interface Activity { at: string; text: string; level: 'info' | 'error'; elapsedMs?:number; deltaMs?:number }
 export interface RunTiming { runId:string; label:string; startedAt:string; elapsedMs:number; endedAt?:string; logPath?:string; readyAt?:string; readyElapsedMs?:number }
 export interface RunHistoryEntry { runId:string; label:string; startedAt:string; endedAt:string; outcome:string; totalElapsedMs:number; readyAt?:string; readyElapsedMs?:number; activities:Activity[]; qrHandoffs?:QrHandoffSummary[] }
-export interface QrHandoffSummary { checkout?:WorkerId; status?:'hold-created'|'qr-ready'; courts:number[]; date:string; startTime:string; endTime:string; amount:number; verifiedAt:string; holdExpiresAt?:string; bookingId?:string; bookingNo?:string }
+export interface QrHandoffSummary { wing?:'MANGO'|'BUKO'; checkout?:WorkerId; status?:'hold-created'|'qr-ready'; courts:number[]; date:string; startTime:string; endTime:string; amount:number; verifiedAt:string; holdExpiresAt?:string; bookingId?:string; bookingNo?:string }
 export interface PrecisionTargetView { workerId:WorkerId; court:number; startTime:string; endTime:string; durationHours:number; assumedPrice?:number;
   evidence?:string; eligible?:boolean; checkpoint?:string; state?:string; code?:string; duplicateOf?:WorkerId; security?:'ready'|'failed'; bookingNo?:string; holdExpiresAt?:string }
 /** Live Precision race view built from runner stage events; purely informational. */

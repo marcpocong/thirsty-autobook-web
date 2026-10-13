@@ -27,7 +27,7 @@ it('shows the five operator views with a wide grid and stacked narrow layout',as
   await showRendererView(page,'strategy');
   expect(await page.locator('#strategy-wing').inputValue()).toBe('MANGO');
   expect(await page.locator('#strategy-wing option[value="BUKO"]').evaluate(e=>(e as HTMLOptionElement).disabled)).toBe(true);
-  expect(await page.locator('#strategy-wing-note').innerText()).toContain('automated booking stays disabled');
+  expect(await page.locator('#strategy-wing-note').innerText()).toContain('Buko release scheduling and Shotgun stay disabled');
   // Booking goal → Target plan → Release mode; evidence and technical review are secondary.
   for(const id of ['#strategy-goal','#strategy-target-plan','#strategy-suggested'])expect(await page.locator(id).isVisible()).toBe(true);
   expect(await page.locator('#strategy-preset').isVisible()).toBe(false);
@@ -86,6 +86,21 @@ it('tests the saved plan with only the selected date changed',async()=>{
   const sent=await page.evaluate(()=>(window as any).fixturePreparation);
   expect(sent).toMatchObject({workflow:'test',method:'browser',request:{date:'2026-09-25',strategy:'standard',start:defaultSetup.START_TIME,duration:defaultSetup.DURATION_HOURS,courtCount:defaultSetup.COURT_COUNT,priority:defaultSetup.PREFERRED_COURTS,fallbackStarts:defaultSetup.FALLBACK_TIMES}});
   expect(await page.locator('#test-plan-summary').innerText()).toContain('Test date: Friday, September 25');
+  await page.close();
+});
+
+it('prepares an explicit Buko Normal test without rewriting the Mango saved strategy',async()=>{
+  const page=await renderer();
+  await page.evaluate(()=>{const w=window as any;w.thirsty.resetPrepare=async(value:unknown)=>{w.fixturePreparation=value;};});
+  await showRendererView(page,'tests');
+  await page.locator('#test-date').fill('2026-10-19');
+  await page.locator('#test-wing').selectOption('BUKO');
+  await page.locator('#test-buko-court').selectOption('4');
+  expect(await page.locator('#test-plan-summary').innerText()).toContain('Buko Wing · Court 4 · Normal booking');
+  await page.locator('#test-main-action').click();
+  await page.waitForFunction(()=>!!(window as any).fixturePreparation);
+  expect(await page.evaluate(()=>(window as any).fixturePreparation)).toMatchObject({workflow:'test',method:'api-first',request:{wing:'BUKO',strategy:'standard',date:'2026-10-19',courtCount:1,priority:[4],fallbackStarts:[],exact:[[4]]}});
+  expect(await page.evaluate(()=>(window as any).fixtureState.booking.setup.PREFERRED_COURTS)).toEqual(defaultSetup.PREFERRED_COURTS);
   await page.close();
 });
 
