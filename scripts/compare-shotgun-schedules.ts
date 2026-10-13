@@ -10,8 +10,8 @@ import { exactShotgunTopology, assertShotgunSchedule, type ShotgunTimingReadines
 
 const root=resolve(import.meta.dirname,'..');
 const out=resolve(process.argv[2]??join(root,'.local/shotgun-comparison'));
-const runs=Number(process.argv[3]??10),warmup=2,prewarmLeadMs=1500;
-if(!Number.isSafeInteger(runs)||runs<1||runs>100)throw Error('BENCH_ARGS_INVALID');
+const runs=Number(process.argv[3]??10),warmup=2,prewarmLeadMs=Number(process.argv[4]??6000);
+if(!Number.isSafeInteger(runs)||runs<1||runs>100||!Number.isSafeInteger(prewarmLeadMs)||prewarmLeadMs<4000||prewarmLeadMs>30000)throw Error('BENCH_ARGS_INVALID');
 await mkdir(out,{recursive:true});
 const target={court:7,start:'19:00',durationHours:3};
 const cases=[
