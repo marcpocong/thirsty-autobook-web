@@ -29,7 +29,7 @@ export function commandSpec(command: Command, root: string, node: string) {
         JSON.stringify({date:c.date})],automation:true};
     }
     if(command.kind==='apiRun'){
-      const preferences=z.object({strategy:z.enum(['standard','extended']),date:z.iso.date(),start:z.string().regex(/^(0[89]|1\d|2[0-3]):00$/),duration:z.number().int().min(1).max(6),courtCount:z.union([z.literal(1),z.literal(2),z.literal(3),z.literal(4),z.literal(5),z.literal(6),z.literal(7)]),
+      const preferences=z.object({wing:z.enum(['MANGO','BUKO']).optional(),strategy:z.enum(['standard','extended']),date:z.iso.date(),start:z.string().regex(/^(0[89]|1\d|2[0-3]):00$/),duration:z.number().int().min(1).max(6),courtCount:z.union([z.literal(1),z.literal(2),z.literal(3),z.literal(4),z.literal(5),z.literal(6),z.literal(7)]),
         maximum:z.number().optional(),priority:z.array(z.number().int().min(1).max(7)).min(1),fallbackStarts:z.array(z.string().regex(/^(0[89]|1\d|2[0-3]):00$/)),exact:z.array(z.array(z.number().int().min(1).max(7))).optional()}).strict();
       const c=z.object({kind:z.literal('apiRun'),mode:z.enum(['prepare','dry','audit','live','live-now']),date:z.iso.date(),
         fingerprint:z.string().regex(/^[a-f0-9]{64}$/),checkoutMethod:z.enum(['proof-based','proofless']).optional(),clockOffsetMs:z.number().finite().optional(),releaseMs:z.number().int().positive().optional(),preferences:preferences.optional()}).strict().parse(command);

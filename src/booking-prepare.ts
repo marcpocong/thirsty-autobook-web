@@ -167,7 +167,8 @@ async function inspectForPreparation(b:BrowserIdentity,safety:Safety,preserveVer
   const observed=await inspectLockPage(page,{scheduleHydrationTimeoutMs:30000});
   if(['Review Booking','Payment Summary'].includes(observed.page)&&(page.url()!==ONDA_URL||await page.locator('h2').count()!==1||(await page.locator('h2').innerText()).trim()!==VENUE))throw Error('WRONG_VENUE');
   await identifyWorkerPage(page,b.workerId).catch(()=>undefined);
-  return {observed,normalize:async(date)=>{const prepared=await prepareSchedule(page,safety,date);await identifyWorkerPage(page,b.workerId).catch(()=>undefined);return prepared;}};
+  const retainedQrPages=preserveVerifiedHold?candidates.filter(candidate=>candidate!==page):[];
+  return {observed,normalize:async(date)=>{const prepared=await prepareSchedule(page,safety,date,retainedQrPages);await identifyWorkerPage(page,b.workerId).catch(()=>undefined);return prepared;}};
 }
 async function available(port:number){
   return new Promise<boolean>(resolveAvailable=>{
@@ -204,13 +205,13 @@ export async function startForPreparation(initial:BrowserIdentity,deps:Preparati
   throw Error('CDP_ENDPOINT_UNAVAILABLE');
 }
 
-export async function prepareSchedule(page:Page,safety:Safety,date?:string){
+export async function prepareSchedule(page:Page,safety:Safety,date?:string,retainedQrPages:readonly Page[]=[]){
   safety.check();
     await page.goto(ONDA_URL,{waitUntil:'domcontentloaded'});
     const target=date??DateTime.now().setZone('Asia/Manila').toISODate()!;
     await navigateDate(page,target,safety);
     const current=await snapshot(page),cells=validateSnapshot(current,target);
     if(cells.some(c=>c.state==='SELECTED'))throw Error('PREEXISTING_SELECTION');
-    await assertDiagnosticSchedule(page,safety);
+    await assertDiagnosticSchedule(page,safety,retainedQrPages);
     return current;
 }
