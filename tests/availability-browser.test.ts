@@ -36,7 +36,7 @@ it('compare navigates normally, makes one exact same-origin GET and performs no 
   const t = new Telemetry(), report = await compareCurrentAvailability(page, date, new Safety(), t);
   expect(report).toMatchObject({ targetDate: date, knownCourts: 7, hourSlotsParsed: 112, availableCount: 96, agreed: 112, domOpenApiClosed: 0, domClosedApiOpen: 0, unknownSpaces: 0 });
   expect(requests).toHaveLength(1); expect(requests[0]!.method).toBe('GET');
-  expect(requests[0]!.query).toBe(`?startDate=${date}&endDate=${date}&duration=60&includeSchedule=true`);
+  expect(requests[0]!.query).toBe(`?startDate=${date}&endDate=${date}&duration=60&includeSchedule=true&slotDateMode=web-operating-day`);
   expect(await page.evaluate(() => (window as any).actions)).toEqual(['picker', 'date']);
   expect(JSON.stringify(report)).not.toMatch(/https?:|spaceId|cookie|token|pricing|@/);
 });

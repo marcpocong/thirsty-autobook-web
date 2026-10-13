@@ -2,6 +2,7 @@ import type { Page } from 'playwright';
 import { DateTime } from 'luxon';
 import type { Preference } from './config.js';
 import { Safety } from './safety.js';
+import { courtByName } from './court-registry.js';
 
 export const selectors = {
   row: '[data-schedule-grid-row-date][data-schedule-grid-row-time]',
@@ -14,7 +15,7 @@ export interface Cell { court: number; hour: string; date: string; state: CellSt
 export interface RawCell { label: string; date: string; hour: string; state: string | null; disabled: boolean }
 export interface Snapshot { heading: string; busy: boolean; rows: { date: string; hour: string }[]; cells: RawCell[] }
 export function parseCell(raw: RawCell): Cell {
-  const match = /^Court ([1-7]): Mango Wing (\d{1,2}) (AM|PM) to (\d{1,2}) (AM|PM) (available|unavailable|selected)$/.exec(raw.label);
+  const match = /^Court ([1-7]): Mango Wing(?: 🥭)? (\d{1,2}) (AM|PM) to (\d{1,2}) (AM|PM) (available|unavailable|selected)$/.exec(raw.label);
   let state: CellState = 'UNKNOWN';
   if (match) {
     const start = Number(match[2]) % 12 + (match[3] === 'PM' ? 12 : 0);
@@ -51,7 +52,16 @@ export function validateSnapshot(s: Snapshot, targetDate: string): Cell[] {
   const date = DateTime.fromISO(targetDate, { zone: 'Asia/Manila' });
   if (!date.isValid || date.toISODate() !== targetDate) throw new Error('INVALID_TARGET_DATE');
   if (s.busy || s.heading !== date.setLocale('en').toFormat('ccc, LLLL d') || s.rows.length !== 16 || new Set(s.rows.map(r => r.hour)).size !== 16 || s.rows.some(r => r.date !== targetDate)) throw new Error('STALE_OR_INCOMPLETE_GRID');
-  const cells = s.cells.map(parseCell);
+  // A verified Buko column does not belong to a legacy Mango strategy. Every
+  // label must still identify an explicit registry court; unknown markup fails.
+  const scoped = s.cells.filter(raw => {
+    const name = /^(.*?) \d{1,2} (?:AM|PM) to /.exec(raw.label)?.[1];
+    const court = name ? courtByName(name) : undefined;
+    if (!court) throw new Error('GRID_STRUCTURE_CHANGED');
+    if (court.wing !== 'MANGO' && (raw.state === 'selected' || raw.label.endsWith(' selected'))) throw new Error('OUT_OF_SCOPE_COURT_SELECTED');
+    return court.wing === 'MANGO';
+  });
+  const cells = scoped.map(parseCell);
   if (cells.length !== 112 || new Set(cells.map(c => `${c.court}/${c.hour}`)).size !== 112 || cells.some(c => c.date !== targetDate || c.court < 1)) throw new Error('GRID_STRUCTURE_CHANGED');
   for (let h = 8; h < 24; h++) for (let court = 1; court <= 7; court++) if (!cells.some(c => c.court === court && c.hour === `${h.toString().padStart(2, '0')}:00`)) throw new Error('GRID_STRUCTURE_CHANGED');
   return cells;
@@ -65,7 +75,9 @@ export async function waitForGrid(page: Page, targetDate: string, safety: Safety
   await page.waitForFunction(({ s, targetDate, label }) => {
     const grids = document.querySelectorAll(s.grid);
     const rows = [...(grids[0]?.querySelectorAll(s.row) ?? [])];
-    return grids.length === 1 && document.querySelector(s.heading)?.textContent?.trim() === label && !document.querySelector('[aria-busy="true"]') && rows.length === 16 && rows.every(r => r.getAttribute('data-schedule-grid-row-date') === targetDate && r.querySelectorAll(s.cell).length === 7);
+    // Readiness follows the Mango subset, regardless of verified extra columns.
+    // validateSnapshot performs the full identity/structure check after this wait.
+    return grids.length === 1 && document.querySelector(s.heading)?.textContent?.trim() === label && !document.querySelector('[aria-busy="true"]') && rows.length === 16 && rows.every(r => r.getAttribute('data-schedule-grid-row-date') === targetDate && [...r.querySelectorAll(s.cell)].filter(e => /^Court [1-7]: Mango Wing(?: 🥭)? /.test(e.getAttribute('aria-label') ?? '')).length === 7);
   }, { s: selectors, targetDate, label }, { timeout, polling: 'raf' });
   safety.check();
 }

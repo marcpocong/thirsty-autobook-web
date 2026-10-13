@@ -25,6 +25,9 @@ it('shows the five operator views with a wide grid and stacked narrow layout',as
   expect(await page.locator('#booking-method').isVisible()).toBe(false);
   await mkdir('.local',{recursive:true});await page.screenshot({path:'.local/ui-redesign-release.png'});
   await showRendererView(page,'strategy');
+  expect(await page.locator('#strategy-wing').inputValue()).toBe('MANGO');
+  expect(await page.locator('#strategy-wing option[value="BUKO"]').evaluate(e=>(e as HTMLOptionElement).disabled)).toBe(true);
+  expect(await page.locator('#strategy-wing-note').innerText()).toContain('automated booking stays disabled');
   // Booking goal → Target plan → Release mode; evidence and technical review are secondary.
   for(const id of ['#strategy-goal','#strategy-target-plan','#strategy-suggested'])expect(await page.locator(id).isVisible()).toBe(true);
   expect(await page.locator('#strategy-preset').isVisible()).toBe(false);

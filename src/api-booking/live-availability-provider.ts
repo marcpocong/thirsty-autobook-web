@@ -1,9 +1,10 @@
 import { parseAvailability } from './availability-parser.js';
 import type { AvailabilityProvider } from './availability-provider.js';
 import type { AvailabilityEnvelope, AvailabilityQuery } from './types.js';
+import { FACILITY_ID } from '../court-registry.js';
 
 // Confirmed historical facility ID; the live provider does not import Chrome bot code.
-export const THIRSTY_PICKLE_FACILITY_ID = '5f8786bd-dc61-4509-b893-74cda8f783f7';
+export const THIRSTY_PICKLE_FACILITY_ID = FACILITY_ID;
 const ORIGIN = 'https://app.onda.fit';
 const MAX_RESPONSE_BYTES = 4_000_000;
 function validDate(value: string) {
@@ -46,7 +47,7 @@ export class OndaLiveAvailabilityProvider implements AvailabilityProvider {
   async getAvailability(query: AvailabilityQuery): Promise<AvailabilityEnvelope> {
     if (!validDate(query.startDate) || !validDate(query.endDate) || query.endDate < query.startDate)
       throw new LiveAvailabilityError('AVAILABILITY_QUERY_INVALID');
-    const params = new URLSearchParams({ startDate: query.startDate, endDate: query.endDate, duration: '60', includeSchedule: 'true' });
+    const params = new URLSearchParams({ startDate: query.startDate, endDate: query.endDate, duration: '60', includeSchedule: 'true', slotDateMode: 'web-operating-day' });
     const url = `${ORIGIN}/api/public/facilities/${THIRSTY_PICKLE_FACILITY_ID}/date-availability?${params}`;
     let response: Response;
     try {
