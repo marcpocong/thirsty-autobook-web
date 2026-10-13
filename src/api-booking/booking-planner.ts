@@ -26,6 +26,7 @@ function groups<T>(values: T[], count: number): T[][] {
 }
 
 export function planBooking(snapshot: AvailabilitySnapshot, p: BookingPreferences, excluded = new Set<string>()): BookingPlan {
+  if (snapshot.wing && snapshot.wing !== 'MANGO') throw new BookingPlanningError('BOOKING_WING_NOT_ENABLED');
   validate(p);
   if (!Object.hasOwn(snapshot.returnedDates, p.targetDate)) throw new BookingPlanningError('BOOKING_TARGET_DATE_MISSING');
   const index = new Map(snapshot.slots.map(slot => [`${slot.court}/${slot.date}/${slot.startTime}`, slot]));

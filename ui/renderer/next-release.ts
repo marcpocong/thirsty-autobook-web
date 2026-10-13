@@ -41,7 +41,7 @@ export function renderNextRelease(state: Dashboard): void {
       : meta.fanOut.source === 'MACHINE_RECOMMENDED' ? ' · machine recommendation' : ' · no capacity profile' : '';
     name.textContent = meta?.shotgun?.enabled ? 'Shotgun' : meta ? `Normal · ${STRATEGY_PRESET_LABEL[meta.preset]}` : 'Smart (custom)';
     const firstTarget=plan.wave1[0],firstCandidate=firstTarget?plan.candidates[firstTarget.candidateIndex]:undefined,range=meta?.shotgun?.exactSchedule.length?`${meta.shotgun.exactSchedule[0]!.configuredOffsetMs} → ${meta.shotgun.exactSchedule.at(-1)!.configuredOffsetMs} ms`:'Measured timing';
-    facts(target, [['Primary target',firstCandidate?`Court ${firstCandidate.court} · ${firstCandidate.start} · ${firstCandidate.durationHours} h`:'—'],['Strategy',meta?.shotgun?.enabled?`Shotgun · Dense Core · ${sends} attempts`:`Normal · ${sends} attempts`],['Timing',range],...(meta?.shotgun?.enabled?[['Strict trigger tolerance',`${SHOTGUN_MAX_TRIGGER_LATENESS_MS} ms · late attempts omitted`] as [string,string],['Tabs required',plan.wave1.map(a=>`${a.workerId}: ${a.fanOutOffsetsMs?.length??1}`).join(' / ')] as [string,string],['Local timing test',state.shotgunTiming?`${state.shotgunTiming.status} · p95 ${state.shotgunTiming.p95??'unmeasured'} ms · max ${state.shotgunTiming.max??'unmeasured'} ms · ${state.shotgunTiming.omittedShots} omitted · ${state.shotgunTiming.compressedPairs} compressed pairs`:'NOT TESTED for this plan and build'] as [string,string]]:[]),['Preparation forecast',feasibility?`${feasibility.projectedReady}/${feasibility.configuredWave1Attempts} ${feasibility.verdict?.replaceAll('_',' ')??'checking'}`:'Checked during Prepare for Release'],['Browsers',`${new Set(plan.wave1.map(value=>value.workerId)).size} release groups`],['Backup attempts',plan.budgets.wave2>0?`Up to ${plan.budgets.wave2}`:'Off'],['Reopened-slot rescue',plan.rescueEnabled&&plan.budgets.rescue>0?`ON · up to ${plan.budgets.rescue}`:'OFF']]);
+    facts(target, [['Wing','Mango Wing'],['Primary target',firstCandidate?`Court ${firstCandidate.court} · ${firstCandidate.start} · ${firstCandidate.durationHours} h`:'—'],['Strategy',meta?.shotgun?.enabled?`Shotgun · Dense Core · ${sends} attempts`:`Normal · ${sends} attempts`],['Timing',range],...(meta?.shotgun?.enabled?[['Strict trigger tolerance',`${SHOTGUN_MAX_TRIGGER_LATENESS_MS} ms · late attempts omitted`] as [string,string],['Tabs required',plan.wave1.map(a=>`${a.workerId}: ${a.fanOutOffsetsMs?.length??1}`).join(' / ')] as [string,string],['Local timing test',state.shotgunTiming?`${state.shotgunTiming.status} · p95 ${state.shotgunTiming.p95??'unmeasured'} ms · max ${state.shotgunTiming.max??'unmeasured'} ms · ${state.shotgunTiming.omittedShots} omitted · ${state.shotgunTiming.compressedPairs} compressed pairs`:'NOT TESTED for this plan and build'] as [string,string]]:[]),['Preparation forecast',feasibility?`${feasibility.projectedReady}/${feasibility.configuredWave1Attempts} ${feasibility.verdict?.replaceAll('_',' ')??'checking'}`:'Checked during Prepare for Release'],['Browsers',`${new Set(plan.wave1.map(value=>value.workerId)).size} release groups`],['Backup attempts',plan.budgets.wave2>0?`Up to ${plan.budgets.wave2}`:'Off'],['Reopened-slot rescue',plan.rescueEnabled&&plan.budgets.rescue>0?`ON · up to ${plan.budgets.rescue}`:'OFF']]);
     facts(technical, [
       ['Release readiness', state.releaseReadiness?.verdict.replaceAll('_',' ') ?? 'checking'],
       ['Build integrity', state.releaseReadiness?.checks.find(value=>value.id==='build')?.detail ?? build],
@@ -70,14 +70,14 @@ export function renderNextRelease(state: Dashboard): void {
   }
   if (setup.RELEASE_STRATEGY === 'precision') {
     name.textContent = 'Fixed Precision (legacy)';
-    facts(target, [['Target date', targetDate], ['Attempts', String(setup.PRECISION_TARGETS.length)], ['Fan-out', setup.PRECISION_FAN_OUT ? `${setup.PRECISION_TARGETS.reduce((sum,value)=>sum+(value.fanOutReleaseOffsetsMs?.length??1),0)} total` : 'off'],
+    facts(target, [['Wing','Mango Wing'],['Target date', targetDate], ['Attempts', String(setup.PRECISION_TARGETS.length)], ['Fan-out', setup.PRECISION_FAN_OUT ? `${setup.PRECISION_TARGETS.reduce((sum,value)=>sum+(value.fanOutReleaseOffsetsMs?.length??1),0)} total` : 'off'],
       ['Wave 2 / Rescue', 'not available in Fixed mode'], ['Build', build]]);
     technical.replaceChildren();
     note.textContent = 'Fixed attempts are sent exactly as listed. The Strategy view builds a Smart plan with backups and Rescue.';
     return;
   }
   name.textContent = 'General';
-  facts(target, [['Target date', targetDate], ['Courts', String(setup.COURT_COUNT)], ['Start', setup.START_TIME], ['Duration', `${setup.DURATION_HOURS} h`], ['Build', build]]);
+  facts(target, [['Wing','Mango Wing'],['Target date', targetDate], ['Courts', String(setup.COURT_COUNT)], ['Start', setup.START_TIME], ['Duration', `${setup.DURATION_HOURS} h`], ['Build', build]]);
   technical.replaceChildren();
   note.textContent = '';
 }

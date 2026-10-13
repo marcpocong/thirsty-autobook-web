@@ -15,7 +15,7 @@ describe('live read-only availability provider', () => {
     const envelope = await provider.getAvailability({ startDate: date, endDate: date });
     expect(fetcher).toHaveBeenCalledOnce();
     const [url, init] = fetcher.mock.calls[0]! as unknown as [string, RequestInit];
-    expect(url).toBe(`https://app.onda.fit/api/public/facilities/${THIRSTY_PICKLE_FACILITY_ID}/date-availability?startDate=${date}&endDate=${date}&duration=60&includeSchedule=true`);
+    expect(url).toBe(`https://app.onda.fit/api/public/facilities/${THIRSTY_PICKLE_FACILITY_ID}/date-availability?startDate=${date}&endDate=${date}&duration=60&includeSchedule=true&slotDateMode=web-operating-day`);
     expect(init).toMatchObject({ method: 'GET', redirect: 'error', credentials: 'omit' });
     expect(envelope).toMatchObject({ fixtureKind: 'live', capturedAt: now.toISOString() });
   });

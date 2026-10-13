@@ -7,6 +7,8 @@ The existing single-court booking flow has live evidence, including the [Septemb
 
 ## Operator flow
 
+**Wing compatibility:** saved court numbers and all automated booking strategies refer to **Mango Wing**. Onda now publishes seven Buko courts under the same facility; they are recorded separately in a verified registry and excluded safely from Mango availability/grid parsing. Buko automation remains visibly disabled pending availability-response, checkout and release-policy verification. See [wing compatibility](docs/WING_COMPATIBILITY.md).
+
 Configure:
 
 1. Open **Strategy**, confirm the target date, and enter ideal start, earliest start, latest finish, duration order and court priority.

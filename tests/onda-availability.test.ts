@@ -14,7 +14,7 @@ it('uses the seven exact verified mappings and inverse, independent of response 
   expect(parse().slots[0]!.court).toBe(7); expect(parse().knownCourts).toBe(7);
 });
 it('builds one canonical exact-date GET path and rejects invalid date input', () => {
-  expect(availabilityPath(date)).toBe(`/api/public/facilities/${FACILITY_ID}/date-availability?startDate=${date}&endDate=${date}&duration=60&includeSchedule=true`);
+  expect(availabilityPath(date)).toBe(`/api/public/facilities/${FACILITY_ID}/date-availability?startDate=${date}&endDate=${date}&duration=60&includeSchedule=true&slotDateMode=web-operating-day`);
   expect(() => availabilityPath('2026-02-30')).toThrow(); expect(() => availabilityPath('2026-09-13&duration=1')).toThrow();
   expect(ObservationSchema.parse({}).AVAILABILITY_DISCOVERY_MODE).toBe('ui');
   expect(ObservationSchema.safeParse({ AVAILABILITY_DISCOVERY_MODE: 'api-only' }).success).toBe(false);

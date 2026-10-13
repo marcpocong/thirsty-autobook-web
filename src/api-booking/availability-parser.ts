@@ -1,18 +1,9 @@
 import { z } from 'zod';
 import type { AvailabilitySlot, AvailabilitySnapshot, ParseAvailabilityOptions } from './types.js';
 import { isOndaUnreleasedEmptyResponse } from '../onda-unreleased.js';
+import { MANGO_SPACE_IDS, courtBySpace, FACILITY_ID } from '../court-registry.js';
 
-export const COURT_TO_SPACE_ID = Object.freeze({
-  1: 'c8c8fb0a-518e-4838-b006-8f200e477788',
-  2: 'df1a98c3-deb2-4721-949a-d5a1e54fdce0',
-  3: '0e853a91-33b6-4de2-9237-778007a9313b',
-  4: '2166184c-db40-4a04-9a80-656878f7327b',
-  5: '1cdcd209-71ce-4a72-a2f6-9252c4d06a01',
-  6: '7aa7d361-9e60-433f-85ed-9e8eeaef8f96',
-  7: '648d72bb-0789-40c6-9557-66709da121ba',
-});
-
-const SPACE_TO_COURT: ReadonlyMap<string, number> = new Map(Object.entries(COURT_TO_SPACE_ID).map(([court, id]) => [id, Number(court)]));
+export const COURT_TO_SPACE_ID = MANGO_SPACE_IDS;
 const DateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => {
   const parsed = new Date(`${value}T00:00:00.000Z`);
   return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
@@ -45,6 +36,7 @@ const SlotSchema = z.object({
 const ResponseSchema = z.object({
   success: z.literal(true),
   data: z.object({
+    facilityId: z.string().uuid().optional(),
     dates: z.record(DateSchema, z.boolean()),
     slotsBySpace: z.record(z.string().uuid(), z.array(z.unknown())),
   }).passthrough(),
@@ -83,8 +75,12 @@ function minor(value: number) {
 }
 
 export function parseAvailability(raw: unknown, options: ParseAvailabilityOptions): AvailabilitySnapshot {
+  const wing = options.wing ?? 'MANGO';
+  if (wing !== 'MANGO' && wing !== 'BUKO') fail('AVAILABILITY_WING_INVALID');
+  if (options.facilityId !== undefined && options.facilityId !== FACILITY_ID) fail('AVAILABILITY_FACILITY_MISMATCH');
   const parsed = ResponseSchema.safeParse(raw);
   if (!parsed.success) fail('AVAILABILITY_RESPONSE_INVALID');
+  if (parsed.data.data.facilityId !== undefined && parsed.data.data.facilityId !== FACILITY_ID) fail('AVAILABILITY_FACILITY_MISMATCH');
   const requestedDates = dateRange(options.startDate, options.endDate);
   const capturedAt = new Date(options.capturedAt);
   if (!Number.isFinite(capturedAt.getTime())) fail('AVAILABILITY_CAPTURE_TIME_INVALID');
@@ -98,10 +94,14 @@ export function parseAvailability(raw: unknown, options: ParseAvailabilityOption
   if (Object.keys(returnedDates).some(date => !requestedDates.includes(date))) fail('AVAILABILITY_UNREQUESTED_DATE');
 
   const slots: AvailabilitySlot[] = [];
+  const excludedSpaceIds: string[] = [];
   const seen = new Map<string, AvailabilitySlot>();
   for (const [spaceId, rawSlots] of Object.entries(parsed.data.data.slotsBySpace)) {
-    const court = SPACE_TO_COURT.get(spaceId);
-    if (!court) fail('AVAILABILITY_UNKNOWN_COURT');
+    const registered = courtBySpace(spaceId);
+    if (!registered) fail('AVAILABILITY_UNKNOWN_COURT');
+    // Only explicitly verified, out-of-scope courts are excluded. Unknown identities still fail closed.
+    if (registered.wing !== wing) { excludedSpaceIds.push(spaceId); continue; }
+    const court = registered.number;
     for (const rawSlot of rawSlots) {
       const result = SlotSchema.safeParse(rawSlot);
       if (!result.success) fail('AVAILABILITY_SLOT_INVALID');
@@ -139,6 +139,6 @@ export function parseAvailability(raw: unknown, options: ParseAvailabilityOption
     }
   }
   // Missing slots are unavailable; the captured response does not establish a completeness contract.
-  return { capturedAt: options.capturedAt, fixtureKind: options.fixtureKind, label: options.label, requestedDates, returnedDates, incompleteDates, slots,
+  return { capturedAt: options.capturedAt, fixtureKind: options.fixtureKind, label: options.label, requestedDates, returnedDates, incompleteDates, slots, wing, excludedSpaceIds,
     emptyUnreleasedResponse: isOndaUnreleasedEmptyResponse(raw) };
 }

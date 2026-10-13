@@ -15,7 +15,7 @@ export function nationalPhone(value: string): string {
 export interface ReviewEvidence { venue:string; fullDate:string; shortDate:string; count:string; court:string; times:string[] }
 export function reviewSummary(e:ReviewEvidence, selectionAmount:number):BookingSummary {
   const date=DateTime.fromFormat(e.fullDate,'cccc, LLLL d, yyyy',{locale:'en',zone:'Asia/Manila'});
-  const court=/^Court ([1-7]): Mango Wing$/.exec(e.court);
+  const court=/^Court ([1-7]): Mango Wing(?: 🥭)?$/.exec(e.court);
   const count=/^Your Reservations \((\d+)\)$/.exec(e.count);
   if(!date.isValid||!court||!count||Number(count[1])!==e.times.length||e.shortDate!==date.toFormat('ccc, LLL d')||e.venue!==VENUE||!e.times.length)throw new Error('REVIEW_STRUCTURE_CHANGED');
   const hours=e.times.map(time=>{

@@ -2,14 +2,10 @@ import { z } from 'zod';
 import { DateTime } from 'luxon';
 import { expandHours, type Preference } from './config.js';
 import { resolvePreference, type Cell } from './grid.js';
+import { MANGO_SPACE_IDS, FACILITY_ID as REGISTRY_FACILITY_ID } from './court-registry.js';
 
-export const FACILITY_ID = '5f8786bd-dc61-4509-b893-74cda8f783f7';
-export const COURT_TO_SPACE_ID = Object.freeze({
-  1: 'c8c8fb0a-518e-4838-b006-8f200e477788', 2: 'df1a98c3-deb2-4721-949a-d5a1e54fdce0',
-  3: '0e853a91-33b6-4de2-9237-778007a9313b', 4: '2166184c-db40-4a04-9a80-656878f7327b',
-  5: '1cdcd209-71ce-4a72-a2f6-9252c4d06a01', 6: '7aa7d361-9e60-433f-85ed-9e8eeaef8f96',
-  7: '648d72bb-0789-40c6-9557-66709da121ba',
-});
+export const FACILITY_ID = REGISTRY_FACILITY_ID;
+export const COURT_TO_SPACE_ID = MANGO_SPACE_IDS;
 export const SPACE_ID_TO_COURT: Readonly<Record<string, number>> = Object.freeze(
   Object.fromEntries(Object.entries(COURT_TO_SPACE_ID).map(([court, id]) => [id, Number(court)])));
 if (Object.keys(COURT_TO_SPACE_ID).join(',') !== '1,2,3,4,5,6,7' ||
@@ -22,7 +18,7 @@ export function assertAvailabilityDate(date: string) {
 }
 export function availabilityPath(targetDate: string) {
   assertAvailabilityDate(targetDate);
-  return `/api/public/facilities/${FACILITY_ID}/date-availability?startDate=${targetDate}&endDate=${targetDate}&duration=60&includeSchedule=true`;
+  return `/api/public/facilities/${FACILITY_ID}/date-availability?startDate=${targetDate}&endDate=${targetDate}&duration=60&includeSchedule=true&slotDateMode=web-operating-day`;
 }
 const SlotSchema = z.object({
   date: z.string(), bookingDate: z.string(), startTime: z.string().regex(/^(0[89]|1\d|2[0-3]):00$/),

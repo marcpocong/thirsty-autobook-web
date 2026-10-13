@@ -1,4 +1,5 @@
 import type { CourtCount } from '../workers.js';
+import type { Wing } from '../court-registry.js';
 
 export type BookingMode = 'standard' | 'extended';
 export type FixtureKind = 'captured-historical' | 'synthetic' | 'live';
@@ -30,6 +31,9 @@ export interface AvailabilitySlot {
 }
 
 export interface AvailabilitySnapshot {
+  /** Absent in legacy fixtures means Mango. Buko snapshots are inspection-only. */
+  wing?: Wing;
+  excludedSpaceIds?: string[];
   capturedAt: string;
   fixtureKind: FixtureKind;
   label: string;
@@ -42,6 +46,8 @@ export interface AvailabilitySnapshot {
 }
 
 export interface ParseAvailabilityOptions extends AvailabilityQuery {
+  wing?: Wing;
+  facilityId?: string;
   capturedAt: string;
   fixtureKind: FixtureKind;
   label: string;
