@@ -57,6 +57,7 @@ export interface ParseAvailabilityOptions extends AvailabilityQuery {
 }
 
 export interface BookingPreferences {
+  wing?: Wing;
   mode: BookingMode;
   targetDate: string;
   durationHours: number;
@@ -83,6 +84,7 @@ export interface PlannedCourt {
 }
 
 export interface BookingPlan {
+  wing?: Wing;
   mode: BookingMode;
   targetDate: string;
   startTime: string;

@@ -1,4 +1,4 @@
-import { COURT_TO_SPACE_ID } from './availability-parser.js';
+import { courtBySpace } from '../court-registry.js';
 import { THIRSTY_PICKLE_FACILITY_ID } from './live-availability-provider.js';
 import { DurableSubmissionJournal, type ObservedCheckoutResponse, type SubmissionPermit } from './durable-submission-journal.js';
 import { acquireFreshSlotProofs } from './slot-proofs.js';
@@ -11,7 +11,7 @@ export interface HourIdentity { spaceId: string; date: string; startTime: string
 export interface SlotCheckRequest extends HourIdentity { clientId: string; facilityId: string }
 export interface CheckoutCustomer { clientId: string; customerId: string; customerFirstName: string; customerLastName: string; customerEmail: string; customerPhone: string }
 export interface TwoHourItem extends HourIdentity {
-  activityKey: null; activityLabel: null; availabilityProof: string; chargedAmount: number; duration: 60;
+  activityKey: null | 'pickleball'; activityLabel: null | 'Pickleball'; availabilityProof: string; chargedAmount: number; duration: 60;
   facilityId: string; guestCount: 1; promotionId: null; rate: number; sessionRef: `session_${number}`;
 }
 export interface TwoHourCheckoutRequest extends Omit<CheckoutCustomer, 'customerFirstName' | 'customerLastName'> {
@@ -63,7 +63,7 @@ export function selectedTwoHours(plan: BookingPlan): [HourIdentity, HourIdentity
     plan.chunks[0]?.courts.length !== 1 || plan.chunks[0]?.durationHours !== 2 || plan.targetDate !== plan.courts[0]?.date ||
     plan.startTime !== plan.courts[0]?.startTime || plan.endTime !== plan.courts[0]?.endTime) fail('TWO_HOUR_PLAN_REQUIRED');
   const court = plan.courts[0]!;
-  if (COURT_TO_SPACE_ID[court.court as keyof typeof COURT_TO_SPACE_ID] !== court.spaceId ||
+  if (courtBySpace(court.spaceId)?.wing !== (plan.wing ?? 'MANGO') || courtBySpace(court.spaceId)?.number !== court.court ||
     court.slots.length !== 2 || court.durationMinutes !== 120 || !court.slots.every(slot => slot.isAvailable &&
       slot.spaceId === court.spaceId && slot.court === court.court && slot.date === court.date && slot.bookingDate === court.date &&
       slot.currency === 'PHP') || court.slots[0]?.startTime !== court.startTime ||
@@ -81,7 +81,7 @@ export function selectedStandardHours(plan: BookingPlan): HourIdentity[] {
     plan.chunks.length !== 1 || chunk?.durationHours !== plan.durationHours || chunk.courts.length !== plan.courts.length ||
     new Set(plan.courts.map(court => court.spaceId)).size !== plan.courts.length ||
     plan.courts.some((court, courtIndex) => chunk.courts[courtIndex]?.spaceId !== court.spaceId ||
-      COURT_TO_SPACE_ID[court.court as keyof typeof COURT_TO_SPACE_ID] !== court.spaceId ||
+      courtBySpace(court.spaceId)?.wing !== (plan.wing ?? 'MANGO') || courtBySpace(court.spaceId)?.number !== court.court ||
       court.durationMinutes !== plan.durationHours * 60 || court.date !== plan.targetDate ||
       court.startTime !== plan.startTime || court.endTime !== plan.endTime || court.slots.length !== plan.durationHours ||
       court.slots.some((slot, index) => slot.spaceId !== court.spaceId || slot.court !== court.court ||
@@ -183,6 +183,7 @@ export class TwoHourReservationAdapter {
       for (const [index, currentKey] of keys.entries()) {
         const journal = journals[index]!;
         await journal.begin(currentKey, now, { attemptId: currentKey, planFingerprint, targetDate: plan.targetDate,
+          ...(plan.wing === 'BUKO' ? {wing:plan.wing,spaceIds:plan.courts.map(court=>court.spaceId)} : {}),
           courtIds: plan.courts.map(court => court.court),
           hourlyBoundaries: hours.map(hour => ({ startTime: hour.startTime, endTime: hour.endTime })),
           expectedBookingCount: request.items.length, maximumAmount: plan.totalPrice, stage: 'dispatching' });

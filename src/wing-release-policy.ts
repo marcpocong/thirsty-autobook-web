@@ -40,9 +40,17 @@ export function wingWorkflow(input: { wing: Wing; date: string; courts: number[]
   if (!snapshot || !Number.isFinite(age) || age < 0 || age > 15000) return unknown;
   const slots = snapshot.slots.filter(slot => slot.date === date);
   const selected = keys.map(key => slots.find(slot => `${slot.court}/${slot.startTime}` === key));
-  if (selected.some(slot => slot?.isAvailable)) return { state: 'AVAILABLE NOW', workflow: 'BOOK_AVAILABLE_NOW' };
-  if (selected.every(slot => slot !== undefined)) return { state: 'FULLY BOOKED', workflow: 'NONE' };
+  if (selected.every(slot => slot?.isAvailable)) return { state: 'AVAILABLE NOW', workflow: 'BOOK_AVAILABLE_NOW' };
+  // One open hour does not authorize a longer target; a wing can publish only
+  // part of a date. Explicit closed cells before a known release can represent
+  // "not released yet", rather than fully booked (observed for Mango Oct 16).
+  if (selected.some(slot => slot?.isAvailable)) return unknown;
   const policy = input.policy === undefined ? WING_RELEASE_POLICIES[wing] : input.policy;
+  if (selected.every(slot => slot !== undefined)) {
+    try { if (now.getTime() < releaseForTarget(date,wing,policy).toMillis()) return unknown; }
+    catch { return unknown; }
+    return { state: 'FULLY BOOKED', workflow: 'NONE' };
+  }
   let release: DateTime;
   try { release = releaseForTarget(date, wing, policy); } catch { return unknown; }
   // Partial publication is not an unreleased wing; never schedule its missing cells.

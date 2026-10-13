@@ -29,7 +29,7 @@ describe('mixed-wing safety and legacy Mango compatibility', () => {
     expect(COURT_REGISTRY).toHaveLength(14);
     expect(new Set(COURT_REGISTRY.map(c => c.id)).size).toBe(14);
     expect(new Set(COURT_REGISTRY.map(c => c.spaceId)).size).toBe(14);
-    expect(COURT_REGISTRY.filter(c => c.wing === 'BUKO').every(c => !c.bookingMethods.length && c.disabledReason)).toBe(true);
+    expect(COURT_REGISTRY.filter(c => c.wing === 'BUKO').every(c => c.bookingMethods.join() === 'api-first-normal' && c.disabledReason)).toBe(true);
     expect(assertCourtFacility(BUKO_SPACE_IDS[1], FACILITY_ID).id).toBe('BUKO:1');
     expect(() => assertCourtFacility(BUKO_SPACE_IDS[1], 'wrong-facility')).toThrow('COURT_FACILITY_MISMATCH');
   });
@@ -93,6 +93,14 @@ describe('independent wing release policies and publication', () => {
     expect(wingWorkflow(input).state).toBe('FULLY BOOKED');
     snapshot.slots=snapshot.slots.filter(s=>s.court!==7||s.startTime!=='20:00');
     expect(wingWorkflow(input).state).toBe('UNKNOWN / NEEDS VERIFICATION');
+  });
+  it('does not advertise a partially open target or call pre-release Mango cells fully booked',()=>{
+    const snapshot=parseAvailability(mixed(),options);
+    snapshot.slots.find(s=>s.court===7&&s.startTime==='20:00')!.isAvailable=false;
+    expect(wingWorkflow({wing:'MANGO',date,courts:[7],hours:['19:00','20:00'],snapshot,now}).workflow).toBe('NONE');
+    snapshot.slots.forEach(s=>s.isAvailable=false);
+    const before=new Date('2026-10-13T19:00:00Z');snapshot.capturedAt=before.toISOString();
+    expect(wingWorkflow({wing:'MANGO',date,courts:[7],hours:['19:00'],snapshot,now:before}).state).toBe('UNKNOWN / NEEDS VERIFICATION');
   });
   it('only schedules a genuinely empty response before a verified future release', () => {
     const before=new Date('2026-10-13T23:00:00Z');

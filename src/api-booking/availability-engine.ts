@@ -38,7 +38,7 @@ export async function discoverApiAvailability(
     const envelope = await provider.getAvailability({ startDate: preferences.targetDate, endDate: preferences.targetDate });
     responseReceived = performance.now();
     const snapshot = parseAvailability(envelope.raw, { startDate: preferences.targetDate, endDate: preferences.targetDate,
-      capturedAt: envelope.capturedAt, fixtureKind: envelope.fixtureKind, label: envelope.label, now: now(), maximumAgeMs });
+      wing: preferences.wing, capturedAt: envelope.capturedAt, fixtureKind: envelope.fixtureKind, label: envelope.label, now: now(), maximumAgeMs });
     parsed = performance.now();
     const candidates = rankBookingCandidates(snapshot, preferences, options.candidateLimit ?? 32);
     selected = performance.now();

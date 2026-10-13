@@ -1,4 +1,5 @@
 import type { AvailabilitySlot, AvailabilitySnapshot, BookingPlan, BookingPreferences, PlannedCourt } from './types.js';
+import { courtBySpace } from '../court-registry.js';
 
 export class BookingPlanningError extends Error {
   constructor(readonly code: string) { super(code); this.name = 'BookingPlanningError'; }
@@ -26,8 +27,14 @@ function groups<T>(values: T[], count: number): T[][] {
 }
 
 export function planBooking(snapshot: AvailabilitySnapshot, p: BookingPreferences, excluded = new Set<string>()): BookingPlan {
-  if (snapshot.wing && snapshot.wing !== 'MANGO') throw new BookingPlanningError('BOOKING_WING_NOT_ENABLED');
+  const wing = p.wing ?? 'MANGO';
+  if ((snapshot.wing ?? 'MANGO') !== wing || !['MANGO','BUKO'].includes(wing)) throw new BookingPlanningError('BOOKING_WING_NOT_ENABLED');
   validate(p);
+  if (wing === 'BUKO' && (p.mode !== 'standard' || p.courtCount !== 1 || p.preferredStartTimes.length !== 1 ||
+      p.fallbackStartTimes.length || p.fallbackCourts.length || !p.exactCourts || p.exactCourts.length !== 1))
+    throw new BookingPlanningError('BUKO_EXACT_NORMAL_PLAN_REQUIRED');
+  if (snapshot.slots.some(slot => { const registered = courtBySpace(slot.spaceId);
+    return registered?.wing !== wing || registered.number !== slot.court; })) throw new BookingPlanningError('BOOKING_WING_IDENTITY_MISMATCH');
   if (!Object.hasOwn(snapshot.returnedDates, p.targetDate)) throw new BookingPlanningError('BOOKING_TARGET_DATE_MISSING');
   const index = new Map(snapshot.slots.map(slot => [`${slot.court}/${slot.date}/${slot.startTime}`, slot]));
   let enoughCourts = false;
@@ -67,7 +74,7 @@ export function planBooking(snapshot: AvailabilitySnapshot, p: BookingPreference
           const key = JSON.stringify(selected.map(cs => [cs[0]!.startTime, cs[0]!.endTime, cs.map(c => [c.court, c.spaceId])]));
           if (excluded.has(key)) continue;
           const chunks = selected.map(cs => ({ startTime: cs[0]!.startTime, endTime: cs[0]!.endTime, durationHours: cs[0]!.durationMinutes / 60, courts: cs, totalPrice: cs.reduce((sum, c) => sum + c.price, 0) }));
-          return { mode: p.mode, targetDate: p.targetDate, startTime, endTime: chunks.at(-1)!.endTime, durationHours: p.durationHours,
+          return { ...(wing === 'BUKO' ? {wing} : {}), mode: p.mode, targetDate: p.targetDate, startTime, endTime: chunks.at(-1)!.endTime, durationHours: p.durationHours,
             courts: selected.flat(), chunks, totalPrice: chunks.reduce((sum, chunk) => sum + chunk.totalPrice, 0), currency: p.currency };
         }
       }

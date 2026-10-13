@@ -22,6 +22,9 @@ import { browserIdentity, verifyDedicatedChromeAsync } from '../browser.js';
 import { emitUiEvent } from '../ui-events.js';
 import { discoverApiAvailability } from './availability-engine.js';
 import { OndaLiveAvailabilityProvider, THIRSTY_PICKLE_FACILITY_ID } from './live-availability-provider.js';
+import { OndaBrowserAvailabilityProvider } from './browser-availability-provider.js';
+import { assertWingNormalRequest } from '../wing-normal-booking.js';
+import { assertQrOrderSummary } from './qr-order-summary.js';
 import { parseAvailability } from './availability-parser.js';
 import { DurableSubmissionJournal } from './durable-submission-journal.js';
 import { loadLocalCheckoutCustomer } from './local-customer.js';
@@ -59,7 +62,7 @@ import {API_SECURITY_PREWARM_LEAD_MS,safeApiFailureCode} from './run-observabili
 import { availabilityObservation, diagnosticLaneForWorker, RunDiagnostics, safeDiagnosticCode,
   type DiagnosticAttemptType, type DiagnosticCorrelation, type DiagnosticOperation } from './run-diagnostics.js';
 
-const preferencesSchema = z.object({ strategy: z.enum(['standard', 'extended']), date: z.iso.date(), start: z.string().regex(/^(0[89]|1\d|2[0-3]):00$/),
+const preferencesSchema = z.object({ wing: z.enum(['MANGO','BUKO']).optional(), strategy: z.enum(['standard', 'extended']), date: z.iso.date(), start: z.string().regex(/^(0[89]|1\d|2[0-3]):00$/),
   duration: z.number().int().min(1).max(6), courtCount: z.union([z.literal(1),z.literal(2),z.literal(3),z.literal(4),z.literal(5),z.literal(6),z.literal(7)]), maximum: z.number().optional(),
   priority: z.array(z.number().int().min(1).max(7)).min(1),
   fallbackStarts: z.array(z.string().regex(/^(0[89]|1\d|2[0-3]):00$/)),
@@ -135,6 +138,7 @@ const sanitizedCheckoutCapture=(response:CheckoutHttpResponse)=>{
     ...(response.evidence?{evidence:response.evidence}:{})};
 };
 const connectedBrowsers: Browser[] = [];
+let availabilityPage: Page | undefined;
 let liveLock:ApiAutomationLock|undefined,retainLiveLock=false,verifiedHold=false;
 let latestVerifiedHoldExpiry:string|undefined;
 let persistedVerifiedHoldExpiry:string|undefined;
@@ -249,7 +253,8 @@ async function readAvailabilitySnapshot(date:string):Promise<AvailabilitySnapsho
   const requestedAt=performance.now();
   const finish=diagnostics.begin('availability','AVAILABILITY_REQUEST_STARTED',{},{});
   try{
-    const provider=new OndaLiveAvailabilityProvider({allowIncompleteRange:true});
+    const provider=availabilityPage ? new OndaBrowserAvailabilityProvider(availabilityPage,{allowIncompleteRange:true})
+      : new OndaLiveAvailabilityProvider({allowIncompleteRange:true});
     const envelope=await provider.getAvailability({startDate:date,endDate:date});
     const snapshot=parseAvailability(envelope.raw,{startDate:date,endDate:date,capturedAt:envelope.capturedAt,
       fixtureKind:envelope.fixtureKind,label:envelope.label,now:new Date(),maximumAgeMs:15_000,requireCompleteRange:false});
@@ -338,6 +343,7 @@ try {
   if (process.env.THIRSTY_API_INSTALLATION !== '1' && process.env.THIRSTY_API_TEST_INSTALLATION !== '1') throw Error('API_INSTALLATION_REQUIRED');
   const config = loadConfig();
   const requested = command.preferences;
+  if (requested) assertWingNormalRequest({ ...requested, method: command.checkoutMethod === 'proofless' ? 'proofless' : 'api-first', mode: command.mode });
   // Precision Release: the saved plan authorizes 1-3 exact, independent one-court targets (never COURT_COUNT).
   const phase3=!requested&&config.RELEASE_STRATEGY==='precision'&&command.mode!=='audit'?config.PRECISION_PHASE3:undefined;
   const precisionTargets=!phase3&&!requested&&config.RELEASE_STRATEGY==='precision'&&command.mode!=='audit'
@@ -429,6 +435,7 @@ try {
     unavailableWorkers.set(workerIds[index]!,{state:'BROWSER_FAILED',code:safeApiFailureCode(result.reason,'API_BROWSER_PREPARATION_FAILED')});});
   const sessions=prepared.flatMap(result=>result.status==='fulfilled'?[result.value]:[]);
   if(!sessions.length)throw Error('API_BROWSER_PREPARATION_FAILED');
+  availabilityPage=sessions[0]!.page;
   if (command.mode === 'prepare') { process.exitCode = 0; }
   else {
     if(command.mode==='live'||command.mode==='live-now'){
@@ -559,7 +566,7 @@ try {
       }
        verifiedHold=true;retainLiveLock=true;
        if(!latestVerifiedHoldExpiry||Date.parse(hold.holdExpiresAt)>Date.parse(latestVerifiedHoldExpiry))latestVerifiedHoldExpiry=hold.holdExpiresAt;
-      const bookingTarget={date:command.date,court:chunkPlan.courts[0]!.court,...(chunkPlan.courts[1]?{courtB:chunkPlan.courts[1].court}:{}),
+      const bookingTarget={...(chunkPlan.wing ? {wing:chunkPlan.wing} : {}),date:command.date,court:chunkPlan.courts[0]!.court,...(chunkPlan.courts[1]?{courtB:chunkPlan.courts[1].court}:{}),
         startTime:chunkPlan.startTime,durationHours:chunkPlan.durationHours};
       stage('PENDING_HOLD', { ...workerTiming(), ...bookingTarget, bookingId: hold.bookingIds[0]!, bookingNo: bookingNo ?? '',
         holdExpiresAt: hold.holdExpiresAt, price: chunkPlan.totalPrice });
@@ -574,8 +581,8 @@ try {
       await session.page.goto(officialCheckoutUrl(hold.bookingIds[0]!), { waitUntil: 'domcontentloaded', timeout: 45_000 });
       await session.page.getByText('QRPH', { exact: true }).first().waitFor({ state: 'visible', timeout: 20_000 });
       const body = await session.page.locator('body').innerText();
-      if (!body.includes('Pending') || !body.replaceAll(',', '').includes(chunkPlan.totalPrice.toFixed(2)))
-        throw Error('OFFICIAL_CHECKOUT_STATE_MISMATCH');
+      assertQrOrderSummary(body, chunkPlan);
+      await session.page.locator('canvas').first().waitFor({state:'visible',timeout:20_000});
       await showWorkerPage(session.page,workerId);
       stage('OFFICIAL_QRPH_HANDOFF', { ...workerTiming(), ...bookingTarget, bookingId: hold.bookingIds[0]!, bookingNo,
         holdExpiresAt: hold.holdExpiresAt, price: chunkPlan.totalPrice });
@@ -649,7 +656,8 @@ try {
       await session.page.goto(officialCheckoutUrl(hold.bookingIds[0]!),{waitUntil:'domcontentloaded',timeout:45_000});
       await session.page.getByText('QRPH',{exact:true}).first().waitFor({state:'visible',timeout:20_000});
       const body=await session.page.locator('body').innerText();
-      if(!body.includes('Pending')||!body.replaceAll(',','').includes(plan.totalPrice.toFixed(2)))throw Error('OFFICIAL_CHECKOUT_STATE_MISMATCH');
+      assertQrOrderSummary(body,plan);
+      await session.page.locator('canvas').first().waitFor({state:'visible',timeout:20_000});
       await showWorkerPage(session.page,workerId);
       stage('OFFICIAL_QRPH_HANDOFF',{...workerTiming(),...bookingTarget,bookingId:hold.bookingIds[0]!,bookingNo,
         holdExpiresAt:hold.holdExpiresAt,price:plan.totalPrice});
@@ -1228,7 +1236,7 @@ try {
     if(phase3)await runPhase3();
     else if(precisionTargets)await runPrecision(precisionTargets);
     else {
-    const preferences:BookingPreferences={mode:strategy,targetDate:command.date,durationHours:duration,
+    const preferences:BookingPreferences={wing:requested?.wing,mode:strategy,targetDate:command.date,durationHours:duration,
       preferredStartTimes:[requested?.start??config.START_TIME],fallbackStartTimes:requested?.fallbackStarts??config.FALLBACK_TIMES,
       courtPriority:requested?.priority??config.PREFERRED_COURTS,fallbackCourts:requested?[]:config.FALLBACK_COURTS,
       courtCount,exactCourts:requested?.exact,maximumTotalPrice:requested?.maximum??config.MAX_PRICE,currency:'PHP'};
@@ -1306,7 +1314,7 @@ try {
       checkoutPlans=primaryProoflessPlans;
     }else{
       stage('FETCHING_AVAILABILITY');
-      discovery = await discoverApiAvailability(new OndaLiveAvailabilityProvider(), preferences);
+      discovery = await discoverApiAvailability(new OndaBrowserAvailabilityProvider(availabilityPage,{wing:preferences.wing}), preferences);
       ensureActive();
       diagnostics.observe('RELEASE_AVAILABILITY_MATRIX',{},{...availabilityObservation(discovery.snapshot,command.date),
         durationMs:Math.round(discovery.timing.totalMs??0)});
@@ -1322,7 +1330,7 @@ try {
         });
       if (!selected) throw Error('API_NO_UNUSED_CANDIDATE');
       const plan = selected.plan;
-      stage('CANDIDATE_READY', { date: command.date, court: plan.courts[0]!.court,
+      stage('CANDIDATE_READY', { ...(plan.wing ? {wing:plan.wing} : {}), date: command.date, court: plan.courts[0]!.court,
         ...(plan.courts[1] ? { courtB: plan.courts[1].court } : {}),startTime: plan.startTime,
         durationHours: duration,price: plan.totalPrice,availabilityMs: Math.round(discovery.timing.totalMs ?? 0) });
       checkoutPlans=standardCheckoutChunks(plan);

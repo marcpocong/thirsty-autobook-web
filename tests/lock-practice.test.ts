@@ -79,6 +79,8 @@ it('restores only official QR stages from the latest API run matching the retain
   await writeFile(path,[{stage:'PENDING_HOLD',workerId:'C',court:5,...base},{stage:'OFFICIAL_QRPH_HANDOFF',workerId:'A',court:7,courtB:6,...base},{stage:'OFFICIAL_QRPH_HANDOFF',workerId:'B',court:3,courtB:2,...base}].map(value=>JSON.stringify(value)).join('\n'));
   expect(await readLatestQrHandoffs(root,expiry)).toMatchObject([{checkout:'A',courts:[7,6],amount:3600},{checkout:'B',courts:[3,2],amount:3600}]);
   expect(await readLatestQrHandoffs(root,'2026-09-22T05:00:00.000+08:00')).toEqual([]);
+  await writeFile(path,JSON.stringify({stage:'OFFICIAL_QRPH_HANDOFF',workerId:'A',wing:'BUKO',court:4,...base}));
+  expect(await readLatestQrHandoffs(root,expiry)).toMatchObject([{checkout:'A',wing:'BUKO',courts:[4]}]);
  }finally{if(!root.startsWith(resolve('.local')+sep))throw Error('UNSAFE_TEST_PATH');await rm(root,{recursive:true,force:true});}
 });
 function harness(locked=true,confirmed=true){

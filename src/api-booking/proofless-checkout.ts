@@ -32,6 +32,7 @@ const unique=<T>(values:readonly T[])=>[...new Set(values)];
  * rates are the last verified venue schedule and every item remains proofless.
  */
 export function prooflessReleasePlan(preferences:BookingPreferences):BookingPlan{
+  if (preferences.wing && preferences.wing !== 'MANGO') throw Error('BUKO_PROOFLESS_NOT_ENABLED');
   const {mode,targetDate,durationHours,courtCount,currency}=preferences;
   const startTime=preferences.preferredStartTimes[0];
   if(!/^\d{4}-\d{2}-\d{2}$/.test(targetDate)||!startTime||!/^([01]\d|2[0-3]):00$/.test(startTime)||currency!=='PHP')
@@ -133,6 +134,7 @@ export function assertDirectDispatchWindow(releaseMs:number,now=Date.now(),trigg
 }
 
 export function prooflessRequest(plan:BookingPlan,customer:CheckoutCustomer):ProoflessCheckoutRequest{
+  if (plan.wing && plan.wing !== 'MANGO') throw Error('BUKO_PROOFLESS_NOT_ENABLED');
   if(plan.mode!=='standard'||plan.chunks.length!==1||plan.courts.length<1||plan.courts.length>2||
     plan.courts.some(court=>court.slots.length!==plan.durationHours))throw Error('DIRECT_PLAN_INVALID');
   const courts=[...plan.courts].sort((a,b)=>a.date.localeCompare(b.date)||a.startTime.localeCompare(b.startTime)||a.spaceId.localeCompare(b.spaceId));
