@@ -1,16 +1,19 @@
 import { z } from 'zod';
-import { verifiedAvailabilitySession } from './verified-availability-session.js';
-import { parseAvailability } from './availability-parser.js';
+import { resolve } from 'node:path';
+import { mkdir } from 'node:fs/promises';
+import { checkAvailability } from './availability-observer.js';
 import { emitUiEvent } from '../ui-events.js';
-const {date}=z.object({date:z.iso.date()}).strict().parse(JSON.parse(process.argv[2]??'{}'));
-const session=await verifiedAvailabilitySession();
+
+/** One-click read-only availability for both wings. Needs no prepared checkout browser and performs no booking POST. */
+const { date } = z.object({ date: z.iso.date() }).strict().parse(JSON.parse(process.argv[2] ?? '{}'));
+let aborted = false;
+process.on('message', message => { if ((message as { type?: string })?.type === 'abort') aborted = true; });
+const directory = resolve('.local/availability-check');
+await mkdir(directory, { recursive: true });
 try {
-  const cells=[];let capturedAt:string|undefined;
-  for(const wing of ['MANGO','BUKO'] as const){
-    const envelope=await session.provider(wing).getAvailability({startDate:date,endDate:date});
-    capturedAt??=envelope.capturedAt;
-    const snapshot=parseAvailability(envelope.raw,{wing,startDate:date,endDate:date,capturedAt:envelope.capturedAt,fixtureKind:envelope.fixtureKind,label:envelope.label,now:new Date(),maximumAgeMs:15_000,requireCompleteRange:false});
-    cells.push(...snapshot.slots.filter(slot=>slot.date===date).map(slot=>({wing,court:slot.court,start:slot.startTime,available:slot.isAvailable,price:slot.price??null})));
-  }
-  emitUiEvent({type:'courtBrowser',date,capturedAt:capturedAt!,cells});
-}finally{await session.close();}
+  const check = await checkAvailability(date, { directory, isAborted: () => aborted, onPhase: phase => process.stdout.write(`${phase}\n`) });
+  emitUiEvent({ type: 'courtBrowser', ...check });
+} catch (error) {
+  process.stderr.write(`${error instanceof Error ? error.message : 'AVAILABILITY_READ_FAILED'}\n`);
+  process.exitCode = 1;
+} finally { if (process.connected) process.disconnect(); }

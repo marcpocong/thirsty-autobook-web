@@ -1,19 +1,27 @@
-import { chromium, type BrowserContext } from 'playwright';
+import type { BrowserContext, Page } from 'playwright';
 import { join } from 'node:path';
 import { ONDA_URL, VENUE } from './config.js';
 import { OndaBrowserAvailabilityProvider } from './api-booking/browser-availability-provider.js';
 import { parseAvailability } from './api-booking/availability-parser.js';
-/** Dedicated guest observer profile and Chrome process. No dispatch CDP, customer or security context. */
+import { launchObserverChrome } from './observer-chrome.js';
+/** Dedicated guest observer profile and Chrome process. No dispatch CDP, customer or security context.
+ * Production launches a normal Chrome window on its own profile (headless and automation-launched browsers are
+ * refused by the site's availability endpoint); tests inject an isolated context. */
 export async function openSlotWatchBrowser(directory:string,launch?:()=>Promise<BrowserContext>) {
-  let context:BrowserContext|undefined;
+  let context:BrowserContext|undefined,closeBrowser:(()=>Promise<void>)|undefined,page:Page;
   try {
-    context=launch?await launch():await chromium.launchPersistentContext(join(directory,'observer-chrome-profile'),{channel:'chrome',headless:false,serviceWorkers:'block'});
-    await context.route('**/*',route=>route.request().method()==='GET'?route.fallback():route.abort('blockedbyclient'));
-    const page=context.pages()[0]??await context.newPage();
-    await page.goto(ONDA_URL,{waitUntil:'domcontentloaded',timeout:45_000});
-    if((await page.getByTestId('public-booking-hero-title').first().innerText({timeout:15_000})).trim()!==VENUE)throw Error('OBSERVER_VENUE_UNVERIFIED');
+    if(launch){
+      context=await launch();closeBrowser=()=>context!.close();
+      await context.route('**/*',route=>route.request().method()==='GET'?route.fallback():route.abort('blockedbyclient'));
+      page=context.pages()[0]??await context.newPage();
+      await page.goto(ONDA_URL,{waitUntil:'domcontentloaded',timeout:45_000});
+      if((await page.getByTestId('public-booking-hero-title').first().innerText({timeout:15_000})).trim()!==VENUE)throw Error('OBSERVER_VENUE_UNVERIFIED');
+    }else{
+      const observer=await launchObserverChrome(join(directory,'observer-chrome-profile'));
+      context=observer.context;page=observer.page;closeBrowser=observer.close;
+    }
     let blocked:string|undefined;
-    return {close:()=>context!.close(),read:async(date:string,signal:AbortSignal)=>{
+    return {close:()=>closeBrowser!(),read:async(date:string,signal:AbortSignal)=>{
       if(blocked)throw Error(blocked);
       if(signal.aborted||page.isClosed())throw Error('OBSERVER_BROWSER_UNAVAILABLE');
       if(page.url()!==ONDA_URL)throw Error('OBSERVER_VENUE_UNVERIFIED');
@@ -25,5 +33,5 @@ export async function openSlotWatchBrowser(directory:string,launch?:()=>Promise<
       const status=headers.get('x-vercel-cache')??undefined,age=headers.get('age'),vercelId=headers.get('x-vercel-id')??undefined,dateHeader=headers.get('date')??undefined,matchedPath=headers.get('x-matched-path')??undefined;
       return {snapshot,cache:{status,...(age&&/^\d{1,7}$/.test(age)?{ageS:Number(age)}:{})},provider:{vercelId,date:dateHeader,matchedPath}};
     }};
-  }catch(error){await context?.close();throw error;}
+  }catch(error){await closeBrowser?.().catch(()=>undefined);throw error;}
 }

@@ -89,6 +89,13 @@ const errors: Record<string, string> = {
   PRECISION_TOO_LATE_TO_FREEZE:'The Precision target set could not be frozen before release. Nothing was sent.',
   SHOTGUN_LIVE_COMPATIBILITY_UNVERIFIED:'Live Shotgun is blocked: proofless release checkout and provider request-rate permission remain unverified. You can edit, save and test the plan offline.',
   AVAILABILITY_BROWSER_PREPARATION_REQUIRED:'Prepare and verify the booking browser before checking live availability.',
+  AVAILABILITY_CHECK_RUNNING:'An availability check is already running. Wait for it to finish.',
+  AVAILABILITY_CHECK_REFUSED_ACTIVE_RUN:'Availability checks are paused while a release is armed or an automation is running, so they cannot compete with dispatch.',
+  AVAILABILITY_CHECK_FAILED:'Availability could not be read. Every cell stays UNKNOWN; nothing was booked.',
+  OBSERVER_PROFILE_BUSY:'The availability observer window from a previous check is still open. Close it, then check again.',
+  OBSERVER_START_TIMEOUT:'The availability observer Chrome did not start in time. Check that Google Chrome is installed, then try again.',
+  OBSERVER_VENUE_UNVERIFIED:'The observer could not verify the Thirsty Pickle booking page. Availability stays UNKNOWN.',
+  CHROME_NOT_INSTALLED:'Google Chrome was not found. Install Chrome to check availability.',
   PRECISION_REQUIRES_PROOFLESS_STANDARD:'Precision Release uses Proofless Direct with Standard 1-3 hour targets.',
   OBJECTIVE_NOT_ACHIEVED_ALL_REJECTED:'Every dispatched Precision attempt was rejected by Onda. No hold was created.',
   OBJECTIVE_NOT_ACHIEVED_NOTHING_DISPATCHED:'No Precision attempt was dispatched. See each attempt for the reason.',
@@ -797,6 +804,7 @@ export class Controller {
   }
   private async operation(kind: Dashboard['operation'], work: (generation: number) => Promise<void>) {
     if (this.state.operation !== 'idle') throw new Error('OPERATION_ALREADY_RUNNING');
+    if (this.availabilityProcess) throw new Error('AVAILABILITY_CHECK_RUNNING');
     const generation = ++this.generation;
     if (['observe', 'dry', 'selection', 'full'].includes(kind)) this.state.releasePerformance = null;
     this.state.dualActive=false; this.state.operation = kind; this.state.ready = false; this.state.plan = null; this.clearApiStage(); this.state.termsAuthorized=false;
@@ -823,7 +831,33 @@ export class Controller {
     }
   }
   private async noLock() { this.state.lock = await this.deps.lock(); if (this.state.lock) throw new Error('AUTOMATION_LOCK_EXISTS'); }
-  browseCourts(value:unknown){const date=z.iso.date().parse(value);return this.operation('apiPreview',async gen=>{this.state.courtBrowser=null;this.publish();await this.run({kind:'courtBrowse',date},gen);});}
+  private availabilityProcess:RunningCommand|undefined;
+  /**
+   * One-click read-only availability for both wings in a dedicated observer browser. It needs no prepared worker,
+   * performs no booking POST and, unlike booking operations, never clears preparation or Terms. It is refused while a
+   * release is armed or any automation runs, so it can never compete with dispatch.
+   */
+  async browseCourts(value:unknown){
+    const date=z.iso.date().parse(value);
+    if(this.availabilityProcess)throw Error('AVAILABILITY_CHECK_RUNNING');
+    if(this.state.scheduledRelease||this.state.activeApiRelease||this.state.operation!=='idle')throw Error('AVAILABILITY_CHECK_REFUSED_ACTIVE_RUN');
+    const startedAt=new Date().toISOString();
+    this.state.availabilityCheck={status:'RUNNING',date,startedAt};this.state.courtBrowser=null;this.publish();
+    this.log(`Availability check started for ${date} · dedicated read-only observer`);
+    const active=this.deps.runner({kind:'courtBrowse',date},this.event,(line,error)=>this.log(line,error));
+    this.availabilityProcess=active;
+    try{
+      const code=await active.done;
+      const evidence=this.state.courtBrowser as Extract<UiEvent,{type:'courtBrowser'}>|null|undefined;
+      if(code!==0||!evidence||evidence.date!==date)throw Error('AVAILABILITY_CHECK_FAILED');
+      const failed=(evidence.wings??[]).filter(w=>w.status==='ERROR');
+      this.state.availabilityCheck={status:failed.length===2?'FAILED':'DONE',date,startedAt,finishedAt:new Date().toISOString(),...(failed.length?{code:failed.map(w=>`${w.wing}:${w.code??'ERROR'}`).join(' ')}:{})};
+      this.log(`Availability check finished for ${date}${failed.length?` · ${failed.length} wing read failed`:''}`);
+    }catch(error){
+      this.state.availabilityCheck={status:'FAILED',date,startedAt,finishedAt:new Date().toISOString(),code:error instanceof Error?error.message:'AVAILABILITY_CHECK_FAILED'};
+      this.log('AVAILABILITY_CHECK_FAILED',true);throw error;
+    }finally{this.availabilityProcess=undefined;this.publish();}
+  }
   apiPreview(value:unknown) { const date=z.iso.date().parse(value); return this.operation('apiPreview', async gen => {
     await this.noLock();
     const fingerprint=this.apiTestFingerprint,preferences=this.apiTestPreferences;
@@ -1226,6 +1260,7 @@ export class Controller {
   async abortAutomation() {
     this.state.termsAuthorized=false;
     if(this.state.scheduledRelease){await this.cancelScheduledRelease('SCHEDULE CANCELLED');return;}
+    if(this.availabilityProcess){await this.availabilityProcess.stop().catch(()=>undefined);this.log('Availability check stopped');}
     if (this.state.operation === 'idle') { this.log('No UI-launched automation is running. External CLI processes are not controlled by this panel.'); return; }
     this.stopReleaseSlotWatchBeforeRelease('release aborted');
     ++this.generation; this.state.ready = false; this.state.operation = 'stopping'; this.publish();
