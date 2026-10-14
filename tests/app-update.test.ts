@@ -28,7 +28,7 @@ describe('canonical update detection and lifecycle refusal',()=>{
  const lock=JSON.stringify({stage:'FINAL_ACTION_DISPATCHING'});await put(root,'.local/automation.lock',lock);
  await expect(assertSafeUpdate(root,{processes:[]})).rejects.toThrow('UNRESOLVED');expect(await readFile(join(root,'.local/automation.lock'),'utf8')).toBe(lock);
  await put(root,'.local/automation.lock',JSON.stringify({stage:'HOLD_VERIFIED',holdExpiresAt:'2099-01-01T00:00:00Z'}));await expect(assertSafeUpdate(root,{processes:[]})).rejects.toThrow('UNRESOLVED');
- await put(root,'.local/automation.lock',JSON.stringify({stage:'HOLD_VERIFIED',holdExpiresAt:'2020-01-01T00:00:00Z'}));await expect(assertSafeUpdate(root,{processes:[]})).resolves.toBeUndefined();
+ await put(root,'.local/automation.lock',JSON.stringify({stage:'HOLD_VERIFIED',holdExpiresAt:'2020-01-01T00:00:00Z'}));await expect(assertSafeUpdate(root,{processes:[]})).resolves.toMatchObject({eligibility:'READY',blockers:[]});
  await put(root,'.local/api-booking/api-first-journals/key/record.json',JSON.stringify({attempt:{},state:'unknown'}));await expect(assertSafeUpdate(root,{processes:[]})).rejects.toThrow('UNRESOLVED_JOURNAL');
  });
 });
