@@ -79,6 +79,8 @@ export interface Dashboard {
   releasePerformance?: Extract<UiEvent, { type: 'releasePerformance' }>['summary'] | null;
   lockReview?:LockReview|null;
   courtBrowser?:Extract<UiEvent,{type:'courtBrowser'}>|null;
+  /** State of the one-click read-only availability check (independent of booking preparation). */
+  availabilityCheck?:{status:'RUNNING'|'DONE'|'FAILED';date:string;startedAt:string;finishedAt?:string;code?:string}|null;
   operation: 'idle' | 'scheduled' | 'chrome' | 'inspect' | 'prepare' | 'confirming' | 'observe' | 'selection' | 'full' | 'dry' | 'practice' | 'stopping' | 'saving' | 'reviewing' | 'clearing' | 'resetting' | 'fullPractice' | 'apiPreview' | 'blockAudit' | 'closingBrowsers';
   /** Live read-only court/hour observation around the next or current release. */
   slotWatch?:SlotWatchView|null;
