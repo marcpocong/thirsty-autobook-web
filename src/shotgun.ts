@@ -1,3 +1,5 @@
+import { canonicalReleaseTargetId, exactReleaseTarget } from './release-target.js';
+import type { Wing } from './court-registry.js';
 import { PRECISION_MAX_FAN_OUT, PRECISION_MAX_SENDS } from './workers.js';
 
 export type ShotgunAllocationMode = 'EQUAL' | 'PRIORITY_WEIGHTED' | 'CUSTOM';
@@ -65,8 +67,9 @@ export interface ShotgunPlan {
 }
 
 /** Stable under visual reordering. Editing the logical court/time target deliberately creates a new identity. */
-export const logicalTargetId = (target: { court: number; start: string; durationHours: number }) =>
-  `court-${target.court}:${target.start}:${target.durationHours}h`;
+export const logicalTargetId = (target: { court: number; start: string; durationHours: number; wing?: Wing; spaceId?: string; bookingDate?: string }) =>
+  target.wing !== undefined || target.bookingDate !== undefined || target.spaceId !== undefined
+    ? canonicalReleaseTargetId(exactReleaseTarget(target)) : `court-${target.court}:${target.start}:${target.durationHours}h`;
 
 const largestRemainder = (budget: number, targets: readonly ShotgunTarget[], weights: readonly number[]) => {
   const totalWeight = weights.reduce((sum, value) => sum + value, 0);

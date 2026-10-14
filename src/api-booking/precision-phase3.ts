@@ -16,7 +16,7 @@ export const PRECISION_MAX_CANDIDATES = 21;
 export type PrecisionWave = 'WAVE_1' | 'WAVE_2' | 'RESCUE';
 export interface CandidatePermissions { wave1: boolean; wave2: boolean; rescue: boolean }
 export interface CandidateInput {
-  court: number; start: string; durationHours: number; priority: number;
+  court: number; start: string; durationHours: number; priority: number; wing?:import('../court-registry.js').Wing;spaceId?:string;bookingDate?:string;
   permissions: CandidatePermissions; rateEvidence: RateEvidence;
   /** Planning-time public evidence and the operator's deliberate override marker (strategy-engine.ts). */
   publicEvidence?: { evidence: string; override?: 'OPERATOR_OVERRIDE_PUBLIC_CONFLICT' };
@@ -54,6 +54,7 @@ export function candidatesConflict(a: Pick<AuthorizedCandidate, 'court' | 'start
 }
 
 export function authorizePrecision(input: PrecisionAuthorizationInput): FrozenPrecisionAuthorization {
+  if (input.candidates.some(c=>c.wing!==undefined||c.spaceId!==undefined||c.bookingDate!==undefined)) throw Error('SCOPED_RELEASE_LIVE_UNVERIFIED_USE_TEST_LAB');
   if (!validDate(input.date) || !Number.isSafeInteger(input.releaseMs) || input.releaseMs <= 0 ||
     !Number.isFinite(Date.parse(input.authorizedAt))) throw Error('PRECISION_AUTHORIZATION_INVALID');
   if (input.candidates.length < 1 || input.candidates.length > PRECISION_MAX_CANDIDATES) throw Error('PRECISION_CANDIDATE_COUNT_INVALID');
@@ -264,6 +265,7 @@ export function pricedPrecisionPlan(candidate: AuthorizedCandidate, date: string
 
 /** The exact plan a saved candidate would be sent with at its rate evidence (for the arm-time wire self-check). */
 export function candidateWirePlan(date: string, candidate: Pick<CandidateInput, 'court' | 'start' | 'durationHours' | 'rateEvidence'>): BookingPlan {
+  if ('wing' in candidate || 'bookingDate' in candidate || 'spaceId' in candidate) throw Error('SCOPED_RELEASE_LIVE_UNVERIFIED_USE_TEST_LAB');
   const end = endOf(candidate.start, candidate.durationHours);
   const logicalKey = DurableSubmissionJournal.key(THIRSTY_PICKLE_FACILITY_ID,
     COURT_TO_SPACE_ID[candidate.court as keyof typeof COURT_TO_SPACE_ID], date, candidate.start, end);

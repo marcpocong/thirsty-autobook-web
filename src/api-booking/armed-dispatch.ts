@@ -100,7 +100,7 @@ export async function armPrecisionRace(race: FrozenPrecisionRace, deps: ArmDeps)
   const dispatchDeadlineMs = deps.releaseMs + Math.max(deps.dispatchWindowMs ?? DIRECT_MAX_DISPATCH_LATENESS_MS,
     latestTriggerOffsetMs + DIRECT_MAX_DISPATCH_LATENESS_MS);
   const prepared = race.attempts.map((attempt, index) => {
-    const request = deepFreeze(prooflessRequest(attempt.plan, deps.customerFor(attempt.target.workerId)));
+    const request = deepFreeze(prooflessRequest(attempt.plan, deps.customerFor(attempt.target.workerId), race.executionMode));
     const keys = standardPlanJournalKeys(attempt.plan, THIRSTY_PICKLE_FACILITY_ID);
     if (keys.length !== 1 || keys[0] !== attempt.target.targetKey) throw Error('PRECISION_TARGET_KEY_MISMATCH');
     // Exact wire-body self-check before anything durable: a malformed request refuses the whole arm, never fails at release.
@@ -117,6 +117,7 @@ export async function armPrecisionRace(race: FrozenPrecisionRace, deps: ArmDeps)
     const parent = new DurableSubmissionJournal(resolve(deps.journalRoot, key));
     const first = values[0]!;
     await parent.arm(key, new Date(deps.now()), { attemptId: key, planFingerprint: race.fingerprint,
+      ...(race.executionMode ? {executionMode:race.executionMode,wing:first.attempt.plan.wing??'MANGO',spaceIds:first.attempt.plan.courts.map(c=>c.spaceId)} : {}),
       targetDate: first.attempt.plan.targetDate, courtIds: first.attempt.plan.courts.map(court => court.court),
       hourlyBoundaries: first.attempt.plan.courts.flatMap(court => court.slots.map(slot => ({ startTime: slot.startTime, endTime: slot.endTime }))),
       expectedBookingCount: first.request.items.length, maximumAmount: first.attempt.plan.totalPrice, stage: 'armed',
@@ -130,6 +131,7 @@ export async function armPrecisionRace(race: FrozenPrecisionRace, deps: ArmDeps)
       ? new DurableSubmissionJournal(resolve(deps.journalRoot, key, 'fan-out', race.fingerprint, attempt.id))
       : deps.journalFor?.(key) ?? new DurableSubmissionJournal(resolve(deps.journalRoot, key));
     await journal.arm(key, new Date(deps.now()), { attemptId: isFanOut ? attempt.id : key, planFingerprint: fingerprint, targetDate: attempt.plan.targetDate,
+      ...(race.executionMode ? {executionMode:race.executionMode,wing:attempt.plan.wing??'MANGO',spaceIds:attempt.plan.courts.map(c=>c.spaceId)} : {}),
       courtIds: attempt.plan.courts.map(court => court.court),
       hourlyBoundaries: attempt.plan.courts.flatMap(court => court.slots.map(slot => ({ startTime: slot.startTime, endTime: slot.endTime }))),
       expectedBookingCount: request.items.length, maximumAmount: attempt.plan.totalPrice, stage: 'armed',
@@ -359,7 +361,14 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
   const targetStops=new Map<string,ShotgunSuppressionReason>();
   // A Precision race authorizes one successful court. Every alternative shares this objective.
   let objectiveStop:ShotgunSuppressionReason|undefined;
-  const stopFor=(attempt:ArmedAttempt)=>objectiveStop??targetStops.get(attempt.target.targetKey);
+  const wingStops = new Map<string,ShotgunSuppressionReason>();
+  const wingOf = (attempt:ArmedAttempt) => attempt.plan.wing ?? 'MANGO';
+  const recordStop = (attempt:ArmedAttempt, reason:ShotgunSuppressionReason) => {
+    if (reason === 'SHOTGUN_TARGET_ALREADY_ACHIEVED' && armed.race.objective === 'ONE_PER_WING') wingStops.set(wingOf(attempt),reason);
+    else objectiveStop=reason;
+    deps.onObjectiveStop?.(reason); targetStops.set(attempt.target.targetKey,reason);
+  };
+  const stopFor=(attempt:ArmedAttempt)=>objectiveStop??wingStops.get(wingOf(attempt))??targetStops.get(attempt.target.targetKey);
   const strictRace=strictDispatch;
   // Preserve cheap safety signals immediately; defer journals, diagnostics and QR navigation until T+1 s.
   const criticalEndMs=armed.releaseMs+FINAL_APPROACH_MS;
@@ -369,8 +378,8 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
     if(error){if(!error.dispatched)return;reason=error.diagnostic?.errorHint==='payment-in-progress'?'SHOTGUN_PAYMENT_IN_PROGRESS_STOP':error.diagnostic?.status===429?'SHOTGUN_PROVIDER_THROTTLE_STOP':error.confirmedRejected?undefined:'SHOTGUN_TARGET_OUTCOME_UNKNOWN';}
     else {try{validatePublicCheckoutResponse(raw,attempt.request as unknown as PublicCheckoutRequest,attempt.plan,new Date(now()),attempt.plan.totalPrice);reason='SHOTGUN_TARGET_ALREADY_ACHIEVED';}
       catch{reason='SHOTGUN_TARGET_OUTCOME_UNKNOWN';}}
-    if(reason){objectiveStop=reason;deps.onObjectiveStop?.(reason);targetStops.set(attempt.target.targetKey,reason);
-      for(const otherIndex of rendererArmed){const other=armed.attempts[otherIndex]!;if(other.triggerMs>now()){suppressed[otherIndex]=reason;void renderer?.transportFor(other.target.workerId,other)?.disarmRendererCheckout(other.key).catch(()=>undefined);}}}
+    if(reason){recordStop(attempt,reason);
+      for(const otherIndex of rendererArmed){const other=armed.attempts[otherIndex]!;if(other.triggerMs>now() && stopFor(other)){suppressed[otherIndex]=reason;void renderer?.transportFor(other.target.workerId,other)?.disarmRendererCheckout(other.key).catch(()=>undefined);}}}
   };
   const lifecycle=(attempt:ArmedAttempt):Pick<CheckoutDispatchOptions,'onResponseSafety'|'beforeResponseBookkeeping'>=>attempt.shotDeadlineMs===undefined?{}:{onResponseSafety:(raw,error)=>safety(attempt,raw,error),beforeResponseBookkeeping:afterCritical};
   const renderer = deps.rendererDispatch;
@@ -394,11 +403,11 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
       catch(error){return classifyPrecisionDispatchError(error,async()=>{try{return (await attempt.journal.read(attempt.key)).state;}catch(readError){if((readError as NodeJS.ErrnoException).code==='ENOENT')return undefined;throw readError;}});}
     })().catch(():PrecisionDispatchResult=>({state:'UNKNOWN',code:'PRECISION_DISPATCH_UNCLASSIFIED'})).then(async result=>{
       const reason=shotgunStopReason({state:result.state,throttle:!!result.code&&/(?:429|THROTTL|RATE_LIMIT)/.test(result.code)});
-      if(reason){objectiveStop=reason;deps.onObjectiveStop?.(reason);targetStops.set(attempt.target.targetKey,reason);
+      if(reason){recordStop(attempt,reason);
         // A renderer child can already be armed for a later trigger. Disarm it as soon as this
         // one-court objective becomes conclusive/unknown/throttled, and retain the exact reason.
         await Promise.all(rendererArmed.flatMap(otherIndex=>{const other=armed.attempts[otherIndex]!;
-          if(otherIndex===index||other.triggerMs<=now())return[];
+          if(otherIndex===index||other.triggerMs<=now()||!stopFor(other))return[];
           suppressed[otherIndex]=reason;
           return [renderer?.transportFor(other.target.workerId,other)?.disarmRendererCheckout(other.key).catch(()=>undefined)??Promise.resolve()];}));}
       return result;

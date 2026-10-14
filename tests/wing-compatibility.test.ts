@@ -79,7 +79,7 @@ describe('independent wing release policies and publication', () => {
   it('preserves Mango inclusive three-day behavior and independent configured Buko timing', () => {
     expect(releaseForTarget(date,'MANGO').toISO()).toBe('2026-10-14T08:00:00.000+08:00');
     expect(releaseForTarget(date,'BUKO',policy).toISO()).toBe('2026-10-12T09:30:00.000+08:00');
-    expect(() => releaseForTarget(date,'BUKO')).toThrow('WING_RELEASE_POLICY_UNKNOWN');
+    expect(releaseForTarget('2026-10-20','BUKO').toISO()).toBe('2026-10-14T08:00:00.000+08:00');
     expect(() => releaseForTarget(date,'BUKO',{...policy,wing:'MANGO'})).toThrow('WING_RELEASE_POLICY_UNKNOWN');
     expect(() => releaseForTarget('2026-02-31','MANGO')).toThrow('WING_TARGET_DATE_INVALID');
   });

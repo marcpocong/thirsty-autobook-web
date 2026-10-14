@@ -24,6 +24,13 @@ export function findChrome(explicit: string | undefined, fallback: string): stri
   return path;
 }
 
+export async function closeOfflineChrome(session:OfflineChrome):Promise<void> {
+  // connectOverCDP browser.close() only disconnects; close the browser we spawned.
+  try { const cdp=await session.browser.newBrowserCDPSession();await cdp.send('Browser.close'); } catch {}
+  await session.browser.close().catch(()=>{});
+  if(session.process.exitCode===null)await new Promise<void>(done=>{const timer=setTimeout(()=>{session.process.kill();done();},3000);session.process.once('exit',()=>{clearTimeout(timer);done();});});
+}
+
 export interface OfflineChrome { index: number; port: number; browser: Browser; pages: Page[]; process: ChildProcess; routeSeen: number[]; version: string | null }
 
 /**
@@ -44,13 +51,15 @@ export async function launchOfflineChrome(options: { chromium: typeof import('pl
     `--remote-debugging-port=${port}`, '--remote-debugging-address=127.0.0.1', `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check',
     '--disable-background-networking', '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1', '--proxy-server=http://127.0.0.1:9',
     ...(rootOnLinux ? ['--no-sandbox'] : []), 'about:blank'], { stdio: 'ignore', windowsHide: !options.headed });
+  let browser:Browser|undefined;
+  try {
   let version: string | null = null;
   for (const deadline = Date.now() + 20_000; ;) {
     try { const response = await fetch(`http://127.0.0.1:${port}/json/version`); if (response.ok) { version = String((await response.json() as { Browser?: string }).Browser ?? '') || null; break; } } catch { /* starting */ }
     if (Date.now() > deadline) throw Error('BENCH_CHROME_START_TIMEOUT');
     await new Promise(done => setTimeout(done, 100));
   }
-  const browser = await options.chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+  browser = await options.chromium.connectOverCDP(`http://127.0.0.1:${port}`);
   const context = browser.contexts()[0]!;
   const pages: Page[] = [];
   const routeSeen: number[] = [];
@@ -78,6 +87,7 @@ export async function launchOfflineChrome(options: { chromium: typeof import('pl
   // Like production, the first tab is the one in front.
   await pages[0]!.bringToFront();
   return { index: options.index, port, browser, pages, process: child, routeSeen, version };
+  } catch(error) {if(browser){try{await (await browser.newBrowserCDPSession()).send('Browser.close');}catch{}await browser.close().catch(()=>{});}if(child.exitCode===null)child.kill();throw error;}
 }
 
 /** Emulated page-script activity: every 10 ms each tab's main thread is busy for `busyMs` (0 disables). */
