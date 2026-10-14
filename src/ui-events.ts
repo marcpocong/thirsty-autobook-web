@@ -17,6 +17,7 @@ export const ReleasePerformanceSchema=z.object({workers:z.object({A:workerPerfor
 
 // Opt-in stdout protocol. Ordinary CLI output and buffered telemetry remain intact.
 export const UiEventSchema = z.discriminatedUnion('type', [
+  z.object({type:z.literal('courtBrowser'),date:z.iso.date(),capturedAt:z.iso.datetime(),cells:z.array(z.object({wing:z.enum(['MANGO','BUKO']),court:z.number().int().min(1).max(7),start:z.string(),available:z.boolean(),price:z.number().finite().nonnegative().nullable()}).strict()).max(224)}).strict(),
   z.object({type:z.literal('apiStage'),stage:z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/),elapsedMs:z.number().int().nonnegative(),
     at:z.iso.datetime().optional(),sincePreviousMs:z.number().int().nonnegative().optional(),runId:z.uuid().optional(),
     code:z.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/).optional(),workerId:WorkerIdSchema.optional(),workerElapsedMs:z.number().int().nonnegative().optional(),port:z.number().int().optional(),releaseMs:z.number().int().optional(),

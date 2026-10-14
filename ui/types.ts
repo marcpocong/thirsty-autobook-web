@@ -24,7 +24,7 @@ import type {ReleaseLabDigest} from '../src/release-lab-analysis.js';
 export type DualPracticeCommand = { kind:'dualDry'; date:string } | { kind:'dualPractice'|'dualFullPractice'; input:DualPracticeInput };
 export interface ConfirmRequest { id:string; tone:'question'|'warning'; title:string; message:string; detail:string; confirmLabel:string; cancelLabel?:string }
 export interface ApiRunPreferences {wing?:'MANGO'|'BUKO';strategy:'standard'|'extended';date:string;start:string;duration:number;courtCount:CourtCount;maximum?:number;priority:number[];fallbackStarts:string[];exact?:number[][]}
-export type Command = {kind:'resetPrepare';input:PreparationInput} | {kind:'testBooking';input:TestBookingInput} | {kind:'apiRun';mode:'prepare'|'dry'|'audit'|'live'|'live-now';date:string;fingerprint:string;checkoutMethod?:'proof-based'|'proofless';clockOffsetMs?:number;releaseMs?:number;preferences?:ApiRunPreferences} | {kind:'blockAudit';date:string} | {kind:'apiPreview';date:string} | DualPracticeCommand | 'chromeDual' | 'dualReadiness' | 'dualPrepare' | {kind:'fullPractice';input:FullPracticeInput} | 'chrome' | 'inspect' | 'observe' | { kind:'selection' | 'dry'; planHash:string } | {kind:'full';context:ScheduledReleaseContext;authorizeTerms:true} | { kind:'practice'; input:PracticeInput };
+export type Command = {kind:'courtBrowse';date:string} | {kind:'resetPrepare';input:PreparationInput} | {kind:'testBooking';input:TestBookingInput} | {kind:'apiRun';mode:'prepare'|'dry'|'audit'|'live'|'live-now';date:string;fingerprint:string;checkoutMethod?:'proof-based'|'proofless';clockOffsetMs?:number;releaseMs?:number;preferences?:ApiRunPreferences} | {kind:'blockAudit';date:string} | {kind:'apiPreview';date:string} | DualPracticeCommand | 'chromeDual' | 'dualReadiness' | 'dualPrepare' | {kind:'fullPractice';input:FullPracticeInput} | 'chrome' | 'inspect' | 'observe' | { kind:'selection' | 'dry'; planHash:string } | {kind:'full';context:ScheduledReleaseContext;authorizeTerms:true} | { kind:'practice'; input:PracticeInput };
 export type Inspection = Extract<UiEvent, { type: 'inspection' }>;
 export interface Activity { at: string; text: string; level: 'info' | 'error'; elapsedMs?:number; deltaMs?:number }
 export interface RunTiming { runId:string; label:string; startedAt:string; elapsedMs:number; endedAt?:string; logPath?:string; readyAt?:string; readyElapsedMs?:number }
@@ -78,6 +78,7 @@ export interface Dashboard {
   dualActive?:boolean;
   releasePerformance?: Extract<UiEvent, { type: 'releasePerformance' }>['summary'] | null;
   lockReview?:LockReview|null;
+  courtBrowser?:Extract<UiEvent,{type:'courtBrowser'}>|null;
   operation: 'idle' | 'scheduled' | 'chrome' | 'inspect' | 'prepare' | 'confirming' | 'observe' | 'selection' | 'full' | 'dry' | 'practice' | 'stopping' | 'saving' | 'reviewing' | 'clearing' | 'resetting' | 'fullPractice' | 'apiPreview' | 'blockAudit' | 'closingBrowsers';
   /** Live read-only court/hour observation around the next or current release. */
   slotWatch?:SlotWatchView|null;
@@ -126,6 +127,7 @@ export interface Bridge {
   adviseFromHistory(input:Record<string,unknown>):Promise<AdvisorResult|{blocked:string}>;
   strategyEvidence(input:{targetDate:string;ranges:import('../src/strategy-engine.js').Window[]}):Promise<import('../src/strategy-engine.js').StrategyHistoricalEvidence>;
   resetPrepare(input:PreparationInput):Promise<void>;
+  browseCourts(date:string):Promise<void>;
   apiPreview(date:string):Promise<void>;
   checkReleaseBlocks(date:string):Promise<void>;
   testBooking(input:TestBookingInput):Promise<void>;

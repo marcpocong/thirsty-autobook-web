@@ -1,3 +1,4 @@
+import { verifiedAvailabilitySession } from './api-booking/verified-availability-session.js';
 import dc from 'node:diagnostics_channel';
 import { lookup } from 'node:dns/promises';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -15,7 +16,8 @@ import type { ClockConsensus } from './release-clock.js';
  *
  * It sends at most NETWORK_CHECK_MAX_REQUESTS sequential GETs, never acquires checkout security,
  * never opens a browser, never changes network settings or the system/app clock, and creates no
- * booking or hold. Timings describe Node's fetch path (not the browser's checkout connection).
+ * booking or hold. Production uses the verified Chrome session; connection reuse is unmeasured.
+ * Explicit injected Node fetchers are retained for offline regression/legacy comparisons only.
  */
 export const NETWORK_CHECK_MAX_REQUESTS = 10;
 export const NETWORK_CHECK_DEFAULT_REQUESTS = 5;
@@ -82,12 +84,15 @@ export async function runNetworkReadiness(options: ReadinessOptions = {}): Promi
   let dnsMs: number | null = null;
   try {
     try { const started = performance.now(); await (options.dns ?? (host => lookup(host)))('app.onda.fit'); dnsMs = round(performance.now() - started); } catch { dnsMs = null; }
-    const provider = new OndaLiveAvailabilityProvider({ allowIncompleteRange: true, timeoutMs: options.timeoutMs ?? 15_000, fetcher });
+    const session=options.fetcher?undefined:await verifiedAvailabilitySession().catch(()=>undefined);
+    const provider=options.fetcher?new OndaLiveAvailabilityProvider({allowIncompleteRange:true,timeoutMs:options.timeoutMs??15_000,fetcher}):session?.provider();
+    try {
     for (let index = 0; index < requests; index++) {
       if (index && spacingMs) await new Promise(done => setTimeout(done, spacingMs));
       connectedDuring = []; fetcherCache = null;
       const started = performance.now();
       try {
+        if(!provider)throw Error('AVAILABILITY_BROWSER_PREPARATION_REQUIRED');
         const envelope = await provider.getAvailability({ startDate: date, endDate: date });
         const durationMs = round(performance.now() - started);
         const snapshot = parseAvailability(envelope.raw, { startDate: date, endDate: date, capturedAt: envelope.capturedAt, fixtureKind: 'live', label: envelope.label,
@@ -100,6 +105,7 @@ export async function runNetworkReadiness(options: ReadinessOptions = {}): Promi
         samples.push({ index, ok: false, code, durationMs: round(performance.now() - started), complete: null, cache: fetcherCache, newConnection: connectedDuring.length > 0, connectMs: connectedDuring[0] ?? null });
       }
     }
+    }finally{await session?.close();}
   } finally { dc.unsubscribe('undici:client:beforeConnect', onBefore); dc.unsubscribe('undici:client:connected', onConnected); }
   let consensus: ClockConsensus | null = null;
   try { consensus = await (options.clockRound ?? (() => queryGoogleClockConsensus()))(); } catch { consensus = null; }
@@ -114,8 +120,8 @@ export async function runNetworkReadiness(options: ReadinessOptions = {}): Promi
   const base: Omit<ReadinessResult, 'verdict' | 'reasons'> = { version: 1, measuredAt: new Date(now()).toISOString(), target: 'Onda public availability (read-only GET)',
     requests, succeeded: durations.length, failed: samples.length - durations.length, complete: samples.filter(sample => sample.complete).length,
     medianMs: percentile(durations, 50), p90Ms: durations.length >= 10 ? percentile(durations, 90) : null, p95Ms: durations.length >= 20 ? percentile(durations, 95) : null,
-    maxMs: durations.at(-1) ?? null, protocol: 'HTTP/1.1 (Node fetch; the browser checkout may differ)',
-    newConnections: samples.filter(sample => sample.newConnection).length, reusedRequests: samples.filter(sample => !sample.newConnection).length,
+    maxMs: durations.at(-1) ?? null, protocol: options.fetcher?'Injected legacy HTTP path':'Verified Chrome session (connection reuse unmeasured)',
+    newConnections: samples.filter(sample => sample.newConnection).length, reusedRequests: options.fetcher?samples.filter(sample => !sample.newConnection).length:0,
     connectMs: samples.map(sample => sample.connectMs).filter((value): value is number => value !== null), dnsMs, samples,
     clock: { samples: consensus?.sampleCount ?? 0, kept: kept.length, offsetMs: consensus ? round(consensus.offsetMs) : null, minRoundTripMs: trips[0] ?? null,
       medianRoundTripMs: percentile(trips, 50), spreadMs: consensus ? round(consensus.spreadMs) : null, quality: consensus?.quality ?? 'UNAVAILABLE' },

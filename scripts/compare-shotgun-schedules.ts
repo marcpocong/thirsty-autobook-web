@@ -4,8 +4,8 @@
 import { mkdir, readFile, writeFile, readdir } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { spawn } from 'node:child_process';
-import { compileSmartPlan, confirmSmartRates, emptySmartDraft, type SmartDraft } from '../src/precision-simple.js';
-import { EXPERIMENTAL_DENSE_CORE_20, logicalTargetId, shotgunOffsets } from '../src/shotgun.js';
+import { compileSmartPlan, confirmSmartRates, emptySmartDraft, type SmartSlot, type SmartDraft } from '../src/precision-simple.js';
+import { EXPERIMENTAL_DENSE_CORE_20, logicalTargetId, shotgunOffsets, type ShotgunAllocationMode } from '../src/shotgun.js';
 import { exactShotgunTopology, assertShotgunSchedule, type ShotgunTimingReadiness } from '../src/shotgun-timing.js';
 
 const root=resolve(import.meta.dirname,'..');
@@ -14,26 +14,32 @@ const runs=Number(process.argv[3]??10),warmup=2,prewarmLeadMs=Number(process.arg
 if(!Number.isSafeInteger(runs)||runs<1||runs>100||!Number.isSafeInteger(prewarmLeadMs)||prewarmLeadMs<4000||prewarmLeadMs>30000)throw Error('BENCH_ARGS_INVALID');
 await mkdir(out,{recursive:true});
 const target={court:7,start:'19:00',durationHours:3};
-const cases=[
+const cases:Array<{name:string;offsets:number[];roundRobin?:number;targets?:SmartSlot[];allocation?:ShotgunAllocationMode;counts?:number[]}>=process.argv[5]==='multi'?[
+  {name:'focused-8',offsets:shotgunOffsets(8,-2000,0)},
+  {name:'diversified-equal-2',offsets:shotgunOffsets(8,-2000,0),targets:[target,{court:6,start:'18:00',durationHours:3}],allocation:'EQUAL'},
+  {name:'diversified-weighted-3',offsets:shotgunOffsets(8,-2000,0),targets:[target,{court:6,start:'18:00',durationHours:3},{court:5,start:'17:00',durationHours:2}],allocation:'PRIORITY_WEIGHTED'},
+  {name:'diversified-custom-4',offsets:shotgunOffsets(8,-2000,0),targets:[target,{court:6,start:'18:00',durationHours:3},{court:5,start:'17:00',durationHours:2},{court:4,start:'20:00',durationHours:2}],allocation:'CUSTOM',counts:[3,2,2,1]},
+  {name:'same-court-overlap-2',offsets:shotgunOffsets(8,-2000,0),targets:[target,{court:7,start:'18:00',durationHours:3}],allocation:'EQUAL'},
+]:[
   {name:'dense-20',offsets:[...EXPERIMENTAL_DENSE_CORE_20]},
   ...[5,8,10,15].map(count=>({name:`wide-${count}`,offsets:shotgunOffsets(count,-2000,0)})),
   {name:'wide-8-round-robin',offsets:shotgunOffsets(8,-2000,0),roundRobin:4},
 ];
 const comparisons=[];
 for(const spec of cases){
-  const count=spec.offsets.length,id=logicalTargetId(target);
-  const draft:SmartDraft={...emptySmartDraft(),immediate:[target],backups:[],useBackupsImmediately:false,retryReopened:false,
+  const count=spec.offsets.length,targets=spec.targets??[target],ids=targets.map(logicalTargetId);
+  const draft:SmartDraft={...emptySmartDraft(),immediate:targets,backups:[],useBackupsImmediately:false,retryReopened:false,
     rates:confirmSmartRates(600,700,'VENUE_SCHEDULE','2026-10-16',new Date('2026-10-14T00:00:00Z')),
-    advanced:{wave2:0,rescue:0},shotgun:{enabled:true,budget:count,allocationMode:'CUSTOM',selectedTargetIds:[id],customCounts:{[id]:count},
+    advanced:{wave2:0,rescue:0},shotgun:{enabled:true,budget:count,allocationMode:spec.allocation??'CUSTOM',selectedTargetIds:ids,customCounts:Object.fromEntries(ids.map((id,index)=>[id,spec.counts?.[index]??count])),
       windowStartMs:-2000,windowEndMs:0,timingMode:'CUSTOM',customOffsetsMs:spec.offsets,timingCapacityOverride:true,allowStandbyConsumption:true}};
   const compiled=compileSmartPlan(draft,{targetDate:'2026-10-16'});
   if(!compiled.phase3||compiled.problems.length||!compiled.shotgun)throw Error(`BENCH_PLAN_INVALID:${compiled.problems.join(',')}`);
   const phase3=structuredClone(compiled.phase3);
   // Explicit alternate topology for comparison. Same one logical target and
   // exact global triggers; maximum six children and one process per group.
-  if('roundRobin' in spec){
+  if(spec.roundRobin){
     phase3.wave1=Array.from({length:spec.roundRobin},(_,worker)=>({workerId:String.fromCharCode(65+worker) as 'A'|'B'|'C'|'D',candidateIndex:0,
-      fanOutOffsetsMs:spec.offsets.filter((_,index)=>index%spec.roundRobin===worker)}));
+      fanOutOffsetsMs:spec.offsets.filter((_,index)=>index%(spec.roundRobin!)===worker)}));
     phase3.standby=phase3.standby.filter(worker=>!phase3.wave1.some(a=>a.workerId===worker));
   }
   const schedule=compiled.shotgun.shots.map(({logicalTargetId,shotIndex,configuredOffsetMs})=>({logicalTargetId,shotIndex,configuredOffsetMs}));
@@ -50,7 +56,7 @@ for(const spec of cases){
   const timing=JSON.parse(await readFile(join(directory,'latest.json'),'utf8')) as ShotgunTimingReadiness;
   const summaryFile=(await readdir(directory)).filter(name=>name.endsWith('-summary.json')).sort().at(-1)!;
   const profile=JSON.parse(await readFile(join(directory,summaryFile),'utf8'));
-  comparisons.push({name:spec.name,offsets:spec.offsets,topology:topology.tabsPerWorker,timing,measurements:profile.widths[0],
+  comparisons.push({name:spec.name,targets,allocation:compiled.shotgun.counts,offsets:spec.offsets,topology:topology.tabsPerWorker,timing,measurements:profile.widths[0],
     conditions:{runs,warmup,prewarmLeadMs,prewarmConcurrency:4,dispatcher:'central',security:'synthetic cpu:0,wait:0',lockdown:true}});
   await writeFile(join(out,'comparison.json'),JSON.stringify(comparisons,null,2));
 }

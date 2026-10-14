@@ -1,5 +1,5 @@
 import { fitNormalAttemptLimits } from '../../src/normal-strategy.js';
-import {primaryShotgunTarget,fitQuickShotgun,shotgunSettingsKey,forecastPreparation,configurationFingerprint} from '../../src/quick-shotgun.js';
+import {primaryOnlyShotgunDraft,primaryShotgunTarget,fitQuickShotgun,shotgunSettingsKey,forecastPreparation,configurationFingerprint} from '../../src/quick-shotgun.js';
 import type { Dashboard } from '../types.js';
 import { compileSmartPlan, describeSmartPlan, resizeSmartFanOut, setSmartChildOffset, smartRange, smartSlotOffsets, SMART_WORKERS, SMART_MAX_SLOTS,
   type SmartDraft, type SmartSlot } from '../../src/precision-simple.js';
@@ -209,6 +209,9 @@ export function initStrategy(value: StrategyHost): void {
     option.value = hour === 24 ? '24:00' : hourText(hour); return option; }));
   writeGoal(goal);
   selectById('strategy-fanout').replaceChildren(new Option('Machine recommendation','auto'),...Array.from({length:PRECISION_MAX_FAN_OUT},(_,index)=>new Option(`${index+1} attempt${index?'s':''} (override)`,String(index+1))));
+  byId('shotgun-primary-allocation').append(byId('strategy-shotgun-targets'),byId('strategy-shotgun-budget').parentElement!,byId('strategy-shotgun-allocation').parentElement!);
+  byId('shotgun-diversified').onclick=()=>{quickChoice=false;host.edit(draft=>{const settings=draft.shotgun??defaultShotgun(draft.immediate);draft.shotgun={...settings,enabled:true,selectedTargetIds:draft.immediate.map(logicalTargetId),allocationMode:'EQUAL'};});};
+  byId('shotgun-focused').onclick=()=>{quickChoice=false;host.edit((draft,lineage)=>{const primary=primaryShotgunTarget(draft);if(!primary)return;const settings=draft.shotgun??defaultShotgun(draft.immediate),index=draft.immediate.indexOf(primary),focused=primaryOnlyShotgunDraft(draft);lineage.backups=[...lineage.immediate.filter((_,i)=>i!==index),...lineage.backups];lineage.immediate=[lineage.immediate[index]??null];draft.immediate=focused.immediate;draft.backups=focused.backups;draft.shotgun={...settings,enabled:true,selectedTargetIds:[logicalTargetId(primary)],allocationMode:'EQUAL'};});};
   inputById('strategy-shotgun-budget').max=String(PRECISION_MAX_SENDS);
   for (const id of ['strategy-ideal-start', 'strategy-prime-from', 'strategy-prime-until', 'strategy-durations', 'strategy-courts'])
     byId(id).addEventListener('change', () => { goal = readGoal(); if(id==='strategy-courts')courtsOverridden=true; host.ensureMeta();host.meta()!.goal=structuredClone(goal);host.edit(()=>{}); invalidate(); });

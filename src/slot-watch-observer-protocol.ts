@@ -2,7 +2,7 @@ import type { AvailabilityObservation } from './slot-evidence.js';
 import type { SlotWatchCandidate, SlotWatchSummary, SlotWatchView } from './slot-watch.js';
 
 export const SLOT_WATCH_OBSERVER_PROTOCOL = 'slot-watch-observer/v1' as const;
-export interface ObserverStart { protocol:typeof SLOT_WATCH_OBSERVER_PROTOCOL;type:'start';id:string;date:string;releaseMs:number;directory:string;clockPath?:string;clockOffsetMs:number;clockSynced:boolean;candidates:SlotWatchCandidate[] }
+export interface ObserverStart { browserObservation?:boolean; protocol:typeof SLOT_WATCH_OBSERVER_PROTOCOL;type:'start';id:string;date:string;releaseMs:number;directory:string;clockPath?:string;clockOffsetMs:number;clockSynced:boolean;candidates:SlotWatchCandidate[] }
 export interface ObserverStop { protocol:typeof SLOT_WATCH_OBSERVER_PROTOCOL;type:'stop';id:string;reason:string }
 export type ObserverCommand = ObserverStart | ObserverStop;
 export type ObserverEvent =

@@ -12,6 +12,10 @@ import { buildStandardPublicCheckoutRequest } from './public-checkout.js';
 import { acquireFreshSlotProofs } from './slot-proofs.js';
 import type { BookingPreferences, BookingPlan } from './types.js';
 
+// Archived diagnostic: use the guarded desktop runner; this legacy transport cannot submit.
+function requireCurrentRunner():void{throw Error('LEGACY_ENTRYPOINT_RETIRED_USE_DESKTOP_RUNNER');}
+requireCurrentRunner();
+
 // Observation and preparation only. This module intentionally has no checkout transport or POST permit import.
 type Stage = { startedAt: string; durationMs: number };
 const stamp = () => new Date().toISOString();

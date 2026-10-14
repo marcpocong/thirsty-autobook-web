@@ -5,7 +5,7 @@ export interface CheckoutDiagnostic {
   contentKind: 'json' | 'html' | 'text' | 'empty' | 'other';
   responseSource: 'cloudflare' | 'application' | 'unknown';
   /** 'payload': Onda refused the request's shape (e.g. "Invalid booking session time"), never an availability answer. */
-  errorHint: 'verification' | 'availability' | 'customer' | 'rate-limit' | 'access' | 'payload' | 'other' | 'none';
+  errorHint: 'payment-in-progress' | 'verification' | 'availability' | 'customer' | 'rate-limit' | 'access' | 'payload' | 'other' | 'none';
   applicationCode?: string;
   cloudflareRay?: string;
 }
@@ -27,7 +27,8 @@ export function checkoutDiagnostic(input: { status: number; contentType: string;
   // Text is inspected only for bounded categories. Its contents never leave this function.
   const text = [applicationCode, parsed?.error, parsed?.message, contentKind === 'html' ? input.body.slice(0, 4096) : '']
     .filter((value): value is string => typeof value === 'string').join(' ').slice(0, 4096);
-  const errorHint = /invalid booking session time/i.test(text) ? 'payload' :
+  const errorHint = /(?:payment|checkout).*(?:already|in progress)|(?:already|existing).*(?:payment|checkout)/i.test(text)?'payment-in-progress':
+    /invalid booking session time/i.test(text) ? 'payload' :
     /turnstile|captcha|challenge|fingerprint|verification|verify/i.test(text) ? 'verification' :
     /slot|availability|unavailable|booked|proof|conflict/i.test(text) ? 'availability' :
       /customer|member|client/i.test(text) ? 'customer' :

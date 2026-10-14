@@ -76,7 +76,7 @@ const controller = new Controller({
     confirmLabel:`Close ${open} browser${open===1?'':'s'}`}),
   startSlotWatch:(input,onUpdate,onObservation)=>{const clockPath=resolve(root,'.local/network-clock.json');
     const offset=readNetworkClock(clockPath)?.offsetMs??input.clockOffsetMs;
-    return startSlotWatchObserver({...input,clockOffsetMs:offset,clockPath,directory:resolve(root,'.local/slot-watch'),nodePath:node,
+    return startSlotWatchObserver({...input,browserObservation:true,clockOffsetMs:offset,clockPath,directory:resolve(root,'.local/slot-watch'),nodePath:node,
       childPath:resolve(root,'dist/src/slot-watch-observer-child.js'),onUpdate,onObservation});},
   slotWatchHistory:()=>readSlotWatchHistory(resolve(root,'.local/slot-watch')),
   // Same .local as the runner's evidence, so arbitration:analyze finds it; runs before the runner is spawned.
@@ -135,7 +135,7 @@ else {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== indexUrl || args.length) throw new Error('IPC_NOT_ALLOWED');
     return action();
   });
-  for (const [name,action] of Object.entries({checkReleaseBlocks:(input:unknown)=>controller.checkReleaseBlocks(input),apiPreview:(input:unknown)=>controller.apiPreview(input),resetPrepare:(input:unknown)=>controller.resetPrepare(input),testBooking:(input:unknown)=>controller.testBooking(input),setWorkflow:(input:unknown)=>controller.setWorkflow(input),runDualPractice:(input:unknown)=>controller.runDualPractice(input),runFullPractice:(input:unknown)=>controller.runFullPractice(input),saveBooking:(input:unknown)=>controller.saveBooking(input),runPractice:(input:unknown)=>controller.runPractice(input),setMode:(input:unknown)=>controller.setMode(input),authorizeTerms:(input:unknown)=>controller.authorizeTerms(input),replayPlan:(input:unknown)=>controller.replayPlan(input),adviseFromHistory:(input:unknown)=>controller.adviseFromHistory(input),strategyEvidence:(input:unknown)=>controller.strategyEvidence(input)})) ipcMain.handle(`thirsty:${name}`,(event,...args:unknown[])=>{
+  for (const [name,action] of Object.entries({browseCourts:(input:unknown)=>controller.browseCourts(input),checkReleaseBlocks:(input:unknown)=>controller.checkReleaseBlocks(input),apiPreview:(input:unknown)=>controller.apiPreview(input),resetPrepare:(input:unknown)=>controller.resetPrepare(input),testBooking:(input:unknown)=>controller.testBooking(input),setWorkflow:(input:unknown)=>controller.setWorkflow(input),runDualPractice:(input:unknown)=>controller.runDualPractice(input),runFullPractice:(input:unknown)=>controller.runFullPractice(input),saveBooking:(input:unknown)=>controller.saveBooking(input),runPractice:(input:unknown)=>controller.runPractice(input),setMode:(input:unknown)=>controller.setMode(input),authorizeTerms:(input:unknown)=>controller.authorizeTerms(input),replayPlan:(input:unknown)=>controller.replayPlan(input),adviseFromHistory:(input:unknown)=>controller.adviseFromHistory(input),strategyEvidence:(input:unknown)=>controller.strategyEvidence(input)})) ipcMain.handle(`thirsty:${name}`,(event,...args:unknown[])=>{
     if(event.sender!==window.webContents||event.senderFrame!==window.webContents.mainFrame||event.senderFrame.url!==indexUrl||args.length!==1)throw new Error('IPC_NOT_ALLOWED');
     return action(args[0]);
   });

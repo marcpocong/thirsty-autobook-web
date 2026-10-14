@@ -21,7 +21,7 @@ import { runAdaptiveAttempt, type AdaptiveSelection } from './adaptive-attempt.j
 import { browserIdentity, verifyDedicatedChromeAsync } from '../browser.js';
 import { emitUiEvent } from '../ui-events.js';
 import { discoverApiAvailability } from './availability-engine.js';
-import { OndaLiveAvailabilityProvider, THIRSTY_PICKLE_FACILITY_ID } from './live-availability-provider.js';
+import { THIRSTY_PICKLE_FACILITY_ID } from './live-availability-provider.js';
 import { OndaBrowserAvailabilityProvider } from './browser-availability-provider.js';
 import { assertWingNormalRequest } from '../wing-normal-booking.js';
 import { assertQrOrderSummary } from './qr-order-summary.js';
@@ -253,8 +253,8 @@ async function readAvailabilitySnapshot(date:string):Promise<AvailabilitySnapsho
   const requestedAt=performance.now();
   const finish=diagnostics.begin('availability','AVAILABILITY_REQUEST_STARTED',{},{});
   try{
-    const provider=availabilityPage ? new OndaBrowserAvailabilityProvider(availabilityPage,{allowIncompleteRange:true})
-      : new OndaLiveAvailabilityProvider({allowIncompleteRange:true});
+    if(!availabilityPage)throw Error('AVAILABILITY_BROWSER_PREPARATION_REQUIRED');
+    const provider=new OndaBrowserAvailabilityProvider(availabilityPage,{allowIncompleteRange:true});
     const envelope=await provider.getAvailability({startDate:date,endDate:date});
     const snapshot=parseAvailability(envelope.raw,{startDate:date,endDate:date,capturedAt:envelope.capturedAt,
       fixtureKind:envelope.fixtureKind,label:envelope.label,now:new Date(),maximumAgeMs:15_000,requireCompleteRange:false});
@@ -366,7 +366,9 @@ try {
   const strategy = requested?.strategy ?? config.BOOKING_TYPE;
   const duration = requested?.duration ?? config.DURATION_HOURS;
   const courtCount = requested?.courtCount ?? config.COURT_COUNT;
+  if(['live','live-now'].includes(command.mode)&&!command.preferences&&config.STRATEGY_V2?.shotgun?.enabled)throw Error('SHOTGUN_LIVE_COMPATIBILITY_UNVERIFIED');
   if(command.mode==='audit'){
+    availabilityPage=(await prepareWorker('A')).page;
     const [read,publicRecords]=await Promise.all([readAvailabilitySnapshot(command.date).then(snapshot=>({snapshot,observedAtMs:nowMs()})),readKnownCourtHourBlocks(command.date)]);
     const cells=prooflessCourtHourStatuses(read.snapshot,command.date,publicRecords.blocks,publicRecords.failedCourts,
       {releaseMs:command.releaseMs??releaseMsForTargetDate(config,command.date),observedAtMs:read.observedAtMs});
@@ -1056,6 +1058,7 @@ try {
           catch(error){stage('PHASE3_STANDBY_FAILED',{workerId,code:safeApiFailureCode(error,'SECURITY_PREWARM_FAILED')});}
         }));})();
       let newestSeq=0,securityRefreshMs=2500,wave1Fired=false,wave1Settled=false;
+      let providerStopCode:string|undefined;
       const receivedEvidence:AvailabilityObservation[]=[];
       const pending=new Set<Promise<unknown>>();
       // A newer Slot Watch read no longer ends the attempt by itself: each checkpoint re-evaluates the
@@ -1079,7 +1082,7 @@ try {
             contextReused:(contextAge(workerId)??Infinity)<=RESCUE_CONTEXT_REUSE_MS});}
         const journal=new DurableSubmissionJournal(resolve('.local/api-booking/api-first-journals',candidate.logicalKey));
         const task=runAdaptiveAttempt(selection,wave,{session,date,now:nowMs,dispatchNow:()=>releaseClock?.nowMs()??nowMs(),
-          newestSeq:()=>newestSeq,securityRefreshMs:()=>securityRefreshMs,aborted:()=>abort.signal.aborted,verifiedHold:()=>verifiedHold,
+          newestSeq:()=>newestSeq,securityRefreshMs:()=>securityRefreshMs,aborted:()=>abort.signal.aborted||!!providerStopCode,verifiedHold:()=>verifiedHold,
           workerReady:()=>releaseTransports.has(workerId)&&!unavailableWorkers.has(workerId),
           prepareSecurity:async()=>{
             const started=performance.now();
@@ -1110,7 +1113,7 @@ try {
         pending.add(task);void task.finally(()=>pending.delete(task));
       };
       const adaptiveLoop=(async()=>{
-        while(!abort.signal.aborted&&nowMs()<releaseMs+15*60_000){
+        while(!abort.signal.aborted&&!providerStopCode&&nowMs()<releaseMs+15*60_000){
           // Slot Watch keeps collecting in its isolated process. Defer adaptive calculations, logs
           // and standby work until the strict initial-release timing interval has ended.
           if(config.STRATEGY_V2?.shotgun?.enabled && shotgunCriticalInterval(releaseMs,nowMs())){
@@ -1176,6 +1179,7 @@ try {
             fanOutCount:attempt.attempt.fanOutCount,configuredOffsetMs:attempt.triggerMs-releaseMs,...shotgunTopology.get(attempt.attempt.id)!,wave:'WAVE_1'});}
         const transportOf=(attempt:ArmedAttempt)=>releaseTransports.get(transportKeyOf(attempt.target.workerId,attempt.attempt.fanOutIndex));
         const outcome=await dispatchArmedPrecisionRace(armed,{clock:releaseClock,spinTailMs:DEFAULT_SPIN_TAIL_MS,isAborted:()=>abort.signal.aborted,sleep:pause,
+          onObjectiveStop:reason=>{if(reason==='SHOTGUN_PROVIDER_THROTTLE_STOP'||reason==='SHOTGUN_PAYMENT_IN_PROGRESS_STOP')providerStopCode=reason;},
           ...fanOutPrewarm(armed.attempts),
           onWake:triggerMs=>{for(const attempt of armed.attempts)if(attempt.triggerMs===triggerMs)recorder.mark(attempt.attempt.id,'schedulerFired');releaseLockdown?.mark('scheduler-wake');},onMark:(_worker,name,attempt)=>{if(name==='transportCall'){recorder.mark(attempt.attempt.id,'workerInvoked');releaseLockdown?.mark(`transport:${attempt.attempt.id}`);}
             else if(name==='rendererArm')recorder.mark(attempt.attempt.id,'rendererArmSent');},
@@ -1222,6 +1226,7 @@ try {
         await standbyReady;
         await adaptiveLoop;
         await persistLatestVerifiedHold();
+        if(providerStopCode&&!verifiedHold){stage('PHASE3_PROVIDER_STOPPED',{code:providerStopCode});throw Error(providerStopCode);}
         await persistProviderTraces().catch(()=>undefined);
         stage('PHASE3_OUTCOME',{outcome:session.status,verifiedCount:session.attempts.filter(value=>value.state==='VERIFIED').length,
           unknownCount:session.attempts.filter(value=>value.state==='UNKNOWN').length,attemptCount:session.attempts.length,

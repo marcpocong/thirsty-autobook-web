@@ -4,6 +4,10 @@ import { OndaLiveAvailabilityProvider, THIRSTY_PICKLE_FACILITY_ID } from './live
 import { selectedTwoHours } from './two-hour-reservation.js';
 import { acquireFreshSlotProofs } from './slot-proofs.js';
 
+// Archived diagnostic: use the guarded desktop runner; this legacy transport cannot submit.
+function requireCurrentRunner():void{throw Error('LEGACY_ENTRYPOINT_RETIRED_USE_DESKTOP_RUNNER');}
+requireCurrentRunner();
+
 // Read-only preparation. Proof values never leave this process or appear in output.
 const date = process.argv[2] ?? '';
 const startTime = process.argv[3] ?? '';

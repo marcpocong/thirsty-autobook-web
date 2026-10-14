@@ -166,7 +166,7 @@ export async function armPrecisionRace(race: FrozenPrecisionRace, deps: ArmDeps)
  * transport is invoked, so they are provably unsent. Never throws synchronously.
  */
 export function fireArmedAttempt(attempt: ArmedAttempt, transport: DirectTransport, clock: Pick<TrustedReleaseClock, 'nowMs'> & Partial<Pick<TrustedReleaseClock,'monotonicDeadline'>>,
-  window: { releaseMs: number; triggerMs?: number; dispatchDeadlineMs: number }, isAborted: () => boolean, lifecycle:Pick<CheckoutDispatchOptions,'onResponseSafety'|'beforeResponseBookkeeping'>={}): Promise<unknown> {
+  window: { releaseMs: number; triggerMs?: number; dispatchDeadlineMs: number }, isAborted: () => boolean, lifecycle:Pick<CheckoutDispatchOptions,'onResponseSafety'|'beforeResponseBookkeeping'>={},beforeSubmit?:()=>void): Promise<unknown> {
   const triggerMs = window.triggerMs ?? window.releaseMs;
   const refuse = (code: string) => {
     if (attempt.state === 'armed') { attempt.state = 'refused'; revokeSubmissionPermit(attempt.permit); }
@@ -175,6 +175,7 @@ export function fireArmedAttempt(attempt: ArmedAttempt, transport: DirectTranspo
   try {
     if (attempt.state !== 'armed') return Promise.reject(new SubmissionDispatchError('SUPERVISED_ONE_SHOT_ALREADY_USED', false));
     if (isAborted()) return refuse('USER_ABORT');
+    try{beforeSubmit?.();}catch(error){return refuse(safeCode(error,'OBJECTIVE_SUBMISSION_STOPPED'));}
     const now = clock.nowMs();
     // Final trusted no-early / maximum-lateness gate (same anchored clock as the wait).
     if (now < triggerMs) return refuse('DIRECT_RELEASE_NOT_REACHED');
@@ -183,7 +184,7 @@ export function fireArmedAttempt(attempt: ArmedAttempt, transport: DirectTranspo
     attempt.state = 'fired';
     // Checked once more as the transport's last step before the network.
     const beforePost = () => {
-      try { const at=clock.nowMs();
+      try { beforeSubmit?.();const at=clock.nowMs();
         if(attempt.shotDeadlineMs!==undefined && at>attempt.shotDeadlineMs) throw new SubmissionDispatchError('SHOTGUN_TRIGGER_MISSED',false);
         assertDirectDispatchWindow(window.releaseMs, at, triggerMs,true);
         if(at>window.dispatchDeadlineMs)throw Error('DIRECT_RELEASE_WINDOW_MISSED'); }
@@ -275,6 +276,7 @@ export interface ArmedDispatchDeps {
   transportFor: (worker: WorkerId, attempt: ArmedAttempt) => DirectTransport | undefined;
   isAborted: () => boolean;
   /** A validated pending hold: record it and hand off to the official QR page. Returns the final state or throws VerifiedHoldQrError. */
+  onObjectiveStop?:(reason:ShotgunSuppressionReason)=>void;
   onVerifiedHold?: (attempt: ArmedAttempt, verified: VerifiedPublicCheckout) => Promise<PrecisionDispatchResult>;
   onEvent?: (event: { kind: 'prewarm-ready' | 'prewarm-failed' | 'prewarm-retry' | 'dispatch-start' | 'settled'; workerId: WorkerId; attemptId: string; state?: PrecisionAttemptState; code?: string;
     predictedReadyOffsetMs?:number;actualReadyOffsetMs?:number;predictionErrorMs?:number;queueDelayMs?:number;prepDurationMs?:number }) => void;
@@ -355,17 +357,20 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
   const outcomes:Array<Promise<PrecisionDispatchResult>|undefined>=new Array(armed.attempts.length);
   const suppressed:Array<ShotgunSuppressionReason|undefined>=new Array(armed.attempts.length);
   const targetStops=new Map<string,ShotgunSuppressionReason>();
+  // A Precision race authorizes one successful court. Every alternative shares this objective.
+  let objectiveStop:ShotgunSuppressionReason|undefined;
+  const stopFor=(attempt:ArmedAttempt)=>objectiveStop??targetStops.get(attempt.target.targetKey);
   const strictRace=strictDispatch;
   // Preserve cheap safety signals immediately; defer journals, diagnostics and QR navigation until T+1 s.
   const criticalEndMs=armed.releaseMs+FINAL_APPROACH_MS;
   const afterCritical=()=>strictRace?waitFor(criticalEndMs,()=>false,timerSleep):Promise.resolve();
   const safety=(attempt:ArmedAttempt,raw:unknown,error?:SubmissionDispatchError)=>{
     let reason:ShotgunSuppressionReason|undefined;
-    if(error){if(!error.dispatched)return;reason=error.diagnostic?.status===429?'SHOTGUN_PROVIDER_THROTTLE_STOP':error.confirmedRejected?undefined:'SHOTGUN_TARGET_OUTCOME_UNKNOWN';}
+    if(error){if(!error.dispatched)return;reason=error.diagnostic?.errorHint==='payment-in-progress'?'SHOTGUN_PAYMENT_IN_PROGRESS_STOP':error.diagnostic?.status===429?'SHOTGUN_PROVIDER_THROTTLE_STOP':error.confirmedRejected?undefined:'SHOTGUN_TARGET_OUTCOME_UNKNOWN';}
     else {try{validatePublicCheckoutResponse(raw,attempt.request as unknown as PublicCheckoutRequest,attempt.plan,new Date(now()),attempt.plan.totalPrice);reason='SHOTGUN_TARGET_ALREADY_ACHIEVED';}
       catch{reason='SHOTGUN_TARGET_OUTCOME_UNKNOWN';}}
-    if(reason){targetStops.set(attempt.target.targetKey,reason);
-      for(const otherIndex of rendererArmed){const other=armed.attempts[otherIndex]!;if(other.target.targetKey===attempt.target.targetKey && other.triggerMs>now()){suppressed[otherIndex]=reason;void renderer?.transportFor(other.target.workerId,other)?.disarmRendererCheckout(other.key).catch(()=>undefined);}}}
+    if(reason){objectiveStop=reason;deps.onObjectiveStop?.(reason);targetStops.set(attempt.target.targetKey,reason);
+      for(const otherIndex of rendererArmed){const other=armed.attempts[otherIndex]!;if(other.triggerMs>now()){suppressed[otherIndex]=reason;void renderer?.transportFor(other.target.workerId,other)?.disarmRendererCheckout(other.key).catch(()=>undefined);}}}
   };
   const lifecycle=(attempt:ArmedAttempt):Pick<CheckoutDispatchOptions,'onResponseSafety'|'beforeResponseBookkeeping'>=>attempt.shotDeadlineMs===undefined?{}:{onResponseSafety:(raw,error)=>safety(attempt,raw,error),beforeResponseBookkeeping:afterCritical};
   const renderer = deps.rendererDispatch;
@@ -389,11 +394,11 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
       catch(error){return classifyPrecisionDispatchError(error,async()=>{try{return (await attempt.journal.read(attempt.key)).state;}catch(readError){if((readError as NodeJS.ErrnoException).code==='ENOENT')return undefined;throw readError;}});}
     })().catch(():PrecisionDispatchResult=>({state:'UNKNOWN',code:'PRECISION_DISPATCH_UNCLASSIFIED'})).then(async result=>{
       const reason=shotgunStopReason({state:result.state,throttle:!!result.code&&/(?:429|THROTTL|RATE_LIMIT)/.test(result.code)});
-      if(reason){targetStops.set(attempt.target.targetKey,reason);
+      if(reason){objectiveStop=reason;deps.onObjectiveStop?.(reason);targetStops.set(attempt.target.targetKey,reason);
         // A renderer child can already be armed for a later trigger. Disarm it as soon as this
-        // same logical target becomes conclusive/unknown/throttled, and retain the exact reason.
+        // one-court objective becomes conclusive/unknown/throttled, and retain the exact reason.
         await Promise.all(rendererArmed.flatMap(otherIndex=>{const other=armed.attempts[otherIndex]!;
-          if(otherIndex===index||other.target.targetKey!==attempt.target.targetKey||other.triggerMs<=now())return[];
+          if(otherIndex===index||other.triggerMs<=now())return[];
           suppressed[otherIndex]=reason;
           return [renderer?.transportFor(other.target.workerId,other)?.disarmRendererCheckout(other.key).catch(()=>undefined)??Promise.resolve()];}));}
       return result;
@@ -405,7 +410,7 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
     for (const index of groupOf(triggerMs)) {
       const attempt = armed.attempts[index]!, ready = readiness[index]!, calibration = calibrations.get(index);
       if (!ready.settled || !ready.ok || !calibration) continue;
-      const stop=targetStops.get(attempt.target.targetKey);if(stop){suppressed[index]=stop;continue;}
+      const stop=stopFor(attempt);if(stop){suppressed[index]=stop;continue;}
       const transport = renderer!.transportFor(attempt.target.workerId,attempt);
       if (!transport) { emitPlan({ workerId: attempt.target.workerId, attemptId:attempt.attempt.id, mode: 'node-fallback', code: 'RENDERER_TRANSPORT_MISSING' }); continue; }
       let plan: RendererFirePlan;
@@ -436,11 +441,11 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
         }
         continue;
       }
-      const stop=targetStops.get(attempt.target.targetKey);if(stop){suppressed[index]=stop;continue;}
+      const stop=stopFor(attempt);if(stop){suppressed[index]=stop;continue;}
       const transport = deps.transportFor(attempt.target.workerId,attempt);
       if (!transport) continue;
       deps.onMark?.(attempt.target.workerId,'transportCall',attempt);
-      const sent = fireArmedAttempt(attempt, transport, clock, armedWindow(armed, attempt), deps.isAborted,lifecycle(attempt));
+      const sent = fireArmedAttempt(attempt, transport, clock, armedWindow(armed, attempt), deps.isAborted,lifecycle(attempt),()=>{const reason=stopFor(attempt);if(reason)throw new SubmissionDispatchError(reason,false);});
       sent.catch(() => undefined); // observed below; marked handled so a refusal is never an unhandled rejection meanwhile
       sends[index] = sent;
       settleSent(index,sent);
@@ -551,6 +556,7 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
     : Promise.resolve(undefined);
   const settleInner = async (index: number): Promise<PrecisionDispatchResult> => {
     const attempt = armed.attempts[index]!, ready = readiness[index]!;
+    if(!sends[index]&&stopFor(attempt))suppressed[index]=stopFor(attempt);
     if(suppressed[index]){await disarmAttempt(attempt,suppressed[index]!,now).catch(()=>undefined);return {state:'NOT_DISPATCHED',code:suppressed[index]};}
     if(outcomes[index]){emit({kind:'dispatch-start',workerId:attempt.target.workerId,attemptId:attempt.attempt.id});return outcomes[index]!;}
     if(attempt.shotDeadlineMs!==undefined && !sends[index]){
@@ -575,11 +581,11 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
         if (outcome === timedOut) { await disarmAttempt(attempt, 'PREWARM_NOT_READY_IN_WINDOW', now).catch(() => undefined); return { state: 'WINDOW_MISSED', code: 'PREWARM_NOT_READY_IN_WINDOW' }; }
       }
       if (!ready.ok) { await disarmAttempt(attempt, 'SECURITY_PREWARM_FAILED', now).catch(() => undefined); return { state: 'PREWARM_FAILED', code: 'SECURITY_PREWARM_FAILED' }; }
-      const stop=targetStops.get(attempt.target.targetKey);
+      const stop=stopFor(attempt);
       if(stop){await disarmAttempt(attempt,stop,now).catch(()=>undefined);return {state:'NOT_DISPATCHED',code:stop};}
       const transport = deps.transportFor(attempt.target.workerId,attempt);
       if (!transport) { await disarmAttempt(attempt, 'API_CHECKOUT_WORKER_MISSING', now).catch(() => undefined); return { state: 'NOT_DISPATCHED', code: 'API_CHECKOUT_WORKER_MISSING' }; }
-      sent = fireArmedAttempt(attempt, transport, clock, armedWindow(armed, attempt), deps.isAborted,lifecycle(attempt));
+      sent = fireArmedAttempt(attempt, transport, clock, armedWindow(armed, attempt), deps.isAborted,lifecycle(attempt),()=>{const reason=stopFor(attempt);if(reason)throw new SubmissionDispatchError(reason,false);});
       sends[index]=sent;
     }
     emit({ kind: 'dispatch-start', workerId: attempt.target.workerId, attemptId: attempt.attempt.id });
