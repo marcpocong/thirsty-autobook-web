@@ -3,7 +3,7 @@ import type { ApiAutomationLock } from './api-automation-lock.js';
 import { armCheckoutRequest } from './armed-request.js';
 import { DurableSubmissionJournal, revokeSubmissionPermit, type SubmissionPermit } from './durable-submission-journal.js';
 import { THIRSTY_PICKLE_FACILITY_ID } from './live-availability-provider.js';
-import { assertPrecisionFreezeIntact, classifyPrecisionDispatchError, type FrozenPrecisionRace, type PrecisionAttempt,
+import { assertPrecisionFreezeIntact, classifyPrecisionDispatchError, raceQuota, type FrozenPrecisionRace, type PrecisionAttempt,
   type PrecisionAttemptState, type PrecisionDispatchResult, type PrecisionTarget } from './precision-race.js';
 import { assertDirectDispatchWindow, DIRECT_MAX_DISPATCH_LATENESS_MS, prooflessPlanFingerprint, prooflessRequest,
   recordDirectCheckoutOutcome, type DirectTransport, type ProoflessCheckoutRequest } from './proofless-checkout.js';
@@ -359,16 +359,25 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
   const outcomes:Array<Promise<PrecisionDispatchResult>|undefined>=new Array(armed.attempts.length);
   const suppressed:Array<ShotgunSuppressionReason|undefined>=new Array(armed.attempts.length);
   const targetStops=new Map<string,ShotgunSuppressionReason>();
-  // A Precision race authorizes one successful court. Every alternative shares this objective.
+  // Without an objective a Precision race authorizes one successful court: every alternative shares it.
+  // With a quota, verified holds are counted as DISTINCT courts per wing (or across wings); a wing stops at its
+  // ideal while other incomplete wings continue. The achieved court itself never needs another hold.
   let objectiveStop:ShotgunSuppressionReason|undefined;
-  const wingStops = new Map<string,ShotgunSuppressionReason>();
+  const wingStops = new Map<string,ShotgunSuppressionReason>(), courtStops = new Map<string,ShotgunSuppressionReason>();
+  const quota = raceQuota(armed.race.objective), achieved = new Map<string,Set<string>>();
   const wingOf = (attempt:ArmedAttempt) => attempt.plan.wing ?? 'MANGO';
+  const courtsOf = (attempt:ArmedAttempt) => attempt.plan.courts.map(court=>`${wingOf(attempt)}:${court.spaceId}`);
   const recordStop = (attempt:ArmedAttempt, reason:ShotgunSuppressionReason) => {
-    if (reason === 'SHOTGUN_TARGET_ALREADY_ACHIEVED' && armed.race.objective === 'ONE_PER_WING') wingStops.set(wingOf(attempt),reason);
-    else objectiveStop=reason;
+    if (reason === 'SHOTGUN_TARGET_ALREADY_ACHIEVED' && quota) {
+      const wing = wingOf(attempt), own = achieved.get(wing) ?? new Set<string>();
+      for (const court of courtsOf(attempt)) { own.add(court); courtStops.set(court,reason); }
+      achieved.set(wing,own);
+      if (quota.scope === 'PER_WING') { if (own.size >= (quota.wings[wing] ?? 1)) wingStops.set(wing,reason); }
+      else if ([...achieved.values()].reduce((sum,set)=>sum+set.size,0) >= (quota.overall ?? 1)) objectiveStop=reason;
+    } else objectiveStop=reason;
     deps.onObjectiveStop?.(reason); targetStops.set(attempt.target.targetKey,reason);
   };
-  const stopFor=(attempt:ArmedAttempt)=>objectiveStop??wingStops.get(wingOf(attempt))??targetStops.get(attempt.target.targetKey);
+  const stopFor=(attempt:ArmedAttempt)=>objectiveStop??wingStops.get(wingOf(attempt))??courtsOf(attempt).map(court=>courtStops.get(court)).find(Boolean)??targetStops.get(attempt.target.targetKey);
   const strictRace=strictDispatch;
   // Preserve cheap safety signals immediately; defer journals, diagnostics and QR navigation until T+1 s.
   const criticalEndMs=armed.releaseMs+FINAL_APPROACH_MS;

@@ -8,13 +8,14 @@ import { compileDualWingPlan } from '../src/dual-wing-plan.js';
 import { prooflessRequest } from '../src/api-booking/proofless-checkout.js';
 import { validatePublicCheckoutResponse } from '../src/api-booking/public-checkout.js';
 import { assertLabSlotEvidence } from '../src/lab-slot-evidence.js';
-import { ShotgunLabService } from '../ui/shotgun-lab-service.js';
+import { BookingTestLabService as ShotgunLabService } from '../ui/booking-test-lab-service.js';
+import { defaultObjective, withStrategy, type BookingObjective } from '../src/booking-objective.js';
 const root=resolve('.');
 async function child(scenario:LabScenario,objective:'ANY_ONE'|'ONE_PER_WING'='ANY_ONE') {
   const base=join(root,'.local/shotgun-test-lab/tests');await mkdir(base,{recursive:true});
   const directory=await mkdtemp(join(base,'case-'));
   const file=join(directory,'input.json');await writeFile(file,JSON.stringify({plan:fixturePlan(['MANGO','BUKO'],objective),scenario,countdownSeconds:8}));
-  await new Promise<void>((done,fail)=>{const worker=spawn(process.execPath,['--import','tsx',join(root,'src/shotgun-test-lab-child.ts'),file,directory],{cwd:root,stdio:['ignore','ignore','pipe','ipc'],windowsHide:true});let error:string|undefined,stderr='';worker.stderr?.on('data',chunk=>{stderr+=String(chunk);});
+  await new Promise<void>((done,fail)=>{const worker=spawn(process.execPath,['--import','tsx',join(root,'src/booking-test-lab-child.ts'),file,directory],{cwd:root,stdio:['ignore','ignore','pipe','ipc'],windowsHide:true});let error:string|undefined,stderr='';worker.stderr?.on('data',chunk=>{stderr+=String(chunk);});
     worker.on('message',(m:unknown)=>{error=(m as {error?:string}).error??error;});worker.on('error',fail);worker.on('exit',code=>code===0?done():fail(Error(error||stderr.slice(-3000).trim()||`LAB_TEST_CHILD_EXIT ${code}`)));});
   return JSON.parse(await readFile(join(directory,'result.json'),'utf8')) as LabResult;
 }
@@ -55,4 +56,49 @@ describe('real isolated Chrome → production scheduler and dispatcher',()=>{
   it('preserves an isolated prior hold and refuses duplicate, stale and missing evidence before preparation',async()=>{
     for(const scenario of ['PREVIOUS_HOLD','DUPLICATE_TARGET','STALE_AVAILABILITY','MISSING_AVAILABILITY'] as const){const r=await child(scenario);expect(r.initiated).toBe(0);expect(r.warnings.join(' ')).toContain('PREFLIGHT_REFUSED');}
   },60000);
+});
+
+// ── Universal Booking Test Lab: the exact Booking Setup objective through the same production modules ──
+function quotaObjective(ideal:number,strategy:'SHOTGUN'|'PRECISION'='SHOTGUN',budget=12):BookingObjective{
+  const o=withStrategy(defaultObjective(Date.now(),'NEXT_RELEASE'),strategy);
+  const goal=(wing:'MANGO'|'BUKO')=>({...o.wings[wing],enabled:true,minimum:1,ideal,courts:[1,2,3].map((court,i)=>({court,priority:i+1})),startTimes:['18:00'],durationHours:2});
+  return {...o,wings:{MANGO:goal('MANGO'),BUKO:goal('BUKO')},shotgun:{...o.shotgun,budget,allocationMode:'EQUAL',timingMode:'AUTO'}};
+}
+async function objectiveChild(scenario:LabScenario,objective:BookingObjective) {
+  const base=join(root,'.local/booking-test-lab/tests');await mkdir(base,{recursive:true});
+  const directory=await mkdtemp(join(base,'case-'));
+  const file=join(directory,'input.json');await writeFile(file,JSON.stringify({kind:'browser',request:{objective,scenario,countdownSeconds:8}}));
+  await new Promise<void>((done,fail)=>{const worker=spawn(process.execPath,['--import','tsx',join(root,'src/booking-test-lab-child.ts'),file,directory],{cwd:root,stdio:['ignore','ignore','pipe','ipc'],windowsHide:true});let error:string|undefined,stderr='';worker.stderr?.on('data',chunk=>{stderr+=String(chunk);});
+    worker.on('message',(m:unknown)=>{error=(m as {error?:string}).error??error;});worker.on('error',fail);worker.on('exit',code=>code===0?done():fail(Error(error||stderr.slice(-3000).trim()||`LAB_TEST_CHILD_EXIT ${code}`)));});
+  return JSON.parse(await readFile(join(directory,'result.json'),'utf8')) as LabResult;
+}
+describe('Booking Test Lab · exact objective, distinct-court quotas',()=>{
+  it('fills a two-court quota in each wing and suppresses the rest per wing',async()=>{
+    const r=await objectiveChild('BOTH_SUCCESS',quotaObjective(2));
+    expect(r.environment).toBe('OFFLINE_SIMULATION');expect(r.strategy).toBe('SHOTGUN');expect(r.planned).toBe(12);
+    for(const wing of r.wings){expect(wing.distinctCourts).toBe(2);expect(wing.complete).toBe(true);}
+    expect(r.objectiveOutcome.status).toBe('IDEAL');expect(r.objectiveOutcome.counted).toBe(4);
+    expect(r.initiated).toBeGreaterThanOrEqual(4);expect(r.omitted).toBeGreaterThan(0);
+    // Holds beyond the ideal are recorded separately, never counted as courts.
+    expect(r.objectiveOutcome.extraHolds).toBe(r.objectiveOutcome.holds-4);
+  },90000);
+  it('reports partial completion and keeps working toward the quota after one hold',async()=>{
+    const r=await objectiveChild('FIRST_SUCCESS',quotaObjective(2));
+    expect(r.objectiveOutcome.status).toBe('PARTIAL');expect(r.objectiveOutcome.distinctCourts).toBe(1);
+    // Only the remaining attempt on the achieved court is suppressed; every other attempt still goes.
+    expect(r.initiated).toBe(11);expect(r.omitted).toBe(1);
+  },90000);
+  it('runs Precision from the same objective without Shotgun strict timing',async()=>{
+    const r=await objectiveChild('ALL_REJECTED',quotaObjective(1,'PRECISION'));
+    expect(r.strategy).toBe('PRECISION');expect(r.missedDeadlines).toBe(0);expect(r.initiated).toBe(r.planned);
+    expect(r.warnings.join(' ')).toMatch(/backups and Reopen Rescue are not exercised/);
+  },90000);
+  it('fails closed when a prepared worker browser closes before the trigger',async()=>{
+    const r=await objectiveChild('BROWSER_CLOSED',quotaObjective(1,'SHOTGUN',6));
+    expect(r.initiated).toBeLessThan(r.planned);expect(r.objectiveOutcome.holds).toBe(0);
+  },90000);
+  it('keeps UNKNOWN blocking after restart and refuses the unverified Buko release policy before any browser starts',async()=>{
+    for(const scenario of ['APP_RESTART_RETAINED_UNKNOWN','UNSUPPORTED_RELEASE_POLICY','DUPLICATE_TARGET'] as const){
+      const r=await objectiveChild(scenario,quotaObjective(1));expect(r.initiated).toBe(0);expect(r.warnings.join(' ')).toContain('PREFLIGHT_REFUSED');}
+  },90000);
 });
