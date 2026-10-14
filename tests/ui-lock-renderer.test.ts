@@ -17,17 +17,17 @@ async function renderer(extra:Record<string,unknown>={}){
   return openRenderer(browser,{booking:booking(),browserHealth:{A:false,B:false},...extra},'release',{width:1060,height:760});
 }
 
-it('shows the five operator views with a wide grid and stacked narrow layout',async()=>{
+it('shows the operator views including the offline Test Lab with a wide grid and stacked narrow layout',async()=>{
   const page=await renderer();
-  expect(await page.locator('nav [data-view]').allTextContents()).toEqual(['Home','Book Now','Next Release','Edit Release Plan','Live','History','Settings']);
+  expect(await page.locator('nav [data-view]').allTextContents()).toEqual(['Home','Book Now','Next Release','Edit Release Plan','Live','History','Shotgun Test Lab','Settings']);
   expect(await page.locator('#release-schedule').isVisible()).toBe(true);
   expect(await page.locator('#next-strategy').isVisible()).toBe(true);
   expect(await page.locator('#booking-method').isVisible()).toBe(false);
   await mkdir('.local',{recursive:true});await page.screenshot({path:'.local/ui-redesign-release.png'});
   await showRendererView(page,'strategy');
   expect(await page.locator('#strategy-wing').inputValue()).toBe('MANGO');
-  expect(await page.locator('#strategy-wing option[value="BUKO"]').evaluate(e=>(e as HTMLOptionElement).disabled)).toBe(true);
-  expect(await page.locator('#strategy-wing-note').innerText()).toContain('Buko release scheduling and Shotgun stay disabled');
+  expect(await page.locator('#strategy-wing option[value="BUKO"]').evaluate(e=>(e as HTMLOptionElement).disabled)).toBe(false);
+  expect(await page.locator('#strategy-wing-note').innerText()).toContain('Buko live release scheduling and Shotgun stay disabled');
   // Booking goal → Target plan → Release mode; evidence and technical review are secondary.
   for(const id of ['#strategy-goal','#strategy-target-plan','#strategy-suggested'])expect(await page.locator(id).isVisible()).toBe(true);
   expect(await page.locator('#strategy-preset').isVisible()).toBe(false);

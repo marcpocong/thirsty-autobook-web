@@ -1,3 +1,4 @@
+import { ShotgunLabService } from './shotgun-lab-service.js';
 import { describeBookingPlan } from '../src/booking-plan.js';
 import { loadConfig,loadPlayerProfiles } from '../src/config.js';
 import {reviewLock,clearVerifiedLock,browserProbe} from './locks.js';
@@ -38,6 +39,7 @@ app.setAppUserModelId('com.thirstypickle.bot');
 app.setPath('userData', resolve(root, '.local/control-panel'));
 const node = process.env.THIRSTY_NODE_EXEC;
 if (!node) throw new Error('Launch the panel with npm run ui.');
+const lab = new ShotgunLabService(root,node,phase=>{if(window&&!window.isDestroyed())window.webContents.send('thirsty:labPhase',phase);});
 const index = resolve(root, 'dist/ui/renderer/index.html');
 const indexUrl = pathToFileURL(index).href;
 let window: BrowserWindow;
@@ -125,18 +127,34 @@ else {
   const actions = {
     reviewLock:()=>controller.reviewLock(),clearLock:()=>controller.clearLock(),resetPractice:()=>controller.resetPractice(),
     startChrome: () => controller.startChrome(), inspectOnda: () => controller.inspectOnda(), prepare: () => controller.prepare(), prepareDual:()=>controller.prepareDual(),
-    armObservation: () => controller.armObservation(), abortAutomation: () => controller.abortAutomation(), getStatus: () => structuredClone(controller.state),
+    armObservation: () => controller.armObservation(), abortAutomation: () => {lab.stop();return controller.abortAutomation();}, getStatus: () => structuredClone(controller.state),
     armSelection: () => controller.armSelection(), dryRace: () => controller.dryRace(),
     armFullBooking:()=>controller.armFullBooking(),cancelScheduledRelease:()=>controller.cancelScheduledRelease(),invalidatePreparation:()=>controller.invalidatePreparation(),syncClock:()=>controller.syncClock(),
     closeBotBrowsers:()=>controller.closeBotBrowsers(),watchNextRelease:()=>controller.watchNextRelease(),stopSlotWatch:()=>controller.stopSlotWatch(),
     rebuildIntelligence:()=>controller.rebuildIntelligence(),clearIntelligence:()=>controller.clearIntelligence(),runNetworkCheck:()=>controller.runNetworkCheck(),
   };
+  ipcMain.handle('thirsty:shotgunLab',async(event,...args:unknown[])=>{
+    if(event.sender!==window.webContents||event.senderFrame!==window.webContents.mainFrame||event.senderFrame.url!==indexUrl||args.length!==1)throw Error('IPC_NOT_ALLOWED');
+    const request=args[0] as {action:string;value?:unknown};
+    if(!request||JSON.stringify(request).length>55000)throw Error('LAB_REQUEST_INVALID');
+    if(request.action==='stop'){lab.stop();return;}
+    if(request.action==='defaults')return lab.defaults();
+    if(request.action==='load')return lab.load();
+    if(lab.busy)throw Error('LAB_RUNNING_STOP_FIRST');
+    if(controller.state.operation!=='idle')throw Error('LAB_REQUIRES_IDLE_APPLICATION');
+    if(request.action==='preview')return lab.preview(request.value as import('../src/dual-wing-plan.js').DualWingPlan);
+    if(request.action==='save')return lab.save(request.value as import('../src/dual-wing-plan.js').DualWingPlan);
+    if(request.action==='run')return lab.run(request.value as import('../src/shotgun-test-lab.js').LabRequest);
+    throw Error('LAB_ACTION_INVALID');
+  });
   for (const [name, action] of Object.entries(actions)) ipcMain.handle(`thirsty:${name}`, (event, ...args: unknown[]) => {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== indexUrl || args.length) throw new Error('IPC_NOT_ALLOWED');
+    if(lab.busy&&!['abortAutomation','getStatus'].includes(name))throw Error('LAB_RUNNING_STOP_FIRST');
     return action();
   });
   for (const [name,action] of Object.entries({browseCourts:(input:unknown)=>controller.browseCourts(input),checkReleaseBlocks:(input:unknown)=>controller.checkReleaseBlocks(input),apiPreview:(input:unknown)=>controller.apiPreview(input),resetPrepare:(input:unknown)=>controller.resetPrepare(input),testBooking:(input:unknown)=>controller.testBooking(input),setWorkflow:(input:unknown)=>controller.setWorkflow(input),runDualPractice:(input:unknown)=>controller.runDualPractice(input),runFullPractice:(input:unknown)=>controller.runFullPractice(input),saveBooking:(input:unknown)=>controller.saveBooking(input),runPractice:(input:unknown)=>controller.runPractice(input),setMode:(input:unknown)=>controller.setMode(input),authorizeTerms:(input:unknown)=>controller.authorizeTerms(input),replayPlan:(input:unknown)=>controller.replayPlan(input),adviseFromHistory:(input:unknown)=>controller.adviseFromHistory(input),strategyEvidence:(input:unknown)=>controller.strategyEvidence(input)})) ipcMain.handle(`thirsty:${name}`,(event,...args:unknown[])=>{
     if(event.sender!==window.webContents||event.senderFrame!==window.webContents.mainFrame||event.senderFrame.url!==indexUrl||args.length!==1)throw new Error('IPC_NOT_ALLOWED');
+    if(lab.busy)throw Error('LAB_RUNNING_STOP_FIRST');
     return action(args[0]);
   });
   ipcMain.handle('thirsty:focusBrowser',async(event,...args:unknown[])=>{
@@ -163,6 +181,7 @@ else {
       if (controller.state.operation === 'stopping') return;
       // Writes the slot watch summary and report before the process ends.
       await controller.stopSlotWatch('app closed');
+      await lab.stopAndWait();
       exiting = true; clearInterval(poll); app.quit();
     });
   });

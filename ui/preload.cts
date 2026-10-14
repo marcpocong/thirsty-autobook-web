@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { Dashboard, Bridge, ConfirmRequest } from './types.js';
 const bridge: Bridge = {
+  onLabPhase:callback=>{const listener=(_event:unknown,phase:string)=>callback(phase);ipcRenderer.on('thirsty:labPhase',listener);return()=>ipcRenderer.removeListener('thirsty:labPhase',listener);},
+  shotgunLab:request=>ipcRenderer.invoke('thirsty:shotgunLab',request),
   syncClock:()=>ipcRenderer.invoke('thirsty:syncClock'),
   focusBrowser:request=>ipcRenderer.invoke('thirsty:focusBrowser',request),
   closeBotBrowsers:()=>ipcRenderer.invoke('thirsty:closeBotBrowsers'),

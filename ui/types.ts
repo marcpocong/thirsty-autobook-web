@@ -117,6 +117,8 @@ export interface Dashboard {
   mode:'selection'|'full'; handoff:Extract<UiEvent,{type:'handoff'}>|null;
 }
 export interface Bridge {
+  onLabPhase?(callback:(phase:string)=>void):()=>void;
+  shotgunLab(request:{action:'defaults'|'preview'|'save'|'load'|'run'|'stop';value?:unknown}):Promise<any>;
   syncClock():Promise<void>;
   focusBrowser(request:{workerId:WorkerId;bookingId?:string}):Promise<BrowserFocusResult>;
   closeBotBrowsers():Promise<void>;
