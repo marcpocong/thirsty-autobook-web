@@ -23,8 +23,8 @@ import type {ReplaySummary} from './controller.js';
 import type {ReleaseLabDigest} from '../src/release-lab-analysis.js';
 export type DualPracticeCommand = { kind:'dualDry'; date:string } | { kind:'dualPractice'|'dualFullPractice'; input:DualPracticeInput };
 export interface ConfirmRequest { id:string; tone:'question'|'warning'; title:string; message:string; detail:string; confirmLabel:string; cancelLabel?:string }
-export interface ApiRunPreferences {wing?:'MANGO'|'BUKO';strategy:'standard'|'extended';date:string;start:string;duration:number;courtCount:CourtCount;maximum?:number;priority:number[];fallbackStarts:string[];exact?:number[][]}
-export type Command = {kind:'courtBrowse';date:string} | {kind:'resetPrepare';input:PreparationInput} | {kind:'testBooking';input:TestBookingInput} | {kind:'apiRun';mode:'prepare'|'dry'|'audit'|'live'|'live-now';date:string;fingerprint:string;checkoutMethod?:'proof-based'|'proofless';clockOffsetMs?:number;releaseMs?:number;preferences?:ApiRunPreferences} | {kind:'blockAudit';date:string} | {kind:'apiPreview';date:string} | DualPracticeCommand | 'chromeDual' | 'dualReadiness' | 'dualPrepare' | {kind:'fullPractice';input:FullPracticeInput} | 'chrome' | 'inspect' | 'observe' | { kind:'selection' | 'dry'; planHash:string } | {kind:'full';context:ScheduledReleaseContext;authorizeTerms:true} | { kind:'practice'; input:PracticeInput };
+export interface ApiRunPreferences {wing?:'MANGO'|'BUKO';strategy:'standard'|'extended';date:string;start:string;duration:number;courtCount:CourtCount;maximum?:number;priority:number[];fallbackStarts:string[];exact?:number[][];workers?:WorkerId[]}
+export type Command = {kind:'courtBrowse';date:string} | {kind:'resetPrepare';input:PreparationInput} | {kind:'testBooking';input:TestBookingInput} | {kind:'apiRun';mode:'prepare'|'dry'|'audit'|'live'|'live-now';date:string;fingerprint:string;checkoutMethod?:'proof-based'|'proofless';clockOffsetMs?:number;releaseMs?:number;preferences?:ApiRunPreferences;shotgunAttestation?:string} | {kind:'blockAudit';date:string} | {kind:'apiPreview';date:string} | DualPracticeCommand | 'chromeDual' | 'dualReadiness' | 'dualPrepare' | {kind:'fullPractice';input:FullPracticeInput} | 'chrome' | 'inspect' | 'observe' | { kind:'selection' | 'dry'; planHash:string } | {kind:'full';context:ScheduledReleaseContext;authorizeTerms:true} | { kind:'practice'; input:PracticeInput };
 export type Inspection = Extract<UiEvent, { type: 'inspection' }>;
 export interface Activity { at: string; text: string; level: 'info' | 'error'; elapsedMs?:number; deltaMs?:number }
 export interface RunTiming { runId:string; label:string; startedAt:string; elapsedMs:number; endedAt?:string; logPath?:string; readyAt?:string; readyElapsedMs?:number }
@@ -120,7 +120,9 @@ export interface Dashboard {
 }
 export interface Bridge {
   onLabPhase?(callback:(phase:string)=>void):()=>void;
-  shotgunLab(request:{action:'defaults'|'preview'|'save'|'load'|'run'|'stop';value?:unknown}):Promise<any>;
+  shotgunLab(request:{action:'defaults'|'preview'|'previewObjective'|'save'|'load'|'run'|'stop';value?:unknown}):Promise<any>;
+  objective(request:{action:'load'|'save'|'savePresets';value?:unknown;binding?:{objectiveFingerprint:string;configFingerprint:string}|null}):Promise<any>;
+  journalArchive(request:{action:'overview'|'verify'|'archive'|'restore';keys?:string[];note?:string}):Promise<any>;
   syncClock():Promise<void>;
   focusBrowser(request:{workerId:WorkerId;bookingId?:string}):Promise<BrowserFocusResult>;
   closeBotBrowsers():Promise<void>;

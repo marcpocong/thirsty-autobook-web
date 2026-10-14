@@ -47,7 +47,7 @@ import { ApiRunProgressLog } from './run-progress-log.js';
 import { ApiAutomationLock } from './api-automation-lock.js';
 import { assertApiReleaseFresh } from './api-release.js';
 import { canReleaseApiLockAfterParallelFailure } from './api-lock-outcome.js';
-import { requiredWorkerIds, type WorkerId } from '../workers.js';
+import { normalWorkerIds, requiredWorkerIds, type WorkerId } from '../workers.js';
 import { showWorkerPage } from '../browser-window.js';
 import { preflightProoflessWire, prooflessCourtHourStatuses, prooflessReleasePlan, resolveProoflessReleasePlan, submitDirectCheckout } from './proofless-checkout.js';
 import { WirePayloadError } from './wire-payload-check.js';
@@ -66,9 +66,11 @@ const preferencesSchema = z.object({ wing: z.enum(['MANGO','BUKO']).optional(), 
   duration: z.number().int().min(1).max(6), courtCount: z.union([z.literal(1),z.literal(2),z.literal(3),z.literal(4),z.literal(5),z.literal(6),z.literal(7)]), maximum: z.number().optional(),
   priority: z.array(z.number().int().min(1).max(7)).min(1),
   fallbackStarts: z.array(z.string().regex(/^(0[89]|1\d|2[0-3]):00$/)),
-  exact: z.array(z.array(z.number().int().min(1).max(7))).optional() }).strict();
+  exact: z.array(z.array(z.number().int().min(1).max(7))).optional(),
+  workers: z.array(z.enum(['A','B','C','D','E','F','G','H'])).min(1).max(8).optional() }).strict();
 const command = z.object({ mode: z.enum(['prepare', 'dry', 'audit', 'live', 'live-now']), date: z.iso.date(),
   checkoutMethod:z.enum(['proof-based','proofless']).optional(),clockOffsetMs:z.number().finite().optional(),releaseMs: z.number().int().positive().optional(), fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+  shotgunAttestation: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   preferences: preferencesSchema.optional() }).strict().parse(JSON.parse(process.argv[2] ?? '{}'));
 const abort = new AbortController();
 const phase3Observations:AvailabilityObservation[]=[];
@@ -366,7 +368,14 @@ try {
   const strategy = requested?.strategy ?? config.BOOKING_TYPE;
   const duration = requested?.duration ?? config.DURATION_HOURS;
   const courtCount = requested?.courtCount ?? config.COURT_COUNT;
-  if(['live','live-now'].includes(command.mode)&&!command.preferences&&config.STRATEGY_V2?.shotgun?.enabled)throw Error('SHOTGUN_LIVE_COMPATIBILITY_UNVERIFIED');
+  // Live Shotgun capability (capability-matrix.ts): Mango scheduled release only, as an owner-attested pilot bound to this
+  // exact plan fingerprint. An immediate current-slot burst and any Buko scheduled target stay refused.
+  if(!command.preferences&&config.STRATEGY_V2?.shotgun?.enabled&&['live','live-now'].includes(command.mode)){
+    if(command.mode==='live-now')throw Error('SHOTGUN_IMMEDIATE_BURST_BLOCKED');
+    if(config.PRECISION_PHASE3?.candidates.some(candidate=>candidate.wing==='BUKO'))throw Error('BUKO_SCHEDULED_LIVE_BLOCKED');
+    if(command.shotgunAttestation!==command.fingerprint)throw Error('SHOTGUN_LIVE_ATTESTATION_REQUIRED');
+    stage('SHOTGUN_LIVE_PILOT_ATTESTED',{attempts:config.STRATEGY_V2.shotgun.exactSchedule.length});
+  }
   if(command.mode==='audit'){
     availabilityPage=(await prepareWorker('A')).page;
     const [read,publicRecords]=await Promise.all([readAvailabilitySnapshot(command.date).then(snapshot=>({snapshot,observedAtMs:nowMs()})),readKnownCourtHourBlocks(command.date)]);
@@ -384,7 +393,7 @@ try {
   if ((command.mode === 'live' || command.mode === 'live-now') && process.env.ONDA_API_FIRST_LIVE !== 'ARMED')
     throw Error('API_LIVE_NOT_ARMED');
   if (command.mode === 'live' && !command.releaseMs) throw Error('API_RELEASE_TIME_REQUIRED');
-  const workerIds:WorkerId[]=phase3?[...phase3.wave1.map(value=>value.workerId),...phase3.standby]:precisionTargets?precisionTargets.map(target=>target.workerId):requiredWorkerIds(strategy,courtCount);
+  const workerIds:WorkerId[]=phase3?[...phase3.wave1.map(value=>value.workerId),...phase3.standby]:precisionTargets?precisionTargets.map(target=>target.workerId):normalWorkerIds(strategy,courtCount,requested?.workers);
   // An armed Precision race tolerates one worker's browser or identity failure: that
   // attempt is recorded as not dispatched and the others stay eligible. Preparation
   // and the dry audit still require every configured worker, while the operator is present.
@@ -997,7 +1006,10 @@ try {
         for(const a of authorization.wave1){const browser=sessions.find(s=>s.workerId===a.workerId);
           if(!browser || browser.pages.length<(a.fanOutOffsetsMs?.length??1) || browser.pages.some(p=>p.isClosed()||p.url()!==ONDA_URL))throw Error('SHOTGUN_TOPOLOGY_NOT_READY');}
       }
-      const frozen=freezePrecisionRace(date,releaseMs,wave1);
+      const savedObjective=config.STRATEGY_V2?.objective;
+      const frozen=savedObjective?freezePrecisionRace(date,releaseMs,wave1,{objective:savedObjective.scope==='ANY_WING'?{scope:'ANY_WING',wings:Object.fromEntries(Object.entries(savedObjective.wings).map(([wing,q])=>[wing,q!.ideal])),overall:savedObjective.overall!.ideal}
+        :{scope:'PER_WING',wings:Object.fromEntries(Object.entries(savedObjective.wings).map(([wing,q])=>[wing,q!.ideal]))}}):freezePrecisionRace(date,releaseMs,wave1);
+      if(savedObjective)stage('PHASE3_OBJECTIVE_QUOTA',{scope:savedObjective.scope,mango:savedObjective.wings.MANGO?.ideal??0,buko:savedObjective.wings.BUKO?.ideal??0});
       const savedShotgun=config.STRATEGY_V2?.shotgun;
       const shotgunTopology=deriveShotgunTopology(frozen.attempts.map(value=>{const candidate=authorization.candidates.find(candidate=>candidate.logicalKey===value.target.targetKey)!;
         return {id:value.id,logicalTargetId:logicalTargetId(candidate),configuredOffsetMs:value.target.releaseOffsetMs??0};}),savedShotgun?.enabled?savedShotgun.exactSchedule:[]);

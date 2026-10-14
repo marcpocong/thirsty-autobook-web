@@ -1,4 +1,6 @@
 import { BookingTestLabService } from './booking-test-lab-service.js';
+import { ObjectiveStore } from './objective-store.js';
+import { archiveHistoricalUnknown, journalOverview, restoreArchived, verifyArchive } from '../src/journal-archive.js';
 import { describeBookingPlan } from '../src/booking-plan.js';
 import { loadConfig,loadPlayerProfiles } from '../src/config.js';
 import {reviewLock,clearVerifiedLock,browserProbe} from './locks.js';
@@ -12,7 +14,8 @@ import { ActivityJournal } from './activity-journal.js';
 import { readLock, readHandoff, readRetainedHold, readPreviousHolds, readLatestQrHandoffs, probeCdp, probeBrowserHealth, probeBrowserReadiness, readClock } from './status.js';
 import { readBooking, saveBooking, describePlan } from './booking.js';
 import { resetPracticeSession } from './practice-reset.js';
-import {requiredWorkerIds,WORKER_IDS} from '../src/workers.js';
+import {normalWorkerIds,WORKER_IDS} from '../src/workers.js';
+import {appendFileSync,mkdirSync} from 'node:fs';
 import {focusDedicatedBrowser} from '../src/browser-window.js';
 import type {ConfirmRequest} from './types.js';
 import {readNetworkClock,synchronizeNetworkClock} from '../src/network-clock.js';
@@ -40,6 +43,7 @@ app.setPath('userData', resolve(root, '.local/control-panel'));
 const node = process.env.THIRSTY_NODE_EXEC;
 if (!node) throw new Error('Launch the panel with npm run ui.');
 const lab = new BookingTestLabService(root,node,phase=>{if(window&&!window.isDestroyed())window.webContents.send('thirsty:labPhase',phase);});
+const objectives = new ObjectiveStore(root);
 const index = resolve(root, 'dist/ui/renderer/index.html');
 const indexUrl = pathToFileURL(index).href;
 let window: BrowserWindow;
@@ -57,9 +61,17 @@ function confirmModal(request: Omit<ConfirmRequest, 'id'>): Promise<boolean> {
   });
 }
 const controller = new Controller({
+  confirmShotgunLive:async plan=>{const shotgun=plan.setup.STRATEGY_V2!.shotgun!,offsets=shotgun.exactSchedule.map(s=>s.configuredOffsetMs).sort((a,b)=>a-b);
+    return confirmModal({tone:'warning',title:'LIVE SHOTGUN PILOT · OWNER ATTESTATION',message:`Arm ${shotgun.exactSchedule.length} live Shotgun attempts for Mango ${plan.targetDate}?`,
+      detail:`Attempts: ${shotgun.exactSchedule.length} across ${Object.keys(shotgun.counts).length} target(s) · offsets ${offsets[0]} … ${offsets.at(-1)} ms before release.\n`+
+        'Capability: LIVE PILOT. The same armed Precision dispatch path has run at Mango releases, and Mango proofless checkout reached genuine holds off-peak. No live Shotgun has reached a hold yet, and provider acceptance exactly at 08:00 is unproven.\n'+
+        'HTTP 429, payment-in-progress or an unknown result stops every unsent attempt. Attempts already sent may create extra temporary holds; each is reconciled separately. Nothing is paid or cancelled automatically.\n\n'+
+        'By confirming you attest that Onda Fit and Thirsty Pickle management authorize this multi-attempt live run for this exact plan. The attestation is recorded locally with the plan fingerprint.',
+      confirmLabel:'Attest and arm live Shotgun',cancelLabel:'Do not arm'});},
+  recordShotgunAttestation:record=>{mkdirSync(resolve(root,'.local/shotgun-live'),{recursive:true});appendFileSync(resolve(root,'.local/shotgun-live/attestations.ndjson'),`${JSON.stringify({at:new Date().toISOString(),...record})}\n`,{mode:0o600});},
   confirmStopPrepare:async()=>confirmModal({tone:'question',title:'Reset & Prepare',message:'An automation is currently running.',detail:'Stop it and prepare a new session?',confirmLabel:'Stop and prepare'}),
   confirmBooking:async(plan,maximum)=>confirmModal({tone:'question',title:`${plan.strategy.toUpperCase()} TEST TO QR`,message:'Create temporary payment holds?',detail:describeBookingPlan(plan,maximum)+'\nIf availability changes before Proceed, the planner may retry other courts or valid splits within this requested time range and court count. Exact courts, when specified, are never substituted.\nTerms authorized for this test. Payment will NOT be automated.',confirmLabel:'Run Test to QR'}),
-  confirmApiTest:async input=>{const workers=requiredWorkerIds(input.strategy,input.courtCount),count=workers.length,proofless=input.method==='proofless';return confirmModal({tone:'warning',title:proofless?'PROOFLESS DIRECT TEST TO QR':'API-FIRST TEST TO QR',message:`Create ${count} temporary API checkout hold${count===1?'':'s'}?`,detail:`Wing: ${input.wing??'MANGO'}\nType: ${input.strategy.toUpperCase()}\nCourts requested: ${input.courtCount}\nCourts per checkout: up to 2\nDate: ${input.date}\nStart: ${input.start}\nDuration: ${input.duration} hour(s)\nNo price ceiling; the exact response amount is validated.\nCourt priority: ${input.priority.join(' -> ')}\nPlayers/Browsers: ${workers.join(' + ')} configured\nTerms authorization: YES\n\n${proofless?'PROOFLESS TEST: You must manually confirm these exact courts and hours are currently open. No availability proof is requested and no automatic availability substitution will occur.\n\n':''}${count} dedicated API Chrome window${count===1?'':'s'} remain visible throughout the run. If Cloudflare requests human verification, use the matching THIRSTY BOT window. Payment will NOT be automated.`,confirmLabel:proofless?'I Confirm Open · Run Proofless Test':'Run API Test to QR'});},
+  confirmApiTest:async input=>{const workers=normalWorkerIds(input.strategy,input.courtCount,input.workers),count=workers.length,proofless=input.method==='proofless';return confirmModal({tone:'warning',title:proofless?'PROOFLESS DIRECT TEST TO QR':'API-FIRST TEST TO QR',message:`Create ${count} temporary API checkout hold${count===1?'':'s'}?`,detail:`Wing: ${input.wing??'MANGO'}\nType: ${input.strategy.toUpperCase()}\nCourts requested: ${input.courtCount}\nCourts per checkout: up to 2\nDate: ${input.date}\nStart: ${input.start}\nDuration: ${input.duration} hour(s)\nNo price ceiling; the exact response amount is validated.\nCourt priority: ${input.priority.join(' -> ')}\nPlayers/Browsers: ${workers.join(' + ')} configured\nTerms authorization: YES\n\n${proofless?'PROOFLESS TEST: You must manually confirm these exact courts and hours are currently open. No availability proof is requested and no automatic availability substitution will occur.\n\n':''}${count} dedicated API Chrome window${count===1?'':'s'} remain visible throughout the run. If Cloudflare requests human verification, use the matching THIRSTY BOT window. Payment will NOT be automated.`,confirmLabel:proofless?'I Confirm Open · Run Proofless Test':'Run API Test to QR'});},
   runner: createRunner(root, node), activityJournal:new ActivityJournal(root), lock: () => readLock(root), retainedHold:()=>readRetainedHold(root), recentQrHandoffs:expiresAt=>readLatestQrHandoffs(root,expiresAt), previousHolds:()=>readPreviousHolds(root), cdp: probeCdp, clock: readClock,syncClock:async()=>{await synchronizeNetworkClock();},
   reviewLock:owned=>reviewLock(root,owned,browserProbe(root,node),undefined,browserProbe(root,node,'B')),
   clearLock:(fingerprint,owned)=>clearVerifiedLock(root,fingerprint,owned,browserProbe(root,node),undefined,browserProbe(root,node,'B')),
@@ -147,6 +159,39 @@ else {
     if(request.action==='previewObjective')return lab.previewObjective(request.value);
     if(request.action==='run')return lab.run(request.value as import('../src/shotgun-test-lab.js').LabRequest);
     throw Error('LAB_ACTION_INVALID');
+  });
+  const allowed=(event:Electron.IpcMainInvokeEvent,args:unknown[])=>event.sender===window.webContents&&event.senderFrame===window.webContents.mainFrame&&event.senderFrame?.url===indexUrl&&args.length===1;
+  // Booking Setup draft: saving a draft never changes the armed/saved release authorization.
+  ipcMain.handle('thirsty:objective',async(event,...args:unknown[])=>{
+    if(!allowed(event,args))throw Error('IPC_NOT_ALLOWED');
+    const request=args[0] as {action?:string;value?:unknown;binding?:unknown};
+    if(!request||JSON.stringify(request).length>300_000)throw Error('OBJECTIVE_REQUEST_INVALID');
+    if(request.action==='load'){let legacy=null;try{legacy=readBooking().setup;}catch{legacy=null;}return objectives.load(legacy);}
+    if(request.action==='save'){const b=request.binding as {objectiveFingerprint?:unknown;configFingerprint?:unknown}|null|undefined;
+      const binding=b===undefined?undefined:b===null?null:typeof b.objectiveFingerprint==='string'&&/^[a-f0-9]{64}$/.test(b.objectiveFingerprint)&&typeof b.configFingerprint==='string'&&/^[a-f0-9]{64}$/.test(b.configFingerprint)
+        ?{objectiveFingerprint:b.objectiveFingerprint,configFingerprint:b.configFingerprint,savedAt:new Date().toISOString()}:(()=>{throw Error('OBJECTIVE_BINDING_INVALID');})();
+      return objectives.save(request.value,binding);}
+    if(request.action==='savePresets')return objectives.savePresets(request.value);
+    throw Error('OBJECTIVE_ACTION_INVALID');
+  });
+  // Historical UNKNOWN archive: index + audit only; journals are never moved, rewritten or reclassified.
+  ipcMain.handle('thirsty:journalArchive',async(event,...args:unknown[])=>{
+    if(!allowed(event,args))throw Error('IPC_NOT_ALLOWED');
+    const request=args[0] as {action?:string;keys?:unknown;note?:unknown};
+    const keys=Array.isArray(request?.keys)&&request.keys.length<=500&&request.keys.every(k=>typeof k==='string'&&/^[a-f0-9]{64}$/.test(k))?request.keys as string[]:[];
+    const note=typeof request?.note==='string'?request.note.slice(0,200):'';
+    if(request?.action==='overview')return journalOverview(root);
+    if(request?.action==='verify')return verifyArchive(root);
+    if(controller.state.operation!=='idle')throw Error('ARCHIVE_REQUIRES_IDLE_APPLICATION');
+    if(request?.action==='archive'){
+      if(!keys.length)throw Error('ARCHIVE_KEYS_REQUIRED');
+      const ok=await confirmModal({tone:'question',title:'Archive historical UNKNOWN records?',message:`Archive ${keys.length} historical UNKNOWN record${keys.length===1?'':'s'}?`,
+        detail:'Each original journal stays exactly where it is, byte for byte, still UNKNOWN. Its target stays blocked against duplicate submission. Archiving only moves the record out of active screens and records a SHA-256 audit entry. It does not retry, reclassify or cancel anything. You can restore it at any time.',confirmLabel:'Archive records'});
+      if(!ok)return {archived:[],refused:[],cancelled:true};
+      return archiveHistoricalUnknown(root,keys,note||'operator archival from Activity');
+    }
+    if(request?.action==='restore'){if(!keys.length)throw Error('ARCHIVE_KEYS_REQUIRED');return restoreArchived(root,keys,note||'operator restore from Activity');}
+    throw Error('ARCHIVE_ACTION_INVALID');
   });
   for (const [name, action] of Object.entries(actions)) ipcMain.handle(`thirsty:${name}`, (event, ...args: unknown[]) => {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== indexUrl || args.length) throw new Error('IPC_NOT_ALLOWED');
