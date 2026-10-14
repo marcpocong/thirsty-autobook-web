@@ -28,7 +28,19 @@ export async function closeOfflineChrome(session:OfflineChrome):Promise<void> {
   // connectOverCDP browser.close() only disconnects; close the browser we spawned.
   try { const cdp=await session.browser.newBrowserCDPSession();await cdp.send('Browser.close'); } catch {}
   await session.browser.close().catch(()=>{});
-  if(session.process?.exitCode===null)await new Promise<void>(done=>{const timer=setTimeout(()=>{session.process!.kill();done();},3000);session.process!.once('exit',()=>{clearTimeout(timer);done();});});
+  if(session.process)await stopChromeProcess(session.process,3000);
+}
+/**
+ * Waits for a spawned Chrome to exit, killing it after `graceMs`, and then waits (bounded) for the kill to complete.
+ * On Windows, letting Node exit while a just-killed child or its CDP socket is still closing can abort the Node
+ * process natively (exit 0xC0000409, no message), which also loses the child's reported result or error.
+ */
+export async function stopChromeProcess(child:ChildProcess,graceMs:number):Promise<void>{
+  if(child.exitCode!==null||child.signalCode!==null)return;
+  const exited=new Promise<void>(done=>child.once('exit',()=>done()));
+  if(await Promise.race([exited.then(()=>true),new Promise<boolean>(done=>setTimeout(()=>done(false),graceMs))]))return;
+  child.kill();
+  await Promise.race([exited,new Promise<void>(done=>setTimeout(done,5000))]);
 }
 
 export interface OfflineChrome { index: number; port: number; browser: Browser; pages: Page[]; process?: ChildProcess; routeSeen: number[]; version: string | null }
@@ -97,7 +109,7 @@ export async function launchOfflineChrome(options: { chromium: typeof import('pl
   // Like production, the first tab is the one in front.
   await pages[0]!.bringToFront();
   return { index: options.index, port, browser, pages, process: child, routeSeen, version };
-  } catch(error) {if(browser){try{await (await browser.newBrowserCDPSession()).send('Browser.close');}catch{}await browser.close().catch(()=>{});}if(child?.exitCode===null)child.kill();throw error;}
+  } catch(error) {if(browser){try{await (await browser.newBrowserCDPSession()).send('Browser.close');}catch{}await browser.close().catch(()=>{});}if(child)await stopChromeProcess(child,0);throw error;}
 }
 
 /** Emulated page-script activity: every 10 ms each tab's main thread is busy for `busyMs` (0 disables). */
