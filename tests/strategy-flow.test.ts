@@ -3,7 +3,7 @@ import {chromium,type Browser} from 'playwright';
 import {mkdir} from 'node:fs/promises';
 import {bookingView,defaultSetup} from '../ui/booking.js';
 import {ConfigSchema} from '../src/config.js';
-import {openRenderer} from './renderer-harness.js';
+import {openRenderer,showRendererView} from './renderer-harness.js';
 let browser:Browser;
 beforeAll(async()=>{browser=await chromium.launch({headless:true,...(process.platform==='win32'?{channel:'chrome'}:{})});await mkdir('.local/strategy-flow',{recursive:true});});
 afterAll(async()=>{await browser.close();});
@@ -33,7 +33,7 @@ it('reviews the complete goal to saved release flow at every required viewport w
  const sends=setup.PRECISION_PHASE3.wave1.reduce((n:number,a:any)=>n+(a.fanOutOffsetsMs?.length??1),0);expect(sends).toBe(setup.STRATEGY_V2.shotgun.budget);
  expect(new Set(setup.PRECISION_PHASE3.wave1.map((a:any)=>a.candidateId)).size).toBe(1);
  expect(setup.PRECISION_PHASE3.candidates.length).toBeGreaterThan(1);
- await page.locator('#strategy-shotgun-next').click();await shot('16-next-release');await page.locator('nav [data-view="strategy"]').click();
+ await page.locator('#strategy-shotgun-next').click();await shot('16-next-release');await showRendererView(page,'strategy');
  await page.evaluate(()=>{const w=window as any;w.fixtureState.prewarmFeasibility={p95Source:'COMPATIBLE_MEASURED_HISTORY',preparationP95Ms:18000,sampleCount:30};w.fixturePublish(w.fixtureState);});
  expect(await page.locator('#strategy-shotgun-quick-status').innerText()).toContain('NEEDS REFRESH');await shot('13-shotgun-stale');
  await page.locator('#strategy-advanced > summary').click();await shot('14-advanced');await page.locator('#strategy-advanced > summary').click();

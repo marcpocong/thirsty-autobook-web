@@ -59,7 +59,16 @@ export async function openRenderer(browser: Browser, extra: Record<string, unkno
       adviseFromHistory: async (input: unknown) => { w.fixtureCalls.push('adviseFromHistory'); w.fixtureAdviceInput = input; return w.fixtureAdvice; },
       replayPlan: async (input: unknown) => { w.fixtureCalls.push('replayPlan'); w.fixtureReplayInput = input; return w.fixtureReplay; },
       onConfirmRequest: (callback: any) => { w.fixtureConfirmRequest = callback; return () => {}; },
-      confirmResponse: async (id: string, confirmed: boolean) => { w.fixtureConfirmResponse = { id, confirmed }; } };
+      confirmResponse: async (id: string, confirmed: boolean) => { w.fixtureConfirmResponse = { id, confirmed }; },
+      // Booking Setup draft store and the journal archive. Read-only calls go to w.fixtureReads; mutating calls stay in
+      // w.fixtureCalls, which tests assert exactly. A fixture can preset w.fixtureObjective / w.fixtureJournals.
+      objective: async (request: any) => { (request.action === 'load' ? (w.fixtureReads ??= []) : w.fixtureCalls).push(`objective:${request.action}`);
+        if (request.action === 'load') return { document: w.fixtureObjective ?? null, migrated: null, notes: [], presets: w.fixturePresets ?? [] };
+        if (request.action === 'save') { w.fixtureObjective = { version: 1, objective: request.value, savedAt: new Date().toISOString(), binding: request.binding ?? w.fixtureObjective?.binding ?? null }; return w.fixtureObjective; }
+        if (request.action === 'savePresets') { w.fixturePresets = request.value; return request.value; } },
+      journalArchive: async (request: any) => { (['overview', 'verify'].includes(request.action) ? (w.fixtureReads ??= []) : w.fixtureCalls).push(`journalArchive:${request.action}`); return w.fixtureJournals?.[request.action] ?? { counts: {}, activeUnknown: [], archived: [], eligible: [], checkedAt: new Date().toISOString() }; },
+      strategyEvidence: async () => ({ targetDate: '', dayOfWeek: '', releasesConsidered: 0, wellObservedReleases: 0, realReleases: 0, historicalPrePhase3: 0, strength: 'NONE', ranges: [], sharedRisk: [] }),
+      onLabPhase: () => () => {} };
   }, state);
   await page.goto(`${RENDERER_ORIGIN}/ui/renderer/index.html`);
   await page.waitForFunction(expected => document.getElementById('headline')?.textContent === expected, state.headline);
@@ -67,10 +76,31 @@ export async function openRenderer(browser: Browser, extra: Record<string, unkno
   return page;
 }
 
-/** Opens a view by its current or legacy name, the way an operator would. */
+/**
+ * Opens a pane by its current or legacy name, the way an operator would, through the four destinations:
+ * release/tests → Booking Setup step 5 (Next Release / Available Now), strategy → step 3 legacy editor,
+ * live/history/records → Activity tabs, tools → Settings.
+ */
 export async function showRendererView(page: Page, view: string): Promise<void> {
   const target = LEGACY_VIEWS[view] ?? view;
-  if (target === 'tests') { await page.locator('nav [data-view="tools"]').click(); await page.locator('#view-tools [data-view="tests"]').click(); return; }
-  await page.locator(`nav [data-view="${target}"]`).click();
-  if (view === 'plan') await page.locator('#strategy-advanced').evaluate(element => { (element as HTMLDetailsElement).open = true; });
+  if (target === 'home') { await page.locator('nav [data-dest="home"]').click(); return; }
+  if (target === 'tools') { await page.locator('nav [data-dest="settings"]').click(); return; }
+  if (['live', 'history', 'records'].includes(target)) { await page.locator('nav [data-dest="activity"]').click(); await page.locator(`.activity-tabs [data-pane="${target}"]`).click(); return; }
+  await page.locator('nav [data-dest="setup"]').click();
+  if (target === 'tests' || target === 'release' || target === 'lab') {
+    // During a run the mode is locked; the current mode is kept.
+    const mode = page.locator(`input[name="setup-mode"][value="${target === 'tests' ? 'AVAILABLE_NOW' : 'NEXT_RELEASE'}"]`);
+    if (!(await mode.isChecked()) && await mode.isEnabled()) await mode.check();
+    await page.locator('#setup-steps [data-step="5"]').click();
+    if (target !== 'lab') await page.locator('#execution-console').evaluate(element => { (element as HTMLDetailsElement).open = true; });
+    if (target === 'tests') await page.locator('#execution-console .manual-book-now').evaluate(element => { (element as HTMLDetailsElement).open = true; });
+    return;
+  }
+  if (target === 'strategy') {
+    await page.locator('#setup-steps [data-step="3"]').click();
+    await page.locator('#legacy-editor-drawer').evaluate(element => { (element as HTMLDetailsElement).open = true; });
+    // The legacy editor opens only when editing is allowed (never during a run).
+    await page.waitForFunction(() => !document.getElementById('view-strategy')?.hidden, undefined, { timeout: 3000 }).catch(() => undefined);
+    if (view === 'plan') await page.locator('#strategy-advanced').evaluate(element => { (element as HTMLDetailsElement).open = true; });
+  }
 }

@@ -3,7 +3,7 @@ import { chromium, type Browser, type Page } from 'playwright';
 import { bookingView, defaultSetup } from '../ui/booking.js';
 import { ConfigSchema } from '../src/config.js';
 import { compileSmartPlan, confirmSmartRates, emptySmartDraft, type SmartDraft } from '../src/precision-simple.js';
-import { openRenderer } from './renderer-harness.js';
+import { openRenderer, showRendererView } from './renderer-harness.js';
 
 /** The Release Offset selector in Edit Plan, in real Chrome against the real renderer. */
 let browser: Browser;
@@ -102,7 +102,7 @@ it('routes the 20-shot preset through unified Smart Shotgun metadata and PRECISI
     {court:1,start:'20:00',durationHours:3},{court:2,start:'21:00',durationHours:3}],backups:[{court:3,start:'17:00',durationHours:2},{court:4,start:'17:00',durationHours:2},{court:5,start:'17:00',durationHours:2}]};
   const phase3=compileSmartPlan(draft,{targetDate}).phase3!;
   const page=await openRenderer(browser,{booking:booking({RELEASE_STRATEGY:'precision',PRECISION_TARGETS:[],PRECISION_PHASE3:phase3})});
-  await page.locator('[data-view="strategy"]').first().click();
+  await showRendererView(page,'strategy');
   await page.locator('input[name="strategy-intensity"][value="SHOTGUN"]').check();
   await page.locator('#strategy-shotgun-advanced').evaluate(element=>element.setAttribute('open',''));
   await page.locator('#strategy-shotgun-preset').click();
@@ -127,7 +127,7 @@ it('focuses the full Dense Core budget on the first target with one operator act
   const targetDate=booking().targetDate,rates=confirmSmartRates(600,700,'VENUE_SCHEDULE',targetDate,new Date());
   const draft:SmartDraft={...emptySmartDraft(),rates,immediate:[{court:7,start:'19:00',durationHours:3},{court:6,start:'19:00',durationHours:3}],backups:[]};
   const page=await openRenderer(browser,{booking:booking({RELEASE_STRATEGY:'precision',PRECISION_TARGETS:[],PRECISION_PHASE3:compileSmartPlan(draft,{targetDate}).phase3!})});
-  await page.locator('[data-view="strategy"]').first().click();await page.locator('input[name="strategy-intensity"][value="SHOTGUN"]').check();await page.locator('#strategy-shotgun-advanced').evaluate(node=>(node as HTMLDetailsElement).open=true);await page.locator('#strategy-shotgun-focus').click();
+  await showRendererView(page,'strategy');await page.locator('input[name="strategy-intensity"][value="SHOTGUN"]').check();await page.locator('#strategy-shotgun-advanced').evaluate(node=>(node as HTMLDetailsElement).open=true);await page.locator('#strategy-shotgun-focus').click();
   expect(await page.locator('#strategy-shotgun-allocation').inputValue()).toBe('CUSTOM');
   const checks=page.locator('#strategy-shotgun-targets input[type="checkbox"]');expect(await checks.nth(0).isChecked()).toBe(true);expect(await checks.nth(1).isChecked()).toBe(false);
   expect(await page.locator('#strategy-shotgun-targets input[type="number"]').first().inputValue()).toBe('20');
@@ -140,7 +140,7 @@ it('saves and reloads literal Advanced Custom Shotgun timing',async()=>{
   const draft:SmartDraft={...emptySmartDraft(),rates,retryReopened:true,maxReopenedAttempts:2,immediate:[{court:6,start:'22:00',durationHours:2},{court:1,start:'20:00',durationHours:3}],
     backups:[{court:3,start:'17:00',durationHours:2},{court:4,start:'17:00',durationHours:2}]};
   const phase3=compileSmartPlan(draft,{targetDate}).phase3!,page=await openRenderer(browser,{booking:booking({RELEASE_STRATEGY:'precision',PRECISION_TARGETS:[],PRECISION_PHASE3:phase3})});
-  await page.locator('[data-view="strategy"]').first().click();await page.locator('input[name="strategy-intensity"][value="SHOTGUN"]').check();
+  await showRendererView(page,'strategy');await page.locator('input[name="strategy-intensity"][value="SHOTGUN"]').check();
   await page.locator('#strategy-shotgun-advanced').evaluate(element=>element.setAttribute('open',''));
   const checks=page.locator('#strategy-shotgun-targets input[type="checkbox"]');await checks.nth(1).uncheck();
   await page.locator('#strategy-shotgun-budget').fill('4');await page.locator('#strategy-shotgun-budget').blur();
@@ -150,7 +150,7 @@ it('saves and reloads literal Advanced Custom Shotgun timing',async()=>{
   await page.locator('#strategy-save').click();await page.waitForFunction(()=>(window as any).fixtureSaved);const result=await saved(page);
   expect(result.STRATEGY_V2.shotgun.customOffsetsMs).toEqual([-1500,-500,-10,0]);
   expect(result.PRECISION_PHASE3.wave1.filter((value:any)=>value.candidateIndex===0).flatMap((value:any)=>value.fanOutOffsetsMs??[value.releaseOffsetMs??0])).toEqual([-1500,-500,-10,0]);
-  await page.close();const reopened=await openRenderer(browser,{booking:booking(result)});await reopened.locator('[data-view="strategy"]').first().click();await reopened.locator('#strategy-shotgun-advanced').evaluate(element=>element.setAttribute('open',''));
+  await page.close();const reopened=await openRenderer(browser,{booking:booking(result)});await showRendererView(reopened,'strategy');await reopened.locator('#strategy-shotgun-advanced').evaluate(element=>element.setAttribute('open',''));
   expect(await reopened.locator('#strategy-shotgun-custom-offsets').inputValue()).toBe('-1500, -500, -10, 0');await reopened.close();
 });
 

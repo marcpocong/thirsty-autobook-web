@@ -1,4 +1,7 @@
-import { installShotgunLab } from './shotgun-lab.js';
+import { hooks, PANE_DESTINATION, type Destination, type Pane } from './navigation.js';
+import { initBookingSetup } from './booking-setup.js';
+import { initHome } from './home.js';
+import { initActivity } from './activity.js';
 import { COURT_REGISTRY } from '../../src/court-registry.js';
 import {shotgunCriticalInterval} from '../../src/shotgun.js';
 import type { Bridge, Dashboard, RunHistoryEntry } from '../types.js';
@@ -30,10 +33,9 @@ let dirty=false, loadedPlan='';
 let courtOrder=[7,6,5,4,3,2,1], fallbackTimes:string[]=[];
 const input=(id:string)=>byId(id) as HTMLInputElement;
 let workflow:'test'|'release'='release';
-/** The five operator concepts, plus the test booking tools opened from Tools. */
-type View = 'home'|'release'|'strategy'|'live'|'history'|'tools'|'tests'|'lab';
+/** Panes inside the four destinations (Home, Booking Setup, Activity, Settings). */
+type View = Pane;
 let currentView:View='home';
-let labRunning=false;
 const browserFocusMessages:Partial<Record<WorkerId,string>>={};
 const browserFocusPending:Partial<Record<WorkerId,boolean>>={};
 // Electron prefixes IPC rejections, so match the known codes anywhere in the message.
@@ -112,27 +114,43 @@ const primary=byId('primary-actions');
 const releaseView=byId('view-release'),testsView=byId('view-tests');
 const testAction=testsView.querySelector('.test-action')!,testResults=byId('test-results');
 const releaseAction=releaseView.querySelector('.release-action')!;
-const VIEWS=['home','release','strategy','live','history','tools','tests','lab'] as const;
+const VIEWS=['home','release','strategy','live','history','tools','tests','setup','records'] as const;
 // These views only observe; they stay reachable while a run is in progress.
-const OBSERVER_VIEWS:readonly View[]=['live','history','tools'];
+const OBSERVER_VIEWS:readonly View[]=['live','history','tools','records'];
 // The main release dashboard is also safe to revisit during a run: render() keeps
 // its mutating controls in the running/disabled state. Strategy remains blocked
 // so an in-flight plan cannot be edited accidentally.
-const RUN_ACCESSIBLE_VIEWS:readonly View[]=['release',...OBSERVER_VIEWS];
+const RUN_ACCESSIBLE_VIEWS:readonly View[]=['home','setup','release',...OBSERVER_VIEWS];
+const DESTINATION_ELEMENTS:Record<Destination,string>={home:'view-home',setup:'dest-setup',activity:'dest-activity',settings:'view-tools'};
 function showView(view:View){
-  if(labRunning&&!['lab','live','history'].includes(view))return;
+  if(hooks.labRunning&&!['setup','live','history','records'].includes(view))return;
   if(latest&&latest.operation!=='idle'&&latest.operation!=='scheduled'&&!RUN_ACCESSIBLE_VIEWS.includes(view)&&!(view==='tests'&&workflow==='test'))return;
   currentView=view;
-  for(const id of VIEWS){byId(`view-${id}`).hidden=id!==view;for(const tab of document.querySelectorAll(`[data-view="${id}"]`))tab.setAttribute('aria-current',id===view?'page':'false');}
-  const nextWorkflow=view==='tests'?'test':(view==='home'||view==='lab')?workflow:OBSERVER_VIEWS.includes(view)?workflow:'release';
+  const destination=PANE_DESTINATION[view];
+  for(const [dest,id] of Object.entries(DESTINATION_ELEMENTS))if(id!==`view-${view}`||dest!==destination)byId(id).hidden=dest!==destination;
+  for(const id of VIEWS){if(id==='home'||id==='tools')continue;byId(`view-${id}`).hidden=id!==view;}
+  byId('view-home').hidden=destination!=='home';byId('view-tools').hidden=destination!=='settings';
+  for(const tab of document.querySelectorAll<HTMLElement>('[data-dest]'))if(tab.closest('nav'))tab.setAttribute('aria-current',tab.dataset.dest===destination?'page':'false');
+  for(const tab of document.querySelectorAll<HTMLElement>('.activity-tabs [data-pane]'))tab.setAttribute('aria-current',tab.dataset.pane===view?'page':'false');
+  const setupWorkflow=destination==='setup'?hooks.desiredWorkflow?.()??null:null;
+  const nextWorkflow=view==='tests'?'test':view==='release'||view==='strategy'?'release':setupWorkflow??(view==='home'||view==='setup'||OBSERVER_VIEWS.includes(view)?workflow:'release');
   if(nextWorkflow!==workflow){storeDraft();workflow=nextWorkflow;if(workflow==='test'&&latest?.booking){const s=latest.booking.setup;applyDraft({testWing:testDraft?.testWing??'MANGO',bukoCourt:testDraft?.bukoCourt??1,releaseStrategy:'general',precisionCount:1,precisionTargets:[],method:s.BOOKING_METHOD,strategy:s.BOOKING_TYPE,date:testDraft?.date??input('test-date').value,courtCount:s.COURT_COUNT,start:s.START_TIME,duration:s.DURATION_HOURS,attempts:s.MAX_SELECTION_ATTEMPTS,courtOrder:[...s.PREFERRED_COURTS],fallbackTimes:[...s.FALLBACK_TIMES],exactA:'',exactB:''});testDirty=false;}if(workflow==='release'&&releaseDraft)applyDraft(releaseDraft);dirty=workflow==='test'?testDirty:releaseDirty;input('terms').checked=false;void window.thirsty.setWorkflow(workflow).then(()=>window.thirsty.getStatus()).then(render);}
-  const terms=byId('terms').parentElement!;
-  (view==='tests'?testAction:releaseAction).append(terms);
   (view==='tests'?testResults:primary).append(byId('observed-price'),byId('selection-result'),byId('handoff-result'));
   (view==='tests'?testsView:releaseView).append(byId('lock-card'));
   if(latest)render(latest);
+  for(const listener of hooks.paneListeners)listener(view);
 }
-for(const button of document.querySelectorAll<HTMLButtonElement>('[data-view]'))button.onclick=()=>showView(button.dataset.view as View);
+/** A destination opens its current pane; Booking Setup chooses the pane for its active section. */
+let lastActivityPane:View='live';
+function showDestination(destination:Destination){
+  if(destination==='home')showView('home');
+  else if(destination==='settings')showView('tools');
+  else if(destination==='activity')showView(lastActivityPane);
+  else showView((document.querySelector<HTMLElement>('#setup-steps [aria-current="step"]')?.dataset.step==='5')?(hooks.desiredWorkflow?.()==='test'?'tests':'release'):'setup');
+}
+for(const button of document.querySelectorAll<HTMLButtonElement>('[data-dest]'))button.addEventListener('click',()=>showDestination(button.dataset.dest as Destination));
+for(const button of document.querySelectorAll<HTMLButtonElement>('.activity-tabs [data-pane]'))button.addEventListener('click',()=>{lastActivityPane=button.dataset.pane as View;showView(lastActivityPane);});
+hooks.showView=showView;hooks.latest=()=>latest;hooks.setLabRunning=value=>{hooks.labRunning=value;if(latest)render(latest);};
 byId('edit-strategy').onclick=()=>showView('strategy');
 input('test-date').value=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Manila',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 
@@ -729,7 +747,9 @@ function renderBuild(state: Dashboard) {
     : [['Build', 'No build-info.json was found. Rebuild with npm run release:build (or npm run ui:build for development).']];
   details.replaceChildren(...rows.flatMap(([term, value]) => { const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = term; dd.textContent = value; return [dt, dd]; }));
 }
-function render(state: Dashboard) {
+/** Legacy panes render first; the destination modules (Booking Setup, Home, Activity) render from the same state. */
+function render(state: Dashboard) { renderPanes(state); for (const renderer of hooks.renderers) renderer(state); }
+function renderPanes(state: Dashboard) {
   latest = state;
   renderBuild(state);
   renderNextRelease(state);
@@ -747,7 +767,7 @@ function render(state: Dashboard) {
   const armed=!!state.scheduledRelease;
   const busy = state.operation !== 'idle'&&state.operation!=='scheduled';
   for(const id of ['test-wing','test-buko-court','test-date','book-now-start','book-now-duration','book-now-objective','book-now-exact','browse-courts'])input(id).disabled=busy;
-  byId('stop').hidden=!(busy||labRunning);
+  byId('stop').hidden=!(busy||hooks.labRunning);byId('inline-stop').hidden=!(busy||hooks.labRunning||armed||!!apiRelease);
   const playerStatus=state.playerStatus??{primary:!!state.booking?.playerConfigured,extended:!!state.booking?.extendedPlayerConfigured,third:!!state.booking?.thirdPlayerConfigured,fourth:!!state.booking?.fourthPlayerConfigured,fifth:!!state.booking?.fifthPlayerConfigured,sixth:!!state.booking?.sixthPlayerConfigured,seventh:!!state.booking?.seventhPlayerConfigured,eighth:!!state.booking?.eighthPlayerConfigured};
   const dual=state.booking?.setup.BOOKING_TYPE==='standard'&&state.booking.setup.COURT_COUNT===2;
   // Keep the dual practice entry point visible in the safe single-court
@@ -978,7 +998,7 @@ function render(state: Dashboard) {
   const action=input('main-action'),hold=!!state.handoff||!!state.lock,blockedHold=hold&&!state.canPrepareOverHold;
   const apiWaiting=state.operation==='full'&&state.apiStage?.stage==='WAITING_FOR_RELEASE';
   const actionState=apiRelease||apiWaiting?'armed':busy?'running':blockedHold?'hold':armed?'armed':state.ready&&!dirty?'review':'prepare';
-  action.textContent=actionState==='prepare'&&unresolvedCheckout?'Reset & Prepare':actionState==='prepare'&&state.canPrepareOverHold?'Prepare New Run':{hold:'Review Hold',running:'Preparing…',armed:'Emergency Stop',review:'Arm Release',prepare:'Prepare for Release'}[actionState];
+  action.textContent=actionState==='prepare'&&unresolvedCheckout?'Reset & Prepare':actionState==='prepare'&&state.canPrepareOverHold?'Prepare New Run':{hold:'Review Hold',running:'Preparing…',armed:'Emergency Stop',review:'Authorize and Arm',prepare:'Prepare'}[actionState];
   action.disabled=actionState==='running'||actionState==='prepare'&&!!input('prepare').disabled;
   byId('release-action-title').textContent=actionState==='armed'?'Armed':actionState==='running'?'Preparing browsers and release contexts…':actionState==='review'?'Ready to arm':'Prepare for release';
   byId('main-action-hint').textContent=unresolvedCheckout?'Inspects every required browser; it will not clear the lock unless the old worker is dead and all Onda state is clean.':state.canPrepareOverHold?'The verified hold stays recorded. Prepare a fresh schedule in the same bot before another run.':blockedHold?'Review the retained lock before any new action.':actionState==='review'?'Authorize Terms for this exact saved strategy, then arm.':actionState==='armed'?'Release is scheduled. Emergency Stop cancels the armed release.':actionState==='running'?'Preparing the required browsers. Wait for readiness to finish.':'Check the saved strategy, then prepare its required browsers.';
@@ -987,7 +1007,8 @@ function render(state: Dashboard) {
   if(apiRelease)byId('main-action-hint').textContent='The authorized release runner is active. Emergency Stop cancels it; child preparation is reported separately.';
   renderReleasePreflight(state);
   byId('primary-actions').hidden=currentView!=='tests'&&!state.selection&&!state.handoff&&!state.bookingResult;
-  const testDate=input('test-date').value;
+  // Booking Setup owns Available Now: its current checkout step supplies the date.
+  const testDate=String(hooks.testRequest?.()?.request.date??input('test-date').value);
   input('test-date').disabled=busy;
   const testPrepared=!!state.ready&&!testDirty&&state.workflow==='test'&&!!b&&(
     (input('book-now-exact').checked||input('test-wing').value==='BUKO'||['api-first','proofless'].includes(b.setup.BOOKING_METHOD))&&!!state.apiFirstReady ||
@@ -1002,7 +1023,6 @@ function render(state: Dashboard) {
   byId('test-readiness').replaceChildren(...gateRows(testGates));
    byId('test-buko-court-label').hidden=false;
    for(const option of (byId('test-buko-court') as HTMLSelectElement).options)option.textContent=`${input('test-wing').value==='BUKO'?'Buko':'Mango'} · Court ${option.value}`;
-   renderCourtBrowser(state);
    byId('test-plan-summary').textContent=b?`${b.setup.BOOKING_METHOD.toUpperCase()} · ${b.setup.BOOKING_TYPE.toUpperCase()} · ${b.setup.COURT_COUNT} court${b.setup.COURT_COUNT===1?'':'s'}\n${friendly(b.setup.START_TIME)}–${endFriendly(b.setup.START_TIME,b.setup.DURATION_HOURS)} · ${b.setup.DURATION_HOURS} hours\nCourt priority: ${b.setup.PREFERRED_COURTS.join(' → ')}\nFallback starts: ${b.setup.FALLBACK_TIMES.map(friendly).join(', ')||'None'}\nTest date: ${testDate?dateLabel(testDate):'Choose a date'}${input('exact-a').value.trim()||input('exact-b').value.trim()?`\nAdvanced exact court override: ${[input('exact-a').value,input('exact-b').value].filter(Boolean).join(' / ')}`:''}`:'No saved booking plan available.';
   const liveTestHandoffs=workflow==='test'&&state.workflow==='test'?activeHandoffs(state):[];
   const readyTestHandoffs=liveTestHandoffs.filter(hold=>(hold.status??'qr-ready')==='qr-ready').length;
@@ -1016,7 +1036,7 @@ function render(state: Dashboard) {
   byId('test-detail').textContent=baseTestDetail;
   const testState=busy?'running':blockedHold?'hold':testPrepared?'review':'prepare';
   const testButton=input('test-main-action');
-  testButton.textContent=testState==='prepare'&&unresolvedCheckout?'Reset & Prepare':testState==='prepare'&&state.canPrepareOverHold?'Prepare New Run':{running:'Running',hold:'Review Hold',review:'Review & Book',prepare:'Prepare'}[testState];
+  testButton.textContent=testState==='prepare'&&unresolvedCheckout?'Reset & Prepare':testState==='prepare'&&state.canPrepareOverHold?'Prepare New Run':{running:'Running',hold:'Review Hold',review:'Authorize and Book to QR',prepare:'Prepare'}[testState];
    if(input('test-wing').value==='BUKO')byId('test-plan-summary').textContent=`Buko Wing · Court ${input('test-buko-court').value} · Normal booking\n${testDate?dateLabel(testDate):'Choose a date'} · ${b?friendly(b.setup.START_TIME):''} · ${b?.setup.DURATION_HOURS??'?'} hour(s)\nAvailability is checked in your dedicated Chrome before submission.\nExact court and time; no fallback substitution. Stops at QR.\nScheduled releases and Shotgun are disabled for Buko.${b&&b.setup.DURATION_HOURS>3?'\nChoose a duration of 1–3 hours in Strategy.':''}`;
    if(input('book-now-exact').checked)byId('test-plan-summary').textContent=`${input('test-wing').value==='BUKO'?'Buko':'Mango'} · Court ${input('test-buko-court').value} · ${testDate||'Choose a date'}\n${friendly(input('book-now-start').value)} · ${input('book-now-duration').value} hour(s) · One exact court\nNormal · fresh proofs · no alternatives · stops at genuine QR · manual payment`;
    testButton.disabled=testState==='running'||testState==='prepare'&&(!b||!testDate||blockedHold||!input('book-now-exact').checked&&input('test-wing').value==='BUKO'&&b.setup.DURATION_HOURS>3);
@@ -1025,7 +1045,7 @@ function render(state: Dashboard) {
    syncViableControls();tick();
 }
 byId('main-action').onclick=()=>{if(!latest)return;if(latest.operation==='full'&&(latest.activeApiRelease||latest.apiStage?.stage==='WAITING_FOR_RELEASE')){void window.thirsty.abortAutomation().catch(()=>{});return;}if(latest.scheduledRelease){input('arm').click();return;}if((latest.lock||latest.handoff)&&!latest.canPrepareOverHold){void window.thirsty.reviewLock().catch(()=>{});return;}if(latest.ready&&!dirty){if(input('terms').checked)input('arm').click();else byId('terms').focus();}else input('prepare').click();};
-byId('test-main-action').onclick=()=>{if(!latest)return;if((latest.lock||latest.handoff)&&!latest.canPrepareOverHold){void window.thirsty.reviewLock().catch(()=>{});return;}if(input('test-main-action').textContent==='Review & Book'){if(input('terms').checked)input('test-booking').click();else byId('terms').focus();}else input('prepare').click();};
+byId('test-main-action').onclick=()=>{if(!latest)return;if((latest.lock||latest.handoff)&&!latest.canPrepareOverHold){void window.thirsty.reviewLock().catch(()=>{});return;}if(input('test-main-action').textContent==='Authorize and Book to QR'){if(input('terms').checked)input('test-booking').click();else byId('terms').focus();}else input('prepare').click();};
 function tick() {
   // Display only; never launches a command. Authoritative release plan comes from main/CLI.
   const effectiveNow=Date.now()+(latest?.clock?.clockOffsetMs??0);
@@ -1061,7 +1081,7 @@ function tick() {
     byId('handoff-result').textContent=`${active?'PAYMENT HOLD ACTIVE — VERIFIED AT HANDOFF':'HOLD NEEDS MANUAL REVIEW'}\nVenue: Thirsty Pickle | SM Seaside\nCourt ${hold.court} · ${hold.date}\nTime: ${hold.hours[0]}–${String(Number(hold.hours.at(-1)!.slice(0,2))+1).padStart(2,'0')}:00\nAmount: ₱${hold.amount.toLocaleString()}\nLast observed status: Pending\nHold countdown at verification: ${hold.countdown}\nVerified: ${new Date(hold.verifiedAt).toLocaleString('en-GB',{timeZone:'Asia/Manila'})}\n${active?'Complete payment manually in Chrome.':'The observed countdown has elapsed. Check Chrome manually.'}\nAUTOMATION STOPPED · AUTOMATION LOCK RETAINED`;
   }
 }
- for (const [id, action] of Object.entries({ 'sync-clock':()=>window.thirsty.syncClock(),'review-lock':()=>window.thirsty.reviewLock(),'clear-lock':()=>window.thirsty.clearLock(),'reset-practice':()=>window.thirsty.resetPractice(),'dual-prepare':()=>window.thirsty.prepareDual(),'api-preview':()=>window.thirsty.apiPreview(input('test-date').value),'full-practice':async()=>{const authorized=input('full-terms').checked;input('full-terms').checked=false;await window.thirsty.runFullPractice({target:{date:input('full-date').value,court:Number(input('full-court').value),start:input('full-start').value,duration:Number(input('full-duration').value)},authorizeTerms:authorized as true});}, chrome: () => window.thirsty.startChrome(), inspect: () => window.thirsty.inspectOnda(), prepare: async () => {input('terms').checked=false;storeDraft();await window.thirsty.resetPrepare(workflow==='test'?{workflow:'test',...testRequest()}:{workflow:'release',strategy:input('booking-type').value as 'standard'|'extended',setup:currentSetup()});const state=await window.thirsty.getStatus();if(state.ready){if(workflow==='test')testDirty=false;else releaseDirty=false;dirty=false;}render(state);}, arm: () => window.thirsty.armFullBooking(), dry:()=>window.thirsty.dryRace(), observe:()=>window.thirsty.armObservation(), stop: () => window.thirsty.abortAutomation(), practice:()=>window.thirsty.runPractice({date:input('practice-date').value,court:Number(input('practice-court').value),start:input('practice-start').value,duration:Number(input('practice-duration').value)}) })) {
+ for (const [id, action] of Object.entries({ 'sync-clock':()=>window.thirsty.syncClock(),'review-lock':()=>window.thirsty.reviewLock(),'clear-lock':()=>window.thirsty.clearLock(),'reset-practice':()=>window.thirsty.resetPractice(),'dual-prepare':()=>window.thirsty.prepareDual(),'api-preview':()=>window.thirsty.apiPreview(input('test-date').value),'full-practice':async()=>{const authorized=input('full-terms').checked;input('full-terms').checked=false;await window.thirsty.runFullPractice({target:{date:input('full-date').value,court:Number(input('full-court').value),start:input('full-start').value,duration:Number(input('full-duration').value)},authorizeTerms:authorized as true});}, chrome: () => window.thirsty.startChrome(), inspect: () => window.thirsty.inspectOnda(), prepare: async () => {input('terms').checked=false;storeDraft();const releaseOverride=workflow==='release'?hooks.releaseSetup?.():null;await window.thirsty.resetPrepare(workflow==='test'?{workflow:'test',...testRequest()}:{workflow:'release',strategy:releaseOverride?'standard':input('booking-type').value as 'standard'|'extended',setup:releaseOverride??currentSetup()});const state=await window.thirsty.getStatus();if(state.ready){if(workflow==='test')testDirty=false;else releaseDirty=false;dirty=false;}render(state);}, arm: () => window.thirsty.armFullBooking(), dry:()=>window.thirsty.dryRace(), observe:()=>window.thirsty.armObservation(), stop: () => window.thirsty.abortAutomation(), practice:()=>window.thirsty.runPractice({date:input('practice-date').value,court:Number(input('practice-court').value),start:input('practice-start').value,duration:Number(input('practice-duration').value)}) })) {
   byId(id).addEventListener('click', () => { void action().catch(async() => { render(await window.thirsty.getStatus()); }); });
  }
 byId('check-release-blocks').addEventListener('click',()=>{void window.thirsty.checkReleaseBlocks(input('block-audit-date').value).catch(async()=>{render(await window.thirsty.getStatus());});});
@@ -1110,6 +1130,9 @@ byId('dual-terms').addEventListener('change',()=>{if(latest)render(latest);});
 
 for(const [id,mode] of [['workflow-test','test'],['workflow-release','release']] as const)byId(id).onclick=()=>{storeDraft();workflow=mode;if(mode==='test'&&testDraft)applyDraft(testDraft);if(mode==='release'&&releaseDraft)applyDraft(releaseDraft);dirty=mode==='test'?testDirty:releaseDirty;input('terms').checked=false;void window.thirsty.setWorkflow(mode);if(latest)render(latest);};
 function testRequest(){
+  // Booking Setup owns Available Now: Prepare and Book use exactly its current checkout step.
+  const override=hooks.testRequest?.();
+  if(override)return override as {method:'browser'|'hybrid'|'api-first'|'proofless';request:Parameters<typeof window.thirsty.testBooking>[0]['request']};
   const setup=latest?.booking?.setup;
   if(!setup)throw Error('BOOKING_PLAN_MISSING');
   if(input('book-now-exact').checked){
@@ -1338,21 +1361,9 @@ function renderPrecision(state:Dashboard){
 // Book Now edits never overwrite the saved release strategy.
 (byId('book-now-start') as HTMLSelectElement).replaceChildren(...Array.from({length:16},(_,i)=>new Option(friendly(`${String(i+8).padStart(2,'0')}:00`),`${String(i+8).padStart(2,'0')}:00`)));
 input('book-now-start').value='18:00';
-byId('browse-courts').onclick=()=>{void window.thirsty.browseCourts(input('test-date').value).catch(()=>{byId('court-browser-status').textContent='Live availability could not be verified. Prepare and verify Chrome, then check again.';});};
-function renderCourtBrowser(state:Dashboard){
- const evidence=state.courtBrowser,current=evidence?.date===input('test-date').value&&Date.now()-Date.parse(evidence.capturedAt)>=0&&Date.now()-Date.parse(evidence.capturedAt)<15_000;
- const wing=input('test-wing').value,grid=byId('court-browser-grid');grid.replaceChildren();
- for(const court of COURT_REGISTRY.filter(c=>c.wing===wing)){
-  const row=document.createElement('div');row.className='court-browser-row';const label=document.createElement('strong');label.textContent=`${court.wing==='MANGO'?'Mango':'Buko'} · Court ${court.number}`;row.append(label);
-  for(let hour=8;hour<24;hour++){const start=`${String(hour).padStart(2,'0')}:00`,cell=current?evidence?.cells.find(c=>c.wing===court.wing&&c.court===court.number&&c.start===start):undefined;
-   const button=document.createElement('button');button.type='button';button.className='court-cell';button.dataset.state=cell?.available&&cell.price!==null?'open':cell?'blocked':'unknown';
-   button.textContent=`${friendly(start)} · ${cell?.available&&cell.price!==null?`₱${cell.price}`:cell?'Blocked':'Unknown'}`;
-   button.disabled=!cell?.available||cell.price===null;button.onclick=()=>{input('test-buko-court').value=String(court.number);input('book-now-start').value=start;input('book-now-exact').checked=true;changed();};row.append(button);
-  }grid.append(row);
- }
- byId('court-browser-status').textContent=current?`Verified ${new Date(evidence!.capturedAt).toLocaleTimeString('en-GB',{timeZone:'Asia/Manila'})} Manila · expires after 15 seconds; checkout rechecks every hour and price.`:'UNKNOWN · Prepare Chrome and check live availability. No current slot evidence.';
-}
-setInterval(()=>{if(latest&&currentView==='tests'&&latest.operation==='idle')renderCourtBrowser(latest);},1000);
+// The both-wing availability grid is rendered by Booking Setup (booking-setup.ts).
 
-installShotgunLab({state:()=>latest,showLive:()=>showView('tests'),setRunning:value=>{labRunning=value;if(latest)render(latest);}});
-input('strategy-wing').onchange=()=>{if(input('strategy-wing').value!=='MANGO'){input('lab-wings').value=input('strategy-wing').value;input('lab-wings').dispatchEvent(new Event('change'));input('strategy-wing').value='MANGO';showView('lab');}};
+hooks.prepare=async()=>{byId('prepare').click();};
+initBookingSetup();initHome();initActivity();
+// Buko or both wings are planned in Booking Setup (the saved legacy plan stays Mango).
+input('strategy-wing').onchange=()=>{const value=input('strategy-wing').value;if(value!=='MANGO'){input('strategy-wing').value='MANGO';document.dispatchEvent(new CustomEvent('booking-setup:wing',{detail:value}));}};

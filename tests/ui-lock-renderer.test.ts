@@ -19,7 +19,7 @@ async function renderer(extra:Record<string,unknown>={}){
 
 it('shows the operator views including the offline Test Lab with a wide grid and stacked narrow layout',async()=>{
   const page=await renderer();
-  expect(await page.locator('nav [data-view]').allTextContents()).toEqual(['Home','Book Now','Next Release','Edit Release Plan','Live','History','Shotgun Test Lab','Settings']);
+  expect(await page.locator('nav [data-dest]').allTextContents()).toEqual(['Home','Booking Setup','Activity','Settings']);
   expect(await page.locator('#release-schedule').isVisible()).toBe(true);
   expect(await page.locator('#next-strategy').isVisible()).toBe(true);
   expect(await page.locator('#booking-method').isVisible()).toBe(false);
@@ -71,22 +71,25 @@ it('returns from Live to the main release page while a release run is active',as
   await showRendererView(page,'release');
   expect(await page.locator('#view-release').isVisible()).toBe(true);
   expect(await page.locator('#main-action').isDisabled()).toBe(true);
+  // Strategy editing stays locked while a run is active: the legacy editor does not open and the goal is read-only.
   await showRendererView(page,'strategy');
-  expect(await page.locator('#view-release').isVisible()).toBe(true);
+  expect(await page.locator('#view-strategy').isVisible()).toBe(false);
+  await page.locator('#setup-steps [data-step="1"]').click();
+  expect(await page.locator('#goal-MANGO-enabled').isDisabled()).toBe(true);
   await page.close();
 });
 
-it('tests the saved plan with only the selected date changed',async()=>{
+it('prepares exactly the Booking Setup Available Now checkout, including its browser assignment',async()=>{
   const page=await renderer();
   await page.evaluate(()=>{const w=window as any;w.thirsty.resetPrepare=async(value:unknown)=>{w.fixturePreparation=value;};});
   await showRendererView(page,'tests');
-  await page.locator('#book-now-exact').uncheck();
-  await page.locator('#test-date').fill('2026-09-25');
+  await page.locator('#setup-steps [data-step="1"]').click();
+  await page.locator('#goal-MANGO-date').fill('2026-10-25');await page.locator('#goal-MANGO-start').selectOption('18:00');
+  await page.locator('#goal-MANGO-ideal').fill('2');await page.locator('#goal-MANGO-ideal').dispatchEvent('change');
+  await page.locator('#setup-steps [data-step="5"]').click();
   await page.locator('#test-main-action').click();
   await page.waitForFunction(()=>!!(window as any).fixturePreparation);
-  const sent=await page.evaluate(()=>(window as any).fixturePreparation);
-  expect(sent).toMatchObject({workflow:'test',method:'browser',request:{date:'2026-09-25',strategy:'standard',start:defaultSetup.START_TIME,duration:defaultSetup.DURATION_HOURS,courtCount:defaultSetup.COURT_COUNT,priority:defaultSetup.PREFERRED_COURTS,fallbackStarts:defaultSetup.FALLBACK_TIMES}});
-  expect(await page.locator('#test-plan-summary').innerText()).toContain('Test date: Friday, September 25');
+  expect(await page.evaluate(()=>(window as any).fixturePreparation)).toMatchObject({workflow:'test',method:'api-first',request:{wing:'MANGO',strategy:'standard',date:'2026-10-25',start:'18:00',duration:2,courtCount:2,priority:[7,6,5,4,3,2,1],fallbackStarts:[],workers:['A']}});
   await page.close();
 });
 
@@ -94,10 +97,12 @@ it('prepares an explicit Buko Normal test without rewriting the Mango saved stra
   const page=await renderer();
   await page.evaluate(()=>{const w=window as any;w.thirsty.resetPrepare=async(value:unknown)=>{w.fixturePreparation=value;};});
   await showRendererView(page,'tests');
-  await page.locator('#test-date').fill('2026-10-19');
-  await page.locator('#test-wing').selectOption('BUKO');
-  await page.locator('#test-buko-court').selectOption('4');
-  expect(await page.locator('#test-plan-summary').innerText()).toContain('Buko · Court 4');
+  await page.locator('#setup-steps [data-step="1"]').click();
+  await page.locator('#goal-MANGO-enabled').uncheck();await page.locator('#goal-BUKO-enabled').check();
+  await page.locator('#goal-BUKO-date').fill('2026-10-19');
+  for(const court of ['7','6','5','3','2','1'])await page.locator('[data-wing="BUKO"] .court-chip[data-court="'+court+'"]').click();
+  await page.locator('#setup-steps [data-step="5"]').click();
+  expect(await page.locator('#strategy-inspector').innerText()).toContain('Buko 4');
   await page.locator('#test-main-action').click();
   await page.waitForFunction(()=>!!(window as any).fixturePreparation);
   expect(await page.evaluate(()=>(window as any).fixturePreparation)).toMatchObject({workflow:'test',method:'api-first',request:{wing:'BUKO',strategy:'standard',date:'2026-10-19',courtCount:1,priority:[4],fallbackStarts:[],exact:[[4]]}});
@@ -110,7 +115,7 @@ it('runs a prepared test through the existing Terms and test booking action',asy
   await page.evaluate(()=>{const w=window as any;w.thirsty.testBooking=async(value:unknown)=>{w.fixtureTestBooking=value;};});
   await showRendererView(page,'tests');
   await page.evaluate(()=>{const w=window as any;w.fixtureState.ready=true;w.fixtureState.apiFirstReady=true;w.fixtureState.browserHealth.A=true;w.fixtureState.preparedContext={workflow:'test',date:(document.getElementById('test-date') as HTMLInputElement).value};w.fixturePublish(w.fixtureState);});
-  expect(await page.locator('#test-main-action').innerText()).toBe('Review & Book');
+  expect(await page.locator('#test-main-action').innerText()).toBe('Authorize and Book to QR');
   await page.locator('#test-main-action').click();
   expect(await page.evaluate(()=>(window as any).fixtureTestBooking)).toBeUndefined();
   await page.locator('#terms').check();
@@ -118,7 +123,7 @@ it('runs a prepared test through the existing Terms and test booking action',asy
   await page.locator('#test-main-action').click();
   await page.waitForFunction(()=>!!(window as any).fixtureTestBooking);
   const sent=await page.evaluate(()=>(window as any).fixtureTestBooking);
-  expect(sent).toMatchObject({authorizeTerms:true,request:{strategy:'standard',priority:[1],exact:[[1]]}});
+  expect(sent).toMatchObject({authorizeTerms:true,method:'api-first',request:{wing:'MANGO',strategy:'standard',courtCount:1,priority:[7,6,5,4,3,2,1],workers:['A']}});
   await page.close();
 });
 
@@ -127,7 +132,7 @@ it('shows API-first browser readiness and the state-based release action',async(
   expect(await page.locator('#release-readiness .gate.good').filter({hasText:'Browser A prepared'}).count()).toBe(1);
   expect(await page.locator('#release-readiness .gate.good').filter({hasText:'Browser B prepared'}).count()).toBe(1);
   expect(await page.locator('#release-readiness').innerText()).not.toContain('All Courts verified');
-  expect(await page.locator('#main-action').innerText()).toBe('Arm Release');
+  expect(await page.locator('#main-action').innerText()).toBe('Authorize and Arm');
   await page.evaluate(()=>{const w=window as any;w.fixtureState.scheduledRelease={releaseMs:Date.now()+60000,targetDate:'2026-09-24'};w.fixtureState.operation='scheduled';w.fixturePublish(w.fixtureState);});
   expect(await page.locator('#main-action').innerText()).toBe('Emergency Stop');
   await page.close();

@@ -12,85 +12,40 @@
     <button id="status-watch" class="status-chip chip-button" type="button" title="Open Live: attempts and the release slot watch"><span class="chip-label">Slot watch</span><span id="status-watch-text" class="chip-state" data-tone="muted">Idle</span></button>
   </div>
 </header>
-<nav class="view-nav" aria-label="Main views">
-  <div class="view-tabs"><button type="button" data-view="home" aria-current="page">Home</button><button type="button" data-view="tests">Book Now</button><button type="button" data-view="release">Next Release</button><button type="button" data-view="strategy">Edit Release Plan</button><button type="button" data-view="live">Live</button><button type="button" data-view="history">History</button><button type="button" data-view="lab">Shotgun Test Lab</button><button type="button" data-view="tools">Settings</button></div>
+<nav class="view-nav" aria-label="Main navigation">
+  <div class="view-tabs" role="tablist"><button type="button" data-dest="home" aria-current="page">Home</button><button type="button" data-dest="setup">Booking Setup</button><button type="button" data-dest="activity">Activity</button><button type="button" data-dest="settings">Settings</button></div>
   <span class="mode" id="mode-label">CHOOSE BOOKING MODE</span>
   <span id="build-label" class="build-label" title="Build provenance">Build: unknown</span>
 </nav>
 <main>
-  <!-- NEXT RELEASE ─────────────────────────────────────────────── -->
-  <div id="view-lab" class="view-grid" hidden aria-label="Shotgun Test Lab">
-    <section class="panel lab-panel"><p class="eyebrow">Plan · Review · Rehearse</p><h2>Dual-wing planner &amp; Shotgun Test Lab</h2>
-    <p>One global attempt budget across exact Mango and Buko targets. Planning and offline rehearsals are supported. Live scheduled Shotgun remains blocked.</p>
-    <div class="setup-grid"><label>Plan type<select id="lab-purpose"><option value="RELEASE_PLAN">Next release planning</option><option value="CURRENT_SLOT_REHEARSAL">Current-slot rehearsal</option></select></label><label>Wings<select id="lab-wings"><option value="BOTH">Both wings</option><option value="MANGO">Mango only</option><option value="BUKO">Buko only</option></select></label><label>Booking goal<select id="lab-objective"><option value="ANY_ONE">Get any one acceptable court</option><option value="ONE_PER_WING">Get one in each wing · offline only</option></select></label></div>
-    <p id="lab-policy" class="warning"></p><p>Any one: a qualifying hold stops alternatives in both wings. One in each: each wing stops after its own hold. UNKNOWN, throttling or payment-in-progress stops all unsent work. Requests in flight may still complete.</p>
-    <h3>Exact targets</h3><div id="lab-targets" class="lab-targets"></div><div class="button-row"><button id="lab-add" type="button" class="secondary">Add target</button><button id="lab-dates" type="button" class="secondary">Apply next-release date estimates</button><button id="lab-load" type="button" class="secondary">Reopen saved dual-wing plan</button></div>
-    <div class="setup-grid"><label>Aggregate attempts<input id="lab-budget" type="number" min="1" max="42" value="8"></label><label>Strategy<select id="lab-allocation"><option value="EQUAL">Diversified · equal</option><option value="PRIORITY_WEIGHTED">Diversified · priority weighted</option><option value="CUSTOM">Custom counts</option><option value="FOCUSED">Focused · priority target only</option></select></label></div>
-    <div class="button-row"><button id="lab-review" type="button" class="secondary">Review compiled plan</button><button id="lab-save" type="button" class="secondary">Save dual-wing planning draft</button></div><p class="small">Saving here preserves your existing Mango release strategy. This planning draft cannot arm a live release.</p><div id="lab-review-output" class="strategy-note" role="status"></div>
-    </section>
-    <section class="panel lab-panel"><h2>Offline Rehearsal</h2><strong>OFFLINE / INTERCEPTED</strong><p>Runs the shared compiler, isolated Chrome workers, prepared browser transport, strict scheduler, one-shot permits and isolated journals. Every checkout is intercepted locally. Security preparation and provider responses are synthetic.</p>
-    <div class="setup-grid"><label>Scenario<select id="lab-scenario"></select></label><label>Test countdown (seconds)<input id="lab-countdown" type="number" min="8" max="30" value="10"></label></div>
-    <div class="button-row"><button id="lab-run" class="primary-action" type="button">Run offline rehearsal</button><button id="lab-stop" type="button" class="secondary" disabled>Stop rehearsal</button></div><p id="lab-status" role="status"></p><div id="lab-results" aria-live="polite"></div>
-    </section>
-    <section class="panel lab-panel"><h2>Live Checkout Test</h2><p class="warning">Can create one real pending booking. Separate action-time authorization and Terms are required. Stop at the genuine QR; payment stays manual.</p><p>Use Book Now for one exact Mango or Buko target with fresh browser-session availability and proofs. A Normal QR smoke test does not verify proofless Shotgun. Live multi-attempt testing is blocked while provider rate permission and session coordination remain unverified.</p>
-    <button id="lab-live" type="button" class="secondary">Choose a current slot in Book Now</button>
-    <h3>Use currently published slots in the rehearsal</h3><label>Exact booking date<input id="lab-published-date" type="date"></label><button id="lab-published-load" type="button" class="secondary">Load fresh availability · read only</button><p id="lab-published-status" role="status"></p><div id="lab-published-slots" class="lab-published-slots"></div>
-    </section>
+  <div id="view-home" class="view-grid home-view" aria-label="Home">
+    <section class="panel home-hero"><div><p class="eyebrow">Thirsty Pickle · Mango &amp; Buko</p><h1 id="home-title">Ready when you are</h1><p id="home-subtitle" class="muted">Set your booking goal once, test it offline, then prepare and arm with one clear button.</p></div>
+      <div class="home-actions"><button type="button" class="primary-action" id="home-start-setup" data-dest="setup">Start Booking Setup</button><button type="button" class="secondary" id="home-view-activity" data-dest="activity">View Activity</button></div></section>
+    <section class="panel home-card" id="home-release"><p class="eyebrow">Next scheduled release</p><div id="home-release-body"></div></section>
+    <section class="panel home-card" id="home-goal"><p class="eyebrow">Saved booking goal</p><div id="home-goal-body"></div></section>
+    <section class="panel home-card" id="home-state"><p class="eyebrow">Preparation &amp; arming</p><div id="home-state-body"></div></section>
+    <section class="panel home-card" id="home-browsers"><p class="eyebrow">Browser readiness</p><div id="home-browsers-body"></div></section>
+    <section class="panel home-card home-wide" id="home-holds"><p class="eyebrow">Holds &amp; payment</p><div id="home-holds-body"></div></section>
+    <section class="panel home-card home-wide" id="home-warnings"><p class="eyebrow">Needs attention</p><div id="home-warnings-body"></div></section>
   </div>
-  <div id="view-home" class="view-grid" aria-label="Home">
-    <section class="panel goal-welcome"><p class="eyebrow">Thirsty Pickle · Mango &amp; Buko</p><h1>What booking do you want?</h1><p>Choose a currently available court, or prepare a Mango release plan.</p></section>
-    <section class="panel goal-choice"><p class="eyebrow">Both wings · fourteen courts</p><h2>Book Available Now</h2><p>Choose an exact court, date and time. Prepare Chrome, verify availability, review the price and authorize one Normal booking to QR.</p><button type="button" data-view="tests" class="primary-action">BOOK AVAILABLE NOW</button></section>
-    <section class="panel goal-choice"><p class="eyebrow">Mango Wing · verified release policy</p><h2>Plan Next Release</h2><p>Review acceptable targets and choose Normal, Focused Shotgun or Diversified Shotgun. Live Shotgun stays blocked until compatibility and rate permission are verified.</p><button type="button" data-view="strategy" class="primary-action">PLAN NEXT RELEASE</button><p class="small">Buko planning uses your 8 AM / +6 calendar day assumption. Choose Buko or Both in Edit Release Plan to plan a shared cohort in the Shotgun Test Lab.</p></section>
-  </div>
-  <div id="view-release" hidden class="view-grid" aria-label="Next Release">
-    <section id="release-schedule" class="panel release-hero">
-      <div class="hero-release">
-        <p class="eyebrow warn-text" id="release-passed"></p>
-        <p class="eyebrow">Next release</p>
-        <strong id="next-release" class="hero-date">Calculating...</strong>
-        <p class="hero-target">Booking target · <strong id="next-target">Calculating...</strong></p>
-        <p id="schedule-meta" class="small"></p>
-      </div>
-      <div class="hero-clock">
-        <p class="eyebrow">Asia / Manila · network clock</p>
-        <div id="clock" class="clock">--:--:--</div>
-        <p id="clock-date" class="muted">Network time not synchronized</p>
-        <div class="hero-sync"><button id="sync-clock" class="secondary compact" type="button">Sync with Google time</button><span id="clock-source" class="small">Required before arming Release</span></div>
-      </div>
-      <div class="countdown-block">
-        <p class="eyebrow" id="countdown-label">Next release in</p>
-        <div id="countdown" class="countdown">--:--:--</div>
-        <p class="muted"><span id="release-time">08:00:00</span> <span id="release-zone">Asia/Manila</span></p>
-      </div>
+  <div id="dest-setup" class="setup-shell" aria-label="Booking Setup" hidden>
+    <section class="panel setup-head">
+      <div class="setup-title"><p class="eyebrow">Booking Setup · one plan from goal to QR</p><h2>What do you want to book?</h2></div>
+      <div class="setup-mode" role="radiogroup" aria-label="Booking mode"><label><input type="radio" name="setup-mode" value="NEXT_RELEASE" checked><span><strong>Next Release</strong><small>Plan for 8:00 AM · Shotgun by default</small></span></label><label><input type="radio" name="setup-mode" value="AVAILABLE_NOW"><span><strong>Available Now</strong><small>Book an open date · Normal by default</small></span></label></div>
+      <div class="setup-status"><span id="setup-state" class="state-badge" data-tone="muted">DRAFT</span><span id="setup-fingerprint" class="fingerprint" title="Plan fingerprint">—</span><span id="setup-save-status" class="small" role="status"></span></div>
+      <ol id="setup-steps" class="setup-steps" aria-label="Booking Setup steps"><li><button type="button" data-step="1" aria-current="step"><b>1</b> Goal</button></li><li><button type="button" data-step="2"><b>2</b> Strategy</button></li><li><button type="button" data-step="3"><b>3</b> Customize</button></li><li><button type="button" data-step="4"><b>4</b> Browsers</button></li><li><button type="button" data-step="5"><b>5</b> Review &amp; Run</button></li></ol>
     </section>
-    <section id="simple-status" class="panel status-card">
-      <div class="readiness" id="readiness" role="status"><strong id="headline">Prepare your session</strong><p id="detail">Start dedicated Chrome, then verify the page before arming.</p></div>
-      <div id="qr-summary-release" class="qr-summary" aria-live="polite" hidden></div>
+    <section id="setup-step-1" class="setup-step" aria-label="Step 1 · Goal">
+      <div id="objective-editor" class="panel objective-editor"></div>
+      <section class="panel court-browser"><div class="section-title"><div><p class="eyebrow">Read only · both wings · no checkout</p><h2>Live availability</h2></div><button id="browse-courts" type="button" class="secondary">Check Availability</button></div><p class="small">Opens a small dedicated read-only Chrome window, reads Mango and Buko, then closes it. No booking browser needs to be prepared. Missing or stale evidence is UNKNOWN; absence of bookings never means open.</p><div id="court-browser-grid" class="court-browser-grid"></div><p id="court-browser-status" role="status"></p></section>
+      <section id="smart-suggestions" class="panel smart-suggestions"></section>
     </section>
-    <section class="panel release-action" aria-labelledby="release-action-title">
-      <p class="eyebrow">Primary action</p><h2 id="release-action-title">Prepare for release</h2>
-      <div id="next-preflight" role="status"></div><button id="main-action" class="primary-action" type="button">Prepare</button>
-      <p id="main-action-hint" class="small"></p>
-      <label class="terms-choice"><input id="terms" type="checkbox" disabled> I authorize accepting Onda Terms for this booking</label>
-    </section>
-    <section id="precision-panel" class="panel precision-panel" hidden><h2>Precision Release</h2><p id="precision-summary" class="small"></p><div id="precision-table" class="precision-table"></div><p class="small">Goal: 1 successful court. These are independent checkout attempts; more than one temporary QR hold may be created. Payment remains manual.</p></section>
-    <section id="next-strategy" class="panel next-strategy"><div class="section-title"><div><p class="eyebrow">The exact saved authorization</p><h2>Saved strategy</h2></div><div class="button-row"><span id="next-strategy-name" class="strategy-badge">Not configured</span><button id="edit-strategy" class="secondary compact" type="button">Edit strategy</button></div></div><dl id="next-strategy-facts" class="fact-grid"></dl><p id="next-strategy-note" class="small"></p><details class="technical-drawer"><summary>Technical readiness details</summary><dl id="next-strategy-technical" class="fact-grid"></dl></details></section>
-    <section class="panel saved-plan"><h2>Saved booking plan</h2><div id="saved-plan-summary" class="plan-card"></div></section>
-    <section id="release-readiness-card" class="panel"><h2>Release readiness</h2><div id="release-readiness" class="gate-list"></div></section>
-    <section class="panel lock-card" id="lock-card" hidden><h2>Automation lock active</h2><pre id="lock-review">Browser state: Needs verification. Use Review Lock.</pre><p id="lock-note" class="small">Booking actions are blocked. You can still edit and save your next booking plan locally.</p><div class="button-row"><button id="review-lock" class="secondary" type="button">Review Lock</button><button id="clear-lock" class="secondary" type="button" hidden>Clear Verified Stale Lock</button></div></section>
-    <section id="primary-actions" class="panel">
-      <button id="prepare" class="prepare" type="button">Prepare Booking <span aria-hidden="true">→</span></button>
-      <p id="observed-price" class="observed-price" role="status" hidden></p>
-      <button id="arm" class="arm" type="button">Arm Booking Selection</button>
-      <p id="blocked-reason" class="small" role="status"></p>
-      <p id="sleep-warning" class="small" hidden>Keep the PC powered on. Do not hibernate or close the laptop lid if Windows is configured to sleep on lid close.</p>
-      <pre id="selection-result" hidden></pre>
-      <pre id="handoff-result" hidden></pre>
-    </section>
-  </div>
-
-  <!-- STRATEGY ───────────────────────────────────────────────────── -->
-  <div id="view-strategy" class="view-grid strategy-view" aria-label="Strategy" hidden>
+    <section id="setup-step-2" class="setup-step" aria-label="Step 2 · Strategy" hidden><div id="strategy-picker" class="panel"></div></section>
+    <section id="setup-step-3" class="setup-step" aria-label="Step 3 · Customize" hidden>
+      <div id="customize-host"></div>
+      <details id="legacy-editor-drawer" class="panel legacy-drawer"><summary>Advanced · edit the saved Mango release plan directly (legacy editor) <span class="small">Smart backups, history suggestions, rate card, Release Lab</span></summary>
+        <p class="small">This editor changes the saved release authorization itself. After saving here, Booking Setup shows the saved plan as changed outside Booking Setup until you reload it.</p>
+      <div id="view-strategy" class="view-grid strategy-view" aria-label="Strategy" hidden>
     <section id="strategy-goal" class="panel strategy-step strategy-target"><p class="eyebrow">Step 1 · Booking goal</p><h2>What do you want to book?</h2><label>Wing<select id="strategy-wing" aria-describedby="strategy-wing-note"><option value="MANGO">Mango Wing · courts 1–7</option><option value="BUKO">Buko Wing · plan / rehearse</option><option value="BOTH">Both wings · plan / rehearse</option></select></label><p id="strategy-wing-note" class="small">This saved release editor retains Mango plans. Choose Buko or Both to open the exact dual-wing planner and offline Test Lab. Buko live release scheduling and Shotgun stay disabled pending verification.</p><p class="small">Target date · <output id="strategy-target-date">—</output></p><div id="strategy-target-preferences">
       <div class="setup-grid"><label>Ideal start<select id="strategy-ideal-start"></select></label><label>Earliest acceptable start<select id="strategy-prime-from"></select></label><label>Latest finish<select id="strategy-prime-until"></select></label><label>Preferred duration (hours)<input id="strategy-durations" value="3,2,1" autocomplete="off" inputmode="numeric"><small>Best choice first, separated by commas</small></label><label>Court priority<input id="strategy-courts" value="7,6,5,4,3,2,1" autocomplete="off" inputmode="numeric"><small>Highest priority first, for example 7, 6, 5</small></label><button id="strategy-sync-courts" type="button" class="secondary">Use main court order</button></div>
       <label class="strategy-public-choice">Public bookings on the unreleased date<select id="strategy-public-data"><option value="CHECK">Check public bookings when building</option><option value="CACHED_ONLY">Use preferences and history without a new check</option></select><small>A read-only check excludes known bookings. Missing records do not promise availability at release; already-known conflicts are always retained.</small></label>
@@ -228,19 +183,85 @@
     </details>
   </div>
 
-  <!-- TESTS ────────────────────────────────────────────────────── -->
-  <div id="view-tests" class="view-grid" aria-label="Tests" hidden>
-    <section class="panel test-date-card"><div><p class="eyebrow">Book Available Now</p><h2>Book an available court</h2><p class="small">Choose an exact target below. Normal booking uses fresh browser-session availability and proofs. The saved release strategy stays separate.</p></div><label>Wing<select id="test-wing"><option value="MANGO">Mango Wing · saved plan</option><option value="BUKO">Buko Wing · Book Available Now</option></select></label><label id="test-buko-court-label" hidden>Exact court<select id="test-buko-court"><option value="1">Buko Court 1</option><option value="2">Buko Court 2</option><option value="3">Buko Court 3</option><option value="4">Buko Court 4</option><option value="5">Buko Court 5</option><option value="6">Buko Court 6</option><option value="7">Buko Court 7</option></select></label><label>Preferred start<select id="book-now-start"></select></label><label>Duration<select id="book-now-duration"><option value="1">1 hour</option><option value="2">2 hours</option><option value="3">3 hours</option></select></label><label>Objective<select id="book-now-objective"><option value="ONE">One exact court</option><option disabled>Multiple courts · use existing verified advanced plan</option></select></label><label><input id="book-now-exact" type="checkbox" checked> Use this exact Normal target</label><label id="test-date-label">Target date<input id="test-date" type="date"></label></section>
-    <section class="panel court-browser"><div class="section-title"><h2>Browse fourteen courts</h2><button id="browse-courts" type="button" class="secondary">CHECK LIVE AVAILABILITY</button></div><p class="small">Prepare Chrome first. Each cell needs current slot evidence and price; absence of bookings never means available. Choose an open cell to edit your target.</p><div id="court-browser-grid" class="court-browser-grid"></div><p id="court-browser-status" role="status"></p></section><section class="panel test-status"><h2>Booking status</h2><strong id="test-headline">Prepare to test</strong><p id="test-detail" class="small"></p><div id="qr-summary-test" class="qr-summary" aria-live="polite" hidden></div></section>
-    <section class="panel test-action"><button id="test-main-action" class="primary-action" type="button">Prepare</button><p id="test-main-action-hint" class="small"></p><button id="test-booking" class="arm" type="button">BOOK TO QR</button></section>
+        </details>
+    </section>
+    <section id="setup-step-4" class="setup-step" aria-label="Step 4 · Browsers" hidden><div id="browser-manager" class="panel"></div></section>
+    <section id="setup-step-5" class="setup-step" aria-label="Step 5 · Review and run" hidden>
+      <div id="strategy-inspector" class="panel inspector"></div>
+      <section id="action-bar" class="panel action-bar" aria-label="Plan actions">
+        <div class="action-row"><button type="button" id="save-draft" class="secondary">Save Draft</button><button id="main-action" class="primary-action" type="button">Prepare</button><button id="test-main-action" class="primary-action" type="button">Prepare</button><button type="button" id="test-this-plan" class="secondary">Test This Plan</button><button type="button" id="view-live-progress" class="secondary" data-dest="activity">View Live Progress</button><button type="button" id="inline-stop" class="stop compact">■ Emergency Stop</button></div>
+        <div id="action-terms" class="action-terms"><label class="terms-choice"><input id="terms" type="checkbox" disabled> I authorize accepting Onda Terms for this booking</label></div>
+        <div class="action-hints"><p id="main-action-hint" class="small"></p><p id="test-main-action-hint" class="small"></p><p id="action-bar-hint" class="small"></p></div>
+        <div id="available-now-steps" class="checkout-steps" hidden></div>
+      </section>
+      <details id="execution-console" class="panel execution-console" open><summary>Execution console · readiness, release clock, holds and QR details</summary>
+        <div id="view-release" hidden class="view-grid" aria-label="Next Release">
+    <section id="release-schedule" class="panel release-hero">
+      <div class="hero-release">
+        <p class="eyebrow warn-text" id="release-passed"></p>
+        <p class="eyebrow">Next release</p>
+        <strong id="next-release" class="hero-date">Calculating...</strong>
+        <p class="hero-target">Booking target · <strong id="next-target">Calculating...</strong></p>
+        <p id="schedule-meta" class="small"></p>
+      </div>
+      <div class="hero-clock">
+        <p class="eyebrow">Asia / Manila · network clock</p>
+        <div id="clock" class="clock">--:--:--</div>
+        <p id="clock-date" class="muted">Network time not synchronized</p>
+        <div class="hero-sync"><button id="sync-clock" class="secondary compact" type="button">Sync with Google time</button><span id="clock-source" class="small">Required before arming Release</span></div>
+      </div>
+      <div class="countdown-block">
+        <p class="eyebrow" id="countdown-label">Next release in</p>
+        <div id="countdown" class="countdown">--:--:--</div>
+        <p class="muted"><span id="release-time">08:00:00</span> <span id="release-zone">Asia/Manila</span></p>
+      </div>
+    </section>
+    <section id="simple-status" class="panel status-card">
+      <div class="readiness" id="readiness" role="status"><strong id="headline">Prepare your session</strong><p id="detail">Start dedicated Chrome, then verify the page before arming.</p></div>
+      <div id="qr-summary-release" class="qr-summary" aria-live="polite" hidden></div>
+    </section>
+    <section class="panel release-action" aria-labelledby="release-action-title">
+      <p class="eyebrow">Release preflight</p><h2 id="release-action-title">Release readiness</h2>
+      <div id="next-preflight" role="status"></div>
+      
+      
+    </section>
+    <section id="precision-panel" class="panel precision-panel" hidden><h2>Precision Release</h2><p id="precision-summary" class="small"></p><div id="precision-table" class="precision-table"></div><p class="small">Goal: 1 successful court. These are independent checkout attempts; more than one temporary QR hold may be created. Payment remains manual.</p></section>
+    <section id="next-strategy" class="panel next-strategy"><div class="section-title"><div><p class="eyebrow">The exact saved authorization</p><h2>Saved strategy</h2></div><div class="button-row"><span id="next-strategy-name" class="strategy-badge">Not configured</span><button id="edit-strategy" class="secondary compact" type="button">Edit strategy</button></div></div><dl id="next-strategy-facts" class="fact-grid"></dl><p id="next-strategy-note" class="small"></p><details class="technical-drawer"><summary>Technical readiness details</summary><dl id="next-strategy-technical" class="fact-grid"></dl></details></section>
+    <section class="panel saved-plan"><h2>Saved booking plan</h2><div id="saved-plan-summary" class="plan-card"></div></section>
+    <section id="release-readiness-card" class="panel"><h2>Release readiness</h2><div id="release-readiness" class="gate-list"></div></section>
+    <section class="panel lock-card" id="lock-card" hidden><h2>Automation lock active</h2><pre id="lock-review">Browser state: Needs verification. Use Review Lock.</pre><p id="lock-note" class="small">Booking actions are blocked. You can still edit and save your next booking plan locally.</p><div class="button-row"><button id="review-lock" class="secondary" type="button">Review Lock</button><button id="clear-lock" class="secondary" type="button" hidden>Clear Verified Stale Lock</button></div></section>
+    <section id="primary-actions" class="panel legacy-actions">
+      <button id="prepare" class="prepare" type="button">Prepare Booking <span aria-hidden="true">→</span></button>
+      <p id="observed-price" class="observed-price" role="status" hidden></p>
+      <button id="arm" class="arm" type="button">Arm Booking Selection</button>
+      <p id="blocked-reason" class="small" role="status"></p>
+      <p id="sleep-warning" class="small" hidden>Keep the PC powered on. Do not hibernate or close the laptop lid if Windows is configured to sleep on lid close.</p>
+      <pre id="selection-result" hidden></pre>
+      <pre id="handoff-result" hidden></pre>
+    </section>
+  </div>
+
+  
+        <div id="view-tests" class="view-grid" aria-label="Tests" hidden>
+    <details class="panel test-date-card manual-book-now"><summary>Manual exact Normal booking (legacy form)</summary><div><p class="eyebrow">Book Available Now</p><h2>Book an available court</h2><p class="small">Choose an exact target below. Normal booking uses fresh browser-session availability and proofs. The saved release strategy stays separate.</p></div><label>Wing<select id="test-wing"><option value="MANGO">Mango Wing · saved plan</option><option value="BUKO">Buko Wing · Book Available Now</option></select></label><label id="test-buko-court-label" hidden>Exact court<select id="test-buko-court"><option value="1">Buko Court 1</option><option value="2">Buko Court 2</option><option value="3">Buko Court 3</option><option value="4">Buko Court 4</option><option value="5">Buko Court 5</option><option value="6">Buko Court 6</option><option value="7">Buko Court 7</option></select></label><label>Preferred start<select id="book-now-start"></select></label><label>Duration<select id="book-now-duration"><option value="1">1 hour</option><option value="2">2 hours</option><option value="3">3 hours</option></select></label><label>Objective<select id="book-now-objective"><option value="ONE">One exact court</option><option disabled>Multiple courts · use existing verified advanced plan</option></select></label><label><input id="book-now-exact" type="checkbox" checked> Use this exact Normal target</label><label id="test-date-label">Target date<input id="test-date" type="date"></label></details>
+    <section class="panel test-status"><h2>Booking status</h2><strong id="test-headline">Prepare to test</strong><p id="test-detail" class="small"></p><div id="qr-summary-test" class="qr-summary" aria-live="polite" hidden></div></section>
+    <section class="panel test-action"><button id="test-booking" class="arm" type="button">BOOK TO QR</button></section>
     <section class="panel test-plan"><h2>Exact booking target</h2><div id="test-plan-summary" class="plan-card"></div></section>
     <section class="panel test-readiness-card"><h2>Booking readiness</h2><div id="test-readiness" class="gate-list"></div></section>
     <section class="panel test-results" id="test-results" hidden><h2>Observed result</h2></section>
     <details id="test-availability" class="panel"><summary>Read-only availability check</summary><p class="small">Checks availability for the selected test date. Does not create a hold.</p><div id="api-dry-controls" hidden><button id="api-preview" class="secondary" type="button">Check exact target availability</button><p class="small">Checks the Test Now date, court priority, hours and duration. No hold or booking will be created.</p></div></details>
   </div>
 
-  <!-- LIVE ───────────────────────────────────────────────────────── -->
-  <div id="view-live" class="view-grid" aria-label="Live" hidden>
+        </details>
+      <section id="test-lab" class="panel test-lab"></section>
+    </section>
+    <div id="view-setup" class="pane-marker" hidden></div>
+    <div class="setup-pager"><button type="button" id="setup-back" class="secondary">← Back</button><button type="button" id="setup-next" class="primary-action compact">Next →</button></div>
+  </div>
+  <div id="dest-activity" class="activity-shell" aria-label="Activity" hidden>
+    <div class="activity-tabs" role="tablist" aria-label="Activity views"><button type="button" data-pane="live" aria-current="page">Live progress</button><button type="button" data-pane="history">History &amp; evidence</button><button type="button" data-pane="records">Records &amp; archive</button></div>
+    <div id="view-live" class="view-grid" aria-label="Live" hidden>
     <section id="live-attempts-card" class="panel live-attempts"><div class="section-title"><div><p class="eyebrow">Live release</p><h2 id="live-primary-target">Waiting for a release</h2></div><span id="live-run-state" class="status-label">○ IDLE</span></div>
       <div class="live-overview" aria-live="polite"><div><span>Planned</span><strong id="live-planned">0</strong></div><div><span>Ready</span><strong id="live-ready">0</strong></div><div><span>Dispatched</span><strong id="live-dispatched">0</strong></div><div><span>In flight</span><strong id="live-pending">0</strong></div></div><p id="live-attempt-counts" role="status"></p><div id="live-result" class="live-result" data-tone="muted">WAITING FOR A RUN</div><p id="live-guidance" class="small">Prepare and arm from Next Release. No action is needed here.</p>
       <p id="live-prewarm" class="small" role="status"></p><div id="live-attempts" aria-live="polite"><p class="empty">Attempts appear here when a release run starts.</p></div>
@@ -259,7 +280,6 @@
 
   </div>
 
-  <!-- HISTORY & INSIGHTS ─────────────────────────────────────────── -->
   <div id="view-history" class="view-grid" aria-label="History &amp; Insights" hidden>
     <section class="panel history-answer"><div class="section-title"><div><p class="eyebrow">Latest release</p><h2>What happened?</h2></div><span class="strategy-badge">Local evidence</span></div><div id="history-summary" class="history-summary"><p class="empty">No recorded release summary yet.</p></div></section>
     <section class="panel run-timing"><div><h2>Current run timing</h2><p class="small">Browser ready to finish; startup and preparation excluded.</p></div><strong id="run-timing">No browser-ready run active</strong></section>
@@ -295,15 +315,17 @@
     <section class="panel previous-holds" id="previous-holds" hidden><h2>Previous payment holds</h2><p class="small">Verified holds retained when another run was prepared. Recorded expiry is not a payment result; check each QR tab in Chrome.</p><div id="previous-holds-list"></div></section>
   </div>
 
-  <!-- TOOLS ────────────────────────────────────────────────────── -->
-  <div id="view-tools" class="view-grid" aria-label="Tools" hidden>
+  
+    <div id="view-records" class="view-grid" aria-label="Records and archive" hidden><section id="records-panel" class="panel records-panel"></section></div>
+  </div>
+  <div id="view-tools" class="view-grid" aria-label="Settings" hidden>
+    <section class="panel tool-card" id="release-verification-card"><div class="section-title"><div><p class="eyebrow">Evidence status · read only</p><h2>Release calendar &amp; capabilities</h2></div></div><div id="release-verification"></div><details class="tool-details"><summary>Capability matrix · every wing, strategy and checkout method</summary><div id="capability-matrix"></div></details></section>
     <section class="panel tool-card" id="build-card">
       <div class="section-title"><div><p class="eyebrow">Provenance</p><h2>Build information</h2></div></div>
       <p class="small">To check whether this installation contains a commit, run <code>git merge-base --is-ancestor &lt;commit&gt; &lt;Git SHA&gt;</code> in the source folder. <code>npm run verify:dist -- --dist "../dist"</code> compares the installed runtime with the current source.</p>
       <dl id="build-details" class="build-details"></dl>
     </section>
-    <section class="panel tool-card" id="test-tools-card"><div class="section-title"><div><p class="eyebrow">Creates real temporary holds only when you run it</p><h2>Test booking tools</h2></div><button type="button" class="secondary" data-view="tests">Open test booking</button></div>
-      <p class="small">Book an available court, check availability, or practise. Nothing starts until you confirm.</p></section>
+    <section class="panel tool-card" id="test-tools-card"><div class="section-title"><div><p class="eyebrow">Booking</p><h2>Book or test</h2></div><button type="button" class="secondary" data-dest="setup">Open Booking Setup</button></div><p class="small">Available Now, Next Release and the Booking Test Lab all live in Booking Setup.</p></section>
     <section id="block-audit-card" class="panel"><div class="section-title"><div><p class="eyebrow">Read-only schedule intelligence</p><h2>Unreleased court blocks</h2></div><span class="audit-safe-badge">NO BOOKING ACTION</span></div><p class="small audit-intro">Check any date across all seven courts. Confirmed public records appear even before Onda publishes the full schedule. No saved plan, players, browsers, preparation, or Terms authorization is required.</p><div class="audit-controls"><label>Schedule date<input id="block-audit-date" type="date"></label><button id="check-release-blocks" class="secondary" type="button">CHECK ALL COURTS</button></div><div id="block-audit-result" class="block-audit-result" aria-live="polite"><div class="audit-empty"><strong>No audit yet</strong><span>Choose a date, then check all courts.</span></div></div></section>
     <section class="panel browsers-card">
       <div class="section-title"><div><p class="eyebrow">Dedicated Chrome windows</p><h2>Bot browsers</h2></div><button id="close-browsers-tools" class="danger-button" type="button">Close all bot browsers</button></div>
@@ -375,7 +397,7 @@
     </details>
   </div>
 
-  <div id="run-detail-modal" class="run-detail-modal" role="dialog" aria-modal="true" aria-labelledby="run-detail-title" hidden><section class="run-detail-dialog"><div class="section-title"><div><p class="eyebrow">Previous run</p><h2 id="run-detail-title">Run details</h2></div><button id="run-detail-close" class="secondary" type="button">Close</button></div><div id="run-detail-content"></div></section></div>
+    <div id="run-detail-modal" class="run-detail-modal" role="dialog" aria-modal="true" aria-labelledby="run-detail-title" hidden><section class="run-detail-dialog"><div class="section-title"><div><p class="eyebrow">Previous run</p><h2 id="run-detail-title">Run details</h2></div><button id="run-detail-close" class="secondary" type="button">Close</button></div><div id="run-detail-content"></div></section></div>
   <div id="confirm-modal" class="confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-message" hidden><section id="confirm-dialog" class="confirm-dialog"><span id="confirm-badge" class="confirm-badge">CONFIRM</span><h2 id="confirm-title"></h2><p id="confirm-message" class="confirm-message"></p><pre id="confirm-detail" class="confirm-detail"></pre><div class="confirm-actions"><button id="confirm-cancel" class="secondary" type="button">Cancel</button><button id="confirm-ok" class="arm" type="button"></button></div></section></div>
   <footer><div><span class="dot"></span><span>Selection is not a reservation. Payment stays manual.</span></div><button id="stop" class="stop" type="button">■ &nbsp; Emergency Stop</button></footer>
 </main><script type="module" src="app.js"></script></body></html>

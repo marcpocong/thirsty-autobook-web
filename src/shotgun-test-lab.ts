@@ -193,7 +193,8 @@ export async function runShotgunLab(input:LabRequest, options:{directory:string;
       }
     }
     // Browser closure after preparation: its attempts must fail closed, the rest proceed.
-    if(input.scenario==='BROWSER_CLOSED')await sessions[0]?.browser.close().catch(()=>undefined);
+    // Closing every tab of the first worker removes its pages exactly as a closed window would; cleanup still owns the process.
+    if(input.scenario==='BROWSER_CLOSED')await Promise.allSettled((sessions[0]?.pages??[]).map(page=>page.close()));
     const triggerMs=Date.now()+input.countdownSeconds*1000;
     const plans=phase3.wave1.flatMap(a=> {
       const candidate=phase3.candidates[a.candidateIndex]!,plan=offlineCandidatePlan(candidate);
