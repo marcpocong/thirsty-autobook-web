@@ -30,7 +30,7 @@ export interface ReadinessResult {
   version: 1; measuredAt: string; target: 'Onda public availability (read-only GET)';
   requests: number; succeeded: number; failed: number; complete: number;
   medianMs: number | null; p90Ms: number | null; p95Ms: number | null; maxMs: number | null;
-  protocol: string; newConnections: number; reusedRequests: number; connectMs: number[]; dnsMs: number | null;
+  protocol: string; newConnections: number|null; reusedRequests: number|null; connectMs: number[]; dnsMs: number | null;
   samples: ReadinessSample[];
   clock: { samples: number; kept: number; offsetMs: number | null; minRoundTripMs: number | null; medianRoundTripMs: number | null; spreadMs: number | null; quality: string };
   interfaces: Array<{ name: string; kind: 'Wi-Fi' | 'Ethernet' | 'Other' }>;
@@ -121,7 +121,7 @@ export async function runNetworkReadiness(options: ReadinessOptions = {}): Promi
     requests, succeeded: durations.length, failed: samples.length - durations.length, complete: samples.filter(sample => sample.complete).length,
     medianMs: percentile(durations, 50), p90Ms: durations.length >= 10 ? percentile(durations, 90) : null, p95Ms: durations.length >= 20 ? percentile(durations, 95) : null,
     maxMs: durations.at(-1) ?? null, protocol: options.fetcher?'Injected legacy HTTP path':'Verified Chrome session (connection reuse unmeasured)',
-    newConnections: samples.filter(sample => sample.newConnection).length, reusedRequests: options.fetcher?samples.filter(sample => !sample.newConnection).length:0,
+    newConnections: options.fetcher?samples.filter(sample => sample.newConnection).length:null, reusedRequests: options.fetcher?samples.filter(sample => !sample.newConnection).length:null,
     connectMs: samples.map(sample => sample.connectMs).filter((value): value is number => value !== null), dnsMs, samples,
     clock: { samples: consensus?.sampleCount ?? 0, kept: kept.length, offsetMs: consensus ? round(consensus.offsetMs) : null, minRoundTripMs: trips[0] ?? null,
       medianRoundTripMs: percentile(trips, 50), spreadMs: consensus ? round(consensus.spreadMs) : null, quality: consensus?.quality ?? 'UNAVAILABLE' },
