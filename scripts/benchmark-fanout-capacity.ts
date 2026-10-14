@@ -266,5 +266,4 @@ try {
 } finally {
   await coordinatorPool?.close();
   await Promise.allSettled(sessions.map(session => closeOfflineChrome(session)));
-  for (const session of sessions) session.process.kill();
 }
