@@ -1,5 +1,7 @@
 # Dual-wing planning and Shotgun Test Lab
 
+> Superseded for operators on October 15, 2026 by Booking Setup and the universal Booking Test Lab ([Booking Setup v3](BOOKING_SETUP_V3.md)). The planning wrapper, its saved file and the isolation rules below remain valid; the lab now also accepts the exact Booking Setup objective with distinct-court quotas.
+
 The exact dual-wing planner is a version 2 wrapper over `compileSmartPlan`, `planShotgun`, `exactShotgunTopology`, `freezePrecisionRace`, `armPrecisionRace` and `dispatchArmedPrecisionRace`. It is not a second booking engine. Its compiled `PRECISION_PHASE3` candidates carry wing, registry space UUID and individual booking date. One aggregate budget produces one global offset schedule; the worker grouping retains the existing six-tab ceiling and seven Precision workers.
 
 ## Evidence and authorization
