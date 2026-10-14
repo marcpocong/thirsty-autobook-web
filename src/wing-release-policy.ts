@@ -2,19 +2,10 @@ import { DateTime } from 'luxon';
 import type { Wing } from './court-registry.js';
 import type { AvailabilitySnapshot } from './api-booking/types.js';
 
-/** Calendar-day offset, not the public site's inclusive "3 days" label. */
-export interface WingReleasePolicy {
-  wing: Wing; timezone: 'Asia/Manila'; horizonOffsetDays: number;
-  releaseTime: string; evidence: string;
-  status?: 'VERIFIED' | 'PROVISIONAL' | 'OWNER_ASSUMED' | 'UNKNOWN'; publicLabel?: string; observedAt?: string;
-}
-export const WING_RELEASE_POLICIES: Readonly<Record<Wing, WingReleasePolicy | null>> = Object.freeze({
-  MANGO: Object.freeze({ wing: 'MANGO', timezone: 'Asia/Manila', horizonOffsetDays: 2,
-    releaseTime: '08:00:00', status: 'VERIFIED', publicLabel: '3 days inclusive', evidence: 'Existing Mango offset; public facility metadata 2026-10-14: 3 days, 08:00:00' }),
-  // Owner-approved operating schedule for planning and offline rehearsal only.
-  // A recurring provider transition remains independently unverified.
-  BUKO: Object.freeze({ wing: 'BUKO', timezone: 'Asia/Manila', horizonOffsetDays: 6, releaseTime: '08:00:00', status: 'OWNER_ASSUMED', publicLabel: 'five days in advance (counting convention unresolved)', observedAt: '2026-10-14', evidence: 'Official Onda booking-page banner independently read in Chrome 2026-10-14: Mango Oct 16 / Buko Oct 20; Owner approved 08:00 / +6 planning on 2026-10-14; recurring Buko rollover independently unverified' }),
-});
+/** Calendar-day offset, not the public site's inclusive "3 days" label. The renderer-safe constants live in
+ * wing-release-data.ts so Booking Setup and the main process derive identical dates. */
+export { WING_RELEASE_POLICIES, type WingReleasePolicy } from './wing-release-data.js';
+import { WING_RELEASE_POLICIES, type WingReleasePolicy } from './wing-release-data.js';
 export function releaseForTarget(date: string, wing: Wing, policy = WING_RELEASE_POLICIES[wing]): DateTime {
   if (!policy || policy.status === 'UNKNOWN' || policy.wing !== wing || policy.timezone !== 'Asia/Manila' || !policy.evidence.trim() ||
     !Number.isSafeInteger(policy.horizonOffsetDays) || policy.horizonOffsetDays < 0 || policy.horizonOffsetDays > 31 ||

@@ -194,8 +194,31 @@ export interface FrozenPrecisionRace {
   readonly fingerprint: string;
   readonly fanOut: boolean;
   readonly executionMode?: 'OFFLINE_INTERCEPTED';
-  readonly objective?: 'ANY_ONE' | 'ONE_PER_WING';
+  readonly objective?: RaceObjective;
   readonly authorizationFingerprint?:string;
+}
+/**
+ * Completion objective of one frozen race. Without an objective a race is the legacy one-court goal: the first
+ * verified hold stops every unsent alternative. A quota counts DISTINCT courts (registry space) per wing, or across
+ * wings for ANY_WING; once a wing reaches its ideal, only that wing's unsent attempts stop. UNKNOWN, throttling and
+ * payment-in-progress always stop every unsent attempt.
+ */
+export interface RaceQuota { scope: 'PER_WING' | 'ANY_WING'; wings: Partial<Record<'MANGO' | 'BUKO', number>>; overall?: number }
+export type RaceObjective = 'ANY_ONE' | 'ONE_PER_WING' | RaceQuota;
+export function validRaceObjective(value: unknown): value is RaceObjective {
+  if (value === 'ANY_ONE' || value === 'ONE_PER_WING') return true;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const q = value as RaceQuota, keys = Object.keys(q).sort().join(',');
+  const count = (n: unknown, max: number) => Number.isSafeInteger(n) && (n as number) >= 1 && (n as number) <= max;
+  const wings = q.wings && typeof q.wings === 'object' ? Object.entries(q.wings) : null;
+  if (!wings || !wings.length || wings.some(([wing, n]) => !['MANGO', 'BUKO'].includes(wing) || !count(n, 7))) return false;
+  return q.scope === 'PER_WING' ? keys === 'scope,wings' : q.scope === 'ANY_WING' && keys === 'overall,scope,wings' && count(q.overall, 14);
+}
+export function raceQuota(objective: RaceObjective | undefined): RaceQuota | null {
+  if (objective === undefined) return null;
+  if (objective === 'ANY_ONE') return { scope: 'ANY_WING', wings: { MANGO: 1, BUKO: 1 }, overall: 1 };
+  if (objective === 'ONE_PER_WING') return { scope: 'PER_WING', wings: { MANGO: 1, BUKO: 1 } };
+  return objective;
 }
 
 const precisionAttemptId = (date: string, releaseMs: number, target: PrecisionTarget, index: number) =>
@@ -204,8 +227,13 @@ const precisionAttemptId = (date: string, releaseMs: number, target: PrecisionTa
 
 /** Freezes the exact dispatch set: an immutable copy plus a fingerprint re-checked before dispatch. */
 export function freezePrecisionRace(date: string, releaseMs: number,
-  attempts: ReadonlyArray<Omit<PrecisionAttempt, 'id' | 'fanOutIndex' | 'fanOutCount'> & Partial<Pick<PrecisionAttempt, 'id' | 'fanOutIndex' | 'fanOutCount'>>>, options?: {executionMode:'OFFLINE_INTERCEPTED';objective:'ANY_ONE'|'ONE_PER_WING';authorizationFingerprint?:string}): FrozenPrecisionRace {
-  if(options&&(options.executionMode!=='OFFLINE_INTERCEPTED'||!['ANY_ONE','ONE_PER_WING'].includes(options.objective)))throw Error('PRECISION_OFFLINE_MODE_INVALID');
+  attempts: ReadonlyArray<Omit<PrecisionAttempt, 'id' | 'fanOutIndex' | 'fanOutCount'> & Partial<Pick<PrecisionAttempt, 'id' | 'fanOutIndex' | 'fanOutCount'>>>, rawOptions?: {executionMode?:'OFFLINE_INTERCEPTED';objective:RaceObjective;authorizationFingerprint?:string}): FrozenPrecisionRace {
+  // Offline rehearsals may use any objective. A live race may carry only an explicit distinct-court quota; the
+  // legacy live path (no options) keeps its exact fingerprint and one-court behaviour.
+  if(rawOptions&&(rawOptions.executionMode!==undefined&&rawOptions.executionMode!=='OFFLINE_INTERCEPTED'||!validRaceObjective(rawOptions.objective)||
+    rawOptions.executionMode===undefined&&typeof rawOptions.objective==='string'))throw Error('PRECISION_OFFLINE_MODE_INVALID');
+  const options=rawOptions?{...(rawOptions.executionMode?{executionMode:rawOptions.executionMode}:{}),objective:rawOptions.objective,
+    ...(rawOptions.authorizationFingerprint?{authorizationFingerprint:rawOptions.authorizationFingerprint}:{})}:undefined;
   const groupKey=(attempt:(typeof attempts)[number])=>`${attempt.target.workerId}|${attempt.target.targetKey}`;
   const counts = new Map<string, number>();
   for (const attempt of attempts) counts.set(groupKey(attempt), (counts.get(groupKey(attempt)) ?? 0) + 1);
@@ -224,7 +252,7 @@ export function freezePrecisionRace(date: string, releaseMs: number,
 
 export function assertPrecisionFreezeIntact(race: FrozenPrecisionRace): void {
   const legacy=precisionFingerprint(race.date, race.releaseMs, race.attempts.map(attempt => attempt.target), race.fanOut, race.attempts.map(attempt=>attempt.dispatchTimingPolicy));
-  const expected=race.executionMode ? createHash('sha256').update(JSON.stringify([legacy,{executionMode:race.executionMode,objective:race.objective,...(race.authorizationFingerprint?{authorizationFingerprint:race.authorizationFingerprint}:{})},race.attempts.map(a=>a.plan)])).digest('hex') : legacy;
+  const expected=race.executionMode||race.objective!==undefined ? createHash('sha256').update(JSON.stringify([legacy,{executionMode:race.executionMode,objective:race.objective,...(race.authorizationFingerprint?{authorizationFingerprint:race.authorizationFingerprint}:{})},race.attempts.map(a=>a.plan)])).digest('hex') : legacy;
   if (expected !== race.fingerprint)
     throw Error('PRECISION_FROZEN_SET_CHANGED');
 }
