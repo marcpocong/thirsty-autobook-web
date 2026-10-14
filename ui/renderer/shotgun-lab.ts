@@ -34,7 +34,7 @@ export function installShotgunLab(host:{state:()=>Dashboard|null|undefined;showL
       const row=document.createElement('div');row.className='lab-target';
       row.append(text('strong',`Priority ${index+1} · ${t.wing} Court ${t.court}`));
       const fields=document.createElement('div');fields.className='setup-grid';
-      const field=(label:string,node:HTMLInputElement|HTMLSelectElement,change:()=>void)=>{const l=document.createElement('label');l.append(text('span',label),node);node.onchange=()=>{try{change();edited();renderTargets();}catch(e){status((e as Error).message);}};fields.append(l);};
+      const field=(label:string,node:HTMLInputElement|HTMLSelectElement,change:()=>void)=>{node.setAttribute('aria-label',label);const l=document.createElement('label');l.append(text('span',label),node);node.onchange=()=>{try{change();edited();renderTargets();}catch(e){status((e as Error).message);}};fields.append(l);};
       const select=(values:Array<[string,string]>,value:string)=>{const s=document.createElement('select');s.replaceChildren(...values.map(([v,l])=>new Option(l,v)));s.value=value;return s;};
       const input=(type:string,value:string)=>{const i=document.createElement('input');i.type=type;i.value=value;return i;};
       const update=(patch:Partial<DualWingTarget>)=>{const next={...t,...patch};Object.assign(next,exactReleaseTarget({...next,spaceId:undefined}));if(patch.wing||patch.court||patch.bookingDate||patch.start||patch.durationHours)next.priceAuthority={source:'offline fixture',capturedAt:new Date().toISOString(),perHour:Array.from({length:next.durationHours},()=>700),kind:'OFFLINE_FIXTURE'};targets[index]=next;};
