@@ -322,13 +322,21 @@ it('clears schedule loading, reports HTTP 403, and preserves confirmed bookings 
   await page.screenshot({path:'.local/operator-ux/schedule-http403.png',fullPage:true});await page.close();
 });
 
-it('Book Now separates wing and exact goal from saved Mango release authorization',async()=>{
+it('Available Now separates the wing goal from the saved Mango release authorization',async()=>{
  const saved=booking();const page=await openRenderer(browser,{booking:saved,playerStatus:players},'home');
- expect(await page.locator('#view-home').isVisible()).toBe(true);await page.getByRole('button',{name:'BOOK AVAILABLE NOW',exact:true}).click();
- await page.locator('#test-wing').selectOption('BUKO');await page.locator('#test-buko-court').selectOption('4');await page.locator('#book-now-start').selectOption('16:00');await page.locator('#book-now-duration').selectOption('2');
- expect(await page.locator('#test-plan-summary').innerText()).toContain('Buko · Court 4');expect(await page.locator('.court-browser-row').count()).toBe(7);
+ expect(await page.locator('#view-home').isVisible()).toBe(true);await page.locator('#home-start-setup').click();
+ await page.locator('input[name="setup-mode"][value="AVAILABLE_NOW"]').check();
+ await page.locator('#goal-MANGO-enabled').uncheck();await page.locator('#goal-BUKO-enabled').check();
+ for(const court of ['7','6','5','3','2','1'])await page.locator('[data-wing="BUKO"] .court-chip[data-court="'+court+'"]').click();
+ await page.locator('#goal-BUKO-start').selectOption('16:00');await page.locator('#goal-BUKO-duration').selectOption('2');
+ expect(await page.locator('#goal-problems').innerText()).toContain('compiles to an exact plan');
+ expect(await page.locator('.availability-wing .court-browser-row:not(.hour-header)').count()).toBe(14);
  expect(await page.locator('#court-browser-status').innerText()).toContain('UNKNOWN');expect(await page.locator('.court-cell:not([disabled])').count()).toBe(0);
- expect(await page.evaluate(()=>(window as any).fixtureState.booking.setup)).toEqual(saved.setup);await page.screenshot({path:'.local/operator-ux/book-now-modernized.png',fullPage:true});await page.close();
+ await page.locator('#setup-steps [data-step="5"]').click();
+ expect(await page.locator('#strategy-inspector').innerText()).toMatch(/Buko 4 4:00 PM.6:00 PM · Browser A/);
+ expect(await page.evaluate(()=>(window as any).fixtureState.booking.setup)).toEqual(saved.setup);
+ expect(await page.evaluate(()=>(window as any).fixtureCalls)).toEqual([]);
+ await page.screenshot({path:'.local/operator-ux/book-now-modernized.png',fullPage:true});await page.close();
 });
 it('diversified selection preserves exact timing and budget while exposing all target allocations',async()=>{
  const page=await openRenderer(browser,{booking:booking(true,true),playerStatus:players},'strategy');
@@ -339,11 +347,18 @@ it('diversified selection preserves exact timing and budget while exposing all t
  await page.screenshot({path:'.local/operator-ux/shotgun-focused-modernized.png',fullPage:true});await page.close();
 });
 
-it('renders scoped prices, refuses stale/date-mismatched evidence and fits narrow Book Now',async()=>{
- const page=await openRenderer(browser,{booking:booking(),playerStatus:players,courtBrowser:{type:'courtBrowser',date:'2026-10-14',capturedAt:new Date().toISOString(),cells:[{wing:'BUKO',court:4,start:'16:00',available:true,price:700},{wing:'MANGO',court:4,start:'16:00',available:false,price:700}]}},'tests',{width:640,height:900});
- await page.locator('#test-date').fill('2026-10-14');await page.locator('#test-wing').selectOption('BUKO');
- expect(await page.locator('.court-cell:not([disabled])').count()).toBe(1);await page.locator('.court-cell:not([disabled])').click();
- expect(await page.locator('#test-buko-court').inputValue()).toBe('4');expect(await page.locator('#book-now-start').inputValue()).toBe('16:00');
+it('renders both-wing prices, refuses stale or other-date evidence and fits a narrow window',async()=>{
+ const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Manila'}).format(new Date());
+ const page=await openRenderer(browser,{booking:booking(),playerStatus:players,courtBrowser:{type:'courtBrowser',date:today,capturedAt:new Date().toISOString(),observer:'window',
+   cells:[{wing:'BUKO',court:4,start:'16:00',state:'OPEN',available:true,price:700},{wing:'MANGO',court:4,start:'16:00',state:'BLOCKED',available:false,price:700}],
+   wings:[{wing:'MANGO',status:'OK',capturedAt:new Date().toISOString(),cells:112},{wing:'BUKO',status:'OK',capturedAt:new Date().toISOString(),cells:56}]}},'home',{width:640,height:900});
+ await page.locator('nav [data-dest="setup"]').click();await page.locator('input[name="setup-mode"][value="AVAILABLE_NOW"]').check();
+ await page.locator('#goal-BUKO-enabled').check();await page.locator('#availability-date').fill(today);
+ expect(await page.locator('.court-cell:not([disabled])').count()).toBe(1);
+ expect(await page.locator('[data-wing="MANGO"] .court-cell[data-state="blocked"]').count()).toBe(1);
+ await page.locator('.court-cell:not([disabled])').click();
+ expect(await page.locator('#goal-BUKO-start').inputValue()).toBe('16:00');
+ expect(await page.locator('[data-wing="BUKO"] .court-priority li').first().innerText()).toContain('Court 4');
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  await page.evaluate(()=>{const w=window as any;w.fixtureState.courtBrowser.capturedAt=new Date(Date.now()-16000).toISOString();w.fixturePublish(w.fixtureState);});
  expect(await page.locator('.court-cell:not([disabled])').count()).toBe(0);expect(await page.locator('#court-browser-status').innerText()).toContain('UNKNOWN');await page.close();

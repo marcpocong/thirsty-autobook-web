@@ -37,6 +37,7 @@ it('preserves a safe Playwright category through wrapped causes without serializ
   const original=Object.assign(Error('private URL and token'),{name:'TimeoutError'}),wrapped=Error('wrapper',{cause:original});
   expect(sanitizedOperationFailureCode(wrapped)).toBe('PLAYWRIGHT_TIMEOUT');
   const t=new Telemetry();t.worker('A').recordReleaseFailure('WAIT_FOR_VENUE_ATTACHED','not allowlisted','not allowlisted',999);
-  const text=JSON.stringify(t.document(sanitizedOperationFailureCode(wrapped)));
+  // The random runID UUID can contain any digits; scan everything else for leaked text or the duration.
+  const {runID:_runID,...document}=t.document(sanitizedOperationFailureCode(wrapped)),text=JSON.stringify(document);
   expect(text).toContain('RELEASE_SHELL_UNCLASSIFIED');expect(text).toContain('UNCLASSIFIED');expect(text).not.toContain('private');expect(text).not.toContain('999');
 });

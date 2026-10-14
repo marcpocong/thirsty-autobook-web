@@ -160,10 +160,9 @@ else {
     if(request.action==='run')return lab.run(request.value as import('../src/shotgun-test-lab.js').LabRequest);
     throw Error('LAB_ACTION_INVALID');
   });
-  const allowed=(event:Electron.IpcMainInvokeEvent,args:unknown[])=>event.sender===window.webContents&&event.senderFrame===window.webContents.mainFrame&&event.senderFrame?.url===indexUrl&&args.length===1;
   // Booking Setup draft: saving a draft never changes the armed/saved release authorization.
   ipcMain.handle('thirsty:objective',async(event,...args:unknown[])=>{
-    if(!allowed(event,args))throw Error('IPC_NOT_ALLOWED');
+    if(event.sender!==window.webContents||event.senderFrame!==window.webContents.mainFrame||event.senderFrame?.url!==indexUrl||args.length!==1)throw Error('IPC_NOT_ALLOWED');
     const request=args[0] as {action?:string;value?:unknown;binding?:unknown};
     if(!request||JSON.stringify(request).length>300_000)throw Error('OBJECTIVE_REQUEST_INVALID');
     if(request.action==='load'){let legacy=null;try{legacy=readBooking().setup;}catch{legacy=null;}return objectives.load(legacy);}
@@ -176,7 +175,7 @@ else {
   });
   // Historical UNKNOWN archive: index + audit only; journals are never moved, rewritten or reclassified.
   ipcMain.handle('thirsty:journalArchive',async(event,...args:unknown[])=>{
-    if(!allowed(event,args))throw Error('IPC_NOT_ALLOWED');
+    if(event.sender!==window.webContents||event.senderFrame!==window.webContents.mainFrame||event.senderFrame?.url!==indexUrl||args.length!==1)throw Error('IPC_NOT_ALLOWED');
     const request=args[0] as {action?:string;keys?:unknown;note?:unknown};
     const keys=Array.isArray(request?.keys)&&request.keys.length<=500&&request.keys.every(k=>typeof k==='string'&&/^[a-f0-9]{64}$/.test(k))?request.keys as string[]:[];
     const note=typeof request?.note==='string'?request.note.slice(0,200):'';

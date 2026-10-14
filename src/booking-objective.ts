@@ -260,7 +260,9 @@ export interface CompiledObjective {
 }
 export interface CompileContext { nowMs: number; unavailableWorkers?: ReadonlySet<string>; shotgunCapacity?: { meaningfulSpacingMs: number };
   /** Optional fresh availability (open cells) to rank flexible Available Now courts. Never invents openness. */
-  openCells?: ReadonlySet<string>; releaseVerified?: Partial<Record<Wing, boolean>> }
+  openCells?: ReadonlySet<string>; releaseVerified?: Partial<Record<Wing, boolean>>;
+  /** Available Now: browsers that must not take a new checkout (pending/verified hold in that customer context, or no configured customer). */
+  normalSkip?: ReadonlySet<string> }
 
 export const WORKER_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'] as const;
 /** Available Now: one Normal run per provider-supported checkout shape. Mango packs ≤2 courts per checkout per
@@ -268,8 +270,9 @@ export const WORKER_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'] as const;
  * customer context never blocks the other (observed HTTP 409 "existing payment"). */
 export function planNormalSteps(o: BookingObjective, ctx: CompileContext) {
   const steps: NormalCheckoutStep[] = [], problems: string[] = [], warnings: string[] = [];
-  let nextWorker = 0;
-  const take = (count: number) => { const workers = WORKER_LETTERS.slice(nextWorker, nextWorker + count); nextWorker += count; return [...workers]; };
+  const free: string[] = WORKER_LETTERS.filter(w => !ctx.normalSkip?.has(w));
+  let needed = 0;
+  const take = (count: number) => { needed += count; return free.splice(0, count); };
   for (const wing of enabledWings(o)) {
     const g = o.wings[wing], ordered = [...g.courts].sort((a, b) => a.priority - b.priority || a.court - b.court);
     const ideal = o.quotaScope === 'ANY_WING' ? Math.min(o.overall.ideal, ordered.length) : g.ideal;
@@ -294,8 +297,10 @@ export function planNormalSteps(o: BookingObjective, ctx: CompileContext) {
           priority: [choice.court], exact: [choice.court], workers: take(1), method: o.checkoutMethod, maximum, expectedHolds: 1 });
     }
   }
-  if (nextWorker > WORKER_LETTERS.length) problems.push(`This goal needs ${nextWorker} separate browsers/customers; at most ${WORKER_LETTERS.length} (A–H) exist.`);
-  return { steps: steps.filter(step => step.workers.length > 0 && step.workers.every(Boolean)), problems, warnings };
+  const usable = WORKER_LETTERS.length - (ctx.normalSkip?.size ?? 0);
+  if (needed > usable) problems.push(`This goal needs ${needed} separate browsers/customers; only ${usable} are free${ctx.normalSkip?.size ? ` (${[...ctx.normalSkip].sort().join(', ')} hold a pending checkout or have no configured customer)` : ''}.`);
+  if (ctx.normalSkip?.size) warnings.push(`Browsers ${[...ctx.normalSkip].sort().join(', ')} are skipped: a pending checkout in that customer context can block another checkout (HTTP 409), or no customer is configured.`);
+  return { steps: steps.filter(step => step.workers.length === Math.ceil(step.courtCount / 2) || (step.wing === 'BUKO' && step.workers.length === 1)), problems, warnings };
 }
 
 export function compileObjective(o: BookingObjective, ctx: CompileContext): CompiledObjective {
@@ -524,7 +529,18 @@ export function objectiveFromLegacySetup(setup: LegacySetupLike, nowMs: number):
       shotgun: shotgun ? { budget: shotgun.budget, allocationMode: shotgun.allocationMode, windowStartMs: shotgun.windowStartMs, windowEndMs: shotgun.windowEndMs, timingMode: shotgun.timingMode,
         ...(shotgun.timingMode === 'CUSTOM' && shotgun.customOffsetsMs ? { customOffsetsMs: [...shotgun.customOffsetsMs] } : {}),
         timingCapacityOverride: !!shotgun.timingCapacityOverride, allowStandbyConsumption: !!shotgun.allowStandbyConsumption, presetId: shotgun.timingMode === 'DENSE_CORE' ? 'DENSE_CORE' : 'FULLY_CUSTOM', source: 'CUSTOM' } : base.shotgun };
-    if (shotgun?.allocationMode === 'CUSTOM') notes.push('Custom per-target Shotgun counts referenced undated targets; review the allocation before saving.');
+    if (shotgun?.allocationMode === 'CUSTOM' && shotgun.customCounts) {
+      // Legacy undated IDs (court-7:19:00:3h) map onto the same Mango targets on the migrated booking date.
+      const counts: Record<string, number> = {};
+      for (const [legacyId, count] of Object.entries(shotgun.customCounts)) {
+        const match = /^court-([1-7]):((?:0[89]|1\d|2[0-3]):00):([1-3])h$/.exec(legacyId);
+        if (!match) continue;
+        try { counts[canonicalReleaseTargetId(exactReleaseTarget({ wing: 'MANGO', court: Number(match[1]), start: match[2]!, durationHours: Number(match[3]), bookingDate: mango.bookingDate }))] = count; } catch { /* reported by compile */ }
+      }
+      objective.shotgun = { ...objective.shotgun, customCounts: counts };
+    }
+    const backups = phase3.candidates.length - immediate.length;
+    if (backups > 0) notes.push(`The saved plan also has ${backups} backup choice${backups === 1 ? '' : 's'}${setup.PRECISION_PHASE3 && 'budgets' in setup.PRECISION_PHASE3 ? '' : ''} that Booking Setup does not list as acceptable targets. They stay in the saved plan until you Prepare from Booking Setup.`);
     return { objective, notes };
   }
   if (setup.BOOKING_TYPE === 'extended' || setup.DURATION_HOURS > 3) notes.push(`The saved ${setup.DURATION_HOURS}-hour Extended plan is outside the 1–3 hour objective model and stays editable in the legacy release editor.`);
