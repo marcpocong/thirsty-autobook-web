@@ -1,3 +1,4 @@
+import { installShotgunLab } from './shotgun-lab.js';
 import { COURT_REGISTRY } from '../../src/court-registry.js';
 import {shotgunCriticalInterval} from '../../src/shotgun.js';
 import type { Bridge, Dashboard, RunHistoryEntry } from '../types.js';
@@ -30,8 +31,9 @@ let courtOrder=[7,6,5,4,3,2,1], fallbackTimes:string[]=[];
 const input=(id:string)=>byId(id) as HTMLInputElement;
 let workflow:'test'|'release'='release';
 /** The five operator concepts, plus the test booking tools opened from Tools. */
-type View = 'home'|'release'|'strategy'|'live'|'history'|'tools'|'tests';
+type View = 'home'|'release'|'strategy'|'live'|'history'|'tools'|'tests'|'lab';
 let currentView:View='home';
+let labRunning=false;
 const browserFocusMessages:Partial<Record<WorkerId,string>>={};
 const browserFocusPending:Partial<Record<WorkerId,boolean>>={};
 // Electron prefixes IPC rejections, so match the known codes anywhere in the message.
@@ -110,7 +112,7 @@ const primary=byId('primary-actions');
 const releaseView=byId('view-release'),testsView=byId('view-tests');
 const testAction=testsView.querySelector('.test-action')!,testResults=byId('test-results');
 const releaseAction=releaseView.querySelector('.release-action')!;
-const VIEWS=['home','release','strategy','live','history','tools','tests'] as const;
+const VIEWS=['home','release','strategy','live','history','tools','tests','lab'] as const;
 // These views only observe; they stay reachable while a run is in progress.
 const OBSERVER_VIEWS:readonly View[]=['live','history','tools'];
 // The main release dashboard is also safe to revisit during a run: render() keeps
@@ -118,10 +120,11 @@ const OBSERVER_VIEWS:readonly View[]=['live','history','tools'];
 // so an in-flight plan cannot be edited accidentally.
 const RUN_ACCESSIBLE_VIEWS:readonly View[]=['release',...OBSERVER_VIEWS];
 function showView(view:View){
+  if(labRunning&&!['lab','live','history'].includes(view))return;
   if(latest&&latest.operation!=='idle'&&latest.operation!=='scheduled'&&!RUN_ACCESSIBLE_VIEWS.includes(view)&&!(view==='tests'&&workflow==='test'))return;
   currentView=view;
   for(const id of VIEWS){byId(`view-${id}`).hidden=id!==view;for(const tab of document.querySelectorAll(`[data-view="${id}"]`))tab.setAttribute('aria-current',id===view?'page':'false');}
-  const nextWorkflow=view==='tests'?'test':view==='home'?workflow:OBSERVER_VIEWS.includes(view)?workflow:'release';
+  const nextWorkflow=view==='tests'?'test':(view==='home'||view==='lab')?workflow:OBSERVER_VIEWS.includes(view)?workflow:'release';
   if(nextWorkflow!==workflow){storeDraft();workflow=nextWorkflow;if(workflow==='test'&&latest?.booking){const s=latest.booking.setup;applyDraft({testWing:testDraft?.testWing??'MANGO',bukoCourt:testDraft?.bukoCourt??1,releaseStrategy:'general',precisionCount:1,precisionTargets:[],method:s.BOOKING_METHOD,strategy:s.BOOKING_TYPE,date:testDraft?.date??input('test-date').value,courtCount:s.COURT_COUNT,start:s.START_TIME,duration:s.DURATION_HOURS,attempts:s.MAX_SELECTION_ATTEMPTS,courtOrder:[...s.PREFERRED_COURTS],fallbackTimes:[...s.FALLBACK_TIMES],exactA:'',exactB:''});testDirty=false;}if(workflow==='release'&&releaseDraft)applyDraft(releaseDraft);dirty=workflow==='test'?testDirty:releaseDirty;input('terms').checked=false;void window.thirsty.setWorkflow(workflow).then(()=>window.thirsty.getStatus()).then(render);}
   const terms=byId('terms').parentElement!;
   (view==='tests'?testAction:releaseAction).append(terms);
@@ -744,7 +747,7 @@ function render(state: Dashboard) {
   const armed=!!state.scheduledRelease;
   const busy = state.operation !== 'idle'&&state.operation!=='scheduled';
   for(const id of ['test-wing','test-buko-court','test-date','book-now-start','book-now-duration','book-now-objective','book-now-exact','browse-courts'])input(id).disabled=busy;
-  byId('stop').hidden=!busy;
+  byId('stop').hidden=!(busy||labRunning);
   const playerStatus=state.playerStatus??{primary:!!state.booking?.playerConfigured,extended:!!state.booking?.extendedPlayerConfigured,third:!!state.booking?.thirdPlayerConfigured,fourth:!!state.booking?.fourthPlayerConfigured,fifth:!!state.booking?.fifthPlayerConfigured,sixth:!!state.booking?.sixthPlayerConfigured,seventh:!!state.booking?.seventhPlayerConfigured,eighth:!!state.booking?.eighthPlayerConfigured};
   const dual=state.booking?.setup.BOOKING_TYPE==='standard'&&state.booking.setup.COURT_COUNT===2;
   // Keep the dual practice entry point visible in the safe single-court
@@ -1350,3 +1353,6 @@ function renderCourtBrowser(state:Dashboard){
  byId('court-browser-status').textContent=current?`Verified ${new Date(evidence!.capturedAt).toLocaleTimeString('en-GB',{timeZone:'Asia/Manila'})} Manila · expires after 15 seconds; checkout rechecks every hour and price.`:'UNKNOWN · Prepare Chrome and check live availability. No current slot evidence.';
 }
 setInterval(()=>{if(latest&&currentView==='tests'&&latest.operation==='idle')renderCourtBrowser(latest);},1000);
+
+installShotgunLab({state:()=>latest,showLive:()=>showView('tests'),setRunning:value=>{labRunning=value;if(latest)render(latest);}});
+input('strategy-wing').onchange=()=>{if(input('strategy-wing').value!=='MANGO'){input('lab-wings').value=input('strategy-wing').value;input('lab-wings').dispatchEvent(new Event('change'));input('strategy-wing').value='MANGO';showView('lab');}};
