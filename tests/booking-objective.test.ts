@@ -5,7 +5,7 @@ import { sha256Hex, canonicalJson } from '../src/sha256-pure.js';
 import { releaseInstantFor, nextReleaseFor } from '../src/wing-release-data.js';
 import { releaseForTarget, nextWingRelease } from '../src/wing-release-policy.js';
 import { compileObjective, defaultObjective, enumerateTargets, evaluateObjectiveOutcome, literalShotgunSchedule, objectiveFromDualWingPlan, objectiveFromLegacySetup,
-  objectiveProblems, objectiveQuota, selectImmediate, withMode, withStrategy, type BookingObjective, type AttemptOutcome } from '../src/booking-objective.js';
+  objectiveProblems, objectiveQuota, savedMangoReleaseSetup, selectImmediate, withMode, withStrategy, type BookingObjective, type AttemptOutcome } from '../src/booking-objective.js';
 import { evaluateCapability, capabilityMatrix, weakestCapability } from '../src/capability-matrix.js';
 import { executionState, editEffect } from '../src/execution-state.js';
 import { applyPreset, comparePresets, duplicatePreset, renamePreset, restorePreset, savePreset, scheduleMetrics, suggestShotgun } from '../src/shotgun-advisor.js';
@@ -124,6 +124,41 @@ describe('booking objective model', () => {
     const open = new Set(['BUKO:3:18:00', 'BUKO:3:19:00']);
     expect(compileObjective(o, { nowMs: NOW, openCells: open }).normalSteps[0]!.exact).toEqual([3]);
     expect(compileObjective(o, { nowMs: NOW }).normalSteps[0]!.exact).toEqual([1]);
+  });
+});
+
+describe('saved Mango release plan (live authorization format)', () => {
+  const mangoOnly = (strategy: 'SHOTGUN' | 'PRECISION' | 'NORMAL') => {
+    const o = withStrategy(example(), strategy); o.wings.BUKO.enabled = false; o.wings.MANGO.courts = [7, 6, 5].map((court, i) => ({ court, priority: i + 1 })); o.wings.MANGO.startTimes = ['19:00'];
+    return o;
+  };
+  const players = { PLAYER_FULL_NAME: 'Fixture Player', PLAYER_PHONE: '09123456789', PLAYER_EMAIL: 'fixture@example.invalid' };
+  it('converts a Mango Shotgun cohort into the undated live format with literal offsets and the quota', async () => {
+    const { ConfigSchema, BookingSetupSchema } = await import('../src/config.js');
+    const compiled = compileObjective(mangoOnly('SHOTGUN'), { nowMs: NOW });
+    expect(compiled.problems).toEqual([]);
+    const saved = savedMangoReleaseSetup(compiled, '2026-10-17');
+    expect(saved.problems).toEqual([]);
+    const setup = BookingSetupSchema.parse(saved.setup);
+    expect(setup.PRECISION_PHASE3!.candidates.every(c => c.wing === undefined && c.bookingDate === undefined)).toBe(true);
+    expect(setup.STRATEGY_V2!.objective).toMatchObject({ scope: 'PER_WING', wings: { MANGO: { minimum: 1, ideal: 2 } }, fingerprint: compiled.fingerprint });
+    const scopedOffsets = compiled.cohorts[0]!.smart!.shotgun!.shots.map(s => s.configuredOffsetMs).sort((a, b) => a - b);
+    expect(setup.STRATEGY_V2!.shotgun!.exactSchedule.map(s => s.configuredOffsetMs).sort((a, b) => a - b)).toEqual(scopedOffsets);
+    expect(() => ConfigSchema.parse({ ...setup, ...players })).not.toThrow();
+  });
+  it('keeps Precision per-target offsets and saves Normal as the General format', async () => {
+    const { BookingSetupSchema } = await import('../src/config.js');
+    const precision = mangoOnly('PRECISION'), ids = enumerateTargets(precision).targets.map(t => t.id);
+    precision.precision.offsetsMs = { [ids[0]!]: [-25, -10], [ids[1]!]: [-5] };
+    const saved = BookingSetupSchema.parse(savedMangoReleaseSetup(compileObjective(precision, { nowMs: NOW }), '2026-10-17').setup);
+    expect(saved.PRECISION_PHASE3!.wave1.map(a => a.fanOutOffsetsMs ?? [a.releaseOffsetMs ?? 0])).toEqual([[-25, -10], [-5], [0]]);
+    const normal = BookingSetupSchema.parse(savedMangoReleaseSetup(compileObjective(mangoOnly('NORMAL'), { nowMs: NOW }), '2026-10-17').setup);
+    expect(normal).toMatchObject({ RELEASE_STRATEGY: 'general', COURT_COUNT: 2, START_TIME: '19:00', PREFERRED_COURTS: [7, 6, 5, 4, 3, 2, 1] });
+  });
+  it('refuses instead of re-dating or dropping a wing', () => {
+    expect(savedMangoReleaseSetup(compileObjective(example(), { nowMs: NOW }), '2026-10-17').problems.join(' ')).toMatch(/Mango-only/);
+    const later = mangoOnly('SHOTGUN'); later.wings.MANGO.bookingDate = '2026-10-18';
+    expect(savedMangoReleaseSetup(compileObjective(later, { nowMs: NOW }), '2026-10-17').problems.join(' ')).toMatch(/publishes Mango 2026-10-17/);
   });
 });
 

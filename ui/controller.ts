@@ -23,7 +23,7 @@ import {expectedPreparationFingerprint,makePreparedContext} from '../src/prepare
 import type {PreparationInput,PreparationResult} from '../src/booking-plan.js';
 import {scheduledReleaseContext,type ScheduledReleaseContext} from '../src/scheduled-release.js';
 import {formatReleaseOffset} from '../src/release-offset.js';
-import {planWorkerIds,requiredWorkerIds,type CourtCount,type WorkerId} from '../src/workers.js';
+import {normalWorkerIds,planWorkerIds,requiredWorkerIds,type CourtCount,type WorkerId} from '../src/workers.js';
 import type {SlotWatchCandidate,SlotWatchDigest,SlotWatchSummary,SlotWatchView} from '../src/slot-watch.js';
 import type {AvailabilityObservation} from '../src/slot-evidence.js';
 import type {ReleaseForensicsDigest} from '../src/release-forensics.js';
@@ -87,6 +87,9 @@ const errors: Record<string, string> = {
   ARBITRATION_RELEASE_CONTEXT_INVALID:'The release date or time could not be verified. Nothing was armed.',
   ARBITRATION_MANIFEST_UNAVAILABLE:'This app build cannot create the investigation setup. Nothing was armed.',
   PRECISION_TOO_LATE_TO_FREEZE:'The Precision target set could not be frozen before release. Nothing was sent.',
+  SHOTGUN_LIVE_ATTESTATION_REQUIRED:'Live Shotgun is a pilot: arming requires your explicit attestation for this exact plan. Nothing was armed.',
+  SHOTGUN_IMMEDIATE_BURST_BLOCKED:'A Shotgun burst against currently open slots is not offered. Use Available Now (Normal) for open dates.',
+  BUKO_SCHEDULED_LIVE_BLOCKED:'Buko scheduled release is offline-only: the Buko release policy is owner-assumed and Buko proofless checkout is unverified. Book open Buko dates with Available Now.',
   SHOTGUN_LIVE_COMPATIBILITY_UNVERIFIED:'Live Shotgun is blocked: proofless release checkout and provider request-rate permission remain unverified. You can edit, save and test the plan offline.',
   AVAILABILITY_BROWSER_PREPARATION_REQUIRED:'Prepare and verify the booking browser before checking live availability.',
   AVAILABILITY_CHECK_RUNNING:'An availability check is already running. Wait for it to finish.',
@@ -95,7 +98,6 @@ const errors: Record<string, string> = {
   OBSERVER_PROFILE_BUSY:'The availability observer window from a previous check is still open. Close it, then check again.',
   OBSERVER_START_TIMEOUT:'The availability observer Chrome did not start in time. Check that Google Chrome is installed, then try again.',
   OBSERVER_VENUE_UNVERIFIED:'The observer could not verify the Thirsty Pickle booking page. Availability stays UNKNOWN.',
-  CHROME_NOT_INSTALLED:'Google Chrome was not found. Install Chrome to check availability.',
   PRECISION_REQUIRES_PROOFLESS_STANDARD:'Precision Release uses Proofless Direct with Standard 1-3 hour targets.',
   OBJECTIVE_NOT_ACHIEVED_ALL_REJECTED:'Every dispatched Precision attempt was rejected by Onda. No hold was created.',
   OBJECTIVE_NOT_ACHIEVED_NOTHING_DISPATCHED:'No Precision attempt was dispatched. See each attempt for the reason.',
@@ -174,9 +176,12 @@ const errors: Record<string, string> = {
 interface SlotWatchHandle { id:string; reason:'release'|'manual'; date:string; releaseMs:number; stop(reason:string):Promise<unknown>; done:Promise<SlotWatchSummary> }
 export interface Dependencies {
   activityJournal?:Pick<ActivityJournal,'begin'|'record'|'ready'|'handoff'|'end'|'history'>;
+  /** Live Shotgun pilot: explicit owner attestation for this exact plan (warning dialog). Absent means refuse. */
+  confirmShotgunLive?:(plan:BookingView)=>Promise<boolean>;
+  recordShotgunAttestation?:(record:{fingerprint:string;targetDate:string;releaseMs:number;attempts:number})=>void;
   confirmStopPrepare?:()=>Promise<boolean>;
   confirmBooking?:(plan:BookingPlan,maximum?:number)=>Promise<boolean>;
-  confirmApiTest?:(input:{wing?:'MANGO'|'BUKO';method:'api-first'|'proofless';strategy:'standard'|'extended';date:string;start:string;duration:number;courtCount:CourtCount;maximum?:number;priority:number[]})=>Promise<boolean>;
+  confirmApiTest?:(input:{wing?:'MANGO'|'BUKO';method:'api-first'|'proofless';strategy:'standard'|'extended';date:string;start:string;duration:number;courtCount:CourtCount;maximum?:number;priority:number[];workers?:WorkerId[]})=>Promise<boolean>;
   runner: Runner; lock(): Promise<boolean>; cdp(): Promise<boolean>; clock: typeof readClock; syncClock?():Promise<void>;
   /** Creates or verifies the Wave 1 preregistration manifest in the app's .local (main process), before the runner starts. */
   ensureArbitrationManifest?(input:{targetDate:string;releaseMs:number;clockOffsetMs:number}):EnsureManifestResult;
@@ -623,7 +628,7 @@ export class Controller {
       if(scheduled&&this.state.operation==='scheduled'&&this.state.booking?.fingerprint!==scheduled.configFingerprint){await this.cancelScheduledRelease('SCHEDULE CANCELLED - SETTINGS CHANGED');return;}
       const context=this.state.preparedContext,required=context?.requiredBrowsers??[];
       const apiWorkers=this.state.workflow==='test'&&this.apiTestPreferences
-        ? requiredWorkerIds(this.apiTestPreferences.strategy,this.apiTestPreferences.courtCount)
+        ? normalWorkerIds(this.apiTestPreferences.strategy,this.apiTestPreferences.courtCount,this.apiTestPreferences.workers)
         : this.state.booking?planWorkerIds(this.state.booking.setup):[];
       const apiFirstReady=this.state.apiFirstReady&&apiWorkers.length>0&&apiWorkers.every(id=>health[id])&&!lock&&(
         this.state.workflow==='test'?!!this.apiTestFingerprint:['api-first','proofless'].includes(this.state.booking?.setup.BOOKING_METHOD??''));
@@ -675,7 +680,7 @@ export class Controller {
       if(event.stage==='BROWSER_READY'&&this.state.operation!=='prepare'&&event.workerId){
         this.apiReadyWorkers.add(event.workerId);
         const required=this.state.workflow==='test'&&this.apiTestPreferences
-          ? requiredWorkerIds(this.apiTestPreferences.strategy,this.apiTestPreferences.courtCount)
+          ? normalWorkerIds(this.apiTestPreferences.strategy,this.apiTestPreferences.courtCount,this.apiTestPreferences.workers)
           : this.state.booking?planWorkerIds(this.state.booking.setup):[];
         if(required.length&&required.every(worker=>this.apiReadyWorkers.has(worker)))this.markBrowserReady(event.at);
       }
@@ -918,17 +923,17 @@ export class Controller {
       await this.operation('prepare',async gen=>{
         let release:BookingView|undefined;
         if(input.workflow==='test'&&['api-first','proofless'].includes(input.method)){
-          const players=this.requirePlayers(requiredWorkerIds(input.request.strategy,input.request.courtCount));this.state.playerStatus=players;
+          const players=this.requirePlayers(normalWorkerIds(input.request.strategy,input.request.courtCount,input.request.workers));this.state.playerStatus=players;
           await this.reconcileLockForApiPrepare(gen,input);
           const fingerprint=expectedPreparationFingerprint(input);
           this.state.workflow='test';this.state.headline='PREPARING API BROWSER';this.publish();
           const preferences:ApiRunPreferences={...(input.request.wing?{wing:input.request.wing}:{}),strategy:input.request.strategy,date:input.request.date,start:input.request.start,duration:input.request.duration,courtCount:input.request.courtCount,
-            maximum:input.maximum,priority:input.request.priority,fallbackStarts:input.request.fallbackStarts,...(input.request.exact?{exact:input.request.exact}:{})};
+            maximum:input.maximum,priority:input.request.priority,fallbackStarts:input.request.fallbackStarts,...(input.request.exact?{exact:input.request.exact}:{}),...(input.request.workers?{workers:input.request.workers}:{})};
           await this.run({kind:'apiRun',mode:'prepare',date:input.request.date,fingerprint,checkoutMethod:input.method==='proofless'?'proofless':'proof-based',preferences},gen);
           if(input.method==='proofless')await this.run({kind:'apiRun',mode:'dry',date:input.request.date,fingerprint,checkoutMethod:'proofless',preferences},gen);
           this.apiTestFingerprint=fingerprint;this.apiTestStrategy=input.request.strategy;this.apiTestCheckoutMethod=input.method==='proofless'?'proofless':'proof-based';this.apiTestPreferences=preferences;this.state.apiFirstReady=true;this.state.ready=true;
           this.state.headline='API READY TO TEST';
-          const count=requiredWorkerIds(input.request.strategy,input.request.courtCount).length;
+          const count=normalWorkerIds(input.request.strategy,input.request.courtCount,input.request.workers).length;
           this.state.detail=`${count} dedicated API browser${count===1?' is':'s are'} open and remain${count===1?'s':''} visible. Authorize Terms, then Run Test to QR.`;
           return;
         }
@@ -972,19 +977,19 @@ export class Controller {
     }finally{this.pendingPreparation=undefined;this.resetting=false;}
   }
   testBooking(value:unknown){const input=TestBookingSchema.parse(value),authorized=this.state.termsAuthorized;this.state.termsAuthorized=false;return this.operation('fullPractice',async gen=>{
-    this.requirePlayers(requiredWorkerIds(input.request.strategy,input.request.courtCount));
+    this.requirePlayers(normalWorkerIds(input.request.strategy,input.request.courtCount,input.request.workers));
     const preparation={workflow:'test' as const,method:input.method,request:input.request,maximum:input.maximum};
     if(['api-first','proofless'].includes(input.method)){
       const fingerprint=expectedPreparationFingerprint(preparation);
       if(!this.state.apiFirstReady||this.apiTestFingerprint!==fingerprint)throw Error('RESET_REQUIRED');
       if(!authorized)throw Error('TERMS_AUTHORIZATION_REQUIRED');
       if(!await this.deps.confirmApiTest?.({method:input.method==='proofless'?'proofless':'api-first',...(input.request.wing?{wing:input.request.wing}:{}),strategy:input.request.strategy,date:input.request.date,start:input.request.start,duration:input.request.duration,courtCount:input.request.courtCount,
-        maximum:input.maximum,priority:input.request.priority}))return;
+        maximum:input.maximum,priority:input.request.priority,...(input.request.workers?{workers:input.request.workers}:{})}))return;
       await this.noLock();this.state.handoff=null;this.state.bookingResult=undefined;
       this.state.headline='Checking API availability';this.state.detail='The dedicated API browser remains visible while availability and proofs are checked.';
       await this.run({kind:'apiRun',mode:'live-now',date:input.request.date,fingerprint,checkoutMethod:input.method==='proofless'?'proofless':'proof-based',
         preferences:{...(input.request.wing?{wing:input.request.wing}:{}),strategy:input.request.strategy,date:input.request.date,start:input.request.start,duration:input.request.duration,courtCount:input.request.courtCount,
-          maximum:input.maximum,priority:input.request.priority,fallbackStarts:input.request.fallbackStarts,...(input.request.exact?{exact:input.request.exact}:{})}},gen);
+          maximum:input.maximum,priority:input.request.priority,fallbackStarts:input.request.fallbackStarts,...(input.request.exact?{exact:input.request.exact}:{}),...(input.request.workers?{workers:input.request.workers}:{})}},gen);
       return;
     }
     await this.requirePrepared('test',expectedPreparationFingerprint(preparation),input.request.strategy);
@@ -1053,7 +1058,8 @@ export class Controller {
     if(!authorized)throw Error('TERMS_AUTHORIZATION_REQUIRED');
     await this.noLock();
     const plan=this.deps.booking();
-    if(plan.setup.STRATEGY_V2?.shotgun?.enabled)throw Error('SHOTGUN_LIVE_COMPATIBILITY_UNVERIFIED');
+    const liveShotgun=!!plan.setup.STRATEGY_V2?.shotgun?.enabled;
+    if(liveShotgun&&plan.setup.PRECISION_PHASE3?.candidates.some(candidate=>candidate.wing==='BUKO'))throw Error('BUKO_SCHEDULED_LIVE_BLOCKED');
     if(plan.setup.STRATEGY_V2?.shotgun?.exactSchedule.some(shot=>shot.configuredOffsetMs>0)||plan.setup.PRECISION_PHASE3?.wave1.some(assignment=>(assignment.fanOutOffsetsMs??[assignment.releaseOffsetMs??0]).some(offset=>offset>0)))
       throw Error('SHOTGUN_PLAN_INCOMPATIBLE_POSITIVE_OFFSET');
     // Arming refreshes the Google offset itself; the runner refreshes it again at T-10 min.
@@ -1078,10 +1084,18 @@ export class Controller {
       if(this.state.prewarmFeasibility.projectedOmitted)throw Error('PREWARM_PLAN_NOT_FEASIBLE');}
     if(clock.releaseMs<=Date.now()+clock.clockOffsetMs)throw Error('RELEASE_MISSED');
     const confirmed=await this.deps.confirm('full',plan);if(!confirmed)return;
+    // LIVE_PILOT capability: the owner attests, for this exact plan and run, that the provider authorizes this multi-attempt
+    // Shotgun. Without an attestation dependency (tests, headless use) live Shotgun fails closed.
+    if(liveShotgun){
+      const attested=await this.deps.confirmShotgunLive?.(plan)??false;
+      if(!attested){this.state.headline='Live Shotgun not armed';this.state.detail='The owner attestation was declined. Nothing was armed; edit, save and offline testing remain available.';this.log('SHOTGUN_LIVE_ATTESTATION_DECLINED');return;}
+      this.deps.recordShotgunAttestation?.({fingerprint:plan.fingerprint,targetDate:plan.targetDate,releaseMs:clock.releaseMs,attempts:plan.setup.STRATEGY_V2!.shotgun!.exactSchedule.length});
+      this.log(`Live Shotgun pilot attested for plan ${plan.fingerprint.slice(0,12)} · ${plan.setup.STRATEGY_V2!.shotgun!.exactSchedule.length} attempts`);
+    }
     if(this.deps.booking().fingerprint!==plan.fingerprint||this.deps.clock().releaseMs!==clock.releaseMs)
       throw Error('SCHEDULE_CONTEXT_MISMATCH');
     const proofless=plan.setup.BOOKING_METHOD==='proofless';
-    const command={kind:'apiRun',mode:'live',date:plan.targetDate,fingerprint:plan.fingerprint,checkoutMethod:proofless?'proofless':'proof-based',clockOffsetMs:clock.clockOffsetMs,releaseMs:clock.releaseMs} as const;
+    const command={kind:'apiRun',mode:'live',date:plan.targetDate,fingerprint:plan.fingerprint,checkoutMethod:proofless?'proofless':'proof-based',clockOffsetMs:clock.clockOffsetMs,releaseMs:clock.releaseMs,...(liveShotgun?{shotgunAttestation:plan.fingerprint}:{})} as const;
     // Preregistration uses the runner's own date/release and completes before anything starts; a failure arms nothing.
     const preregistered=this.preregister(command.date,command.releaseMs,command.clockOffsetMs);
     if(this.deps.startSleepProtection){this.sleepBlockerId=this.deps.startSleepProtection();this.state.sleepProtection=true;}

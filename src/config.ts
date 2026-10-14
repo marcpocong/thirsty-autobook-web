@@ -74,6 +74,11 @@ export const StrategyV2Schema=z.object({version:z.literal(1),preset:z.enum(['BAL
     capacityOverride:z.boolean().optional(),counts:z.record(z.string(),z.number().int().nonnegative()),
     exactSchedule:z.array(z.object({logicalTargetId:z.string().min(1).max(100),shotIndex:z.number().int().nonnegative(),configuredOffsetMs:phase3OffsetValue}).strict()).max(PRECISION_MAX_SENDS),
     capacity:z.object({meaningfulSpacingMs:z.number().positive(),recommendedMaximum:z.number().int().positive(),warning:z.string().nullable(),groupAnchorMs:z.number().int()}).strict()}).strict().optional(),
+  // Booking Setup objective quota (distinct courts). Present only when saved from Booking Setup; it changes dispatch
+  // suppression, so planFingerprint includes it. Absent means the legacy one-court Precision objective.
+  objective:z.object({version:z.literal(3),fingerprint:z.string().regex(/^[a-f0-9]{64}$/),scope:z.enum(['PER_WING','ANY_WING']),
+    wings:z.object({MANGO:z.object({minimum:z.number().int().min(1).max(7),ideal:z.number().int().min(1).max(7)}).strict().optional(),BUKO:z.object({minimum:z.number().int().min(1).max(7),ideal:z.number().int().min(1).max(7)}).strict().optional()}).strict(),
+    overall:z.object({minimum:z.number().int().min(1).max(14),ideal:z.number().int().min(1).max(14)}).strict().optional()}).strict().optional(),
   intelligenceMode:z.enum(['AUTO','PREFERENCE_ONLY']).optional(),
   provenance:z.object({source:z.enum(['SMART_SUGGESTED','EXISTING_SMART_PLAN','OPERATOR_BUILT']),operatorModifications:z.number().int().min(0)}).strict().optional()}).strict();
 export const ReleaseLabSetupSchema=z.object({version:z.literal(1),kind:z.literal('DURATION_OFFSET_V1'),label:z.literal('Duration × Offset')}).strict();
@@ -111,6 +116,11 @@ function checkPrecision(c:{RELEASE_STRATEGY:'general'|'precision';BOOKING_METHOD
         Object.entries(shotgun.counts).some(([id,count])=>count>0&&!scheduled.has(id)))
         ctx.addIssue({code:'custom',message:'Shotgun exact schedule does not match PRECISION_PHASE3 authorization.',path:['STRATEGY_V2','shotgun','exactSchedule']});
     }
+    const objective=c.STRATEGY_V2?.objective;
+    if(objective){const ids=(wing:string)=>new Set(p.wave1.map(a=>p.candidates[a.candidateIndex]!).filter(cand=>(cand.wing??'MANGO')===wing).map(cand=>cand.spaceId??`${wing}:${cand.court}`)).size;
+      if(objective.scope==='PER_WING')for(const [wing,q] of Object.entries(objective.wings))if(q&&(q.ideal<q.minimum||ids(wing)<q.ideal))ctx.addIssue({code:'custom',message:`The ${wing} objective needs ${q?.ideal} distinct immediate courts.`,path:['STRATEGY_V2','objective']});
+      if(objective.overall&&(objective.overall.ideal<objective.overall.minimum||ids('MANGO')+ids('BUKO')<objective.overall.ideal))ctx.addIssue({code:'custom',message:'The overall objective needs more distinct immediate courts.',path:['STRATEGY_V2','objective']});
+      if((objective.scope==='ANY_WING')!==!!objective.overall)ctx.addIssue({code:'custom',message:'Objective scope and overall quota disagree.',path:['STRATEGY_V2','objective']});}
     if(new Set(workers).size!==workers.length)ctx.addIssue({code:'custom',message:'Precision workers must be unique across Wave 1 and standby.',path:['PRECISION_PHASE3']});
     if(p.wave1.some(value=>!p.candidates[value.candidateIndex]?.permissions.wave1))ctx.addIssue({code:'custom',message:'Wave 1 assignment must name a Wave 1 eligible candidate.',path:['PRECISION_PHASE3']});
     if(p.wave1.some(value=>p.candidates[value.candidateIndex]?.rateEvidence.status==='REFERENCE'||
@@ -327,7 +337,8 @@ export function planFingerprint(c: Config) {
     schedule: ObservationSchema.parse(c), target: calculateTarget(c), attempts:c.MAX_SELECTION_ATTEMPTS,
     // Present only for Precision, so a General plan keeps exactly its previous fingerprint.
     ...(c.RELEASE_STRATEGY==='precision'?{releaseStrategy:'precision',precisionTargets:c.PRECISION_TARGETS,precisionFanOut:c.PRECISION_FAN_OUT,precisionPhase3:c.PRECISION_PHASE3,
-      ...(c.RELEASE_LAB?{releaseLab:c.RELEASE_LAB}:{})}:{}),
+      ...(c.RELEASE_LAB?{releaseLab:c.RELEASE_LAB}:{}),
+      ...(c.STRATEGY_V2?.objective?{objective:{scope:c.STRATEGY_V2.objective.scope,wings:c.STRATEGY_V2.objective.wings,overall:c.STRATEGY_V2.objective.overall}}:{})}:{}),
     // Likewise present only when non-zero; a changed offset after arming is a changed plan.
     ...(c.RELEASE_OFFSET_MS?{releaseOffsetMs:c.RELEASE_OFFSET_MS}:{}) })).digest('hex');
 }

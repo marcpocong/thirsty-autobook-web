@@ -23,9 +23,12 @@ jobs:
       # Run them sequentially in this same job instead of competing with the
       # rest of the suite. Every test and every existing timeout remains intact.
       - name: Unit, integration and renderer regressions
-        run: npm test -- --exclude tests/shotgun-test-lab.test.ts --exclude tests/strategy-flow.test.ts
+        run: npm test -- --exclude tests/shotgun-test-lab.test.ts --exclude tests/strategy-flow.test.ts --exclude tests/normal-test-lab.test.ts
       - name: Isolated Chrome Test Lab scenarios
         run: npx vitest run tests/shotgun-test-lab.test.ts
+      # Spawns one isolated lab child per scenario; sequential so it never loads the timing-sensitive dispatcher tests.
+      - name: Offline Normal Test Lab scenarios
+        run: npx vitest run tests/normal-test-lab.test.ts
       - name: Complete operator strategy flow and viewport checks
         run: npx vitest run tests/strategy-flow.test.ts
       - name: Clean UI/runtime build

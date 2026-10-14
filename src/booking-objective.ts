@@ -386,6 +386,61 @@ export function compileObjective(o: BookingObjective, ctx: CompileContext): Comp
     problems: unique(problems), warnings: unique(warnings), fingerprint: sha256Hex(canonicalJson(fingerprintSource)) };
 }
 
+// ── Saved Mango release plan (the live authorization format) ─────────────────────────────────────────────
+/**
+ * The live Precision/Shotgun runner authorizes only the legacy undated Mango representation, bound to the release
+ * calendar's next target date (exact dated candidates are refused live). This converts a compiled Mango-only cohort
+ * into that saved setup through the same compiler, keeping every court, time, worker grouping and literal offset.
+ * It refuses — instead of silently re-dating — when the chosen Mango date is not the next release's booking date.
+ */
+export function savedMangoReleaseSetup(compiled: CompiledObjective, nextMangoBookingDate: string): { setup: Record<string, unknown> | null; problems: string[] } {
+  const o = compiled.objective, problems: string[] = [];
+  if (o.mode !== 'NEXT_RELEASE') return { setup: null, problems: ['Available Now runs directly; it is not saved as a release plan.'] };
+  if (compiled.problems.length) return { setup: null, problems: ['Resolve the plan problems first.'] };
+  if (o.wings.BUKO.enabled) problems.push('The live release plan is Mango-only. Turn Buko off to save a live plan; Buko stays in offline rehearsal.');
+  if (!o.wings.MANGO.enabled) problems.push('Enable Mango to save a live release plan.');
+  if (o.wings.MANGO.bookingDate !== nextMangoBookingDate) problems.push(`The next release publishes Mango ${nextMangoBookingDate}. ${o.wings.MANGO.bookingDate} cannot be saved as the live plan now; keep it as a draft and save it after the earlier release.`);
+  if (problems.length) return { setup: null, problems };
+  const g = o.wings.MANGO, ordered = [...g.courts].sort((a, b) => a.priority - b.priority || a.court - b.court).map(c => c.court);
+  const preferred = [...ordered, ...[7, 6, 5, 4, 3, 2, 1].filter(c => !ordered.includes(c))];
+  if (o.strategy === 'NORMAL') {
+    const general = compiled.generalRelease!;
+    return { setup: { BOOKING_METHOD: general.BOOKING_METHOD, BOOKING_TYPE: 'standard', RELEASE_STRATEGY: 'general', PRECISION_TARGETS: [], PRECISION_FAN_OUT: false, RELEASE_OFFSET_MS: 0,
+      COURT_COUNT: general.COURT_COUNT, START_TIME: general.START_TIME, DURATION_HOURS: general.DURATION_HOURS, PREFERRED_COURTS: general.PREFERRED_COURTS, FALLBACK_COURTS: [],
+      FALLBACK_TIMES: general.FALLBACK_TIMES, MAX_SELECTION_ATTEMPTS: 3 }, problems };
+  }
+  const cohort = compiled.cohorts[0]!;
+  const legacy = (t: ObjectiveTarget, immediate: boolean): SmartSlot => {
+    const offsets = immediate && o.strategy === 'PRECISION' ? o.precision.offsetsMs[t.id] ?? [0] : [0];
+    return { court: t.court, start: t.start, durationHours: t.durationHours, priority: t.priority, rate: targetRate(t, g)!,
+      ...(immediate && o.strategy === 'PRECISION' ? offsets.length > 1 ? { fanOutOffsetsMs: [...offsets] } : offsets[0] ? { releaseOffsetMs: offsets[0] } : {} : {}) };
+  };
+  const legacyId = new Map(cohort.immediate.map(t => [t.id, `court-${t.court}:${t.start}:${t.durationHours}h`]));
+  let shotgun: ShotgunSettings | undefined;
+  if (o.strategy === 'SHOTGUN') {
+    const scoped = toShotgunSettings(o.shotgun, cohort.immediate.map(t => t.id)).settings;
+    shotgun = { ...scoped, selectedTargetIds: scoped.selectedTargetIds.map(id => legacyId.get(id)!),
+      ...(scoped.customCounts ? { customCounts: Object.fromEntries(Object.entries(scoped.customCounts).map(([id, n]) => [legacyId.get(id)!, n])) } : {}) };
+  }
+  const smart = compileSmartPlan({ ...emptySmartDraft(), immediate: cohort.immediate.map(t => legacy(t, true)), backups: cohort.backups.map(t => legacy(t, false)),
+    retryReopened: o.strategy === 'PRECISION' && o.precision.retryReopened, ...(shotgun ? { shotgun } : {}), advanced: o.strategy === 'SHOTGUN' ? { wave2: 0, rescue: 0 } : {} }, { targetDate: g.bookingDate });
+  if (!smart.phase3) return { setup: null, problems: smart.problems };
+  const hours = cohort.immediate.map(t => hourOf(t.start));
+  const quota = compiled.quota;
+  const strategyV2 = { version: 1, preset: 'CUSTOM', goal: { primeFrom: `${String(Math.min(...hours)).padStart(2, '0')}:00`, primeUntil: `${String(Math.min(24, Math.max(...cohort.immediate.map(t => hourOf(t.start) + t.durationHours)))).padStart(2, '0')}:00`,
+      durations: [g.durationHours], courts: ordered },
+    fanOut: { width: 1, source: 'OPERATOR_OVERRIDE', recommendedWidth: null, timing: 'BALANCED', profileCreatedAt: null },
+    ...(smart.shotgun && shotgun ? { shotgun: { version: 1, enabled: true, budget: shotgun.budget, allocationMode: shotgun.allocationMode, selectedTargetIds: shotgun.selectedTargetIds,
+      ...(shotgun.customCounts ? { customCounts: shotgun.customCounts } : {}), windowStartMs: shotgun.windowStartMs, windowEndMs: shotgun.windowEndMs, timingMode: shotgun.timingMode,
+      ...(shotgun.customOffsetsMs ? { customOffsetsMs: shotgun.customOffsetsMs } : {}), timingCapacityOverride: !!shotgun.timingCapacityOverride, allowStandbyConsumption: !!shotgun.allowStandbyConsumption,
+      counts: smart.shotgun.counts, exactSchedule: smart.shotgun.shots.map(({ logicalTargetId, shotIndex, configuredOffsetMs }) => ({ logicalTargetId, shotIndex, configuredOffsetMs })),
+      capacity: { meaningfulSpacingMs: smart.shotgun.meaningfulSpacingMs, recommendedMaximum: smart.shotgun.recommendedMaximum, warning: smart.shotgun.capacityWarning, groupAnchorMs: smart.shotgun.groupAnchorMs } } } : {}),
+    objective: { version: 3, fingerprint: compiled.fingerprint, scope: quota.scope, wings: { MANGO: quota.wings.MANGO! }, ...(quota.overall ? { overall: quota.overall } : {}) } };
+  return { setup: { BOOKING_METHOD: 'proofless', BOOKING_TYPE: 'standard', RELEASE_STRATEGY: 'precision', PRECISION_TARGETS: [], PRECISION_FAN_OUT: false, RELEASE_OFFSET_MS: 0,
+    PRECISION_PHASE3: smart.phase3, STRATEGY_V2: strategyV2, COURT_COUNT: 1, START_TIME: cohort.immediate[0]!.start, DURATION_HOURS: g.durationHours,
+    PREFERRED_COURTS: preferred, FALLBACK_COURTS: [], FALLBACK_TIMES: [], MAX_SELECTION_ATTEMPTS: 3 }, problems };
+}
+
 // ── Outcome reconciliation ───────────────────────────────────────────────────────────────────────────────
 export type AttemptState = 'HOLD_VERIFIED' | 'HOLD_VERIFIED_QR_ATTENTION' | 'QR_READY' | 'REJECTED' | 'UNKNOWN' | 'NOT_DISPATCHED' | 'WINDOW_MISSED' | 'OMITTED' | 'SUPPRESSED';
 export interface AttemptOutcome {

@@ -3,6 +3,8 @@ import type { Dashboard, Bridge, ConfirmRequest } from './types.js';
 const bridge: Bridge = {
   onLabPhase:callback=>{const listener=(_event:unknown,phase:string)=>callback(phase);ipcRenderer.on('thirsty:labPhase',listener);return()=>ipcRenderer.removeListener('thirsty:labPhase',listener);},
   shotgunLab:request=>ipcRenderer.invoke('thirsty:shotgunLab',request),
+  objective:request=>ipcRenderer.invoke('thirsty:objective',request),
+  journalArchive:request=>ipcRenderer.invoke('thirsty:journalArchive',request),
   syncClock:()=>ipcRenderer.invoke('thirsty:syncClock'),
   focusBrowser:request=>ipcRenderer.invoke('thirsty:focusBrowser',request),
   closeBotBrowsers:()=>ipcRenderer.invoke('thirsty:closeBotBrowsers'),

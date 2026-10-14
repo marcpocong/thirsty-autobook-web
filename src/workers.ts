@@ -9,6 +9,17 @@ export function requiredWorkerIds(strategy:'standard'|'extended',courtCount:Cour
   return WORKER_IDS.slice(0,courtGroups*timeGroups) as WorkerId[];
 }
 
+/**
+ * Normal (API/Proofless) runs may name exactly which browsers/customers execute their checkouts, so a second wing can
+ * use a customer context that has no pending checkout. The count must equal the checkout chunks; letters are distinct.
+ */
+export function normalWorkerIds(strategy:'standard'|'extended',courtCount:CourtCount,explicit?:readonly string[]):WorkerId[]{
+  const required=requiredWorkerIds(strategy,courtCount);
+  if(explicit===undefined)return required;
+  if(explicit.length!==required.length||new Set(explicit).size!==explicit.length||explicit.some(id=>!(WORKER_IDS as readonly string[]).includes(id)))throw Error('NORMAL_WORKER_ASSIGNMENT_INVALID');
+  return [...explicit] as WorkerId[];
+}
+
 /** Precision v1 uses one worker per exact target, A through G (seven courts). H is never a Precision worker. */
 export const PRECISION_MAX_ATTEMPTS = 7;
 /** Fixed and Smart Precision may fan out into 2 to this many independently tracked children (one tab each). */
