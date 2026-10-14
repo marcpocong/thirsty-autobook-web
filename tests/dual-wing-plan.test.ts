@@ -14,7 +14,7 @@ import { FACILITY_ID } from '../src/court-registry.js';
 describe('evidence-aware release policies',()=>{
   it('keeps actual offsets independent of labels and Buko live-ineligible',()=>{
     expect(WING_RELEASE_POLICIES.MANGO?.horizonOffsetDays).toBe(2);expect(WING_RELEASE_POLICIES.BUKO?.horizonOffsetDays).toBe(6);
-    expect(WING_RELEASE_POLICIES.BUKO?.status).toBe('PROVISIONAL');expect(WING_RELEASE_POLICIES.BUKO?.publicLabel).toContain('five');
+    expect(WING_RELEASE_POLICIES.BUKO?.status).toBe('OWNER_ASSUMED');expect(WING_RELEASE_POLICIES.BUKO?.publicLabel).toContain('five');
     expect(()=>assertVerifiedRelease('2026-10-21','BUKO')).toThrow('UNVERIFIED');
     expect(releaseForTarget('2026-10-21','BUKO').toISO()).toBe('2026-10-15T08:00:00.000+08:00');
   });

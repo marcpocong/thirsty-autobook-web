@@ -15,7 +15,7 @@ async function child(scenario:LabScenario,objective:'ANY_ONE'|'ONE_PER_WING'='AN
   const directory=await mkdtemp(join(base,'case-'));
   const file=join(directory,'input.json');await writeFile(file,JSON.stringify({plan:fixturePlan(['MANGO','BUKO'],objective),scenario,countdownSeconds:8}));
   await new Promise<void>((done,fail)=>{const worker=spawn(process.execPath,['--import','tsx',join(root,'src/shotgun-test-lab-child.ts'),file,directory],{cwd:root,stdio:['ignore','ignore','pipe','ipc'],windowsHide:true});let error:string|undefined,stderr='';worker.stderr?.on('data',chunk=>{stderr+=String(chunk);});
-    worker.on('message',(m:unknown)=>{error=(m as {error?:string}).error??error;});worker.on('error',fail);worker.on('exit',code=>code===0?done():fail(Error(error??stderr.slice(-3000)??'LAB_TEST_CHILD_FAILED')));});
+    worker.on('message',(m:unknown)=>{error=(m as {error?:string}).error??error;});worker.on('error',fail);worker.on('exit',code=>code===0?done():fail(Error(error||stderr.slice(-3000).trim()||`LAB_TEST_CHILD_EXIT ${code}`)));});
   return JSON.parse(await readFile(join(directory,'result.json'),'utf8')) as LabResult;
 }
 describe('intercepted lab safety and exact provider fixtures',()=>{

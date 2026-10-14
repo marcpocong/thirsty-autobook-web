@@ -11,7 +11,10 @@ it('edits and reopens exact dual-wing allocation, shows blocked live status and 
   const page=await openRenderer(browser,{booking:bookingView(ConfigSchema.parse({...defaultSetup,PLAYER_FULL_NAME:'Fixture',PLAYER_PHONE:'09000000000',PLAYER_EMAIL:'offline@example.invalid'}))},'lab');
   await page.exposeFunction('nodeLabPreview',compileDualWingPlan);
   await page.waitForFunction(()=>document.querySelectorAll('.lab-target').length===2);
-  expect(await page.locator('#lab-policy').innerText()).toContain('PROVISIONAL');
+  expect(await page.locator('#lab-policy').innerText()).toContain('owner-assumed');
+  expect(await page.locator('#lab-policy').innerText()).not.toContain('Invalid Date');
+  expect(await page.locator('#lab-policy').innerText()).toContain('Mango booking date: 2026-10-17');
+  expect(await page.locator('#lab-policy').innerText()).toContain('Buko booking date: 2026-10-21');
   await page.locator('#lab-review').click();await page.waitForFunction(()=>document.getElementById('lab-review-output')?.textContent?.includes('8 aggregate attempts'));
   expect(await page.locator('#lab-review-output').innerText()).toContain('2026-10-21');
   await page.locator('#lab-allocation').selectOption('CUSTOM');
