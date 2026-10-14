@@ -119,6 +119,14 @@ describe('booking objective model', () => {
     expect(compiled.warnings.join(' ')).toMatch(/alternative Buko starts are not attempted/);
     expect(compiled.capability.BUKO?.status).toBe('LIVE_PILOT');
   });
+  it('never assigns a checkout to a browser whose customer context holds a pending checkout', () => {
+    const o = withMode(example(), 'AVAILABLE_NOW', NOW);
+    const compiled = compileObjective(o, { nowMs: NOW, normalSkip: new Set(['A', 'C']) });
+    expect(compiled.normalSteps.map(s => s.workers)).toEqual([['B'], ['D'], ['E']]);
+    expect(compiled.warnings.join(' ')).toMatch(/A, C are skipped/);
+    const crowded = compileObjective(o, { nowMs: NOW, normalSkip: new Set(['A', 'B', 'C', 'D', 'E', 'F']) });
+    expect(crowded.problems.join(' ')).toMatch(/needs 3 separate browsers\/customers; only 2 are free/);
+  });
   it('ranks flexible Buko courts by fresh open cells without inventing openness', () => {
     const o = withMode(example(), 'AVAILABLE_NOW', NOW); o.wings.MANGO.enabled = false; o.wings.BUKO.ideal = 1; o.wings.BUKO.minimum = 1;
     const open = new Set(['BUKO:3:18:00', 'BUKO:3:19:00']);

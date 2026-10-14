@@ -30,3 +30,8 @@ The site's existing-payment 409 was observed when trying Buko in the first custo
 Home → Book Available Now provides independent exact Mango/Buko date, court, start and 1–3-hour duration. The fourteen-court browser filters by wing and displays current per-slot prices; stale/missing observations remain UNKNOWN. Numeric release plans remain explicitly Mango. Next Release retains the shared compiler and saved literal authorizations.
 
 Operational audits, CLI previews and network diagnostics now require verified Chrome availability. Slot Watch injects its own isolated guest Chrome observer and cannot borrow dispatch security or worker credentials. Its matrix stays Mango scoped; Buko scheduled releases remain blocked. Live Shotgun has an explicit compatibility block pending proofless release and provider request-rate verification. See [availability dependency audit](AVAILABILITY_CALLER_AUDIT.md) and the modernization report for tested scopes and limitations.
+
+
+## Booking Setup v3 follow-up (October 15)
+
+Book Now, Next Release, Edit Release Plan and the Shotgun Test Lab are folded into Booking Setup. Both wings are configured in one goal with per-wing dates and minimum/ideal distinct courts. Available Now runs Mango checkouts (up to two courts each) and Buko checkouts (one exact court each) in separate browser contexts, so a pending checkout in one customer context cannot block the other (the observed HTTP 409). Check Availability no longer needs a prepared worker: a dedicated read-only observer window reads both wings (headless is refused by the site with HTTP 403). Live Shotgun is a Mango LIVE PILOT behind an owner attestation; Buko scheduled release and Buko proofless remain offline-only/blocked. See [Booking Setup v3](BOOKING_SETUP_V3.md).

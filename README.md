@@ -7,23 +7,7 @@ The existing single-court booking flow has live evidence, including the [Septemb
 
 ## Operator flow
 
-**Wing compatibility:** saved court numbers and release strategies refer to **Mango Wing**. Test Now also supports an explicit **Buko Wing → Book Available Now** request for one exact court, 1–3 hours, using fresh browser-session availability and proofs. Buko release scheduling, Shotgun and Proofless remain disabled. Official Mango and Buko UI flows were verified to QR; the new bot path is separately identified as offline validated. See [wing compatibility](docs/WING_COMPATIBILITY.md).
-
-Configure:
-
-1. Open **Strategy**, confirm the target date, and enter ideal start, earliest start, latest finish, duration order and court priority.
-2. Click **BUILD TARGET PLAN**, then review **PRIMARY** and backups. Known conflicts are excluded; any uncertain public evidence is labelled.
-3. Choose **NORMAL** or **SHOTGUN** and use its single save action. Quick Shotgun selects #1 and searches 20 down to 1 with the real compiler and prewarm forecast; every Wave 1 attempt must be READY, with zero at risk and zero omitted.
-4. Confirm **NORMAL STRATEGY SAVED ✓** or **SHOTGUN SAVED ✓**, read **What will happen at 8:00 AM?**, then **GO TO NEXT RELEASE**. The review is read-only and requires no second save.
-
-Run:
-
-1. Open **Next Release** and confirm the compact **Saved strategy** card.
-2. Select **Prepare for Release**. When preparation is complete, authorize Onda Terms for that exact run and select **Arm Release**.
-   Once the API runner starts, Next Release retains the exact authorized date and release time, shows armed/preparing or waiting status separately from child readiness, and keeps Emergency Stop available. The active runner's lock is not a request to reset; after it exits, any retained lock still requires review.
-3. Use **Live** for the human-readable result and grouped target attempts. Payment always remains manual; the bot stops at QR.
-
-Normal operator choices are visible first. Exact timing, worker groups, preparation assumptions, compiled authorization, calibration and raw forensics remain available in collapsed technical drawers. The saved compiled plan—not the summary text—is authoritative.
+The app has four destinations — **Home**, **Booking Setup**, **Activity**, **Settings**. Everything from goal to QR happens in Booking Setup: **1 Goal** (Available Now or Next Release; per-wing dates, minimum/ideal courts, acceptable courts and times, one-click read-only availability for both wings) → **2 Strategy** (Shotgun default for releases, Normal for open dates; checkout method separate, with per-wing capability) → **3 Customize** (full Shotgun editor, Precision, legacy saved-plan editor in a drawer) → **4 Browsers** → **5 Review & Run** (Strategy Inspector, one state-dependent action: Prepare → Authorize and Arm / Authorize and Book to QR → Emergency Stop, and the Booking Test Lab). Payment always remains manual; the bot stops at QR. See [Booking Setup v3](docs/BOOKING_SETUP_V3.md) for the guide, the capability matrix and remaining limitations, and [wing compatibility](docs/WING_COMPATIBILITY.md).
 
 ## Strategy Engine V2 (current)
 
