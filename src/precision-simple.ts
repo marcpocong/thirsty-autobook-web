@@ -1,3 +1,5 @@
+import { exactReleaseTarget } from './release-target.js';
+import type { Wing } from './court-registry.js';
 /**
  * Smart backups: the operator-facing model of a Precision Phase 3 plan.
  *
@@ -40,7 +42,7 @@ export interface SmartPublicEvidence { evidence: 'NOT_CHECKED' | 'NO_KNOWN_PUBLI
 export type SmartReleaseOffset = number;
 const validSmartReleaseOffset = (value: unknown) => Number.isSafeInteger(value) && (value as number) >= -2_000 && (value as number) <= 2_000;
 export interface SmartSlot {
-  court: number; start: string; durationHours: number;
+  court: number; start: string; durationHours: number; wing?: Wing; spaceId?: string; bookingDate?: string;
   /** Immediate attempts only: Release Offset in ms. Absent means normal (at the release time). */
   releaseOffsetMs?: SmartReleaseOffset;
   /** Immediate attempts only: 2–6 fan-out children, one Release Offset each (index order). Replaces releaseOffsetMs. */
@@ -62,7 +64,7 @@ export interface SmartDraft {
 }
 /** Structural copy of the config PrecisionPhase3Schema. */
 export interface SmartPhase3 {
-  candidates: Array<{ court: number; start: string; durationHours: number; priority: number; permissions: SmartPermissions; rateEvidence: SmartRateEvidence;
+  candidates: Array<{ court: number; start: string; durationHours: number; wing?: Wing; spaceId?: string; bookingDate?: string; priority: number; permissions: SmartPermissions; rateEvidence: SmartRateEvidence;
     publicEvidence?: SmartPublicEvidence }>;
   wave1: Array<{ workerId: SmartWorker; candidateIndex: number; releaseOffsetMs?: SmartReleaseOffset; fanOutOffsetsMs?: SmartReleaseOffset[] }>;
   standby: SmartWorker[];
@@ -86,9 +88,9 @@ export const smartRange = (start: string, hours: number) => `${smartTime(start)}
 export const smartPeso = (amount: number) => `₱${amount.toLocaleString('en-US')}`;
 export const smartSlotText = (slot: Pick<SmartSlot, 'court' | 'start' | 'durationHours'>) =>
   `Court ${slot.court} · ${smartTime(slot.start)} · ${slot.durationHours} hour${slot.durationHours === 1 ? '' : 's'}`;
-const smartKey = (slot: Pick<SmartSlot, 'court' | 'start' | 'durationHours'>) => `${slot.court}/${slot.start}/${slot.durationHours}`;
-const smartOverlap = (a: Pick<SmartSlot, 'court' | 'start' | 'durationHours'>, b: Pick<SmartSlot, 'court' | 'start' | 'durationHours'>) =>
-  a.court === b.court && smartHourOf(a.start) < smartHourOf(b.start) + b.durationHours && smartHourOf(b.start) < smartHourOf(a.start) + a.durationHours;
+const smartKey = (slot: SmartSlot) => logicalTargetId(slot);
+const smartOverlap = (a: SmartSlot, b: SmartSlot) =>
+  (a.wing ?? 'MANGO') === (b.wing ?? 'MANGO') && a.bookingDate === b.bookingDate && a.court === b.court && smartHourOf(a.start) < smartHourOf(b.start) + b.durationHours && smartHourOf(b.start) < smartHourOf(a.start) + a.durationHours;
 const smartDateText = (date: string) => /^\d{4}-\d{2}-\d{2}$/.test(date)
   ? new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(`${date}T12:00:00Z`)) : 'another date';
 const smartCount = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`;
@@ -168,6 +170,11 @@ export function confirmSmartRates(day: number | null, evening: number | null, st
 /** The evidence a slot will be authorized with, and a short operator-facing label. */
 export function smartRateFor(slot: SmartSlot, rates: SmartRateTable, targetDate: string, immediate: boolean): SmartRateView {
   const review = (label: string): SmartRateView => ({ evidence: null, label, needsReview: true });
+  if (slot.wing !== undefined || slot.bookingDate !== undefined) {
+    const rate = slot.rate;
+    if (!rate || rate.date !== targetDate || !rate.actionable || rate.status === 'REFERENCE' || rate.perHour.length !== slot.durationHours || rate.perHour.some(p => !Number.isFinite(p) || p <= 0)) return review('Exact targets require a wing/date price authority');
+    return { evidence: {...rate,perHour:[...rate.perHour]}, label: `Expected: ${smartPeso(rate.perHour.reduce((a,b)=>a+b,0))} · exact price authority`, needsReview:false };
+  }
   const hours = Array.from({ length: slot.durationHours }, (_, offset) => smartHourOf(slot.start) + offset);
   if (hours.every(hour => hour >= SMART_EVENING_FROM)) {
     const evidence: SmartRateEvidence = { source: SMART_EVENING_RATE_SOURCE, capturedAt: SMART_EVENING_RATE_CONFIRMED_AT,
@@ -203,8 +210,11 @@ export function compileSmartPlan(draft: SmartDraft, context: SmartContext): Smar
   if (!draft.immediate.length) problems.push('Add at least one immediate attempt.');
   if (draft.immediate.length > SMART_WORKERS.length) problems.push(`At most ${SMART_WORKERS.length} immediate attempts (workers A–G).`);
   if (slots.length > SMART_MAX_SLOTS) problems.push(`At most ${SMART_MAX_SLOTS} slots in total.`);
+  const scoped=slots.filter(({slot})=>slot.wing!==undefined||slot.bookingDate!==undefined||slot.spaceId!==undefined);
+  if(scoped.length && scoped.length!==slots.length) return {phase3:null,problems:['Do not mix legacy undated targets with exact targets. Migrate copies explicitly in the dual-wing planner.'],warnings:[],immediateWorkers:[],standby:[],budgets:{wave2:0,rescue:0,total:0},rates:[]};
   const seen = new Set<string>();
   for (const { slot, immediate } of slots) {
+    if (slot.wing !== undefined || slot.bookingDate !== undefined || slot.spaceId !== undefined) { try { exactReleaseTarget(slot, context.targetDate); } catch { problems.push('Exact target wing, UUID, date or range is invalid.'); continue; } }
     if (!Number.isInteger(slot.court) || slot.court < 1 || slot.court > 7 || !/^(0[89]|1\d|2[0-3]):00$/.test(slot.start) ||
       !Number.isInteger(slot.durationHours) || slot.durationHours < 1 || slot.durationHours > 3) { problems.push('A slot has an invalid court, start or duration.'); continue; }
     if (smartHourOf(slot.start) + slot.durationHours > 24) problems.push(`${smartSlotText(slot)} ends after midnight.`);
@@ -223,10 +233,10 @@ export function compileSmartPlan(draft: SmartDraft, context: SmartContext): Smar
   const shotgun = draft.shotgun?.enabled ? planShotgun(draft.shotgun,
     draft.immediate.map((slot,index)=>({logicalTargetId:logicalTargetId(slot),priority:slot.priority??index+1})),
     context.shotgunCapacity??{meaningfulSpacingMs:SHOTGUN_MEANINGFUL_SPACING_MS}) : undefined;
-  if(shotgun)problems.push(...shotgun.problems);
+  if(shotgun){problems.push(...shotgun.problems);if(!shotgun.shots.length)problems.push('Allocate at least one Shotgun attempt.');}
   const shotgunOffsetsByTarget=new Map<string,number[]>();
   for(const shot of shotgun?.shots??[]){const values=shotgunOffsetsByTarget.get(shot.logicalTargetId)??[];values.push(shot.configuredOffsetMs);shotgunOffsetsByTarget.set(shot.logicalTargetId,values);}
-  const groupCount=(slot:SmartSlot)=>shotgunOffsetsByTarget.has(logicalTargetId(slot))?shotgunWorkerGroups(shotgunOffsetsByTarget.get(logicalTargetId(slot))!).length:1;
+  const groupCount=(slot:SmartSlot)=>shotgun && draft.shotgun!.selectedTargetIds.includes(logicalTargetId(slot)) && !shotgunOffsetsByTarget.has(logicalTargetId(slot)) ? 0 : shotgunOffsetsByTarget.has(logicalTargetId(slot))?shotgunWorkerGroups(shotgunOffsetsByTarget.get(logicalTargetId(slot))!).length:1;
 
   // Workers: manual picks first, then the next ready worker in A–G order. Shotgun may assign multiple workers to one logical target;
   // each worker still owns at most SMART_MAX_FAN_OUT child tabs.
@@ -271,14 +281,14 @@ export function compileSmartPlan(draft: SmartDraft, context: SmartContext): Smar
   const auto = { wave2: Math.min(backupChoices, standby.length), rescue: retry ? reopened : 0 };
   const wave2 = draft.advanced.wave2 ?? auto.wave2, rescue = draft.advanced.rescue ?? auto.rescue;
   // Every fan-out child is a send; without fan-out this equals the number of immediate attempts.
-  const immediateSends = draft.immediate.reduce((sum,slot)=>sum+(shotgunOffsetsByTarget.get(logicalTargetId(slot))?.length??smartSlotOffsets(slot).length),0);
+  const immediateSends = draft.immediate.reduce((sum,slot)=>sum+(shotgunOffsetsByTarget.get(logicalTargetId(slot))?.length??(shotgun && draft.shotgun!.selectedTargetIds.includes(logicalTargetId(slot)) ? 0 : smartSlotOffsets(slot).length)),0);
   const total = draft.advanced.total ?? immediateSends + wave2 + rescue;
   const budgets = { wave2, rescue, total };
   if (![wave2, rescue, total].every(value => Number.isSafeInteger(value) && value >= 0) || wave2 > 7 || rescue > 7 || total > SMART_MAX_SENDS ||
     wave2 > standby.length || total < immediateSends || total > immediateSends + wave2 + rescue ||
     total > Math.max(SMART_MAX_SLOTS, immediateSends + wave2) + rescue || (rescue > 0 && !retry)) problems.push('Attempt limits are inconsistent. Check Advanced settings.');
 
-  const rates = slots.map(({ slot, immediate }) => smartRateFor(slot, draft.rates, context.targetDate, immediate));
+  const rates = slots.map(({ slot, immediate }) => smartRateFor(slot, draft.rates, slot.bookingDate ?? context.targetDate, immediate));
   const review = rates.filter(rate => rate.needsReview).length;
   if (review) problems.push(`Review rates: ${smartCount(review, 'slot needs', 'slots need')} a confirmed rate for ${smartDateText(context.targetDate)}.`);
   for (const rate of rates) if (rate.evidence && !/^[A-Za-z0-9 _./:-]{1,100}$/.test(rate.evidence.source)) problems.push('A rate source contains unsupported characters.');
@@ -290,12 +300,12 @@ export function compileSmartPlan(draft: SmartDraft, context: SmartContext): Smar
     warnings.push(`All ${selected.length} immediate attempts share ${smartRange(selected[0]!.start, selected[0]!.durationHours)}. A time-wide unavailable block would affect every attempt.`);
 
   const phase3: SmartPhase3 | null = problems.length ? null : {
-    candidates: slots.map(({ slot }, index) => ({ court: slot.court, start: slot.start, durationHours: slot.durationHours, priority: priorities[index]!,
+    candidates: slots.map(({ slot }, index) => ({ court: slot.court, start: slot.start, durationHours: slot.durationHours, ...(slot.wing !== undefined || slot.bookingDate !== undefined || slot.spaceId !== undefined ? exactReleaseTarget(slot, context.targetDate) : {}), priority: priorities[index]!,
       permissions: permissions[index]!, rateEvidence: { ...rates[index]!.evidence!, perHour: [...rates[index]!.evidence!.perHour] },
       ...(slot.publicEvidence ? { publicEvidence: { ...slot.publicEvidence } } : {}) })),
     wave1: draft.immediate.flatMap((slot,candidateIndex)=>{
       const offsets=shotgunOffsetsByTarget.get(logicalTargetId(slot));
-      const groups=offsets?shotgunWorkerGroups(offsets):[smartSlotOffsets(slot)];
+      const groups=offsets?shotgunWorkerGroups(offsets):shotgun && draft.shotgun!.selectedTargetIds.includes(logicalTargetId(slot))?[]:[smartSlotOffsets(slot)];
       return groups.map((values,group)=>({workerId:workerGroups[candidateIndex]![group]!,candidateIndex,
         ...(values.length>1?{fanOutOffsetsMs:[...values]}:values[0]?{releaseOffsetMs:values[0]}:{})}));
     }),
@@ -312,7 +322,7 @@ export function compileSmartPlan(draft: SmartDraft, context: SmartContext): Smar
 export function smartDraftFromPhase3(saved: SmartPhase3, context: SmartContext): SmartDraft {
   const assigned = new Map<number,SmartWorker>();for(const value of saved.wave1)if(!assigned.has(value.candidateIndex))assigned.set(value.candidateIndex,value.workerId);
   const plain = (index: number): SmartSlot => { const c = saved.candidates[index]!;
-    return { court: c.court, start: c.start, durationHours: c.durationHours, ...(c.publicEvidence ? { publicEvidence: { ...c.publicEvidence } } : {}) }; };
+    return { court: c.court, start: c.start, durationHours: c.durationHours, ...(c.wing ? {wing:c.wing,spaceId:c.spaceId,bookingDate:c.bookingDate} : {}), ...(c.publicEvidence ? { publicEvidence: { ...c.publicEvidence } } : {}) }; };
   const order = (indices: number[]) => indices.sort((a, b) => saved.candidates[a]!.priority - saved.candidates[b]!.priority || a - b);
   const immediateIndex = [...new Set(saved.wave1.map(value => value.candidateIndex))];
   const backupIndex = order(saved.candidates.map((_, index) => index).filter(index => !assigned.has(index)));

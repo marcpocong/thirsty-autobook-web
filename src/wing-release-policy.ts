@@ -6,21 +6,35 @@ import type { AvailabilitySnapshot } from './api-booking/types.js';
 export interface WingReleasePolicy {
   wing: Wing; timezone: 'Asia/Manila'; horizonOffsetDays: number;
   releaseTime: string; evidence: string;
+  status?: 'VERIFIED' | 'PROVISIONAL' | 'UNKNOWN'; publicLabel?: string; observedAt?: string;
 }
 export const WING_RELEASE_POLICIES: Readonly<Record<Wing, WingReleasePolicy | null>> = Object.freeze({
   MANGO: Object.freeze({ wing: 'MANGO', timezone: 'Asia/Manila', horizonOffsetDays: 2,
-    releaseTime: '08:00:00', evidence: 'Existing Mango offset; public facility metadata 2026-10-14: 3 days, 08:00:00' }),
-  // Observed Buko dates through Oct 19 at 02:xx on Oct 14 do not prove
-  // a recurring release time, rolling window, or inclusive day count.
-  BUKO: null,
+    releaseTime: '08:00:00', status: 'VERIFIED', publicLabel: '3 days inclusive', evidence: 'Existing Mango offset; public facility metadata 2026-10-14: 3 days, 08:00:00' }),
+  // Owner-observed banner horizon supports planning; a recurring 08:00 transition
+  // remains unverified. Provisional dates cannot authorize live submissions.
+  BUKO: Object.freeze({ wing: 'BUKO', timezone: 'Asia/Manila', horizonOffsetDays: 6, releaseTime: '08:00:00', status: 'PROVISIONAL', publicLabel: 'five days in advance (counting convention unresolved)', observedAt: '2026-10-14', evidence: 'Official Onda booking-page banner independently read in Chrome 2026-10-14: Mango Oct 16 / Buko Oct 20; 08:00 Buko rollover remains hypothetical' }),
 });
 export function releaseForTarget(date: string, wing: Wing, policy = WING_RELEASE_POLICIES[wing]): DateTime {
-  if (!policy || policy.wing !== wing || policy.timezone !== 'Asia/Manila' || !policy.evidence.trim() ||
+  if (!policy || policy.status === 'UNKNOWN' || policy.wing !== wing || policy.timezone !== 'Asia/Manila' || !policy.evidence.trim() ||
     !Number.isSafeInteger(policy.horizonOffsetDays) || policy.horizonOffsetDays < 0 || policy.horizonOffsetDays > 31 ||
     !/^(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(policy.releaseTime)) throw Error('WING_RELEASE_POLICY_UNKNOWN');
   const target = DateTime.fromISO(date, { zone: policy.timezone });
   if (!target.isValid || target.toISODate() !== date) throw Error('WING_TARGET_DATE_INVALID');
   return DateTime.fromISO(`${target.minus({ days: policy.horizonOffsetDays }).toISODate()}T${policy.releaseTime}`, { zone: policy.timezone });
+}
+/** Estimates never authorize submission. Policies without a status are legacy test inputs only. */
+export function assertVerifiedRelease(date: string, wing: Wing, policy = WING_RELEASE_POLICIES[wing]): DateTime {
+  if (policy?.status !== 'VERIFIED') throw Error('WING_RELEASE_POLICY_UNVERIFIED');
+  return releaseForTarget(date, wing, policy);
+}
+export function nextWingRelease(now: Date, wing: Wing) {
+  const policy = WING_RELEASE_POLICIES[wing];
+  if (!policy || policy.status === 'UNKNOWN') throw Error('WING_RELEASE_POLICY_UNKNOWN');
+  const local = DateTime.fromJSDate(now, {zone: 'Asia/Manila'});
+  let release = DateTime.fromISO(`${local.toISODate()}T${policy.releaseTime}`, {zone:'Asia/Manila'});
+  if (release.toMillis() <= now.getTime()) release = release.plus({days:1});
+  return { releaseAt: release.toISO()!, bookingDate: release.plus({days:policy.horizonOffsetDays}).toISODate()!, status: policy.status };
 }
 export type WingTargetState = 'AVAILABLE NOW' | 'NOT YET RELEASED' | 'FULLY BOOKED' | 'UNKNOWN / NEEDS VERIFICATION';
 export interface WingWorkflow { state: WingTargetState; workflow: 'BOOK_AVAILABLE_NOW' | 'PREPARE_FOR_RELEASE' | 'NONE'; releaseAt?: string }
@@ -47,10 +61,12 @@ export function wingWorkflow(input: { wing: Wing; date: string; courts: number[]
   if (selected.some(slot => slot?.isAvailable)) return unknown;
   const policy = input.policy === undefined ? WING_RELEASE_POLICIES[wing] : input.policy;
   if (selected.every(slot => slot !== undefined)) {
+    if (policy?.status !== 'VERIFIED') return unknown;
     try { if (now.getTime() < releaseForTarget(date,wing,policy).toMillis()) return unknown; }
     catch { return unknown; }
     return { state: 'FULLY BOOKED', workflow: 'NONE' };
   }
+  if (policy?.status !== 'VERIFIED') return unknown;
   let release: DateTime;
   try { release = releaseForTarget(date, wing, policy); } catch { return unknown; }
   // Partial publication is not an unreleased wing; never schedule its missing cells.

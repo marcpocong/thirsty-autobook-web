@@ -12,6 +12,7 @@ import type { CheckoutDiagnostic } from './checkout-diagnostics.js';
  */
 export type SubmissionState = 'dispatching' | 'armed' | 'unknown' | 'verified' | 'rejected';
 export interface SanitizedSubmissionAttempt {
+  executionMode?:'OFFLINE_INTERCEPTED';
   wing?: Wing;
   spaceIds?: string[];
   attemptId: string;
@@ -73,8 +74,9 @@ export function delegatedSubmissionPermit(key: string): SubmissionPermit {
 const ONE_SHOT_FILE = 'supervised-one-shot.json';
 
 function validAttempt(attempt: SanitizedSubmissionAttempt, stage: SanitizedSubmissionAttempt['stage']): boolean {
+  if (attempt.executionMode !== undefined && attempt.executionMode !== 'OFFLINE_INTERCEPTED') return false;
   if (attempt.wing !== undefined && !['MANGO','BUKO'].includes(attempt.wing)) return false;
-  if (attempt.wing === 'BUKO' && (stage !== 'dispatching' || attempt.courtIds?.length !== 1 ||
+  if (attempt.wing === 'BUKO' && (stage !== 'dispatching' && attempt.executionMode !== 'OFFLINE_INTERCEPTED' || attempt.courtIds?.length !== 1 ||
       attempt.spaceIds?.length !== 1 || courtBySpace(attempt.spaceIds[0]!)?.wing !== 'BUKO' ||
       courtBySpace(attempt.spaceIds[0]!)?.number !== attempt.courtIds[0])) return false;
   return /^[a-f0-9]{64}$/.test(attempt.attemptId) && /^[a-f0-9]{64}$/.test(attempt.planFingerprint) &&

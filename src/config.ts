@@ -30,7 +30,7 @@ const precisionWorker=z.enum(['A','B','C','D','E','F','G']);
 const rateEvidence=z.object({source:z.string().min(1).max(100),capturedAt:z.iso.datetime(),status:z.enum(['TARGET_DATE_PUBLISHED','VENUE_SCHEDULE','OPERATOR_CONFIRMED','REFERENCE']),
   date:z.iso.date(),perHour:z.array(z.number().positive()).min(1).max(3),actionable:z.boolean()}).strict();
 export const PrecisionPhase3Schema=z.object({
-  candidates:z.array(z.object({court:z.number().int().min(1).max(7),start:hour,durationHours:z.number().int().min(1).max(3),
+  candidates:z.array(z.object({wing:z.enum(['MANGO','BUKO']).optional(),spaceId:z.uuid().optional(),bookingDate:z.iso.date().optional(),court:z.number().int().min(1).max(7),start:hour,durationHours:z.number().int().min(1).max(3),
     priority:z.number().int().min(1),permissions:z.object({wave1:z.boolean(),wave2:z.boolean(),rescue:z.boolean()}).strict(),rateEvidence,
     // Planning-time public evidence; the override marker keeps a deliberately force-included conflicting slot at freeze.
     publicEvidence:z.object({evidence:z.enum(['NOT_CHECKED','NO_KNOWN_PUBLIC_CONFLICT','KNOWN_PUBLIC_BOOKING_CONFLICT','UNKNOWN_PUBLIC_QUERY_FAILED','PUBLISHED_OPEN','PUBLISHED_UNAVAILABLE']),

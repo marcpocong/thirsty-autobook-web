@@ -1,0 +1,7 @@
+import {z} from 'zod';
+const offset=z.number().int().min(-2000).max(0);
+export const DualWingPlanSchema=z.object({version:z.literal(2),purpose:z.enum(['RELEASE_PLAN','CURRENT_SLOT_REHEARSAL']),objective:z.enum(['ANY_ONE','ONE_PER_WING']),releaseAt:z.iso.datetime({offset:true}).optional(),
+  targets:z.array(z.object({wing:z.enum(['MANGO','BUKO']),spaceId:z.uuid(),bookingDate:z.iso.date(),court:z.number().int().min(1).max(7),start:z.string().regex(/^(0[89]|1\d|2[0-3]):00$/),durationHours:z.number().int().min(1).max(3),priority:z.number().int().min(1),
+    priceAuthority:z.object({source:z.string().min(1).max(100),capturedAt:z.iso.datetime(),perHour:z.array(z.number().positive()).min(1).max(3),kind:z.enum(['OPERATOR_CONFIRMED','TARGET_DATE_PUBLISHED','OFFLINE_FIXTURE'])}).strict()}).strict()).min(1).max(7),
+  shotgun:z.object({enabled:z.literal(true),budget:z.number().int().min(1).max(42),allocationMode:z.enum(['EQUAL','PRIORITY_WEIGHTED','CUSTOM']),selectedTargetIds:z.array(z.string().min(1).max(160)).min(1).max(7),customCounts:z.record(z.string().max(160),z.number().int().min(0).max(42)).optional(),
+    windowStartMs:offset,windowEndMs:offset,timingMode:z.enum(['AUTO','DENSE_CORE','TIGHT','BALANCED','WIDE','CUSTOM']),customOffsetsMs:z.array(offset).max(42).optional(),timingCapacityOverride:z.boolean().optional(),allowStandbyConsumption:z.boolean().optional(),capacityOverride:z.boolean().optional()}).strict()}).strict();

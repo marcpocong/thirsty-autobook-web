@@ -342,8 +342,10 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
     const networkDurationMs = Math.max(0, Math.round(performance.now() - networkStarted));
     if(checkout && lifecycle.onResponseSafety){
       let raw:unknown;try{if(result.status===200 && result.body.length<=MAX_RESPONSE_BYTES)raw=JSON.parse(result.body);}catch{}
+      // Preserve this bounded signal before bookkeeping is deferred to T+1s.
+      const paymentInProgress=result.status===409 && /(?:payment|checkout).*(?:already|in progress)|(?:already|existing).*(?:payment|checkout)/i.test(result.body.slice(0,4096));
       lifecycle.onResponseSafety(raw,result.status===200?undefined:new BrowserSessionTransportError('ONDA_HTTP_STATUS_INVALID',true,
-        {status:result.status,category:'http-rejection',contentKind:'json',responseSource:'application',errorHint:'other'},isPayloadRejection(result)||confirmedApplicationConflict(result)));
+        {status:result.status,category:'http-rejection',contentKind:'json',responseSource:'application',errorHint:paymentInProgress?'payment-in-progress':'other'},isPayloadRejection(result)||confirmedApplicationConflict(result)));
     }
     await lifecycle.beforeResponseBookkeeping?.();
     const diagnostic = result.status === 200 ? undefined : checkoutDiagnostic(result);

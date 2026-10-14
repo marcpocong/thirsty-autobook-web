@@ -1,0 +1,173 @@
+import { ApiAutomationLock } from './api-booking/api-automation-lock.js';
+import { DualWingPlanSchema } from './dual-wing-plan-schema.js';
+import { exactReleaseTarget } from './release-target.js';
+import { assertLabSlotEvidence } from './lab-slot-evidence.js';
+import { createHash } from 'node:crypto';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { chromium } from 'playwright';
+import { launchOfflineChrome, closeOfflineChrome, findChrome, syntheticSecurityPreparation, cpuSnapshot, busyPercent, type OfflineChrome } from '../scripts/bench-support.js';
+import { compileDualWingPlan, type DualWingPlan } from './dual-wing-plan.js';
+import { exactShotgunTopology, assertShotgunSchedule } from './shotgun-timing.js';
+import { freezePrecisionRace, type PrecisionTarget } from './api-booking/precision-race.js';
+import { armPrecisionRace, dispatchArmedPrecisionRace } from './api-booking/armed-dispatch.js';
+import { prooflessReleasePlan, type ProoflessCheckoutRequest } from './api-booking/proofless-checkout.js';
+import { DurableSubmissionJournal } from './api-booking/durable-submission-journal.js';
+import { OndaBrowserSessionTransport } from './api-booking/browser-session-transport.js';
+import { TrustedReleaseClock } from './release-clock.js';
+import { CriticalPathRecorder } from './api-booking/critical-path.js';
+import { FACILITY_ID, courtBySpace } from './court-registry.js';
+import type { BookingPlan } from './api-booking/types.js';
+import type { WorkerId } from './workers.js';
+
+export const LAB_SCENARIOS = ['ALL_REJECTED','FIRST_SUCCESS','LATER_SUCCESS','MANGO_SUCCESS','BUKO_SUCCESS','BOTH_SUCCESS','UNKNOWN','PAYMENT_IN_PROGRESS','THROTTLE','PREPARE_FAILED','WORKER_UNAVAILABLE','MISSED_TRIGGER','TWO_IN_FLIGHT_SUCCESS','PREVIOUS_HOLD','DUPLICATE_TARGET','WRONG_WING','STALE_AVAILABILITY','MISSING_AVAILABILITY'] as const;
+export type LabScenario = typeof LAB_SCENARIOS[number];
+export interface LabRequest {plan:DualWingPlan;scenario:LabScenario;countdownSeconds:number}
+export interface LabResult {
+  label:'OFFLINE / INTERCEPTED'; runId:string; scenario:LabScenario; objective:string;
+  planned:number;initiated:number;omitted:number;missedDeadlines:number;compressedPairs:number;
+  timing:{p50:number|null;p95:number|null;max:number|null}; cpuBusyPercent:number|null;
+  preparation:Array<{attemptId:string;ready:boolean;durationMs?:number;code?:string}>;
+  wings:Array<{wing:string;planned:number;initiated:number;holds:number;complete:boolean}>;
+  outcomes:Array<{targetId:string;wing:string;date:string;court:number;worker:string;offsetMs:number;state:string;code?:string}>;
+  warnings:string[]; topologyFingerprint:string; triggerAt:string; authorizationFingerprint:string;
+}
+export function validateLabRequest(input:LabRequest) {
+  if (!input || !LAB_SCENARIOS.includes(input.scenario) || !Number.isSafeInteger(input.countdownSeconds) || input.countdownSeconds<8 || input.countdownSeconds>30) throw Error('LAB_REQUEST_INVALID');
+  DualWingPlanSchema.parse(input.plan);
+  const compiled=compileDualWingPlan(input.plan);
+  if(input.plan.purpose==='CURRENT_SLOT_REHEARSAL')for(const target of input.plan.targets)if(target.priceAuthority.kind==='TARGET_DATE_PUBLISHED')assertLabSlotEvidence(target);
+  if (!compiled.phase3 || !compiled.shotgun || compiled.problems.length) throw Error(`LAB_PLAN_INVALID: ${compiled.problems.join(' ')}`);
+  const topology=exactShotgunTopology(compiled.phase3,compiled.shotgun.shots);assertShotgunSchedule(topology,compiled.shotgun.shots);
+  return {compiled,phase3:compiled.phase3,topology};
+}
+/** Exact Buko/Mango payload rehearsal, never a claim that a proofless provider method works. */
+export function offlineCandidatePlan(candidate:NonNullable<ReturnType<typeof compileDualWingPlan>['phase3']>['candidates'][number]):BookingPlan {
+  exactReleaseTarget(candidate);
+  if(candidate.rateEvidence.date!==candidate.bookingDate||candidate.rateEvidence.perHour.length!==candidate.durationHours||candidate.rateEvidence.perHour.some(p=>!Number.isFinite(p)||p<=0))throw Error('LAB_PRICE_AUTHORITY_INVALID');
+  const base=prooflessReleasePlan({mode:'standard',targetDate:candidate.bookingDate!,durationHours:candidate.durationHours,courtCount:1,
+    preferredStartTimes:[candidate.start],fallbackStartTimes:[],courtPriority:[candidate.court],fallbackCourts:[],exactCourts:[[candidate.court]],maximumTotalPrice:Infinity,currency:'PHP'});
+  const source=base.courts[0]!, prices=candidate.rateEvidence.perHour;
+  const slots=source.slots.map((slot,index)=>({...slot,spaceId:candidate.spaceId!,price:prices[index]!}));
+  const court={...source,spaceId:candidate.spaceId!,slots,price:prices.reduce((a,b)=>a+b,0)};
+  return {...base,wing:candidate.wing,courts:[court],chunks:[{...base.chunks[0]!,courts:[court],totalPrice:court.price}],totalPrice:court.price};
+}
+/** Fixtures mirror the real validator's required evidence. They never navigate to a simulated QR. */
+export function simulatedPending(request:ProoflessCheckoutRequest, serial:number, now=Date.now()) {
+  const ids=request.items.map((_,i)=>`offline-${serial}-${i}`), first=request.items[0]!, session=`offline-session-${serial}`;
+  return {success:true,bookings:request.items.map((item,i)=>({id:ids[i],booking_no:`offline-number-${serial}-${i}`,customer_id:request.customerId,
+    space_id:item.spaceId,facility_id:item.facilityId,date:item.date,start_time:`${item.startTime}:00`,end_time:`${item.endTime}:00`,duration:60,
+    rate:item.rate,guest_count:1,booking_status:'pending',payment_status:'pending',booking_session_id:session,hold_expires_at:new Date(now+600_000).toISOString()})),
+    bookingSessions:[{requestSessionRef:'session_1',bookingSessionId:session,facilityId:first.facilityId,spaceId:first.spaceId,date:first.date,
+      startTime:`${first.startTime}:00`,endTime:`${request.items.at(-1)!.endTime}:00`,durationHours:request.items.length,bookingIds:ids}],
+    transaction:{id:`offline-transaction-${serial}`,reference:`offline-number-${serial}-0`,amount:request.items.reduce((a,b)=>a+b.chargedAmount,0),status:'pending'},
+    trustedTotalAmount:request.items.reduce((a,b)=>a+b.chargedAmount,0)};
+}
+const percentile=(values:number[],q:number)=>values.length?[...values].sort((a,b)=>a-b)[Math.min(values.length-1,Math.ceil(values.length*q)-1)]!:null;
+
+/** Child-process only: cwd must be its fresh isolated run directory. No production
+ * config, profiles, identities, holds, lock or journals are loaded. */
+export async function runShotgunLab(input:LabRequest, options:{directory:string;runId:string;isAborted:()=>boolean;onPhase?:(phase:string)=>void}):Promise<LabResult> {
+  const {compiled,phase3,topology}=validateLabRequest(input);
+  if(process.cwd()!==options.directory)throw Error('LAB_ISOLATED_CWD_REQUIRED');
+  const sessions:OfflineChrome[]=[];
+  let lock:ApiAutomationLock|undefined;
+  const prepared:LabResult['preparation']=[];
+  const observed:Array<{wing:string;at:number;offset:number;targetId:string}>=[];
+  const outcomes:LabResult['outcomes']=[];
+  const waves=Object.keys(topology.tabsPerWorker);
+  const summary=(triggerMs:number,fingerprint:string,cpu:number|null=null):LabResult=>({label:'OFFLINE / INTERCEPTED',runId:options.runId,scenario:input.scenario,objective:input.plan.objective,
+    planned:topology.shots.length,initiated:observed.length,omitted:topology.shots.length-observed.length,
+    missedDeadlines:outcomes.filter(o=>o.code==='SHOTGUN_TRIGGER_MISSED').length,
+    compressedPairs:[...observed].sort((a,b)=>a.offset-b.offset).slice(1).filter((o,i)=>{const previous=[...observed].sort((a,b)=>a.offset-b.offset)[i]!;return o.at-previous.at<Math.max(1,(o.offset-previous.offset)/2);}).length,
+    timing:{p50:percentile(observed.map(o=>o.at-(triggerMs+o.offset)),.5),p95:percentile(observed.map(o=>o.at-(triggerMs+o.offset)),.95),max:observed.length?Math.max(...observed.map(o=>o.at-(triggerMs+o.offset))):null},cpuBusyPercent:cpu,
+    preparation:prepared,wings:(['MANGO','BUKO'] as const).filter(wing=>input.plan.targets.some(t=>t.wing===wing)).map(wing=>({wing,
+      planned:topology.shots.filter(s=>compiled.targets.find(t=>t.id===s.logicalTargetId)?.wing===wing).length,initiated:observed.filter(o=>o.wing===wing).length,
+      holds:outcomes.filter(o=>o.wing===wing&&o.state==='HOLD_VERIFIED_QR_ATTENTION').length,complete:outcomes.some(o=>o.wing===wing&&o.state==='HOLD_VERIFIED_QR_ATTENTION')})),
+    outcomes,warnings:[...compiled.warnings,'Security preparation is synthetic. Local timing is not provider receipt or acceptance.','Live multi-attempt checkout is blocked; this test cannot validate provider request-rate permission.'],
+    topologyFingerprint:topology.fingerprint,triggerAt:new Date(triggerMs).toISOString(),authorizationFingerprint:fingerprint});
+  if(['PREVIOUS_HOLD','DUPLICATE_TARGET','STALE_AVAILABILITY','MISSING_AVAILABILITY'].includes(input.scenario)) {
+    // Run actual validation/refusal paths before creating browser workers.
+    if(input.scenario==='DUPLICATE_TARGET') {
+      const duplicate=compileDualWingPlan({...input.plan,targets:[...input.plan.targets,input.plan.targets[0]!]});
+      if(!duplicate.problems.some(p=>p.includes('twice')))throw Error('LAB_DUPLICATE_GUARD_FAILED');
+    } else if(input.scenario==='STALE_AVAILABILITY'||input.scenario==='MISSING_AVAILABILITY') {
+      const target={...input.plan.targets[0]!,priceAuthority:{...input.plan.targets[0]!.priceAuthority,kind:'TARGET_DATE_PUBLISHED' as const,capturedAt:new Date(Date.now()-16000).toISOString(),...(input.scenario==='MISSING_AVAILABILITY'?{perHour:[]}: {})}};
+      let refused=false;try{assertLabSlotEvidence(target);}catch{refused=true;}if(!refused)throw Error('LAB_EVIDENCE_GUARD_FAILED');
+    } else if(input.scenario==='PREVIOUS_HOLD') {
+      const journal=new DurableSubmissionJournal(join(options.directory,'simulated-retained-hold'));
+      const key=DurableSubmissionJournal.key(FACILITY_ID,input.plan.targets[0]!.spaceId,input.plan.targets[0]!.bookingDate,input.plan.targets[0]!.start,`${String(Number(input.plan.targets[0]!.start.slice(0,2))+input.plan.targets[0]!.durationHours).padStart(2,'0')}:00`);
+      await journal.begin(key,new Date(),{attemptId:key,planFingerprint:key,targetDate:input.plan.targets[0]!.bookingDate,courtIds:[input.plan.targets[0]!.court],hourlyBoundaries:[],expectedBookingCount:1,maximumAmount:700,stage:'dispatching'});
+      await journal.mark(key,'verified',new Date(),undefined,{success:true,bookingIds:['offline-previous'],bookingNumbers:['offline'],bookingSessionIds:['offline'],holdExpiresAt:[new Date(Date.now()+600000).toISOString()],validationCode:'OFFLINE_ONLY'});
+      if((await journal.peekDisposition(key))!=='blocked')throw Error('LAB_RETAINED_HOLD_GUARD_FAILED');
+    }
+    const result=summary(Date.now(),'preflight-refusal');result.warnings.push(`SIMULATED_PREFLIGHT_REFUSED: ${input.scenario}`);return result;
+  }
+  try {
+    options.onPhase?.('Preparing isolated Chrome workers; all external networking blocked');
+    for(const [index,worker] of waves.entries()) {
+      if(options.isAborted())throw Error('LAB_STOPPED');
+      const session=await launchOfflineChrome({chromium,chromePath:findChrome(undefined,chromium.executablePath()),scratch:options.directory,index,tabs:topology.tabsPerWorker[worker]!,basePort:30544});
+      sessions.push(session);
+      // Context-wide interception additionally blocks every non-fixture route.
+      await session.browser.contexts()[0]!.route('**/*',route=>route.abort());
+      for(const [tab,page] of session.pages.entries()) {
+        await page.unroute('https://app.onda.fit/**');
+        const shot=topology.shots.find(s=>s.workerId===worker&&s.fanOutIndex===tab)!;
+        await page.route('**/*',async route=>{
+          const req=route.request();
+          if(req.method()!=='POST'||req.url()!=='https://app.onda.fit/api/bookings/public-checkout'){await route.abort();return;}
+          const request=req.postDataJSON() as ProoflessCheckoutRequest;
+          const target=compiled.targets.find(t=>t.id===shot.logicalTargetId)!;
+          if(request.items.some(item=>item.spaceId!==target.spaceId||item.date!==target.bookingDate)||courtBySpace(request.items[0]!.spaceId)?.wing!==target.wing)throw Error('LAB_PAYLOAD_IDENTITY_MISMATCH');
+          const ordinal=observed.length+1;
+          observed.push({wing:target.wing,at:req.timing().startTime,offset:shot.configuredOffsetMs,targetId:target.id});
+          if(input.scenario==='TWO_IN_FLIGHT_SUCCESS')await new Promise(done=>setTimeout(done,800));
+          let status=409,body:unknown={success:false,error:'Slot unavailable (offline fixture)'};
+          const success=input.scenario==='FIRST_SUCCESS'&&ordinal===1||input.scenario==='LATER_SUCCESS'&&ordinal===3||input.scenario==='MANGO_SUCCESS'&&target.wing==='MANGO'||input.scenario==='BUKO_SUCCESS'&&target.wing==='BUKO'||input.scenario==='BOTH_SUCCESS'||input.scenario==='TWO_IN_FLIGHT_SUCCESS'&&ordinal<=2||input.scenario==='WRONG_WING'&&ordinal===1;
+          if(success){status=200;body=simulatedPending(request,ordinal);if(input.scenario==='WRONG_WING')(body as ReturnType<typeof simulatedPending>).bookings[0]!.space_id='wrong-wing-space';}
+          if(ordinal===1&&input.scenario==='UNKNOWN'){status=200;body={success:true};}
+          if(ordinal===1&&input.scenario==='THROTTLE'){status=429;body={success:false,error:'Too many requests'};}
+          if(ordinal===1&&input.scenario==='PAYMENT_IN_PROGRESS')body={success:false,error:'Payment already in progress'};
+          await route.fulfill({status,contentType:'application/json',body:JSON.stringify(body)});
+        });
+      }
+    }
+    const triggerMs=Date.now()+input.countdownSeconds*1000;
+    const plans=phase3.wave1.flatMap(a=> {
+      const candidate=phase3.candidates[a.candidateIndex]!,plan=offlineCandidatePlan(candidate);
+      const target:PrecisionTarget={court:candidate.court,start:candidate.start,durationHours:candidate.durationHours,workerId:a.workerId,end:plan.endTime,assumedAmount:plan.totalPrice,
+        targetKey:DurableSubmissionJournal.key(FACILITY_ID,candidate.spaceId!,candidate.bookingDate!,candidate.start,plan.endTime)};
+      return (a.fanOutOffsetsMs??[a.releaseOffsetMs??0]).map(offset=>({target:{...target,releaseOffsetMs:offset},plan,dispatchTimingPolicy:'SHOTGUN_STRICT' as const}));
+    });
+    const race=freezePrecisionRace(input.plan.targets[0]!.bookingDate,triggerMs,plans,{executionMode:'OFFLINE_INTERCEPTED',objective:input.plan.objective,authorizationFingerprint:createHash('sha256').update(JSON.stringify(input.plan)).digest('hex')});
+    const clock=TrustedReleaseClock.fromOffset(0,{method:'offline-test-trigger-clock',sampleCount:0});
+    const pageOf=(a:{target:PrecisionTarget;fanOutIndex:number})=>sessions[waves.indexOf(a.target.workerId)]!.pages[a.fanOutIndex]!;
+    const recorder=new CriticalPathRecorder(triggerMs,clock.monotonicDeadline(triggerMs),clock.offsetMs-clock.wallDisagreementMs(),race.attempts.map(a=>a.id));
+    const transports=new Map(race.attempts.map(a=>[a.id,new OndaBrowserSessionTransport(pageOf(a),syntheticSecurityPreparation(pageOf(a),0,0),async()=>{}, {},o=>recorder.observeTransport(a.id,o))]));
+    lock=await ApiAutomationLock.acquire('standard',waves as WorkerId[]);
+    const armed=await armPrecisionRace(race,{lock,journalRoot:join(options.directory,'journals'),releaseMs:triggerMs,now:()=>clock.nowMs(),customerFor:worker=>({
+      clientId:`00000000-0000-4000-8000-${String(worker.charCodeAt(0)).padStart(12,'0')}`,customerId:`00000000-0000-4000-9000-${String(worker.charCodeAt(0)).padStart(12,'0')}`,
+      customerEmail:`offline-${worker}@example.invalid`,customerPhone:'09000000000',customerFirstName:'Offline',customerLastName:'Fixture'})});
+    const before=cpuSnapshot();
+    options.onPhase?.(`OFFLINE countdown: ${input.countdownSeconds}s to test trigger; ${armed.attempts.length} frozen attempts`);
+    const result=await dispatchArmedPrecisionRace(armed,{clock,prewarmLeadMs:6000,prewarmPolicy:{concurrency:4,perGroupConcurrency:1,tierBarrierTimeoutMs:Infinity},isAborted:options.isAborted,
+      transportFor:(_worker,a)=>transports.get(a.attempt.id)!,prewarm:async a=>{
+        const started=performance.now();
+        try {
+          if(a.target.workerId===waves[0]&&['PREPARE_FAILED','WORKER_UNAVAILABLE'].includes(input.scenario))throw Error(input.scenario);
+          await transports.get(a.attempt.id)!.prepareCheckoutContext();
+          if(a.target.workerId===waves[0]&&input.scenario==='MISSED_TRIGGER')await pageOf(a.attempt).evaluate(when=>{setTimeout(()=>{const end=performance.now()+200;while(performance.now()<end){}},Math.max(0,when-Date.now()-25));},a.triggerMs);
+          prepared.push({attemptId:a.attempt.id,ready:true,durationMs:performance.now()-started});
+        } catch(error){prepared.push({attemptId:a.attempt.id,ready:false,code:(error as Error).message});throw error;}
+      },afterFire:()=>lock!.dispatching(),onVerifiedHold:async(_attempt,verified)=>{await lock!.held(verified.holdExpiresAt);return {state:'HOLD_VERIFIED_QR_ATTENTION'};}});
+    for(const row of result.results) {
+      const c=compiled.targets.find(t=>t.spaceId===row.attempt.plan.courts[0]!.spaceId&&t.bookingDate===row.attempt.plan.targetDate&&t.start===row.attempt.plan.startTime)!;
+      outcomes.push({targetId:c.id,wing:c.wing,date:c.bookingDate,court:c.court,worker:row.attempt.target.workerId,offsetMs:row.attempt.target.releaseOffsetMs??0,state:row.state,...(row.code?{code:row.code}:{})});
+    }
+    // Independent browser request-start measurements, captured by the same recorder.
+    const rows=new Map(recorder.rows().map(r=>[r.workerId,r]));
+    for(const o of observed){const a=race.attempts.find(a=>a.target.releaseOffsetMs===o.offset&&a.plan.courts[0]!.spaceId===compiled.targets.find(t=>t.id===o.targetId)!.spaceId);const row=a&&rows.get(a.id);if(row?.browserRequestStartMs!==null&&row?.browserRequestStartMs!==undefined)o.at=triggerMs+row.browserRequestStartMs;}
+    return summary(triggerMs,race.fingerprint,busyPercent(before,cpuSnapshot()));
+  } finally {await Promise.allSettled(sessions.map(s=>closeOfflineChrome(s)));await lock?.release();}
+}

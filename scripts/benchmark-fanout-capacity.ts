@@ -1,3 +1,5 @@
+import { offlineCandidatePlan } from '../src/shotgun-test-lab.js';
+import type { SmartPhase3 } from '../src/precision-simple.js';
 import {exactShotgunTopology,assertShotgunSchedule,summarizeShotgunTiming,shotgunMachineKey,type ShotgunTopologyInput} from '../src/shotgun-timing.js';
 /**
  * Fan-out Capacity Benchmark (offline; it NEVER contacts Onda — see scripts/bench-support.ts).
@@ -27,14 +29,14 @@ import { constants as osConstants, cpus, getPriority, platform, release as osRel
 import { join, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { pathToFileURL } from 'node:url';
-import { busyPercent, cpuSnapshot, findChrome, launchOfflineChrome, startPageBusyWork, syntheticSecurityPreparation, type OfflineChrome } from './bench-support.js';
+import { busyPercent, cpuSnapshot, closeOfflineChrome, findChrome, launchOfflineChrome, startPageBusyWork, syntheticSecurityPreparation, type OfflineChrome } from './bench-support.js';
 
 const args = new Map<string, string>();
 for (let index = 2; index < process.argv.length; index++) {
   const key = process.argv[index]!.replace(/^--/, ''), next = process.argv[index + 1];
   if (next !== undefined && !next.startsWith('--')) { args.set(key, next); index++; } else args.set(key, 'true');
 }
-const savedInput=args.has('saved-plan')?JSON.parse(await readFile(resolve(args.get('saved-plan')!), 'utf8')) as {PRECISION_PHASE3:ShotgunTopologyInput;STRATEGY_V2:{shotgun:{enabled:boolean;exactSchedule:Array<{logicalTargetId:string;configuredOffsetMs:number}>}}}:null;
+const savedInput=args.has('saved-plan')?JSON.parse(await readFile(resolve(args.get('saved-plan')!), 'utf8')) as {PRECISION_PHASE3:ShotgunTopologyInput & SmartPhase3;objective?:'ANY_ONE'|'ONE_PER_WING';STRATEGY_V2:{shotgun:{enabled:boolean;exactSchedule:Array<{logicalTargetId:string;configuredOffsetMs:number}>}}}:null;
 if(savedInput && !savedInput.STRATEGY_V2?.shotgun?.enabled)throw Error('BENCH_SAVED_SHOTGUN_REQUIRED');
 const savedTopology=savedInput?exactShotgunTopology(savedInput.PRECISION_PHASE3,savedInput.STRATEGY_V2.shotgun.exactSchedule):null;
 if(savedTopology)assertShotgunSchedule(savedTopology,savedInput!.STRATEGY_V2.shotgun.exactSchedule);
@@ -101,7 +103,9 @@ type RunSample = import('../src/fanout-capacity.js').RunSample;
 
 const customer = { clientId: '00000000-0000-4000-8000-00000000c11e', customerId: '00000000-0000-4000-8000-000000000b00',
   customerEmail: 'offline-bench@example.invalid', customerPhone: '09000000000', customerFirstName: 'Offline', customerLastName: 'Bench' };
-const date = '2026-09-26';
+const {DurableSubmissionJournal}=await import(moduleUrl('src/api-booking/durable-submission-journal.ts')) as typeof import('../src/api-booking/durable-submission-journal.js');
+const awaitedJournalKey=(spaceId:string,date:string,start:string,end:string)=>DurableSubmissionJournal.key('5f8786bd-dc61-4509-b893-74cda8f783f7',spaceId,date,start,end);
+const date = savedInput?.PRECISION_PHASE3.candidates[0]?.bookingDate ?? '2026-09-26';
 const maxWidth = Math.max(...widths);
 const sessions: OfflineChrome[] = [];
 let coordinatorPool: import('../src/api-booking/dispatch-coordinator.js').CoordinatorPool | undefined;
@@ -111,7 +115,9 @@ async function runOnce(width: number, runIndex: number): Promise<RunSample> {
   const runDir = join(scratch, 'runs', `${label}-${width}x-${runIndex}-${Date.now()}`);
   await mkdir(runDir, { recursive: true });
   process.chdir(runDir);
+  const scoped=savedInput?.PRECISION_PHASE3.candidates.some(c=>c.wing!==undefined||c.bookingDate!==undefined);
   const targets = savedInput?savedInput.PRECISION_PHASE3.wave1.map(a=>{const candidate=savedInput.PRECISION_PHASE3.candidates[a.candidateIndex]!;
+    if(scoped){const plan=offlineCandidatePlan(candidate);return {court:candidate.court,start:candidate.start,durationHours:candidate.durationHours,workerId:a.workerId as import('../src/workers.js').WorkerId,end:plan.endTime,assumedAmount:plan.totalPrice,targetKey:(awaitedJournalKey(candidate.spaceId!,candidate.bookingDate!,candidate.start,plan.endTime))};}
     return {...race.validatePrecisionTargets([candidate],date)[0]!,workerId:a.workerId as import('../src/workers.js').WorkerId};})
     :race.validatePrecisionTargets(Array.from({ length: workerCount }, (_, index) => ({ court: index + 1, start: '17:00', durationHours: 3 })), date);
   const lock = await ApiAutomationLock.acquire('standard', targets.map(target => target.workerId));
@@ -121,9 +127,9 @@ async function runOnce(width: number, runIndex: number): Promise<RunSample> {
     const offsets=assignment?(assignment.fanOutOffsetsMs??[assignment.releaseOffsetMs??0]):Array.from({length:width},(_,child)=>childOffset(child,width));
     return offsets.map(offset=>{
     const childTarget = { ...target, ...(offset ? { releaseOffsetMs: offset } : {}) };
-    return { target: childTarget, plan: race.precisionTargetPlan(childTarget, date),...(savedTopology?.shots.some(s=>s.shotgun&&s.workerId===target.workerId&&s.configuredOffsetMs===offset)?{dispatchTimingPolicy:'SHOTGUN_STRICT' as const}:{}) };
+    return { target: childTarget, plan: scoped ? offlineCandidatePlan(savedInput!.PRECISION_PHASE3.candidates[assignment!.candidateIndex]!) : race.precisionTargetPlan(childTarget, date),...(savedTopology?.shots.some(s=>s.shotgun&&s.workerId===target.workerId&&s.configuredOffsetMs===offset)?{dispatchTimingPolicy:'SHOTGUN_STRICT' as const}:{}) };
   });});
-  const frozen = race.freezePrecisionRace(date, releaseMs, attempts);
+  const frozen = race.freezePrecisionRace(date, releaseMs, attempts, scoped ? {executionMode:'OFFLINE_INTERCEPTED',objective:savedInput?.objective??'ANY_ONE'} : undefined);
   const pageOf = (attempt: { target: { workerId: string }; fanOutIndex: number }) =>
     sessions[targets.findIndex(target => target.workerId === attempt.target.workerId)]!.pages[attempt.fanOutIndex]!;
   const recorder = new cp.CriticalPathRecorder(releaseMs, trusted.monotonicDeadline(releaseMs), trusted.offsetMs - trusted.wallDisagreementMs(),
@@ -145,7 +151,7 @@ async function runOnce(width: number, runIndex: number): Promise<RunSample> {
   // Renderer mode: each page keeps a registry of keys it already fired (never re-armed). Runs reuse the same pages and keys, so clear it,
   // which is equivalent to fresh pages; production uses new keys for every release.
   if (dispatcher === 'renderer') await Promise.all(sessions.flatMap(session => session.pages).map(page => page.evaluate('delete globalThis.__thirstyRendererDispatch')));
-  const armed = await armedModule.armPrecisionRace(frozen, { lock, customerFor: () => customer, journalRoot: resolve('.local/api-booking/api-first-journals'),
+  const armed = await armedModule.armPrecisionRace(frozen, { lock, customerFor: worker => scoped ? {...customer,customerId:`00000000-0000-4000-9000-${String(worker.charCodeAt(0)).padStart(12,'0')}`} : customer, journalRoot: resolve('.local/api-booking/api-first-journals'),
     releaseMs, now: () => trusted.nowMs() });
   const firstTrigger = armedModule.firstArmedTrigger(armed);
   const lockdown=lockdownModule?new lockdownModule.ReleaseCriticalLockdown(trusted.monotonicDeadline(firstTrigger)):undefined;
@@ -215,7 +221,7 @@ const raw: RunSample[] = [];
 const summaries: import('../src/fanout-capacity.js').WidthSummary[] = [];
 try {
   for (let index = 0; index < workerCount; index++) {
-    const session = await launchOfflineChrome({ chromium, chromePath, scratch, index, tabs: savedTopology?Object.values(savedTopology.tabsPerWorker)[index]!:maxWidth, headed });
+    const session = await launchOfflineChrome({ chromium, chromePath, scratch, index, basePort:Number(args.get('base-port')??29544), tabs: savedTopology?Object.values(savedTopology.tabsPerWorker)[index]!:maxWidth, headed });
     sessions.push(session);
     for (const page of session.pages) await startPageBusyWork(page, pageBusyMs);
   }
@@ -259,6 +265,6 @@ try {
   process.stdout.write(`${JSON.stringify({ summary: join(outDir, `${stamp}-${label}-summary.json`), ...(saveProfile ? { profile: join(outDir, `profile-${stamp}.json`) } : {}) })}\n`);
 } finally {
   await coordinatorPool?.close();
-  await Promise.allSettled(sessions.map(session => session.browser.close()));
+  await Promise.allSettled(sessions.map(session => closeOfflineChrome(session)));
   for (const session of sessions) session.process.kill();
 }

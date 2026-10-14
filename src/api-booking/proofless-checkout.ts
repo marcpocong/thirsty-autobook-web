@@ -133,8 +133,8 @@ export function assertDirectDispatchWindow(releaseMs:number,now=Date.now(),trigg
     now-releaseMs>maximumLateMs)throw Error('DIRECT_RELEASE_WINDOW_MISSED');
 }
 
-export function prooflessRequest(plan:BookingPlan,customer:CheckoutCustomer):ProoflessCheckoutRequest{
-  if (plan.wing && plan.wing !== 'MANGO') throw Error('BUKO_PROOFLESS_NOT_ENABLED');
+export function prooflessRequest(plan:BookingPlan,customer:CheckoutCustomer,executionMode?:'OFFLINE_INTERCEPTED'):ProoflessCheckoutRequest{
+  if (plan.wing && plan.wing !== 'MANGO' && executionMode !== 'OFFLINE_INTERCEPTED') throw Error('BUKO_PROOFLESS_NOT_ENABLED');
   if(plan.mode!=='standard'||plan.chunks.length!==1||plan.courts.length<1||plan.courts.length>2||
     plan.courts.some(court=>court.slots.length!==plan.durationHours))throw Error('DIRECT_PLAN_INVALID');
   const courts=[...plan.courts].sort((a,b)=>a.date.localeCompare(b.date)||a.startTime.localeCompare(b.startTime)||a.spaceId.localeCompare(b.spaceId));
@@ -144,7 +144,7 @@ export function prooflessRequest(plan:BookingPlan,customer:CheckoutCustomer):Pro
     bookingType:'online',usedCustomerMembershipId:null,userId:null,
     items:courts.flatMap((court,courtIndex)=>court.slots.map(slot=>({sessionRef:`session_${courtIndex+1}` as const,facilityId:THIRSTY_PICKLE_FACILITY_ID,
       spaceId:slot.spaceId,date:slot.date,startTime:slot.startTime,endTime:ondaCheckoutBoundary(slot.endTime),duration:60,
-      rate:slot.price,chargedAmount:slot.price,guestCount:1,activityKey:null,activityLabel:null,promotionId:null,availabilityProof:null})))};
+      rate:slot.price,chargedAmount:slot.price,guestCount:1,activityKey:plan.wing==='BUKO'?'pickleball':null,activityLabel:plan.wing==='BUKO'?'Pickleball':null,promotionId:null,availabilityProof:null})))};
 }
 
 function deepFreeze<T>(value: T): T {

@@ -193,6 +193,9 @@ export interface FrozenPrecisionRace {
   readonly attempts: readonly PrecisionAttempt[];
   readonly fingerprint: string;
   readonly fanOut: boolean;
+  readonly executionMode?: 'OFFLINE_INTERCEPTED';
+  readonly objective?: 'ANY_ONE' | 'ONE_PER_WING';
+  readonly authorizationFingerprint?:string;
 }
 
 const precisionAttemptId = (date: string, releaseMs: number, target: PrecisionTarget, index: number) =>
@@ -201,7 +204,8 @@ const precisionAttemptId = (date: string, releaseMs: number, target: PrecisionTa
 
 /** Freezes the exact dispatch set: an immutable copy plus a fingerprint re-checked before dispatch. */
 export function freezePrecisionRace(date: string, releaseMs: number,
-  attempts: ReadonlyArray<Omit<PrecisionAttempt, 'id' | 'fanOutIndex' | 'fanOutCount'> & Partial<Pick<PrecisionAttempt, 'id' | 'fanOutIndex' | 'fanOutCount'>>>): FrozenPrecisionRace {
+  attempts: ReadonlyArray<Omit<PrecisionAttempt, 'id' | 'fanOutIndex' | 'fanOutCount'> & Partial<Pick<PrecisionAttempt, 'id' | 'fanOutIndex' | 'fanOutCount'>>>, options?: {executionMode:'OFFLINE_INTERCEPTED';objective:'ANY_ONE'|'ONE_PER_WING';authorizationFingerprint?:string}): FrozenPrecisionRace {
+  if(options&&(options.executionMode!=='OFFLINE_INTERCEPTED'||!['ANY_ONE','ONE_PER_WING'].includes(options.objective)))throw Error('PRECISION_OFFLINE_MODE_INVALID');
   const groupKey=(attempt:(typeof attempts)[number])=>`${attempt.target.workerId}|${attempt.target.targetKey}`;
   const counts = new Map<string, number>();
   for (const attempt of attempts) counts.set(groupKey(attempt), (counts.get(groupKey(attempt)) ?? 0) + 1);
@@ -214,12 +218,14 @@ export function freezePrecisionRace(date: string, releaseMs: number,
   }));
   const logicalCounts=new Map<string,number>();for(const attempt of attempts)logicalCounts.set(attempt.target.targetKey,(logicalCounts.get(attempt.target.targetKey)??0)+1);
   const fanOut = [...logicalCounts.values()].some(count => count > 1);
-  return Object.freeze({ date, releaseMs, attempts: copy, fanOut,
-    fingerprint: precisionFingerprint(date, releaseMs, copy.map(attempt => attempt.target), fanOut, copy.map(attempt=>attempt.dispatchTimingPolicy)) });
+  return Object.freeze({ date, releaseMs, attempts: copy, fanOut, ...(options ?? {}),
+    fingerprint: options ? createHash('sha256').update(JSON.stringify([precisionFingerprint(date, releaseMs, copy.map(attempt => attempt.target), fanOut, copy.map(attempt=>attempt.dispatchTimingPolicy)), options, copy.map(a=>a.plan)])).digest('hex') : precisionFingerprint(date, releaseMs, copy.map(attempt => attempt.target), fanOut, copy.map(attempt=>attempt.dispatchTimingPolicy)) });
 }
 
 export function assertPrecisionFreezeIntact(race: FrozenPrecisionRace): void {
-  if (precisionFingerprint(race.date, race.releaseMs, race.attempts.map(attempt => attempt.target), race.fanOut, race.attempts.map(attempt=>attempt.dispatchTimingPolicy)) !== race.fingerprint)
+  const legacy=precisionFingerprint(race.date, race.releaseMs, race.attempts.map(attempt => attempt.target), race.fanOut, race.attempts.map(attempt=>attempt.dispatchTimingPolicy));
+  const expected=race.executionMode ? createHash('sha256').update(JSON.stringify([legacy,{executionMode:race.executionMode,objective:race.objective,...(race.authorizationFingerprint?{authorizationFingerprint:race.authorizationFingerprint}:{})},race.attempts.map(a=>a.plan)])).digest('hex') : legacy;
+  if (expected !== race.fingerprint)
     throw Error('PRECISION_FROZEN_SET_CHANGED');
 }
 

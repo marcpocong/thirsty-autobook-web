@@ -7,7 +7,7 @@ import { PRECISION_MAX_FAN_OUT } from './workers.js';
 import type { PrewarmFeasibilityResult } from './api-booking/prewarm-feasibility.js';
 
 export interface ShotgunTopologyInput {
-  candidates: readonly {court:number;start:string;durationHours:number}[];
+  candidates: readonly {court:number;start:string;durationHours:number;wing?:import('./court-registry.js').Wing;spaceId?:string;bookingDate?:string}[];
   wave1: readonly {workerId:string;candidateIndex:number;fanOutOffsetsMs?:readonly number[];releaseOffsetMs?:number}[];
 }
 export interface ShotgunTopology {
