@@ -1,6 +1,6 @@
 import { parseAvailability } from './availability-parser.js';
 import { BookingPlanningError, planBooking } from './booking-planner.js';
-import { OndaLiveAvailabilityProvider } from './live-availability-provider.js';
+import { verifiedAvailabilitySession } from './verified-availability-session.js';
 import type { BookingPreferences } from './types.js';
 
 // Read-only API-first candidate preview. This entry point has no reservation or checkout import.
@@ -26,8 +26,9 @@ if (!date || !startTime || !durationText || !courtCountText || !maximumText || !
     courtCount: courtCount as 1 | 2, maximumTotalPrice: maximum, currency: 'PHP',
   };
   try {
-    const provider = new OndaLiveAvailabilityProvider();
-    const envelope = await provider.getAvailability({ startDate: date, endDate: date });
+    const session=await verifiedAvailabilitySession();
+    const provider=session.provider();
+    const envelope = await provider.getAvailability({ startDate: date, endDate: date }).finally(()=>session.close());
     const snapshot = parseAvailability(envelope.raw, { startDate: date, endDate: date,
       capturedAt: envelope.capturedAt, fixtureKind: 'live', label: envelope.label,
       now: new Date(), maximumAgeMs: 15_000 });

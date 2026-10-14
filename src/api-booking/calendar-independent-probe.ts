@@ -11,6 +11,10 @@ import { OndaBrowserSessionTransport } from './browser-session-transport.js';
 import { THIRSTY_PICKLE_CLIENT_ID } from './local-customer.js';
 import type { BookingPlan } from './types.js';
 
+// Archived diagnostic: use the guarded desktop runner; this legacy transport cannot submit.
+function requireCurrentRunner():void{throw Error('LEGACY_ENTRYPOINT_RETIRED_USE_DESKTOP_RUNNER');}
+requireCurrentRunner();
+
 /** Read-only probe of the genuine bookingId route. Never selects a slot or submits a hold. */
 const start = Date.now();
 const elapsed = () => Date.now() - start;

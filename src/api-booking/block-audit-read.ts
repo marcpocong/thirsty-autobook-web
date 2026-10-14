@@ -2,13 +2,16 @@ import { OndaLiveAvailabilityProvider, LiveAvailabilityError, type LiveAvailabil
 import { parseAvailability } from './availability-parser.js';
 import { networkNowMs } from '../network-clock.js';
 import type { UiEvent } from '../ui-events.js';
+import type { AvailabilityProvider } from './availability-provider.js';
 type Diagnostics=NonNullable<Extract<UiEvent,{type:'blockAudit'}>['diagnostics']>;
 /** One public GET, no retries, credentials or raw provider/customer data in diagnostics. */
-export async function readAuditAvailability(date:string, options:LiveAvailabilityOptions={}) {
+export async function readAuditAvailability(date:string, options:LiveAvailabilityOptions={}, provider?:AvailabilityProvider) {
   const started=performance.now();
   const durationMs=()=>Math.round(performance.now()-started);
   try {
-    const envelope=await new OndaLiveAvailabilityProvider({...options,allowIncompleteRange:true}).getAvailability({startDate:date,endDate:date});
+    if(!provider&&!options.fetcher)throw Error('AVAILABILITY_BROWSER_PREPARATION_REQUIRED');
+    // An explicit injected fetcher is retained solely for offline/legacy comparisons.
+    const envelope=await (provider??new OndaLiveAvailabilityProvider({...options,allowIncompleteRange:true})).getAvailability({startDate:date,endDate:date});
     const snapshot=parseAvailability(envelope.raw,{startDate:date,endDate:date,capturedAt:envelope.capturedAt,
       fixtureKind:envelope.fixtureKind,label:envelope.label,now:options.clock?.()??new Date(),maximumAgeMs:15_000,requireCompleteRange:false});
     return {snapshot,observedAtMs:networkNowMs(),diagnostics:{status:'SUCCESS',durationMs:durationMs()} satisfies Diagnostics['availability']};

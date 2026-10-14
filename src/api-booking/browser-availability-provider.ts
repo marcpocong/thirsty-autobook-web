@@ -10,7 +10,7 @@ const MAX_BYTES = 4_000_000;
  * The parent retains the exact parser, pricing and freshness checks.
  */
 export class OndaBrowserAvailabilityProvider extends OndaLiveAvailabilityProvider {
-  constructor(page: Pick<Page, 'url' | 'evaluate'>, options: Omit<LiveAvailabilityOptions, 'fetcher'> = {}) {
+  constructor(page: Pick<Page, 'url' | 'evaluate'>, options: Omit<LiveAvailabilityOptions, 'fetcher'> & {onHeaders?:(headers:Headers)=>void} = {}) {
     const timeoutMs = options.timeoutMs ?? 10_000;
     const fetcher: typeof fetch = async (input, init) => {
       const url = new URL(String(input));
@@ -24,6 +24,7 @@ export class OndaBrowserAvailabilityProvider extends OndaLiveAvailabilityProvide
         const response = await fetch(path, { method: 'GET', credentials: 'same-origin', redirect: 'error',
           headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(timeoutMs) });
         const contentType = response.headers.get('content-type') ?? '';
+        const metadata=Object.fromEntries(['x-vercel-cache','age','date','x-matched-path','x-vercel-id'].flatMap(key=>{const value=response.headers.get(key);return value&&value.length<=240&&/^[\x20-\x7E]+$/.test(value)?[[key,value]]:[];}));
         // Rejections never return provider text or security values to Node.
         if (!response.ok) return { status: response.status, contentType, body: '' };
         if (!contentType.toLowerCase().includes('application/json')) return { status: response.status, contentType, body: '' };
@@ -38,9 +39,10 @@ export class OndaBrowserAvailabilityProvider extends OndaLiveAvailabilityProvide
         }
         const bytes = new Uint8Array(length); let offset = 0;
         for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
-        return { status: response.status, contentType, body: new TextDecoder().decode(bytes) };
+        return { status: response.status, contentType, body: new TextDecoder().decode(bytes), metadata };
       }, { path: url.pathname + url.search, timeoutMs, maximum: MAX_BYTES });
-      return new Response(result.body, { status: result.status, headers: { 'content-type': result.contentType } });
+      const response=new Response(result.body, { status: result.status, headers: { 'content-type': result.contentType, ...('metadata' in result?result.metadata:{}) } });
+      options.onHeaders?.(response.headers);return response;
     };
     super({ ...options, fetcher });
   }

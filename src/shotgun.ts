@@ -3,7 +3,7 @@ import { PRECISION_MAX_FAN_OUT, PRECISION_MAX_SENDS } from './workers.js';
 export type ShotgunAllocationMode = 'EQUAL' | 'PRIORITY_WEIGHTED' | 'CUSTOM';
 export type ShotgunTimingMode = 'AUTO' | 'DENSE_CORE' | 'TIGHT' | 'BALANCED' | 'WIDE' | 'CUSTOM';
 export type ShotgunReadiness = 'PREPARING' | 'READY' | 'FAILED' | 'OMITTED';
-export type ShotgunSuppressionReason = 'SHOTGUN_TARGET_ALREADY_ACHIEVED' | 'SHOTGUN_TARGET_OUTCOME_UNKNOWN' | 'SHOTGUN_PROVIDER_THROTTLE_STOP';
+export type ShotgunSuppressionReason = 'SHOTGUN_PAYMENT_IN_PROGRESS_STOP' | 'SHOTGUN_TARGET_ALREADY_ACHIEVED' | 'SHOTGUN_TARGET_OUTCOME_UNKNOWN' | 'SHOTGUN_PROVIDER_THROTTLE_STOP';
 /** Installation evidence from the 2026-10-03 intercepted spaced run; live compatible profiles may only raise this floor. */
 export const SHOTGUN_MEANINGFUL_SPACING_MS=105;
 /** Local trigger-to-dispatch tolerance, independent of request count; not provider arrival evidence. */

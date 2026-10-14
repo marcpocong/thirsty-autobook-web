@@ -1,3 +1,4 @@
+import { COURT_REGISTRY } from '../../src/court-registry.js';
 import {shotgunCriticalInterval} from '../../src/shotgun.js';
 import type { Bridge, Dashboard, RunHistoryEntry } from '../types.js';
 import type { BookingSetup } from '../../src/config.js';
@@ -29,8 +30,8 @@ let courtOrder=[7,6,5,4,3,2,1], fallbackTimes:string[]=[];
 const input=(id:string)=>byId(id) as HTMLInputElement;
 let workflow:'test'|'release'='release';
 /** The five operator concepts, plus the test booking tools opened from Tools. */
-type View = 'release'|'strategy'|'live'|'history'|'tools'|'tests';
-let currentView:View='release';
+type View = 'home'|'release'|'strategy'|'live'|'history'|'tools'|'tests';
+let currentView:View='home';
 const browserFocusMessages:Partial<Record<WorkerId,string>>={};
 const browserFocusPending:Partial<Record<WorkerId,boolean>>={};
 // Electron prefixes IPC rejections, so match the known codes anywhere in the message.
@@ -109,7 +110,7 @@ const primary=byId('primary-actions');
 const releaseView=byId('view-release'),testsView=byId('view-tests');
 const testAction=testsView.querySelector('.test-action')!,testResults=byId('test-results');
 const releaseAction=releaseView.querySelector('.release-action')!;
-const VIEWS=['release','strategy','live','history','tools','tests'] as const;
+const VIEWS=['home','release','strategy','live','history','tools','tests'] as const;
 // These views only observe; they stay reachable while a run is in progress.
 const OBSERVER_VIEWS:readonly View[]=['live','history','tools'];
 // The main release dashboard is also safe to revisit during a run: render() keeps
@@ -119,8 +120,8 @@ const RUN_ACCESSIBLE_VIEWS:readonly View[]=['release',...OBSERVER_VIEWS];
 function showView(view:View){
   if(latest&&latest.operation!=='idle'&&latest.operation!=='scheduled'&&!RUN_ACCESSIBLE_VIEWS.includes(view)&&!(view==='tests'&&workflow==='test'))return;
   currentView=view;
-  for(const id of VIEWS){byId(`view-${id}`).hidden=id!==view;for(const tab of document.querySelectorAll(`[data-view="${id}"]`))tab.setAttribute('aria-current',id===view||(id==='tools'&&view==='tests')?'page':'false');}
-  const nextWorkflow=view==='tests'?'test':OBSERVER_VIEWS.includes(view)?workflow:'release';
+  for(const id of VIEWS){byId(`view-${id}`).hidden=id!==view;for(const tab of document.querySelectorAll(`[data-view="${id}"]`))tab.setAttribute('aria-current',id===view?'page':'false');}
+  const nextWorkflow=view==='tests'?'test':view==='home'?workflow:OBSERVER_VIEWS.includes(view)?workflow:'release';
   if(nextWorkflow!==workflow){storeDraft();workflow=nextWorkflow;if(workflow==='test'&&latest?.booking){const s=latest.booking.setup;applyDraft({testWing:testDraft?.testWing??'MANGO',bukoCourt:testDraft?.bukoCourt??1,releaseStrategy:'general',precisionCount:1,precisionTargets:[],method:s.BOOKING_METHOD,strategy:s.BOOKING_TYPE,date:testDraft?.date??input('test-date').value,courtCount:s.COURT_COUNT,start:s.START_TIME,duration:s.DURATION_HOURS,attempts:s.MAX_SELECTION_ATTEMPTS,courtOrder:[...s.PREFERRED_COURTS],fallbackTimes:[...s.FALLBACK_TIMES],exactA:'',exactB:''});testDirty=false;}if(workflow==='release'&&releaseDraft)applyDraft(releaseDraft);dirty=workflow==='test'?testDirty:releaseDirty;input('terms').checked=false;void window.thirsty.setWorkflow(workflow).then(()=>window.thirsty.getStatus()).then(render);}
   const terms=byId('terms').parentElement!;
   (view==='tests'?testAction:releaseAction).append(terms);
@@ -886,7 +887,7 @@ function render(state: Dashboard) {
   }
   byId('mode-label').textContent=workflow==='test'?'TEST NOW':'RELEASE BOOKING';
    byId('prepare').firstChild!.textContent='RESET & PREPARE ';
-   const methodValue=input('booking-method').value,apiFirst=['api-first','proofless'].includes(methodValue),proofless=methodValue==='proofless';
+   const methodValue=workflow==='test'&&input('book-now-exact').checked?'api-first':input('booking-method').value,apiFirst=['api-first','proofless'].includes(methodValue),proofless=methodValue==='proofless';
    byId('test-booking').textContent=proofless?'RUN PROOFLESS TEST TO QR':apiFirst?'RUN API TEST TO QR':'RUN TEST TO QR';
    byId('api-dry-controls').hidden=!apiFirst||workflow!=='test';
    byId('test-availability').hidden=!apiFirst;
@@ -904,7 +905,7 @@ function render(state: Dashboard) {
   byId('test-booking').hidden=workflow==='release';byId('test-date-label').hidden=workflow==='release';
   input('test-booking').disabled=busy||dirty||state.lock||!state.ready||!input('terms').checked;
   input('terms').disabled=armed||busy||dirty||state.lock||!state.ready;
-  byId('terms').parentElement!.lastChild!.textContent=workflow==='test'?' I authorize accepting Onda Terms for this test':' I authorize accepting Onda Terms for this booking';
+  byId('terms').parentElement!.lastChild!.textContent=workflow==='test'?' I authorize accepting Onda Terms for this booking':' I authorize accepting Onda Terms for this booking';
   if(workflow==='release'&&armed)byId('terms').parentElement!.lastChild!.textContent=' AUTHORIZED FOR THIS EXACT SCHEDULED RUN';
   byId('workflow-test').setAttribute('aria-pressed',String(workflow==='test'));byId('workflow-release').setAttribute('aria-pressed',String(workflow==='release'));
   input('workflow-test').disabled=busy;input('workflow-release').disabled=busy;
@@ -978,45 +979,49 @@ function render(state: Dashboard) {
   byId('release-action-title').textContent=actionState==='armed'?'Armed':actionState==='running'?'Preparing browsers and release contexts…':actionState==='review'?'Ready to arm':'Prepare for release';
   byId('main-action-hint').textContent=unresolvedCheckout?'Inspects every required browser; it will not clear the lock unless the old worker is dead and all Onda state is clean.':state.canPrepareOverHold?'The verified hold stays recorded. Prepare a fresh schedule in the same bot before another run.':blockedHold?'Review the retained lock before any new action.':actionState==='review'?'Authorize Terms for this exact saved strategy, then arm.':actionState==='armed'?'Release is scheduled. Emergency Stop cancels the armed release.':actionState==='running'?'Preparing the required browsers. Wait for readiness to finish.':'Check the saved strategy, then prepare its required browsers.';
   input('terms').parentElement!.hidden=currentView==='release'?actionState!=='review':false;
+  if(state.booking?.setup.STRATEGY_V2?.shotgun?.enabled&&!apiRelease){byId('main-action-hint').textContent='Live Shotgun blocked: proofless release compatibility and provider request-rate permission remain unverified. Editing, saving and offline testing are available.';if(actionState==='review'){action.textContent='LIVE SHOTGUN BLOCKED';action.disabled=true;}}
   if(apiRelease)byId('main-action-hint').textContent='The authorized release runner is active. Emergency Stop cancels it; child preparation is reported separately.';
   renderReleasePreflight(state);
   byId('primary-actions').hidden=currentView!=='tests'&&!state.selection&&!state.handoff&&!state.bookingResult;
   const testDate=input('test-date').value;
   input('test-date').disabled=busy;
   const testPrepared=!!state.ready&&!testDirty&&state.workflow==='test'&&!!b&&(
-    (input('test-wing').value==='BUKO'||['api-first','proofless'].includes(b.setup.BOOKING_METHOD))&&!!state.apiFirstReady ||
+    (input('book-now-exact').checked||input('test-wing').value==='BUKO'||['api-first','proofless'].includes(b.setup.BOOKING_METHOD))&&!!state.apiFirstReady ||
     !!state.preparedContext&&state.preparedContext.workflow==='test'&&state.preparedContext.date===testDate);
-  const testBrowsers=input('test-wing').value==='BUKO'?['A'] as WorkerId[]:b?requiredWorkers(b.setup.BOOKING_TYPE,b.setup.COURT_COUNT):['A'] as WorkerId[];
+  const testBrowsers=input('book-now-exact').checked||input('test-wing').value==='BUKO'?['A'] as WorkerId[]:b?requiredWorkers(b.setup.BOOKING_TYPE,b.setup.COURT_COUNT):['A'] as WorkerId[];
   const testGates:[string,boolean][]=[
-    ['Test date selected',!!testDate],['Saved booking plan',!!b],...testBrowsers.map(id=>[`${workerLabel(id)} configured`,!!playerReadyByWorker[id]] as [string,boolean]),
+    ['Target date selected',!!testDate],['Booking preferences available',!!b],...testBrowsers.map(id=>[`${workerLabel(id)} configured`,!!playerReadyByWorker[id]] as [string,boolean]),
     ...testBrowsers.map(id=>[`Browser ${id} prepared`,testPrepared&&!!state.browserHealth?.[id]] as [string,boolean]),
     ['Automation lock clear',!state.lock],['Preparation matches this date and plan',testPrepared],
-    ['Terms authorized for this test',!!state.termsAuthorized]
+    ['Terms authorized for this booking',!!state.termsAuthorized]
   ];
   byId('test-readiness').replaceChildren(...gateRows(testGates));
-   byId('test-buko-court-label').hidden=input('test-wing').value!=='BUKO';
+   byId('test-buko-court-label').hidden=false;
+   for(const option of (byId('test-buko-court') as HTMLSelectElement).options)option.textContent=`${input('test-wing').value==='BUKO'?'Buko':'Mango'} · Court ${option.value}`;
+   renderCourtBrowser(state);
    byId('test-plan-summary').textContent=b?`${b.setup.BOOKING_METHOD.toUpperCase()} · ${b.setup.BOOKING_TYPE.toUpperCase()} · ${b.setup.COURT_COUNT} court${b.setup.COURT_COUNT===1?'':'s'}\n${friendly(b.setup.START_TIME)}–${endFriendly(b.setup.START_TIME,b.setup.DURATION_HOURS)} · ${b.setup.DURATION_HOURS} hours\nCourt priority: ${b.setup.PREFERRED_COURTS.join(' → ')}\nFallback starts: ${b.setup.FALLBACK_TIMES.map(friendly).join(', ')||'None'}\nTest date: ${testDate?dateLabel(testDate):'Choose a date'}${input('exact-a').value.trim()||input('exact-b').value.trim()?`\nAdvanced exact court override: ${[input('exact-a').value,input('exact-b').value].filter(Boolean).join(' / ')}`:''}`:'No saved booking plan available.';
   const liveTestHandoffs=workflow==='test'&&state.workflow==='test'?activeHandoffs(state):[];
   const readyTestHandoffs=liveTestHandoffs.filter(hold=>(hold.status??'qr-ready')==='qr-ready').length;
   const expectedTestHandoffs=Math.max(testBrowsers.length,liveTestHandoffs.length);
   byId('test-headline').textContent=liveTestHandoffs.length
     ? readyTestHandoffs===expectedTestHandoffs?'CONFIRM BOOKING DETAILS BEFORE PAYING':`CHECKOUTS REACHING QR · ${readyTestHandoffs}/${expectedTestHandoffs}`
-    : workflow==='test'&&state.workflow==='test'?state.headline:state.lock?'Review retained hold':testPrepared?'Ready to test':'Prepare to test';
+    : workflow==='test'&&state.workflow==='test'?state.headline:state.lock?'Review retained hold':testPrepared?'Ready to review':'Prepare your browser';
    const baseTestDetail=liveTestHandoffs.length
      ? `${readyTestHandoffs} of ${expectedTestHandoffs} required QR page${expectedTestHandoffs===1?' is':'s are'} verified. Check the player, courts, date, every hourly slot, amount, and booking reference below before scanning any QR code.`
      : workflow==='test'&&state.workflow==='test'?state.detail:state.lock?'Review the existing browser and payment hold before testing again.':testPrepared?'Review Terms, then run the saved plan.':'Choose a date, then prepare the saved booking plan.';
   byId('test-detail').textContent=baseTestDetail;
   const testState=busy?'running':blockedHold?'hold':testPrepared?'review':'prepare';
   const testButton=input('test-main-action');
-  testButton.textContent=testState==='prepare'&&unresolvedCheckout?'Reset & Prepare':testState==='prepare'&&state.canPrepareOverHold?'Prepare New Run':{running:'Running',hold:'Review Hold',review:'Review & Test',prepare:'Prepare'}[testState];
+  testButton.textContent=testState==='prepare'&&unresolvedCheckout?'Reset & Prepare':testState==='prepare'&&state.canPrepareOverHold?'Prepare New Run':{running:'Running',hold:'Review Hold',review:'Review & Book',prepare:'Prepare'}[testState];
    if(input('test-wing').value==='BUKO')byId('test-plan-summary').textContent=`Buko Wing · Court ${input('test-buko-court').value} · Normal booking\n${testDate?dateLabel(testDate):'Choose a date'} · ${b?friendly(b.setup.START_TIME):''} · ${b?.setup.DURATION_HOURS??'?'} hour(s)\nAvailability is checked in your dedicated Chrome before submission.\nExact court and time; no fallback substitution. Stops at QR.\nScheduled releases and Shotgun are disabled for Buko.${b&&b.setup.DURATION_HOURS>3?'\nChoose a duration of 1–3 hours in Strategy.':''}`;
-   testButton.disabled=testState==='running'||testState==='prepare'&&(!b||!testDate||blockedHold||input('test-wing').value==='BUKO'&&b.setup.DURATION_HOURS>3);
+   if(input('book-now-exact').checked)byId('test-plan-summary').textContent=`${input('test-wing').value==='BUKO'?'Buko':'Mango'} · Court ${input('test-buko-court').value} · ${testDate||'Choose a date'}\n${friendly(input('book-now-start').value)} · ${input('book-now-duration').value} hour(s) · One exact court\nNormal · fresh proofs · no alternatives · stops at genuine QR · manual payment`;
+   testButton.disabled=testState==='running'||testState==='prepare'&&(!b||!testDate||blockedHold||!input('book-now-exact').checked&&input('test-wing').value==='BUKO'&&b.setup.DURATION_HOURS>3);
    byId('test-main-action-hint').textContent=unresolvedCheckout?'Inspects both API browsers and clears the retained safety lock only after clean-state verification.':state.canPrepareOverHold?'The verified hold stays recorded. Preparing opens a fresh schedule in the same bot.':blockedHold?'Review the retained lock before another test.':testState==='review'?'This test can create real temporary payment holds. Review Terms and confirm the test before continuing.':testState==='running'?'The current test is in progress.':'Prepare the required browser or browsers for the selected date.';
   testResults.hidden=!!byId('observed-price').hidden&&!!byId('selection-result').hidden&&!!byId('handoff-result').hidden;
    syncViableControls();tick();
 }
 byId('main-action').onclick=()=>{if(!latest)return;if(latest.operation==='full'&&(latest.activeApiRelease||latest.apiStage?.stage==='WAITING_FOR_RELEASE')){void window.thirsty.abortAutomation().catch(()=>{});return;}if(latest.scheduledRelease){input('arm').click();return;}if((latest.lock||latest.handoff)&&!latest.canPrepareOverHold){void window.thirsty.reviewLock().catch(()=>{});return;}if(latest.ready&&!dirty){if(input('terms').checked)input('arm').click();else byId('terms').focus();}else input('prepare').click();};
-byId('test-main-action').onclick=()=>{if(!latest)return;if((latest.lock||latest.handoff)&&!latest.canPrepareOverHold){void window.thirsty.reviewLock().catch(()=>{});return;}if(input('test-main-action').textContent==='Review & Test'){if(input('terms').checked)input('test-booking').click();else byId('terms').focus();}else input('prepare').click();};
+byId('test-main-action').onclick=()=>{if(!latest)return;if((latest.lock||latest.handoff)&&!latest.canPrepareOverHold){void window.thirsty.reviewLock().catch(()=>{});return;}if(input('test-main-action').textContent==='Review & Book'){if(input('terms').checked)input('test-booking').click();else byId('terms').focus();}else input('prepare').click();};
 function tick() {
   // Display only; never launches a command. Authoritative release plan comes from main/CLI.
   const effectiveNow=Date.now()+(latest?.clock?.clockOffsetMs??0);
@@ -1068,7 +1073,7 @@ for(const id of ['full-date','full-court','full-start','full-duration'])byId(id)
 byId('mode-full').addEventListener('change',()=>{void window.thirsty.setMode('full').catch(()=>{});});
 byId('mode-selection').addEventListener('change',()=>{void window.thirsty.setMode('selection').catch(()=>{});});
 byId('terms').addEventListener('change',()=>{void window.thirsty.authorizeTerms(input('terms').checked).catch(()=>{input('terms').checked=false;});});
- for(const id of ['test-wing','test-buko-court','booking-method','test-date','court-count','start-time','duration','attempts','exact-a','exact-b'])byId(id).addEventListener('change',changed);
+ for(const id of ['book-now-start','book-now-duration','book-now-exact','test-wing','test-buko-court','booking-method','test-date','court-count','start-time','duration','attempts','exact-a','exact-b'])byId(id).addEventListener('change',changed);
 byId('booking-method').addEventListener('change',()=>{byId('release-offset').hidden=!releaseOffsetApplies();});
 byId('release-offset-ms').addEventListener('change',changed);
 for(const id of ['precision-strategy','precision-count',...PRECISION_WORKERS.map((_,i)=>i).flatMap(i=>[`precision-court-${i}`,`precision-start-${i}`,`precision-duration-${i}`,`precision-width-${i}`])])
@@ -1103,6 +1108,10 @@ for(const [id,mode] of [['workflow-test','test'],['workflow-release','release']]
 function testRequest(){
   const setup=latest?.booking?.setup;
   if(!setup)throw Error('BOOKING_PLAN_MISSING');
+  if(input('book-now-exact').checked){
+    const wing=input('test-wing').value as 'MANGO'|'BUKO',court=Number(input('test-buko-court').value);
+    return {method:'api-first' as const,request:{wing,strategy:'standard' as const,date:input('test-date').value,start:input('book-now-start').value,duration:Number(input('book-now-duration').value),courtCount:1 as const,priority:[court],fallbackStarts:[],exact:[[court]]}};
+  }
   if(input('test-wing').value==='BUKO'){
     if(setup.DURATION_HOURS>3)throw Error('BUKO_EXACT_NORMAL_PLAN_REQUIRED');
     const court=Number(input('test-buko-court').value);
@@ -1321,3 +1330,22 @@ function renderPrecision(state:Dashboard){
   for(let i=0;i<PRECISION_WORKERS.length;i++){const row=live?.targets.find(t=>t.workerId===PRECISION_WORKERS[i]);
     byId(`precision-evidence-${i}`).textContent=row?.evidence?`Latest (${row.checkpoint??''}): ${PRECISION_EVIDENCE_TEXT[row.evidence]??row.evidence}`:'';}
 }
+
+// Book Now edits never overwrite the saved release strategy.
+(byId('book-now-start') as HTMLSelectElement).replaceChildren(...Array.from({length:16},(_,i)=>new Option(friendly(`${String(i+8).padStart(2,'0')}:00`),`${String(i+8).padStart(2,'0')}:00`)));
+input('book-now-start').value='18:00';
+byId('browse-courts').onclick=()=>{void window.thirsty.browseCourts(input('test-date').value).catch(()=>{byId('court-browser-status').textContent='Live availability could not be verified. Prepare and verify Chrome, then check again.';});};
+function renderCourtBrowser(state:Dashboard){
+ const evidence=state.courtBrowser,current=evidence?.date===input('test-date').value&&Date.now()-Date.parse(evidence.capturedAt)<15_000;
+ const wing=input('test-wing').value,grid=byId('court-browser-grid');grid.replaceChildren();
+ for(const court of COURT_REGISTRY.filter(c=>c.wing===wing)){
+  const row=document.createElement('div');row.className='court-browser-row';const label=document.createElement('strong');label.textContent=`${court.wing==='MANGO'?'Mango':'Buko'} · Court ${court.number}`;row.append(label);
+  for(let hour=8;hour<24;hour++){const start=`${String(hour).padStart(2,'0')}:00`,cell=current?evidence?.cells.find(c=>c.wing===court.wing&&c.court===court.number&&c.start===start):undefined;
+   const button=document.createElement('button');button.type='button';button.className='court-cell';button.dataset.state=cell?.available&&cell.price!==null?'open':cell?'blocked':'unknown';
+   button.textContent=`${friendly(start)} · ${cell?.available&&cell.price!==null?`₱${cell.price}`:cell?'Blocked':'Unknown'}`;
+   button.disabled=!cell?.available||cell.price===null;button.onclick=()=>{input('test-buko-court').value=String(court.number);input('book-now-start').value=start;input('book-now-exact').checked=true;changed();};row.append(button);
+  }grid.append(row);
+ }
+ byId('court-browser-status').textContent=current?`Verified ${new Date(evidence!.capturedAt).toLocaleTimeString('en-GB',{timeZone:'Asia/Manila'})} Manila · expires after 15 seconds; checkout rechecks every hour and price.`:'UNKNOWN · Prepare Chrome and check live availability. No current slot evidence.';
+}
+setInterval(()=>{if(latest&&currentView==='tests'&&latest.operation==='idle')renderCourtBrowser(latest);},1000);

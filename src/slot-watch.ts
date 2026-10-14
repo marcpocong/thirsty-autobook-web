@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
-import { OndaLiveAvailabilityProvider } from './api-booking/live-availability-provider.js';
 import { parseAvailability } from './api-booking/availability-parser.js';
 import { readPublicBookingRecords, type PublicBookingRecords } from './api-booking/public-bookings.js';
 import { MATRIX_COURTS, MATRIX_HOURS, SLOT_STATE_CODE, countCourtHourStates, courtHourStates, encodeCourtHourStates,
@@ -16,10 +15,10 @@ export { relativeSeconds } from './slot-evidence.js';
 export type { SlotTimelineEntry } from './slot-evidence.js';
 
 /**
- * Release slot watch: a read-only observer of all 112 court-hours around a release.
- * It uses only Onda's public, credential-free availability and booking-record
- * endpoints and never touches a browser, lock, hold, or checkout. It runs in the
- * desktop app's main process, never in the booking runner.
+ * Release slot watch: a read-only observer of the Mango court-hour matrix.
+ * Production injects availability from an isolated Chrome guest observer in a
+ * separate child process. Public occupancy remains supplemental. Missing browser
+ * evidence stays UNKNOWN; this class never borrows a dispatch worker or security context.
  *
  * Reads launch on their scheduled release-relative times even while earlier reads
  * are still waiting for Onda (release-time reads have taken 3-6 s), up to a small
@@ -148,26 +147,9 @@ export interface SlotWatchOptions {
   dynamicScheduling?:boolean;
 }
 
-const cacheOf = (headers: Headers): AvailabilityRead['cache'] => {
-  const status = headers.get('x-vercel-cache') ?? '', age = headers.get('age') ?? '';
-  const cache = { ...(/^[A-Z_]{2,16}$/.test(status) ? { status } : {}), ...(/^\d{1,7}$/.test(age) ? { ageS: Number(age) } : {}) };
-  return Object.keys(cache).length ? cache : undefined;
-};
-const safeHeader=(value:string|null,max=240)=>value&&value.length<=max&&/^[\x20-\x7E]+$/.test(value)?value:undefined;
-const providerOf=(headers:Headers):AvailabilityRead['provider']=>{
-  const vercelId=safeHeader(headers.get('x-vercel-id')),date=safeHeader(headers.get('date')),matchedPath=safeHeader(headers.get('x-matched-path'));
-  return vercelId||date||matchedPath?{...(vercelId?{vercelId}:{}),...(date?{date}:{}),...(matchedPath?{matchedPath}:{})}:undefined;
-};
-const withSignal = (signal: AbortSignal): typeof fetch => (input, init) =>
-  fetch(input, { ...init, signal: init?.signal ? AbortSignal.any([init.signal, signal]) : signal });
-async function liveAvailability(date: string, signal: AbortSignal): Promise<AvailabilityRead> {
-  let cache: AvailabilityRead['cache'],provider:AvailabilityRead['provider'];
-  const fetcher: typeof fetch = async (input, init) => { const response = await withSignal(signal)(input, init); cache = cacheOf(response.headers);provider=providerOf(response.headers);return response; };
-  const envelope = await new OndaLiveAvailabilityProvider({ allowIncompleteRange: true, timeoutMs: SLOT_WATCH_READ_TIMEOUT_MS, fetcher })
-    .getAvailability({ startDate: date, endDate: date });
-  return { snapshot: parseAvailability(envelope.raw, { startDate: date, endDate: date, capturedAt: envelope.capturedAt,
-    fixtureKind: envelope.fixtureKind, label: envelope.label, now: new Date(), maximumAgeMs: 15_000, requireCompleteRange: false }), ...(cache ? { cache } : {}),...(provider?{provider}:{}) };
-}
+/** Production must inject the isolated browser observer. Missing transport stays UNKNOWN. */
+async function liveAvailability(_date:string,_signal:AbortSignal):Promise<AvailabilityRead>{throw Error('AVAILABILITY_OBSERVER_BROWSER_REQUIRED');}
+const withSignal = (signal: AbortSignal): typeof fetch => (input, init) => fetch(input, { ...init, signal: init?.signal ? AbortSignal.any([init.signal, signal]) : signal });
 const liveBookings = (date: string, signal: AbortSignal) => readPublicBookingRecords(date, { timeoutMs: SLOT_WATCH_BOOKING_TIMEOUT_MS, fetcher: withSignal(signal) });
 const abortableSleep = (ms: number, signal: AbortSignal) => new Promise<void>(done => {
   if (signal.aborted) { done(); return; }

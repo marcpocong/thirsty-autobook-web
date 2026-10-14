@@ -14,6 +14,7 @@ const bridge: Bridge = {
   strategyEvidence:input=>ipcRenderer.invoke('thirsty:strategyEvidence',input),
   resetPrepare:strategy=>ipcRenderer.invoke('thirsty:resetPrepare',strategy),
   testBooking:input=>ipcRenderer.invoke('thirsty:testBooking',input),
+  browseCourts:date=>ipcRenderer.invoke('thirsty:browseCourts',date),
   apiPreview:date=>ipcRenderer.invoke('thirsty:apiPreview',date),
   checkReleaseBlocks:date=>ipcRenderer.invoke('thirsty:checkReleaseBlocks',date),
   setWorkflow:workflow=>ipcRenderer.invoke('thirsty:setWorkflow',workflow),

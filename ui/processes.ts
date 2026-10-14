@@ -23,6 +23,10 @@ export function sanitizeLine(text: string): string {
 }
 export function commandSpec(command: Command, root: string, node: string) {
   if (typeof command === 'object' && command !== null) {
+    if(command.kind==='courtBrowse'){
+      const c=z.object({kind:z.literal('courtBrowse'),date:z.iso.date()}).strict().parse(command);
+      return {executable:node,args:['--import','tsx',resolve(root,'src/api-booking/court-browser-runner.ts'),JSON.stringify({date:c.date})],automation:true};
+    }
     if(command.kind==='blockAudit'){
       const c=z.object({kind:z.literal('blockAudit'),date:z.iso.date()}).strict().parse(command);
       return {executable:node,args:['--import','tsx',resolve(root,'src/api-booking/block-audit-runner.ts'),

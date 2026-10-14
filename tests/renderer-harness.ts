@@ -55,7 +55,7 @@ export async function openRenderer(browser: Browser, extra: Record<string, unkno
       checkReleaseBlocks: record('checkReleaseBlocks'), testBooking: record('testBooking'), cancelScheduledRelease: record('cancelScheduledRelease'),
       rebuildIntelligence: record('rebuildIntelligence'), clearIntelligence: record('clearIntelligence'), runNetworkCheck: record('runNetworkCheck'),
       watchNextRelease: record('watchNextRelease'), stopSlotWatch: record('stopSlotWatch'), closeBotBrowsers: record('closeBotBrowsers'), syncClock: record('syncClock'),
-      setMode: record('setMode'), abortAutomation: record('abortAutomation'), apiPreview: record('apiPreview'),
+      setMode: record('setMode'), abortAutomation: record('abortAutomation'), apiPreview: record('apiPreview'), browseCourts:record('browseCourts'),
       adviseFromHistory: async (input: unknown) => { w.fixtureCalls.push('adviseFromHistory'); w.fixtureAdviceInput = input; return w.fixtureAdvice; },
       replayPlan: async (input: unknown) => { w.fixtureCalls.push('replayPlan'); w.fixtureReplayInput = input; return w.fixtureReplay; },
       onConfirmRequest: (callback: any) => { w.fixtureConfirmRequest = callback; return () => {}; },

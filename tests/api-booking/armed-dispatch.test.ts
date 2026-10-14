@@ -562,3 +562,28 @@ describe('strict Shotgun deadlines',()=>{
     expect(writeTimes.length).toBeGreaterThan(0);expect(writeTimes.every(t=>t>=releaseMs+1000)).toBe(true);
   });
 });
+
+
+describe('diversified one-court objective coordination',()=>{
+  it.each(['hold','unknown','throttle','payment','rejection'] as const)('coordinates different courts on %s',async kind=>{
+    const releaseMs=Date.now()+1700;
+    const targets=validatePrecisionTargets([{court:7,start:'17:00',durationHours:3,releaseOffsetMs:-500},{court:6,start:'17:00',durationHours:3,releaseOffsetMs:0}],date);
+    const race=freezePrecisionRace(date,releaseMs,targets.map(target=>({target,plan:precisionTargetPlan(target,date),dispatchTimingPolicy:'SHOTGUN_STRICT' as const})));
+    const clock=TrustedReleaseClock.fromOffset(0,{method:'test',sampleCount:5});
+    const armed=await armPrecisionRace(race,{customerFor:()=>customer,journalRoot:root,releaseMs,now:()=>clock.nowMs()});
+    const {transport,calls}=fakeTransport(async request=>{
+      if(kind==='hold')return pendingResponse(request,armed.attempts[0]!.plan);
+      if(kind==='unknown')throw new BrowserSessionTransportError('OUTCOME_UNKNOWN',true);
+      if(kind==='throttle')throw new BrowserSessionTransportError('ONDA_HTTP_STATUS_INVALID',true,{status:429,category:'http-rejection',contentKind:'json',responseSource:'application',errorHint:'rate-limit'},true);
+      if(kind==='payment')throw new BrowserSessionTransportError('ONDA_HTTP_STATUS_INVALID',true,{status:409,category:'http-rejection',contentKind:'json',responseSource:'application',errorHint:'payment-in-progress'},true);
+      return conflict();
+    });
+    const outcome=await dispatchArmedPrecisionRace(armed,{clock,prewarmLeadMs:1300,spinTailMs:0,isAborted:()=>false,prewarm:async()=>{},transportFor:()=>transport});
+    expect(calls).toHaveLength(kind==='rejection'?2:1);
+    if(kind!=='rejection'){
+      expect(outcome.results[1]!.state).toBe('NOT_DISPATCHED');
+      expect(outcome.results[1]!.code).toBe({hold:'SHOTGUN_TARGET_ALREADY_ACHIEVED',unknown:'SHOTGUN_TARGET_OUTCOME_UNKNOWN',throttle:'SHOTGUN_PROVIDER_THROTTLE_STOP',payment:'SHOTGUN_PAYMENT_IN_PROGRESS_STOP'}[kind]);
+      expect(isSubmissionPermitUnspent(armed.attempts[1]!.permit)).toBe(false);
+    }
+  });
+});

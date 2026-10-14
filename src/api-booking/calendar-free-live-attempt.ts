@@ -15,6 +15,10 @@ import { submitCalendarFreeTwoHourCheckout } from './calendar-free-checkout.js';
 import { officialCheckoutUrl } from './checkout-restoration.js';
 import type { CheckoutHttpResponse } from './browser-session-transport.js';
 
+// Archived diagnostic: use the guarded desktop runner; this legacy transport cannot submit.
+function requireCurrentRunner():void{throw Error('LEGACY_ENTRYPOINT_RETIRED_USE_DESKTOP_RUNNER');}
+requireCurrentRunner();
+
 const [date, startTime, courtText, durationText] = process.argv.slice(2);
 const journalDirectory = '.local/api-booking/submission-journal-session-20260919-second';
 const court = Number(courtText);

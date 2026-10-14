@@ -23,3 +23,10 @@ Mango's existing today + 2 / 08:00 Manila policy is unchanged. Buko's recurring 
 Whole targets require every requested hour to be open. Missing or partially open targets remain unknown. Explicit closed Mango cells before a verified future release are not mislabeled fully booked. A facility-wide available flag is never treated as wing-wide slot publication.
 
 The site's existing-payment 409 was observed when trying Buko in the first customer's pending checkout context. The independent configured Worker B normal flow succeeded. Never treat this message as ordinary slot contention or automatically retry it. Unknown outcomes retain reconciliation requirements. Saved profiles, configurations, journals, release budgets and offsets are preserved.
+
+
+## Workflow modernization follow-up (October 14)
+
+Home → Book Available Now provides independent exact Mango/Buko date, court, start and 1–3-hour duration. The fourteen-court browser filters by wing and displays current per-slot prices; stale/missing observations remain UNKNOWN. Numeric release plans remain explicitly Mango. Next Release retains the shared compiler and saved literal authorizations.
+
+Operational audits, CLI previews and network diagnostics now require verified Chrome availability. Slot Watch injects its own isolated guest Chrome observer and cannot borrow dispatch security or worker credentials. Its matrix stays Mango scoped; Buko scheduled releases remain blocked. Live Shotgun has an explicit compatibility block pending proofless release and provider request-rate verification. See [availability dependency audit](AVAILABILITY_CALLER_AUDIT.md) and the modernization report for tested scopes and limitations.

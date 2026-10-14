@@ -87,6 +87,8 @@ const errors: Record<string, string> = {
   ARBITRATION_RELEASE_CONTEXT_INVALID:'The release date or time could not be verified. Nothing was armed.',
   ARBITRATION_MANIFEST_UNAVAILABLE:'This app build cannot create the investigation setup. Nothing was armed.',
   PRECISION_TOO_LATE_TO_FREEZE:'The Precision target set could not be frozen before release. Nothing was sent.',
+  SHOTGUN_LIVE_COMPATIBILITY_UNVERIFIED:'Live Shotgun is blocked: proofless release checkout and provider request-rate permission remain unverified. You can edit, save and test the plan offline.',
+  AVAILABILITY_BROWSER_PREPARATION_REQUIRED:'Prepare and verify the booking browser before checking live availability.',
   PRECISION_REQUIRES_PROOFLESS_STANDARD:'Precision Release uses Proofless Direct with Standard 1-3 hour targets.',
   OBJECTIVE_NOT_ACHIEVED_ALL_REJECTED:'Every dispatched Precision attempt was rejected by Onda. No hold was created.',
   OBJECTIVE_NOT_ACHIEVED_NOTHING_DISPATCHED:'No Precision attempt was dispatched. See each attempt for the reason.',
@@ -726,6 +728,7 @@ export class Controller {
       const remaining=event.countdownSeconds===null?'remaining time unknown':`${Math.floor(event.countdownSeconds/60)}:${String(event.countdownSeconds%60).padStart(2,'0')} remaining`;
       this.state.detail=`Browser ${event.browser} · ${remaining}\nWait for expiry, then press Reset & Prepare again.`;this.log(`Preparation blocked: ${this.state.detail}`,true);return;
     }
+    if(event.type==='courtBrowser'){this.state.courtBrowser=event;this.publish();return;}
     if(event.type==='blockAudit'){
       this.state.blockAudit=event;
       const count=(status:typeof event.cells[number]['status'])=>event.cells.filter(cell=>cell.status===status).length;
@@ -820,6 +823,7 @@ export class Controller {
     }
   }
   private async noLock() { this.state.lock = await this.deps.lock(); if (this.state.lock) throw new Error('AUTOMATION_LOCK_EXISTS'); }
+  browseCourts(value:unknown){const date=z.iso.date().parse(value);return this.operation('apiPreview',async gen=>{this.state.courtBrowser=null;this.publish();await this.run({kind:'courtBrowse',date},gen);});}
   apiPreview(value:unknown) { const date=z.iso.date().parse(value); return this.operation('apiPreview', async gen => {
     await this.noLock();
     const fingerprint=this.apiTestFingerprint,preferences=this.apiTestPreferences;
@@ -1015,6 +1019,7 @@ export class Controller {
     if(!authorized)throw Error('TERMS_AUTHORIZATION_REQUIRED');
     await this.noLock();
     const plan=this.deps.booking();
+    if(plan.setup.STRATEGY_V2?.shotgun?.enabled)throw Error('SHOTGUN_LIVE_COMPATIBILITY_UNVERIFIED');
     if(plan.setup.STRATEGY_V2?.shotgun?.exactSchedule.some(shot=>shot.configuredOffsetMs>0)||plan.setup.PRECISION_PHASE3?.wave1.some(assignment=>(assignment.fanOutOffsetsMs??[assignment.releaseOffsetMs??0]).some(offset=>offset>0)))
       throw Error('SHOTGUN_PLAN_INCOMPATIBLE_POSITIVE_OFFSET');
     // Arming refreshes the Google offset itself; the runner refreshes it again at T-10 min.

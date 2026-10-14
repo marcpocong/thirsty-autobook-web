@@ -7,7 +7,7 @@ import { isObserverEvent, SLOT_WATCH_OBSERVER_PROTOCOL, type ObserverCommand } f
 export type ObserverHealthState='ONLINE'|'DEGRADED'|'OFFLINE';
 export interface ObserverHealth {state:ObserverHealthState;lastEventAt:string|null;lastSuccessfulReadAt:string|null;lastLatencyMs:number|null;reason:string|null;sequence:number}
 export interface ObserverHandle {id:string;done:Promise<SlotWatchSummary>;stop(reason:string):Promise<SlotWatchSummary>;health():ObserverHealth}
-export interface ObserverLaunch {nodePath:string;childPath:string;date:string;releaseMs:number;directory:string;clockPath?:string;clockOffsetMs:number;clockSynced:boolean;candidates?:SlotWatchCandidate[];
+export interface ObserverLaunch {browserObservation?:boolean;nodePath:string;childPath:string;date:string;releaseMs:number;directory:string;clockPath?:string;clockOffsetMs:number;clockSynced:boolean;candidates?:SlotWatchCandidate[];
   onUpdate(view:SlotWatchView):void;onObservation?(observation:AvailabilityObservation):void;spawn?:typeof fork;execArgv?:string[]}
 
 /** Separate Node process: availability reads and evidence aggregation never share the release dispatch event loop. */
@@ -28,7 +28,7 @@ export function startSlotWatchObserver(input:ObserverLaunch):ObserverHandle{
     else if(raw.type==='failed')fail(raw.code);
   });
   child.once('error',()=>fail('OBSERVER_PROCESS_ERROR'));child.once('exit',code=>{if(!settled)fail(code===0?'OBSERVER_DISCONNECTED':'OBSERVER_CRASHED');});
-  const start:ObserverCommand={protocol:SLOT_WATCH_OBSERVER_PROTOCOL,type:'start',id,date:input.date,releaseMs:input.releaseMs,directory:input.directory,
+  const start:ObserverCommand={protocol:SLOT_WATCH_OBSERVER_PROTOCOL,type:'start',...(input.browserObservation===true?{browserObservation:true}:{}),id,date:input.date,releaseMs:input.releaseMs,directory:input.directory,
     ...(input.clockPath?{clockPath:input.clockPath}:{}),clockOffsetMs:input.clockOffsetMs,clockSynced:input.clockSynced,candidates:[...(input.candidates??[])]};child.send(start);
   return {id,done,health:()=>({...health}),stop:reason=>{if(!settled){const command:ObserverCommand={protocol:SLOT_WATCH_OBSERVER_PROTOCOL,type:'stop',id,reason};child.send(command);}
     return done.finally(()=>{if(child.connected)child.disconnect();});}};

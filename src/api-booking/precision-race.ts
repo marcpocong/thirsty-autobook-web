@@ -164,6 +164,7 @@ export async function classifyPrecisionDispatchError(error: unknown,
   journalState: () => Promise<SubmissionState | undefined>): Promise<PrecisionDispatchResult> {
   const code = error instanceof Error && /^[A-Z][A-Z0-9_]{0,79}$/.test(error.message) ? error.message : 'PRECISION_DISPATCH_FAILED';
   if (error instanceof VerifiedHoldQrError) return { state: 'HOLD_VERIFIED_QR_ATTENTION', code };
+  if(error instanceof SubmissionDispatchError&&error.diagnostic?.errorHint==='payment-in-progress')return {state:'REJECTED',code:'SHOTGUN_PAYMENT_IN_PROGRESS_STOP'};
   if(error instanceof SubmissionDispatchError&&error.diagnostic?.status===429)return {state:'REJECTED',code:'SHOTGUN_PROVIDER_THROTTLE_STOP'};
   if (error instanceof SubmissionDispatchError && !error.dispatched)
     return { state: code === 'DIRECT_RELEASE_WINDOW_MISSED' ? 'WINDOW_MISSED' : 'NOT_DISPATCHED', code };

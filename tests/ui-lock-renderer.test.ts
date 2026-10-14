@@ -19,7 +19,7 @@ async function renderer(extra:Record<string,unknown>={}){
 
 it('shows the five operator views with a wide grid and stacked narrow layout',async()=>{
   const page=await renderer();
-  expect(await page.locator('nav [data-view]').allTextContents()).toEqual(['Next Release','Strategy','Live','History & Insights','Tools']);
+  expect(await page.locator('nav [data-view]').allTextContents()).toEqual(['Home','Book Now','Next Release','Edit Release Plan','Live','History','Settings']);
   expect(await page.locator('#release-schedule').isVisible()).toBe(true);
   expect(await page.locator('#next-strategy').isVisible()).toBe(true);
   expect(await page.locator('#booking-method').isVisible()).toBe(false);
@@ -80,6 +80,7 @@ it('tests the saved plan with only the selected date changed',async()=>{
   const page=await renderer();
   await page.evaluate(()=>{const w=window as any;w.thirsty.resetPrepare=async(value:unknown)=>{w.fixturePreparation=value;};});
   await showRendererView(page,'tests');
+  await page.locator('#book-now-exact').uncheck();
   await page.locator('#test-date').fill('2026-09-25');
   await page.locator('#test-main-action').click();
   await page.waitForFunction(()=>!!(window as any).fixturePreparation);
@@ -96,7 +97,7 @@ it('prepares an explicit Buko Normal test without rewriting the Mango saved stra
   await page.locator('#test-date').fill('2026-10-19');
   await page.locator('#test-wing').selectOption('BUKO');
   await page.locator('#test-buko-court').selectOption('4');
-  expect(await page.locator('#test-plan-summary').innerText()).toContain('Buko Wing · Court 4 · Normal booking');
+  expect(await page.locator('#test-plan-summary').innerText()).toContain('Buko · Court 4');
   await page.locator('#test-main-action').click();
   await page.waitForFunction(()=>!!(window as any).fixturePreparation);
   expect(await page.evaluate(()=>(window as any).fixturePreparation)).toMatchObject({workflow:'test',method:'api-first',request:{wing:'BUKO',strategy:'standard',date:'2026-10-19',courtCount:1,priority:[4],fallbackStarts:[],exact:[[4]]}});
@@ -108,8 +109,8 @@ it('runs a prepared test through the existing Terms and test booking action',asy
   const page=await renderer();
   await page.evaluate(()=>{const w=window as any;w.thirsty.testBooking=async(value:unknown)=>{w.fixtureTestBooking=value;};});
   await showRendererView(page,'tests');
-  await page.evaluate(()=>{const w=window as any;w.fixtureState.ready=true;w.fixtureState.browserHealth.A=true;w.fixtureState.preparedContext={workflow:'test',date:(document.getElementById('test-date') as HTMLInputElement).value};w.fixturePublish(w.fixtureState);});
-  expect(await page.locator('#test-main-action').innerText()).toBe('Review & Test');
+  await page.evaluate(()=>{const w=window as any;w.fixtureState.ready=true;w.fixtureState.apiFirstReady=true;w.fixtureState.browserHealth.A=true;w.fixtureState.preparedContext={workflow:'test',date:(document.getElementById('test-date') as HTMLInputElement).value};w.fixturePublish(w.fixtureState);});
+  expect(await page.locator('#test-main-action').innerText()).toBe('Review & Book');
   await page.locator('#test-main-action').click();
   expect(await page.evaluate(()=>(window as any).fixtureTestBooking)).toBeUndefined();
   await page.locator('#terms').check();
@@ -117,7 +118,7 @@ it('runs a prepared test through the existing Terms and test booking action',asy
   await page.locator('#test-main-action').click();
   await page.waitForFunction(()=>!!(window as any).fixtureTestBooking);
   const sent=await page.evaluate(()=>(window as any).fixtureTestBooking);
-  expect(sent).toMatchObject({authorizeTerms:true,request:{strategy:'standard',priority:defaultSetup.PREFERRED_COURTS}});
+  expect(sent).toMatchObject({authorizeTerms:true,request:{strategy:'standard',priority:[1],exact:[[1]]}});
   await page.close();
 });
 

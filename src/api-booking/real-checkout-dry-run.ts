@@ -10,6 +10,10 @@ import { runRealCheckoutHybridDryRun } from './real-checkout-hybrid.js';
 import { checkoutDiagnostic } from './checkout-diagnostics.js';
 import { DateTime } from 'luxon';
 
+// Archived diagnostic: use the guarded desktop runner; this legacy transport cannot submit.
+function requireCurrentRunner():void{throw Error('LEGACY_ENTRYPOINT_RETIRED_USE_DESKTOP_RUNNER');}
+requireCurrentRunner();
+
 const [date, startTime, durationText, courtText] = process.argv.slice(2);
 const durationHours = Number(durationText), court = Number(courtText);
 const auto = date === 'auto';
