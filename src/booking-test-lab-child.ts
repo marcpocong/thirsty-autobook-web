@@ -1,4 +1,5 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { appendFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { runShotgunLab, type LabRequest } from './shotgun-test-lab.js';
 import { runNormalLab, type NormalLabScenario } from './normal-test-lab.js';
@@ -11,14 +12,19 @@ const directory = resolve(process.argv[3] ?? '');
 if (!/(?:booking|shotgun)-test-lab/.test(directory) || directory === process.cwd()) throw Error('LAB_ISOLATION_REQUIRED');
 await mkdir(directory, { recursive: true });
 process.chdir(directory);
+// Synchronous trace in the isolated run directory: it survives a native abort and shows the last completed step.
+const trace = (text: string) => { try { appendFileSync(resolve(directory, 'child-trace.log'), `${new Date().toISOString()} ${text}
+`); } catch { /* diagnostics only */ } };
+trace(`start ${kind}`);
+process.on('exit', code => trace(`exit ${code}`));
 process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT = 'SUPERVISED_ONE_SHOT';
 let stopped = false;
 process.on('message', message => { if (message === 'stop') stopped = true; });
 process.on('SIGTERM', () => { stopped = true; });
 try {
-  const options = { directory, runId: directory.split(/[\\/]/).at(-1)!, isAborted: () => stopped, onPhase: (phase: string) => process.send?.({ phase }) };
+  const options = { directory, runId: directory.split(/[\\/]/).at(-1)!, isAborted: () => stopped, onPhase: (phase: string) => { trace(`phase ${phase}`); process.send?.({ phase }); }, onTrace: (step: string) => trace(step) };
   const result = kind === 'normal' ? await runNormalLab(request as { objective: BookingObjective; scenario: NormalLabScenario }, options) : await runShotgunLab(request as LabRequest, options);
   await writeFile(resolve(directory, 'result.json'), JSON.stringify(result, null, 2));
-  process.send?.({ result });
-} catch (error) { process.stderr.write(`${(error as Error).message}\n`); process.send?.({ error: (error as Error).message }); process.exitCode = 1; }
-finally { process.disconnect?.(); }
+  trace('result written'); process.send?.({ result });
+} catch (error) { process.stderr.write(`${(error as Error).message}\n`); process.send?.({ error: (error as Error).message }); trace(`error ${(error as Error).message}`); process.exitCode = 1; }
+finally { trace('disconnect'); process.disconnect?.(); }

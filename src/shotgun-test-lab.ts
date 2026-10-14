@@ -108,7 +108,7 @@ const percentile=(values:number[],q:number)=>values.length?[...values].sort((a,b
 
 /** Child-process only: cwd must be its fresh isolated run directory. No production
  * config, profiles, identities, holds, lock or journals are loaded. */
-export async function runShotgunLab(input:LabRequest, options:{directory:string;runId:string;isAborted:()=>boolean;onPhase?:(phase:string)=>void}):Promise<LabResult> {
+export async function runShotgunLab(input:LabRequest, options:{directory:string;runId:string;isAborted:()=>boolean;onPhase?:(phase:string)=>void;onTrace?:(step:string)=>void}):Promise<LabResult> {
   const prepared_=validateLabRequest(input),{phase3,topology}=prepared_,labTargets=prepared_.targets;
   if(process.cwd()!==options.directory)throw Error('LAB_ISOLATED_CWD_REQUIRED');
   const sessions:OfflineChrome[]=[];
@@ -166,8 +166,8 @@ export async function runShotgunLab(input:LabRequest, options:{directory:string;
     options.onPhase?.('Preparing isolated Chrome workers; all external networking blocked');
     for(const [index,worker] of waves.entries()) {
       if(options.isAborted())throw Error('LAB_STOPPED');
-      const session=await launchOfflineChrome({chromium,chromePath:findChrome(undefined,chromium.executablePath()),scratch:options.directory,index,tabs:topology.tabsPerWorker[worker]!,basePort:30544});
-      sessions.push(session);
+      const session=await launchOfflineChrome({chromium,chromePath:findChrome(undefined,chromium.executablePath()),scratch:options.directory,index,tabs:topology.tabsPerWorker[worker]!,basePort:30544,trace:step=>options.onTrace?.(step)});
+      sessions.push(session);options.onPhase?.(`Isolated worker ${worker} launched`);
       // Context-wide interception additionally blocks every non-fixture route.
       await session.browser.contexts()[0]!.route('**/*',route=>route.abort());
       for(const [tab,page] of session.pages.entries()) {
@@ -231,5 +231,5 @@ export async function runShotgunLab(input:LabRequest, options:{directory:string;
     const rows=new Map(recorder.rows().map(r=>[r.workerId,r]));
     for(const o of observed){const a=race.attempts.find(a=>a.target.releaseOffsetMs===o.offset&&a.plan.courts[0]!.spaceId===labTargets.find(t=>t.id===o.targetId)!.spaceId);const row=a&&rows.get(a.id);if(row?.browserRequestStartMs!==null&&row?.browserRequestStartMs!==undefined)o.at=triggerMs+row.browserRequestStartMs;}
     return summary(triggerMs,race.fingerprint,busyPercent(before,cpuSnapshot()));
-  } finally {await Promise.allSettled(sessions.map(s=>closeOfflineChrome(s)));await lock?.release();}
+  } finally {options.onPhase?.('Closing isolated Chrome workers');await Promise.allSettled(sessions.map(s=>closeOfflineChrome(s)));options.onPhase?.('Isolated Chrome workers closed');await lock?.release();}
 }
