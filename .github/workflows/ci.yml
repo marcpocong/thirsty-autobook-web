@@ -19,8 +19,15 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: Typecheck
         run: npm run typecheck
-      - name: Unit, integration and UI tests (UI tests drive the real renderer in Chromium)
-        run: npm test
+      # These two suites own multiple real browsers or many full-page captures.
+      # Run them sequentially in this same job instead of competing with the
+      # rest of the suite. Every test and every existing timeout remains intact.
+      - name: Unit, integration and renderer regressions
+        run: npm test -- --exclude tests/shotgun-test-lab.test.ts --exclude tests/strategy-flow.test.ts
+      - name: Isolated Chrome Test Lab scenarios
+        run: npx vitest run tests/shotgun-test-lab.test.ts
+      - name: Complete operator strategy flow and viewport checks
+        run: npx vitest run tests/strategy-flow.test.ts
       - name: Clean UI/runtime build
         run: npm run ui:build
       - name: Source-vs-dist consistency
