@@ -50,9 +50,11 @@ export interface OfflineChrome { index: number; port: number; browser: Browser; 
  * fan-out child). `headed` shows real windows (background tabs behave like production's); default is headless.
  */
 export async function launchOfflineChrome(options: { chromium: typeof import('playwright').chromium; chromePath: string; scratch: string; index: number; tabs: number;
-  headed?: boolean; basePort?: number; responseDelayMs?: number }): Promise<OfflineChrome> {
+  headed?: boolean; basePort?: number; responseDelayMs?: number; trace?: (step: string) => void }): Promise<OfflineChrome> {
+  const trace = (step: string) => options.trace?.(`worker ${options.index}: ${step}`);
   const port = (options.basePort ?? 29544) + options.index, profile = join(options.scratch, 'profiles', `w${options.index}`);
   await mkdir(profile, { recursive: true });
+  trace('port probe');
   for (const stop = Date.now() + 20_000; ;) {
     try { await fetch(`http://127.0.0.1:${port}/json/version`, { signal: AbortSignal.timeout(500) }); } catch { break; }
     if (Date.now() > stop) throw Error('BENCH_PORT_BUSY');
@@ -70,6 +72,7 @@ export async function launchOfflineChrome(options: { chromium: typeof import('pl
       args:[`--remote-debugging-port=${port}`,'--remote-debugging-address=127.0.0.1','--disable-background-networking','--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1','--proxy-server=http://127.0.0.1:9']});
     browser=launched.browser()!;version=browser.version();
   } else {
+  trace('spawn');
   child = spawn(options.chromePath, [...(options.headed ? [`--window-position=${40 + options.index * 30},${40 + options.index * 30}`, '--window-size=900,700'] : ['--headless=new']),
     `--remote-debugging-port=${port}`, '--remote-debugging-address=127.0.0.1', `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check',
     '--disable-background-networking', '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1', '--proxy-server=http://127.0.0.1:9',
@@ -80,12 +83,15 @@ export async function launchOfflineChrome(options: { chromium: typeof import('pl
     if (Date.now() > deadline) throw Error('BENCH_CHROME_START_TIMEOUT');
     await new Promise(done => setTimeout(done, 100));
   }
+  trace('connect');
   browser = await options.chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+  trace('connected');
   }
   const context = browser.contexts()[0]!;
   const pages: Page[] = [];
   const routeSeen: number[] = [];
   for (let tab = 0; tab < options.tabs; tab++) {
+    trace(`tab ${tab} open`);
     const page = tab === 0 ? context.pages()[0] ?? await context.newPage() : await context.newPage();
     await page.route('https://app.onda.fit/**', async route => {
       const request = route.request();
@@ -101,7 +107,9 @@ export async function launchOfflineChrome(options: { chromium: typeof import('pl
       }
       await route.fulfill({ status: 404, body: '' });
     });
+    trace(`tab ${tab} goto`);
     await page.goto(ONDA_BOOKING_URL, { waitUntil: 'domcontentloaded' });
+    trace(`tab ${tab} escape check`);
     const escaped = await page.evaluate(async () => { try { await fetch('https://example.com/', { mode: 'no-cors' }); return true; } catch { return false; } });
     if (escaped) throw Error('BENCH_NETWORK_NOT_ISOLATED');
     pages.push(page);
