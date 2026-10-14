@@ -743,6 +743,7 @@ function render(state: Dashboard) {
   const apiRelease=state.operation==='full'?state.activeApiRelease:null;
   const armed=!!state.scheduledRelease;
   const busy = state.operation !== 'idle'&&state.operation!=='scheduled';
+  for(const id of ['test-wing','test-buko-court','test-date','book-now-start','book-now-duration','book-now-objective','book-now-exact','browse-courts'])input(id).disabled=busy;
   byId('stop').hidden=!busy;
   const playerStatus=state.playerStatus??{primary:!!state.booking?.playerConfigured,extended:!!state.booking?.extendedPlayerConfigured,third:!!state.booking?.thirdPlayerConfigured,fourth:!!state.booking?.fourthPlayerConfigured,fifth:!!state.booking?.fifthPlayerConfigured,sixth:!!state.booking?.sixthPlayerConfigured,seventh:!!state.booking?.seventhPlayerConfigured,eighth:!!state.booking?.eighthPlayerConfigured};
   const dual=state.booking?.setup.BOOKING_TYPE==='standard'&&state.booking.setup.COURT_COUNT===2;
@@ -1175,7 +1176,7 @@ function renderPhase4(state:Dashboard){
       `Measured ${new Date(net.measuredAt).toLocaleString('en-GB',{timeZone:'Asia/Manila'})} Manila · ${net.target}`,
       `${net.succeeded} of ${net.requests} reads succeeded · ${net.complete} complete`,
       `Read time median ${net.medianMs??'—'} ms · p90 ${net.p90Ms??'needs 10 reads'} · p95 ${net.p95Ms??'needs 20 reads'} · max ${net.maxMs??'—'} ms`,
-      `Connections: ${net.newConnections} new, ${net.reusedRequests} reused · setup ${net.connectMs.length?net.connectMs.map(value=>`${value} ms`).join(', '):'none'} · DNS ${net.dnsMs??'—'} ms · ${net.protocol}`,
+      `Connections: ${net.newConnections??'unmeasured'} new, ${net.reusedRequests??'unmeasured'} reused · setup ${net.connectMs.length?net.connectMs.map(value=>`${value} ms`).join(', '):'none'} · DNS ${net.dnsMs??'—'} ms · ${net.protocol}`,
       `Network clock: ${net.clock.kept} of ${net.clock.samples} samples kept · offset ${net.clock.offsetMs??'—'} ms · round trip ${net.clock.minRoundTripMs??'—'}–${net.clock.medianRoundTripMs??'—'} ms · spread ${net.clock.spreadMs??'—'} ms · ${net.clock.quality}`,
       `Interfaces: ${net.interfaces.map(value=>`${value.name} (${value.kind})`).join(', ')||'none reported'} · link speed not measured`,
       net.history.previousRuns?`Earlier checks: ${net.history.previousRuns}, median read time ${net.history.previousMedianMs??'—'} ms`:'No earlier checks to compare.']));}
@@ -1336,7 +1337,7 @@ function renderPrecision(state:Dashboard){
 input('book-now-start').value='18:00';
 byId('browse-courts').onclick=()=>{void window.thirsty.browseCourts(input('test-date').value).catch(()=>{byId('court-browser-status').textContent='Live availability could not be verified. Prepare and verify Chrome, then check again.';});};
 function renderCourtBrowser(state:Dashboard){
- const evidence=state.courtBrowser,current=evidence?.date===input('test-date').value&&Date.now()-Date.parse(evidence.capturedAt)<15_000;
+ const evidence=state.courtBrowser,current=evidence?.date===input('test-date').value&&Date.now()-Date.parse(evidence.capturedAt)>=0&&Date.now()-Date.parse(evidence.capturedAt)<15_000;
  const wing=input('test-wing').value,grid=byId('court-browser-grid');grid.replaceChildren();
  for(const court of COURT_REGISTRY.filter(c=>c.wing===wing)){
   const row=document.createElement('div');row.className='court-browser-row';const label=document.createElement('strong');label.textContent=`${court.wing==='MANGO'?'Mango':'Buko'} · Court ${court.number}`;row.append(label);

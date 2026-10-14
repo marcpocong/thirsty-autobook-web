@@ -403,12 +403,17 @@ describe('release instant', () => {
 
   it('a verified hold is handed to the QR step; a lock-record failure after the sends never changes outcomes', async () => {
     const { armed, clock } = await arm(2, 1_500);
+    // This checks hold/lock semantics, not timer precision (covered by real-clock tests above).
+    let at=armed.releaseMs-1500;
+    vi.spyOn(clock,'nowMs').mockImplementation(()=>at);
+    vi.spyOn(clock,'monotonicDeadline').mockImplementation(epoch=>performance.now()+(epoch-at));
+    const sleep=async(ms:number)=>{at+=Math.ceil(Math.max(1,ms));await new Promise<void>(done=>setImmediate(done));};
     const holds: string[] = [];
-    const outcome = await dispatchArmedPrecisionRace(armed, { clock, prewarmLeadMs: 200, spinTailMs: 20, isAborted: () => false, prewarm: async () => undefined,
+    const outcome = await dispatchArmedPrecisionRace(armed, { clock, prewarmLeadMs: 200, spinTailMs: 0, sleep, isAborted: () => false, prewarm: async () => undefined,
       transportFor: worker => fakeTransport(async request => worker === 'A' ? pendingResponse(request, armed.attempts[0]!.plan) : conflict()).transport,
       onVerifiedHold: async attempt => { holds.push(attempt.target.workerId); return { state: 'QR_READY' }; },
       afterFire: async () => { throw Error('LOCK_REPLACED'); } });
-    expect(holds).toEqual(['A']);
+    expect(holds,JSON.stringify(outcome.results.map(result=>({state:result.state,code:result.code})))).toEqual(['A']);
     expect(outcome.results.map(result => result.state)).toEqual(['QR_READY', 'REJECTED']);
     expect(outcome.afterFireError).toBe('LOCK_REPLACED');
   });

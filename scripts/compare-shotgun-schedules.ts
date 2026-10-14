@@ -25,15 +25,19 @@ const cases:Array<{name:string;offsets:number[];roundRobin?:number;targets?:Smar
   ...[5,8,10,15].map(count=>({name:`wide-${count}`,offsets:shotgunOffsets(count,-2000,0)})),
   {name:'wide-8-round-robin',offsets:shotgunOffsets(8,-2000,0),roundRobin:4},
 ];
-const comparisons=[];
+const comparisons=process.argv[6]==='resume'?JSON.parse(await readFile(join(out,'comparison.json'),'utf8')):[];
 for(const spec of cases){
+  if(comparisons.some((row:{name:string})=>row.name===spec.name))continue;
   const count=spec.offsets.length,targets=spec.targets??[target],ids=targets.map(logicalTargetId);
   const draft:SmartDraft={...emptySmartDraft(),immediate:targets,backups:[],useBackupsImmediately:false,retryReopened:false,
     rates:confirmSmartRates(600,700,'VENUE_SCHEDULE','2026-10-16',new Date('2026-10-14T00:00:00Z')),
     advanced:{wave2:0,rescue:0},shotgun:{enabled:true,budget:count,allocationMode:spec.allocation??'CUSTOM',selectedTargetIds:ids,customCounts:Object.fromEntries(ids.map((id,index)=>[id,spec.counts?.[index]??count])),
       windowStartMs:-2000,windowEndMs:0,timingMode:'CUSTOM',customOffsetsMs:spec.offsets,timingCapacityOverride:true,allowStandbyConsumption:true}};
   const compiled=compileSmartPlan(draft,{targetDate:'2026-10-16'});
-  if(!compiled.phase3||compiled.problems.length||!compiled.shotgun)throw Error(`BENCH_PLAN_INVALID:${compiled.problems.join(',')}`);
+  if(!compiled.phase3||compiled.problems.length||!compiled.shotgun){
+    if(spec.name==='same-court-overlap-2'&&compiled.problems.some(reason=>reason.includes('overlap on the same court'))){comparisons.push({name:spec.name,targets,verdict:'COMPILER_REJECTED',reason:compiled.problems.join(', '),timing:null});await writeFile(join(out,'comparison.json'),JSON.stringify(comparisons,null,2));continue;}
+    throw Error(`BENCH_PLAN_INVALID:${compiled.problems.join(',')}`);
+  }
   const phase3=structuredClone(compiled.phase3);
   // Explicit alternate topology for comparison. Same one logical target and
   // exact global triggers; maximum six children and one process per group.
