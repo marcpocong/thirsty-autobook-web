@@ -76,11 +76,12 @@ function fakeTransport(respond: (request: ProoflessCheckoutRequest) => Promise<u
 const conflict = () => Promise.reject(new BrowserSessionTransportError('ONDA_HTTP_STATUS_INVALID', true,
   { status: 409, category: 'http-rejection', contentKind: 'json', responseSource: 'application', errorHint: 'availability' }, true));
 function pendingResponse(request: ProoflessCheckoutRequest, plan: BookingPlan) {
-  const ids = request.items.map((_, index) => `booking-${index}`);
+  // One expiry for the whole checkout, as the provider returns it; per-item Date.now() differed under load.
+  const ids = request.items.map((_, index) => `booking-${index}`), holdExpiresAt = new Date(Date.now() + 600_000).toISOString();
   return { success: true, bookings: request.items.map((item, index) => ({ id: ids[index], booking_no: `number-${index}`, customer_id: request.customerId,
     space_id: item.spaceId, facility_id: item.facilityId, date: item.date, start_time: `${item.startTime}:00`, end_time: `${item.endTime}:00`,
     duration: 60, rate: item.rate, guest_count: 1, booking_status: 'pending', payment_status: 'pending', booking_session_id: 'session',
-    hold_expires_at: new Date(Date.now() + 600_000).toISOString() })),
+    hold_expires_at: holdExpiresAt })),
     bookingSessions: [{ requestSessionRef: 'session_1', bookingSessionId: 'session', facilityId: request.facilityId, spaceId: request.items[0]!.spaceId,
       date, startTime: '17:00:00', endTime: '20:00:00', durationHours: 3, bookingIds: ids }],
     transaction: { id: 'transaction', reference: 'number-0', amount: plan.totalPrice, status: 'pending' }, trustedTotalAmount: plan.totalPrice };
