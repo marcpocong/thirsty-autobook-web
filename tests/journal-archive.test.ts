@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { mkdtemp, readFile, utimes, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readFile, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { DurableSubmissionJournal } from '../src/api-booking/durable-submission-journal.js';
 import { archiveHistoricalUnknown, journalOverview, readArchiveIndex, restoreArchived, scanJournals, verifyArchive } from '../src/journal-archive.js';
 // @ts-expect-error plain ESM installation helper
@@ -34,9 +34,11 @@ describe('historical UNKNOWN archival', () => {
     const safety = await inspectUpdateSafety(root, { processes: [], now: NOW });
     expect(safety.historicalUnknown.map((r: { key: string }) => r.key)).toEqual([key(1)]);
 
-    const result = await archiveHistoricalUnknown(root, [key(1), key(2), key(3), key(9)], 'owner-approved archival', NOW);
-    expect(result.archived.map(e => e.key)).toEqual([key(1)]);
-    expect(result.refused).toEqual([{ key: key(2), reason: 'UNKNOWN_RECORD_RECENT' }, { key: key(3), reason: 'STATE_VERIFIED' }, { key: key(9), reason: 'NOT_FOUND' }]);
+    const rel = (path: string) => relative(root, path).split(sep).join('/');
+    const pathOf = (k: string) => scan.find(r => r.key === k)!.path;
+    const result = await archiveHistoricalUnknown(root, [pathOf(key(1)), pathOf(key(2)), pathOf(key(3)), '.local/api-booking/missing.json'], 'owner-approved archival', NOW);
+    expect(result.archived.map(e => e.path)).toEqual([rel(oldUnknown)]);
+    expect(result.refused).toEqual([{ path: pathOf(key(2)), reason: 'UNKNOWN_RECORD_RECENT' }, { path: pathOf(key(3)), reason: 'STATE_VERIFIED' }, { path: '.local/api-booking/missing.json', reason: 'NOT_FOUND' }]);
     expect(await readFile(oldUnknown)).toEqual(before);
     const guard = new DurableSubmissionJournal(join(root, '.local/api-booking/api-first-journals', key(1)));
     await expect(guard.begin(key(1))).rejects.toThrow('DUPLICATE_LOGICAL_BOOKING_BLOCKED');
@@ -46,7 +48,7 @@ describe('historical UNKNOWN archival', () => {
     const overview = await journalOverview(root, NOW);
     expect(overview.activeUnknown.map(r => r.key)).toEqual([key(2)]);
     expect(overview.archived.map(e => e.key)).toEqual([key(1)]);
-    expect(await verifyArchive(root)).toEqual([{ key: key(1), path: expect.stringContaining(key(1)), status: 'MATCH' }]);
+    expect(await verifyArchive(root)).toEqual([{ key: key(1), path: rel(oldUnknown), status: 'MATCH' }]);
     // The installer still sees the same evidence; the archive lives outside the lifecycle stores.
     const after = await inspectUpdateSafety(root, { processes: [], now: NOW });
     expect(after.historicalUnknown).toEqual(safety.historicalUnknown);
@@ -54,7 +56,7 @@ describe('historical UNKNOWN archival', () => {
     await writeFile(oldUnknown, before.toString().replace('"unknown"', '"unknown" '));
     expect((await verifyArchive(root))[0]!.status).toBe('CHANGED');
     await writeFile(oldUnknown, before);
-    expect((await restoreArchived(root, [key(1)], 'review again')).restored).toEqual([key(1)]);
+    expect((await restoreArchived(root, [rel(oldUnknown)], 'review again')).restored).toEqual([rel(oldUnknown)]);
     expect((await readArchiveIndex(root)).entries).toEqual([]);
     const auditLog = (await readFile(join(root, '.local/journal-archive/audit.ndjson'), 'utf8')).trim().split('\n').map(line => JSON.parse(line).action);
     expect(auditLog).toEqual(['ARCHIVE', 'VERIFY', 'VERIFY', 'RESTORE']);
@@ -62,7 +64,20 @@ describe('historical UNKNOWN archival', () => {
   it('never archives armed records or records with an unexpired hold', async () => {
     const root = await mkdtemp(join(tmpdir(), 'journal-archive-'));
     await journal(root, key(4), 'armed', OLD);
-    const result = await archiveHistoricalUnknown(root, [key(4)], 'x', NOW);
+    const result = await archiveHistoricalUnknown(root, (await scanJournals(root, NOW)).map(r => r.path), 'x', NOW);
     expect(result.archived).toEqual([]); expect(result.refused[0]!.reason).toBe('STATE_ARMED');
+  });
+  it('archives each file when one logical key has several historical UNKNOWN files', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'journal-archive-'));
+    const original = await journal(root, key(5), 'unknown', OLD);
+    const copyDirectory = join(root, '.local/api-booking/api-first-journals', key(5), 'attempt-1');
+    await mkdir(copyDirectory, { recursive: true }); const copy = join(copyDirectory, `${key(5)}.json`); await copyFile(original, copy); await utimes(copy, OLD, OLD);
+    const overview = await journalOverview(root, NOW);
+    expect(overview.eligible).toHaveLength(2);
+    const result = await archiveHistoricalUnknown(root, overview.eligible, 'both copies', NOW);
+    expect(result.archived).toHaveLength(2); expect(result.refused).toEqual([]);
+    expect((await journalOverview(root, NOW)).activeUnknown).toEqual([]);
+    expect((await verifyArchive(root)).every(r => r.status === 'MATCH')).toBe(true);
+    await expect(new DurableSubmissionJournal(join(root, '.local/api-booking/api-first-journals', key(5))).begin(key(5))).rejects.toThrow('DUPLICATE_LOGICAL_BOOKING_BLOCKED');
   });
 });
