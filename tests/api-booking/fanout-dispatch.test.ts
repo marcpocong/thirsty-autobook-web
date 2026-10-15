@@ -87,9 +87,9 @@ describe('Shotgun same-target stop conditions',()=>{
     const transport:DirectTransport={publicCheckoutProofless:async(request,permit,options)=>{calls++;consumeSubmissionPermit(permit,requestKey(request));options?.beforePost?.();
       if(mode==='unknown')throw Error('network outcome unavailable');
       if(mode==='throttle')throw new BrowserSessionTransportError('ONDA_HTTP_STATUS_INVALID',true,{status:429,category:'http-rejection',contentKind:'json',responseSource:'application',errorHint:'rate-limit'},true);
-      if(mode==='hold'){const ids=request.items.map((_,index)=>`booking-${index}`);return {success:true,bookings:request.items.map((item,index)=>({id:ids[index],booking_no:`number-${index}`,customer_id:request.customerId,
+      if(mode==='hold'){const ids=request.items.map((_,index)=>`booking-${index}`),holdExpiresAt=new Date(Date.now()+600_000).toISOString();return {success:true,bookings:request.items.map((item,index)=>({id:ids[index],booking_no:`number-${index}`,customer_id:request.customerId,
         space_id:item.spaceId,facility_id:item.facilityId,date:item.date,start_time:`${item.startTime}:00`,end_time:`${item.endTime}:00`,duration:60,rate:item.rate,guest_count:1,
-        booking_status:'pending',payment_status:'pending',booking_session_id:'session',hold_expires_at:new Date(Date.now()+600_000).toISOString()})),bookingSessions:[{requestSessionRef:'session_1',bookingSessionId:'session',facilityId:request.facilityId,
+        booking_status:'pending',payment_status:'pending',booking_session_id:'session',hold_expires_at:holdExpiresAt})),bookingSessions:[{requestSessionRef:'session_1',bookingSessionId:'session',facilityId:request.facilityId,
         spaceId:request.items[0]!.spaceId,date,startTime:'17:00:00',endTime:'20:00:00',durationHours:3,bookingIds:ids}],transaction:{id:'transaction',reference:'number-0',amount:2100,status:'pending'},trustedTotalAmount:2100};}
       return conflict();}};
     const outcome=await dispatchArmedPrecisionRace(armed,{clock,prewarmLeadMs:500,spinTailMs:20,isAborted:()=>false,transportFor:()=>transport,prewarm:async()=>undefined,
