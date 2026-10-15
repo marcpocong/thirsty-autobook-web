@@ -37,7 +37,7 @@ A frozen race may carry an explicit quota (`RaceQuota`). A verified hold adds it
 | Available Now · Normal | API with fresh proofs | LIVE VERIFIED (1–7 courts; ≤2 per checkout) | LIVE VERIFIED for 1 exact court; 2+ courts LIVE PILOT (separate one-court checkouts, separate browsers) |
 | Available Now · Normal | Proofless | LIVE VERIFIED (off-peak holds 2026-09-23, up to 6 parallel workers) | BLOCKED — `BUKO_PROOFLESS_NOT_ENABLED` |
 | Available Now · Normal | Browser / Hybrid (legacy) | LIVE VERIFIED, ≤2 courts | BLOCKED — browser planner is Mango-only |
-| Next Release · Normal | API / Proofless / Browser / Hybrid | LIVE SUPPORTED (existing gated path; no release-boundary win recorded) | OFFLINE ONLY — release policy OWNER ASSUMED; Normal release planner Mango-only |
+| Next Release · Normal | API / Proofless / Browser / Hybrid | LIVE SUPPORTED (existing gated path; no release-boundary win recorded) | OFFLINE ONLY — Buko release PROVISIONAL (08:00 not observed); Normal release planner Mango-only |
 | Next Release · Precision | Proofless | LIVE SUPPORTED (used at releases; 08:00 proofless acceptance unproven) | OFFLINE ONLY |
 | Next Release · Shotgun | Proofless | **LIVE PILOT** — same armed dispatch path as Precision fan-out; arming needs an owner attestation for the exact plan | OFFLINE ONLY |
 
@@ -59,7 +59,7 @@ The lab runs the exact compiled Booking Setup objective — no second editor. **
 
 ## Remaining provider limitations
 
-- Buko scheduled release: OWNER ASSUMED (08:00 / +6 days); no recurring Buko transition observed; Buko proofless checkout unverified and refused by the builder and journal.
+- Buko scheduled release: PROVISIONAL (08:00 / +6 days). The +6 date rule was observed on consecutive days (banner Oct 14 → Oct 20; Oct 15 → Oct 21, confirmed read-only with Oct 22 unreleased); the 08:00 instant has not been observed; Buko proofless checkout unverified and refused by the builder and journal.
 - No live Shotgun has reached a provider hold; provider acceptance of a proofless checkout exactly at 08:00 is unproven.
 - Multi-checkout Available Now sequences (e.g. Mango 2 + Buko 1) run each checkout through the verified one-checkout path but the sequence itself has not been run live.
 - Provider request-volume limits are not documented; 429 stops all unsent attempts and nothing is retried.

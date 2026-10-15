@@ -22,7 +22,7 @@ export function initHome() {
 function renderSettings() {
   fill(byId('release-verification'), el('dl', { class: 'fact-grid' }, ...(['MANGO', 'BUKO'] as const).flatMap(w => { const p = WING_RELEASE_POLICIES[w];
     return [el('dt', { text: `${wingName(w)} release` }), el('dd', { text: p ? `${p.releaseTime.slice(0, 5)} Manila · booking date +${p.horizonOffsetDays} days · ${(p.status ?? 'UNKNOWN').replace('_', ' ')} — ${p.evidence}` : 'Unknown' })]; })),
-    el('p', { class: 'small', text: 'OWNER ASSUMED is used for planning and offline rehearsal only and is never upgraded automatically. Buko live scheduled booking stays offline-only until a Buko release transition is observed and Buko proofless checkout is verified; book open Buko dates with Available Now.' }));
+    el('p', { class: 'small', text: 'OWNER ASSUMED and PROVISIONAL are used for planning and offline rehearsal only and are never upgraded automatically. Buko live scheduled booking stays offline-only until the Buko 08:00 release transition is observed and Buko proofless checkout is verified; book open Buko dates with Available Now.' }));
   const rows = capabilityMatrix(1);
   fill(byId('capability-matrix'), el('div', { class: 'table-scroll' }, el('table', { class: 'attempt-table', id: 'capability-table' }, el('thead', {}, el('tr', {}, ...['Mode', 'Strategy', 'Checkout', 'Wing', 'Status', 'Reason'].map(h => el('th', { text: h })))),
     el('tbody', {}, ...rows.map(r => el('tr', { 'data-status': r.verdict.status }, el('td', { text: r.mode === 'AVAILABLE_NOW' ? 'Available Now' : 'Next Release' }), el('td', { text: STRATEGY_LABEL[r.strategy] }), el('td', { text: METHOD_LABEL[r.method] }), el('td', { text: wingName(r.wing) }),

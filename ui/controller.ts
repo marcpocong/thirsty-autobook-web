@@ -89,7 +89,7 @@ const errors: Record<string, string> = {
   PRECISION_TOO_LATE_TO_FREEZE:'The Precision target set could not be frozen before release. Nothing was sent.',
   SHOTGUN_LIVE_ATTESTATION_REQUIRED:'Live Shotgun is a pilot: arming requires your explicit attestation for this exact plan. Nothing was armed.',
   SHOTGUN_IMMEDIATE_BURST_BLOCKED:'A Shotgun burst against currently open slots is not offered. Use Available Now (Normal) for open dates.',
-  BUKO_SCHEDULED_LIVE_BLOCKED:'Buko scheduled release is offline-only: the Buko release policy is owner-assumed and Buko proofless checkout is unverified. Book open Buko dates with Available Now.',
+  BUKO_SCHEDULED_LIVE_BLOCKED:'Buko scheduled release is offline-only: the Buko 08:00 release time is not yet observed (PROVISIONAL) and Buko proofless checkout is unverified. Book open Buko dates with Available Now.',
   SHOTGUN_LIVE_COMPATIBILITY_UNVERIFIED:'Live Shotgun is blocked: proofless release checkout and provider request-rate permission remain unverified. You can edit, save and test the plan offline.',
   AVAILABILITY_BROWSER_PREPARATION_REQUIRED:'Prepare and verify the booking browser before checking live availability.',
   AVAILABILITY_CHECK_RUNNING:'An availability check is already running. Wait for it to finish.',
