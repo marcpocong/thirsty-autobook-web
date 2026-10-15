@@ -77,28 +77,30 @@ async function audit(root: string, event: Record<string, unknown>) {
   await appendFile(join(directory, 'audit.ndjson'), `${JSON.stringify({ at: new Date().toISOString(), ...event })}\n`, { mode: 0o600 });
 }
 
-/** Archives exactly the requested keys if each is currently eligible. Never touches the journal files. */
-export async function archiveHistoricalUnknown(root: string, keys: readonly string[], note: string, now = Date.now()) {
+/**
+ * Archives exactly the requested records (identified by their relative journal path: one logical key can have several
+ * files, e.g. earlier attempt copies of the same court/time) if each is currently eligible. Never touches the files.
+ */
+export async function archiveHistoricalUnknown(root: string, paths: readonly string[], note: string, now = Date.now()) {
   const records = await scanJournals(root, now), index = await readArchiveIndex(root);
-  const archived: ArchiveEntry[] = [], refused: Array<{ key: string; reason: string }> = [];
-  for (const key of new Set(keys)) {
-    const matches = records.filter(r => r.key === key);
-    const record = matches[0];
-    if (matches.length !== 1 || !record) { refused.push({ key, reason: matches.length ? 'AMBIGUOUS_KEY' : 'NOT_FOUND' }); continue; }
-    if (!record.eligible || record.offline) { refused.push({ key, reason: record.reason ?? 'OFFLINE_RECORD' }); continue; }
-    if (index.entries.some(e => e.key === key)) { refused.push({ key, reason: 'ALREADY_ARCHIVED' }); continue; }
-    archived.push({ key, path: record.path, sha256: record.sha256, size: record.size, state: 'unknown', targetDate: record.targetDate, ...(record.wing ? { wing: record.wing } : {}),
+  const archived: ArchiveEntry[] = [], refused: Array<{ path: string; reason: string }> = [];
+  for (const path of new Set(paths)) {
+    const record = records.find(r => r.path === path);
+    if (!record) { refused.push({ path, reason: 'NOT_FOUND' }); continue; }
+    if (!record.eligible || record.offline) { refused.push({ path, reason: record.reason ?? 'OFFLINE_RECORD' }); continue; }
+    if (index.entries.some(e => e.path === path)) { refused.push({ path, reason: 'ALREADY_ARCHIVED' }); continue; }
+    archived.push({ key: record.key, path: record.path, sha256: record.sha256, size: record.size, state: 'unknown', targetDate: record.targetDate, ...(record.wing ? { wing: record.wing } : {}),
       courtIds: record.courtIds, lastWriteAt: record.lastWriteAt, archivedAt: new Date(now).toISOString(), note: note.slice(0, 200) });
   }
   if (archived.length) { await writeIndex(root, { version: 1, entries: [...index.entries, ...archived] }); await audit(root, { action: 'ARCHIVE', note: note.slice(0, 200), entries: archived.map(e => ({ key: e.key, path: e.path, sha256: e.sha256 })) }); }
   return { archived, refused };
 }
-/** Removes index entries only. The journals were never moved, so nothing is restored on disk. */
-export async function restoreArchived(root: string, keys: readonly string[], note: string) {
-  const index = await readArchiveIndex(root), restore = new Set(keys);
-  const restored = index.entries.filter(e => restore.has(e.key));
-  if (restored.length) { await writeIndex(root, { version: 1, entries: index.entries.filter(e => !restore.has(e.key)) }); await audit(root, { action: 'RESTORE', note: note.slice(0, 200), keys: restored.map(e => e.key) }); }
-  return { restored: restored.map(e => e.key) };
+/** Removes index entries (by journal path) only. The journals were never moved, so nothing is restored on disk. */
+export async function restoreArchived(root: string, paths: readonly string[], note: string) {
+  const index = await readArchiveIndex(root), restore = new Set(paths);
+  const restored = index.entries.filter(e => restore.has(e.path));
+  if (restored.length) { await writeIndex(root, { version: 1, entries: index.entries.filter(e => !restore.has(e.path)) }); await audit(root, { action: 'RESTORE', note: note.slice(0, 200), entries: restored.map(e => ({ key: e.key, path: e.path })) }); }
+  return { restored: restored.map(e => e.path) };
 }
 /** Re-hashes every archived original. CHANGED or MISSING means the archive no longer describes that evidence. */
 export async function verifyArchive(root: string) {
@@ -114,11 +116,11 @@ export async function verifyArchive(root: string) {
 /** Operator view: active (non-archived) UNKNOWN records stay visible; archived ones move to the archive tab. */
 export async function journalOverview(root: string, now = Date.now()) {
   const [records, index] = await Promise.all([scanJournals(root, now), readArchiveIndex(root)]);
-  const archivedKeys = new Set(index.entries.map(e => e.key));
+  const archivedPaths = new Set(index.entries.map(e => e.path));
   const unknown = records.filter(r => r.state === 'unknown' && !r.offline);
   return { checkedAt: new Date(now).toISOString(),
-    activeUnknown: unknown.filter(r => !archivedKeys.has(r.key)), archived: index.entries,
-    eligible: unknown.filter(r => r.eligible && !archivedKeys.has(r.key)).map(r => r.key),
+    activeUnknown: unknown.filter(r => !archivedPaths.has(r.path)), archived: index.entries,
+    eligible: unknown.filter(r => r.eligible && !archivedPaths.has(r.path)).map(r => r.path),
     counts: { journals: records.length, unknown: unknown.length, archived: index.entries.length,
       verified: records.filter(r => r.state === 'verified').length, rejected: records.filter(r => r.state === 'rejected').length,
       armedOrDispatching: records.filter(r => ['armed', 'dispatching'].includes(r.state)).length } };

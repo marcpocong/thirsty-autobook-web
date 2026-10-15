@@ -177,7 +177,8 @@ else {
   ipcMain.handle('thirsty:journalArchive',async(event,...args:unknown[])=>{
     if(event.sender!==window.webContents||event.senderFrame!==window.webContents.mainFrame||event.senderFrame?.url!==indexUrl||args.length!==1)throw Error('IPC_NOT_ALLOWED');
     const request=args[0] as {action?:string;keys?:unknown;note?:unknown};
-    const keys=Array.isArray(request?.keys)&&request.keys.length<=500&&request.keys.every(k=>typeof k==='string'&&/^[a-f0-9]{64}$/.test(k))?request.keys as string[]:[];
+    // Records are identified by their relative journal path inside a lifecycle store (one key can have several files).
+    const keys=Array.isArray(request?.keys)&&request.keys.length<=500&&request.keys.every(k=>typeof k==='string'&&/^\.local\/(?:api-booking|dual|retained-holds)\/[A-Za-z0-9._\/-]{1,400}\.json$/.test(k)&&!k.includes('..'))?request.keys as string[]:[];
     const note=typeof request?.note==='string'?request.note.slice(0,200):'';
     if(request?.action==='overview')return journalOverview(root);
     if(request?.action==='verify')return verifyArchive(root);

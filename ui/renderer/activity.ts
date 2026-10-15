@@ -16,7 +16,7 @@ async function refresh() {
 async function act(action: 'archive' | 'restore' | 'verify', keys: string[] = []) {
   busy = true; render();
   try {
-    if (action === 'verify') { const results = await window.thirsty.journalArchive({ action: 'verify' }) as Array<{ key: string; status: string }>; verify = new Map(results.map(r => [r.key, r.status]));
+    if (action === 'verify') { const results = await window.thirsty.journalArchive({ action: 'verify' }) as Array<{ path: string; status: string }>; verify = new Map(results.map(r => [r.path, r.status]));
       message = `Verified ${results.length} archived record(s): ${results.filter(r => r.status === 'MATCH').length} match their original bytes.`; }
     else if (action === 'archive') { const result = await window.thirsty.journalArchive({ action: 'archive', keys, note: 'Owner-approved archival of historical UNKNOWN records (Activity)' }) as { archived: unknown[]; refused: Array<{ reason: string }>; cancelled?: boolean };
       message = result.cancelled ? 'Archival cancelled.' : `Archived ${result.archived.length} record(s)${result.refused.length ? `; ${result.refused.length} refused (${[...new Set(result.refused.map(r => r.reason))].join(', ')})` : ''}. Their targets remain blocked against duplicate submission.`; }
@@ -39,9 +39,9 @@ function render() {
     el('ul', { class: 'plain-list small' }, ...rows.map(r => el('li', { 'data-eligible': String(r.eligible), text: `${wingName(r.wing ?? 'MANGO')} Court ${r.courtIds.join('+') || '?'} · last write ${manilaTime(Date.parse(r.lastWriteAt))}${r.httpStatus ? ` · HTTP ${r.httpStatus}` : ''}${r.failureCode ? ` · ${r.failureCode}` : ''} · ${r.eligible ? 'historical (eligible to archive)' : `not eligible: ${r.reason}`}` }))))))
     : el('p', { class: 'small good-text', text: '✓ No active UNKNOWN records.' });
   const archived = overview.archived.length ? el('div', { class: 'table-scroll' }, el('table', { class: 'attempt-table', id: 'archived-records' }, el('thead', {}, el('tr', {}, ...['Target date', 'Wing · court', 'Archived', 'Original SHA-256', 'Verify', ''].map(h => el('th', { text: h })))),
-    el('tbody', {}, ...overview.archived.map(a => { const restore = el('button', { type: 'button', class: 'secondary compact', text: 'Restore' }) as HTMLButtonElement; restore.disabled = busy; restore.onclick = () => void act('restore', [a.key]);
+    el('tbody', {}, ...overview.archived.map(a => { const restore = el('button', { type: 'button', class: 'secondary compact', text: 'Restore' }) as HTMLButtonElement; restore.disabled = busy; restore.onclick = () => void act('restore', [a.path]);
       return el('tr', {}, el('td', { text: dateText(a.targetDate) }), el('td', { text: `${wingName(a.wing ?? 'MANGO')} ${a.courtIds.join('+')}` }), el('td', { text: manilaTime(Date.parse(a.archivedAt)) }), el('td', { class: 'small mono', text: `${a.sha256.slice(0, 16)}…` }),
-        el('td', { 'data-tone': verify?.get(a.key) === 'MATCH' ? 'good' : verify?.has(a.key) ? 'bad' : 'muted', text: verify?.get(a.key) ?? '—' }), el('td', {}, restore)); }))))
+        el('td', { 'data-tone': verify?.get(a.path) === 'MATCH' ? 'good' : verify?.has(a.path) ? 'bad' : 'muted', text: verify?.get(a.path) ?? '—' }), el('td', {}, restore)); }))))
     : el('p', { class: 'small', text: 'No archived records.' });
   fill(host, el('div', { class: 'section-title' }, el('div', {}, el('p', { class: 'eyebrow', text: 'Durable submission evidence' }), el('h2', { text: 'Records & archive' })), el('div', { class: 'button-row' }, archiveAll, verifyButton)),
     el('p', { class: 'small', text: `${c.journals ?? 0} submission journals: ${c.verified ?? 0} verified, ${c.rejected ?? 0} rejected, ${c.unknown ?? 0} UNKNOWN (${c.archived ?? 0} archived), ${c.armedOrDispatching ?? 0} armed or dispatching.` }),
