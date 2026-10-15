@@ -43,7 +43,7 @@ export const EVIDENCE: Readonly<Record<string, EvidenceRef>> = Object.freeze({
 export interface CapabilityQuery {
   wing: Wing; mode: BookingModeId; strategy: StrategyId; method: CheckoutMethodId;
   /** Distinct courts this wing needs (ideal quota). */ courts: number;
-  /** Optional operator-accepted, locally recorded release verification for an OWNER_ASSUMED wing. */
+  /** Optional operator-accepted, locally recorded release verification for a wing that is not VERIFIED. */
   releaseVerified?: boolean;
 }
 export interface CapabilityVerdict {
@@ -101,11 +101,12 @@ export function evaluateCapability(q: CapabilityQuery): CapabilityVerdict {
   }
   const release = releaseStatusOf('BUKO');
   const releaseReason = release === 'VERIFIED' || q.releaseVerified ? null
+    : release === 'PROVISIONAL' ? "Buko's +6 day date rule has been observed on consecutive days, but the 08:00 release instant has not (PROVISIONAL)."
     : `Buko's 08:00 / +6 day release is ${release.replace('_', ' ')}: no recurring Buko release transition has been independently observed.`;
   if (q.strategy === 'NORMAL') return verdict('OFFLINE_ONLY', [...(releaseReason ? [releaseReason] : []), 'The scheduled Normal release planner is Mango-only (BUKO_BROWSER_PLANNER_NOT_ENABLED).'],
     [], { verify: 'Record a Buko release observation (Settings → Release verification), then book Buko once the date is open with Available Now.' });
   return verdict('OFFLINE_ONLY', [...(releaseReason ? [releaseReason] : []), 'Buko proofless checkout has never been verified and is refused by the checkout builder and journal (BUKO_PROOFLESS_NOT_ENABLED).'],
-    [], { verify: 'Buko scheduled Shotgun/Precision needs (1) an observed Buko release transition and (2) a verified Buko proofless checkout. Until then Buko is offline rehearsal only; book open Buko dates with Available Now.' });
+    [], { verify: 'Buko scheduled Shotgun/Precision needs (1) an observed Buko 08:00 release transition and (2) a verified Buko proofless checkout. Until then Buko is offline rehearsal only; book open Buko dates with Available Now.' });
 }
 
 /** Rows for the operator's capability matrix. */

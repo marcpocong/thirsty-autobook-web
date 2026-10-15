@@ -15,9 +15,9 @@ export interface WingReleasePolicy {
 export const WING_RELEASE_POLICIES: Readonly<Record<Wing, WingReleasePolicy | null>> = Object.freeze({
   MANGO: Object.freeze({ wing: 'MANGO', timezone: 'Asia/Manila', horizonOffsetDays: 2,
     releaseTime: '08:00:00', status: 'VERIFIED', publicLabel: '3 days inclusive', evidence: 'Existing Mango offset; public facility metadata 2026-10-14: 3 days, 08:00:00' }),
-  // Owner-approved operating schedule for planning and offline rehearsal only.
-  // A recurring provider transition remains independently unverified.
-  BUKO: Object.freeze({ wing: 'BUKO', timezone: 'Asia/Manila', horizonOffsetDays: 6, releaseTime: '08:00:00', status: 'OWNER_ASSUMED', publicLabel: 'five days in advance (counting convention unresolved)', observedAt: '2026-10-14', evidence: 'Official Onda booking-page banner independently read in Chrome 2026-10-14: Mango Oct 16 / Buko Oct 20; Owner approved 08:00 / +6 planning on 2026-10-14; recurring Buko rollover independently unverified' }),
+  // The +6 date rule is observed on consecutive days; the 08:00 instant is owner-approved planning, not yet observed.
+  // PROVISIONAL is planning and offline rehearsal only: assertVerifiedRelease still refuses it.
+  BUKO: Object.freeze({ wing: 'BUKO', timezone: 'Asia/Manila', horizonOffsetDays: 6, releaseTime: '08:00:00', status: 'PROVISIONAL', publicLabel: 'five days in advance (observed as release date +6 calendar days)', observedAt: '2026-10-15', evidence: 'Date rule observed on consecutive days: official booking-page banner 2026-10-14 showed Buko Oct 20; on 2026-10-15 the owner saw Buko Oct 21 as the newest date and the read-only availability check confirmed Oct 21 published and Oct 22 unreleased at 12:43 Manila. The 08:00 release instant is owner-approved planning and has not been observed' }),
 });
 
 const MANILA_OFFSET_MS = 8 * 60 * 60_000;

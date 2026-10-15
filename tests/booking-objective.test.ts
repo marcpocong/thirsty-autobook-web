@@ -231,7 +231,7 @@ describe('capability matrix', () => {
     expect(evaluateCapability({ wing: 'MANGO', mode: 'AVAILABLE_NOW', strategy: 'NORMAL', method: 'BROWSER', courts: 3 }).status).toBe('BLOCKED');
     expect(evaluateCapability({ wing: 'MANGO', mode: 'NEXT_RELEASE', strategy: 'SHOTGUN', method: 'API_FRESH_PROOF', courts: 1 }).status).toBe('BLOCKED');
     const buko = evaluateCapability({ wing: 'BUKO', mode: 'NEXT_RELEASE', strategy: 'SHOTGUN', method: 'PROOFLESS', courts: 1 });
-    expect(buko.status).toBe('OFFLINE_ONLY'); expect(buko.reasons.join(' ')).toMatch(/OWNER ASSUMED/);
+    expect(buko.status).toBe('OFFLINE_ONLY'); expect(buko.reasons.join(' ')).toMatch(/08:00 release instant has not \(PROVISIONAL\)/);
   });
   it('treats Mango Shotgun as an attested live pilot and Precision as the supported live path', () => {
     const shotgun = evaluateCapability({ wing: 'MANGO', mode: 'NEXT_RELEASE', strategy: 'SHOTGUN', method: 'PROOFLESS', courts: 2 });

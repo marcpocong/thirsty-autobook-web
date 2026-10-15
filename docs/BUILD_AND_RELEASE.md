@@ -40,7 +40,7 @@ After power loss or process termination, do not launch or rerun installation bli
 
 ## Configured release calendar
 
-Mango remains VERIFIED at 08:00 Manila, booking date release date +2 calendar days. Buko is OWNER_ASSUMED at 08:00 Manila, +6 calendar days, approved October 14, 2026 from the observed official banner horizon. No extra rollover observation is required for planning or offline rehearsal. Independently verified provider timing remains distinct. October 15 08:00 maps to Mango October 17 and Buko October 21; exact matching timestamps allow one mixed-wing planning cohort. Saved strategies are never changed automatically.
+Mango remains VERIFIED at 08:00 Manila, booking date release date +2 calendar days. Buko is PROVISIONAL at 08:00 Manila, +6 calendar days: approved October 14, 2026 from the observed official banner horizon (Oct 20), and the date rule was observed again on October 15 (Oct 21 published, Oct 22 unreleased). The 08:00 instant itself has not been observed, so Buko is not VERIFIED. No extra rollover observation is required for planning or offline rehearsal. Independently verified provider timing remains distinct. October 15 08:00 maps to Mango October 17 and Buko October 21; exact matching timestamps allow one mixed-wing planning cohort. Saved strategies are never changed automatically.
 
 Live Shotgun is a Mango LIVE PILOT capability: arming requires an owner attestation for the exact plan fingerprint and every existing readiness gate; Buko scheduled targets and immediate current-slot bursts stay refused. Assumed scheduling never authorizes Buko live submissions. All offline rehearsals remain OFFLINE / INTERCEPTED and use isolated browsers and the existing real dispatcher (see [Booking Setup v3](BOOKING_SETUP_V3.md)).
 

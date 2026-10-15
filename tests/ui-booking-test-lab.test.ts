@@ -18,7 +18,7 @@ it('plans both wings, keeps Buko offline-only with an explicit reason and hides 
   const mango = nextReleaseFor(Date.now(), 'MANGO').bookingDate, buko = nextReleaseFor(Date.now(), 'BUKO').bookingDate;
   expect(await page.locator('#goal-MANGO-date').inputValue()).toBe(mango);
   expect(await page.locator('#goal-BUKO-date').inputValue()).toBe(buko);
-  expect(await page.locator('[data-wing="BUKO"] .evidence-chip').innerText()).toContain('OWNER ASSUMED');
+  expect(await page.locator('[data-wing="BUKO"] .evidence-chip').innerText()).toContain('PROVISIONAL');
   await page.locator('#setup-steps [data-step="2"]').click();
   expect(await page.locator('#capability-panel').innerText()).toMatch(/Mango · LIVE PILOT[\s\S]*Buko · OFFLINE ONLY/);
   expect(await page.locator('#capability-panel').innerText()).toContain('BUKO_PROOFLESS_NOT_ENABLED');

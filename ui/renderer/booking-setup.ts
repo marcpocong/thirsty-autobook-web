@@ -380,7 +380,7 @@ function renderCustomize(editable: boolean) {
   if (objective.mode === 'NEXT_RELEASE') {
     const g = compiled.generalRelease;
     fill(host, el('div', { class: 'panel' }, title, g ? el('p', { text: `At 8:00 the bot reads the published Mango schedule and books ${g.COURT_COUNT} court${g.COURT_COUNT === 1 ? '' : 's'} at ${hourText(g.START_TIME)}${g.FALLBACK_TIMES.length ? ` (then ${g.FALLBACK_TIMES.map(hourText).join(', ')})` : ''} for ${g.DURATION_HOURS} h, in your court priority, using ${METHOD_LABEL[objective.checkoutMethod]}.` }) : el('p', { class: 'warn-text', text: 'Normal release planning covers Mango only.' }),
-      objective.wings.BUKO.enabled ? el('p', { class: 'notice', text: 'Buko scheduled release is offline-only (owner-assumed release time; Normal release planner is Mango-only). Book open Buko dates with Available Now.' }) : null));
+      objective.wings.BUKO.enabled ? el('p', { class: 'notice', text: 'Buko scheduled release is offline-only (Buko 08:00 release time not yet observed; Normal release planner is Mango-only). Book open Buko dates with Available Now.' }) : null));
     return;
   }
   fill(host, el('div', { class: 'panel' }, title, el('p', { class: 'small', text: 'Each row is one provider checkout with its own browser and customer. A pending checkout in one customer context can block another (HTTP 409), so wings never share a browser.' }),
