@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { stripTypeScriptTypes } from 'node:module';
 import { resolve } from 'node:path';
+import { setupDifferences } from '../src/plan-diff.js';
 
 /**
  * Loads the real renderer (index.html, styles.css and app.ts with every module it imports) into Chrome with a
@@ -39,6 +40,7 @@ async function serve(page: Page): Promise<void> {
 export async function openRenderer(browser: Browser, extra: Record<string, unknown>, view = 'plan', viewport = { width: 1060, height: 900 }): Promise<Page> {
   const page = await browser.newPage({ viewport });
   await serve(page);
+  await page.exposeFunction('nodeSetupDifferences', (saved: unknown, draft: unknown) => setupDifferences(saved, draft));
   const state = { operation: 'idle', headline: 'Fixture status', detail: 'Ready for review', ready: false, workflow: 'release', cdp: false, lock: false,
     inspection: null, clock: null, plan: null, logs: [], liveRace: true, termsAuthorized: false, apiFirstReady: false,
     browserHealth: {}, capabilities: { selectionReady: true, checkoutReady: true, paymentBoundaryReady: true },
@@ -62,10 +64,17 @@ export async function openRenderer(browser: Browser, extra: Record<string, unkno
       confirmResponse: async (id: string, confirmed: boolean) => { w.fixtureConfirmResponse = { id, confirmed }; },
       // Booking Setup draft store and the journal archive. Read-only calls go to w.fixtureReads; mutating calls stay in
       // w.fixtureCalls, which tests assert exactly. A fixture can preset w.fixtureObjective / w.fixtureJournals.
-      objective: async (request: any) => { (request.action === 'load' ? (w.fixtureReads ??= []) : w.fixtureCalls).push(`objective:${request.action}`);
-        if (request.action === 'load') return { document: w.fixtureObjective ?? null, migrated: null, notes: [], presets: w.fixturePresets ?? [] };
+      objective: async (request: any) => { (['load', 'validateRelease'].includes(request.action) ? (w.fixtureReads ??= []) : w.fixtureCalls).push(`objective:${request.action}`);
+        if (request.action === 'load') return { document: w.fixtureObjective ?? w.fixtureState.objectiveDocument ?? null, migrated: null, notes: [], presets: w.fixturePresets ?? [] };
         if (request.action === 'save') { w.fixtureObjective = { version: 1, objective: request.value, savedAt: new Date().toISOString(), binding: request.binding ?? w.fixtureObjective?.binding ?? null }; return w.fixtureObjective; }
-        if (request.action === 'savePresets') { w.fixturePresets = request.value; return request.value; } },
+        if (request.action === 'savePresets') { w.fixturePresets = request.value; return request.value; }
+        // Mirrors Controller.validateReleaseSetup: schema verdict (fixture-controlled) plus an exact comparison with the saved setup.
+        if (request.action === 'validateRelease') {
+          const canon = (v: any): string => Array.isArray(v) ? `[${v.map(canon).join(',')}]` : v && typeof v === 'object' ? `{${Object.keys(v).sort().filter(k => v[k] !== undefined).map(k => `${JSON.stringify(k)}:${canon(v[k])}`).join(',')}}` : JSON.stringify(v);
+          if (w.fixtureValidation) return w.fixtureValidation;
+          const saved = w.fixtureState.booking?.setup, matches = !!saved && canon(saved) === canon(request.value);
+          // The real comparison the controller uses (src/plan-diff.ts), evaluated in Node through an exposed function.
+          return { ok: true, problems: [], matchesSaved: matches, differences: saved ? await w.nodeSetupDifferences(saved, request.value) : null }; } },
       journalArchive: async (request: any) => { (['overview', 'verify'].includes(request.action) ? (w.fixtureReads ??= []) : w.fixtureCalls).push(`journalArchive:${request.action}`); return w.fixtureJournals?.[request.action] ?? { counts: {}, activeUnknown: [], archived: [], eligible: [], checkedAt: new Date().toISOString() }; },
       strategyEvidence: async () => ({ targetDate: '', dayOfWeek: '', releasesConsidered: 0, wellObservedReleases: 0, realReleases: 0, historicalPrePhase3: 0, strength: 'NONE', ranges: [], sharedRisk: [] }),
       onLabPhase: () => () => {} };

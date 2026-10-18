@@ -48,6 +48,9 @@ export function renderHome(state: Dashboard) {
   fill(byId('home-holds-body'), holds.length ? el('ul', { class: 'plain-list' }, ...holds.map(h => el('li', { text: `${wingName(h.wing ?? 'MANGO')} Court ${h.courts.join(' + ')} · ${dateText(h.date)} ${h.startTime}–${h.endTime} · ${peso(h.amount)} · temporary hold until ${manilaTime(Date.parse(h.holdExpiresAt!), { hour: '2-digit', minute: '2-digit' })} · PAYMENT PENDING (manual)${h.checkout ? ` · Browser ${h.checkout}` : ''}` })))
     : el('p', { class: 'small', text: `No current verified hold.${state.previousHolds?.length ? ` ${state.previousHolds.length} retained hold record(s) in History.` : ''} A hold is never a paid booking until you pay on Onda.` }));
   const warnings: Array<[string, string]> = [];
+  // The same typed failure and run accounting Booking Setup shows, first.
+  if (state.attention) warnings.push(['bad', `${state.attention.title}: ${state.attention.detail} → ${state.attention.recovery.label} in Booking Setup → Review & Run.`]);
+  if (state.runSummary?.settled && state.runSummary.planned && !state.runSummary.holds) warnings.push([state.runSummary.unknown ? 'bad' : 'warn', `Last release run · ${state.runSummary.headline}: ${state.runSummary.detail}. ${state.runSummary.nextStep}`]);
   if (state.lock && !state.canPrepareOverHold) warnings.push(['bad', 'An automation safety lock is active. Review it in Booking Setup → Review & Run before another run.']);
   for (const h of holds) { const left = Date.parse(h.holdExpiresAt!) - now; if (left < 180_000) warnings.push(['warn', `A temporary hold expires in ${Math.max(0, Math.round(left / 1000))} s. Pay on Onda now if you want it; the bot never pays.`]); }
   if (journals?.activeUnknown) warnings.push(['warn', `${journals.activeUnknown} submission record(s) have an UNKNOWN outcome and keep their targets blocked. Review or archive them in Activity → Records & archive.`]);
@@ -56,5 +59,5 @@ export function renderHome(state: Dashboard) {
   if (compiled.problems.length) warnings.push(['warn', `Booking Setup has ${compiled.problems.length} item(s) to fix.`]);
   fill(byId('home-warnings-body'), warnings.length ? el('ul', { class: 'strategy-warnings' }, ...warnings.map(([tone, text]) => el('li', { 'data-tone': tone, text })))
     : el('p', { class: 'small good-text', text: `✓ Nothing needs attention.${journals ? ` ${journals.archived} historical record(s) archived.` : ''}` }));
-  byId('home-title').textContent = v?.state === 'ARMED' ? 'Armed and waiting for release' : v?.state === 'PREPARED' ? 'Prepared — ready to authorize' : holds.length ? 'You have a temporary hold' : 'Ready when you are';
+  byId('home-title').textContent = v?.state === 'ARMED' ? 'Armed and waiting for release' : v?.state === 'RUNNING' ? 'Release running' : v?.state === 'PREPARED' ? 'Prepared — authorize and arm next' : holds.length ? 'You have a temporary hold' : state.attention ? 'Needs attention' : v?.state === 'DRAFT' ? 'Draft — save the release plan next' : v?.state === 'SAVED' ? 'Saved — prepare next' : 'Ready when you are';
 }

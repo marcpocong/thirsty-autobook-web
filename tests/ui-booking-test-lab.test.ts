@@ -24,7 +24,9 @@ it('plans both wings, keeps Buko offline-only with an explicit reason and hides 
   expect(await page.locator('#capability-panel').innerText()).toContain('BUKO_PROOFLESS_NOT_ENABLED');
   await page.locator('#setup-steps [data-step="5"]').click();
   expect(await page.locator('#main-action').isDisabled()).toBe(true);
-  expect(await page.locator('#action-bar-hint').innerText()).toContain('Mango-only');
+  // The reason is a visible blocker with its recovery, not hint text under the button.
+  expect(await page.locator('#action-blockers').innerText()).toContain('Mango-only');
+  expect(await page.locator('#action-blockers [data-recovery="REVIEW_PROBLEMS"]').count()).toBeGreaterThan(0);
   expect(await page.locator('#inspector-binding').innerText()).toContain('Not live-saveable');
   expect(await page.locator('#strategy-inspector').innerText()).toMatch(/Buko is OFFLINE ONLY for live use/);
   await page.locator('#save-draft').click();

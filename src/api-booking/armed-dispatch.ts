@@ -270,6 +270,8 @@ export interface ArmedDispatchDeps {
   clock: TrustedReleaseClock;
   /** Runs alongside prewarm; must complete before renderer calibration or dispatch. */
   refreshClock?: () => Promise<TrustedReleaseClock>;
+  /** How long before the earliest trigger the refresh must have settled (default CLOCK_REFRESH_DEADLINE_LEAD_MS). */
+  clockRefreshDeadlineLeadMs?: number;
   prewarmLeadMs: number;
   /** A failed prewarm is retried once only if it failed at least this long before release. */
   prewarmRetryCutoffMs?: number;
@@ -284,6 +286,11 @@ export interface ArmedDispatchDeps {
   onVerifiedHold?: (attempt: ArmedAttempt, verified: VerifiedPublicCheckout) => Promise<PrecisionDispatchResult>;
   onEvent?: (event: { kind: 'prewarm-ready' | 'prewarm-failed' | 'prewarm-retry' | 'dispatch-start' | 'settled'; workerId: WorkerId; attemptId: string; state?: PrecisionAttemptState; code?: string;
     predictedReadyOffsetMs?:number;actualReadyOffsetMs?:number;predictionErrorMs?:number;queueDelayMs?:number;prepDurationMs?:number }) => void;
+  /**
+   * Preparation window actually obtained, measured against the EARLIEST configured trigger (not the release instant):
+   * planned lead, the lead that remained when preparation could start, and how late that start was. Telemetry only.
+   */
+  onPrewarmWindow?: (window: { plannedLeadMs: number; actualLeadMs: number; lateByMs: number; firstTriggerOffsetMs: number }) => void;
   onWake?: (triggerMs:number) => void;
   /**
    * Priority-aware prewarm (prewarm-scheduler.ts): children are prepared tier by tier (fan-out index 0 first) with bounded
@@ -324,6 +331,12 @@ export interface ArmedDispatchDeps {
 export const FINAL_APPROACH_MS = 1_000;
 /** When the experimental renderer path calibrates page clocks. */
 export const RENDERER_CALIBRATION_LEAD_MS = 3_000;
+/**
+ * The near-release clock consensus runs alongside preparation but must have settled this long before the earliest
+ * trigger. A refresh that is still outstanding then (a hung NTP round) fails closed: no attempt dispatches on timing
+ * evidence that was never confirmed, and the run settles instead of waiting indefinitely.
+ */
+export const CLOCK_REFRESH_DEADLINE_LEAD_MS = 2_000;
 export interface ArmedDispatchOutcome {
   results: Array<{ attempt: PrecisionAttempt } & PrecisionDispatchResult>;
   disarmed: WorkerId[];
@@ -354,6 +367,8 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
   // A plain timer: after something was sent, a wait must never throw (the runner's abort-aware sleep does).
   const timerSleep = (ms: number) => new Promise<void>(done => setTimeout(done, ms));
   type Readiness = { settled: boolean; ok: boolean; omitted?: boolean; promise: Promise<boolean> };
+  /** Why a preparation did not succeed, per attempt: a security failure is reported differently from a too-late start. */
+  const prewarmFailures = new Map<string, string>();
   let readiness: Readiness[];
   let prewarmSchedule: PrewarmSchedule | undefined;
   const tiered = !!deps.prewarmPolicy;
@@ -488,6 +503,13 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
       clock.adopt(next, armed.releaseMs); return undefined;
     }, error => ({ error }));
     await waitFor(firstTriggerMs - deps.prewarmLeadMs);
+    {
+      // When the coordinator itself starts late (e.g. something awaited before it), this records the shortfall.
+      const startAt = now(), plannedStart = firstTriggerMs - deps.prewarmLeadMs;
+      const window = { plannedLeadMs: deps.prewarmLeadMs, actualLeadMs: Math.round(firstTriggerMs - startAt), lateByMs: Math.max(0, Math.round(startAt - plannedStart)),
+        firstTriggerOffsetMs: Math.round(firstTriggerMs - armed.releaseMs) };
+      observe(() => deps.onPrewarmWindow?.(window));
+    }
     const prepare = async (attempt: ArmedAttempt): Promise<boolean> => {
       const startedAt=now(),queueDelayMs=startedAt-(firstTriggerMs-deps.prewarmLeadMs);
       for (let round = 1; round <= 2; round++) {
@@ -500,6 +522,7 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
           // the shot's allowance without starting new clock/CDP work at its trigger.
           await deps.prewarm(attempt); }
         catch (error) {
+          prewarmFailures.set(attempt.attempt.id, safeCode(error, 'SECURITY_PREWARM_FAILED'));
           emit({ kind: 'prewarm-failed', workerId: attempt.target.workerId, attemptId: attempt.attempt.id, code: safeCode(error, 'SECURITY_PREWARM_FAILED') });
           if (round === 1 && now() < retryCutoff) { emit({ kind: 'prewarm-retry', workerId: attempt.target.workerId, attemptId: attempt.attempt.id }); continue; }
           return false;
@@ -525,8 +548,14 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
     }
     // Integrity of the frozen set is verified before the final wait, never after the first trigger.
     assertPrecisionFreezeIntact(armed.race);
-    const clockFailure = await clockRefresh;
-    if (clockFailure) throw clockFailure.error;
+    if (clockRefresh) {
+      // Bounded: the refreshed clock must be adopted before calibration and dispatch, and never hold the run open.
+      const timedOut = Symbol('clock-refresh-timeout');
+      const clockFailure = await Promise.race([clockRefresh,
+        waitFor(firstTriggerMs - (deps.clockRefreshDeadlineLeadMs ?? CLOCK_REFRESH_DEADLINE_LEAD_MS), () => false, timerSleep).then(() => timedOut)]);
+      if (clockFailure === timedOut) throw Error('RELEASE_CLOCK_REFRESH_TIMEOUT');
+      if (clockFailure && typeof clockFailure === 'object') throw clockFailure.error;
+    }
     if (renderer) {
       // EXPERIMENTAL: calibrate every page clock a few seconds out; an attempt that cannot calibrate uses the Node path.
       // Bounded: whatever has not finished by the final approach is abandoned, so a stuck page can never hold the
@@ -587,9 +616,16 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
     if(attempt.shotDeadlineMs!==undefined && !sends[index]){
       if(!ready.settled && now()<=attempt.shotDeadlineMs)await Promise.race([ready.promise,waitFor(attempt.shotDeadlineMs,()=>false,timerSleep)]);
       if(outcomes[index])return outcomes[index]!;
-      if(attempt.state==='refused')await attempt.journal.mark(attempt.key,'rejected',new Date(now()),undefined,undefined,'SHOTGUN_TRIGGER_MISSED').catch(()=>undefined);
-      else await disarmAttempt(attempt,'SHOTGUN_TRIGGER_MISSED',now).catch(()=>undefined);
-      return {state:'NOT_DISPATCHED',code:'SHOTGUN_TRIGGER_MISSED'};
+      // Never sent. The recorded reason says why: security preparation failed, the tier was omitted, the browser
+      // was gone, or it was simply not ready inside its strict allowance.
+      const failedCode=prewarmFailures.get(attempt.attempt.id);
+      const reason:{state:PrecisionAttemptState;code:string}=ready.settled&&!ready.ok&&!ready.omitted&&failedCode!=='SHOTGUN_TRIGGER_MISSED'?{state:'PREWARM_FAILED',code:'SECURITY_PREWARM_FAILED'}
+        :ready.omitted?{state:'NOT_DISPATCHED',code:'PREWARM_TIER_OMITTED'}
+          :ready.settled&&ready.ok&&!deps.transportFor(attempt.target.workerId,attempt)?{state:'NOT_DISPATCHED',code:'API_CHECKOUT_WORKER_MISSING'}
+            :{state:'NOT_DISPATCHED',code:'SHOTGUN_TRIGGER_MISSED'};
+      if(attempt.state==='refused')await attempt.journal.mark(attempt.key,'rejected',new Date(now()),undefined,undefined,reason.code).catch(()=>undefined);
+      else await disarmAttempt(attempt,reason.code,now).catch(()=>undefined);
+      return reason;
     }
     let sent = sends[index];
     if (!sent) {

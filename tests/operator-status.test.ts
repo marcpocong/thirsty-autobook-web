@@ -39,7 +39,10 @@ describe('outcome first',()=>{
   it.each([
     [['READY'],'WAITING FOR RELEASE'],[['ARMED','IN_FLIGHT'],'DISPATCHING'],[['IN_FLIGHT'],'WAITING FOR PROVIDER'],
     [['HOLD_VERIFIED'],'HOLD VERIFIED'],[['REJECTED','REJECTED'],'ALL RELEASE ATTEMPTS REJECTED'],
-    [['UNKNOWN'],'OUTCOME UNKNOWN'],[['FAILED','NOT_DISPATCHED'],'OUTCOME UNKNOWN'],[['QR_READY'],'HOLD VERIFIED'],
+    [['UNKNOWN'],'OUTCOME UNKNOWN'],[['QR_READY'],'HOLD VERIFIED'],
+    // Definitively unsent is never reported as unknown (October 18: three SHOTGUN_TRIGGER_MISSED attempts).
+    [['NOT_DISPATCHED','NOT_DISPATCHED','NOT_DISPATCHED'],'NOTHING DISPATCHED'],[['REJECTED','NOT_DISPATCHED'],'ALL SENT ATTEMPTS REJECTED'],
+    [['FAILED','NOT_DISPATCHED'],'RESULT INCOMPLETE · REVIEW ACTIVITY'],[['WINDOW_MISSED','OMITTED'],'NOTHING DISPATCHED'],
   ])('%j → %s',(states,outcome)=>expect(liveOutcome(live(states as string[]))).toBe(outcome));
   it('shows provider throttling',()=>expect(liveOutcome(live(['REJECTED'],['HTTP_429']))).toBe('PROVIDER THROTTLED'));
   it('shows rescue active and rescue verified',()=>{expect(liveOutcome(live(['IN_FLIGHT'],[],'RESCUE'))).toBe('RESCUE ACTIVE');expect(liveOutcome(live(['HOLD_VERIFIED'],[],'RESCUE'))).toBe('RESCUE HOLD VERIFIED');});

@@ -218,12 +218,26 @@ export function literalShotgunSchedule(pairs: ReadonlyArray<{ targetId: string; 
     .sort((a, b) => a.rank - b.rank || a.id.localeCompare(b.id) || a.shotIndex - b.shotIndex);
   return { counts, offsets: placements.map(p => perTarget.get(p.id)![p.shotIndex]!) };
 }
-/** Objective Shotgun settings → existing ShotgunSettings for exactly these immediate targets. */
-export function toShotgunSettings(s: ObjectiveShotgun, immediateIds: readonly string[]): { settings: ShotgunSettings; problems: string[] } {
+/** True only for a key that is really present; an absent key is a sparse custom count, not an invalid one. */
+const hasCount = (counts: Record<string, number> | undefined, id: string) => !!counts && Object.prototype.hasOwnProperty.call(counts, id);
+/**
+ * Objective Shotgun settings → existing ShotgunSettings for exactly these immediate targets.
+ * CUSTOM allocation: an ABSENT count means 0 attempts (sparse migrated plans). A PRESENT value must be a whole number
+ * ≥ 0; anything else (null from a serialized NaN, negative, fractional, infinite, text) stays invalid and is reported
+ * with the court it belongs to. Values are never rounded, clamped or replaced.
+ */
+export function toShotgunSettings(s: ObjectiveShotgun, immediateIds: readonly string[], labelOf?: (id: string) => string): { settings: ShotgunSettings; problems: string[] } {
   const problems: string[] = [];
+  const literalAssignments = s.timingMode === 'CUSTOM' && !!s.customAssignments;
+  if (s.allocationMode === 'CUSTOM' && !literalAssignments) for (const id of immediateIds) {
+    if (!hasCount(s.customCounts, id)) continue;
+    const value: unknown = s.customCounts![id];
+    if (!Number.isSafeInteger(value) || (value as number) < 0)
+      problems.push(`${labelOf?.(id) ?? 'A Shotgun target'}: the attempt count must be a whole number of 0 or more (found ${value === null || value === undefined || value === '' ? 'blank' : String(value)}). It was not changed; correct it.`);
+  }
   const base: ShotgunSettings = { enabled: true, budget: s.budget, allocationMode: s.allocationMode, selectedTargetIds: [...immediateIds],
     windowStartMs: s.windowStartMs, windowEndMs: s.windowEndMs, timingMode: s.timingMode, timingCapacityOverride: !!s.timingCapacityOverride,
-    allowStandbyConsumption: !!s.allowStandbyConsumption, ...(s.allocationMode === 'CUSTOM' ? { customCounts: Object.fromEntries(immediateIds.map(id => [id, s.customCounts?.[id] ?? 0])) } : {}),
+    allowStandbyConsumption: !!s.allowStandbyConsumption, ...(s.allocationMode === 'CUSTOM' ? { customCounts: Object.fromEntries(immediateIds.map(id => [id, hasCount(s.customCounts, id) ? s.customCounts![id]! : 0])) } : {}),
     ...(s.customOffsetsMs ? { customOffsetsMs: [...s.customOffsetsMs] } : {}) };
   if (s.timingMode === 'CUSTOM' && s.customAssignments) {
     const offsets = s.customOffsetsMs ?? [];
@@ -343,15 +357,20 @@ export function compileObjective(o: BookingObjective, ctx: CompileContext): Comp
         };
         const missingRates = [...cohort.immediate, ...cohort.backups].filter(t => !rateFor(t));
         if (missingRates.length) problems.push(`Confirm the daytime rate: ${missingRates.length} target${missingRates.length === 1 ? ' has' : 's have'} hours before 4 PM (${unique(missingRates.map(t => t.wing === 'MANGO' ? 'Mango' : 'Buko')).join(' and ')}).`);
-        let shotgun: ShotgunSettings | undefined;
-        if (o.strategy === 'SHOTGUN') { const converted = toShotgunSettings(o.shotgun, cohort.immediate.map(t => t.id)); problems.push(...converted.problems); shotgun = converted.settings; }
+        let shotgun: ShotgunSettings | undefined, countProblems = false;
+        if (o.strategy === 'SHOTGUN') {
+          const label = (id: string) => { const t = cohort.immediate.find(value => value.id === id); return t ? `${t.wing === 'MANGO' ? 'Mango' : 'Buko'} Court ${t.court} · ${t.start}` : 'A Shotgun target'; };
+          const converted = toShotgunSettings(o.shotgun, cohort.immediate.map(t => t.id), label); problems.push(...converted.problems); shotgun = converted.settings;
+          countProblems = converted.problems.some(p => p.includes('attempt count must be'));
+        }
         if (!missingRates.length && cohort.immediate.length) {
           const draft = { ...emptySmartDraft(), immediate: cohort.immediate.map(t => slot(t, true)), backups: cohort.backups.map(t => slot(t, false)),
             useBackupsImmediately: false, retryReopened: o.strategy === 'PRECISION' && o.precision.retryReopened, ...(shotgun ? { shotgun } : {}),
             advanced: o.strategy === 'SHOTGUN' ? { wave2: 0, rescue: 0 } : {} };
           cohort.smart = compileSmartPlan(draft, { targetDate: o.wings[cohortWings[0]!].bookingDate, ...(ctx.unavailableWorkers ? { unavailable: ctx.unavailableWorkers } : {}),
             ...(ctx.shotgunCapacity ? { shotgunCapacity: ctx.shotgunCapacity } : {}) });
-          problems.push(...cohort.smart.problems); warnings.push(...cohort.smart.warnings);
+          // The same invalid count is already reported above with its court name instead of an internal target ID.
+          problems.push(...cohort.smart.problems.filter(p => !(countProblems && p.startsWith('Custom Shotgun count for')))); warnings.push(...cohort.smart.warnings);
         } else if (!cohort.immediate.length) problems.push('No immediate target could be scheduled.');
       }
       cohorts.push(cohort);

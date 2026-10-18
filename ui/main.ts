@@ -34,6 +34,7 @@ import {readBuildInfo} from '../src/build-info.js';
 import {currentMachineIdentity,fanOutDigest} from '../src/fanout-capacity.js';
 import {readReleaseTelemetry} from '../src/release-telemetry.js';
 import {createMachineHealthSampler,readLastReleaseBuild} from '../src/release-readiness-gate.js';
+import {readSourceStatus,readUpdatePreflight} from '../src/source-status.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 process.chdir(root);
@@ -115,6 +116,9 @@ const controller = new Controller({
     detail: (plan ? describePlan(plan)+'\n\n' : '') + (kind==='full'?'Terms authorization: YES, for this booking only.\nFinal automation boundary: QR Checkout.\nThe bot will continue through Onda until the QR payment page is reached, then stop. Payment itself remains manual.':kind==='selection'?'At release this automation MAY SELECT available court slots.\nSelection Only stops before Proceed. Selection is not a reservation.':'This waits for release and performs read-only refresh/date navigation. No court slots will be selected.'),
     confirmLabel: kind==='full'?'Arm Full Booking':kind==='selection'?'Arm Selection':kind==='dry'?'Arm Dry Race':'Arm observation' }),
   buildInfo:()=>readBuildInfo(resolve(root,'dist/build-info.json')),
+  // Installation root holds the source checkout in Source/; a development run is itself the checkout.
+  sourceStatus:()=>readSourceStatus([resolve(root,'Source'),root]),
+  updatePreflight:()=>readUpdatePreflight(root),
   machineHealth:()=>machineHealth.sample(),// release:build records under the source tree; an installation runs from its parent folder.
   testedBuild:()=>readLastReleaseBuild(root)??readLastReleaseBuild(resolve(root,'Source')),
   // Profiles are measured offline by scripts/benchmark-fanout-capacity.ts on this machine (source tree or installation).
@@ -171,6 +175,8 @@ else {
         ?{objectiveFingerprint:b.objectiveFingerprint,configFingerprint:b.configFingerprint,savedAt:new Date().toISOString()}:(()=>{throw Error('OBJECTIVE_BINDING_INVALID');})();
       return objectives.save(request.value,binding);}
     if(request.action==='savePresets')return objectives.savePresets(request.value);
+    // Validation of the exact runtime representation against the real configuration schema; never saves.
+    if(request.action==='validateRelease')return controller.validateReleaseSetup(request.value);
     throw Error('OBJECTIVE_ACTION_INVALID');
   });
   // Historical UNKNOWN archive: index + audit only; journals are never moved, rewritten or reclassified.

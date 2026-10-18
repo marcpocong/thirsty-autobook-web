@@ -36,7 +36,7 @@ it('keeps API release ownership visible across stage updates and stops the runne
   expect(await page.evaluate(()=>(window as any).fixtureCalls)).toEqual(['abortAutomation']);
   await page.evaluate(()=>{const w=window as any;w.fixtureState.operation='idle';w.fixtureState.activeApiRelease=null;w.fixturePublish(w.fixtureState);});
   expect(await page.locator('#schedule-meta').innerText()).toContain('NOT ARMED');
-  expect(await page.locator('#main-action').innerText()).toBe('Review Hold');
+  expect(await page.locator('#main-action').innerText()).toBe('Review lock');
   await page.close();
 });
 it('resolves both acknowledgements without Advanced, keeps priority explicit, saves literal timing and passes keyboard checks',async()=>{
@@ -146,7 +146,9 @@ it('renders multi-target allocation and Focus on #1, and leaves invalid plans BL
 });
 it('mirrors the existing arm gate on Next Release and puts Live waiting first',async()=>{
   const page=await openRenderer(browser,{booking:booking(false),playerStatus:players},'release');
-  expect(await page.locator('#next-preflight').innerText()).toContain('NOT READY');
+  // One readiness verdict for the saved plan: the earliest incomplete stage, never a button-derived READY claim.
+  expect(await page.locator('#next-preflight').innerText()).toContain('Saved plan is valid · not prepared yet');
+  expect(await page.locator('#next-preflight').innerText()).not.toContain('READY FOR RELEASE');
   await showRendererView(page,'live');expect(await page.locator('#live-result').innerText()).toBe('WAITING FOR RELEASE');
   await page.close();
 });
@@ -163,9 +165,11 @@ it('shows partial preparation from the engine forecast and prevents saving that 
   await page.close();
 });
 it('shows the ready preflight from fixture engine state, without calling Terms or arming',async()=>{
-  const value=booking(false),workers={A:true},page=await openRenderer(browser,{booking:value,playerStatus:players,browserHealth:workers,ready:true,cdp:true,apiFirstReady:true,termsAuthorized:true,clock:{...clockStatus(ObservationSchema.parse({}),DateTime.now()),networkSynced:true,clockOffsetMs:0,canArmToday:true,remainingMs:120000,releaseMs:value.releaseMs,targetDate:value.targetDate}},'release');
+  const value=booking(false),workers={A:true},page=await openRenderer(browser,{booking:value,playerStatus:players,browserHealth:workers,ready:true,cdp:true,apiFirstReady:true,termsAuthorized:true,preparedPlanFingerprint:value.fingerprint,
+    prewarmFeasibility:{verdict:'READY',projectedReady:1,configuredWave1Attempts:1,projectedAtRisk:0,projectedOmitted:0,p95Source:'COMPATIBLE_MEASURED_HISTORY',sampleCount:12,prewarmLeadMs:15000,preparationP95Ms:9000},clock:{...clockStatus(ObservationSchema.parse({}),DateTime.now()),networkSynced:true,clockOffsetMs:0,canArmToday:true,remainingMs:120000,releaseMs:value.releaseMs,targetDate:value.targetDate}},'release');
   expect(await page.locator('#arm').isEnabled()).toBe(true);
-  expect(await page.locator('#next-preflight').innerText()).toContain('READY FOR RELEASE');
+  // Prepared and forecast-feasible is stated as such; live security is never claimed before arming.
+  expect(await page.locator('#next-preflight').innerText()).toContain('Prepared · forecast feasible · live security is verified only after arming');
   expect(await page.locator('#next-preflight').innerText()).toContain('AUTHORIZED');
   expect(await page.evaluate(()=>(window as any).fixtureCalls)).toEqual([]);
   await page.screenshot({path:'.local/operator-ux/next-release-ready.png',fullPage:true});

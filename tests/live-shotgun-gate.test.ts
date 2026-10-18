@@ -36,7 +36,8 @@ async function arm(view: ReturnType<typeof shotgunView>, extra: Partial<Dependen
       browserReadiness: async () => ({ A: probe, B: probe, C: probe, D: probe, E: probe, F: probe, G: probe }) as never, machineHealth: () => ({ eventLoopP95Ms: 4, memoryUsedPct: 40 }) as never,
       clock: () => ({ ...clockStatus(ObservationSchema.parse({}), DateTime.fromISO('2026-10-14T21:00:00+08:00')), releaseMs, targetDate: view.targetDate, networkSynced: true, clockOffsetMs: 0 }),
       confirm: async () => true, publish: () => undefined, booking: () => view, saveBooking: () => view, recordShotgunAttestation: record => attestations.push(record), ...extra });
-    controller.state.apiFirstReady = true; controller.state.ready = true; controller.state.termsAuthorized = true;
+    // Preparation is bound to the exact saved plan it prepared (as resetPrepare records it).
+    controller.state.apiFirstReady = true; controller.state.ready = true; controller.state.termsAuthorized = true; controller.state.preparedPlanFingerprint = view.fingerprint;
     await controller.armFullBooking();
     return { calls, controller, attestations };
   } finally { process.env.THIRSTY_API_INSTALLATION = previous; }

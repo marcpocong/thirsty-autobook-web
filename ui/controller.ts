@@ -42,6 +42,9 @@ import {TARGET_EVIDENCE_LABEL,type TargetEvidence} from '../src/api-booking/pre-
 import type {PrecisionView} from './types.js';
 import {reduceLiveRun} from './live-run.js';
 import type {EnsureManifestResult} from '../src/arbitration/experiment-manifest.js';
+import {classifyFailure,type FailureContext} from '../src/preparation-failure.js';
+import {summarizeRunOutcome} from '../src/run-outcome.js';
+import {setupDifferences} from '../src/plan-diff.js';
 
 /** Race-group headline: the operator's goal is one court, so any verified hold achieves it. */
 const PRECISION_OUTCOME_HEADLINE:Record<string,string>={
@@ -172,6 +175,11 @@ const errors: Record<string, string> = {
   BOT_BROWSER_CLOSE_FAILED:'The bot browsers could not be checked or closed. Close the THIRSTY BOT Chrome windows manually.',
   BOT_BROWSER_CLOSE_TIMEOUT:'Some bot Chrome windows did not close in time. Close them manually from the taskbar.',
   SLOT_WATCH_UNAVAILABLE:'Release slot watch is not available in this build.',
+  PREPARED_PLAN_CHANGED:'The saved release plan changed after preparation. Nothing was armed. Prepare the saved plan again, then arm.',
+  RELEASE_CLOCK_REFRESH_TIMEOUT:'The final release clock check did not finish in time. No attempt was sent; every attempt is recorded as unsent.',
+  PREPARATION_RESULT_INVALID:'Preparation reached its final check but its evidence did not validate. Nothing was submitted. The failing fields are listed in Activity; prepare again.',
+  PREPARATION_RESULT_MISMATCH:'The preparation result does not belong to the saved plan. Nothing was armed; prepare again.',
+  BOOKING_OPERATION_FAILED:'Preparation failed without a specific reason. The step and error class are recorded in Activity. Nothing was submitted.',
 };
 /** A slot watch the controller started, and why; manual watches are only stopped explicitly. */
 interface SlotWatchHandle { id:string; reason:'release'|'manual'; date:string; releaseMs:number; stop(reason:string):Promise<unknown>; done:Promise<SlotWatchSummary> }
@@ -233,6 +241,9 @@ export interface Dependencies {
   buildInfo?():import('../src/build-info.js').BuildInfo|null;
   machineHealth?():MachineHealth;
   testedBuild?():{gitSha:string;dirty:boolean|null;finishedAt:string;packaged:boolean}|null;
+  /** Read-only local source checkout identity (never implies built, CI-verified or installed). */
+  sourceStatus?():{headSha:string|null;branch:string|null;readAt:string}|null;
+  updatePreflight?():NonNullable<Dashboard['updatePreflight']>|null;
 }
 const AdvisorRequestSchema=z.object({courts:z.array(z.number().int().min(1).max(7)).min(1).max(7),earliestStart:z.string().regex(/^(0[89]|1\d|2[0-3]):00$/),
   latestStart:z.string().regex(/^(0[89]|1\d|2[0-3]):00$/),durationHours:z.number().int().min(1).max(3),immediate:z.number().int().min(0).max(7),backups:z.number().int().min(0).max(14),
@@ -243,7 +254,12 @@ const ReplayRequestSchema=z.union([z.object({source:z.literal('saved')}).strict(
 export interface ReplaySummary {blocked?:string;plan?:'saved'|'draft';results:ReplayResult[];skipped:Array<{releaseKey:string;reason:string}>}
 export class Controller {
   readonly state: Dashboard = { operation: 'idle', headline: 'RESET REQUIRED', workflow:'release', detail: 'Configure your booking, then Reset & Prepare.', ready: false,
-    cdp: false, lock: false, inspection: null, clock: null, plan: null, logs: [], liveRace: fullBookingReady(), booking:null, termsAuthorized:false, apiFirstReady:false, capabilities, selection:null,mode:fullBookingReady()?'full':'selection',handoff:null,qrHandoffs:[],preparedContext:null,browserHealth:{A:false,B:false,C:false,D:false,E:false,F:false,G:false,H:false},playerStatus:{primary:false,extended:false,third:false,fourth:false},scheduledRelease:null,sleepProtection:false,scheduleStatus:null };
+    cdp: false, lock: false, inspection: null, clock: null, plan: null, logs: [], liveRace: fullBookingReady(), booking:null, termsAuthorized:false, apiFirstReady:false, capabilities, selection:null,mode:fullBookingReady()?'full':'selection',handoff:null,qrHandoffs:[],preparedContext:null,browserHealth:{A:false,B:false,C:false,D:false,E:false,F:false,G:false,H:false},playerStatus:{primary:false,extended:false,third:false,fourth:false},scheduledRelease:null,sleepProtection:false,scheduleStatus:null,
+    attention:null,preparedPlanFingerprint:null,protocolIssues:[],runSummary:null };
+  /** Context of the operation in progress, for typed failure records (never values, tokens or customer data). */
+  private lastPreparationStep:string|null=null;
+  private lastFailureWorker:string|null=null;
+  private lastErrorCode:string|null=null;
   private active?: RunningCommand;
   private pendingPreparation?:{input:PreparationInput;fingerprint:string;release?:BookingView;players:NonNullable<Dashboard['playerStatus']>};
   private preparationResult?:PreparationResult;
@@ -269,6 +285,8 @@ export class Controller {
   /** Runner runs whose forensic report waits for this slot watch (by watch ID) to finish. */
   private readonly pendingForensics=new Map<string,string[]>();
   constructor(private deps: Dependencies) {try{this.state.build=this.deps.buildInfo?.()??null;}catch{this.state.build=null;}
+    try{this.state.sourceStatus=this.deps.sourceStatus?.()??null;}catch{this.state.sourceStatus=null;}
+    try{this.state.updatePreflight=this.deps.updatePreflight?.()??null;}catch{this.state.updatePreflight=null;}
     try{this.state.fanOut=this.deps.fanOutDigest?.()??null;}catch{this.state.fanOut=null;}this.state.runHistory=this.deps.activityJournal?.history?.()??[];this.state.slotWatch=null;this.state.slotWatchHistory=this.readSlotWatchHistory();this.state.releaseForensics=this.readForensicsHistory();this.state.releaseLab=this.readReleaseLabHistory()[0]??null;
     this.state.phase4={busy:null,message:'',networkReadiness:this.readNetworkHistory()[0]??null,networkHistory:this.networkHistorySummary()};this.readIntelligence();}
   // Phase 4: read-only analysis in this (desktop) process only, never while a release is close or running.
@@ -447,7 +465,26 @@ export class Controller {
     }
     return {setup:parsed.data,reconciliation:repaired.reconciliation};
   }
-  private clearPreparation(){this.state.preparedContext=null;this.state.preparedAt=undefined;this.state.apiFirstReady=false;this.apiTestFingerprint=undefined;this.apiTestStrategy=undefined;this.apiTestCheckoutMethod=undefined;this.apiTestPreferences=undefined;this.state.ready=false;this.state.termsAuthorized=false;}
+  /**
+   * Validates the exact runtime representation of a draft against the real configuration schema WITHOUT saving it,
+   * and compares it with the saved release authorization. Used before the draft may become the saved plan.
+   */
+  validateReleaseSetup(input:unknown){
+    const repaired=reconcileBookingSetupFallbacks(input),parsed=BookingSetupSchema.safeParse(repaired.setup);
+    let saved:BookingView['setup']|null=null,savedFingerprint:string|null=null;
+    try{const view=this.deps.booking();saved=view.setup;savedFingerprint=view.fingerprint;}catch{saved=null;}
+    if(!parsed.success){
+      const refinements=parsed.error.issues.filter(issue=>issue.code==='custom').map(issue=>issue.message);
+      const fields=parsed.error.issues.slice(0,6).map(issue=>`${issue.path.join('.')||'plan'}: ${issue.message}`);
+      return {ok:false as const,problems:[...new Set([bookingSetupProblem(repaired.setup),...refinements,...fields].filter((p):p is string=>!!p))].slice(0,6),savedFingerprint};
+    }
+    // Saving never adjusts a plan silently: a fallback the reconciler would drop is reported, not applied.
+    const adjusted=repaired.reconciliation.removed.map(value=>`Fallback start ${value.time} would be removed (${value.reason.replaceAll('_',' ').toLowerCase()}).`);
+    if(adjusted.length)return {ok:false as const,problems:adjusted,savedFingerprint};
+    const differences=saved?setupDifferences(saved,parsed.data):null;
+    return {ok:true as const,problems:[] as string[],savedFingerprint,matchesSaved:!!differences&&differences.total===0,differences};
+  }
+  private clearPreparation(){this.state.preparedContext=null;this.state.preparedAt=undefined;this.state.apiFirstReady=false;this.state.preparedPlanFingerprint=null;this.apiTestFingerprint=undefined;this.apiTestStrategy=undefined;this.apiTestCheckoutMethod=undefined;this.apiTestPreferences=undefined;this.state.ready=false;this.state.termsAuthorized=false;}
   private stopSleepProtection(){if(this.sleepBlockerId!==undefined)this.deps.stopSleepProtection?.(this.sleepBlockerId);this.sleepBlockerId=undefined;this.state.sleepProtection=false;}
   private clearScheduled(){if(this.scheduledTimer)clearTimeout(this.scheduledTimer);this.scheduledTimer=undefined;this.state.scheduledRelease=null;this.state.scheduleStatus=null;this.stopSleepProtection();}
   async cancelScheduledRelease(reason='SCHEDULE CANCELLED'){
@@ -492,6 +529,17 @@ export class Controller {
     if(event.stage==='PRECISION_FROZEN'){view.frozen=true;view.frozenCount=event.frozenCount;view.frozenAt=event.at;}
     if(event.stage==='PRECISION_OUTCOME')view.outcome=event.outcome;
     this.state.precision=view;
+  }
+  /** Final accounting over every attempt the runner reported (all waves), against the saved Wave 1 plan size. */
+  private trackRunSummary(){
+    const live=this.state.live;if(!live?.parents.length){return;}
+    const plan=this.state.booking?.setup.PRECISION_PHASE3,planned=plan?plan.wave1.reduce((n,a)=>n+(a.fanOutOffsetsMs?.length??1),0):undefined;
+    this.state.runSummary=summarizeRunOutcome(live.parents.flatMap(parent=>parent.children.map(child=>({state:child.state,...(child.code?{code:child.code}:{})}))),planned);
+  }
+  /** Rejected runtime events stay visible (stage, field paths and codes only) instead of disappearing into the log. */
+  private recordProtocolIssue(line:string){
+    const issues=this.state.protocolIssues??[];
+    this.state.protocolIssues=[...issues,{at:new Date().toISOString(),text:line.slice(0,300)}].slice(-20);
   }
   private readonly liveCandidates=new Map<string,{court:number;startTime:string;endTime:string}>();
   /** Live view: the run by logical target and fan-out child (ui/live-run.ts). */
@@ -627,7 +675,13 @@ export class Controller {
       try { this.state.clock = this.deps.clock(); }
       catch { this.state.clock = null; this.state.ready = false; this.state.detail = errors.CONFIG_INVALID!; }
       if (this.state.operation === 'idle'||this.state.operation==='scheduled') {
-        try { const booking=this.deps.booking(); if (this.state.preparedContext?.workflow==='release'&&this.state.preparedContext.configFingerprint!==booking.fingerprint)this.clearPreparation(); this.state.booking=booking; if(booking.setup.BOOKING_TYPE==='extended'&&this.deps.dualEvidence)this.state.dualValidation=await this.deps.dualEvidence(); }
+        try { const booking=this.deps.booking(); if (this.state.preparedContext?.workflow==='release'&&this.state.preparedContext.configFingerprint!==booking.fingerprint)this.clearPreparation();
+          // A release preparation belongs to exactly one saved plan. Saving a different plan clears it with an explanation.
+          if(this.state.operation==='idle'&&this.state.workflow==='release'&&this.state.apiFirstReady&&this.state.preparedPlanFingerprint&&this.state.preparedPlanFingerprint!==booking.fingerprint){
+            this.clearPreparation();this.state.headline='SAVED PLAN CHANGED';
+            this.state.detail='The saved release plan changed after preparation, so that preparation no longer applies. Prepare the saved plan again; nothing was armed.';
+            this.state.attention=classifyFailure('PREPARED_PLAN_CHANGED',{operation:'prepare',lockPresent:lock});this.log('PREPARED_PLAN_CHANGED · preparation cleared for the newly saved plan');}
+          this.state.booking=booking; if(booking.setup.BOOKING_TYPE==='extended'&&this.deps.dualEvidence)this.state.dualValidation=await this.deps.dualEvidence(); }
         catch { this.state.booking=null; this.state.ready=false; }
       }
       const scheduled=this.state.scheduledRelease;
@@ -681,6 +735,10 @@ export class Controller {
         else if(event.stage==='FAILED')this.state.activeApiRelease.phase='FAILED';
       }
       this.trackIdentity(event);
+      // Failure context for typed records: the specific code, the worker and the preparation step reached.
+      if(event.stage==='FAILED'&&event.code)this.lastErrorCode=event.code;
+      if(event.workerId&&/FAILED|INVALID/.test(event.stage))this.lastFailureWorker=event.workerId;
+      if(event.stage==='PREPARATION_STEP_FAILED'&&event.checkpoint)this.lastPreparationStep=event.checkpoint.toLowerCase();
        if(event.price!==undefined)this.state.observedPrice=event.price;
        if(event.assumedPrice!==undefined)this.state.assumedPrice=event.assumedPrice;
       if(event.stage==='RUN_STARTED'){this.apiReadyWorkers.clear();if(event.runId)this.runnerRunId=event.runId;}
@@ -695,6 +753,7 @@ export class Controller {
       this.trackPrecision(event);
       this.trackPhase3(event);
       this.trackLive(event);
+      this.trackRunSummary();
       const labels:Record<string,string>={RUN_STARTED:'API run started',EXPIRED_HOLD_REUSABLE:'Expired verified hold released for a new test',FINISHED_ATTEMPT_REUSABLE:'Finished attempt archived for a new test',PREPARING_BROWSER:'Preparing isolated Chrome',BROWSER_READY:'API browser ready',
         WAITING_FOR_BLOCK_AUDIT:'Waiting for 7:30 block audit',PRIMARY_PROOFLESS_PLAN_READY:'Proofless court plan resolved',PRIMARY_PROOFLESS_DISPATCHING:'Dispatching proofless checkout',PRIMARY_PROOFLESS_OUTCOME:'Proofless checkout outcome recorded',WAITING_FOR_RELEASE:'Waiting for release',SECURITY_PREWARM_STARTED:'Preparing checkout security before release',SECURITY_PREWARM_READY:'Checkout security ready for release',RELEASE_TRIGGERED:'Release reached',FETCHING_AVAILABILITY:'Fetching live API availability',
         WORKER_OUTCOME:'Checkout outcome recorded',CANDIDATE_READY:'API candidate ready',DRY_RUN_COMPLETE:'API dry run complete',FRESH_VERIFICATION_AND_PROOFS:'Fresh verification and slot proofs',
@@ -723,7 +782,7 @@ export class Controller {
       if(['PRECISION_TARGET_EVIDENCE','PROOFLESS_TARGET_EVIDENCE'].includes(event.stage))this.state.detail=`${event.workerId?`Worker ${event.workerId} · `:''}Court ${event.court} · ${event.startTime}${event.endTime?`–${event.endTime}`:''}${event.checkpoint?` · ${event.checkpoint}`:''} · ${TARGET_EVIDENCE_LABEL[event.evidence as TargetEvidence]??event.evidence}${event.eligible===false?' · NOT ELIGIBLE':''}`;
       if(event.stage==='PRECISION_ATTEMPT_STATE')this.state.detail=`Worker ${event.workerId} · Court ${event.court} · ${event.startTime}–${event.endTime} · ${PRECISION_STATE_LABEL[event.attemptState??'']??event.attemptState}${event.duplicateOf?` · duplicates Worker ${event.duplicateOf}`:event.code?` · ${event.code}`:''}`;
       if(event.stage==='CUSTOMER_IDENTITY_INVALID')this.state.detail=identityIssueText(event,this.state.booking?.setup.RELEASE_STRATEGY==='precision');
-      if(event.stage==='PREWARM_TIER_STATUS'||event.stage==='PREPARATION_RESULT_INVALID')this.state.detail=event.message??event.stage;
+      if(['PREWARM_TIER_STATUS','PREPARATION_RESULT_INVALID','PREPARATION_STEP_FAILED','PREWARM_WINDOW'].includes(event.stage))this.state.detail=event.message??event.stage;
       if(event.stage==='NETWORK_CLOCK_REFRESHED')this.state.detail=`${event.checkpoint} · offset ${event.offsetMs} ms · round trip ${event.roundTripMs} ms · change ${event.deltaMs} ms`+(event.sampleCount!==undefined?` · ${event.sampleCount} samples · spread ${event.spreadMs} ms · ±${event.uncertaintyMs} ms`:'');
       if(event.stage==='NETWORK_CLOCK_CONSENSUS')this.state.detail=`${event.checkpoint} · offset ${event.offsetMs} ms · ${event.sampleCount} samples · fastest round trip ${event.roundTripMs} ms · spread ${event.spreadMs} ms · ±${event.uncertaintyMs} ms · change ${event.deltaMs} ms`+(event.code==='CLOCK_JUMP_REJECTED'?' · large earlier jump not adopted':'');
       if(event.stage==='RELEASE_OFFSET_SCHEDULED'&&event.releaseOffsetMs!==undefined)this.state.detail=`${event.workerId?`Worker ${event.workerId} · `:''}Trigger ${formatReleaseOffset(event.releaseOffsetMs)}: checkout may be sent up to ${-event.releaseOffsetMs} ms before the official release time`;
@@ -739,6 +798,9 @@ export class Controller {
       this.publish();return;
     }
     if(event.type==='preparationResult'){this.preparationResult=event.result;this.publish();return;}
+    if(event.type==='preparationProgress')this.lastPreparationStep=event.step;
+    if(event.type==='preparationBlocked')this.lastFailureWorker=event.browser;
+    if(event.type==='error'&&event.code!=='USER_ABORT')this.lastErrorCode=event.code;
     if(event.type==='preparationProgress'){
       const labels={starting:'Starting required browser(s)...','previous-session':'Checking previous session...','holds':'Checking payment holds...','onda':'Preparing Onda...','calendar':'Verifying calendar...','grids':'Verifying grids...','availability':'Checking booking availability...','final':'Final readiness check...'};
       this.state.headline='PREPARING';this.state.detail=labels[event.step];this.log(`Preparation: ${this.state.detail}`);return;
@@ -800,7 +862,7 @@ export class Controller {
     const runnerBefore=this.runnerRunId;
     if(typeof command==='object'&&command.kind==='apiRun'&&command.mode==='live'&&command.releaseMs!==undefined)
       this.state.activeApiRelease={releaseMs:command.releaseMs,targetDate:command.date,phase:'PREPARING'};
-    const active = this.deps.runner(command, this.event, (line, error) => this.log(line, error),async plan=>{if(generation!==this.generation)return false;const answer=await this.deps.confirmBooking?.(plan,typeof command==='object'&&command.kind==='testBooking'?command.input.maximum:0)??false;return generation===this.generation&&answer;});
+    const active = this.deps.runner(command, this.event, (line, error) => {if(/^UI_EVENT_(?:SCHEMA_REJECTED|JSON_INVALID)/.test(line))this.recordProtocolIssue(line);this.log(line, error);},async plan=>{if(generation!==this.generation)return false;const answer=await this.deps.confirmBooking?.(plan,typeof command==='object'&&command.kind==='testBooking'?command.input.maximum:0)??false;return generation===this.generation&&answer;});
     this.active = active;
     try {
       const code = await active.done;
@@ -821,12 +883,15 @@ export class Controller {
     const generation = ++this.generation;
     if (['observe', 'dry', 'selection', 'full'].includes(kind)) this.state.releasePerformance = null;
     this.state.dualActive=false; this.state.operation = kind; this.state.ready = false; this.state.plan = null; this.clearApiStage(); this.state.termsAuthorized=false;
+    this.lastPreparationStep=null;this.lastFailureWorker=null;this.lastErrorCode=null;
+    if(kind==='prepare'||kind==='full'){this.state.attention=null;if(kind==='full')this.state.runSummary=null;}
     let outcome='complete';
     try {this.beginRun(kind);await work(generation); }
     catch (error) {
       outcome='failed';
       if (generation === this.generation) {
         const code = error instanceof Error ? error.message : 'OPERATION_FAILED';
+        if(kind==='prepare'||kind==='full')await this.recordFailure(code==='COMMAND_FAILED'&&this.lastErrorCode?this.lastErrorCode:code,kind==='prepare'?'prepare':'run');
         const hadSpecificFailure = this.state.apiStage?.stage==='FAILED'||Object.values(preparationHeadlines).includes(this.state.headline)||['PARTIAL SUCCESS','BOOKING FAILED'].includes(this.state.bookingResult?.status??'')||this.state.dualResult?.status==='DUAL_PARTIAL_SUCCESS'||this.state.dualResult?.status==='DUAL_FAILED'||this.state.headline === 'Needs attention'||this.state.headline.includes('FAILED')||this.state.headline==='HANDOFF STATUS UNKNOWN';
         if(code==='HANDOFF_STATUS_UNKNOWN')this.state.headline='HANDOFF STATUS UNKNOWN';
         else if(code==='BOOKING_SETTINGS_INVALID')this.state.headline='BOOKING SETTINGS NEED ATTENTION';
@@ -844,6 +909,20 @@ export class Controller {
     }
   }
   private async noLock() { this.state.lock = await this.deps.lock(); if (this.state.lock) throw new Error('AUTOMATION_LOCK_EXISTS'); }
+  /**
+   * Typed, durable failure record: category, stage, worker, retry safety and one recovery. Written to the run's activity
+   * journal while the run is still open. The lock is re-read so retry is offered only when nothing was left behind.
+   */
+  private async recordFailure(code:string,operation:FailureContext['operation']){
+    const lockPresent=await this.deps.lock().catch(()=>true);
+    const failure=classifyFailure(code,{operation,step:this.lastPreparationStep,workerId:this.lastFailureWorker,lockPresent});
+    if(failure.category==='OPERATOR_CANCELLED')return;
+    // A settled release reports its own accounting and safe next step instead of a generic code.
+    const summary=this.state.runSummary;
+    if(operation==='run'&&summary?.settled)failure.detail=`${summary.headline}: ${summary.detail}. ${summary.nextStep}`;
+    this.state.attention=failure;
+    this.log(`FAILURE_RECORD category=${failure.category} code=${failure.code} operation=${failure.operation} step=${failure.step??'none'} worker=${failure.workerId??'none'} retrySafe=${failure.retrySafe} recovery=${failure.recovery.action}`,true);
+  }
   private availabilityProcess:RunningCommand|undefined;
   /**
    * One-click read-only availability for both wings in a dedicated observer browser. It needs no prepared worker,
@@ -940,6 +1019,7 @@ export class Controller {
           await this.run({kind:'apiRun',mode:'prepare',date:input.request.date,fingerprint,checkoutMethod:input.method==='proofless'?'proofless':'proof-based',preferences},gen);
           if(input.method==='proofless')await this.run({kind:'apiRun',mode:'dry',date:input.request.date,fingerprint,checkoutMethod:'proofless',preferences},gen);
           this.apiTestFingerprint=fingerprint;this.apiTestStrategy=input.request.strategy;this.apiTestCheckoutMethod=input.method==='proofless'?'proofless':'proof-based';this.apiTestPreferences=preferences;this.state.apiFirstReady=true;this.state.ready=true;
+          this.state.preparedPlanFingerprint=fingerprint;this.state.attention=null;
           this.state.headline='API READY TO TEST';
           const count=normalWorkerIds(input.request.strategy,input.request.courtCount,input.request.workers).length;
           this.state.detail=`${count} dedicated API browser${count===1?' is':'s are'} open and remain${count===1?'s':''} visible. Authorize Terms, then Run Test to QR.`;
@@ -957,7 +1037,8 @@ export class Controller {
              this.state.workflow='release';this.state.headline='PREPARING API BROWSER';this.publish();
              await this.run({kind:'apiRun',mode:'prepare',date:release.targetDate,fingerprint:release.fingerprint,checkoutMethod:release.setup.BOOKING_METHOD==='proofless'?'proofless':'proof-based'},gen);
              if(release.setup.BOOKING_METHOD==='proofless')await this.run({kind:'apiRun',mode:'dry',date:release.targetDate,fingerprint:release.fingerprint,checkoutMethod:'proofless'},gen);
-             this.state.apiFirstReady=true;this.state.ready=true;this.state.headline='API BROWSER READY';
+             // Preparation is bound to this exact saved plan; a later save of any other plan clears it (refresh) and arming refuses it.
+             this.state.apiFirstReady=true;this.state.ready=true;this.state.preparedPlanFingerprint=release.fingerprint;this.state.attention=null;this.state.headline='API BROWSER READY';
               const count=planWorkerIds(release.setup).length;
              this.state.detail=`${count} API browser${count===1?' is':'s are'} ready. Authorize Terms, then arm the next release.`+(this.state.identityIssues?.length?`\n${this.state.identityIssues.join('\n')}`:'');
              return;
@@ -976,6 +1057,7 @@ export class Controller {
         const result=this.preparationResult;if(!result||result.fingerprint!==fingerprint||result.workflow!==input.workflow||result.strategy!==strategy)throw Error('PREPARATION_RESULT_MISMATCH');
         const health=await this.health(),required=requiredWorkerIds(strategy,courtCount);if(required.some(id=>!health[id]))throw Error('RESET_REQUIRED');
         this.state.preparedContext=makePreparedContext(input,result,players,release);this.state.ready=true;this.state.preparedAt=Date.parse(this.state.preparedContext.preparedAt);
+        this.state.preparedPlanFingerprint=release?.fingerprint??fingerprint;this.state.attention=null;
         this.state.headline=input.workflow==='release'?'READY TO ARM':'READY TO TEST';
         this.state.detail=input.workflow==='release'?`${strategy==='extended'?'Extended':'Standard'} · ${this.state.preparedContext.courtCount} court(s)\nBrowsers: ${required.length} ready\nPlayers: ${required.length} configured\nSelected slots: 0\nPayment holds: none\nAuthorize Terms, then Arm Next Release.`:`${strategy==='extended'?'Extended':'Standard'} · ${this.state.preparedContext.courtCount} court(s)\nDate: ${this.state.preparedContext.date}\nBrowsers: ${required.length} ready\nPlayers: ${required.length} configured\nCurrent booking solution: available\nSelected slots: 0\nPayment holds: none\nAuthorize Terms, then Run Test to QR.`;
       });
@@ -1052,13 +1134,20 @@ export class Controller {
     if(this.state.operation!=='idle')throw new Error('OPERATION_ALREADY_RUNNING');
     const apiReady=this.state.apiFirstReady&&(
       this.state.workflow==='test'?!!this.apiTestFingerprint:['api-first','proofless'].includes(this.state.booking?.setup.BOOKING_METHOD??''));
-    if(value&&((!apiReady&&!fullBookingReady(this.state.capabilities))||this.state.lock||!this.state.ready||(!apiReady&&(!this.state.preparedContext||this.state.preparedContext.workflow!==this.state.workflow))))throw new Error('TERMS_AUTHORIZATION_NOT_ALLOWED');
+    if(value&&((!apiReady&&!fullBookingReady(this.state.capabilities))||this.state.lock||!this.state.ready||(!apiReady&&(!this.state.preparedContext||this.state.preparedContext.workflow!==this.state.workflow)))){
+      // Never refuse silently: the reason stays on screen next to the checkbox.
+      this.state.detail=this.state.lock?'Terms can be authorized after the retained lock is reviewed.':!this.state.ready?'Terms are authorized for a prepared run. Prepare the saved plan first.':'Terms cannot be authorized for this workflow until it is prepared.';
+      this.publish();throw new Error('TERMS_AUTHORIZATION_NOT_ALLOWED');
+    }
     this.state.termsAuthorized=value;this.publish();
   }
   async armFullBooking(){
     const authorized=this.state.termsAuthorized;this.state.termsAuthorized=false;
     try{if(['api-first','proofless'].includes(this.deps.booking().setup.BOOKING_METHOD))await this.armApiRelease(authorized);
-      else await this.armScheduledRelease(authorized);}catch(error){if(this.state.scheduledRelease){this.clearScheduled();this.clearPreparation();this.state.operation='idle';}const code=error instanceof Error?error.message:'SCHEDULE_FAILED';this.state.headline='Needs attention';this.state.detail=errors[code]??code;this.log(code,true);}
+      else await this.armScheduledRelease(authorized);}catch(error){if(this.state.scheduledRelease){this.clearScheduled();this.clearPreparation();this.state.operation='idle';}const code=error instanceof Error?error.message:'SCHEDULE_FAILED';this.state.headline='Needs attention';this.state.detail=errors[code]??code;this.log(code,true);
+        // Arming refusals keep a typed reason and recovery on screen (the run itself never started).
+        const failure=classifyFailure(code,{operation:'arm',lockPresent:this.state.lock});if(failure.category!=='OPERATOR_CANCELLED'){this.state.attention=failure;this.log(`FAILURE_RECORD category=${failure.category} code=${failure.code} operation=arm retrySafe=${failure.retrySafe} recovery=${failure.recovery.action}`,true);}
+        this.publish();}
   }
   private async armApiRelease(authorized:boolean){
     if(process.env.THIRSTY_API_INSTALLATION!=='1'&&process.env.THIRSTY_API_TEST_INSTALLATION!=='1')throw Error('API_INSTALLATION_REQUIRED');
@@ -1066,6 +1155,9 @@ export class Controller {
     if(!authorized)throw Error('TERMS_AUTHORIZATION_REQUIRED');
     await this.noLock();
     const plan=this.deps.booking();
+    // Arm exactly the plan that was prepared: never a plan saved afterwards, never an unbound preparation.
+    if(!this.state.preparedPlanFingerprint)throw Error('RESET_REQUIRED');
+    if(plan.fingerprint!==this.state.preparedPlanFingerprint)throw Error('PREPARED_PLAN_CHANGED');
     const liveShotgun=!!plan.setup.STRATEGY_V2?.shotgun?.enabled;
     if(liveShotgun&&plan.setup.PRECISION_PHASE3?.candidates.some(candidate=>candidate.wing==='BUKO'))throw Error('BUKO_SCHEDULED_LIVE_BLOCKED');
     if(plan.setup.STRATEGY_V2?.shotgun?.exactSchedule.some(shot=>shot.configuredOffsetMs>0)||plan.setup.PRECISION_PHASE3?.wave1.some(assignment=>(assignment.fanOutOffsetsMs??[assignment.releaseOffsetMs??0]).some(offset=>offset>0)))

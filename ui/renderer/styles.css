@@ -989,3 +989,56 @@ footer > div { display: flex; align-items: center; gap: 8px; font-size: 11px; co
 .test-lab .button-row { flex-wrap: wrap; }
 .test-lab .button-row > button { flex: 0 1 auto; width: auto; white-space: nowrap; }
 .test-lab .button-row > .primary-action { padding: 11px 22px; font-size: 13px; }
+/* Operator workflow (2026-10-18 overhaul): plan identity, stage ladder, readiness layers, blockers, conflicts, attention. */
+@media (max-height: 900px) { .action-bar { position: static; box-shadow: none; } }
+.plan-identity-row { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.plan-identity { margin: 0; padding: 8px 12px; font-weight: 650; font-size: 13px; border-radius: var(--radius-sm); border: 1px solid var(--line-strong); background: #12301f; color: var(--text); }
+.plan-identity[data-tone=bad] { color: #ffd7d3; background: var(--danger-bg); border-color: var(--danger-line); }
+.plan-identity[data-tone=warn] { color: var(--warning); background: var(--warning-bg); border-color: #6d5a2c; }
+.plan-identity[data-tone=live] { color: #fff2c8; background: #3a2c10; border-color: #c99a32; }
+.plan-ladder { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; margin: 0; padding: 0; list-style: none; counter-reset: stage; }
+.plan-ladder li { min-width: 0; padding: 6px 8px; border-radius: var(--radius-sm); border: 1px solid var(--line); background: #0b1d14; counter-increment: stage; }
+.plan-ladder li strong { display: block; font-size: 11px; color: var(--text-2); }
+.plan-ladder li strong::before { content: counter(stage) " · "; color: var(--faint); }
+.plan-ladder li span { display: block; font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+.plan-ladder li[data-status=DONE] { border-color: #4f8a2a; background: #13301f; }
+.plan-ladder li[data-status=DONE] strong { color: var(--brand-bright); }
+.plan-ladder li[data-status=CURRENT] { border-color: #2e5f7c; background: #10263a; }
+.plan-ladder li[data-status=BLOCKED] { border-color: var(--danger-line); background: var(--danger-bg); }
+.plan-ladder li[data-status=BLOCKED] span { color: #ffd7d3; }
+.plan-ladder li[data-status=STALE] { border-color: #6d5a2c; background: var(--warning-bg); }
+.plan-ladder li[data-status=STALE] span { color: var(--warning); }
+.readiness-layers { margin: 0 0 10px; }
+.readiness-summary { margin: 0 0 6px; font-weight: 650; color: var(--text); }
+.readiness-layers ul { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; margin: 0; padding: 0; list-style: none; }
+.readiness-layers li { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 6px 8px; font-size: 11px; border-radius: var(--radius-sm); border: 1px solid var(--line); background: #0b1d14; }
+.readiness-layers li strong { color: var(--text-2); }
+.readiness-layers .layer-status { font-weight: 700; letter-spacing: .4px; color: var(--muted); }
+.readiness-layers .layer-detail { color: var(--muted); overflow-wrap: anywhere; }
+.readiness-layers li[data-status=OK] { border-color: #4f8a2a; } .readiness-layers li[data-status=OK] .layer-status { color: var(--brand-bright); }
+.readiness-layers li[data-status=WARN] { border-color: #6d5a2c; } .readiness-layers li[data-status=WARN] .layer-status { color: var(--warning); }
+.readiness-layers li[data-status=BLOCKED] { border-color: var(--danger-line); background: var(--danger-bg); } .readiness-layers li[data-status=BLOCKED] .layer-status, .readiness-layers li[data-status=BLOCKED] .layer-detail { color: #ffd7d3; }
+.action-blockers { margin: 10px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.action-blockers li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; font-size: 13px; color: var(--warning); background: var(--warning-bg); border: 1px solid #6d5a2c; border-radius: var(--radius-sm); }
+.action-blockers li span { flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere; }
+.recovery { white-space: nowrap; }
+.primary-action.stop-action { color: #fff; background: linear-gradient(100deg, #b84f50, #d0605d); border-color: #e48a86; }
+.attention-panel { border-color: var(--danger-line); background: linear-gradient(180deg, #2a1517, var(--surface)); }
+.attention-panel h3 { margin: 4px 0; font-size: 16px; color: #ffd7d3; }
+.attention-panel p { margin: 4px 0; overflow-wrap: anywhere; }
+.attention-panel .eyebrow { color: var(--danger); }
+.plan-conflict { border-color: #6d5a2c; background: linear-gradient(180deg, #2b2415, var(--surface)); }
+.plan-conflict h3 { margin: 0 0 6px; color: var(--warning); }
+.diff-table th, .diff-table td { text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+.diff-table td:last-child { color: var(--brand-bright); }
+.run-summary { margin: 8px 0; padding: 8px 10px; border-radius: var(--radius-sm); border: 1px solid var(--line-strong); background: #12301f; }
+.run-summary[data-headline="OUTCOME UNKNOWN"] { border-color: var(--danger-line); background: var(--danger-bg); }
+.run-summary[data-headline="NOTHING DISPATCHED"], .run-summary[data-headline="ALL SENT ATTEMPTS REJECTED"] { border-color: #6d5a2c; background: var(--warning-bg); }
+.run-summary p { margin: 4px 0 0; }
+.readiness-layers-list { margin: 8px 0; padding-left: 18px; font-size: 12px; }
+.readiness-layers-list li[data-status=BLOCKED] { color: var(--danger); } .readiness-layers-list li[data-status=OK] { color: var(--brand-bright); }
+@media (max-width: 1100px) { .plan-ladder { grid-template-columns: repeat(3, minmax(0, 1fr)); } .readiness-layers ul { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .plan-ladder, .readiness-layers ul { grid-template-columns: minmax(0, 1fr); } }
+.capacity-panel { margin: 0 0 12px; padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid var(--line-strong); background: #12301f; }
+.capacity-panel[data-verdict=NOT_FEASIBLE] { border-color: #6d5a2c; background: var(--warning-bg); }
+.capacity-panel p { margin: 4px 0; } .capacity-panel h4 { margin: 10px 0 6px; }

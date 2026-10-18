@@ -74,6 +74,9 @@ export function reduceLiveRun(previous: LiveRunView | null | undefined, event: S
       return view;
     }
     case 'PREWARM_PLAN': view.prewarm = { leadMs: event.prewarmLeadMs ?? 0, width: event.fanOutCount ?? 1 }; return view;
+    // What the run actually obtained, against the earliest trigger (October 18: planned 105 s, obtained about 30 s).
+    case 'PREWARM_WINDOW': view.prewarm = { leadMs: event.prewarmLeadMs ?? view.prewarm?.leadMs ?? 0, width: view.prewarm?.width ?? 1,
+      ...(event.leadBeforeTriggerMs !== undefined ? { actualLeadMs: event.leadBeforeTriggerMs } : {}), ...(event.lateByMs !== undefined ? { lateByMs: event.lateByMs } : {}) }; return view;
     case 'SECURITY_PREWARM_STARTED': case 'SECURITY_PREWARM_READY': case 'SECURITY_PREWARM_FAILED': {
       if(!event.attemptId)return previous??null;const parent=view.parents.find(value=>value.children.some(child=>child.attemptId===event.attemptId));if(!parent)return previous??null;
       const child=childFor(parent,event);setState(child,event.stage==='SECURITY_PREWARM_STARTED'?'PREPARING':event.stage==='SECURITY_PREWARM_READY'?'READY':'FAILED',event.code);return view;
