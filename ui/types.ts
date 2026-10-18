@@ -40,7 +40,7 @@ export interface LiveChildView { attemptId:string; label:string; fanOutIndex:num
 export interface LiveParentView { key:string; wave:'WAVE_1'|'WAVE_2'|'RESCUE'; workerId?:string; court?:number; startTime?:string; endTime?:string; candidateId?:string; children:LiveChildView[] }
 export interface LivePredictionView { candidateId:string; court?:number; startTime?:string; endTime?:string; predictedStartMs:number; predictedEndMs:number; confidence:string;
   prewarm?:'PREPARING'|'READY'|'FAILED'; errorMs?:number }
-export interface LiveRunView { parents:LiveParentView[]; tiers?:string; prewarm?:{leadMs:number;width:number}; predictions:LivePredictionView[];
+export interface LiveRunView { parents:LiveParentView[]; tiers?:string; prewarm?:{leadMs:number;width:number;actualLeadMs?:number;lateByMs?:number}; predictions:LivePredictionView[];
   rescueEnabled?:boolean; rescueMax?:number; outcome?:string; notes:string[] }
 /** Machine Fan-out Capacity Profile digest (fanout-capacity.ts), with the full newest compatible profile for timing presets. */
 export interface FanOutWidthView { width:number; attempts:number; chromeP50:number|null; chromeP95:number|null; chromeP99:number|null; chromeMax:number|null; spreadP95:number|null; perChildP95:Array<number|null> }
@@ -112,6 +112,18 @@ export interface Dashboard {
   /** Display-only record of the authorized API release owned by the active runner. */
   activeApiRelease?:{releaseMs:number;targetDate:string;phase:'PREPARING'|'WAITING'|'RUNNING'|'FAILED'}|null;
   sleepProtection?:boolean;
+  /** The latest failure needing the operator: typed category, step, worker, retry safety and one recovery. */
+  attention?:import('../src/preparation-failure.js').ClassifiedFailure|null;
+  /** Saved-plan fingerprint the current preparation belongs to (null when nothing is prepared). */
+  preparedPlanFingerprint?:string|null;
+  /** Runtime events the UI contract rejected (stage, field paths and validation codes only). */
+  protocolIssues?:Array<{at:string;text:string}>;
+  /** Accounting of the latest release run: planned, prepared, initiated, holds, rejected, unsent, unknown. */
+  runSummary?:import('../src/run-outcome.js').RunOutcomeSummary|null;
+  /** Local source checkout compared with the installed build (read-only, from the Source folder's git metadata). */
+  sourceStatus?:{headSha:string|null;branch:string|null;readAt:string}|null;
+  /** The canonical updater's last lifecycle preflight (counts only), as of its own timestamp. */
+  updatePreflight?:{gitSha:string|null;checkedAt:string;eligibility:string;blockers:number;historicalUnknown:number}|null;
   arbitrationManifest?:ArbitrationManifestView|null;
   scheduleStatus?:'WAITING'|'WAKE / RECONNECT'|'FINAL PREFLIGHT'|'RUNNING'|'MISSED'|null;
   capabilities: { selectionReady:boolean; checkoutReady:boolean; paymentBoundaryReady:boolean };
@@ -121,7 +133,7 @@ export interface Dashboard {
 export interface Bridge {
   onLabPhase?(callback:(phase:string)=>void):()=>void;
   shotgunLab(request:{action:'defaults'|'preview'|'previewObjective'|'save'|'load'|'run'|'stop';value?:unknown}):Promise<any>;
-  objective(request:{action:'load'|'save'|'savePresets';value?:unknown;binding?:{objectiveFingerprint:string;configFingerprint:string}|null}):Promise<any>;
+  objective(request:{action:'load'|'save'|'savePresets'|'validateRelease';value?:unknown;binding?:{objectiveFingerprint:string;configFingerprint:string}|null}):Promise<any>;
   journalArchive(request:{action:'overview'|'verify'|'archive'|'restore';keys?:string[];note?:string}):Promise<any>;
   syncClock():Promise<void>;
   focusBrowser(request:{workerId:WorkerId;bookingId?:string}):Promise<BrowserFocusResult>;

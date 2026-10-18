@@ -187,13 +187,18 @@
     </section>
     <section id="setup-step-4" class="setup-step" aria-label="Step 4 · Browsers" hidden><div id="browser-manager" class="panel"></div></section>
     <section id="setup-step-5" class="setup-step" aria-label="Step 5 · Review and run" hidden>
-      <div id="strategy-inspector" class="panel inspector"></div>
+      <section id="attention-panel" class="panel attention-panel" role="alert" hidden></section>
       <section id="action-bar" class="panel action-bar" aria-label="Plan actions">
+        <div class="plan-identity-row"><p id="plan-identity" class="plan-identity" role="status"></p><ol id="plan-ladder" class="plan-ladder" aria-label="Plan stages"></ol></div>
+        <div id="readiness-layers" class="readiness-layers" aria-label="Readiness"></div>
         <div class="action-row"><button type="button" id="save-draft" class="secondary">Save Draft</button><button id="main-action" class="primary-action" type="button">Prepare</button><button id="test-main-action" class="primary-action" type="button">Prepare</button><button type="button" id="test-this-plan" class="secondary">Test This Plan</button><button type="button" id="view-live-progress" class="secondary" data-dest="activity">View Live Progress</button><button type="button" id="inline-stop" class="stop compact">■ Emergency Stop</button></div>
         <div id="action-terms" class="action-terms"><label class="terms-choice"><input id="terms" type="checkbox" disabled> I authorize accepting Onda Terms for this booking</label></div>
+        <ul id="action-blockers" class="action-blockers" aria-label="Why an action is unavailable" hidden></ul>
         <div class="action-hints"><p id="main-action-hint" class="small"></p><p id="test-main-action-hint" class="small"></p><p id="action-bar-hint" class="small"></p></div>
         <div id="available-now-steps" class="checkout-steps" hidden></div>
       </section>
+      <section id="plan-conflict" class="panel plan-conflict" aria-label="Draft and saved plan differ" hidden></section>
+      <div id="strategy-inspector" class="panel inspector"></div>
       <details id="execution-console" class="panel execution-console" open><summary>Execution console · readiness, release clock, holds and QR details</summary>
         <div id="view-release" hidden class="view-grid" aria-label="Next Release">
     <section id="release-schedule" class="panel release-hero">
@@ -229,7 +234,7 @@
     <section id="precision-panel" class="panel precision-panel" hidden><h2>Precision Release</h2><p id="precision-summary" class="small"></p><div id="precision-table" class="precision-table"></div><p class="small">Goal: 1 successful court. These are independent checkout attempts; more than one temporary QR hold may be created. Payment remains manual.</p></section>
     <section id="next-strategy" class="panel next-strategy"><div class="section-title"><div><p class="eyebrow">The exact saved authorization</p><h2>Saved strategy</h2></div><div class="button-row"><span id="next-strategy-name" class="strategy-badge">Not configured</span><button id="edit-strategy" class="secondary compact" type="button">Edit strategy</button></div></div><dl id="next-strategy-facts" class="fact-grid"></dl><p id="next-strategy-note" class="small"></p><details class="technical-drawer"><summary>Technical readiness details</summary><dl id="next-strategy-technical" class="fact-grid"></dl></details></section>
     <section class="panel saved-plan"><h2>Saved booking plan</h2><div id="saved-plan-summary" class="plan-card"></div></section>
-    <section id="release-readiness-card" class="panel"><h2>Release readiness</h2><div id="release-readiness" class="gate-list"></div></section>
+    <section id="release-readiness-card" class="panel"><h2>Detailed arming checklist</h2><p class="small">Individual engine checks for the saved plan. The readiness summary above is the single readiness verdict.</p><div id="release-readiness" class="gate-list"></div></section>
     <section class="panel lock-card" id="lock-card" hidden><h2>Automation lock active</h2><pre id="lock-review">Browser state: Needs verification. Use Review Lock.</pre><p id="lock-note" class="small">Booking actions are blocked. You can still edit and save your next booking plan locally.</p><div class="button-row"><button id="review-lock" class="secondary" type="button">Review Lock</button><button id="clear-lock" class="secondary" type="button" hidden>Clear Verified Stale Lock</button></div></section>
     <section id="primary-actions" class="panel legacy-actions">
       <button id="prepare" class="prepare" type="button">Prepare Booking <span aria-hidden="true">→</span></button>

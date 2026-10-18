@@ -4,6 +4,7 @@ import type { Dashboard } from '../types.js';
 import { describeSmartPlan, smartImmediateSends, type SmartPhase3, type SmartWorker } from '../../src/precision-simple.js';
 import { STRATEGY_PRESET_LABEL } from '../../src/strategy-engine.js';
 import { byId, el, facts } from './dom.js';
+import { readinessLayers, readinessSummary } from '../../src/execution-state.js';
 
 /**
  * NEXT RELEASE summary, generated only from the SAVED authorization (never from the editor draft), so it always states
@@ -43,7 +44,7 @@ export function renderNextRelease(state: Dashboard): void {
     const firstTarget=plan.wave1[0],firstCandidate=firstTarget?plan.candidates[firstTarget.candidateIndex]:undefined,range=meta?.shotgun?.exactSchedule.length?`${meta.shotgun.exactSchedule[0]!.configuredOffsetMs} → ${meta.shotgun.exactSchedule.at(-1)!.configuredOffsetMs} ms`:'Measured timing';
     facts(target, [['Wing','Mango Wing'],['Primary target',firstCandidate?`Court ${firstCandidate.court} · ${firstCandidate.start} · ${firstCandidate.durationHours} h`:'—'],['Strategy',meta?.shotgun?.enabled?`Shotgun · Dense Core · ${sends} attempts`:`Normal · ${sends} attempts`],['Timing',range],...(meta?.shotgun?.enabled?[['Strict trigger tolerance',`${SHOTGUN_MAX_TRIGGER_LATENESS_MS} ms · late attempts omitted`] as [string,string],['Tabs required',plan.wave1.map(a=>`${a.workerId}: ${a.fanOutOffsetsMs?.length??1}`).join(' / ')] as [string,string],['Local timing test',state.shotgunTiming?`${state.shotgunTiming.status} · p95 ${state.shotgunTiming.p95??'unmeasured'} ms · max ${state.shotgunTiming.max??'unmeasured'} ms · ${state.shotgunTiming.omittedShots} omitted · ${state.shotgunTiming.compressedPairs} compressed pairs`:'NOT TESTED for this plan and build'] as [string,string]]:[]),['Preparation forecast',feasibility?`${feasibility.projectedReady}/${feasibility.configuredWave1Attempts} ${feasibility.verdict?.replaceAll('_',' ')??'checking'}`:'Checked during Prepare for Release'],['Browsers',`${new Set(plan.wave1.map(value=>value.workerId)).size} release groups`],['Backup attempts',plan.budgets.wave2>0?`Up to ${plan.budgets.wave2}`:'Off'],['Reopened-slot rescue',plan.rescueEnabled&&plan.budgets.rescue>0?`ON · up to ${plan.budgets.rescue}`:'OFF']]);
     facts(technical, [
-      ['Release readiness', state.releaseReadiness?.verdict.replaceAll('_',' ') ?? 'checking'],
+      ['Engine checks (detail)', state.releaseReadiness?.verdict.replaceAll('_',' ') ?? 'checking'],
       ['Build integrity', state.releaseReadiness?.checks.find(value=>value.id==='build')?.detail ?? build],
       ['Trusted clock', state.releaseReadiness?.checks.find(value=>value.id==='clock')?.detail ?? 'checking'],
       ['Observer', state.releaseReadiness?.checks.find(value=>value.id==='observer')?.detail ?? 'offline'],
@@ -82,21 +83,35 @@ export function renderNextRelease(state: Dashboard): void {
   note.textContent = '';
 }
 
-/** Human-facing mirror of the existing arm control after app.ts applies all engine gates. */
+/**
+ * Readiness of the SAVED release authorization, on the same five layers as Booking Setup (execution-state.ts). It never
+ * derives readiness from a button's enabled state and never calls a forecast "ready for release".
+ */
 export function renderReleasePreflight(state:Dashboard):void {
   const card=byId('next-preflight'),setup=state.booking?.setup,plan=setup?.PRECISION_PHASE3;
   const apiRelease=state.operation==='full'?state.activeApiRelease:null;
-  const arm=byId('arm') as HTMLButtonElement,armed=!!state.scheduledRelease||!!apiRelease;
-  byId('release-action-title').textContent=armed?'Armed':'Release pre-flight';
-  const title=apiRelease?{PREPARING:'ARMED · PREPARING RELEASE CONTEXTS',WAITING:'WAITING FOR RELEASE',RUNNING:'RELEASE IN PROGRESS',FAILED:'RELEASE NEEDS ATTENTION'}[apiRelease.phase]:armed?'WAITING FOR RELEASE':!arm.disabled?'✓ READY FOR RELEASE':'✕ NOT READY';
+  const armed=!!state.scheduledRelease||!!apiRelease;
+  byId('release-action-title').textContent=armed?'Armed':'Saved plan readiness';
   const workers=[...new Set(plan?.wave1.map(value=>value.workerId)??[])];
   const children=state.live?.parents.filter(parent=>parent.wave==='WAVE_1').flatMap(parent=>parent.children)??[];
   const required=setup?.STRATEGY_V2?.shotgun?.exactSchedule.length??(plan?smartImmediateSends(plan.wave1):0);
   const ready=children.filter(child=>child.state==='READY').length;
-  const issues=workers.filter(worker=>!state.browserHealth?.[worker]).map(worker=>`✕ Browser ${worker} disconnected`);
-  const reason=byId('blocked-reason').textContent;
+  const prepared=!!state.ready&&!!state.preparedPlanFingerprint&&state.preparedPlanFingerprint===state.booking?.fingerprint;
+  const f=state.prewarmFeasibility;
+  const layers=readinessLayers({plan:{problems:setup?0:1,runtime:setup?'VALID':'INVALID',saved:!!setup},
+    environment:{prepared,forOtherPlan:!!state.ready&&!!state.preparedPlanFingerprint&&!prepared,required:workers.length,connected:workers.filter(worker=>state.browserHealth?.[worker]).length,identityIssues:state.identityIssues?.length??0},
+    forecast:f?{verdict:f.verdict,ready:f.projectedReady,configured:f.configuredWave1Attempts,atRisk:f.projectedAtRisk,omitted:f.projectedOmitted,measured:f.p95Source!=='FALLBACK',samples:f.sampleCount}
+      :plan?{verdict:'UNAVAILABLE',ready:0,configured:required,atRisk:0,omitted:0,measured:false,samples:0}:null,
+    security:plan?{planned:required,ready,preparing:children.filter(child=>child.state==='PREPARING').length,failed:children.filter(child=>['FAILED','PREWARM_FAILED'].includes(child.state)).length,
+      omitted:children.filter(child=>child.state==='OMITTED').length,leadMs:state.live?.prewarm?.leadMs??f?.prewarmLeadMs??null}:null,
+    armed:{armed:armed&&apiRelease?.phase!=='RUNNING',running:apiRelease?.phase==='RUNNING'}});
+  const title=apiRelease?{PREPARING:'ARMED · PREPARING RELEASE CONTEXTS',WAITING:'WAITING FOR RELEASE',RUNNING:'RELEASE IN PROGRESS',FAILED:'RELEASE NEEDS ATTENTION'}[apiRelease.phase]:armed?'WAITING FOR RELEASE':readinessSummary(layers);
   const first=plan?.wave1[0],candidate=first?plan?.candidates[first.candidateIndex]:undefined,offsets=setup?.STRATEGY_V2?.shotgun?.exactSchedule.map(shot=>shot.configuredOffsetMs)??[];
-  const details=el('dl','fact-grid');facts(details,[['Target',candidate?`Court ${candidate.court} · ${candidate.start} · ${candidate.durationHours} h`:'No saved Smart target'],['Strategy',setup?.STRATEGY_V2?.shotgun?.enabled?`Shotgun · ${setup.STRATEGY_V2.shotgun.timingMode.replaceAll('_',' ')} · ${required} attempts`:'Saved release strategy'],['Timing',offsets.length?`${Math.min(...offsets)} → ${Math.max(...offsets)} ms`:'Saved release timing'],['Preparation',children.length?`Live readiness: ${ready}/${required} READY`:state.ready?'Engine preparation complete · child readiness counts not reported':'Live readiness: not yet prepared'],['Browsers',`${workers.filter(worker=>state.browserHealth?.[worker]).length}/${workers.length} connected`],['Terms',state.termsAuthorized?'AUTHORIZED':'Needs authorization']]);
-  if(armed){const terms=Array.from(details.querySelectorAll('dt')).find(node=>node.textContent==='Terms');if(terms?.nextElementSibling)terms.nextElementSibling.textContent='AUTHORIZED FOR THIS RUN';}
-  card.replaceChildren(el('h3','',title),details,...(!armed&&arm.disabled?[el('p','warn-text',reason||'Review preparation, saved plan and Terms before arming.'),...issues.map(issue=>el('p','warn-text',issue))]:[]));
+  const details=el('dl','fact-grid');facts(details,[['Plan',state.booking?`Saved release authorization ${state.booking.fingerprint.slice(0,12)}`:'No saved release plan'],
+    ['Target',candidate?`Court ${candidate.court} · ${candidate.start} · ${candidate.durationHours} h`:'No saved Smart target'],['Strategy',setup?.STRATEGY_V2?.shotgun?.enabled?`Shotgun · ${setup.STRATEGY_V2.shotgun.timingMode.replaceAll('_',' ')} · ${required} attempts`:'Saved release strategy'],
+    ['Timing',offsets.length?`${Math.min(...offsets)} → ${Math.max(...offsets)} ms`:'Saved release timing'],
+    ['Live security',children.length?`${ready}/${required} ready (actual evidence for this run)`:'not yet prepared · runs only after arming'],
+    ['Browsers',`${workers.filter(worker=>state.browserHealth?.[worker]).length}/${workers.length} connected`],['Terms',armed?'AUTHORIZED FOR THIS RUN':state.termsAuthorized?'AUTHORIZED':'Needs authorization']]);
+  const list=el('ul','readiness-layers-list');list.append(...layers.map(layer=>{const item=el('li','',`${layer.label}: ${layer.status==='NA'?'N/A':layer.status} · ${layer.detail}`);item.dataset.status=layer.status;return item;}));
+  card.replaceChildren(el('h3','',title),list,details);
 }

@@ -17,6 +17,7 @@ import {initStrategy,reconstructLineage,renderStrategy,strategySaved,strategySav
 import {renderLive} from './live.js';
 import {renderInsights} from './insights.js';
 import {renderNextRelease,renderReleasePreflight} from './next-release.js';
+import {provenanceStatus} from '../../src/provenance.js';
 import {initSlotWatchView,renderSlotWatch,selectWatch,setSlotMatrixMode} from './slot-watch-view.js';
 import {dateLabel,evidenceLabel,evidenceSlot,friendly,hourlySlots,hours,readText,relative,slotStateInfo} from './format.js';
 import {PRECISION_MAX_ATTEMPTS,PRECISION_MAX_FAN_OUT} from '../../src/workers.js';
@@ -737,17 +738,26 @@ function manifestGate(state:Dashboard,releaseMs:number|undefined):Gate{
 function renderBuild(state: Dashboard) {
   const build = state.build;
   const label = byId('build-label');
-  label.textContent = build ? `Build ${build.gitSha.slice(0, 7)}${build.dirty ? ' + uncommitted' : ''}` : 'Build: unknown';
-  label.dataset.tone = !build || build.dirty !== false ? 'warn' : 'muted';
+  const provenance = provenanceStatus(build?.gitSha === 'unknown' ? null : build?.gitSha, state.sourceStatus);
+  label.textContent = build ? `Build ${build.gitSha.slice(0, 7)}${build.dirty ? ' + uncommitted' : ''}${provenance.tone === 'warn' && state.sourceStatus?.headSha ? ' · newer source not installed' : ''}` : 'Build: unknown';
+  label.dataset.tone = !build || build.dirty !== false || provenance.tone === 'warn' ? 'warn' : 'muted';
   label.title = build ? `${build.gitSha} · ${build.branch} · built ${build.builtAt} · ${build.buildId}` : 'No build-info.json: this run was not produced by a clean build.';
   const details = byId('build-details');
   const rows: Array<[string, string]> = build ? [['Git SHA', build.gitSha], ['Branch', build.branch],
     ['Source state', build.dirty === null ? 'unknown' : build.dirty ? 'UNCOMMITTED CHANGES were included' : 'clean (committed source only)'],
-    ['Built', build.builtAt], ['Build ID', build.buildId], ['Dist content ID', build.contentId], ['Kind', build.kind], ['Package version', build.packageVersion], ['Node', build.node]]
-    : [['Build', 'No build-info.json was found. Rebuild with npm run release:build (or npm run ui:build for development).']];
+    ['Built', build.builtAt], ['Build ID', build.buildId], ['Dist content ID', build.contentId], ['Kind', build.kind], ['Package version', build.packageVersion], ['Node', build.node],
+    // Source Updated / CI Verified / Installed / Installed Runtime Verified are separate facts; GitHub alone never means installed.
+    ['Installed', build.kind === 'installation' ? `Yes · this app runs ${build.gitSha.slice(0, 7)} built ${build.builtAt}` : 'No · development or source build, not the canonical installation'],
+    ['CI verified', build.kind === 'installation' ? 'Required by the canonical updater for this exact commit before it was installed' : 'Not established for a development build'],
+    ['Installed runtime verified', build.kind === 'installation' ? 'Checked by the updater against a fresh compile (BUILD-INFO.txt); re-check with npm run verify:dist -- --dist ../dist' : 'Not applicable'],
+    ['Source checkout', provenance.detail],
+    ['Last installation preflight', state.updatePreflight ? `${state.updatePreflight.eligibility} · ${state.updatePreflight.blockers} active lifecycle blocker${state.updatePreflight.blockers === 1 ? '' : 's'} · ${state.updatePreflight.historicalUnknown} historical UNKNOWN record${state.updatePreflight.historicalUnknown === 1 ? '' : 's'} preserved (never reclassified) · checked ${state.updatePreflight.checkedAt}` : 'Not recorded. Run npm run app:update-check (read-only) from Source.']]
+    : [['Build', 'No build-info.json was found. Rebuild with npm run release:build (or npm run ui:build for development).'], ['Source checkout', provenance.detail]];
   details.replaceChildren(...rows.flatMap(([term, value]) => { const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = term; dd.textContent = value; return [dt, dd]; }));
 }
 /** Legacy panes render first; the destination modules (Booking Setup, Home, Activity) render from the same state. */
+/** The legacy form's unsaved-edit flag applies only while that form owns the release plan. */
+const formDirty=()=>workflow==='release'&&!!hooks.useSavedRelease?.()?false:dirty;
 function render(state: Dashboard) { renderPanes(state); for (const renderer of hooks.renderers) renderer(state); }
 function renderPanes(state: Dashboard) {
   latest = state;
@@ -774,10 +784,10 @@ function renderPanes(state: Dashboard) {
   // default; actions stay disabled until count 2 is explicitly saved.
   byId('dual-panel').hidden=false;
   (byId('dual-fields') as HTMLFieldSetElement).disabled=busy;
-  (byId('dual-prepare') as HTMLButtonElement).disabled=busy||state.lock||dirty||!dual;
-  (byId('dual-dry') as HTMLButtonElement).disabled=busy||state.lock||dirty||!dual||!state.cdp;
-  (byId('dual-selection') as HTMLButtonElement).disabled=busy||state.lock||dirty||!dual||!state.cdp||!input('dual-noncompetitive').checked;
-  (byId('dual-full') as HTMLButtonElement).disabled=busy||state.lock||dirty||!dual||!state.cdp||!input('dual-noncompetitive').checked||!input('dual-terms').checked;
+  (byId('dual-prepare') as HTMLButtonElement).disabled=busy||state.lock||formDirty()||!dual;
+  (byId('dual-dry') as HTMLButtonElement).disabled=busy||state.lock||formDirty()||!dual||!state.cdp;
+  (byId('dual-selection') as HTMLButtonElement).disabled=busy||state.lock||formDirty()||!dual||!state.cdp||!input('dual-noncompetitive').checked;
+  (byId('dual-full') as HTMLButtonElement).disabled=busy||state.lock||formDirty()||!dual||!state.cdp||!input('dual-noncompetitive').checked||!input('dual-terms').checked;
   byId('dual-readiness').textContent=dual
     ? ['A','B'].map(id=>{const w=state.dualWorkers?.[id as 'A'|'B'];return `Browser ${id}: ${w?`${w.state.toUpperCase()} (last observed ${new Date(w.verifiedAt).toLocaleTimeString()})`:'NOT VERIFIED'}`;}).join('\n')+`\nDual selection: ${state.dualValidation?.selection?'READY':'NOT READY'}\n${state.dualValidation?.full?'DUAL FULL FLOW VERIFIED':'FULL DUAL HOLD NOT YET VERIFIED'}`
     : 'Legacy dual practice only: Set Courts to book to 2 with Standard saved settings. Use the main controls for Standard / Extended bookings.';
@@ -786,7 +796,7 @@ function renderPanes(state: Dashboard) {
   const full=workflow==='release'||state.mode==='full',fullReady=state.capabilities.selectionReady&&state.capabilities.checkoutReady&&state.capabilities.paymentBoundaryReady;
   input('mode-full').checked=full;input('mode-selection').checked=!full;
   input('mode-full').disabled=busy||!fullReady;input('mode-selection').disabled=busy;
-  input('terms').disabled=armed||busy||state.lock||dirty||!full||!fullReady;
+  input('terms').disabled=armed||busy||state.lock||formDirty()||!full||!fullReady;
   byId('mode-label').textContent=full?'FULL BOOKING TO QR':'SELECTION ONLY';
   byId('prepare').firstChild!.textContent=dual?'Prepare Selected Dual Run ':full?'Prepare Full Booking ':'Prepare Selection ';
   byId('arm').textContent=full?'Arm Full Booking':'Arm Booking Selection';
@@ -815,9 +825,9 @@ function renderPanes(state: Dashboard) {
   (byId('full-practice') as HTMLButtonElement).disabled=busy||state.lock||!state.cdp||!state.booking?.playerConfigured||!fullReady||!input('full-terms').checked;
   (byId('practice') as HTMLButtonElement).disabled=busy||state.lock||!state.cdp;
   byId('practice-blocked').textContent=state.lock?'Use Reset Practice Session to inspect and safely restart the dedicated practice environment.':!state.cdp?'Start / Attach Chrome first.':!state.booking?.playerConfigured?'Player information is missing.':!fullReady?'Full Booking capability is not verified.':!input('full-terms').checked?'Terms authorization is required for this practice run.':'';
-  (byId('prepare') as HTMLButtonElement).disabled=armed||busy||state.lock||dirty||!state.booking;
+  (byId('prepare') as HTMLButtonElement).disabled=armed||busy||state.lock||formDirty()||!state.booking;
   (byId('arm') as HTMLButtonElement).disabled = armed?false:busy || state.lock || !state.booking || !state.capabilities.selectionReady || !state.cdp || (full&&(!fullReady||!state.termsAuthorized));
-  (byId('dry') as HTMLButtonElement).disabled=busy||dirty||state.lock||!state.booking||!state.clock?.canArmToday;
+  (byId('dry') as HTMLButtonElement).disabled=busy||formDirty()||state.lock||!state.booking||!state.clock?.canArmToday;
   (byId('observe') as HTMLButtonElement).disabled=busy||state.lock||!state.clock?.canArmToday;
   input('terms').checked=state.termsAuthorized||armed;
   byId('player-status').textContent=`Player information · ${state.booking?.playerConfigured?'Configured ✓':'Missing / configuration invalid'}`;
@@ -845,8 +855,8 @@ function renderPanes(state: Dashboard) {
   const fresh = !!i && state.cdp && Date.now() - Date.parse(i.verifiedAt) < 60000;
   const clock = state.clock;
   byId('release-strategy').textContent = clock ? `Pre-open calendar: ${clock.preopenCalendar ? 'ON' : 'OFF'}\nRelease trigger: ${clock.releaseTime}.000 ${clock.timezone}\nRelease lead: ${clock.leadMs} ms\n${clock.preopenCalendar ? '1. Check already-open target\n2. If enabled: click without refresh\n3. Otherwise: immediate reload fallback' : 'At release: bounded reload, minimal shell, strict target grid'}\nAuto-enable at 08:00: UNVERIFIED` : 'Configuration unavailable';
-  byId('next-readiness').textContent = `Chrome/CDP: ${state.cdp ? 'REACHABLE' : 'NOT READY'}\nOnda: ${fresh && i?.gridToday && i.allCourts && i.visible ? 'READY (last inspection)' : 'NEEDS INSPECTION'}\nBooking plan: ${state.booking && !dirty ? 'READY' : 'NOT READY'}\nPlayer: ${state.booking?.playerConfigured ? 'READY' : 'NOT READY'}\nPre-open strategy: ${clock ? clock.preopenCalendar ? 'ON' : 'OFF' : 'UNKNOWN'}\nNo existing selections: ${fresh && i?.selected === 0 ? 'YES (last inspection)' : 'NOT VERIFIED'}\nAutomation lock: ${state.lock ? 'BLOCKED' : 'CLEAR'}\nTerms authorization: required per run\nRelease: ${clock ? `${clock.releaseTime} ${clock.timezone}` : 'UNKNOWN'}\nTarget: ${clock?.targetDate ?? 'UNKNOWN'}`;
-  if(dual)byId('next-readiness').textContent=`2 courts / SAME TIME BLOCK\n${byId('dual-readiness').textContent}\nBooking plan: ${state.booking&&!dirty?'SAVED':'NOT READY'}\nAutomation lock: ${state.lock?'BLOCKED':'CLEAR'}\nTerms authorization: required per run\nRelease: ${clock?`${clock.releaseTime} ${clock.timezone}`:'UNKNOWN'}\nTarget: ${clock?.targetDate??'UNKNOWN'}`;
+  byId('next-readiness').textContent = `Chrome/CDP: ${state.cdp ? 'REACHABLE' : 'NOT READY'}\nOnda: ${fresh && i?.gridToday && i.allCourts && i.visible ? 'READY (last inspection)' : 'NEEDS INSPECTION'}\nBooking plan: ${state.booking && !formDirty() ? 'READY' : 'NOT READY'}\nPlayer: ${state.booking?.playerConfigured ? 'READY' : 'NOT READY'}\nPre-open strategy: ${clock ? clock.preopenCalendar ? 'ON' : 'OFF' : 'UNKNOWN'}\nNo existing selections: ${fresh && i?.selected === 0 ? 'YES (last inspection)' : 'NOT VERIFIED'}\nAutomation lock: ${state.lock ? 'BLOCKED' : 'CLEAR'}\nTerms authorization: required per run\nRelease: ${clock ? `${clock.releaseTime} ${clock.timezone}` : 'UNKNOWN'}\nTarget: ${clock?.targetDate ?? 'UNKNOWN'}`;
+  if(dual)byId('next-readiness').textContent=`2 courts / SAME TIME BLOCK\n${byId('dual-readiness').textContent}\nBooking plan: ${state.booking&&!formDirty()?'SAVED':'NOT READY'}\nAutomation lock: ${state.lock?'BLOCKED':'CLEAR'}\nTerms authorization: required per run\nRelease: ${clock?`${clock.releaseTime} ${clock.timezone}`:'UNKNOWN'}\nTarget: ${clock?.targetDate??'UNKNOWN'}`;
   const performance=state.releasePerformance,ms=(value:number|null)=>value===null?'N/A':`${value} ms`;
   const workerPerformance=(label:string,p:ReleasePerformance['workers']['A'])=>p?`${label}\nBranch: ${p.branch}\nTrigger → target enabled: ${ms(p.triggerToTargetEnabledMs)}\nTarget enabled → click: ${ms(p.targetEnabledToClickMs)}\nTarget click → grid ready: ${ms(p.targetClickToGridReadyMs)}\nGrid ready → snapshot: ${ms(p.gridReadyToSnapshotCompletedMs)}\nSnapshot → preference: ${ms(p.snapshotToPreferenceResolvedMs)}\n\nSELECTION\nPreference → first click: ${ms(p.preferenceToFirstSlotClickMs)}\nFirst click → last confirmed: ${ms(p.firstSlotClickToLastStateConfirmedMs)}\nLast confirmed → verification: ${ms(p.lastSlotConfirmedToSelectionVerificationMs)}\nVerification → Proceed: ${ms(p.selectionVerificationToBookingProceedMs)}\n\nCHECKOUT\nProceed → Review: ${ms(p.proceedToReviewDetectedMs)}\nReview detect → validate: ${ms(p.reviewDetectedToValidatedMs)}\nReview → Player form: ${ms(p.reviewValidatedToPlayerFormDetectedMs)}\nPlayer form → fill: ${ms(p.playerFormDetectedToFillCompletedMs)}\nFill → player Proceed: ${ms(p.fillCompletedToPlayerProceedMs)}\nPlayer Proceed → Payment: ${ms(p.playerProceedToPaymentSummaryDetectedMs)}\nPayment detect → validate: ${ms(p.paymentSummaryDetectedToValidatedMs)}\nPayment → Terms: ${ms(p.paymentValidatedToTermsControlMs)}\nTerms → checked: ${ms(p.termsControlToTermsCheckedMs)}\nChecked → final actionable: ${ms(p.termsCheckedToFinalButtonActionableMs)}\n\nHANDOFF\nFinal action → click: ${ms(p.finalActionStartedToClickedMs)}\nFinal click → Checkout: ${ms(p.finalClickToCheckoutPageMs)}\nCheckout → hold: ${ms(p.checkoutPageToHoldStatusMs)}\nHold → QR verified: ${ms(p.holdStatusToQrHandoffMs)}\n\nTOTAL\nTrigger → selection: ${ms(p.triggerToSelectionVerifiedMs)}\nTrigger → Proceed: ${ms(p.triggerToBookingProceedMs)}\nTrigger → final click: ${ms(p.triggerToFinalClickMs)}\nTrigger → QR hold: ${ms(p.triggerToQrHandoffMs)}\n\nCounters:\nSelection full-grid reads: ${p.counters.selectionFullGridReads}\nPre-Proceed grid reads: ${p.counters.preProceedGridReads}\nFull guards: ${p.counters.fullGuards}\nLight guards: ${p.counters.lightGuards}\nSlot clicks: ${p.counters.slotClicks}\nSelection summary reads: ${p.counters.selectionSummaryReads}\nReview parses: ${p.counters.reviewParses}\nPayment parses: ${p.counters.paymentSummaryParses}\nTerms acquisitions: ${p.counters.termsControlAcquisitions}`:`${label}\nN/A`;
   const overall=performance?`OVERALL\nTrigger → both selections: ${ms(performance.overall.triggerToBothSelectionsVerifiedMs)}\nTrigger → both final clicks: ${ms(performance.overall.triggerToBothFinalClicksMs)}\nTrigger → both QR holds: ${ms(performance.overall.triggerToBothQrHandoffsMs)}`:'OVERALL\nN/A';
@@ -916,7 +926,8 @@ function renderPanes(state: Dashboard) {
    byId('api-dry-controls').hidden=!apiFirst||workflow!=='test';
    byId('test-availability').hidden=!apiFirst;
    (byId('api-preview') as HTMLButtonElement).disabled=busy||state.lock||!state.apiFirstReady;
-  const draftProblem=workflow==='release'?bookingSetupProblem(currentSetup()):undefined;
+  // When Booking Setup owns Next Release, the legacy form never gates or describes the release plan.
+  const draftProblem=workflow==='release'&&!hooks.useSavedRelease?.()?bookingSetupProblem(currentSetup()):undefined;
   byId('configuration-status').hidden=workflow!=='release';
   byId('configuration-status').textContent=draftProblem?`CONFIGURATION: NEEDS ATTENTION\n${draftProblem}`:'CONFIGURATION: VALID';
   byId('configuration-status').dataset.tone=draftProblem?'warn':'good';
@@ -927,15 +938,15 @@ function renderPanes(state: Dashboard) {
   input('prepare').disabled=['prepare','stopping','saving','resetting'].includes(state.operation)||!!draftProblem;
   byId('arm').textContent=armed?'CANCEL ARMED RELEASE':'ARM NEXT RELEASE';byId('arm').hidden=workflow==='test';
   byId('test-booking').hidden=workflow==='release';byId('test-date-label').hidden=workflow==='release';
-  input('test-booking').disabled=busy||dirty||state.lock||!state.ready||!input('terms').checked;
-  input('terms').disabled=armed||busy||dirty||state.lock||!state.ready;
+  input('test-booking').disabled=busy||formDirty()||state.lock||!state.ready||!input('terms').checked;
+  input('terms').disabled=armed||busy||formDirty()||state.lock||!state.ready;
   byId('terms').parentElement!.lastChild!.textContent=workflow==='test'?' I authorize accepting Onda Terms for this booking':' I authorize accepting Onda Terms for this booking';
   if(workflow==='release'&&armed)byId('terms').parentElement!.lastChild!.textContent=' AUTHORIZED FOR THIS EXACT SCHEDULED RUN';
   byId('workflow-test').setAttribute('aria-pressed',String(workflow==='test'));byId('workflow-release').setAttribute('aria-pressed',String(workflow==='release'));
   input('workflow-test').disabled=busy;input('workflow-release').disabled=busy;
   input('save-booking').disabled=busy||workflow==='test';
-   if(workflow==='release'){input('arm').disabled ||= dirty||!state.ready||!input('terms').checked||!state.clock?.networkSynced||(!apiFirst&&!fullReady);byId('blocked-reason').textContent=state.lock?'RESET REQUIRED':dirty?'SETTINGS CHANGED · Press Reset & Prepare.':!state.clock?.networkSynced?'Sync with Google Time before arming.':!state.ready?'Reset & Prepare before arming.':!input('terms').checked?'Authorize Terms, then Arm Next Release.':'';}
-  if(workflow==='test')byId('blocked-reason').textContent=state.lock?'RESET REQUIRED':dirty?'SETTINGS CHANGED · Press Reset & Prepare.':!state.ready?'Reset & Prepare before running a test.':!input('terms').checked?'Authorize Terms, then run your test.':'';
+   if(workflow==='release'){input('arm').disabled ||= formDirty()||!state.ready||!input('terms').checked||!state.clock?.networkSynced||(!apiFirst&&!fullReady);byId('blocked-reason').textContent=state.lock?'RESET REQUIRED':formDirty()?'SETTINGS CHANGED · Press Reset & Prepare.':!state.clock?.networkSynced?'Sync with Google Time before arming.':!state.ready?'Reset & Prepare before arming.':!input('terms').checked?'Authorize Terms, then Arm Next Release.':'';}
+  if(workflow==='test')byId('blocked-reason').textContent=state.lock?'RESET REQUIRED':formDirty()?'SETTINGS CHANGED · Press Reset & Prepare.':!state.ready?'Reset & Prepare before running a test.':!input('terms').checked?'Authorize Terms, then run your test.':'';
   if(workflow==='release'&&armed){input('arm').disabled=false;byId('blocked-reason').textContent='';}
   if(apiRelease)byId('blocked-reason').textContent='';
   if(state.bookingResult){byId('handoff-result').hidden=false;byId('handoff-result').textContent=state.bookingResult.description+'\n'+state.bookingResult.outcomes.map((v,i)=>`Checkout ${i+1}: ${v}`).join('\n');}
@@ -967,7 +978,7 @@ function renderPanes(state: Dashboard) {
     const finalAt=(release?.releaseMs??state.clock.releaseMs)-state.clock.preflightSecondsBefore*1000;
     byId('schedule-meta').textContent=`Final preflight: ${new Date(finalAt).toLocaleTimeString('en-US',{timeZone:state.clock.timezone,hour:'numeric',minute:'2-digit',second:'2-digit'})} | System: ${apiRelease?{PREPARING:'ARMED · PREPARING',WAITING:'WAITING FOR RELEASE',RUNNING:'RUNNING',FAILED:'NEEDS ATTENTION'}[apiRelease.phase]:state.scheduleStatus??(armed?'WAITING':'NOT ARMED')}`;
   }
-  const apiPrepared=!!state.apiFirstReady&&!!state.ready&&!!state.booking&&['api-first','proofless'].includes(state.booking.setup.BOOKING_METHOD)&&!state.lock;
+  const apiPrepared=!!state.apiFirstReady&&!!state.ready&&!!state.booking&&['api-first','proofless'].includes(state.booking.setup.BOOKING_METHOD)&&!state.lock&&state.preparedPlanFingerprint===state.booking.fingerprint;
   const prepared=apiPrepared||!!state.preparedContext&&state.preparedContext.workflow==='release'&&state.preparedContext.configFingerprint===state.booking?.fingerprint;
    const required=workflow==='release'?neededWorkers():requiredWorkers(strategy,count);
   const verificationGates:Gate[]=apiFirst
@@ -997,7 +1008,7 @@ function renderPanes(state: Dashboard) {
      'Payment stays manual.'].filter(Boolean).join('\n');
   const action=input('main-action'),hold=!!state.handoff||!!state.lock,blockedHold=hold&&!state.canPrepareOverHold;
   const apiWaiting=state.operation==='full'&&state.apiStage?.stage==='WAITING_FOR_RELEASE';
-  const actionState=apiRelease||apiWaiting?'armed':busy?'running':blockedHold?'hold':armed?'armed':state.ready&&!dirty?'review':'prepare';
+  const actionState=apiRelease||apiWaiting?'armed':busy?'running':blockedHold?'hold':armed?'armed':state.ready&&!formDirty()?'review':'prepare';
   action.textContent=actionState==='prepare'&&unresolvedCheckout?'Reset & Prepare':actionState==='prepare'&&state.canPrepareOverHold?'Prepare New Run':{hold:'Review Hold',running:'Preparing…',armed:'Emergency Stop',review:'Authorize and Arm',prepare:'Prepare'}[actionState];
   action.disabled=actionState==='running'||actionState==='prepare'&&!!input('prepare').disabled;
   byId('release-action-title').textContent=actionState==='armed'?'Armed':actionState==='running'?'Preparing browsers and release contexts…':actionState==='review'?'Ready to arm':'Prepare for release';
@@ -1044,7 +1055,7 @@ function renderPanes(state: Dashboard) {
   testResults.hidden=!!byId('observed-price').hidden&&!!byId('selection-result').hidden&&!!byId('handoff-result').hidden;
    syncViableControls();tick();
 }
-byId('main-action').onclick=()=>{if(!latest)return;if(latest.operation==='full'&&(latest.activeApiRelease||latest.apiStage?.stage==='WAITING_FOR_RELEASE')){void window.thirsty.abortAutomation().catch(()=>{});return;}if(latest.scheduledRelease){input('arm').click();return;}if((latest.lock||latest.handoff)&&!latest.canPrepareOverHold){void window.thirsty.reviewLock().catch(()=>{});return;}if(latest.ready&&!dirty){if(input('terms').checked)input('arm').click();else byId('terms').focus();}else input('prepare').click();};
+byId('main-action').onclick=()=>{if(!latest)return;if(hooks.primaryAction?.())return;if(latest.operation==='full'&&(latest.activeApiRelease||latest.apiStage?.stage==='WAITING_FOR_RELEASE')){void window.thirsty.abortAutomation().catch(()=>{});return;}if(latest.scheduledRelease){input('arm').click();return;}if((latest.lock||latest.handoff)&&!latest.canPrepareOverHold){void window.thirsty.reviewLock().catch(()=>{});return;}if(latest.ready&&!dirty){if(input('terms').checked)input('arm').click();else byId('terms').focus();}else input('prepare').click();};
 byId('test-main-action').onclick=()=>{if(!latest)return;if((latest.lock||latest.handoff)&&!latest.canPrepareOverHold){void window.thirsty.reviewLock().catch(()=>{});return;}if(input('test-main-action').textContent==='Authorize and Book to QR'){if(input('terms').checked)input('test-booking').click();else byId('terms').focus();}else input('prepare').click();};
 function tick() {
   // Display only; never launches a command. Authoritative release plan comes from main/CLI.
@@ -1081,7 +1092,10 @@ function tick() {
     byId('handoff-result').textContent=`${active?'PAYMENT HOLD ACTIVE — VERIFIED AT HANDOFF':'HOLD NEEDS MANUAL REVIEW'}\nVenue: Thirsty Pickle | SM Seaside\nCourt ${hold.court} · ${hold.date}\nTime: ${hold.hours[0]}–${String(Number(hold.hours.at(-1)!.slice(0,2))+1).padStart(2,'0')}:00\nAmount: ₱${hold.amount.toLocaleString()}\nLast observed status: Pending\nHold countdown at verification: ${hold.countdown}\nVerified: ${new Date(hold.verifiedAt).toLocaleString('en-GB',{timeZone:'Asia/Manila'})}\n${active?'Complete payment manually in Chrome.':'The observed countdown has elapsed. Check Chrome manually.'}\nAUTOMATION STOPPED · AUTOMATION LOCK RETAINED`;
   }
 }
- for (const [id, action] of Object.entries({ 'sync-clock':()=>window.thirsty.syncClock(),'review-lock':()=>window.thirsty.reviewLock(),'clear-lock':()=>window.thirsty.clearLock(),'reset-practice':()=>window.thirsty.resetPractice(),'dual-prepare':()=>window.thirsty.prepareDual(),'api-preview':()=>window.thirsty.apiPreview(input('test-date').value),'full-practice':async()=>{const authorized=input('full-terms').checked;input('full-terms').checked=false;await window.thirsty.runFullPractice({target:{date:input('full-date').value,court:Number(input('full-court').value),start:input('full-start').value,duration:Number(input('full-duration').value)},authorizeTerms:authorized as true});}, chrome: () => window.thirsty.startChrome(), inspect: () => window.thirsty.inspectOnda(), prepare: async () => {input('terms').checked=false;storeDraft();const releaseOverride=workflow==='release'?hooks.releaseSetup?.():null;await window.thirsty.resetPrepare(workflow==='test'?{workflow:'test',...testRequest()}:{workflow:'release',strategy:releaseOverride?'standard':input('booking-type').value as 'standard'|'extended',setup:releaseOverride??currentSetup()});const state=await window.thirsty.getStatus();if(state.ready){if(workflow==='test')testDirty=false;else releaseDirty=false;dirty=false;}render(state);}, arm: () => window.thirsty.armFullBooking(), dry:()=>window.thirsty.dryRace(), observe:()=>window.thirsty.armObservation(), stop: () => window.thirsty.abortAutomation(), practice:()=>window.thirsty.runPractice({date:input('practice-date').value,court:Number(input('practice-court').value),start:input('practice-start').value,duration:Number(input('practice-duration').value)}) })) {
+ for (const [id, action] of Object.entries({ 'sync-clock':()=>window.thirsty.syncClock(),'review-lock':()=>window.thirsty.reviewLock(),'clear-lock':()=>window.thirsty.clearLock(),'reset-practice':()=>window.thirsty.resetPractice(),'dual-prepare':()=>window.thirsty.prepareDual(),'api-preview':()=>window.thirsty.apiPreview(input('test-date').value),'full-practice':async()=>{const authorized=input('full-terms').checked;input('full-terms').checked=false;await window.thirsty.runFullPractice({target:{date:input('full-date').value,court:Number(input('full-court').value),start:input('full-start').value,duration:Number(input('full-duration').value)},authorizeTerms:authorized as true});}, chrome: () => window.thirsty.startChrome(), inspect: () => window.thirsty.inspectOnda(), prepare: async () => {input('terms').checked=false;storeDraft();const releaseOverride=workflow==='release'?hooks.releaseSetup?.():null;
+    // Booking Setup (Next Release) prepares exactly the saved authorization; the legacy form is never substituted.
+    const savedOnly=workflow==='release'&&!!hooks.useSavedRelease?.()&&!!latest?.booking;
+    await window.thirsty.resetPrepare(workflow==='test'?{workflow:'test',...testRequest()}:savedOnly?{workflow:'release',strategy:latest!.booking!.setup.BOOKING_TYPE}:{workflow:'release',strategy:releaseOverride?'standard':input('booking-type').value as 'standard'|'extended',setup:releaseOverride??currentSetup()});const state=await window.thirsty.getStatus();if(state.ready){if(workflow==='test')testDirty=false;else releaseDirty=false;dirty=false;}render(state);}, arm: () => window.thirsty.armFullBooking(), dry:()=>window.thirsty.dryRace(), observe:()=>window.thirsty.armObservation(), stop: () => window.thirsty.abortAutomation(), practice:()=>window.thirsty.runPractice({date:input('practice-date').value,court:Number(input('practice-court').value),start:input('practice-start').value,duration:Number(input('practice-duration').value)}) })) {
   byId(id).addEventListener('click', () => { void action().catch(async() => { render(await window.thirsty.getStatus()); }); });
  }
 byId('check-release-blocks').addEventListener('click',()=>{void window.thirsty.checkReleaseBlocks(input('block-audit-date').value).catch(async()=>{render(await window.thirsty.getStatus());});});

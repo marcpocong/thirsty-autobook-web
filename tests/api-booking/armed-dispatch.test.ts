@@ -516,7 +516,8 @@ describe('strict Shotgun deadlines',()=>{
     const { armed, clock, releaseMs } = await arm(1, 1000);
     const order: string[] = [], { transport, calls } = fakeTransport(conflict);
     let preparedAt = 0;
-    const outcome = await dispatchArmedPrecisionRace(armed, { clock, prewarmLeadMs: 700, isAborted: () => false,
+    // Compressed timeline: the refresh settles at T-200 ms, so this test states its own refresh deadline.
+    const outcome = await dispatchArmedPrecisionRace(armed, { clock, prewarmLeadMs: 700, isAborted: () => false, clockRefreshDeadlineLeadMs: 100,
       refreshClock: async () => { order.push('clock-start'); await new Promise(r => setTimeout(r, Math.max(0, releaseMs - 200 - clock.nowMs()))); order.push('clock-finished'); return clock; },
       prewarm: async () => { preparedAt = clock.nowMs(); order.push('prewarm'); }, transportFor: () => transport });
     expect(order).toEqual(['clock-start', 'prewarm', 'clock-finished']);

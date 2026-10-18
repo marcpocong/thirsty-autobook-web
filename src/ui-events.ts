@@ -62,6 +62,12 @@ export const UiEventSchema = z.discriminatedUnion('type', [
     scope:z.enum(['PER_WING','ANY_WING']).optional(),mango:z.number().int().min(0).max(7).optional(),buko:z.number().int().min(0).max(7).optional(),
     deferred:z.number().int().nonnegative().optional(),flushed:z.number().int().nonnegative().optional(),
     workInFinal50Ms:z.number().int().nonnegative().optional(),workInFinal20Ms:z.number().int().nonnegative().optional(),workInFinal10Ms:z.number().int().nonnegative().optional(),
+    // Preparation window actually obtained relative to the earliest configured trigger (PREWARM_WINDOW).
+    leadBeforeTriggerMs:z.number().int().optional(),lateByMs:z.number().int().nonnegative().optional(),
+    // Found by the typed stage() contract: informational stages deferred through the final-second lockdown carry
+    // lockdownDeferredMs; Precision configuration carries fanOut; Phase 3 evidence carries operational.
+    lockdownDeferredMs:z.number().int().nonnegative().optional(),fanOut:z.boolean().optional(),operational:z.boolean().optional(),
+    parentGoalCount:z.number().int().nonnegative().optional(),
     // Rescue V2 reopen predictions (release-relative ms) and their observed error.
     predictedStartMs:z.number().finite().optional(),predictedEndMs:z.number().finite().optional(),errorMs:z.number().finite().optional(),
     confidence:z.string().regex(/^[A-Z][A-Z0-9_]{0,40}$/).optional(),contextReused:z.boolean().optional()}).strict(),
@@ -82,6 +88,14 @@ export const UiEventSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('error'), code: z.string().regex(/^[A-Z_]{1,80}$/) }).strict(),
 ]);
 export type UiEvent = z.infer<typeof UiEventSchema>;
+/**
+ * Versioned runtime→UI event contract. Runner `stage()` extras are typed from the schema itself, so a field the UI
+ * would reject is a compile error, not a silently omitted event at release time. Bump on incompatible changes.
+ */
+export const UI_EVENT_PROTOCOL_VERSION = 2;
+export type ApiStageEvent = Extract<UiEvent, { type: 'apiStage' }>;
+/** Bounded operational metadata a runner may attach to a stage event. */
+export type ApiStageFields = Omit<ApiStageEvent, 'type' | 'stage' | 'elapsedMs' | 'at' | 'sincePreviousMs'>;
 export function emitUiEvent(event: UiEvent) {
   if (process.env.THIRSTY_UI_EVENTS === '1') process.stdout.write(`THIRSTY_EVENT ${JSON.stringify(event)}\n`);
 }

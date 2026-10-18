@@ -41,7 +41,7 @@ export function evaluateReleaseReadiness(input:{build:BuildInfo|null;testedBuild
   for(const [id,value] of Object.entries(input.workers).sort()){
     const level:ReadinessLevel=!value.connected||!value.identityValid?'UNAVAILABLE':!value.securityReady||value.targetReady===false||value.tabCount===0||(value.latencyP95Ms??0)>20?'DEGRADED':'GOOD';
     (level==='GOOD'?readyWorkers:level==='DEGRADED'?degradedWorkers:unavailableWorkers).push(id);
-    add({id:`worker-${id}`,label:`Worker ${id}`,level,hardBlock:false,detail:!value.connected?'browser disconnected':!value.identityValid?'identity/profile not verified':!value.securityReady?'security preparation not ready':value.targetReady===false?'expected Onda target tab not found':value.tabCount===0?'no responsive tab':`connected · ${value.tabCount??'?'} tab(s) · probe ${value.latencyP95Ms?.toFixed(1)??'?'} ms`});
+    add({id:`worker-${id}`,label:`Worker ${id}`,level,hardBlock:false,detail:!value.connected?'browser disconnected':!value.identityValid?'identity/profile not verified':!value.securityReady?'session not prepared for the saved plan':value.targetReady===false?'expected Onda target tab not found':value.tabCount===0?'no responsive tab':`connected · ${value.tabCount??'?'} tab(s) · probe ${value.latencyP95Ms?.toFixed(1)??'?'} ms`});
   }
   add({id:'observer',label:'Observer',level:input.observer.online?'GOOD':'DEGRADED',hardBlock:false,detail:input.observer.online?`online · latest read ${input.observer.lastReadAgeMs===null?'pending':Math.round(input.observer.lastReadAgeMs/1000)+' s ago'}`:'offline; Wave 2 and Rescue require new valid evidence'});
   add({id:'fanout',label:'Fan-out profile',level:input.fanOut?.compatible&&!input.fanOut.stale?'GOOD':input.fanOut?'DEGRADED':'UNAVAILABLE',hardBlock:false,detail:input.fanOut?`${input.fanOut.width} per target${input.fanOut.stale?' · stale':''}${input.fanOut.compatible?'':' · incompatible'}`:'Auto falls back to width 1'});
@@ -54,7 +54,8 @@ export function evaluateReleaseReadiness(input:{build:BuildInfo|null;testedBuild
     add({id:'shotgun-topology',label:'Exact Shotgun topology',level:missing?'UNAVAILABLE':'GOOD',hardBlock:missing,detail:`${input.shotgun.shotCount} shots · tabs ${Object.values(input.shotgun.tabsPerWorker).join('/')} · strict tolerance ${SHOTGUN_MAX_TRIGGER_LATENESS_MS} ms`});
     const status=input.shotgun.timingStatus??'NOT_TESTED';add({id:'shotgun-timing',label:'Local Shotgun timing test',level:status==='READY'?'GOOD':status==='NOT_TESTED'?'DEGRADED':'UNAVAILABLE',hardBlock:status==='FAILED'||status==='AT_RISK',detail:`${status} · configured trigger to local Chrome only; provider outcome unknown`});
   }
-  add({id:'prewarm',label:'Prewarm',level:input.prewarm?'GOOD':'DEGRADED',hardBlock:false,detail:input.prewarm?'release preparation complete':'not yet prepared'});
+  // Preparation is not release security: per-attempt security runs only after arming, shortly before the first trigger.
+  add({id:'prewarm',label:'Environment prepared',level:input.prewarm?'GOOD':'DEGRADED',hardBlock:false,detail:input.prewarm?'browser sessions prepared for the saved plan · live release security runs only after arming':'not yet prepared'});
   const hard=checks.some(value=>value.hardBlock&&value.level!=='GOOD'),warnings=checks.some(value=>value.level!=='GOOD');
   return {verdict:hard?'NOT_READY':warnings?'READY_WITH_WARNINGS':'READY',measuredAt:new Date().toISOString(),checks,readyWorkers,degradedWorkers,unavailableWorkers};
 }

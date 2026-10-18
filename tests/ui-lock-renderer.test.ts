@@ -128,10 +128,15 @@ it('runs a prepared test through the existing Terms and test booking action',asy
 });
 
 it('shows API-first browser readiness and the state-based release action',async()=>{
-  const page=await renderer({booking:booking('api-first','extended'),ready:true,apiFirstReady:true,browserHealth:{A:true,B:true},cdp:true});
+  const saved=booking('api-first','extended');
+  const page=await renderer({booking:saved,ready:true,apiFirstReady:true,preparedPlanFingerprint:saved.fingerprint,browserHealth:{A:true,B:true},cdp:true});
   expect(await page.locator('#release-readiness .gate.good').filter({hasText:'Browser A prepared'}).count()).toBe(1);
   expect(await page.locator('#release-readiness .gate.good').filter({hasText:'Browser B prepared'}).count()).toBe(1);
   expect(await page.locator('#release-readiness').innerText()).not.toContain('All Courts verified');
+  // The Booking Setup draft differs from this advanced-editor plan: nothing is chosen silently.
+  expect(await page.locator('#main-action').innerText()).toBe('Save release plan');
+  expect(await page.locator('#plan-conflict').isVisible()).toBe(true);
+  await page.locator('#conflict-keep-saved').click();
   expect(await page.locator('#main-action').innerText()).toBe('Authorize and Arm');
   await page.evaluate(()=>{const w=window as any;w.fixtureState.scheduledRelease={releaseMs:Date.now()+60000,targetDate:'2026-09-24'};w.fixtureState.operation='scheduled';w.fixturePublish(w.fixtureState);});
   expect(await page.locator('#main-action').innerText()).toBe('Emergency Stop');
@@ -140,7 +145,8 @@ it('shows API-first browser readiness and the state-based release action',async(
 
 it('keeps a retained hold visible while booking controls stay blocked',async()=>{
   const page=await renderer({lock:true});
-  expect(await page.locator('#main-action').innerText()).toBe('Review Hold');
+  expect(await page.locator('#main-action').innerText()).toBe('Review lock');
+  expect(await page.locator('#action-blockers').innerText()).toContain('retained automation lock');
   expect(await page.locator('#lock-card').isVisible()).toBe(true);
   expect(await page.locator('#arm').isDisabled()).toBe(true);
   await showRendererView(page,'plan');
@@ -152,6 +158,9 @@ it('keeps a retained hold visible while booking controls stay blocked',async()=>
 it('offers Prepare New Run for a verified hold without dismissing the lock',async()=>{
   const page=await renderer({lock:true,canPrepareOverHold:true});
   await page.evaluate(()=>{const w=window as any;w.thirsty.resetPrepare=async(value:unknown)=>{w.fixturePreparation=value;};});
+  // A verified hold allows a new run, but the draft must first be saved as the release plan (explicit, never silent).
+  expect(await page.locator('#main-action').innerText()).toBe('Save release plan');
+  await page.locator('#conflict-keep-saved').click();
   expect(await page.locator('#main-action').innerText()).toBe('Prepare New Run');
   await showRendererView(page,'tests');
   expect(await page.locator('#test-main-action').innerText()).toBe('Prepare New Run');

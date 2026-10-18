@@ -16,6 +16,10 @@ export const hooks: {
   /** When Booking Setup owns the plan, Prepare uses exactly its compiled setup / checkout step. */
   releaseSetup: (() => Record<string, unknown> | null) | null;
   testRequest: (() => TestRequestOverride | null) | null;
+  /** Booking Setup in Next Release: Prepare sends no setup, so exactly the saved authorization is prepared. */
+  useSavedRelease: (() => boolean) | null;
+  /** Booking Setup's handler for the primary action button; returns true when it handled the click. */
+  primaryAction: (() => boolean) | null;
   prepare: () => Promise<void>;
   labRunning: boolean;
   setLabRunning: (running: boolean) => void;
@@ -23,7 +27,7 @@ export const hooks: {
   paneListeners: Array<(pane: Pane) => void>;
   latest: () => Dashboard | undefined;
 } = {
-  showView: () => undefined, desiredWorkflow: null, releaseSetup: null, testRequest: null, prepare: async () => undefined,
+  showView: () => undefined, desiredWorkflow: null, releaseSetup: null, testRequest: null, useSavedRelease: null, primaryAction: null, prepare: async () => undefined,
   labRunning: false, setLabRunning: () => undefined, renderers: [], paneListeners: [], latest: () => undefined,
 };
 export const onRender = (callback: (state: Dashboard) => void) => { hooks.renderers.push(callback); };

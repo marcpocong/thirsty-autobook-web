@@ -34,7 +34,7 @@ describe('release readiness gate',()=>{
   it('warns for a degraded worker without silently excluding it',()=>{
     const input=base();input.workers.A!.securityReady=false;const result=evaluateReleaseReadiness(input);
     expect(result.verdict).toBe('READY_WITH_WARNINGS');expect(result.degradedWorkers).toEqual(['A']);expect(result.readyWorkers).not.toContain('A');
-    expect(check(input,'worker-A')).toMatchObject({level:'DEGRADED',hardBlock:false,detail:'security preparation not ready'});
+    expect(check(input,'worker-A')).toMatchObject({level:'DEGRADED',hardBlock:false,detail:'session not prepared for the saved plan'});
   });
 
   it('marks a worker with slow command latency degraded and names the measurement',()=>{

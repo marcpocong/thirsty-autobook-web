@@ -1,5 +1,6 @@
 import type { PrewarmFeasibilityResult } from '../../src/api-booking/prewarm-feasibility.js';
 import type { Dashboard } from '../types.js';
+import { HOLD_STATES, UNSENT_STATES, summarizeRunOutcome } from '../../src/run-outcome.js';
 
 export const offsetText = (value: number): string => `${value > 0 ? '+' : ''}${value} ms`;
 export function acknowledgementKind(problem: string): 'timing' | 'standby' | null {
@@ -13,7 +14,11 @@ export function preparationText(value: PrewarmFeasibilityResult | null, required
   if (value.projectedAtRisk) return `⚠ PREPARATION AT RISK · Forecast: ${value.projectedReady}/${value.configuredWave1Attempts} feasible · ${value.projectedAtRisk} at risk. Live readiness must still be checked.`;
   return `✓ PREPARATION FEASIBLE · Forecast: ${value.projectedReady}/${value.configuredWave1Attempts} attempts can be prepared. Live readiness is checked before arming.`;
 }
-const verified = (state: string) => ['QR_READY', 'VERIFIED', 'HOLD_VERIFIED', 'HOLD_VERIFIED_QR_ATTENTION'].includes(state);
+const verified = (state: string) => HOLD_STATES.has(state);
+/**
+ * Outcome first. UNKNOWN is reserved for an attempt that may have been sent without a confirmed result; a definitively
+ * unsent attempt (permit revoked, nothing initiated) is reported as unsent, never as unknown or rejected.
+ */
 export function liveOutcome(state: Dashboard): string {
   const parents = state.live?.parents ?? [], children = parents.flatMap(parent => parent.children);
   if (parents.some(parent => parent.wave === 'RESCUE' && parent.children.some(child => verified(child.state)))) return 'RESCUE HOLD VERIFIED';
@@ -26,6 +31,10 @@ export function liveOutcome(state: Dashboard): string {
   const planned = plan?.wave1.reduce((count,group)=>count+(group.fanOutOffsetsMs?.length??1),0) ?? state.booking?.setup.STRATEGY_V2?.shotgun?.exactSchedule.length ?? release.length;
   if (planned > 0 && release.length === planned && release.every(child => child.state === 'REJECTED')) return 'ALL RELEASE ATTEMPTS REJECTED';
   if (children.some(child => child.state === 'IN_FLIGHT')) return children.some(child => child.state === 'ARMED') ? 'DISPATCHING' : 'WAITING FOR PROVIDER';
-  if (children.some(child => ['FAILED', 'PREWARM_FAILED', 'NOT_DISPATCHED', 'WINDOW_MISSED', 'OMITTED', 'BROWSER_FAILED', 'IDENTITY_FAILED', 'JOURNAL_BLOCKED'].includes(child.state))) return 'OUTCOME UNKNOWN';
+  const summary = summarizeRunOutcome(children, planned);
+  if (summary.settled && summary.planned) return summary.rejected ? 'ALL SENT ATTEMPTS REJECTED' : 'NOTHING DISPATCHED';
+  const active = state.operation !== 'idle' || !!state.activeApiRelease;
+  // The runner ended without settling every attempt: say so instead of guessing an outcome.
+  if (!active && children.some(child => UNSENT_STATES.has(child.state) || child.state === 'FAILED')) return 'RESULT INCOMPLETE · REVIEW ACTIVITY';
   return 'WAITING FOR RELEASE';
 }
