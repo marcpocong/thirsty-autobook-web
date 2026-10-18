@@ -206,7 +206,8 @@ export interface ReadinessLayer { id: 'PLAN' | 'ENVIRONMENT' | 'FORECAST' | 'SEC
 export interface ReadinessInputs {
   plan: { problems: number; runtime: RuntimeValidation; saved: boolean };
   environment: { prepared: boolean; forOtherPlan: boolean; required: number; connected: number; identityIssues: number };
-  forecast: { verdict: ForecastVerdict; ready: number; configured: number; atRisk: number; omitted: number; measured: boolean; samples: number } | null;
+  forecast: { verdict: ForecastVerdict; ready: number; configured: number; atRisk: number; omitted: number; measured: boolean; samples: number;
+    /** Which forecast this is (capacity before preparation, or live over connected browsers) and what limits it. */ basis?: string; limits?: string[] } | null;
   security: { planned: number; ready: number; preparing: number; failed: number; omitted: number; leadMs: number | null } | null;
   armed: { armed: boolean; running: boolean };
 }
@@ -221,7 +222,7 @@ export function readinessLayers(i: ReadinessInputs): ReadinessLayer[] {
   const f = i.forecast;
   layers.push(!f || f.verdict === 'NOT_APPLICABLE' ? { id: 'FORECAST', label: 'Timing forecast', status: 'NA', detail: 'No staged preparation forecast applies to this plan' }
     : { id: 'FORECAST', label: 'Timing forecast', status: f.verdict === 'READY' ? 'OK' : f.verdict === 'AT_RISK' ? 'WARN' : 'BLOCKED',
-      detail: f.verdict === 'UNAVAILABLE' ? 'Forecast unavailable' : `${f.ready}/${f.configured} predicted ready${f.atRisk ? ` · ${f.atRisk} at risk` : ''}${f.omitted ? ` · ${f.omitted} predicted omitted` : ''} · ${f.measured ? `${plural(f.samples, 'measured sample')}` : 'fallback estimate'} · a forecast is not proof of security readiness` });
+      detail: f.verdict === 'UNAVAILABLE' ? 'Forecast unavailable' : `${f.ready}/${f.configured} predicted ready${f.atRisk ? ` · ${f.atRisk} at risk` : ''}${f.omitted ? ` · ${f.omitted} predicted omitted` : ''}${f.limits?.length ? ` (limited by ${[...new Set(f.limits)].join(', ')})` : ''}${f.basis ? ` · ${f.basis}` : ''} · ${f.measured ? `${plural(f.samples, 'measured sample')}` : 'fallback estimate'} · a forecast is not proof of security readiness` });
   const s = i.security;
   layers.push(!s || (!s.ready && !s.preparing && !s.failed && !s.omitted)
     ? { id: 'SECURITY', label: 'Live security', status: 'PENDING', detail: i.armed.armed || i.armed.running ? `Not started yet${s?.leadMs ? ` · starts about ${Math.round(s.leadMs / 1000)} s before the first trigger` : ''}` : 'Not started · runs only after arming, shortly before the first trigger. A dry run or forecast does not prove it will succeed.' }

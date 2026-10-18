@@ -83,6 +83,20 @@ export function renderNextRelease(state: Dashboard): void {
   note.textContent = '';
 }
 
+const LIMIT_TEXT:Record<string,string>={PREWARM_WORKER_UNAVAILABLE:'a required browser is not connected',PREWARM_CAPACITY_EXCEEDED:'preparation capacity',PREWARM_FRESHNESS_LIMIT:'security context would expire before its trigger',PREWARM_TRIGGER_TOO_EARLY:'not ready before its trigger',PREWARM_PROJECTED_OMISSION:'preparation capacity'};
+/**
+ * One forecast rule for every readiness display. Before preparation: the CAPACITY forecast of the saved plan (configured
+ * browsers, measured history). After preparation: the engine's live forecast over the browsers actually connected.
+ * Never a connected-browser forecast before anything was prepared (that would report omissions for the wrong reason).
+ */
+export function layerForecast(state:Dashboard,prepared:boolean):Parameters<typeof readinessLayers>[0]['forecast']{
+  const plan=state.booking?.setup.PRECISION_PHASE3 as SmartPhase3|undefined;if(!plan)return null;
+  const unavailable=new Set(Object.entries(PLAYER_KEYS).filter(([worker,key])=>state.playerStatus?.[key]===false||(state.identityIssues??[]).some(issue=>issue.startsWith(`Worker ${worker} `))).map(([worker])=>worker));
+  const f=prepared?state.prewarmFeasibility:forecastPreparation(plan,unavailable,state.prewarmFeasibility);
+  if(!f)return {verdict:'UNAVAILABLE',ready:0,configured:smartImmediateSends(plan.wave1),atRisk:0,omitted:0,measured:false,samples:0};
+  return {verdict:f.verdict,ready:f.projectedReady,configured:f.configuredWave1Attempts,atRisk:f.projectedAtRisk,omitted:f.projectedOmitted,measured:f.p95Source!=='FALLBACK',samples:f.sampleCount,
+    basis:prepared?'live, connected browsers':'capacity, before preparation',limits:(f.limitingConstraints??[]).map(code=>LIMIT_TEXT[code]??code)};
+}
 /**
  * Readiness of the SAVED release authorization, on the same five layers as Booking Setup (execution-state.ts). It never
  * derives readiness from a button's enabled state and never calls a forecast "ready for release".
@@ -100,8 +114,7 @@ export function renderReleasePreflight(state:Dashboard):void {
   const f=state.prewarmFeasibility;
   const layers=readinessLayers({plan:{problems:setup?0:1,runtime:setup?'VALID':'INVALID',saved:!!setup},
     environment:{prepared,forOtherPlan:!!state.ready&&!!state.preparedPlanFingerprint&&!prepared,required:workers.length,connected:workers.filter(worker=>state.browserHealth?.[worker]).length,identityIssues:state.identityIssues?.length??0},
-    forecast:f?{verdict:f.verdict,ready:f.projectedReady,configured:f.configuredWave1Attempts,atRisk:f.projectedAtRisk,omitted:f.projectedOmitted,measured:f.p95Source!=='FALLBACK',samples:f.sampleCount}
-      :plan?{verdict:'UNAVAILABLE',ready:0,configured:required,atRisk:0,omitted:0,measured:false,samples:0}:null,
+    forecast:layerForecast(state,prepared),
     security:plan?{planned:required,ready,preparing:children.filter(child=>child.state==='PREPARING').length,failed:children.filter(child=>['FAILED','PREWARM_FAILED'].includes(child.state)).length,
       omitted:children.filter(child=>child.state==='OMITTED').length,leadMs:state.live?.prewarm?.leadMs??f?.prewarmLeadMs??null}:null,
     armed:{armed:armed&&apiRelease?.phase!=='RUNNING',running:apiRelease?.phase==='RUNNING'}});

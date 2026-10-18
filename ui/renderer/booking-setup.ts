@@ -1,6 +1,6 @@
 import type { Dashboard } from '../types.js';
 import type { Wing } from '../../src/court-registry.js';
-import { compileObjective, courtLabel, defaultObjective, enabledWings, evaluateObjectiveOutcome, objectiveFromLegacySetup, parseStoredObjective, savedMangoReleaseSetup, withMode, withStrategy, WINGS,
+import { compileObjective, rebaseReleasedDates, courtLabel, defaultObjective, enabledWings, evaluateObjectiveOutcome, objectiveFromLegacySetup, parseStoredObjective, savedMangoReleaseSetup, withMode, withStrategy, WINGS,
   OUTCOME_LABEL, type BookingObjective, type CompiledObjective, type NormalCheckoutStep, type ObjectiveShotgun, type WingGoal } from '../../src/booking-objective.js';
 import { METHOD_LABEL, METHOD_TO_SETUP, STRATEGY_LABEL, evaluateCapability, methodsForStrategy, strategiesFor, type CapabilityVerdict, type CheckoutMethodId, type StrategyId } from '../../src/capability-matrix.js';
 import { editEffect, executionState, operatorGates, planLadder, readinessLayers, readinessSummary, type ExecutionView, type OperatorGates, type OperatorInputs,
@@ -13,6 +13,7 @@ import { minimumMeaningfulSpacingMs } from '../../src/fanout-timing.js';
 import type { SavedShotgunPreset } from '../../src/shotgun-advisor.js';
 import { hooks, onPane, onRender, el, fill, dateText, hourText, manilaTime, peso, rangeText, wingName } from './navigation.js';
 import { renderShotgunEditor } from './shotgun-editor.js';
+import { layerForecast } from './next-release.js';
 import { initTestLab, renderTestLab } from './test-lab.js';
 import { forecastPreparation } from '../../src/quick-shotgun.js';
 import { capacityAdvice } from '../../src/capacity-advice.js';
@@ -212,7 +213,7 @@ async function load() {
     else if (result.migrated) { objective = parseStoredObjective(result.migrated) ?? objective; notes = result.notes ?? []; }
   } catch { notes = ['The saved Booking Setup draft could not be read. A new draft was started; nothing was overwritten.']; }
   // A stored next-release date that has already been released is moved to the next release only with a visible note.
-  if (objective.mode === 'NEXT_RELEASE') for (const wing of WINGS) { try { if (releaseInstantFor(objective.wings[wing].bookingDate, wing) <= Date.now()) { const next = nextReleaseFor(Date.now(), wing).bookingDate; notes.push(`${wingName(wing)} ${objective.wings[wing].bookingDate} has already been released; the draft now targets the next release date ${next}. Review before saving.`); objective.wings[wing].bookingDate = next; } } catch { /* reported by compile */ } }
+  { const rebased = rebaseReleasedDates(objective, Date.now()); objective = rebased.objective; notes.push(...rebased.notes); }
   loaded = true; recompile(); renderAll(true);
 }
 async function saveDraft(binding?: ObjectiveBinding | null) {
@@ -643,8 +644,7 @@ function renderReview(v: ExecutionView) {
   const workers = requiredWorkers(), f = s?.prewarmFeasibility;
   const layers = readinessLayers({ plan: { problems: keepSaved ? 0 : compiled.problems.length, runtime: keepSaved ? 'VALID' : runtimeCheck.status, saved: keepSaved || runtimeCheck.matchesSaved === true },
     environment: { prepared: preparedForSaved(), forOtherPlan: inputs.prepared.forOtherPlan, required: workers.length, connected: workers.filter(w => s?.browserHealth?.[w as 'A']).length, identityIssues: s?.identityIssues?.length ?? 0 },
-    forecast: release() && f ? { verdict: f.verdict, ready: f.projectedReady, configured: f.configuredWave1Attempts, atRisk: f.projectedAtRisk, omitted: f.projectedOmitted, measured: f.p95Source !== 'FALLBACK', samples: f.sampleCount }
-      : release() && s?.booking?.setup.PRECISION_PHASE3 ? { verdict: 'UNAVAILABLE', ready: 0, configured: plannedSends, atRisk: 0, omitted: 0, measured: false, samples: 0 } : null,
+    forecast: release() && s ? layerForecast(s, preparedForSaved()) : null,
     security: release() ? { planned: plannedSends, ready: children.filter(c => c.state === 'READY').length, preparing: children.filter(c => c.state === 'PREPARING').length,
       failed: children.filter(c => ['FAILED', 'PREWARM_FAILED'].includes(c.state)).length, omitted: children.filter(c => c.state === 'OMITTED').length, leadMs: s?.live?.prewarm?.leadMs ?? f?.prewarmLeadMs ?? null } : null,
     armed: { armed, running } });

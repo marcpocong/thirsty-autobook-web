@@ -56,6 +56,9 @@ describe('operator workflow (renderer)', () => {
     await expect.poll(() => primary(page).innerText()).toBe('Prepare');
     expect(await page.locator('#setup-save-status').innerText()).toContain('Release plan saved');
     expect(await page.locator('#plan-conflict').isVisible()).toBe(false);
+    // Before preparation the forecast is the plan's capacity forecast, never a connected-browser forecast that omits everything.
+    expect(await page.locator('#readiness-layers [data-layer="FORECAST"]').innerText()).toContain('capacity, before preparation');
+    expect(await page.locator('#readiness-layers [data-layer="FORECAST"]').innerText()).not.toContain('not connected');
     await primary(page).click();
     await expect.poll(() => calls(page)).toEqual(['saveBooking', 'objective:save', 'resetPrepare']);
     // Prepare sends no setup: the controller prepares exactly the saved authorization.
