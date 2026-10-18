@@ -585,6 +585,38 @@ export function objectiveFromDualWingPlan(plan: { objective: 'ANY_ONE' | 'ONE_PE
   return { ...base, wings, quotaScope: plan.objective === 'ANY_ONE' ? 'ANY_WING' : 'PER_WING', overall: { minimum: 1, ideal: 1 }, strategy: 'SHOTGUN', checkoutMethod: 'PROOFLESS',
     shotgun: { ...plan.shotgun, presetId: plan.shotgun.timingMode === 'CUSTOM' ? 'FULLY_CUSTOM' : 'SUGGESTED', source: 'CUSTOM' } };
 }
+/**
+ * A stored Next Release draft whose date has already been released is moved to that wing's next release date. Custom
+ * Shotgun counts, literal assignments and Precision offsets are keyed by date-specific target IDs; they are carried to
+ * the SAME wing, court, start and duration on the new date, so the operator's allocation is not silently emptied
+ * (October 18: a moved draft showed 0 attempts). Values are never changed; every move is reported in a note, and the
+ * result is only a draft until the operator saves it.
+ */
+export function rebaseReleasedDates(o: BookingObjective, nowMs: number): { objective: BookingObjective; notes: string[] } {
+  if (o.mode !== 'NEXT_RELEASE') return { objective: o, notes: [] };
+  const next: BookingObjective = JSON.parse(JSON.stringify(o)), notes: string[] = [], moved: Wing[] = [];
+  for (const wing of WINGS) {
+    try {
+      if (releaseInstantFor(next.wings[wing].bookingDate, wing) > nowMs) continue;
+      const to = nextReleaseFor(nowMs, wing).bookingDate;
+      if (next.wings[wing].enabled) notes.push(`${wing === 'MANGO' ? 'Mango' : 'Buko'} ${next.wings[wing].bookingDate} has already been released; the draft now targets the next release date ${to}. Review it, then save the release plan.`);
+      next.wings[wing].bookingDate = to; moved.push(wing);
+    } catch { /* an invalid date is reported by compile */ }
+  }
+  if (!moved.length) return { objective: o, notes };
+  // Old date-specific ID → new ID for the same wing/court/start/duration (and nothing else).
+  const remap = new Map<string, string>();
+  const keyOf = (id: string) => { const m = /^v2:(MANGO|BUKO):([^:]+):\d{4}-\d{2}-\d{2}:(.+)$/.exec(id); return m && moved.includes(m[1] as Wing) ? `${m[1]}:${m[2]}:${m[3]}` : null; };
+  const fresh = new Map(enumerateTargets(next).targets.map(t => [keyOf(t.id), t.id] as const));
+  const ids = [...Object.keys(o.shotgun.customCounts ?? {}), ...(o.shotgun.customAssignments ?? []), ...Object.keys(o.precision.offsetsMs)];
+  for (const id of ids) { const key = keyOf(id), target = key ? fresh.get(key) : undefined; if (target && target !== id) remap.set(id, target); }
+  const move = (id: string) => remap.get(id) ?? id;
+  if (next.shotgun.customCounts) next.shotgun.customCounts = Object.fromEntries(Object.entries(next.shotgun.customCounts).map(([id, n]) => [move(id), n]));
+  if (next.shotgun.customAssignments) next.shotgun.customAssignments = next.shotgun.customAssignments.map(move);
+  next.precision.offsetsMs = Object.fromEntries(Object.entries(next.precision.offsetsMs).map(([id, v]) => [move(id), v]));
+  if (remap.size) notes.push(`Attempt allocations and offsets were carried to the same courts and hours on the new date (${remap.size} target${remap.size === 1 ? '' : 's'}); no value was changed.`);
+  return { objective: next, notes };
+}
 /** Accepts unknown stored JSON; returns a valid v3 objective or null. Never guesses a missing wing as anything but Mango. */
 export function parseStoredObjective(value: unknown): BookingObjective | null {
   if (!value || typeof value !== 'object') return null;

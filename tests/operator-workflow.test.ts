@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compileObjective, defaultObjective, enumerateTargets, objectiveFromLegacySetup, savedMangoReleaseSetup, withStrategy, type BookingObjective } from '../src/booking-objective.js';
+import { compileObjective, defaultObjective, enumerateTargets, objectiveFromLegacySetup, rebaseReleasedDates, savedMangoReleaseSetup, withStrategy, type BookingObjective } from '../src/booking-objective.js';
 import { operatorGates, planLadder, readinessLayers, readinessSummary, type OperatorInputs } from '../src/execution-state.js';
 import { classifyFailure, failureCategory } from '../src/preparation-failure.js';
 import { summarizeRunOutcome } from '../src/run-outcome.js';
@@ -60,6 +60,27 @@ describe('custom Shotgun counts: sparse, explicit, invalid', () => {
     const again = compileObjective(migrated, { nowMs: NOW });
     expect(again.problems).toEqual([]);
     expect(again.cohorts[0]!.smart!.shotgun!.shots.map(s => s.configuredOffsetMs)).toEqual(saved.STRATEGY_V2!.shotgun!.exactSchedule.map(s => s.configuredOffsetMs));
+  });
+});
+
+describe('a draft whose release already happened', () => {
+  it('moves to the next release date and carries custom counts to the same courts (October 18: the moved draft showed 0 attempts)', () => {
+    const o = incidentObjective({ 7: 3 }, 3), snapshot = JSON.stringify(o);
+    const later = Date.parse('2026-10-15T02:00:00Z');   // 10:00 Manila, after the 2026-10-15 08:00 release of 2026-10-17
+    const before = compileObjective(o, { nowMs: later });
+    const { objective, notes } = rebaseReleasedDates(o, later);
+    expect(objective.wings.MANGO.bookingDate).toBe('2026-10-18');
+    const compiled = compileObjective(objective, { nowMs: later });
+    expect(compiled.problems).toEqual([]);
+    expect(compiled.attemptCount).toBe(3);
+    expect(Object.values(objective.shotgun.customCounts!)).toEqual([3]);
+    expect(Object.keys(objective.shotgun.customCounts!)[0]).toContain(':2026-10-18:19:00:');
+    expect(notes).toHaveLength(2);
+    expect(notes[1]).toContain('no value was changed');
+    expect(JSON.stringify(o)).toBe(snapshot);
+    expect(before.problems.join(' ')).toMatch(/already released|was released/);
+    // A draft for a future release is untouched.
+    expect(rebaseReleasedDates(o, NOW)).toEqual({ objective: o, notes: [] });
   });
 });
 
