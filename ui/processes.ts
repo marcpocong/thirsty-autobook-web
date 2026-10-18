@@ -11,6 +11,18 @@ import {requireCapability} from '../src/capabilities.js';
 import { DualPracticeSchema, requireDualFullAuthorization } from '../src/dual-practice.js';
 import {ScheduledReleaseContextSchema} from '../src/scheduled-release.js';
 
+/** Retain schema failure reasons without copying rejected values, credentials or provider bodies. */
+export function decodeStructuredEvent(line: string): { event: UiEvent } | { error: string } {
+  let value: unknown;
+  try { value = JSON.parse(line); } catch { return { error: 'UI_EVENT_JSON_INVALID' }; }
+  const parsed = UiEventSchema.safeParse(value);
+  if (parsed.success) return { event: parsed.data };
+  const token = (value: unknown) => typeof value === 'string' && /^[A-Za-z][A-Za-z0-9_]{0,79}$/.test(value) ? value : 'UNKNOWN';
+  const stage = token((value as { stage?: unknown } | null)?.stage);
+  const issues = parsed.error.issues.slice(0, 8).map(issue => `${issue.code}:${issue.path.map(token).join('.') || 'event'}${issue.code === 'unrecognized_keys' ? `:${issue.keys.slice(0, 8).map(token).join(',')}` : ''}`);
+  return { error: `UI_EVENT_SCHEMA_REJECTED stage=${stage} issues=${issues.join(';')}` };
+}
+
 export interface RunningCommand { pid: number | undefined; done: Promise<number>; stop(): Promise<void>;
   sendObservation?(observation: AvailabilityObservation, date: string, releaseMs: number): void }
 export type Runner = (command: Command, onEvent: (event: UiEvent) => void, onLine: (line: string, error: boolean) => void, confirmBooking?:(plan:BookingPlan)=>Promise<boolean>) => RunningCommand;
@@ -112,8 +124,10 @@ export function createRunner(root: string, node: string): Runner {
       let buffer = '';
       const consume = (line: string) => {
         if (line.startsWith('THIRSTY_EVENT ')) {
-          try { const event = UiEventSchema.safeParse(JSON.parse(line.slice(14))); if (event.success) { onEvent(event.data); return; } } catch {}
-          onLine('Unrecognized structured event omitted.', true); return;
+          const decoded = decodeStructuredEvent(line.slice(14));
+          if ('event' in decoded) onEvent(decoded.event);
+          else onLine(decoded.error, true);
+          return;
         }
         // The CLI's pretty JSON is represented by validated structured events.
         // Keep human stdout/stderr, avoiding braces/field fragments in the log.

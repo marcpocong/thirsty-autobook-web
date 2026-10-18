@@ -512,6 +512,27 @@ describe('Release Offset (per attempt)', () => {
 });
 
 describe('strict Shotgun deadlines',()=>{
+  it('starts prewarm while final clock refresh is waiting, instead of losing its preparation lead', async () => {
+    const { armed, clock, releaseMs } = await arm(1, 1000);
+    const order: string[] = [], { transport, calls } = fakeTransport(conflict);
+    let preparedAt = 0;
+    const outcome = await dispatchArmedPrecisionRace(armed, { clock, prewarmLeadMs: 700, isAborted: () => false,
+      refreshClock: async () => { order.push('clock-start'); await new Promise(r => setTimeout(r, Math.max(0, releaseMs - 200 - clock.nowMs()))); order.push('clock-finished'); return clock; },
+      prewarm: async () => { preparedAt = clock.nowMs(); order.push('prewarm'); }, transportFor: () => transport });
+    expect(order).toEqual(['clock-start', 'prewarm', 'clock-finished']);
+    expect(preparedAt).toBeLessThan(releaseMs - 400);
+    expect(calls).toHaveLength(1);
+    expect(outcome.results[0]!.state).toBe('REJECTED');
+  });
+  it('a final clock failure cannot send an already-prewarmed attempt', async () => {
+    const { armed, clock } = await arm(1, 1000);
+    const { transport, calls } = fakeTransport(conflict);
+    await expect(dispatchArmedPrecisionRace(armed, { clock, prewarmLeadMs: 700, isAborted: () => false,
+      refreshClock: async () => { throw Error('NETWORK_CLOCK_STALE'); }, prewarm: async () => undefined,
+      transportFor: () => transport })).rejects.toThrow('NETWORK_CLOCK_STALE');
+    expect(calls).toHaveLength(0);
+    expect(armed.attempts[0]!.state).toBe('disarmed');
+  });
   async function strict(offsets:number[]=[-500],lead=60000){
     const releaseMs=Date.now()+lead,target=validatePrecisionTargets([{court:7,start:'17:00',durationHours:3}],date)[0]!;
     const race=freezePrecisionRace(date,releaseMs,offsets.map(releaseOffsetMs=>{const child={...target,releaseOffsetMs};return {target:child,plan:precisionTargetPlan(child,date),dispatchTimingPolicy:'SHOTGUN_STRICT' as const};}));

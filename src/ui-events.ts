@@ -58,6 +58,10 @@ export const UiEventSchema = z.discriminatedUnion('type', [
     predictedReadyOffsetMs:z.number().finite().optional(),actualReadyOffsetMs:z.number().finite().optional(),predictionErrorMs:z.number().finite().optional(),
     queueDelayMs:z.number().finite().nonnegative().optional(),prepDurationMs:z.number().finite().nonnegative().optional(),omittedReason:z.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/).optional(),
     shotIndex:z.number().int().nonnegative().optional(),shotCount:z.number().int().positive().optional(),timingBucket:z.enum(['< -500 ms','-500 to -100 ms','-100 to 0 ms','0 to +100 ms','+100 to +250 ms','> +250 ms']).optional(),
+    workerGroupIndex:z.number().int().min(0).max(6).optional(),attempts:z.number().int().nonnegative().optional(),
+    scope:z.enum(['PER_WING','ANY_WING']).optional(),mango:z.number().int().min(0).max(7).optional(),buko:z.number().int().min(0).max(7).optional(),
+    deferred:z.number().int().nonnegative().optional(),flushed:z.number().int().nonnegative().optional(),
+    workInFinal50Ms:z.number().int().nonnegative().optional(),workInFinal20Ms:z.number().int().nonnegative().optional(),workInFinal10Ms:z.number().int().nonnegative().optional(),
     // Rescue V2 reopen predictions (release-relative ms) and their observed error.
     predictedStartMs:z.number().finite().optional(),predictedEndMs:z.number().finite().optional(),errorMs:z.number().finite().optional(),
     confidence:z.string().regex(/^[A-Z][A-Z0-9_]{0,40}$/).optional(),contextReused:z.boolean().optional()}).strict(),

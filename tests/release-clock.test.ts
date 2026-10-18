@@ -140,6 +140,19 @@ describe('monotonic release deadline', () => {
   it('rejects a non-finite offset (a failed sync can never anchor the release clock)', () => {
     expect(() => TrustedReleaseClock.fromOffset(Number.NaN, { method: 'x', sampleCount: 0 })).toThrow('NETWORK_CLOCK_OFFSET_INVALID');
   });
+  it('updates a shared prewarm clock without permitting a large earlier release jump', () => {
+    const c = clocks(0, releaseMs - 120_000);
+    const clock = TrustedReleaseClock.fromOffset(50, { method: 'initial', sampleCount: 5 }, c.perf, c.wall);
+    const shared = clock;
+    const deadline = clock.monotonicDeadline(releaseMs);
+    expect(clock.adopt(TrustedReleaseClock.fromOffset(500, { method: 'bad', sampleCount: 5 }, c.perf, c.wall), releaseMs)).toBe(false);
+    expect(shared.monotonicDeadline(releaseMs)).toBe(deadline);
+    expect(clock.adopt(TrustedReleaseClock.fromOffset(70, { method: 'final', sampleCount: 10 }, c.perf, c.wall), releaseMs)).toBe(true);
+    expect(shared).toBe(clock);
+    expect(shared.offsetMs).toBe(70);
+    expect(shared.evidence.method).toBe('final');
+    expect(shared.monotonicDeadline(releaseMs)).toBe(deadline - 20);
+  });
 });
 
 describe('clock and arm stage events reach the operator UI', () => {

@@ -16,7 +16,7 @@ import { freezePrecisionRace, precisionAttemptSet, precisionTargetPlan, reducePr
   validatePrecisionTargets, VerifiedHoldQrError, classifyPrecisionDispatchError,
   type PrecisionAttempt, type PrecisionAttemptState, type PrecisionTarget } from './precision-race.js';
 import { authorizePrecision, candidateWirePlan, precisionCandidateId, PrecisionSession, classifyActionableObservation, pricedPrecisionPlan, adaptiveMaxAgeMs,
-  adaptiveFitness, freshestAvailabilityObservation, isActionableEvidenceFitness, type AvailabilityObservation } from './precision-phase3.js';
+  adaptiveFitness, freshestAvailabilityObservation, isActionableEvidenceFitness, shouldContinueAdaptiveRun, type AvailabilityObservation } from './precision-phase3.js';
 import { runAdaptiveAttempt, type AdaptiveSelection } from './adaptive-attempt.js';
 import { browserIdentity, verifyDedicatedChromeAsync } from '../browser.js';
 import { emitUiEvent } from '../ui-events.js';
@@ -307,8 +307,8 @@ function assertClockFresh(){
  * adopted the fresh T-10 min consensus is used, and a stale sync still fails closed.
  */
 let releaseClock:TrustedReleaseClock|undefined;
-async function prepareReleaseClock(releaseMs:number):Promise<TrustedReleaseClock>{
-  let clock:TrustedReleaseClock|undefined;
+async function prepareReleaseClock(releaseMs:number,initial:TrustedReleaseClock):Promise<TrustedReleaseClock>{
+  let clock:TrustedReleaseClock|undefined=initial;
   for(const round of RELEASE_CLOCK_ROUNDS){
     const at=releaseMs-round.beforeMs;
     if(nowMs()>at+5_000)continue;
@@ -331,6 +331,13 @@ async function prepareReleaseClock(releaseMs:number):Promise<TrustedReleaseClock
   }
   assertClockFresh();
   return clock??TrustedReleaseClock.fromOffset(clockOffsetMs,{method:'t-10m-consensus',sampleCount:0});
+}
+async function refreshArmedClock(clock:TrustedReleaseClock,releaseMs:number):Promise<TrustedReleaseClock>{
+  clock.adopt(await prepareReleaseClock(releaseMs,clock),releaseMs);
+  // Keep the timing report and final lockdown anchored to the same refreshed clock as dispatch.
+  if(criticalPath){criticalPath.releaseMono=clock.monotonicDeadline(releaseMs);criticalPath.wallToTrustedMs=clock.offsetMs-clock.wallDisagreementMs();}
+  releaseLockdown=new ReleaseCriticalLockdown(clock.monotonicDeadline(releaseMs));
+  return clock;
 }
 /** Resync at T-10 min (retry at T-5 min), never inside the final minutes before dispatch. */
 async function refreshClockBeforeRelease(releaseMs:number){
@@ -854,7 +861,7 @@ try {
         // After the one-second dispatch window no POST can start: enable any trace whose request event was not seen.
         setTimeout(()=>traces.enableAll(),Math.max(0,armed.dispatchDeadlineMs+100-nowMs())).unref();
         try{
-          releaseClock=await prepareReleaseClock(releaseMs);
+          releaseClock=TrustedReleaseClock.fromOffset(clockOffsetMs,{method:'prewarm-anchor',sampleCount:0});
           const recorder=startCriticalPath(releaseClock,releaseMs,new Map(armed.attempts.flatMap(attempt=>{
             const session=sessionFor(attempt.attempt);return session?[[attempt.attempt.id,session.page] as const]:[];})));
           // One critical-path row per child: the tab's transport observations are aliased onto its attempt ID.
@@ -862,6 +869,7 @@ try {
             recorder.describe(attempt.attempt.id,{parentGoalId:attempt.target.targetKey,workerId:attempt.target.workerId,fanOutIndex:attempt.attempt.fanOutIndex,
               fanOutCount:attempt.attempt.fanOutCount,configuredOffsetMs:attempt.triggerMs-releaseMs,wave:'WAVE_1'});}
           const outcome=await dispatchArmedPrecisionRace(armed,{clock:releaseClock,spinTailMs:DEFAULT_SPIN_TAIL_MS,
+            refreshClock:()=>refreshArmedClock(releaseClock!,releaseMs),
             ...fanOutPrewarm(armed.attempts),
             isAborted:()=>abort.signal.aborted,sleep:pause,transportFor:(_worker,attempt)=>releaseTransports.get(transportKeyFor(attempt.attempt)),
             onWake:triggerMs=>{for(const attempt of armed.attempts)if(attempt.triggerMs===triggerMs)recorder.mark(attempt.attempt.id,'schedulerFired');releaseLockdown?.mark('scheduler-wake');},onMark:(_worker,name,attempt)=>{if(name==='transportCall'){recorder.mark(attempt.attempt.id,'workerInvoked');releaseLockdown?.mark(`transport:${attempt.attempt.id}`);}
@@ -1069,7 +1077,7 @@ try {
           try{await transport.prepareCheckoutContext();stage('PHASE3_STANDBY_READY',{workerId});}
           catch(error){stage('PHASE3_STANDBY_FAILED',{workerId,code:safeApiFailureCode(error,'SECURITY_PREWARM_FAILED')});}
         }));})();
-      let newestSeq=0,securityRefreshMs=2500,wave1Fired=false,wave1Settled=false;
+      let newestSeq=0,securityRefreshMs=2500,wave1Fired=false,wave1Settled=false,adaptiveStopped=false;
       let providerStopCode:string|undefined;
       const receivedEvidence:AvailabilityObservation[]=[];
       const pending=new Set<Promise<unknown>>();
@@ -1125,7 +1133,8 @@ try {
         pending.add(task);void task.finally(()=>pending.delete(task));
       };
       const adaptiveLoop=(async()=>{
-        while(!abort.signal.aborted&&!providerStopCode&&nowMs()<releaseMs+15*60_000){
+        while(!abort.signal.aborted&&!adaptiveStopped&&!providerStopCode&&nowMs()<releaseMs+15*60_000){
+          if (!shouldContinueAdaptiveRun(authorization, { wave1Settled, wave1Fired, pending: pending.size })) break;
           // Slot Watch keeps collecting in its isolated process. Defer adaptive calculations, logs
           // and standby work until the strict initial-release timing interval has ended.
           if(config.STRATEGY_V2?.shotgun?.enabled && shotgunCriticalInterval(releaseMs,nowMs())){
@@ -1182,7 +1191,7 @@ try {
         await Promise.allSettled([...pending]);
       })();
       try{
-        releaseClock=await prepareReleaseClock(releaseMs);
+        releaseClock=TrustedReleaseClock.fromOffset(clockOffsetMs,{method:'prewarm-anchor',sampleCount:0});
         // Critical-path rows are per child attempt; each tab's transport observations are aliased onto its attempt.
         const recorder=startCriticalPath(releaseClock,releaseMs,new Map(armed.attempts.flatMap(attempt=>{
           const page=pageOf(attempt.attempt);return page?[[attempt.attempt.id,page] as const]:[];})));
@@ -1191,6 +1200,7 @@ try {
             fanOutCount:attempt.attempt.fanOutCount,configuredOffsetMs:attempt.triggerMs-releaseMs,...shotgunTopology.get(attempt.attempt.id)!,wave:'WAVE_1'});}
         const transportOf=(attempt:ArmedAttempt)=>releaseTransports.get(transportKeyOf(attempt.target.workerId,attempt.attempt.fanOutIndex));
         const outcome=await dispatchArmedPrecisionRace(armed,{clock:releaseClock,spinTailMs:DEFAULT_SPIN_TAIL_MS,isAborted:()=>abort.signal.aborted,sleep:pause,
+          refreshClock:()=>refreshArmedClock(releaseClock!,releaseMs),
           onObjectiveStop:reason=>{if(reason==='SHOTGUN_PROVIDER_THROTTLE_STOP'||reason==='SHOTGUN_PAYMENT_IN_PROGRESS_STOP')providerStopCode=reason;},
           ...fanOutPrewarm(armed.attempts),
           onWake:triggerMs=>{for(const attempt of armed.attempts)if(attempt.triggerMs===triggerMs)recorder.mark(attempt.attempt.id,'schedulerFired');releaseLockdown?.mark('scheduler-wake');},onMark:(_worker,name,attempt)=>{if(name==='transportCall'){recorder.mark(attempt.attempt.id,'workerInvoked');releaseLockdown?.mark(`transport:${attempt.attempt.id}`);}
@@ -1229,6 +1239,8 @@ try {
               unbindProoflessAttempt(binding);}
           }});
         wave1Settled=true;
+        stage('PHASE3_WAVE1_COMPLETE',{attemptCount:outcome.results.length,
+          unsentCount:outcome.results.filter(result=>PRECISION_UNSENT_STATES.has(result.state)).length});
         for(const result of outcome.results)recorder.describe(result.attempt.id,{finalState:result.state,...(result.code?{finalCode:result.code}:{})});
         for(const result of outcome.results){const binding=bindings.get(result.attempt.id);
           if(!binding||!session.attempts.some(value=>value.id===binding.correlation.attemptId))
@@ -1247,7 +1259,8 @@ try {
           retainLiveLock=false;await liveLock?.release();liveLock=undefined;
         }
         if(session.status!=='OBJECTIVE_ACHIEVED'&&session.status!=='OBJECTIVE_ACHIEVED_EXTRA_HOLD')throw Error(session.status);
-      }catch(error){await disarmUnfired(armed,safeApiFailureCode(error,'ARMED_NOT_DISPATCHED'),nowMs).catch(()=>[]);
+      }catch(error){adaptiveStopped=true;await disarmUnfired(armed,safeApiFailureCode(error,'ARMED_NOT_DISPATCHED'),nowMs).catch(()=>[]);
+        await adaptiveLoop;
         await persistProviderTraces().catch(()=>undefined);throw error;}
     };
     if(phase3)await runPhase3();

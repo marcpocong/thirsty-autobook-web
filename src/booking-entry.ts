@@ -44,7 +44,13 @@ try{
     if(!solution)throw Error('TARGET_NOT_AVAILABLE');
     const fingerprint=expectedPreparationFingerprint(input,input.workflow==='release'?planFingerprint(config):undefined);
     emitUiEvent({type:'preparationProgress',step:'final'});
-    const result=PreparationResultSchema.parse({workflow:input.workflow,strategy,fingerprint,browsers:prepared.browsers.map(b=>({id:b.id,dedicatedProfileVerified:true,ondaVerified:true,preparedDate:b.snapshot!.rows[0]!.date,gridVerified:true,selectedCount:0,hold:'Not detected'})),solutionAvailable:solution,...(target?{releaseTargetDate:target.targetDate,releaseMs:target.releaseMs}:{})});
+    const checked=PreparationResultSchema.safeParse({workflow:input.workflow,strategy,fingerprint,browsers:prepared.browsers.map(b=>({id:b.id,dedicatedProfileVerified:true,ondaVerified:true,preparedDate:b.snapshot!.rows[0]!.date,gridVerified:true,selectedCount:0,hold:'Not detected'})),solutionAvailable:solution,...(target?{releaseTargetDate:target.targetDate,releaseMs:target.releaseMs}:{})});
+    if(!checked.success){
+      const fields=checked.error.issues.map(issue=>issue.path.join('.')).join(', ').slice(0,190);
+      emitUiEvent({type:'apiStage',stage:'PREPARATION_RESULT_INVALID',elapsedMs:0,message:`Invalid preparation evidence fields: ${fields}`});
+      throw Error('PREPARATION_RESULT_INVALID');
+    }
+    const result=checked.data;
     emitUiEvent({type:'preparationResult',result});console.log('READY');
   }
   else if(mode==='test'){

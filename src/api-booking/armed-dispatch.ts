@@ -268,6 +268,8 @@ export const firstArmedTrigger = (armed: ArmedPrecisionRace) =>
 
 export interface ArmedDispatchDeps {
   clock: TrustedReleaseClock;
+  /** Runs alongside prewarm; must complete before renderer calibration or dispatch. */
+  refreshClock?: () => Promise<TrustedReleaseClock>;
   prewarmLeadMs: number;
   /** A failed prewarm is retried once only if it failed at least this long before release. */
   prewarmRetryCutoffMs?: number;
@@ -482,6 +484,9 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
   };
   try {
     assertPrecisionFreezeIntact(armed.race);
+    const clockRefresh = deps.refreshClock?.().then(next => {
+      clock.adopt(next, armed.releaseMs); return undefined;
+    }, error => ({ error }));
     await waitFor(firstTriggerMs - deps.prewarmLeadMs);
     const prepare = async (attempt: ArmedAttempt): Promise<boolean> => {
       const startedAt=now(),queueDelayMs=startedAt-(firstTriggerMs-deps.prewarmLeadMs);
@@ -520,6 +525,8 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
     }
     // Integrity of the frozen set is verified before the final wait, never after the first trigger.
     assertPrecisionFreezeIntact(armed.race);
+    const clockFailure = await clockRefresh;
+    if (clockFailure) throw clockFailure.error;
     if (renderer) {
       // EXPERIMENTAL: calibrate every page clock a few seconds out; an attempt that cannot calibrate uses the Node path.
       // Bounded: whatever has not finished by the final approach is abandoned, so a stuck page can never hold the
