@@ -223,7 +223,7 @@ export function toShotgunSettings(s: ObjectiveShotgun, immediateIds: readonly st
   const problems: string[] = [];
   const base: ShotgunSettings = { enabled: true, budget: s.budget, allocationMode: s.allocationMode, selectedTargetIds: [...immediateIds],
     windowStartMs: s.windowStartMs, windowEndMs: s.windowEndMs, timingMode: s.timingMode, timingCapacityOverride: !!s.timingCapacityOverride,
-    allowStandbyConsumption: !!s.allowStandbyConsumption, ...(s.customCounts ? { customCounts: Object.fromEntries(Object.entries(s.customCounts).filter(([id]) => immediateIds.includes(id))) } : {}),
+    allowStandbyConsumption: !!s.allowStandbyConsumption, ...(s.allocationMode === 'CUSTOM' ? { customCounts: Object.fromEntries(immediateIds.map(id => [id, s.customCounts?.[id] ?? 0])) } : {}),
     ...(s.customOffsetsMs ? { customOffsetsMs: [...s.customOffsetsMs] } : {}) };
   if (s.timingMode === 'CUSTOM' && s.customAssignments) {
     const offsets = s.customOffsetsMs ?? [];
@@ -432,13 +432,17 @@ export function savedMangoReleaseSetup(compiled: CompiledObjective, nextMangoBoo
   if (!smart.phase3) return { setup: null, problems: smart.problems };
   const hours = cohort.immediate.map(t => hourOf(t.start));
   const quota = compiled.quota;
+  // Zero-count alternatives have no wave1 authorization. Keep them in the objective,
+  // but serialize only active targets into the runtime's exact Shotgun authorization.
+  const activeShotgunIds = new Set(smart.shotgun?.shots.map(shot => shot.logicalTargetId) ?? []);
+  const activeCounts = (counts: Record<string, number>) => Object.fromEntries(Object.entries(counts).filter(([id, count]) => activeShotgunIds.has(id) || count !== 0));
   const strategyV2 = { version: 1, preset: 'CUSTOM', goal: { primeFrom: `${String(Math.min(...hours)).padStart(2, '0')}:00`, primeUntil: `${String(Math.min(24, Math.max(...cohort.immediate.map(t => hourOf(t.start) + t.durationHours)))).padStart(2, '0')}:00`,
       durations: [g.durationHours], courts: ordered },
     fanOut: { width: 1, source: 'OPERATOR_OVERRIDE', recommendedWidth: null, timing: 'BALANCED', profileCreatedAt: null },
-    ...(smart.shotgun && shotgun ? { shotgun: { version: 1, enabled: true, budget: shotgun.budget, allocationMode: shotgun.allocationMode, selectedTargetIds: shotgun.selectedTargetIds,
-      ...(shotgun.customCounts ? { customCounts: shotgun.customCounts } : {}), windowStartMs: shotgun.windowStartMs, windowEndMs: shotgun.windowEndMs, timingMode: shotgun.timingMode,
+    ...(smart.shotgun && shotgun ? { shotgun: { version: 1, enabled: true, budget: shotgun.budget, allocationMode: shotgun.allocationMode, selectedTargetIds: shotgun.selectedTargetIds.filter(id => activeShotgunIds.has(id)),
+      ...(shotgun.customCounts ? { customCounts: activeCounts(shotgun.customCounts) } : {}), windowStartMs: shotgun.windowStartMs, windowEndMs: shotgun.windowEndMs, timingMode: shotgun.timingMode,
       ...(shotgun.customOffsetsMs ? { customOffsetsMs: shotgun.customOffsetsMs } : {}), timingCapacityOverride: !!shotgun.timingCapacityOverride, allowStandbyConsumption: !!shotgun.allowStandbyConsumption,
-      counts: smart.shotgun.counts, exactSchedule: smart.shotgun.shots.map(({ logicalTargetId, shotIndex, configuredOffsetMs }) => ({ logicalTargetId, shotIndex, configuredOffsetMs })),
+      counts: activeCounts(smart.shotgun.counts), exactSchedule: smart.shotgun.shots.map(({ logicalTargetId, shotIndex, configuredOffsetMs }) => ({ logicalTargetId, shotIndex, configuredOffsetMs })),
       capacity: { meaningfulSpacingMs: smart.shotgun.meaningfulSpacingMs, recommendedMaximum: smart.shotgun.recommendedMaximum, warning: smart.shotgun.capacityWarning, groupAnchorMs: smart.shotgun.groupAnchorMs } } } : {}),
     objective: { version: 3, fingerprint: compiled.fingerprint, scope: quota.scope, wings: { MANGO: quota.wings.MANGO! }, ...(quota.overall ? { overall: quota.overall } : {}) } };
   return { setup: { BOOKING_METHOD: 'proofless', BOOKING_TYPE: 'standard', RELEASE_STRATEGY: 'precision', PRECISION_TARGETS: [], PRECISION_FAN_OUT: false, RELEASE_OFFSET_MS: 0,

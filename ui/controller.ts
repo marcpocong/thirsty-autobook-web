@@ -51,6 +51,7 @@ const PRECISION_OUTCOME_HEADLINE:Record<string,string>={
   OBJECTIVE_NOT_CONFIRMED_MANUAL_RECONCILIATION:'OBJECTIVE NOT CONFIRMED · MANUAL RECONCILIATION REQUIRED',
   OBJECTIVE_NOT_ACHIEVED_ALL_REJECTED:'OBJECTIVE NOT ACHIEVED · ALL REJECTED',
   OBJECTIVE_NOT_ACHIEVED_NOTHING_DISPATCHED:'OBJECTIVE NOT ACHIEVED · NOTHING DISPATCHED',
+  NOTHING_DISPATCHED:'OBJECTIVE NOT ACHIEVED · NOTHING DISPATCHED',
 };
 const precisionOutcomeHeadline=(code:string|undefined)=>code?PRECISION_OUTCOME_HEADLINE[code]:undefined;
 /** Operator text for an invalid customer identity. Uses worker letters and codes only, never a customer ID. */
@@ -75,7 +76,7 @@ const errors: Record<string, string> = {
   PRECISION_TOO_LATE_TO_ARM:'Precision Release must be armed at least 3 minutes before release so the target set can be frozen at T-2 min.',
   PREWARM_PLAN_NOT_FEASIBLE:'The exact saved Wave 1 plan has projected preparation omissions. Edit the Strategy and save a new PRECISION_PHASE3 authorization before arming.',
   SHOTGUN_PLAN_INCOMPATIBLE_POSITIVE_OFFSET:'This saved Shotgun plan contains a post-release offset. It remains visible for review but cannot be armed. Edit it to -2000 through 0 ms and save a new exact schedule.',
-  SHOTGUN_PREWARM_NOT_FULLY_READY:'Shotgun timing is not fully ready on this machine. Reduce the shot count, widen the timing schedule, or prepare again.',
+  SHOTGUN_PREWARM_NOT_FULLY_READY:'The preparation forecast cannot ready every configured attempt before its deadline. Reduce the attempts per browser and prepare again. A READY forecast does not guarantee provider security verification will succeed.',
   SHOTGUN_TOPOLOGY_NOT_READY:'The exact Shotgun browser tabs are not ready. Reset & Prepare, then check every required browser group.',
   SHOTGUN_TIMING_NOT_READY:'The matching local Shotgun timing test failed or showed compression. Reduce the shot count, widen the schedule, or test again.',
   SHOTGUN_MACHINE_NOT_READY:'Machine load exceeds the strict Shotgun timing allowance. Prepare again when the machine is less busy.',
@@ -437,7 +438,13 @@ export class Controller {
   }
   private releaseSetup(input:unknown):{setup:ReturnType<typeof BookingSetupSchema.parse>;reconciliation:FallbackReconciliation}{
     const repaired=reconcileBookingSetupFallbacks(input),parsed=BookingSetupSchema.safeParse(repaired.setup);
-    if(!parsed.success){this.state.headline='BOOKING SETTINGS NEED ATTENTION';this.state.detail=`Check the highlighted booking fields and press Reset & Prepare again.\n${bookingSetupProblem(repaired.setup)??'The current Release booking settings are invalid.'}`;throw Error('BOOKING_SETTINGS_INVALID');}
+    if(!parsed.success){
+      const refinements=parsed.error.issues.filter(issue=>issue.code==='custom').map(issue=>issue.message).slice(0,3).join(' ');
+      const fields=parsed.error.issues.slice(0,3).map(issue=>issue.path.join('.')).join(', ');
+      const problem=bookingSetupProblem(repaired.setup)??(refinements||`Invalid booking fields: ${fields}.`);
+      this.state.headline='BOOKING SETTINGS NEED ATTENTION';this.state.detail=`Check the booking plan and press Reset & Prepare again.\n${problem}`;
+      this.log(`BOOKING_SETTINGS_INVALID: ${problem}`,true);throw Error('BOOKING_SETTINGS_INVALID');
+    }
     return {setup:parsed.data,reconciliation:repaired.reconciliation};
   }
   private clearPreparation(){this.state.preparedContext=null;this.state.preparedAt=undefined;this.state.apiFirstReady=false;this.apiTestFingerprint=undefined;this.apiTestStrategy=undefined;this.apiTestCheckoutMethod=undefined;this.apiTestPreferences=undefined;this.state.ready=false;this.state.termsAuthorized=false;}
@@ -716,6 +723,7 @@ export class Controller {
       if(['PRECISION_TARGET_EVIDENCE','PROOFLESS_TARGET_EVIDENCE'].includes(event.stage))this.state.detail=`${event.workerId?`Worker ${event.workerId} · `:''}Court ${event.court} · ${event.startTime}${event.endTime?`–${event.endTime}`:''}${event.checkpoint?` · ${event.checkpoint}`:''} · ${TARGET_EVIDENCE_LABEL[event.evidence as TargetEvidence]??event.evidence}${event.eligible===false?' · NOT ELIGIBLE':''}`;
       if(event.stage==='PRECISION_ATTEMPT_STATE')this.state.detail=`Worker ${event.workerId} · Court ${event.court} · ${event.startTime}–${event.endTime} · ${PRECISION_STATE_LABEL[event.attemptState??'']??event.attemptState}${event.duplicateOf?` · duplicates Worker ${event.duplicateOf}`:event.code?` · ${event.code}`:''}`;
       if(event.stage==='CUSTOMER_IDENTITY_INVALID')this.state.detail=identityIssueText(event,this.state.booking?.setup.RELEASE_STRATEGY==='precision');
+      if(event.stage==='PREWARM_TIER_STATUS'||event.stage==='PREPARATION_RESULT_INVALID')this.state.detail=event.message??event.stage;
       if(event.stage==='NETWORK_CLOCK_REFRESHED')this.state.detail=`${event.checkpoint} · offset ${event.offsetMs} ms · round trip ${event.roundTripMs} ms · change ${event.deltaMs} ms`+(event.sampleCount!==undefined?` · ${event.sampleCount} samples · spread ${event.spreadMs} ms · ±${event.uncertaintyMs} ms`:'');
       if(event.stage==='NETWORK_CLOCK_CONSENSUS')this.state.detail=`${event.checkpoint} · offset ${event.offsetMs} ms · ${event.sampleCount} samples · fastest round trip ${event.roundTripMs} ms · spread ${event.spreadMs} ms · ±${event.uncertaintyMs} ms · change ${event.deltaMs} ms`+(event.code==='CLOCK_JUMP_REJECTED'?' · large earlier jump not adopted':'');
       if(event.stage==='RELEASE_OFFSET_SCHEDULED'&&event.releaseOffsetMs!==undefined)this.state.detail=`${event.workerId?`Worker ${event.workerId} · `:''}Trigger ${formatReleaseOffset(event.releaseOffsetMs)}: checkout may be sent up to ${-event.releaseOffsetMs} ms before the official release time`;

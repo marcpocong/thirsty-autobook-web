@@ -284,6 +284,12 @@ export interface RaceAttempt { id: string; candidateId: string; workerId: Worker
 /** Sends Wave 1 makes: one per immediate target, or one per fan-out child. */
 export const wave1SendCount = (authorization: Pick<FrozenPrecisionAuthorization, 'wave1'>) =>
   authorization.wave1.reduce((sum, value) => sum + (value.fanOutOffsetsMs?.length ?? 1), 0);
+/** A settled run with no permitted future work must finish instead of looking armed for 15 minutes. */
+export function shouldContinueAdaptiveRun(authorization: Pick<FrozenPrecisionAuthorization, 'budgets' | 'rescueEnabled'>,
+  state: { wave1Settled: boolean; wave1Fired: boolean; pending: number }): boolean {
+  return !state.wave1Settled || state.pending > 0 || (state.wave1Fired &&
+    (authorization.budgets.wave2 > 0 || authorization.rescueEnabled && authorization.budgets.rescue > 0));
+}
 export class PrecisionSession {
   readonly attempts: RaceAttempt[] = [];
   latest?: ActionableObservation;

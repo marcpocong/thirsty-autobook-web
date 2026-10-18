@@ -100,7 +100,7 @@ export class CriticalPathRecorder {
    * @param releaseMono Node performance.now() value of the release instant (clock.monotonicDeadline(releaseMs))
    * @param wallToTrustedMs trusted = wall + this (clock.offsetMs − clock.wallDisagreementMs() at dispatch)
    */
-  constructor(readonly releaseMs: number, readonly releaseMono: number, readonly wallToTrustedMs: number, workers: readonly string[] = [],
+  constructor(readonly releaseMs: number, public releaseMono: number, public wallToTrustedMs: number, workers: readonly string[] = [],
     private readonly perf: () => number = () => performance.now(), readonly defaultMode: DispatchMode = 'node') {
     for (const worker of workers) this.workers.set(worker, { node: {}, dispatchMode: defaultMode });
   }

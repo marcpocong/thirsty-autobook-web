@@ -141,6 +141,26 @@ describe('saved Mango release plan (live authorization format)', () => {
     return o;
   };
   const players = { PLAYER_FULL_NAME: 'Fixture Player', PLAYER_PHONE: '09123456789', PLAYER_EMAIL: 'fixture@example.invalid' };
+  it('saves a focused custom allocation with sparse or explicit zero-count alternatives', async () => {
+    const { BookingSetupSchema } = await import('../src/config.js');
+    for (const explicitZeros of [false, true]) {
+      const o = mangoOnly('SHOTGUN');
+      o.wings.MANGO.durationHours = 3;
+      o.wings.MANGO.minimum = 1; o.wings.MANGO.ideal = 1;
+      const ids = enumerateTargets(o).targets.map(t => t.id);
+      o.shotgun = { ...o.shotgun, allocationMode: 'CUSTOM', budget: 20, timingMode: 'DENSE_CORE', timingCapacityOverride: true,
+        customCounts: { ...(explicitZeros ? Object.fromEntries(ids.map(id => [id, 0])) : {}), [ids[0]!]: 20 } };
+      const compiled = compileObjective(o, { nowMs: NOW });
+      expect(compiled.problems).toEqual([]);
+      const setup = BookingSetupSchema.parse(savedMangoReleaseSetup(compiled, '2026-10-17').setup);
+      const shotgun = setup.STRATEGY_V2!.shotgun!;
+      expect(shotgun.selectedTargetIds).toEqual(['court-7:19:00:3h']);
+      expect(shotgun.customCounts).toEqual({ 'court-7:19:00:3h': 20 });
+      expect(shotgun.exactSchedule.map(s => s.configuredOffsetMs)).toEqual(compiled.cohorts[0]!.smart!.shotgun!.shots.map(s => s.configuredOffsetMs));
+      expect(setup.PRECISION_PHASE3!.wave1).toHaveLength(4);
+      expect(o.wings.MANGO.courts.map(c => c.court)).toEqual([7, 6, 5]);
+    }
+  });
   it('converts a Mango Shotgun cohort into the undated live format with literal offsets and the quota', async () => {
     const { ConfigSchema, BookingSetupSchema } = await import('../src/config.js');
     const compiled = compileObjective(mangoOnly('SHOTGUN'), { nowMs: NOW });

@@ -76,8 +76,21 @@ export interface TrustedClockEvidence { method: string; sampleCount: number; spr
  * The final wait and the final no-early check read the same anchored clock.
  */
 export class TrustedReleaseClock {
-  private constructor(private readonly anchorPerf: number, private readonly anchorEpoch: number, readonly offsetMs: number,
-    readonly evidence: TrustedClockEvidence, private readonly perf: () => number, private readonly wall: () => number) {}
+  private constructor(private anchorPerf: number, private anchorEpoch: number, private offset: number,
+    private clockEvidence: TrustedClockEvidence, private perf: () => number, private wall: () => number) {}
+
+  get offsetMs(): number { return this.offset; }
+  get evidence(): TrustedClockEvidence { return this.clockEvidence; }
+
+  /** Preserve the shared clock identity while prewarm and final consensus overlap. */
+  adopt(next: TrustedReleaseClock, releaseMs: number): boolean {
+    const chosen = adoptConsensus(this, next, releaseMs);
+    if (chosen.jumpRejected) return false;
+    this.anchorPerf = next.anchorPerf; this.anchorEpoch = next.anchorEpoch;
+    this.offset = next.offset; this.clockEvidence = next.clockEvidence;
+    this.perf = next.perf; this.wall = next.wall;
+    return true;
+  }
 
   static fromOffset(offsetMs: number, evidence: TrustedClockEvidence, perf: () => number = () => performance.now(), wall: () => number = Date.now) {
     if (!Number.isFinite(offsetMs)) throw Error('NETWORK_CLOCK_OFFSET_INVALID');
