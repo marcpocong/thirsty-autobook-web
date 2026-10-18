@@ -20,11 +20,12 @@ afterEach(() => { if (previous === undefined) delete process.env.THIRSTY_API_INS
 
 /** A controller over a mutable saved plan, recording every runner command. `script` may emit events and choose the exit code. */
 function harness(initial: BookingView, script: (command: Command, emit: (event: UiEvent) => void, line: (text: string) => void) => number = () => 0, extra: Partial<Dependencies> = {}) {
-  let saved = initial; const calls: Command[] = []; let locked = false;
+  // One fixed release instant: the controller rejects a release that moves between its own reads (SCHEDULE_CONTEXT_MISMATCH).
+  let saved = initial; const calls: Command[] = []; let locked = false; const releaseMs = Date.now() + 3_600_000;
   const runner: Runner = (command, event, onLine) => { calls.push(command); const code = script(command, event, text => onLine(text, true)); return { pid: 1, done: Promise.resolve(code), stop: async () => undefined }; };
   const controller = new Controller({ ensureArbitrationManifest: preregistered, runner, lock: async () => locked, cdp: async () => true,
     browserHealth: async () => ({ A: true, B: true }), playerStatus: () => ({ primary: true, extended: true }),
-    clock: () => ({ ...clockStatus(ObservationSchema.parse({}), DateTime.fromISO('2026-09-24T06:00:00+08:00')), releaseMs: Date.now() + 3_600_000, targetDate: saved.targetDate, networkSynced: true, clockOffsetMs: 0 }),
+    clock: () => ({ ...clockStatus(ObservationSchema.parse({}), DateTime.fromISO('2026-09-24T06:00:00+08:00')), releaseMs, targetDate: saved.targetDate, networkSynced: true, clockOffsetMs: 0 }),
     confirm: async () => true, publish: () => undefined, booking: () => saved, saveBooking: (input: unknown) => { saved = bookingView(ConfigSchema.parse({ ...BookingSetupSchema.parse(input), ...players })); return saved; }, ...extra });
   return { controller, calls, setSaved: (view: BookingView) => { saved = view; }, setLock: (value: boolean) => { locked = value; } };
 }
