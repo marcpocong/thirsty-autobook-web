@@ -1,5 +1,5 @@
 import { closeSync, openSync } from 'node:fs';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import type { Page } from 'playwright';
@@ -9,7 +9,8 @@ import { OndaBrowserSessionTransport } from '../../src/api-booking/browser-sessi
 import { CHECKOUT_TRACE_URL, ProviderTraceSet, type CdpSessionLike } from '../../src/api-booking/checkout-provider-trace.js';
 import { freezePrecisionRace, precisionTargetPlan, validatePrecisionTargets } from '../../src/api-booking/precision-race.js';
 import { TrustedReleaseClock } from '../../src/release-clock.js';
-import { SlotWatch } from '../../src/slot-watch.js';
+import { SlotWatch, type SlotWatchSummary } from '../../src/slot-watch.js';
+import { startSlotWatchObserver, type ObserverHandle } from '../../src/slot-watch-observer.js';
 import type { AvailabilitySnapshot } from '../../src/api-booking/types.js';
 
 /**
@@ -37,9 +38,9 @@ function fakePage(onPost?: () => void) {
 }
 
 interface RaceResult { states: string[]; postLatenessMs: number[]; releaseMs: number }
-/** Arms and dispatches `count` independent attempts; `during` runs alongside (it gets the release instant). */
-async function race(count: number, during?: (releaseMs: number, pages: { onPost: Array<() => void> }) => Promise<void> | void): Promise<RaceResult> {
-  const releaseMs = Date.now() + 1_200;
+/** Arms independent attempts, awaits observer setup/handshake, then dispatches alongside the running observer. */
+async function race(count: number, during?: (releaseMs: number, pages: { onPost: Array<() => void> }) => Promise<void> | void, leadMs = 1_200): Promise<RaceResult> {
+  const releaseMs = Date.now() + leadMs;
   const targets = validatePrecisionTargets([1, 2, 3, 4, 5, 6, 7].slice(0, count).map(court => ({ court, start: '17:00', durationHours: 3 })), date);
   const frozen = freezePrecisionRace(date, releaseMs, targets.map(target => ({ target, plan: precisionTargetPlan(target, date) })));
   const clock = TrustedReleaseClock.fromOffset(0, { method: 'test', sampleCount: 5 });
@@ -47,10 +48,9 @@ async function race(count: number, during?: (releaseMs: number, pages: { onPost:
   const postLatenessMs: number[] = [], hooks: Array<() => void> = targets.map(() => () => undefined);
   const transports = new Map(targets.map((target, index) => [target.workerId, new OndaBrowserSessionTransport(fakePage(() => { postLatenessMs.push(clock.nowMs() - releaseMs); hooks[index]!(); }),
     async () => ({ turnstileToken: 'synthetic-token', publicFingerprint: 'synthetic-print' }))] as const));
-  const side = during?.(releaseMs, { onPost: hooks });
+  await during?.(releaseMs, { onPost: hooks });
   const outcome = await dispatchArmedPrecisionRace(armed, { clock, prewarmLeadMs: 500, isAborted: () => false,
     prewarm: async attempt => transports.get(attempt.target.workerId)!.prepareCheckoutContext(), transportFor: worker => transports.get(worker) });
-  await side;
   return { states: outcome.results.map(result => result.state), postLatenessMs, releaseMs };
 }
 const published = (): AvailabilitySnapshot => ({ capturedAt: new Date().toISOString(), fixtureKind: 'live', label: 'test', requestedDates: [date],
@@ -121,17 +121,30 @@ describe('Phase 2 observer and telemetry cannot affect checkout', () => {
   });
 
   it('stopping the observer at the release instant does not cancel checkout', async () => {
-    let watch: SlotWatch | undefined, stopped: Promise<unknown> | undefined;
-    const result = await race(3, async releaseMs => {
-      watch = new SlotWatch({ date, releaseMs, directory: join(root, 'watch-stop'), schedule: { availability: [-200, 0, 100], bookings: [] },
-        readAvailability: (_date, signal) => new Promise((done, fail) => { const timer = setTimeout(() => done(published()), 2_000);
-          signal.addEventListener('abort', () => { clearTimeout(timer); fail(Error('ABORTED')); }, { once: true }); }) });
-      setTimeout(() => { stopped = watch!.stop('release aborted'); }, Math.max(0, releaseMs - Date.now()));
-    });
-    await wait(result.releaseMs + 50 - Date.now());
-    await expect(stopped).resolves.toMatchObject({ status: 'stopped', reason: 'release aborted' });
-    expect(result.states).toEqual(baseline.states);
-    for (const lateness of result.postLatenessMs) expect(lateness).toBeLessThan(50);
+    let observer: ObserverHandle | undefined, stopped: Promise<SlotWatchSummary> | undefined;
+    try {
+      const result = await race(3, async releaseMs => {
+        observer = startSlotWatchObserver({ nodePath: process.execPath, childPath: resolve('tests/fixtures/slot-watch-slow-stop-child.ts'),
+          execArgv: ['--import', 'tsx'], date, releaseMs, directory: join(root, 'watch-stop'), clockOffsetMs: 0, clockSynced: true,
+          onUpdate: () => undefined });
+        const readyDeadline = Date.now() + 3_000;
+        while (observer.health().sequence < 2 && Date.now() < readyDeadline) await wait(10);
+        expect(observer.health().state).toBe('ONLINE');
+        expect(observer.health().sequence).toBeGreaterThanOrEqual(2);
+        expect(Date.now()).toBeLessThan(releaseMs - 1_000);
+        setTimeout(() => { stopped = observer!.stop('release aborted'); }, Math.max(0, releaseMs - Date.now()));
+      }, 5_000); // Cold child startup budget; the dispatcher and its 50 ms assertions are unchanged.
+      await wait(result.releaseMs + 50 - Date.now());
+      await expect(stopped).resolves.toMatchObject({ status: 'stopped', reason: 'release aborted' });
+      expect(result.states).toEqual(baseline.states);
+      for (const lateness of result.postLatenessMs) expect(lateness).toBeLessThan(50);
+      const childControl = JSON.parse(await readFile(join(root, 'watch-stop', 'synthetic-stop-duration.json'), 'utf8'));
+      expect(childControl).toMatchObject({ offlineOnly: true, parentPid: process.pid, status: 'stopped', reason: 'release aborted' });
+      expect(childControl.pid).not.toBe(process.pid);
+      expect(childControl.durationMs).toBeGreaterThanOrEqual(100);
+      await mkdir('.local', { recursive: true });
+      await writeFile('.local/phase2-child-control.json', JSON.stringify({ ...childControl, postLatenessMs: result.postLatenessMs, states: result.states }, null, 2));
+    } finally { if (observer) await observer.stop('test cleanup').catch(() => undefined); }
   });
 
   it('provider-trace failures (attach refused, throwing listeners, failing commands, hostile events) do not fail checkout', async () => {
