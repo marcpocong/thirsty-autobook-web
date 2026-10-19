@@ -37,7 +37,7 @@ function simulate(tasks:readonly TimelineTask[],policy:PrewarmPolicy,startMs:num
 }
 
 export function exactPrewarmLeadMs(tasks:readonly PrewarmTask[],policy:PrewarmPolicy,prepDurationMs:number):number{
-  if(Math.max(0,...tasks.map(task=>task.tier))===0)return BASE_PREWARM_LEAD_MS;
+  if(!tasks.length)return BASE_PREWARM_LEAD_MS;
   const timeline=simulate(tasks.map(task=>({...task,workerId:task.group,logicalTargetId:task.id,configuredOffsetMs:0,available:true})),policy,0,prepDurationMs,Infinity);
   const finish=Math.max(0,...[...timeline.values()].map(value=>value.ready??0));
   return Math.min(MAX_PREWARM_LEAD_MS,Math.max(BASE_PREWARM_LEAD_MS,Math.ceil(finish*1.25+15_000)));

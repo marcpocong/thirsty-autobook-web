@@ -25,7 +25,7 @@ function shotgunView(objective?: { ideal: number }) {
         capacity: { meaningfulSpacingMs: plan.meaningfulSpacingMs, recommendedMaximum: plan.recommendedMaximum, warning: plan.capacityWarning, groupAnchorMs: plan.groupAnchorMs } },
       ...(objective ? { objective: { version: 3, fingerprint: 'a'.repeat(64), scope: 'PER_WING', wings: { MANGO: { minimum: 1, ideal: objective.ideal } } } } : {}) } }));
 }
-async function arm(view: ReturnType<typeof shotgunView>, extra: Partial<Dependencies>) {
+async function arm(view: ReturnType<typeof shotgunView>, extra: Partial<Dependencies>, beforeArm?: (controller:Controller)=>void) {
   const previous = process.env.THIRSTY_API_INSTALLATION; process.env.THIRSTY_API_INSTALLATION = '1';
   try {
     const calls: Command[] = [], releaseMs = Date.now() + 3_600_000, attestations: unknown[] = [];
@@ -38,12 +38,44 @@ async function arm(view: ReturnType<typeof shotgunView>, extra: Partial<Dependen
       confirm: async () => true, publish: () => undefined, booking: () => view, saveBooking: () => view, recordShotgunAttestation: record => attestations.push(record), ...extra });
     // Preparation is bound to the exact saved plan it prepared (as resetPrepare records it).
     controller.state.apiFirstReady = true; controller.state.ready = true; controller.state.termsAuthorized = true; controller.state.preparedPlanFingerprint = view.fingerprint;
+    beforeArm?.(controller);
     await controller.armFullBooking();
     return { calls, controller, attestations };
   } finally { process.env.THIRSTY_API_INSTALLATION = previous; }
 }
 
 describe('live Shotgun capability gate', () => {
+  it.each(['syncClock','browserReadiness','confirm','confirmShotgunLive'] as const)('Stop revokes delayed %s and duplicate arming', async step=>{
+    let controller!:Controller,entered!:()=>void,resolve!:(value:never)=>void;
+    const waiting=new Promise<void>(done=>entered=done),pending=new Promise<never>(done=>resolve=done);
+    let first=true;
+    const extra:Partial<Dependencies>={confirmShotgunLive:async()=>true,[step]:async()=>{
+      if(first){first=false;entered();return pending;}
+      return step==='browserReadiness'?{}:true;
+    }};
+    const result=arm(shotgunView(),extra,c=>controller=c);
+    await waiting;
+    expect(controller.state.operation).toBe('confirming');
+    await controller.armFullBooking();
+    await controller.abortAutomation();await controller.abortAutomation();
+    const stoppedHeadline=controller.state.headline;
+    resolve(true as never);
+    const {calls,attestations}=await result;
+    await new Promise(done=>setImmediate(done));
+    expect(calls).toEqual([]);expect(attestations).toEqual([]);
+    expect(controller.state.operation).toBe('idle');
+    expect(controller.state.headline).toBe(stoppedHeadline);
+  });
+  it('a rejected confirmation releases arming ownership for deliberately reauthorized work', async()=>{
+    let first=true;
+    const view=shotgunView();
+    const {controller,calls}=await arm(view,{confirm:async()=>{if(first){first=false;throw Error('fixture rejection');}return true;},confirmShotgunLive:async()=>true});
+    expect(calls).toEqual([]);expect(controller.state.operation).toBe('idle');
+    const previous=process.env.THIRSTY_API_INSTALLATION;process.env.THIRSTY_API_INSTALLATION='1';
+    try{controller.state.termsAuthorized=true;await controller.armFullBooking();}
+    finally{if(previous===undefined)delete process.env.THIRSTY_API_INSTALLATION;else process.env.THIRSTY_API_INSTALLATION=previous;}
+    expect(calls.filter(c=>typeof c==='object'&&c.kind==='apiRun')).toHaveLength(1);
+  });
   it('fails closed without an explicit owner attestation for the exact plan', async () => {
     const { calls, controller } = await arm(shotgunView(), {});
     expect(calls.filter(c => typeof c === 'object' && c.kind === 'apiRun' && c.mode === 'live')).toEqual([]);
