@@ -37,7 +37,7 @@ export async function detectInstallation(source) {
 }
 export function windowsProcesses() {
   if(process.platform!=='win32')throw Error('WINDOWS_UPDATE_REQUIRED');
-  return JSON.parse(execFileSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',`@(Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object { $_.Name -match '^(node|electron|chrome|Thirsty Pickle Bot|tsx|node_repl)\.exe$' } | Select-Object ProcessId,ExecutablePath,CommandLine,@{n='CreatedMs';e={if($_.CreationDate){([DateTimeOffset]$_.CreationDate).ToUnixTimeMilliseconds()}else{$null}}}) | ConvertTo-Json -Compress`],{encoding:'utf8',windowsHide:true,maxBuffer:8*1024*1024}));
+  return JSON.parse(execFileSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',`ConvertTo-Json -Compress -InputObject @(Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object { $_.Name -match '^(node|electron|chrome|Thirsty Pickle Bot|tsx|node_repl)\.exe$' } | Select-Object ProcessId,ExecutablePath,CommandLine,@{n='CreatedMs';e={if($_.CreationDate){([DateTimeOffset]$_.CreationDate).ToUnixTimeMilliseconds()}else{$null}}})`],{encoding:'utf8',windowsHide:true,maxBuffer:8*1024*1024}));
 }
 /** Booking lifecycle evidence. Never managed, moved, parsed-and-rewritten or reclassified by an update. */
 export const lifecycleStores=Object.freeze(['.local/api-booking','.local/dual','.local/retained-holds']);
@@ -103,7 +103,10 @@ export async function inspectUpdateSafety(root,{processes=windowsProcesses(),now
       else if(e.name.endsWith('.lock')){const v=await readJson(p);if(v!==undefined)checkLock(v,p);}
       else if(e.name.endsWith('.json')) {
         const v=await readJson(p);if(v===undefined)continue;
-        if(v&&v.attempt&&v.state&&v.attempt.executionMode!=='OFFLINE_INTERCEPTED') {
+        const journal=v&&typeof v==='object'&&('attempt' in v||'state' in v);
+        if(journal&&(!v.attempt||typeof v.attempt!=='object'||Array.isArray(v.attempt)||!['armed','dispatching','unknown','verified','rejected'].includes(v.state))) {
+          block('APP_UPDATE_STATE_UNRECOGNIZED',p,'JOURNAL_SHAPE');
+        } else if(journal&&v.attempt.executionMode!=='OFFLINE_INTERCEPTED') {
           if(['armed','dispatching'].includes(v.state))block('APP_UPDATE_ACTIVE_DISPATCH',p,`JOURNAL_${v.state.toUpperCase()}`);
           else if(v.state==='unknown')await classifyUnknown(v,p);
           else if(v.state==='verified') {
