@@ -18,6 +18,7 @@ import { initTestLab, renderTestLab } from './test-lab.js';
 import { forecastPreparation } from '../../src/quick-shotgun.js';
 import { capacityAdvice } from '../../src/capacity-advice.js';
 import { preparationText } from './operator-status.js';
+import { planWorkerIds } from '../../src/workers.js';
 
 /**
  * Booking Setup: one guided workspace from goal to QR. The objective is the single editable source; every plan,
@@ -96,7 +97,7 @@ function preparedForSaved() {
 const PLAYER_FLAG: Record<string, keyof NonNullable<Dashboard['playerStatus']>> = { A: 'primary', B: 'extended', C: 'third', D: 'fourth', E: 'fifth', F: 'sixth', G: 'seventh', H: 'eighth' };
 function requiredWorkers(): string[] {
   if (!release()) return compiled.normalSteps[activeStep]?.workers ?? [];
-  return [...new Set(state?.booking?.setup.PRECISION_PHASE3?.wave1.map(a => a.workerId) ?? [])];
+  return state?.booking ? planWorkerIds(state.booking.setup) : [];
 }
 function operatorInputs(): OperatorInputs {
   const s = state, { operation, armed, running } = runState(), live = liveSetup(), workers = requiredWorkers();
