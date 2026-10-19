@@ -38,7 +38,9 @@ function customFrom(settings: ObjectiveShotgun, pairs: Array<{ targetId: string;
 }
 function numberField(label: string, value: number, attrs: Record<string, string>, onCommit: (value: number) => void, disabled: boolean) {
   const input = el('input', { type: 'number', value: String(value), step: '1', ...attrs }) as HTMLInputElement; input.disabled = disabled;
-  input.addEventListener('change', () => { const n = Number(input.value); if (!Number.isFinite(n) || !Number.isInteger(n)) { input.setCustomValidity('Enter a whole number.'); input.reportValidity(); return; } input.setCustomValidity(''); onCommit(n); });
+  // Keep finite invalid edits in the draft so the compiler blocks Save/Prepare. Native validity alone does not
+  // protect the action bar (it is outside a form) and must not leave an older allocation executable.
+  input.addEventListener('change', () => { const n = Number(input.value); if (!Number.isFinite(n)) { input.setCustomValidity('Enter a number.'); input.reportValidity(); return; } input.setCustomValidity(''); onCommit(n); });
   return el('label', {}, label, input);
 }
 
@@ -118,7 +120,7 @@ export function renderShotgunEditor(host: HTMLElement, ctx: ShotgunEditorContext
       const target = targets.find(t => t.id === row.targetId), previous = position > 0 ? sourceRows[position - 1]!.offsetMs : null;
       const offset = el('input', { type: 'number', step: '1', value: String(row.offsetMs), 'aria-label': `Shot ${position + 1} offset in milliseconds`, 'data-shot': String(position) }) as HTMLInputElement;
       offset.disabled = disabled;
-      offset.onchange = () => { const n = Number(offset.value); if (!Number.isInteger(n)) { offset.setCustomValidity('Whole milliseconds only.'); offset.reportValidity(); return; } writeRows(pairs => { pairs[position] = { ...pairs[position]!, offsetMs: n }; }); };
+      offset.onchange = () => { const n = Number(offset.value); writeRows(pairs => { pairs[position] = { ...pairs[position]!, offsetMs: n }; }); };
       const targetSelect = el('select', { 'aria-label': `Shot ${position + 1} target` }) as HTMLSelectElement;
       targetSelect.replaceChildren(...targets.map(t => new Option(`${wingName(t.wing)} ${t.court} · ${hourText(t.start)}`, t.id))); targetSelect.value = row.targetId; targetSelect.disabled = disabled;
       targetSelect.onchange = () => writeRows(pairs => { pairs[position] = { ...pairs[position]!, targetId: targetSelect.value }; });
