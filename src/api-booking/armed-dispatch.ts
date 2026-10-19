@@ -268,8 +268,10 @@ export const firstArmedTrigger = (armed: ArmedPrecisionRace) =>
 
 export interface ArmedDispatchDeps {
   clock: TrustedReleaseClock;
-  /** Runs alongside prewarm; must complete before renderer calibration or dispatch. */
+  /** Runs alongside prewarm; returns a candidate without mutating the shared dispatch clock. */
   refreshClock?: () => Promise<TrustedReleaseClock>;
+  /** Re-anchor timing evidence only after the coordinator accepts the refresh before its cutoff. */
+  onClockRefreshed?: (clock: TrustedReleaseClock) => void;
   /** How long before the earliest trigger the refresh must have settled (default CLOCK_REFRESH_DEADLINE_LEAD_MS). */
   clockRefreshDeadlineLeadMs?: number;
   prewarmLeadMs: number;
@@ -497,11 +499,20 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
     }
     return false;
   };
+  let clockRefreshOpen = true;
   try {
     assertPrecisionFreezeIntact(armed.race);
+    const refreshCutoffMs = firstTriggerMs - (deps.clockRefreshDeadlineLeadMs ?? CLOCK_REFRESH_DEADLINE_LEAD_MS);
     const clockRefresh = deps.refreshClock?.().then(next => {
-      clock.adopt(next, armed.releaseMs); return undefined;
-    }, error => ({ error }));
+      // Promise.race alone cannot enforce the cutoff: a completed refresh wins even if the
+      // coordinator reaches that race late. Never adopt after timeout/abort, either.
+      if (deps.isAborted()) return { error: Error('USER_ABORT') };
+      if (!clockRefreshOpen || now() >= refreshCutoffMs || next.nowMs() >= refreshCutoffMs)
+        return { error: Error('RELEASE_CLOCK_REFRESH_TIMEOUT') };
+      clock.adopt(next, armed.releaseMs);
+      deps.onClockRefreshed?.(clock);
+      return undefined;
+    }).catch(error => ({ error }));
     await waitFor(firstTriggerMs - deps.prewarmLeadMs);
     {
       // When the coordinator itself starts late (e.g. something awaited before it), this records the shortfall.
@@ -552,7 +563,7 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
       // Bounded: the refreshed clock must be adopted before calibration and dispatch, and never hold the run open.
       const timedOut = Symbol('clock-refresh-timeout');
       const clockFailure = await Promise.race([clockRefresh,
-        waitFor(firstTriggerMs - (deps.clockRefreshDeadlineLeadMs ?? CLOCK_REFRESH_DEADLINE_LEAD_MS), () => false, timerSleep).then(() => timedOut)]);
+        waitFor(refreshCutoffMs, () => false, timerSleep).then(() => timedOut)]);
       if (clockFailure === timedOut) throw Error('RELEASE_CLOCK_REFRESH_TIMEOUT');
       if (clockFailure && typeof clockFailure === 'object') throw clockFailure.error;
     }
@@ -590,11 +601,14 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
       else { deps.onWake?.(step.triggerMs); fireGroup(step.triggerMs); }
     }
   } catch (error) {
+    clockRefreshOpen = false;
     prewarmSchedule?.stopStarting();
     try { deps.onReleaseWindowEnd?.(); } catch { /* optional tuning */ }
     // Aborted (or failed) before anything was sent: nothing was fired; record every attempt as provably unsent.
     await disarmUnfired(armed, safeCode(error, 'ARMED_NOT_DISPATCHED'), now);
     throw error;
+  } finally {
+    clockRefreshOpen = false;
   }
   // The CDP messages leave in the microtasks after the last pass; run no bookkeeping on this thread until they have.
   await new Promise<void>(done => setImmediate(done));

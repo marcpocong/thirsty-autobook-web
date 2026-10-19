@@ -338,12 +338,10 @@ const prewarmWindowStage=(window:{plannedLeadMs:number;actualLeadMs:number;lateB
   stage('PREWARM_WINDOW',{prewarmLeadMs:Math.max(1,Math.round(window.plannedLeadMs)),leadBeforeTriggerMs:window.actualLeadMs,lateByMs:window.lateByMs,
     releaseOffsetMs:Math.max(-2000,Math.min(2000,window.firstTriggerOffsetMs)),...(window.lateByMs>1_000?{code:'PREWARM_LATE_START'}:{}),
     message:`Preparation started ${Math.round(window.actualLeadMs/1000)} s before the earliest trigger (planned ${Math.round(window.plannedLeadMs/1000)} s)${window.lateByMs>1_000?`; ${Math.round(window.lateByMs/1000)} s late`:''}.`});
-async function refreshArmedClock(clock:TrustedReleaseClock,releaseMs:number):Promise<TrustedReleaseClock>{
-  clock.adopt(await prepareReleaseClock(releaseMs,clock),releaseMs);
+function reanchorArmedTiming(clock:TrustedReleaseClock,releaseMs:number):void{
   // Keep the timing report and final lockdown anchored to the same refreshed clock as dispatch.
   if(criticalPath){criticalPath.releaseMono=clock.monotonicDeadline(releaseMs);criticalPath.wallToTrustedMs=clock.offsetMs-clock.wallDisagreementMs();}
   releaseLockdown=new ReleaseCriticalLockdown(clock.monotonicDeadline(releaseMs));
-  return clock;
 }
 /** Resync at T-10 min (retry at T-5 min), never inside the final minutes before dispatch. */
 async function refreshClockBeforeRelease(releaseMs:number){
@@ -875,7 +873,7 @@ try {
             recorder.describe(attempt.attempt.id,{parentGoalId:attempt.target.targetKey,workerId:attempt.target.workerId,fanOutIndex:attempt.attempt.fanOutIndex,
               fanOutCount:attempt.attempt.fanOutCount,configuredOffsetMs:attempt.triggerMs-releaseMs,wave:'WAVE_1'});}
           const outcome=await dispatchArmedPrecisionRace(armed,{clock:releaseClock,spinTailMs:DEFAULT_SPIN_TAIL_MS,
-            refreshClock:()=>refreshArmedClock(releaseClock!,releaseMs),onPrewarmWindow:prewarmWindowStage,
+            refreshClock:()=>prepareReleaseClock(releaseMs,releaseClock!),onClockRefreshed:clock=>reanchorArmedTiming(clock,releaseMs),onPrewarmWindow:prewarmWindowStage,
             ...fanOutPrewarm(armed.attempts),
             isAborted:()=>abort.signal.aborted,sleep:pause,transportFor:(_worker,attempt)=>releaseTransports.get(transportKeyFor(attempt.attempt)),
             onWake:triggerMs=>{for(const attempt of armed.attempts)if(attempt.triggerMs===triggerMs)recorder.mark(attempt.attempt.id,'schedulerFired');releaseLockdown?.mark('scheduler-wake');},onMark:(_worker,name,attempt)=>{if(name==='transportCall'){recorder.mark(attempt.attempt.id,'workerInvoked');releaseLockdown?.mark(`transport:${attempt.attempt.id}`);}
@@ -1206,7 +1204,7 @@ try {
             fanOutCount:attempt.attempt.fanOutCount,configuredOffsetMs:attempt.triggerMs-releaseMs,...shotgunTopology.get(attempt.attempt.id)!,wave:'WAVE_1'});}
         const transportOf=(attempt:ArmedAttempt)=>releaseTransports.get(transportKeyOf(attempt.target.workerId,attempt.attempt.fanOutIndex));
         const outcome=await dispatchArmedPrecisionRace(armed,{clock:releaseClock,spinTailMs:DEFAULT_SPIN_TAIL_MS,isAborted:()=>abort.signal.aborted,sleep:pause,
-          refreshClock:()=>refreshArmedClock(releaseClock!,releaseMs),onPrewarmWindow:prewarmWindowStage,
+          refreshClock:()=>prepareReleaseClock(releaseMs,releaseClock!),onClockRefreshed:clock=>reanchorArmedTiming(clock,releaseMs),onPrewarmWindow:prewarmWindowStage,
           onObjectiveStop:reason=>{if(reason==='SHOTGUN_PROVIDER_THROTTLE_STOP'||reason==='SHOTGUN_PAYMENT_IN_PROGRESS_STOP')providerStopCode=reason;},
           ...fanOutPrewarm(armed.attempts),
           onWake:triggerMs=>{for(const attempt of armed.attempts)if(attempt.triggerMs===triggerMs)recorder.mark(attempt.attempt.id,'schedulerFired');releaseLockdown?.mark('scheduler-wake');},onMark:(_worker,name,attempt)=>{if(name==='transportCall'){recorder.mark(attempt.attempt.id,'workerInvoked');releaseLockdown?.mark(`transport:${attempt.attempt.id}`);}
