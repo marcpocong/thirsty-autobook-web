@@ -650,7 +650,12 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
   const settleInner = async (index: number): Promise<PrecisionDispatchResult> => {
     const attempt = armed.attempts[index]!, ready = readiness[index]!;
     if(!sends[index]&&stopFor(attempt))suppressed[index]=stopFor(attempt);
-    if(suppressed[index]){await disarmAttempt(attempt,suppressed[index]!,now).catch(()=>undefined);return {state:'NOT_DISPATCHED',code:suppressed[index]};}
+    if(suppressed[index]){
+      // Expiry already revoked a never-sent permit; persist its suppression reason off the trigger path.
+      if(attempt.state==='refused'&&!sends[index])await attempt.journal.mark(attempt.key,'rejected',new Date(now()),undefined,undefined,suppressed[index]).catch(()=>undefined);
+      else await disarmAttempt(attempt,suppressed[index]!,now).catch(()=>undefined);
+      return {state:'NOT_DISPATCHED',code:suppressed[index]};
+    }
     if(outcomes[index]){emit({kind:'dispatch-start',workerId:attempt.target.workerId,attemptId:attempt.attempt.id});return outcomes[index]!;}
     if(attempt.shotDeadlineMs!==undefined && !sends[index]){
       if(!ready.settled && now()<=attempt.shotDeadlineMs)await Promise.race([ready.promise,waitFor(attempt.shotDeadlineMs,()=>false,timerSleep)]);

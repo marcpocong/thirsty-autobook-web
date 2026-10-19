@@ -616,6 +616,10 @@ describe('diversified one-court objective coordination',()=>{
       expect(outcome.results[1]!.state).toBe('NOT_DISPATCHED');
       expect(outcome.results[1]!.code).toBe({hold:'SHOTGUN_TARGET_ALREADY_ACHIEVED',unknown:'SHOTGUN_TARGET_OUTCOME_UNKNOWN',throttle:'SHOTGUN_PROVIDER_THROTTLE_STOP',payment:'SHOTGUN_PAYMENT_IN_PROGRESS_STOP'}[kind]);
       expect(isSubmissionPermitUnspent(armed.attempts[1]!.permit)).toBe(false);
+      // A suppressed shot can expire with its permit revoked before off-path settlement; its journal must still settle.
+      expect(await armed.attempts[1]!.journal.read(armed.attempts[1]!.key)).toMatchObject({state:'rejected',failureCode:outcome.results[1]!.code});
+      expect(armed.attempts[0]!.state).toBe('fired');
+      expect((await armed.attempts[0]!.journal.read(armed.attempts[0]!.key)).state).toBe(kind==='hold'?'verified':kind==='unknown'?'unknown':'rejected');
     }
   });
 });
