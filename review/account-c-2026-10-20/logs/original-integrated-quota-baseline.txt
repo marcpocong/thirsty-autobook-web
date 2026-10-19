@@ -1,0 +1,47 @@
+
+ RUN  v5.0.0 <LOCAL_WORKTREE>
+
+ ❯ tests/operator-verification-ui.test.ts (3 tests | 1 failed | 2 skipped) 998ms
+   ❯ independent integrated-source verification (3)
+     × uses the saved two-court quota in the detailed summary 656ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/operator-verification-ui.test.ts > independent integrated-source verification > uses the saved two-court quota in the detailed summary
+AssertionError: expected 'PRECISION · SMART BACKUPS · GOAL: 1 H…' to contain 'GOAL: 2 COURTS'
+
+- Expected
++ Received
+
+- GOAL: 2 COURTS
++ PRECISION · SMART BACKUPS · GOAL: 1 HOLD
++ 2 immediate + up to 0 backups + up to 0 reopened-slot attempts · maximum 2 sends
++ AT 8:00
++ 2 immediate attempts will be sent. They do not wait for the released schedule.
++ Attempt 1 · Court 7 · 7:00 PM–10:00 PM · Worker A · Expected ₱2,100
++ Attempt 2 · Court 6 · 7:00 PM–10:00 PM · Worker B · Expected ₱2,100 · 1000 ms early
++ IF A FRESH APPROVED BACKUP IS OPEN
++ No backup attempts.
++ IF EVERYTHING FAILS AND AN APPROVED SLOT REOPENS
++ Off. Reopened slots are not retried.
++ SAFETY
++ UNKNOWN stops later attempts. Nothing is retried after an UNKNOWN result.
++ Payment is manual. Nothing is cancelled automatically.
++ More than one temporary hold is possible.
++ Target: Thursday, October 22
+
+ ❯ tests/operator-verification-ui.test.ts:106:67
+    104|     if (await page.locator('#execution-console').getAttribute('open') …
+    105|     expect(await page.locator('#saved-plan-summary').isVisible()).toBe…
+    106|     expect(await page.locator('#saved-plan-summary').innerText()).toCo…
+       |                                                                   ^
+    107|     expect(await page.locator('#saved-plan-summary').innerText()).not.…
+    108|     await page.locator('#saved-plan-summary').scrollIntoViewIfNeeded();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 2 skipped (3)
+   Start at  01:18:22
+   Duration  1.84s (tests 58%, transform 21%, import 21%)

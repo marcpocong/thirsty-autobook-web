@@ -1,0 +1,8 @@
+
+ RUN  v5.0.0 <LOCAL_WORKTREE>
+
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  01:36:51
+   Duration  1.16s (transform 60%, import 36%, tests 4%)

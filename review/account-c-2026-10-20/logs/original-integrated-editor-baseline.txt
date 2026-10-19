@@ -1,0 +1,35 @@
+
+ RUN  v5.0.0 <LOCAL_WORKTREE>
+
+ ❯ tests/operator-verification-ui.test.ts (5 tests | 2 failed | 3 skipped) 4015ms
+   ❯ independent integrated-source verification (5)
+     × a fractional count entered in Customize invalidates the draft instead of keeping historical executable values 1888ms
+     × a fractional offset entered in Customize invalidates the draft instead of keeping historical executable values 1690ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/operator-verification-ui.test.ts > independent integrated-source verification > a fractional count entered in Customize invalidates the draft instead of keeping historical executable values
+ FAIL  tests/operator-verification-ui.test.ts > independent integrated-source verification > a fractional offset entered in Customize invalidates the draft instead of keeping historical executable values
+AssertionError: expected 'Showing the saved release plan 24392f…' to contain 'not executable'
+
+Expected: "not executable"
+Received: "Showing the saved release plan 24392ff9402a. This draft is exactly that plan."
+
+ ❯ tests/operator-verification-ui.test.ts:59:73
+     57|     await input.fill(field === 'count' ? '1.5' : '-1.5'); await input.…
+     58|     await step5(page);
+     59|     await expect.poll(() => page.locator('#plan-identity').innerText()…
+       |                                                                         ^
+     60|     expect(await primary(page).isDisabled()).toBe(true);
+     61|     expect(await page.locator('#strategy-inspector').innerText()).toCo…
+
+Caused by: Error: Matcher did not succeed in time.
+ ❯ tests/operator-verification-ui.test.ts:59:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 3 skipped (5)
+   Start at  01:21:04
+   Duration  4.91s (tests 84%, import 8%, transform 8%)

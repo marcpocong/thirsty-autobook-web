@@ -1,0 +1,111 @@
+
+ RUN  v5.0.0 <LOCAL_WORKTREE>
+
+ ❯ tests/operator-verification-ui.test.ts (6 tests | 5 failed) 7334ms
+   ❯ independent integrated-source verification (6)
+     × a fractional count entered in Customize invalidates the draft instead of keeping historical executable values 1606ms
+     × a fractional offset entered in Customize invalidates the draft instead of keeping historical executable values 1678ms
+     × shows a wrong profile and controller hard blockers beside Arm with working recoveries 1526ms
+     × prevents repeated Prepare, Arm and Save Draft while a bridge call is pending 528ms
+     × uses the saved two-court quota in the detailed summary 545ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/operator-verification-ui.test.ts > independent integrated-source verification > a fractional count entered in Customize invalidates the draft instead of keeping historical executable values
+ FAIL  tests/operator-verification-ui.test.ts > independent integrated-source verification > a fractional offset entered in Customize invalidates the draft instead of keeping historical executable values
+AssertionError: expected 'Showing the saved release plan 24392f…' to contain 'not executable'
+
+Expected: "not executable"
+Received: "Showing the saved release plan 24392ff9402a. This draft is exactly that plan."
+
+ ❯ tests/operator-verification-ui.test.ts:89:73
+     87|     await input.fill(field === 'count' ? '1.5' : '-1.5'); await input.…
+     88|     await step5(page);
+     89|     await expect.poll(() => page.locator('#plan-identity').innerText()…
+       |                                                                         ^
+     90|     expect(await primary(page).isDisabled()).toBe(true);
+     91|     expect(await page.locator('#strategy-inspector').innerText()).toCo…
+
+Caused by: Error: Matcher did not succeed in time.
+ ❯ tests/operator-verification-ui.test.ts:89:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  tests/operator-verification-ui.test.ts > independent integrated-source verification > shows a wrong profile and controller hard blockers beside Arm with working recoveries
+AssertionError: expected '' to contain 'wrong profile'
+
+- Expected
++ Received
+
+- wrong profile
+
+ ❯ tests/operator-verification-ui.test.ts:107:75
+    105|     }, 'home', { width: 1366, height: 768 });
+    106|     await step5(page);
+    107|     await expect.poll(() => page.locator('#action-blockers').innerText…
+       |                                                                           ^
+    108|     expect(await primary(page).isDisabled()).toBe(true);
+    109|     await page.locator('#action-blockers [data-recovery="RECHECK_BROWS…
+
+Caused by: Error: Matcher did not succeed in time.
+ ❯ tests/operator-verification-ui.test.ts:107:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  tests/operator-verification-ui.test.ts > independent integrated-source verification > prevents repeated Prepare, Arm and Save Draft while a bridge call is pending
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ tests/operator-verification-ui.test.ts:138:46
+    136|     await expect.poll(() => primary(page).innerText()).toBe('Prepare');
+    137|     await primary(page).click();
+    138|     expect(await primary(page).isDisabled()).toBe(true);
+       |                                              ^
+    139|     expect(await page.locator('#save-draft').isDisabled()).toBe(true);
+    140|     await page.locator('#inline-stop').click();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  tests/operator-verification-ui.test.ts > independent integrated-source verification > uses the saved two-court quota in the detailed summary
+AssertionError: expected 'PRECISION · SMART BACKUPS · GOAL: 1 H…' to contain 'GOAL: 2 COURTS'
+
+- Expected
++ Received
+
+- GOAL: 2 COURTS
++ PRECISION · SMART BACKUPS · GOAL: 1 HOLD
++ 2 immediate + up to 0 backups + up to 0 reopened-slot attempts · maximum 2 sends
++ AT 8:00
++ 2 immediate attempts will be sent. They do not wait for the released schedule.
++ Attempt 1 · Court 7 · 7:00 PM–10:00 PM · Worker A · Expected ₱2,100
++ Attempt 2 · Court 6 · 7:00 PM–10:00 PM · Worker B · Expected ₱2,100 · 1000 ms early
++ IF A FRESH APPROVED BACKUP IS OPEN
++ No backup attempts.
++ IF EVERYTHING FAILS AND AN APPROVED SLOT REOPENS
++ Off. Reopened slots are not retried.
++ SAFETY
++ UNKNOWN stops later attempts. Nothing is retried after an UNKNOWN result.
++ Payment is manual. Nothing is cancelled automatically.
++ More than one temporary hold is possible.
++ Target: Thursday, October 22
+
+ ❯ tests/operator-verification-ui.test.ts:163:67
+    161|     if (await page.locator('#execution-console').getAttribute('open') …
+    162|     expect(await page.locator('#saved-plan-summary').isVisible()).toBe…
+    163|     expect(await page.locator('#saved-plan-summary').innerText()).toCo…
+       |                                                                   ^
+    164|     expect(await page.locator('#saved-plan-summary').innerText()).not.…
+    165|     expect(await page.locator('#precision-panel').innerText()).not.toC…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  5 failed | 1 passed (6)
+   Start at  01:34:04
+   Duration  8.21s (tests 90%, transform 5%, import 4%)

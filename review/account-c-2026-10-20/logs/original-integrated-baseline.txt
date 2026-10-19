@@ -1,0 +1,74 @@
+
+ RUN  v5.0.0 <LOCAL_WORKTREE>
+
+ ❯ tests/operator-verification-ui.test.ts (3 tests | 3 failed) 3017ms
+   ❯ independent integrated-source verification (3)
+     × shows a wrong profile and controller hard blockers beside Arm with working recoveries 1647ms
+     × prevents repeated Prepare, Arm and Save Draft while a bridge call is pending 482ms
+     × uses the saved two-court quota in the detailed summary 490ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/operator-verification-ui.test.ts > independent integrated-source verification > shows a wrong profile and controller hard blockers beside Arm with working recoveries
+AssertionError: expected '' to contain 'wrong profile'
+
+- Expected
++ Received
+
+- wrong profile
+
+ ❯ tests/operator-verification-ui.test.ts:56:75
+     54|     }, 'home', { width: 1366, height: 768 });
+     55|     await step5(page);
+     56|     await expect.poll(() => page.locator('#action-blockers').innerText…
+       |                                                                           ^
+     57|     expect(await primary(page).isDisabled()).toBe(true);
+     58|     await page.locator('#action-blockers [data-recovery="RECHECK_BROWS…
+
+Caused by: Error: Matcher did not succeed in time.
+ ❯ tests/operator-verification-ui.test.ts:56:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  tests/operator-verification-ui.test.ts > independent integrated-source verification > prevents repeated Prepare, Arm and Save Draft while a bridge call is pending
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ tests/operator-verification-ui.test.ts:82:46
+     80|     await expect.poll(() => primary(page).innerText()).toBe('Prepare');
+     81|     await primary(page).click();
+     82|     expect(await primary(page).isDisabled()).toBe(true);
+       |                                              ^
+     83|     expect(await page.locator('#save-draft').isDisabled()).toBe(true);
+     84|     await page.locator('#inline-stop').click();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  tests/operator-verification-ui.test.ts > independent integrated-source verification > uses the saved two-court quota in the detailed summary
+AssertionError: expected '' to contain 'GOAL: 2 COURTS'
+
+- Expected
++ Received
+
+- GOAL: 2 COURTS
+
+ ❯ tests/operator-verification-ui.test.ts:105:67
+    103|     await step5(page);
+    104|     await page.locator('#execution-console summary').first().click();
+    105|     expect(await page.locator('#saved-plan-summary').innerText()).toCo…
+       |                                                                   ^
+    106|     expect(await page.locator('#saved-plan-summary').innerText()).not.…
+    107|     await page.close();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed (3)
+   Start at  01:17:06
+   Duration  3.84s (tests 81%, transform 10%, import 10%)
