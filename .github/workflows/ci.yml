@@ -19,15 +19,19 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: Typecheck
         run: npm run typecheck
-      # These two suites own multiple real browsers or many full-page captures.
+      # Heavy suites own multiple real browsers or many full-page captures.
       # Run them sequentially in this same job instead of competing with the
       # rest of the suite. Every test and every existing timeout remains intact.
       - name: Unit, integration and renderer regressions
-        run: npm test -- --exclude tests/shotgun-test-lab.test.ts --exclude tests/strategy-flow.test.ts --exclude tests/normal-test-lab.test.ts --exclude tests/ui-destinations.test.ts --exclude tests/api-booking/armed-dispatch.test.ts --exclude tests/api-booking/fanout-dispatch.test.ts --exclude tests/api-booking/release-timing-2026-10-18.test.ts
+        run: npm test -- --exclude tests/shotgun-test-lab.test.ts --exclude tests/strategy-flow.test.ts --exclude tests/normal-test-lab.test.ts --exclude tests/ui-destinations.test.ts --exclude tests/api-booking/armed-dispatch.test.ts --exclude tests/api-booking/fanout-dispatch.test.ts --exclude tests/api-booking/release-timing-2026-10-18.test.ts --exclude tests/api-booking/phase2-independence.test.ts
       # Real-time 50 ms strict-deadline dispatcher suites. They fail under CPU saturation (reproduced with the
-      # pre-October-15 dispatcher too), so they run alone; every deadline and tolerance is unchanged.
+      # pre-October-15 dispatcher too), so each runs alone, including observer independence; every deadline and tolerance is unchanged.
       - name: Real-time dispatcher deadline suites
-        run: npx vitest run tests/api-booking/armed-dispatch.test.ts tests/api-booking/fanout-dispatch.test.ts tests/api-booking/release-timing-2026-10-18.test.ts
+        run: |
+          npx vitest run tests/api-booking/armed-dispatch.test.ts
+          npx vitest run tests/api-booking/fanout-dispatch.test.ts
+          npx vitest run tests/api-booking/release-timing-2026-10-18.test.ts
+          npx vitest run tests/api-booking/phase2-independence.test.ts
       - name: Isolated Chrome Test Lab scenarios
         run: npx vitest run tests/shotgun-test-lab.test.ts
       # Spawns one isolated lab child per scenario; sequential so it never loads the timing-sensitive dispatcher tests.
