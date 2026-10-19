@@ -82,6 +82,18 @@ describe('installation safety is separate from booking submission safety',()=>{
     expect(report.blockers.map((b:{reason:string})=>b.reason).sort()).toEqual(['UNKNOWN_RECORD_DISPATCH_WINDOW_OPEN','UNKNOWN_RECORD_FUTURE_DATED','UNKNOWN_RECORD_RECENT','UNKNOWN_RECORD_UNRECOGNIZED']);
     await expect(assertSafeUpdate(root,{processes:[],now:NOW})).rejects.toThrow('APP_UPDATE_UNRESOLVED_JOURNAL');
   });
+  it('refuses journal-shaped records with missing or malformed state or attempt without modifying them',async()=>{
+    const malformed=[{attempt:{}},{attempt:{},state:''},{attempt:{},state:null},{attempt:{},state:'future-state'},
+      {state:'unknown'},{attempt:null,state:'unknown'},{attempt:[],state:'rejected'},
+      {attempt:{executionMode:'OFFLINE_INTERCEPTED'},state:''}];
+    for(const record of malformed){
+      const root=await recognized(),path='.local/api-booking/api-first-journals/corrupt.json',bytes=JSON.stringify(record);
+      await put(root,path,bytes);
+      const report=await inspectUpdateSafety(root,{processes:[],now:NOW});
+      expect(report).toMatchObject({eligibility:'REFUSED',historicalUnknown:[],blockers:[{code:'APP_UPDATE_STATE_UNRECOGNIZED',reason:'JOURNAL_SHAPE'}]});
+      expect(await readFile(join(root,path),'utf8')).toBe(bytes);
+    }
+  });
   it('an active dispatch (armed or dispatching record, or an arming in progress) still blocks installation',async()=>{
     for(const variant of ['armed','dispatching','arming']){
       const root=await recognized(),key=hex(9),journal=new DurableSubmissionJournal(journalDir(root,key));
