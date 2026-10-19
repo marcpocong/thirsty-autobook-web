@@ -94,6 +94,23 @@ describe('installation safety is separate from booking submission safety',()=>{
       expect(await readFile(join(root,path),'utf8')).toBe(bytes);
     }
   });
+  it('recognizes corrupt reserved journal filenames without treating unrelated metadata as a journal',async()=>{
+    const key=hex(19),roots=[`api-first-journals/${key}`,`api-first-journals/${key}/fan-out/${hex(20)}/${hex(21)}`,
+      `api-first-journals/rejected-attempts/${key}-archived`,'submission-journal','submission-journal-session-20260919-second'];
+    for(const directory of roots)for(const record of [null,[],{}, {key}]){
+      const root=await fixture(),path=`.local/api-booking/${directory}/${key}.json`,bytes=JSON.stringify(record);
+      await put(root,path,bytes);
+      const report=await inspectUpdateSafety(root,{processes:[],now:NOW});
+      expect(report).toMatchObject({eligibility:'REFUSED',historicalUnknown:[],blockers:[{code:'APP_UPDATE_STATE_UNRECOGNIZED',reason:'JOURNAL_SHAPE',path}]});
+      await expect(assertSafeUpdate(root,{processes:[],now:NOW})).rejects.toThrow('APP_UPDATE_STATE_UNRECOGNIZED');
+      expect(await readFile(join(root,path),'utf8')).toBe(bytes);
+    }
+    const root=await fixture();
+    await put(root,'.local/api-booking/api-first-journals/supervised-one-shot.json','null');
+    await put(root,`.local/api-booking/precision-races/${key}.json`,'[]');
+    await put(root,`.local/dual/${key}.json`,'{}');
+    expect(await inspectUpdateSafety(root,{processes:[],now:NOW})).toMatchObject({eligibility:'READY',blockers:[]});
+  });
   it('an active dispatch (armed or dispatching record, or an arming in progress) still blocks installation',async()=>{
     for(const variant of ['armed','dispatching','arming']){
       const root=await recognized(),key=hex(9),journal=new DurableSubmissionJournal(journalDir(root,key));

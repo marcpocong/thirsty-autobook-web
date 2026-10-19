@@ -103,8 +103,11 @@ export async function inspectUpdateSafety(root,{processes=windowsProcesses(),now
       else if(e.name.endsWith('.lock')){const v=await readJson(p);if(v!==undefined)checkLock(v,p);}
       else if(e.name.endsWith('.json')) {
         const v=await readJson(p);if(v===undefined)continue;
-        const journal=v&&typeof v==='object'&&('attempt' in v||'state' in v);
-        if(journal&&(!v.attempt||typeof v.attempt!=='object'||Array.isArray(v.attempt)||!['armed','dispatching','unknown','verified','rejected'].includes(v.state))) {
+        // A durable journal's reserved filename still identifies it when corrupt JSON has lost every field.
+        // Keep this path rule inside known journal stores; unrelated metadata may legitimately be null or arrays.
+        const knownJournal=/^\.local\/api-booking\/(?:api-first-journals|submission-journal(?:-[^/]+)?)\//.test(slash(relative(root,p)))&&/^[a-f0-9]{64}\.json$/.test(e.name);
+        const journal=knownJournal||v&&typeof v==='object'&&('attempt' in v||'state' in v);
+        if(journal&&(!v||typeof v!=='object'||Array.isArray(v)||!v.attempt||typeof v.attempt!=='object'||Array.isArray(v.attempt)||!['armed','dispatching','unknown','verified','rejected'].includes(v.state))) {
           block('APP_UPDATE_STATE_UNRECOGNIZED',p,'JOURNAL_SHAPE');
         } else if(journal&&v.attempt.executionMode!=='OFFLINE_INTERCEPTED') {
           if(['armed','dispatching'].includes(v.state))block('APP_UPDATE_ACTIVE_DISPATCH',p,`JOURNAL_${v.state.toUpperCase()}`);
