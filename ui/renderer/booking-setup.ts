@@ -17,7 +17,7 @@ import { layerForecast } from './next-release.js';
 import { initTestLab, renderTestLab } from './test-lab.js';
 import { forecastPreparation } from '../../src/quick-shotgun.js';
 import { capacityAdvice } from '../../src/capacity-advice.js';
-import { preparationText } from './operator-status.js';
+import { preparationText, releaseBlockers } from './operator-status.js';
 import { planWorkerIds } from '../../src/workers.js';
 
 /**
@@ -41,6 +41,7 @@ interface RuntimeCheck { key: string; status: RuntimeValidation; problems: strin
   differences: { summary: PlanDifference[]; fields: PlanDifference[]; total: number } | null }
 let runtimeCheck: RuntimeCheck = { key: '', status: 'UNAVAILABLE', problems: [], matchesSaved: null, differences: null };
 let showAllDifferences = false, savingPlan = false;
+let pendingAction: 'saving' | 'prepare' | 'arming' | null = null;
 const byId = (id: string) => document.getElementById(id)!;
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -83,7 +84,7 @@ function revalidate() { runtimeCheck = { ...runtimeCheck, key: '' }; refreshRunt
 const release = () => objective.mode === 'NEXT_RELEASE';
 /** Live run state as the controller reports it; the armed snapshot is whatever the controller froze. */
 function runState() {
-  const s = state, operation = s?.operation ?? 'idle';
+  const s = state, operation = s?.operation && s.operation !== 'idle' ? s.operation : pendingAction ?? (savingPlan ? 'saving' : 'idle');
   const armed = !!s?.scheduledRelease || (operation === 'full' && !!s?.activeApiRelease && s.activeApiRelease.phase !== 'RUNNING');
   const running = s?.activeApiRelease?.phase === 'RUNNING' || operation === 'fullPractice' || operation === 'selection';
   return { operation, armed, running };
@@ -110,6 +111,7 @@ function operatorInputs(): OperatorInputs {
     armed, running, lock: { present: !!s?.lock, canPrepareOver: !!s?.canPrepareOverHold, unresolvedSubmission: !!s?.lock && !s.canPrepareOverHold && s.retainedLockStage === 'FINAL_ACTION_DISPATCHING' },
     disconnected: prepared ? workers.filter(w => !s?.browserHealth?.[w as 'A']) : [],
     playersMissing: workers.filter(w => s?.playerStatus?.[PLAYER_FLAG[w]!] === false),
+    identityIssues: s?.identityIssues ?? [], readinessBlockers: s ? releaseBlockers(s) : [],
     termsAuthorized: !!s?.termsAuthorized,
     forecast: phase3 ? { verdict: feasibility ? feasibility.verdict : 'UNAVAILABLE', ready: feasibility?.projectedReady ?? 0, configured: feasibility?.configuredWave1Attempts ?? 0, omitted: feasibility?.projectedOmitted ?? 0, required: true }
       : { verdict: 'NOT_APPLICABLE', ready: 0, configured: 0, omitted: 0, required: false },
@@ -173,14 +175,16 @@ async function saveReleasePlan() {
 async function prepareSaved() {
   const g = gates(); if (!g.prepare.enabled) { flash(g.prepare.reason ?? 'Preparation is not available now.'); return; }
   if (!release()) { await hooks.prepare(); return; }
+  pendingAction = 'prepare'; renderAll(true);
   try { await window.thirsty.resetPrepare({ workflow: 'release', strategy: state?.booking?.setup.BOOKING_TYPE ?? 'standard' }); }
   catch { /* the controller records a typed failure with its recovery */ }
-  state = await window.thirsty.getStatus().catch(() => state); renderAll(true);
+  finally { state = await window.thirsty.getStatus().catch(() => state); pendingAction = null; renderAll(true); }
 }
 async function armPrepared() {
   const g = gates(); if (!g.arm.enabled) { flash(g.arm.reason ?? 'Arming is not available now.'); return; }
+  pendingAction = 'arming'; renderAll(true);
   try { await window.thirsty.armFullBooking(); } catch { /* typed failure is published by the controller */ }
-  state = await window.thirsty.getStatus().catch(() => state); renderAll(true);
+  finally { state = await window.thirsty.getStatus().catch(() => state); pendingAction = null; renderAll(true); }
 }
 function scrollTo(id: string) { document.getElementById(id)?.scrollIntoView({ block: 'center' }); }
 /** Every recovery button in the app routes through here; nothing patches the page or bypasses a controller gate. */
@@ -191,6 +195,7 @@ function recover(action: RecoveryAction) {
     case 'SAVE_PLAN': void saveReleasePlan(); return;
     case 'PREPARE': case 'RECHECK_BROWSERS': void prepareSaved(); return;
     case 'REVIEW_READINESS': scrollTo('readiness-layers'); return;
+    case 'SYNC_CLOCK': void window.thirsty.syncClock().catch(() => undefined); return;
     case 'REVIEW_LOCK': case 'REVIEW_SUBMISSION': void window.thirsty.reviewLock().catch(() => undefined); (document.getElementById('execution-console') as HTMLDetailsElement | null)?.setAttribute('open', ''); scrollTo('lock-card'); return;
     case 'AUTHORIZE_TERMS': byId('terms').scrollIntoView({ block: 'center' }); byId('terms').focus(); return;
     case 'CONFIGURE_PLAYERS': hooks.showView('tools'); return;
@@ -253,7 +258,11 @@ export function initBookingSetup() {
   for (const button of document.querySelectorAll<HTMLButtonElement>('#setup-steps [data-step]')) button.addEventListener('click', () => goStep(Number(button.dataset.step)));
   byId('setup-back').addEventListener('click', () => goStep(Math.max(1, step - 1)));
   byId('setup-next').addEventListener('click', () => goStep(Math.min(5, step + 1)));
-  byId('save-draft').addEventListener('click', () => { void saveDraft().then(() => renderAll(true)).catch(() => flash('The draft could not be saved.')); });
+  byId('save-draft').addEventListener('click', () => {
+    if (pendingAction || savingPlan || !gates().saveDraft.enabled) return;
+    pendingAction = 'saving'; renderAll(true);
+    void saveDraft().catch(() => flash('The draft could not be saved.')).finally(() => { pendingAction = null; renderAll(true); });
+  });
   byId('inline-stop').addEventListener('click', () => { void window.thirsty.abortAutomation().catch(() => undefined); });
   byId('test-this-plan').addEventListener('click', () => { const g = gates().test; if (!g.enabled) { flash(g.reason ?? 'Testing is not available now.'); return; }
     byId('test-lab').scrollIntoView({ block: 'start' }); byId('test-lab').querySelector<HTMLButtonElement>('#lab-run-offline')?.focus(); });
@@ -648,7 +657,7 @@ function renderReview(v: ExecutionView) {
     forecast: release() && s ? layerForecast(s, preparedForSaved()) : null,
     security: release() ? { planned: plannedSends, ready: children.filter(c => c.state === 'READY').length, preparing: children.filter(c => c.state === 'PREPARING').length,
       failed: children.filter(c => ['FAILED', 'PREWARM_FAILED'].includes(c.state)).length, omitted: children.filter(c => c.state === 'OMITTED').length, leadMs: s?.live?.prewarm?.leadMs ?? f?.prewarmLeadMs ?? null } : null,
-    armed: { armed, running } });
+    armed: { armed, running }, readinessBlockers: s ? releaseBlockers(s) : [] });
   const layersHost = byId('readiness-layers');
   layersHost.hidden = !release();
   fill(layersHost, el('p', { class: 'readiness-summary', text: readinessSummary(layers) }),
@@ -687,6 +696,7 @@ function renderReview(v: ExecutionView) {
     if (owns && /Prepare/.test(test.textContent ?? '') && (compiled.problems.length || !compiled.normalSteps[activeStep])) test.disabled = true;
   }
   const blockersHost = byId('action-blockers'), blockers = g.blockers;
+  (byId('inline-stop') as HTMLButtonElement).hidden = !g.stop.enabled;
   blockersHost.hidden = !blockers.length;
   fill(blockersHost, ...blockers.map(x => el('li', { 'data-control': x.control }, el('span', { text: `${x.control}: ${x.reason}` }), recoveryButton(x.recovery))));
   (byId('save-draft') as HTMLButtonElement).disabled = !g.saveDraft.enabled; byId('save-draft').title = g.saveDraft.reason ?? 'Saves this Booking Setup draft only. It never changes the saved release authorization.';
@@ -719,7 +729,7 @@ function renderConflict(liveSaveable: boolean) {
   const row = (x: PlanDifference) => el('tr', {}, el('th', { text: x.label }), el('td', { text: x.saved }), el('td', { text: x.draft }));
   const table = (rows: PlanDifference[], id: string) => el('div', { class: 'table-scroll' }, el('table', { class: 'attempt-table diff-table', id },
     el('thead', {}, el('tr', {}, ...['Field', `Saved plan ${s!.booking!.fingerprint.slice(0, 8)}`, 'This draft'].map(h => el('th', { text: h })))), el('tbody', {}, ...rows.map(row))));
-  const button = (text: string, id: string, onclick: () => void, primary = false) => { const b = el('button', { type: 'button', class: primary ? 'compact' : 'secondary compact', id, text }) as HTMLButtonElement; b.onclick = onclick; return b; };
+  const button = (text: string, id: string, onclick: () => void, primary = false) => { const b = el('button', { type: 'button', class: primary ? 'compact' : 'secondary compact', id, text }) as HTMLButtonElement; b.disabled = !!pendingAction || savingPlan || (s?.operation ?? 'idle') !== 'idle'; b.onclick = onclick; return b; };
   const loadSaved = () => { if (!s?.booking) return; const m = objectiveFromLegacySetup(s.booking.setup as never, Date.now()); objective = m.objective; notes = m.notes; owns = true; recompile(); revalidate(); flash('Loaded the saved release plan into Booking Setup. The previous draft changes were discarded.', 'good'); renderAll(true); };
   if (!owns) {
     fill(host, el('h3', { text: 'Using the saved plan from the advanced editor' }), el('p', { class: 'small', text: 'Preparation and arming use the saved plan. This Booking Setup draft is ignored until you choose otherwise.' }),

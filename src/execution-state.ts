@@ -52,7 +52,7 @@ export function editEffect(state: ExecutionState): 'ALLOW' | 'INVALIDATES_PREPAR
 // unavailable always carries a plain-language reason and one recovery the operator can press. These gates mirror,
 // and never replace, the controller and runner checks that remain authoritative.
 export type RecoveryAction = 'REVIEW_PROBLEMS' | 'REVIEW_CHANGES' | 'SAVE_PLAN' | 'PREPARE' | 'RECHECK_BROWSERS' | 'REVIEW_READINESS' | 'REVIEW_LOCK'
-  | 'REVIEW_SUBMISSION' | 'AUTHORIZE_TERMS' | 'CONFIGURE_PLAYERS' | 'REVIEW_CAPACITY' | 'STOP' | 'WAIT' | 'OPEN_ACTIVITY';
+  | 'REVIEW_SUBMISSION' | 'AUTHORIZE_TERMS' | 'CONFIGURE_PLAYERS' | 'REVIEW_CAPACITY' | 'SYNC_CLOCK' | 'STOP' | 'WAIT' | 'OPEN_ACTIVITY';
 export interface Recovery { label: string; action: RecoveryAction }
 export interface Gate { enabled: boolean; reason: string | null; recovery: Recovery | null }
 export type PrimaryAction = 'SAVE_PLAN' | 'PREPARE' | 'AUTHORIZE_ARM' | 'STOP' | 'WAIT' | 'REVIEW_LOCK' | 'REVIEW_SUBMISSION';
@@ -75,6 +75,9 @@ export interface OperatorInputs {
   /** Required browsers of the prepared plan that are currently disconnected (letters). */
   disconnected: readonly string[];
   playersMissing: readonly string[];
+  identityIssues?: readonly string[];
+  /** Published controller checks only; the renderer never estimates capacity or timing. */
+  readinessBlockers?: readonly { reason: string; recovery: Recovery }[];
   termsAuthorized: boolean;
   /** Shotgun plans require a complete preparation forecast; other plans pass NOT_APPLICABLE when none applies. */
   forecast: { verdict: ForecastVerdict; ready: number; configured: number; omitted: number; required: boolean };
@@ -143,14 +146,16 @@ export function operatorGates(i: OperatorInputs): OperatorGates {
   else if (!terms.enabled) arm = terms;
   else if (i.disconnected.length) arm = closed(`Browser ${i.disconnected.join(', ')} ${i.disconnected.length === 1 ? 'is' : 'are'} disconnected.`, { label: 'Recheck browsers', action: 'RECHECK_BROWSERS' });
   else if (i.playersMissing.length) arm = closed(`Browser ${i.playersMissing.join(', ')} has no configured player/customer.`, { label: 'Configure players', action: 'CONFIGURE_PLAYERS' });
+  else if (i.identityIssues?.length) arm = closed(i.identityIssues.join('; '), { label: 'Recheck browsers', action: 'RECHECK_BROWSERS' });
+  else if (release && i.readinessBlockers?.length) arm = closed(i.readinessBlockers[0]!.reason, i.readinessBlockers[0]!.recovery);
   else if (release && i.forecast.required && i.forecast.verdict === 'NOT_FEASIBLE')
     arm = closed(`Preparation forecast: only ${i.forecast.ready} of ${i.forecast.configured} attempts can be ready before their triggers (${i.forecast.omitted} would be omitted). Reduce attempts or widen the schedule, then save and prepare again.`, { label: 'Review capacity', action: 'REVIEW_CAPACITY' });
   else if (release && i.forecast.required && i.forecast.verdict === 'UNAVAILABLE')
     arm = closed('The preparation forecast for this exact plan is unavailable. Prepare again.', { label: 'Prepare again', action: 'PREPARE' });
   else if (!i.termsAuthorized) arm = closed('Tick the Terms authorization for this run.', { label: 'Authorize Terms', action: 'AUTHORIZE_TERMS' });
 
-  const editable = !live && !(busy && BUSY_PREPARE.has(i.operation));
-  const saveDraft = editable ? open() : closed(live ? 'The plan is armed or running. Use Emergency Stop to disarm before editing.' : 'Wait for preparation to finish.', live ? { label: 'Emergency Stop', action: 'STOP' } : { label: 'Wait', action: 'WAIT' });
+  const editable = !live && !busy;
+  const saveDraft = editable ? open() : closed(live ? 'The plan is armed or running. Use Emergency Stop to disarm before editing.' : 'Wait for the current operation to finish.', live ? { label: 'Emergency Stop', action: 'STOP' } : { label: 'Wait', action: 'WAIT' });
   let test: Gate = open();
   if (live) test = closed('Offline testing is unavailable while a release is armed or running.', null);
   else if (busy) test = closed('Wait for the current operation to finish.', { label: 'Wait', action: 'WAIT' });
@@ -202,7 +207,7 @@ export function planLadder(i: OperatorInputs & { executed?: string | null }): La
 // Five separate claims. None of them implies another: a valid plan is not a prepared environment, a favorable
 // forecast is not live security readiness, and nothing here predicts a provider outcome.
 export type LayerStatus = 'OK' | 'WARN' | 'BLOCKED' | 'PENDING' | 'NA';
-export interface ReadinessLayer { id: 'PLAN' | 'ENVIRONMENT' | 'FORECAST' | 'SECURITY' | 'ARMED'; label: string; status: LayerStatus; detail: string }
+export interface ReadinessLayer { id: 'PLAN' | 'ENVIRONMENT' | 'FORECAST' | 'SECURITY' | 'ARMED' | 'RUNTIME'; label: string; status: LayerStatus; detail: string }
 export interface ReadinessInputs {
   plan: { problems: number; runtime: RuntimeValidation; saved: boolean };
   environment: { prepared: boolean; forOtherPlan: boolean; required: number; connected: number; identityIssues: number };
@@ -210,6 +215,7 @@ export interface ReadinessInputs {
     /** Which forecast this is (capacity before preparation, or live over connected browsers) and what limits it. */ basis?: string; limits?: string[] } | null;
   security: { planned: number; ready: number; preparing: number; failed: number; omitted: number; leadMs: number | null } | null;
   armed: { armed: boolean; running: boolean };
+  readinessBlockers?: readonly { reason: string }[];
 }
 export function readinessLayers(i: ReadinessInputs): ReadinessLayer[] {
   const layers: ReadinessLayer[] = [];
@@ -220,6 +226,7 @@ export function readinessLayers(i: ReadinessInputs): ReadinessLayer[] {
   layers.push({ id: 'ENVIRONMENT', label: 'Environment prepared', status: e.forOtherPlan ? 'BLOCKED' : !e.prepared ? 'PENDING' : e.connected < e.required || e.identityIssues ? 'BLOCKED' : 'OK',
     detail: e.forOtherPlan ? 'Prepared for an older plan — prepare again' : !e.prepared ? 'Not prepared' : `${e.connected}/${e.required} browsers connected${e.identityIssues ? ` · ${plural(e.identityIssues, 'identity issue')}` : ''} · sessions checked during preparation` });
   const f = i.forecast;
+  if (i.readinessBlockers?.length) layers.push({ id: 'RUNTIME', label: 'Release checks', status: 'BLOCKED', detail: i.readinessBlockers.map(b => b.reason).join('; ') });
   layers.push(!f || f.verdict === 'NOT_APPLICABLE' ? { id: 'FORECAST', label: 'Timing forecast', status: 'NA', detail: 'No staged preparation forecast applies to this plan' }
     : { id: 'FORECAST', label: 'Timing forecast', status: f.verdict === 'READY' ? 'OK' : f.verdict === 'AT_RISK' ? 'WARN' : 'BLOCKED',
       detail: f.verdict === 'UNAVAILABLE' ? 'Forecast unavailable' : `${f.ready}/${f.configured} predicted ready${f.atRisk ? ` · ${f.atRisk} at risk` : ''}${f.omitted ? ` · ${f.omitted} predicted omitted` : ''}${f.limits?.length ? ` (limited by ${[...new Set(f.limits)].join(', ')})` : ''}${f.basis ? ` · ${f.basis}` : ''} · ${f.measured ? `${plural(f.samples, 'measured sample')}` : 'fallback estimate'} · a forecast is not proof of security readiness` });
@@ -240,6 +247,8 @@ export function readinessSummary(layers: readonly ReadinessLayer[]): string {
   if (armed.status === 'OK') return security.status === 'OK' ? 'Armed · live security ready for every planned attempt' : security.status === 'BLOCKED' ? `Armed · live security: ${security.detail}` : 'Armed · live security has not yet been verified for every attempt';
   if (env.status === 'BLOCKED') return `${env.label}: ${env.detail}`;
   if (env.status !== 'OK') return `Saved plan is valid · not prepared yet${forecast.status === 'BLOCKED' ? ` · forecast: ${forecast.detail}` : ''}`;
+  const runtime = layers.find(l => l.id === 'RUNTIME');
+  if (runtime?.status === 'BLOCKED') return `${runtime.label}: ${runtime.detail}`;
   if (forecast.status === 'BLOCKED') return `Prepared · forecast: ${forecast.detail}`;
   return `Prepared${forecast.status === 'OK' ? ' · forecast feasible' : forecast.status === 'WARN' ? ' · forecast at risk' : ''} · live security is verified only after arming`;
 }

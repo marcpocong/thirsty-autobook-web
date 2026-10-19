@@ -6,6 +6,7 @@ import { STRATEGY_PRESET_LABEL } from '../../src/strategy-engine.js';
 import { byId, el, facts } from './dom.js';
 import { readinessLayers, readinessSummary } from '../../src/execution-state.js';
 import { planWorkerIds } from '../../src/workers.js';
+import { releaseBlockers } from './operator-status.js';
 
 /**
  * NEXT RELEASE summary, generated only from the SAVED authorization (never from the editor draft), so it always states
@@ -118,7 +119,7 @@ export function renderReleasePreflight(state:Dashboard):void {
     forecast:layerForecast(state,prepared),
     security:plan?{planned:required,ready,preparing:children.filter(child=>child.state==='PREPARING').length,failed:children.filter(child=>['FAILED','PREWARM_FAILED'].includes(child.state)).length,
       omitted:children.filter(child=>child.state==='OMITTED').length,leadMs:state.live?.prewarm?.leadMs??f?.prewarmLeadMs??null}:null,
-    armed:{armed:armed&&apiRelease?.phase!=='RUNNING',running:apiRelease?.phase==='RUNNING'}});
+    armed:{armed:armed&&apiRelease?.phase!=='RUNNING',running:apiRelease?.phase==='RUNNING'},readinessBlockers:releaseBlockers(state)});
   const title=apiRelease?{PREPARING:'ARMED · PREPARING RELEASE CONTEXTS',WAITING:'WAITING FOR RELEASE',RUNNING:'RELEASE IN PROGRESS',FAILED:'RELEASE NEEDS ATTENTION'}[apiRelease.phase]:armed?'WAITING FOR RELEASE':readinessSummary(layers);
   const first=plan?.wave1[0],candidate=first?plan?.candidates[first.candidateIndex]:undefined,offsets=setup?.STRATEGY_V2?.shotgun?.exactSchedule.map(shot=>shot.configuredOffsetMs)??[];
   const details=el('dl','fact-grid');facts(details,[['Plan',state.booking?`Saved release authorization ${state.booking.fingerprint.slice(0,12)}`:'No saved release plan'],

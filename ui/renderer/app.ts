@@ -997,7 +997,7 @@ function renderPanes(state: Dashboard) {
    const savedSetup=state.booking?.setup;
    if(savedSetup?.RELEASE_STRATEGY==='precision'){
      const p=savedSetup.PRECISION_PHASE3;
-     byId('saved-plan-summary').textContent=p?smartSavedSummary(p,state.booking!.targetDate):
+     byId('saved-plan-summary').textContent=p?smartSavedSummary(p,state.booking!.targetDate,savedSetup.STRATEGY_V2?.objective):
        `PRECISION RELEASE · GOAL: 1 COURT · PROOFLESS DIRECT\n${savedSetup.PRECISION_TARGETS.map((t,i)=>`Worker ${PRECISION_WORKERS[i]} · Court ${t.court} · ${friendly(t.start)}–${endFriendly(t.start,t.durationHours)} · ${t.durationHours} h`).join('\n')}\nIndependent attempts: more than one temporary QR hold may be created. Payment remains manual.\nTarget: ${dateLabel(state.booking!.targetDate)}`;
    }
    else byId('saved-plan-summary').textContent=state.booking?(`${state.booking.setup.BOOKING_METHOD.toUpperCase()} · ${state.booking.setup.BOOKING_TYPE.toUpperCase()} · ${state.booking.setup.COURT_COUNT} court${state.booking.setup.COURT_COUNT===1?'':'s'}\n${friendly(state.booking.setup.START_TIME)}–${endFriendly(state.booking.setup.START_TIME,state.booking.setup.DURATION_HOURS)} · ${state.booking.setup.DURATION_HOURS} hours\nCourt priority: ${state.booking.setup.PREFERRED_COURTS.join(' → ')}\nFallback starts: ${state.booking.setup.FALLBACK_TIMES.map(friendly).join(', ')||'None'}\nTarget: ${dateLabel(state.booking.targetDate)}`):'No saved plan available.';
@@ -1304,9 +1304,13 @@ const PRECISION_STATE_TEXT:Record<string,[string,'ok'|'warn'|'bad'|'']>={EXCLUDE
   UNKNOWN:['UNKNOWN — may have been sent · do not retry','bad'],HOLD_VERIFIED:['HOLD VERIFIED','ok'],
   HOLD_VERIFIED_QR_ATTENTION:['HOLD VERIFIED · QR HANDOFF NEEDS ATTENTION — use Show Browser','bad'],QR_READY:['HOLD VERIFIED · QR READY','ok']};
 /** Next Release summary of a saved Smart plan, generated from the saved authorization itself. */
-function smartSavedSummary(plan:NonNullable<BookingSetup['PRECISION_PHASE3']>,targetDate:string){
+function savedGoalText(objective?:NonNullable<BookingSetup['STRATEGY_V2']>['objective']){
+  const quota=objective?.scope==='ANY_WING'?objective.overall:objective?.wings.MANGO;
+  return quota?`${quota.ideal} COURT${quota.ideal===1?'':'S'} · MINIMUM ${quota.minimum}`:'1 HOLD';
+}
+function smartSavedSummary(plan:NonNullable<BookingSetup['PRECISION_PHASE3']>,targetDate:string,objective?:NonNullable<BookingSetup['STRATEGY_V2']>['objective']){
   const description=describeSmartPlan(plan as SmartPhase3,{unavailable:unreadyWorkers()});
-  return ['PRECISION · SMART BACKUPS · GOAL: 1 HOLD',`${description.summary} · maximum ${description.maxSends} sends`,
+  return [`PRECISION · SMART BACKUPS · GOAL: ${savedGoalText(objective)}`,`${description.summary} · maximum ${description.maxSends} sends`,
     ...description.sections.flatMap(section=>[section.title.toUpperCase(),...section.lines.map(line=>`  ${line}`)]),...description.warnings,`Target: ${dateLabel(targetDate)}`].join('\n');
 }
 const SMART_OUTCOME:Record<string,string>={OBJECTIVE_ACHIEVED:'Hold verified',OBJECTIVE_ACHIEVED_EXTRA_HOLD:'Hold verified · another attempt also holds a court',
@@ -1317,6 +1321,7 @@ const AVAILABILITY_STATUS:Record<string,string>={ACTIONABLE_FRESH:'Fresh · usab
 const ATTEMPT_LABEL:Record<string,string>={WAVE_1:'Immediate attempt',WAVE_2:'Backup attempt',RESCUE:'Reopened-slot attempt'};
 function renderPrecision(state:Dashboard){
   const setup=state.booking?.setup,live=state.precision;
+  byId('precision-goal-note').textContent=`Goal: ${savedGoalText(setup?.STRATEGY_V2?.objective)}. These are independent checkout attempts; more than one temporary QR hold may be created. Payment remains manual.`;
   if(setup?.RELEASE_STRATEGY==='precision'&&setup.PRECISION_PHASE3){
     const p=setup.PRECISION_PHASE3 as SmartPhase3,phase=state.phase3,panel=byId('precision-panel');panel.hidden=false;
     const current=state.slotWatch?.current?.seq===phase?.seq&&(phase?.fitness==='ACTIONABLE_FRESH'||phase?.fitness==='ACTIONABLE_BOUNDED_CACHE');

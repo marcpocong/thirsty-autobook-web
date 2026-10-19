@@ -1,6 +1,18 @@
 import type { PrewarmFeasibilityResult } from '../../src/api-booking/prewarm-feasibility.js';
 import type { Dashboard } from '../types.js';
 import { HOLD_STATES, UNSENT_STATES, summarizeRunOutcome } from '../../src/run-outcome.js';
+import type { Recovery } from '../../src/execution-state.js';
+
+/** Preserve the controller's reasons; this adapter changes presentation only. */
+export function releaseBlockers(state: Dashboard): Array<{ reason: string; recovery: Recovery }> {
+  return (state.releaseReadiness?.checks ?? []).filter(c => c.hardBlock && c.level !== 'GOOD').map(c => ({
+    reason: `${c.label}: ${c.detail}`,
+    recovery: c.id === 'clock' ? { label: 'Refresh trusted clock', action: 'SYNC_CLOCK' }
+      : c.id === 'wave1-preparation-capacity' || c.id === 'shotgun-timing' ? { label: 'Review capacity', action: 'REVIEW_CAPACITY' }
+      : c.id === 'shotgun-topology' ? { label: 'Recheck browsers', action: 'RECHECK_BROWSERS' }
+      : { label: 'Review release checks', action: 'REVIEW_READINESS' }
+  }));
+}
 
 export const offsetText = (value: number): string => `${value > 0 ? '+' : ''}${value} ms`;
 export function acknowledgementKind(problem: string): 'timing' | 'standby' | null {
