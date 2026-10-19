@@ -44,7 +44,7 @@ export function shotgunBrowserVersion(topology:ShotgunTopology,probes:Record<str
   const versions=Object.keys(topology.tabsPerWorker).map(w=>probes[w]?.chromeVersion);
   return versions.length && versions.every(v=>typeof v==='string' && v===versions[0])?versions[0]!:null;
 }
-export const shotgunMachineKey=()=>JSON.stringify({cpu:cpus()[0]?.model,cores:cpus().length,memory:Math.round(totalmem()/2**30),platform:platform(),os:release(),node:process.version});
+export const shotgunMachineKey=(nodeVersion=process.version)=>JSON.stringify({cpu:cpus()[0]?.model,cores:cpus().length,memory:Math.round(totalmem()/2**30),platform:platform(),os:release(),node:nodeVersion});
 export interface ShotgunTimingReadiness {
   schema:'shotgun-timing/v1';status:'READY'|'AT_RISK'|'FAILED'|'NOT_TESTED';shotCount:number;workerCount:number;tabsPerWorker:Record<string,number>;
   configuredMinimumSpacingMs:number|null;p50:number|null;p95:number|null;max:number|null;outsideTolerance:number;omittedShots:number;
@@ -75,7 +75,7 @@ export function summarizeShotgunTiming(topology:ShotgunTopology,children:readonl
     fingerprint:topology.fingerprint,testedAt:children.length?new Date().toISOString():null,...compatibility,runs};
 }
 /** Stale, other-plan, dirty-build and experimental-dispatcher results cannot authorize the default path. */
-export function applicableShotgunTiming(value:ShotgunTimingReadiness,topology:ShotgunTopology,buildKey:string,now=Date.now(),chromeVersion:string|null=value?.chromeVersion??null):boolean {
+export function applicableShotgunTiming(value:ShotgunTimingReadiness,topology:ShotgunTopology,buildKey:string,now=Date.now(),chromeVersion:string|null=value?.chromeVersion??null,machineKey:string|null=shotgunMachineKey()):boolean {
   if(!value||typeof value!=='object')return false;
   const counts=[value.outsideTolerance,value.omittedShots,value.compressedPairs];
   const metrics=[value.p50,value.p95,value.max];
@@ -89,8 +89,8 @@ export function applicableShotgunTiming(value:ShotgunTimingReadiness,topology:Sh
     (!measured&&!absent)||value.configuredMinimumSpacingMs!==topology.minimumSpacingMs||
     value.predictedCompression!==(topology.minimumSpacingMs!==null&&topology.minimumSpacingMs<SHOTGUN_MEANINGFUL_SPACING_MS)||
     value.status==='READY'&&(!cleanTiming||value.compressedPairs!==0)||value.status==='AT_RISK'&&(!cleanTiming||value.compressedPairs===0))return false;
-  return value.chromeVersion!==null && value.chromeVersion===chromeVersion && ['READY','AT_RISK','FAILED','NOT_TESTED'].includes(value.status) && value.shotCount===topology.shots.filter(s=>s.shotgun).length && value.workerCount===Object.keys(topology.tabsPerWorker).length && Number.isSafeInteger(value.outsideTolerance) && value.outsideTolerance>=0 && Number.isSafeInteger(value.omittedShots) && value.omittedShots>=0 && value.schema==='shotgun-timing/v1' && value.fingerprint===topology.fingerprint && value.machineKey===shotgunMachineKey() && value.buildKey===buildKey && !buildKey.includes('dirty') && value.dispatcher==='central' && value.testedAt!==null && now-Date.parse(value.testedAt)>=0 && now-Date.parse(value.testedAt)<=24*60*60_000 && value.runs>0;
+  return value.chromeVersion!==null && value.chromeVersion===chromeVersion && ['READY','AT_RISK','FAILED','NOT_TESTED'].includes(value.status) && value.shotCount===topology.shots.filter(s=>s.shotgun).length && value.workerCount===Object.keys(topology.tabsPerWorker).length && Number.isSafeInteger(value.outsideTolerance) && value.outsideTolerance>=0 && Number.isSafeInteger(value.omittedShots) && value.omittedShots>=0 && value.schema==='shotgun-timing/v1' && value.fingerprint===topology.fingerprint && value.machineKey===machineKey && value.buildKey===buildKey && !buildKey.includes('dirty') && value.dispatcher==='central' && value.testedAt!==null && now-Date.parse(value.testedAt)>=0 && now-Date.parse(value.testedAt)<=24*60*60_000 && value.runs>0;
 }
-export function readShotgunTiming(path:string,topology:ShotgunTopology,buildKey:string,chromeVersion:string|null=null):ShotgunTimingReadiness|null {
-  try{const value=JSON.parse(readFileSync(path,'utf8')) as ShotgunTimingReadiness;return applicableShotgunTiming(value,topology,buildKey,Date.now(),chromeVersion)?value:null;}catch{return null;}
+export function readShotgunTiming(path:string,topology:ShotgunTopology,buildKey:string,chromeVersion:string|null=null,machineKey?:string|null):ShotgunTimingReadiness|null {
+  try{const value=JSON.parse(readFileSync(path,'utf8')) as ShotgunTimingReadiness;return applicableShotgunTiming(value,topology,buildKey,Date.now(),chromeVersion,machineKey)?value:null;}catch{return null;}
 }

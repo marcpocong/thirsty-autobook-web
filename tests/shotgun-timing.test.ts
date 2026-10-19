@@ -64,6 +64,13 @@ describe('exact Shotgun readiness',()=>{
     expect(applicableShotgunTiming(ready,tiny,'build1')).toBe(true);expect(applicableShotgunTiming(ready,topology,'build1')).toBe(false);expect(applicableShotgunTiming(ready,tiny,'build2')).toBe(false);
     expect(applicableShotgunTiming({...ready,machineKey:'another'},tiny,'build1')).toBe(false);expect(applicableShotgunTiming({...ready,dispatcher:'renderer'},tiny,'build1')).toBe(false);
     expect(applicableShotgunTiming({...ready,testedAt:'2020-01-01'},tiny,'build1')).toBe(false);
+    // Electron consumes evidence measured by the separate dispatcher executable. The caller must supply
+    // that probed runtime identity; an unavailable or different runtime never makes a profile applicable.
+    const dispatcherKey=JSON.stringify({...JSON.parse(shotgunMachineKey()),node:'v24.15.0'});
+    const runnerProfile={...ready,machineKey:dispatcherKey};
+    expect(applicableShotgunTiming(runnerProfile,tiny,'build1',Date.now(),'Chrome/test',dispatcherKey)).toBe(true);
+    expect(applicableShotgunTiming(runnerProfile,tiny,'build1',Date.now(),'Chrome/test',null)).toBe(false);
+    expect(applicableShotgunTiming(runnerProfile,tiny,'build1',Date.now(),'Chrome/test','other-runtime')).toBe(false);
   });
 });
 

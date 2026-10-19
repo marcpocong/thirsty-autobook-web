@@ -100,8 +100,9 @@ describe('priority-aware prewarm', () => {
 });
 
 describe('adaptive prewarm lead', () => {
-  it('keeps the 15 s base lead for a single tier and reserves conservative rounds without measurements', () => {
-    expect(adaptivePrewarmLeadMs({ tiers: 1, workers: 7, concurrency: 7, prepP95Ms: 8_000 })).toBe(15_000);
+  it('reserves a preparation round even for a single tier and conservative rounds without measurements', () => {
+    expect(adaptivePrewarmLeadMs({ tiers: 1, workers: 7, concurrency: 7, prepP95Ms: 8_000 })).toBe(25_000);
+    expect(adaptivePrewarmLeadMs({ tiers: 1, workers: 2, concurrency: 2, prepP95Ms: 30_492 })).toBe(53_115);
     expect(adaptivePrewarmLeadMs({ tiers: 4, workers: 7, concurrency: 7, prepP95Ms: null })).toBe(75_000);
   });
   it('grows with the number of tiers and the measured p95, capped inside the context freshness limit', () => {

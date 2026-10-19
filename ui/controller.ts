@@ -184,6 +184,8 @@ const errors: Record<string, string> = {
 /** A slot watch the controller started, and why; manual watches are only stopped explicitly. */
 interface SlotWatchHandle { id:string; reason:'release'|'manual'; date:string; releaseMs:number; stop(reason:string):Promise<unknown>; done:Promise<SlotWatchSummary> }
 export interface Dependencies {
+  /** Measured in the actual createRunner executable; null means the probe failed. */
+  dispatcherMachineKey?:string|null;
   activityJournal?:Pick<ActivityJournal,'begin'|'record'|'ready'|'handoff'|'end'|'history'>;
   /** Live Shotgun pilot: explicit owner attestation for this exact plan (warning dialog). Absent means refuse. */
   confirmShotgunLive?:(plan:BookingView)=>Promise<boolean>;
@@ -264,6 +266,9 @@ export class Controller {
   private pendingPreparation?:{input:PreparationInput;fingerprint:string;release?:BookingView;players:NonNullable<Dashboard['playerStatus']>};
   private preparationResult?:PreparationResult;
   private generation = 0;
+  /** Owns pre-run awaits as well as the eventual runner handoff. Stop revokes this synchronously. */
+  private pendingArm?: {cancel():void};
+  private checkArm(token: object) { if (this.pendingArm !== token) throw Error('CANCELLED'); }
   private scheduledTimer?:ReturnType<typeof setTimeout>;
   private sleepBlockerId?:number;
   private apiTestFingerprint?:string;
@@ -495,12 +500,12 @@ export class Controller {
     this.log(reason,true);this.finishRun('cancelled');this.state.operation='idle';this.state.headline=reason;this.state.detail=reason==='RELEASE MISSED'?'The exact armed release time passed. No booking action was started. Reset & Prepare and explicitly arm a new run.':'The armed release was cancelled. Terms and preparation were cleared.';this.publish();
   }
   async invalidatePreparation(){if(this.state.scheduledRelease){await this.cancelScheduledRelease('SCHEDULE CANCELLED - SETTINGS CHANGED');return;}if(this.state.operation!=='idle')throw Error('OPERATION_ALREADY_RUNNING');this.clearPreparation();this.state.headline='SETTINGS CHANGED';this.state.detail='Press Reset & Prepare to prepare these settings.';this.publish();}
-  private async health(){const observed=this.deps.browserHealth?await this.deps.browserHealth():await this.deps.cdp().then(A=>({A,B:A}));const h={A:false,B:false,C:false,D:false,E:false,F:false,G:false,H:false,...observed};this.state.browserHealth=h;this.state.cdp=h.A;return h;}
-  private async requirePrepared(workflow:'test'|'release',fingerprint:string,strategy:'standard'|'extended'){
+  private async health(check?:()=>void){const observed=this.deps.browserHealth?await this.deps.browserHealth():await this.deps.cdp().then(A=>({A,B:A}));check?.();const h={A:false,B:false,C:false,D:false,E:false,F:false,G:false,H:false,...observed};this.state.browserHealth=h;this.state.cdp=h.A;return h;}
+  private async requirePrepared(workflow:'test'|'release',fingerprint:string,strategy:'standard'|'extended',check?:()=>void){
     const context=this.state.preparedContext;
     if(!context||context.workflow!==workflow||context.strategy!==strategy||context.configFingerprint!==fingerprint||this.state.workflow!==workflow)throw Error('RESET_REQUIRED');
-    if(await this.deps.lock())throw Error('RESET_REQUIRED');
-    const h=await this.health(),required=context.requiredBrowsers;
+    const locked=await this.deps.lock();check?.();if(locked)throw Error('RESET_REQUIRED');
+    const h=await this.health(check),required=context.requiredBrowsers;
     if(required.some(id=>!h[id])){this.clearPreparation();throw Error('RESET_REQUIRED');}
   }
   private publish() { this.deps.publish(structuredClone(this.state)); }
@@ -657,7 +662,7 @@ export class Controller {
       const savedSetup=this.state.booking?.setup;
       if(savedSetup?.STRATEGY_V2?.shotgun?.enabled && savedSetup.PRECISION_PHASE3){
         try{const topology=exactShotgunTopology(savedSetup.PRECISION_PHASE3,savedSetup.STRATEGY_V2.shotgun.exactSchedule);
-          this.state.shotgunTiming=readShotgunTiming('.local/shotgun-timing/latest.json',topology,this.state.build?.dirty?'dirty':this.state.build?.gitSha??'unknown',shotgunBrowserVersion(topology,workerProbes));}catch{this.state.shotgunTiming=null;}
+          this.state.shotgunTiming=readShotgunTiming('.local/shotgun-timing/latest.json',topology,this.state.build?.dirty?'dirty':this.state.build?.gitSha??'unknown',shotgunBrowserVersion(topology,workerProbes),this.deps.dispatcherMachineKey);}catch{this.state.shotgunTiming=null;}
       }else this.state.shotgunTiming=null;
       this.state.lock = lock; this.state.browserHealth=health;this.state.cdp = !!health.A;this.state.playerStatus=this.players();
       const retained=lock&&this.state.operation==='idle'?await this.deps.retainedHold?.():null;
@@ -710,7 +715,7 @@ export class Controller {
       this.state.prewarmFeasibility=this.state.booking?this.forecastPrewarm(this.state.booking):null;
       const fallbackMachine:MachineHealth={measuredAt:new Date().toISOString(),cpuCount:0,memoryUsedPct:100,eventLoopP95Ms:100,processRssMb:0};
       this.state.releaseReadiness=evaluateReleaseReadiness({build:this.state.build??null,testedBuild:this.deps.testedBuild?.()??null,configValid:!!this.state.booking,
-        authorizationValid:!!this.state.booking&&(this.state.booking.setup.RELEASE_STRATEGY!=='precision'||!!this.state.booking.setup.PRECISION_PHASE3),
+        authorizationValid:!!this.state.booking&&BookingSetupSchema.safeParse(this.state.booking.setup).success,
         clock:{synced:!!clock?.networkSynced,ageMs:Number.isFinite(clockAt)?Date.now()-clockAt:null,uncertaintyMs:clockRoundTrip===null||clockRoundTrip===undefined?null:clockRoundTrip/2,offsetMs:clock?.clockOffsetMs??null},
         machine:this.deps.machineHealth?.()??fallbackMachine,workers,
         ...(this.state.booking?.setup.STRATEGY_V2?.shotgun?.enabled&&this.state.booking.setup.PRECISION_PHASE3?{shotgun:{...(()=>{const t=exactShotgunTopology(this.state.booking!.setup.PRECISION_PHASE3!,this.state.booking!.setup.STRATEGY_V2!.shotgun!.exactSchedule);return {tabsPerWorker:t.tabsPerWorker,shotCount:t.shots.length};})(),timingStatus:this.state.shotgunTiming?.status}}:{}),observer:{online:!!this.slotWatch&&!!observerView&&['waiting','watching'].includes(observerView.status),
@@ -908,7 +913,7 @@ export class Controller {
       if (generation === this.generation) { this.finishRun(outcome);this.state.operation = 'idle'; this.state.termsAuthorized=false;this.state.activeApiRelease=null; await this.refresh(); this.publish(); }
     }
   }
-  private async noLock() { this.state.lock = await this.deps.lock(); if (this.state.lock) throw new Error('AUTOMATION_LOCK_EXISTS'); }
+  private async noLock(check?:()=>void) { const lock=await this.deps.lock();check?.();this.state.lock=lock;if(lock)throw new Error('AUTOMATION_LOCK_EXISTS'); }
   /**
    * Typed, durable failure record: category, stage, worker, retry safety and one recovery. Written to the run's activity
    * journal while the run is still open. The lock is re-read so retry is offered only when nothing was left behind.
@@ -1142,18 +1147,25 @@ export class Controller {
     this.state.termsAuthorized=value;this.publish();
   }
   async armFullBooking(){
+    if(this.pendingArm||this.state.operation!=='idle')return;
+    let cancel!:()=>void;
+    const cancelled=new Promise<void>(resolve=>cancel=resolve),token={cancel};this.pendingArm=token;
     const authorized=this.state.termsAuthorized;this.state.termsAuthorized=false;
-    try{if(['api-first','proofless'].includes(this.deps.booking().setup.BOOKING_METHOD))await this.armApiRelease(authorized);
-      else await this.armScheduledRelease(authorized);}catch(error){if(this.state.scheduledRelease){this.clearScheduled();this.clearPreparation();this.state.operation='idle';}const code=error instanceof Error?error.message:'SCHEDULE_FAILED';this.state.headline='Needs attention';this.state.detail=errors[code]??code;this.log(code,true);
+    this.state.operation='confirming';
+    try{this.publish();const work=['api-first','proofless'].includes(this.deps.booking().setup.BOOKING_METHOD)?this.armApiRelease(authorized,token):this.armScheduledRelease(authorized,token);
+      // Release the IPC caller even if a cancelled clock/dialog promise never settles. The continuation retains
+      // its revoked token and cannot launch later; Promise.race also observes any eventual rejection.
+      await Promise.race([work,cancelled]);}catch(error){if(this.pendingArm!==token)return;if(this.state.scheduledRelease){this.clearScheduled();this.clearPreparation();this.state.operation='idle';}const code=error instanceof Error?error.message:'SCHEDULE_FAILED';this.state.headline='Needs attention';this.state.detail=errors[code]??code;this.log(code,true);
         // Arming refusals keep a typed reason and recovery on screen (the run itself never started).
         const failure=classifyFailure(code,{operation:'arm',lockPresent:this.state.lock});if(failure.category!=='OPERATOR_CANCELLED'){this.state.attention=failure;this.log(`FAILURE_RECORD category=${failure.category} code=${failure.code} operation=arm retrySafe=${failure.retrySafe} recovery=${failure.recovery.action}`,true);}
-        this.publish();}
+        this.publish();}finally{if(this.pendingArm===token){this.pendingArm=undefined;if(this.state.operation==='confirming')this.state.operation='idle';this.publish();}}
   }
-  private async armApiRelease(authorized:boolean){
+  private async armApiRelease(authorized:boolean,token:object){
     if(process.env.THIRSTY_API_INSTALLATION!=='1'&&process.env.THIRSTY_API_TEST_INSTALLATION!=='1')throw Error('API_INSTALLATION_REQUIRED');
-    if(this.state.operation!=='idle'||!this.state.apiFirstReady||!this.state.ready)throw Error('RESET_REQUIRED');
+    if(this.state.operation!=='confirming'||!this.state.apiFirstReady||!this.state.ready)throw Error('RESET_REQUIRED');
     if(!authorized)throw Error('TERMS_AUTHORIZATION_REQUIRED');
-    await this.noLock();
+    await this.noLock(()=>this.checkArm(token));
+    this.checkArm(token);
     const plan=this.deps.booking();
     // Arm exactly the plan that was prepared: never a plan saved afterwards, never an unbound preparation.
     if(!this.state.preparedPlanFingerprint)throw Error('RESET_REQUIRED');
@@ -1164,6 +1176,7 @@ export class Controller {
       throw Error('SHOTGUN_PLAN_INCOMPATIBLE_POSITIVE_OFFSET');
     // Arming refreshes the Google offset itself; the runner refreshes it again at T-10 min.
     try{await this.deps.syncClock?.();}catch{/* judged below by freshness */}
+    this.checkArm(token);
     const clock=this.deps.clock();
     this.requirePlayers(planWorkerIds(plan.setup));
     if(!clock.networkSynced)throw Error('NETWORK_CLOCK_SYNC_REQUIRED');
@@ -1172,22 +1185,24 @@ export class Controller {
       const topology=exactShotgunTopology(plan.setup.PRECISION_PHASE3,plan.setup.STRATEGY_V2.shotgun.exactSchedule);
       assertShotgunSchedule(topology,plan.setup.STRATEGY_V2.shotgun.exactSchedule);
       const probes=await this.deps.browserReadiness?.();
+      this.checkArm(token);
       this.workerProbes=probes??{};
       assertShotgunTabs(topology,probes??{});
       const machine=this.deps.machineHealth?.();
       if(!machine || machine.eventLoopP95Ms>=SHOTGUN_MAX_TRIGGER_LATENESS_MS || machine.memoryUsedPct>=92)throw Error('SHOTGUN_MACHINE_NOT_READY');
       assertShotgunPrewarm(this.forecastPrewarm(plan),topology.shots.length);
-      const timing=readShotgunTiming('.local/shotgun-timing/latest.json',topology,this.state.build?.dirty?'dirty':this.state.build?.gitSha??'unknown',shotgunBrowserVersion(topology,probes??{}));
+      const timing=readShotgunTiming('.local/shotgun-timing/latest.json',topology,this.state.build?.dirty?'dirty':this.state.build?.gitSha??'unknown',shotgunBrowserVersion(topology,probes??{}),this.deps.dispatcherMachineKey);
       if(timing && timing.status!=='READY')throw Error('SHOTGUN_TIMING_NOT_READY');
     }
     if(plan.setup.PRECISION_PHASE3){this.state.prewarmFeasibility=this.forecastPrewarm(plan);if(!this.state.prewarmFeasibility)throw Error('PREWARM_FEASIBILITY_UNAVAILABLE');
       if(this.state.prewarmFeasibility.projectedOmitted)throw Error('PREWARM_PLAN_NOT_FEASIBLE');}
     if(clock.releaseMs<=Date.now()+clock.clockOffsetMs)throw Error('RELEASE_MISSED');
-    const confirmed=await this.deps.confirm('full',plan);if(!confirmed)return;
+    const confirmed=await this.deps.confirm('full',plan);this.checkArm(token);if(!confirmed)return;
     // LIVE_PILOT capability: the owner attests, for this exact plan and run, that the provider authorizes this multi-attempt
     // Shotgun. Without an attestation dependency (tests, headless use) live Shotgun fails closed.
     if(liveShotgun){
       const attested=await this.deps.confirmShotgunLive?.(plan)??false;
+      this.checkArm(token);
       if(!attested){this.state.headline='Live Shotgun not armed';this.state.detail='The owner attestation was declined. Nothing was armed; edit, save and offline testing remain available.';this.log('SHOTGUN_LIVE_ATTESTATION_DECLINED');return;}
       this.deps.recordShotgunAttestation?.({fingerprint:plan.fingerprint,targetDate:plan.targetDate,releaseMs:clock.releaseMs,attempts:plan.setup.STRATEGY_V2!.shotgun!.exactSchedule.length});
       this.log(`Live Shotgun pilot attested for plan ${plan.fingerprint.slice(0,12)} · ${plan.setup.STRATEGY_V2!.shotgun!.exactSchedule.length} attempts`);
@@ -1198,8 +1213,11 @@ export class Controller {
     const command={kind:'apiRun',mode:'live',date:plan.targetDate,fingerprint:plan.fingerprint,checkoutMethod:proofless?'proofless':'proof-based',clockOffsetMs:clock.clockOffsetMs,releaseMs:clock.releaseMs,...(liveShotgun?{shotgunAttestation:plan.fingerprint}:{})} as const;
     // Preregistration uses the runner's own date/release and completes before anything starts; a failure arms nothing.
     const preregistered=this.preregister(command.date,command.releaseMs,command.clockOffsetMs);
+    this.checkArm(token);
     if(this.deps.startSleepProtection){this.sleepBlockerId=this.deps.startSleepProtection();this.state.sleepProtection=true;}
     this.beginSlotWatch(plan.targetDate,clock.releaseMs,'release');
+    this.checkArm(token);
+    this.state.operation='idle'; // Synchronous transfer into operation; no await may split this handoff.
     try{await this.operation('full',async gen=>{
       this.log(preregistered);
       this.state.headline=proofless?'PROOFLESS DIRECT ARMED':'API FIRST ARMED';this.state.detail=proofless?'The saved plan will be block-audited at 7:30 and dispatched prooflessly at the network-clock release boundary.':'The isolated browser will wait for release and acquire fresh availability proofs.';this.publish();
@@ -1225,19 +1243,19 @@ export class Controller {
     this.state.arbitrationManifest={status:'ready',targetDate,releaseMs,verified:result.status==='VERIFIED',createdAt:result.manifest.createdAt};
     return `ARBITRATION_MANIFEST_${result.status} · ${release} · preregistered ${result.manifest.createdAt}`;
   }
-  private async armScheduledRelease(authorized:boolean){
+  private async armScheduledRelease(authorized:boolean,token:object){
     if(this.state.scheduledRelease){await this.cancelScheduledRelease();return;}
-    if(this.state.operation!=='idle')throw Error('OPERATION_ALREADY_RUNNING');
+    if(this.state.operation!=='confirming')throw Error('OPERATION_ALREADY_RUNNING');
     if(!fullBookingReady(this.state.capabilities))throw Error('LIVE_RACE_BLOCKED');
-    await this.noLock();const plan=this.deps.booking();
+    await this.noLock(()=>this.checkArm(token));this.checkArm(token);const plan=this.deps.booking();
     if(['api-first','proofless'].includes(plan.setup.BOOKING_METHOD))throw Error('API_FIRST_LIVE_CHECKOUT_BLOCKED');
     if(!plan.playerConfigured)throw Error('PLAYER_INFO_MISSING');if(plan.setup.BOOKING_TYPE==='extended'&&!plan.extendedPlayerConfigured)throw Error('EXTENDED_PLAYER_INFO_MISSING');
-    await this.requirePrepared('release',plan.fingerprint,plan.setup.BOOKING_TYPE);if(!authorized)throw Error('TERMS_AUTHORIZATION_REQUIRED');
+    await this.requirePrepared('release',plan.fingerprint,plan.setup.BOOKING_TYPE,()=>this.checkArm(token));this.checkArm(token);if(!authorized)throw Error('TERMS_AUTHORIZATION_REQUIRED');
     const clock=this.deps.clock(),prepared=this.state.preparedContext!;
     if(!clock.networkSynced)throw Error('NETWORK_CLOCK_SYNC_REQUIRED');
     const context=scheduledReleaseContext(prepared,plan,clock);
-    const confirmed=await this.deps.confirm('full',plan);if(!confirmed){this.state.headline='Arming cancelled';this.state.detail='No release was scheduled.';this.publish();return;}
-    await this.noLock();const fresh=this.deps.clock();if(this.deps.booking().fingerprint!==context.configFingerprint||fresh.releaseMs!==context.releaseMs||fresh.targetDate!==context.targetDate)throw Error('SCHEDULE_CONTEXT_MISMATCH');
+    const confirmed=await this.deps.confirm('full',plan);this.checkArm(token);if(!confirmed){this.state.headline='Arming cancelled';this.state.detail='No release was scheduled.';this.publish();return;}
+    await this.noLock(()=>this.checkArm(token));this.checkArm(token);const fresh=this.deps.clock();if(this.deps.booking().fingerprint!==context.configFingerprint||fresh.releaseMs!==context.releaseMs||fresh.targetDate!==context.targetDate)throw Error('SCHEDULE_CONTEXT_MISMATCH');
     const generation=++this.generation;this.state.termsAuthorized=false;this.state.scheduledRelease=context;this.state.scheduleStatus='WAITING';this.state.operation='scheduled';
     if(this.deps.startSleepProtection){this.sleepBlockerId=this.deps.startSleepProtection();this.state.sleepProtection=true;}
     const wakeAt=context.releaseMs-fresh.wakeSecondsBefore*1000,delay=Math.max(0,wakeAt-(Date.now()+fresh.clockOffsetMs));
@@ -1372,6 +1390,7 @@ export class Controller {
     this.state.headline='Practice complete';this.state.detail='Selection verified and cleared. Proceed was never clicked.';
   }); }
   async abortAutomation() {
+    const pendingArm=this.pendingArm;this.pendingArm=undefined;pendingArm?.cancel();
     this.state.termsAuthorized=false;
     if(this.state.scheduledRelease){await this.cancelScheduledRelease('SCHEDULE CANCELLED');return;}
     if(this.availabilityProcess){await this.availabilityProcess.stop().catch(()=>undefined);this.log('Availability check stopped');}

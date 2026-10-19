@@ -139,7 +139,7 @@ export function describeTierStatus(status: readonly TierStatus[]): string {
 }
 
 /**
- * Prewarm lead for a fan-out plan. With one tier this is the base lead (15 s, as before). With several tiers
+ * Prewarm lead for a plan. Even one tier must reserve a full preparation round. With several tiers
  * prepared behind a barrier the lead grows so that, at the measured p95 preparation time, every tier can finish
  * with a margin — capped well inside the 120 s prepared-context freshness limit.
  */
@@ -150,7 +150,7 @@ export const PREWARM_FALLBACK_DURATION_MS = 12_000;
 export const PREPARED_CONTEXT_FRESHNESS_MS = 120_000;
 export function adaptivePrewarmLeadMs(input: { tiers: number; workers: number; concurrency: number; prepP95Ms: number | null; baseLeadMs?: number; marginMs?: number }): number {
   const base = input.baseLeadMs ?? BASE_PREWARM_LEAD_MS, margin = input.marginMs ?? 15_000;
-  if (!(input.tiers > 1)) return base;
+  if (!(input.tiers >= 1)) return base;
   // Without a compatible history, reserve a conservative preparation round per tier; never silently use the single-shot 15 s lead.
   const prepP95Ms=input.prepP95Ms!==null&&input.prepP95Ms>0?input.prepP95Ms:PREWARM_FALLBACK_DURATION_MS;
   const children = input.tiers * Math.max(1, input.workers);

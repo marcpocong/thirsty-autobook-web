@@ -75,7 +75,7 @@ describe('independent integrated-source verification', () => {
     expect(await page.locator('#confirm-modal').isVisible()).toBe(false); await page.close();
   },60_000);
 
-  it.each(['count', 'offset'] as const)('a fractional %s entered in Customize invalidates the draft instead of keeping historical executable values', async field => {
+  it.each(['count', 'offset', 'blank count', 'blank offset'] as const)('an invalid %s entered in Customize invalidates the draft instead of keeping historical executable values', async field => {
     const o = objective({ 7: 2 }, 2), saved = savedView(o);
     const page = await openRenderer(browser, { booking: saved, playerStatus, objectiveDocument: draftDoc(o) }, 'home', {width:1440,height:900});
     await page.locator('#home-start-setup').click();
@@ -83,13 +83,13 @@ describe('independent integrated-source verification', () => {
     await page.locator('#setup-steps [data-step="2"]').click();
     await page.locator('input[name="strategy-choice"][value="SHOTGUN"]').check();
     await page.locator('#setup-steps [data-step="3"]').click();
-    const input = field === 'count' ? page.locator('.custom-counts label').filter({hasText:'Mango Court 7'}).locator('input') : page.getByRole('spinbutton', {name:'Shot 1 offset in milliseconds',exact:true});
-    await input.fill(field === 'count' ? '1.5' : '-1.5'); await input.press('Tab');
+    const input = field.endsWith('count') ? page.locator('.custom-counts label').filter({hasText:'Mango Court 7'}).locator('input') : page.getByRole('spinbutton', {name:'Shot 1 offset in milliseconds',exact:true});
+    await input.fill(field.startsWith('blank')?'':field === 'count' ? '1.5' : '-1.5'); await input.press('Tab');
     await step5(page);
     await expect.poll(() => page.locator('#plan-identity').innerText()).toContain('not executable');
     expect(await primary(page).isDisabled()).toBe(true);
     expect(await page.locator('#strategy-inspector').innerText()).toContain('Draft plan (not executable yet)');
-    expect(await page.locator('#action-blockers').innerText()).toMatch(field === 'count' ? /Court 7.*1.5/ : /offset|millisecond/i);
+    expect(await page.locator('#action-blockers').innerText()).toMatch(field.endsWith('count') ? /Court 7.*(1.5|NaN|blank)/ : /offset|millisecond/i);
     expect(await calls(page)).toEqual([]);
     await page.screenshot({ path: `.local/operator-workflow/1440-entered-invalid-${field}.png` });
     await page.close();

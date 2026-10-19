@@ -1,0 +1,72 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { DateTime } from 'luxon';
+import { Controller, type Dependencies } from '../ui/controller.js';
+import { bookingView, defaultSetup, type BookingView } from '../ui/booking.js';
+import { BookingSetupSchema, ConfigSchema, ObservationSchema } from '../src/config.js';
+import { clockStatus } from '../ui/status.js';
+import type { Runner } from '../ui/processes.js';
+import type { Command } from '../ui/types.js';
+import type { UiEvent } from '../src/ui-events.js';
+import { UiEventSchema, UI_EVENT_PROTOCOL_VERSION } from '../src/ui-events.js';
+import { preregistered } from './arbitration-manifest-stub.js';
+
+const players = { PLAYER_FULL_NAME: 'Fixture Player', PLAYER_PHONE: '09123456789', PLAYER_EMAIL: 'fixture@example.invalid' };
+const precision = (targets: Array<{ court: number; start: string; durationHours: number }>) =>
+  bookingView(ConfigSchema.parse({ ...defaultSetup, BOOKING_METHOD: 'proofless', DURATION_HOURS: 3, RELEASE_STRATEGY: 'precision', PRECISION_TARGETS: targets, ...players }));
+const one = [{ court: 7, start: '17:00', durationHours: 3 }], two = [{ court: 7, start: '17:00', durationHours: 3 }, { court: 6, start: '17:00', durationHours: 3 }];
+let previous: string | undefined;
+beforeEach(() => { previous = process.env.THIRSTY_API_INSTALLATION; process.env.THIRSTY_API_INSTALLATION = '1'; });
+afterEach(() => { if (previous === undefined) delete process.env.THIRSTY_API_INSTALLATION; else process.env.THIRSTY_API_INSTALLATION = previous; });
+
+/** A controller over a mutable saved plan, recording every runner command. `script` may emit events and choose the exit code. */
+function harness(initial: BookingView, script: (command: Command, emit: (event: UiEvent) => void, line: (text: string) => void) => number = () => 0, extra: Partial<Dependencies> = {}) {
+  // One fixed release instant: the controller rejects a release that moves between its own reads (SCHEDULE_CONTEXT_MISMATCH).
+  let saved = initial; const calls: Command[] = []; let locked = false; const releaseMs = Date.now() + 3_600_000;
+  const runner: Runner = (command, event, onLine) => { calls.push(command); const code = script(command, event, text => onLine(text, true)); return { pid: 1, done: Promise.resolve(code), stop: async () => undefined }; };
+  const controller = new Controller({ ensureArbitrationManifest: preregistered, runner, lock: async () => locked, cdp: async () => true,
+    browserHealth: async () => ({ A: true, B: true }), playerStatus: () => ({ primary: true, extended: true }),
+    clock: () => ({ ...clockStatus(ObservationSchema.parse({}), DateTime.fromISO('2026-09-24T06:00:00+08:00')), releaseMs, targetDate: saved.targetDate, networkSynced: true, clockOffsetMs: 0 }),
+    confirm: async () => true, publish: () => undefined, booking: () => saved, saveBooking: (input: unknown) => { saved = bookingView(ConfigSchema.parse({ ...BookingSetupSchema.parse(input), ...players })); return saved; }, ...extra });
+  return { controller, calls, setSaved: (view: BookingView) => { saved = view; }, setLock: (value: boolean) => { locked = value; } };
+}
+const liveRuns = (calls: Command[]) => calls.filter(c => typeof c === 'object' && c.kind === 'apiRun' && c.mode === 'live');
+
+describe('independent Account A review: cancellation while arming', () => {
+  it('settles the cancelled bridge call even if its confirmation never resolves',async()=>{
+    let entered!:()=>void,first=true;const waiting=new Promise<void>(done=>entered=done);
+    const h=harness(precision(two),()=>0,{confirm:async()=>{if(!first)return true;first=false;entered();return new Promise<boolean>(()=>{});}});
+    await h.controller.resetPrepare({workflow:'release',strategy:'standard'});await h.controller.authorizeTerms(true);
+    const arming=h.controller.armFullBooking();await waiting;await h.controller.abortAutomation();await arming;
+    expect(h.controller.state.operation).toBe('idle');expect(liveRuns(h.calls)).toEqual([]);
+    await h.controller.resetPrepare({workflow:'release',strategy:'standard'});await h.controller.authorizeTerms(true);await h.controller.armFullBooking();
+    expect(liveRuns(h.calls)).toHaveLength(1);
+  });
+  it('allows a fresh prepared and authorized run while a cancelled confirmation later rejects',async()=>{
+    let entered!:()=>void,reject!:(error:Error)=>void,first=true;
+    const waiting=new Promise<void>(done=>entered=done);
+    const h=harness(precision(two),()=>0,{confirm:async()=>{if(!first)return true;first=false;entered();return new Promise<boolean>((_,fail)=>reject=fail);}});
+    await h.controller.resetPrepare({workflow:'release',strategy:'standard'});await h.controller.authorizeTerms(true);
+    const stale=h.controller.armFullBooking();await waiting;
+    await h.controller.abortAutomation();await h.controller.abortAutomation();
+    await h.controller.resetPrepare({workflow:'release',strategy:'standard'});await h.controller.authorizeTerms(true);
+    await h.controller.armFullBooking();
+    const headline=h.controller.state.headline;
+    reject(Error('old dialog rejected'));await stale;await new Promise(done=>setImmediate(done));
+    expect(liveRuns(h.calls)).toHaveLength(1);expect(h.controller.state.operation).toBe('idle');expect(h.controller.state.headline).toBe(headline);
+  });
+  it('Stop while confirmation is pending must prevent a later confirmation from starting the runner', async () => {
+    let resolveConfirm!: (value: boolean) => void;
+    let entered!: () => void;
+    const waiting = new Promise<void>(resolve => entered = resolve);
+    const h = harness(precision(one), () => 0, { confirm: async () => { entered(); return new Promise<boolean>(resolve => resolveConfirm = resolve); } });
+    await h.controller.resetPrepare({ workflow: 'release', strategy: 'standard' });
+    await h.controller.authorizeTerms(true);
+    const arming = h.controller.armFullBooking();
+    await waiting;
+    await h.controller.abortAutomation();
+    resolveConfirm(true);
+    await arming;
+    await new Promise(done=>setImmediate(done));
+    expect(liveRuns(h.calls)).toEqual([]);
+  });
+});

@@ -737,13 +737,11 @@ try {
       if(failure)throw Error(safeApiFailureCode(failure.reason,'SECURITY_PREWARM_FAILED'));
     };
     /**
-     * Security preparation for a release: without fan-out, every attempt prepares at once 15 s ahead (unchanged). With fan-out,
-     * children prepare tier by tier (A0…G0 first, prewarm-scheduler.ts) with one preparation per browser at a time, and the lead
-     * grows with the number of tiers at this installation's measured p95 preparation time (security-prep-history.ts).
+     * Every release reserves its measured preparation round, including one child per worker. Fan-out children
+     * prepare tier by tier with one preparation per browser. The forecast uses this same exact-task lead model.
      */
     const fanOutPrewarm=(attempts:readonly ArmedAttempt[])=>{
       const width=Math.max(1,...attempts.map(attempt=>attempt.attempt.fanOutCount));
-      if(width<=1)return {prewarmLeadMs:API_SECURITY_PREWARM_LEAD_MS};
       const groups=new Set(attempts.map(attempt=>attempt.target.workerId)).size,history=securityPrepHistory('.',groups);
       const compatibleP95Ms=history.atConcurrency===groups?history.p95Ms:null,prepP95Ms=compatibleP95Ms??12_000,
         prewarmPolicy={concurrency:Math.max(1,groups),perGroupConcurrency:1,tierBarrierTimeoutMs:Math.max(4_000,Math.round(prepP95Ms*1.5))};

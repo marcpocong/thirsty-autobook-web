@@ -13,6 +13,12 @@ const ready=(plan:SmartPhase3,patch:Partial<Parameters<typeof evaluatePrewarmFea
   availableWorkers:new Set('ABCDEFG'),...patch});
 
 describe('exact-plan prewarm feasibility',()=>{
+  it('reserves a measured preparation round for the exact two-worker single-tier release',()=>{
+    const value=ready(phase3([1,1],[[0],[0]]),{prepP95Ms:30_492,sampleCount:8});
+    expect(value).toMatchObject({prewarmLeadMs:53_115,preparationP95Ms:30_492,sampleCount:8,projectedReady:2,projectedOmitted:0});
+    expect(value.attempts.map(a=>a.predictedPrepareReadyMs)).toEqual([-22_623,-22_623]);
+    expect(value.freshnessMarginMs).toBeGreaterThan(15_000);
+  });
   it('models one tier / one child per worker',()=>{const value=ready(phase3([1,1,1]));expect(value).toMatchObject({configuredWave1Attempts:3,tiers:1,groups:3,projectedReady:3,projectedOmitted:0,verdict:'READY'});});
   it('models two and six tiers',()=>{expect(ready(phase3([2,2])).tiers).toBe(2);expect(ready(phase3([6])).tiers).toBe(6);});
   it('models a logical Shotgun target split across workers and uneven allocations',()=>{const plan=phase3([6,4,2]);plan.wave1[1]!.candidateIndex=0;

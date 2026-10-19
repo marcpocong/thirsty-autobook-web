@@ -35,6 +35,7 @@ import {currentMachineIdentity,fanOutDigest} from '../src/fanout-capacity.js';
 import {readReleaseTelemetry} from '../src/release-telemetry.js';
 import {createMachineHealthSampler,readLastReleaseBuild} from '../src/release-readiness-gate.js';
 import {readSourceStatus,readUpdatePreflight} from '../src/source-status.js';
+import {readDispatcherMachineKey} from './runner-runtime.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 process.chdir(root);
@@ -62,6 +63,7 @@ function confirmModal(request: Omit<ConfirmRequest, 'id'>): Promise<boolean> {
   });
 }
 const controller = new Controller({
+  dispatcherMachineKey:readDispatcherMachineKey(node),
   confirmShotgunLive:async plan=>{const shotgun=plan.setup.STRATEGY_V2!.shotgun!,offsets=shotgun.exactSchedule.map(s=>s.configuredOffsetMs).sort((a,b)=>a-b);
     return confirmModal({tone:'warning',title:'LIVE SHOTGUN PILOT · OWNER ATTESTATION',message:`Arm ${shotgun.exactSchedule.length} live Shotgun attempts for Mango ${plan.targetDate}?`,
       detail:`Attempts: ${shotgun.exactSchedule.length} across ${Object.keys(shotgun.counts).length} target(s) · offsets ${offsets[0]} … ${offsets.at(-1)} ms before release.\n`+
