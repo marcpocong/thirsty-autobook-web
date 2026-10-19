@@ -30,6 +30,31 @@ describe('exact Shotgun readiness',()=>{
     const change=structuredClone(plan);change.wave1[0]!.fanOutOffsetsMs![0]=-999;expect(exactShotgunTopology(change).fingerprint).not.toBe(topology.fingerprint);
     const worker=structuredClone(plan);worker.wave1[0]!.workerId='G';expect(exactShotgunTopology(worker).fingerprint).not.toBe(topology.fingerprint);
   });
+  it('requires each exact saved tab exactly once per run and rejects nonfinite Chrome samples',()=>{
+    const saved=exactShotgunTopology({candidates:[{court:7,start:'19:00',durationHours:3}],wave1:[{workerId:'A',candidateIndex:0,fanOutOffsetsMs:[-1000,-80,0]}]});
+    const rows=saved.shots.map(shot=>({...sample(),workerId:shot.workerId,fanOutIndex:shot.fanOutIndex,fanOutCount:3,
+      configuredOffsetMs:shot.configuredOffsetMs,chromeStartMs:shot.configuredOffsetMs+8}));
+    expect(summarizeShotgunTiming(saved,rows,compatibility,1).status).toBe('READY');
+    const variants=[
+      [rows[0]!,rows[0]!,rows[2]!],
+      rows.map((row,i)=>i===1?{...row,workerId:'B'}:row),
+      rows.map((row,i)=>i===1?{...row,run:1}:row),
+      rows.map((row,i)=>i===1?{...row,fanOutCount:2}:row),
+      ...[NaN,Infinity,-Infinity].map(value=>rows.map((row,i)=>i===1?{...row,chromeStartMs:value}:row)),
+    ];
+    for(const variant of variants)expect(summarizeShotgunTiming(saved,variant,compatibility,1).status).toBe('FAILED');
+    expect(summarizeShotgunTiming(saved,rows,compatibility,1.5).status).toBe('FAILED');
+  });
+  it('rejects malformed or contradictory READY calibration records for the exact saved topology',()=>{
+    const tiny=exactShotgunTopology({candidates:[{court:7,start:'19:00',durationHours:3}],wave1:[{workerId:'A',releaseOffsetMs:-500,candidateIndex:0}]});
+    const ready=summarizeShotgunTiming(tiny,[sample()],compatibility,1);
+    const patches=[{p50:null},{p95:NaN},{max:Infinity},{max:80},{p50:-1},{p50:10,p95:8},
+      {outsideTolerance:1},{omittedShots:1},{compressedPairs:1},{compressedPairs:-1},
+      {runs:1.5},{runs:Infinity},{tabsPerWorker:{A:2}},{tabsPerWorker:{A:1,B:1}},
+      {configuredMinimumSpacingMs:0},{predictedCompression:true}];
+    expect(applicableShotgunTiming(ready,tiny,'build1')).toBe(true);
+    for(const patch of patches)expect(applicableShotgunTiming({...ready,...patch},tiny,'build1')).toBe(false);
+  });
   it('reports Chrome timing, omissions and compression without turning them into provider evidence',()=>{
     const tiny=exactShotgunTopology({candidates:[{court:7,start:'19:00',durationHours:3}],wave1:[{workerId:'A',releaseOffsetMs:-500,candidateIndex:0}]});
     const ready=summarizeShotgunTiming(tiny,[sample()],compatibility,1);expect(ready).toMatchObject({status:'READY',p50:8,p95:8,max:8,outsideTolerance:0,omittedShots:0});

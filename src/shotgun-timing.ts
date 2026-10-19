@@ -52,13 +52,22 @@ export interface ShotgunTimingReadiness {
 }
 /** Local configured-trigger -> Chrome request-start only. No network/provider/booking guarantee. */
 export function summarizeShotgunTiming(topology:ShotgunTopology,children:readonly ChildSample[],compatibility:{machineKey:string;buildKey:string;dispatcher:string;chromeVersion:string|null},runs:number):ShotgunTimingReadiness {
+  const seen=new Set<string>();
+  const validRuns=Number.isSafeInteger(runs)&&runs>0;
+  const validRows=children.every(c=>{
+    const shot=topology.shots.find(s=>s.workerId===c.workerId&&s.fanOutIndex===c.fanOutIndex&&s.configuredOffsetMs===c.configuredOffsetMs);
+    const key=`${c.run}|${c.workerId}|${c.fanOutIndex}`;
+    if(!validRuns||!Number.isSafeInteger(c.run)||c.run<0||c.run>=runs||!shot||c.fanOutCount!==topology.tabsPerWorker[c.workerId]||seen.has(key)||
+      c.chromeStartMs!==null&&!Number.isFinite(c.chromeStartMs))return false;
+    seen.add(key);return true;
+  });
   const strictChildren=children.filter(c=>topology.shots.some(s=>s.shotgun&&s.workerId===c.workerId&&s.fanOutIndex===c.fanOutIndex&&s.configuredOffsetMs===c.configuredOffsetMs));
-  const errors=strictChildren.flatMap(c=>c.chromeStartMs===null?[]:[c.chromeStartMs-c.configuredOffsetMs]),summary=stats(errors);
-  const outsideTolerance=errors.filter(e=>e<0 || e>SHOTGUN_MAX_TRIGGER_LATENESS_MS).length,omittedShots=strictChildren.filter(c=>c.chromeStartMs===null).length;
+  const errors=strictChildren.flatMap(c=>c.chromeStartMs===null||!Number.isFinite(c.chromeStartMs)?[]:[c.chromeStartMs-c.configuredOffsetMs]),summary=stats(errors);
+  const outsideTolerance=errors.filter(e=>e<0 || e>SHOTGUN_MAX_TRIGGER_LATENESS_MS).length,omittedShots=strictChildren.filter(c=>c.chromeStartMs===null||!Number.isFinite(c.chromeStartMs)).length;
   let compressedPairs=0;
   for(const run of new Set(children.map(c=>c.run))){const ordered=strictChildren.filter(c=>c.run===run && c.chromeStartMs!==null).sort((a,b)=>a.configuredOffsetMs-b.configuredOffsetMs);
     for(let i=1;i<ordered.length;i++){const a=ordered[i-1]!,b=ordered[i]!;if(b.configuredOffsetMs>a.configuredOffsetMs && b.chromeStartMs!-a.chromeStartMs!<Math.max(1,(b.configuredOffsetMs-a.configuredOffsetMs)/2))compressedPairs++;}}
-  const complete=children.length===runs*topology.shots.length && runs>0;
+  const complete=validRows&&validRuns&&children.length===runs*topology.shots.length;
   const predictedCompression=topology.minimumSpacingMs!==null && topology.minimumSpacingMs<SHOTGUN_MEANINGFUL_SPACING_MS;
   return {schema:'shotgun-timing/v1',status:!children.length?'NOT_TESTED':!complete||outsideTolerance||omittedShots?'FAILED':compressedPairs?'AT_RISK':'READY',
     shotCount:topology.shots.filter(s=>s.shotgun).length,workerCount:Object.keys(topology.tabsPerWorker).length,tabsPerWorker:topology.tabsPerWorker,
@@ -66,7 +75,20 @@ export function summarizeShotgunTiming(topology:ShotgunTopology,children:readonl
     fingerprint:topology.fingerprint,testedAt:children.length?new Date().toISOString():null,...compatibility,runs};
 }
 /** Stale, other-plan, dirty-build and experimental-dispatcher results cannot authorize the default path. */
-export function applicableShotgunTiming(value:ShotgunTimingReadiness,topology:ShotgunTopology,buildKey:string,now=Date.now(),chromeVersion:string|null=value.chromeVersion):boolean {
+export function applicableShotgunTiming(value:ShotgunTimingReadiness,topology:ShotgunTopology,buildKey:string,now=Date.now(),chromeVersion:string|null=value?.chromeVersion??null):boolean {
+  if(!value||typeof value!=='object')return false;
+  const counts=[value.outsideTolerance,value.omittedShots,value.compressedPairs];
+  const metrics=[value.p50,value.p95,value.max];
+  const measured=metrics.every(v=>typeof v==='number'&&Number.isFinite(v))&&value.p50! <= value.p95! && value.p95! <= value.max!;
+  const absent=metrics.every(v=>v===null);
+  const tabs=value.tabsPerWorker;
+  const sameTabs=tabs&&typeof tabs==='object'&&!Array.isArray(tabs)&&Object.keys(tabs).length===Object.keys(topology.tabsPerWorker).length&&
+    Object.entries(topology.tabsPerWorker).every(([worker,count])=>tabs[worker]===count);
+  const cleanTiming=measured&&value.p50! >= 0 && value.max! <= SHOTGUN_MAX_TRIGGER_LATENESS_MS&&value.outsideTolerance===0&&value.omittedShots===0;
+  if(!sameTabs||!counts.every(v=>Number.isSafeInteger(v)&&v>=0)||!Number.isSafeInteger(value.runs)||value.runs<=0||
+    (!measured&&!absent)||value.configuredMinimumSpacingMs!==topology.minimumSpacingMs||
+    value.predictedCompression!==(topology.minimumSpacingMs!==null&&topology.minimumSpacingMs<SHOTGUN_MEANINGFUL_SPACING_MS)||
+    value.status==='READY'&&(!cleanTiming||value.compressedPairs!==0)||value.status==='AT_RISK'&&(!cleanTiming||value.compressedPairs===0))return false;
   return value.chromeVersion!==null && value.chromeVersion===chromeVersion && ['READY','AT_RISK','FAILED','NOT_TESTED'].includes(value.status) && value.shotCount===topology.shots.filter(s=>s.shotgun).length && value.workerCount===Object.keys(topology.tabsPerWorker).length && Number.isSafeInteger(value.outsideTolerance) && value.outsideTolerance>=0 && Number.isSafeInteger(value.omittedShots) && value.omittedShots>=0 && value.schema==='shotgun-timing/v1' && value.fingerprint===topology.fingerprint && value.machineKey===shotgunMachineKey() && value.buildKey===buildKey && !buildKey.includes('dirty') && value.dispatcher==='central' && value.testedAt!==null && now-Date.parse(value.testedAt)>=0 && now-Date.parse(value.testedAt)<=24*60*60_000 && value.runs>0;
 }
 export function readShotgunTiming(path:string,topology:ShotgunTopology,buildKey:string,chromeVersion:string|null=null):ShotgunTimingReadiness|null {
