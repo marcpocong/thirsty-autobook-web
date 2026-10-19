@@ -5,6 +5,7 @@ import { describeSmartPlan, smartImmediateSends, type SmartPhase3, type SmartWor
 import { STRATEGY_PRESET_LABEL } from '../../src/strategy-engine.js';
 import { byId, el, facts } from './dom.js';
 import { readinessLayers, readinessSummary } from '../../src/execution-state.js';
+import { planWorkerIds } from '../../src/workers.js';
 
 /**
  * NEXT RELEASE summary, generated only from the SAVED authorization (never from the editor draft), so it always states
@@ -106,7 +107,7 @@ export function renderReleasePreflight(state:Dashboard):void {
   const apiRelease=state.operation==='full'?state.activeApiRelease:null;
   const armed=!!state.scheduledRelease||!!apiRelease;
   byId('release-action-title').textContent=armed?'Armed':'Saved plan readiness';
-  const workers=[...new Set(plan?.wave1.map(value=>value.workerId)??[])];
+  const workers=setup?planWorkerIds(setup):[];
   const children=state.live?.parents.filter(parent=>parent.wave==='WAVE_1').flatMap(parent=>parent.children)??[];
   const required=setup?.STRATEGY_V2?.shotgun?.exactSchedule.length??(plan?smartImmediateSends(plan.wave1):0);
   const ready=children.filter(child=>child.state==='READY').length;

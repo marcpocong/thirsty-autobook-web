@@ -3,9 +3,10 @@ import { chromium, type Browser, type Page } from 'playwright';
 import { mkdir } from 'node:fs/promises';
 import { openRenderer } from './renderer-harness.js';
 import { bookingView, defaultSetup } from '../ui/booking.js';
-import { BookingSetupSchema, ConfigSchema } from '../src/config.js';
+import { BookingSetupSchema, ConfigSchema, type BookingSetup } from '../src/config.js';
 import { compileObjective, defaultObjective, enumerateTargets, savedMangoReleaseSetup, withStrategy, type BookingObjective } from '../src/booking-objective.js';
 import { nextReleaseFor } from '../src/wing-release-data.js';
+import { summarizeRunOutcome } from '../src/run-outcome.js';
 
 /**
  * The operator workflow through the real renderer and a recording bridge: Draft → Save → Prepare → Terms → Arm, the
@@ -42,6 +43,35 @@ async function publish(page: Page, patch: Record<string, unknown>) {
 const noOverflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth <= 1);
 
 describe('operator workflow (renderer)', () => {
+  it.each(['General', 'Fixed Precision', 'Smart standby'] as const)('%s uses every saved-plan worker for browser and player gates', async kind => {
+    let setup: BookingSetup = { ...defaultSetup, BOOKING_METHOD: 'proofless', COURT_COUNT: 3 };
+    if (kind === 'Fixed Precision') setup = { ...setup, RELEASE_STRATEGY: 'precision', PRECISION_TARGETS: [
+      { court: 7, start: '19:00', durationHours: 3 }, { court: 6, start: '19:00', durationHours: 3 }
+    ] };
+    if (kind === 'Smart standby') {
+      const source = savedView(objective({ 7: 3 }, 3)).setup;
+      setup = { ...source, STRATEGY_V2: undefined, PRECISION_PHASE3: { ...source.PRECISION_PHASE3!, standby: ['B'],
+        budgets: { wave2: 1, rescue: 0, total: 4 }, rescueEnabled: false } };
+    }
+    const saved = bookingView(ConfigSchema.parse({ ...setup, ...players }));
+    const page = await openRenderer(browser, { booking: saved, playerStatus, objectiveDocument: draftDoc(objective({ 7: 2 }, 2)),
+      ready: true, apiFirstReady: true, workflow: 'release', preparedPlanFingerprint: saved.fingerprint, termsAuthorized: true,
+      browserHealth: { A: true, B: false }, prewarmFeasibility: { verdict: 'READY', projectedReady: 3, configuredWave1Attempts: 3,
+        projectedAtRisk: 0, projectedOmitted: 0, p95Source: 'FALLBACK', sampleCount: 0, prewarmLeadMs: 45000, preparationP95Ms: 9000 } }, 'home', { width: 560, height: 800 });
+    await step5(page);
+    await page.locator('#conflict-keep-saved').click();
+    await expect.poll(() => page.locator('#action-blockers').innerText()).toContain('Browser B is disconnected');
+    expect(await primary(page).isDisabled()).toBe(true);
+    expect(await page.locator('#readiness-layers [data-layer="ENVIRONMENT"]').innerText()).toContain('1/2 browsers connected');
+    expect(await page.locator('#next-preflight').innerText()).toContain('1/2 browsers connected');
+    await publish(page, { browserHealth: { A: true, B: true }, playerStatus: { ...playerStatus, extended: false } });
+    await expect.poll(() => page.locator('#action-blockers').innerText()).toContain('Browser B has no configured player/customer');
+    expect(await primary(page).isDisabled()).toBe(true);
+    expect(await noOverflow(page)).toBe(true);
+    expect(await calls(page)).toEqual([]);
+    await page.close();
+  }, 60_000);
+
   it('Draft → Save → Prepare → Terms → Authorize and Arm, preparing exactly the saved plan with no substitution', async () => {
     const o = objective({ 7: 3 }, 3), old = savedView(objective({ 7: 20 }, 20));
     const page = await openRenderer(browser, { booking: old, playerStatus, objectiveDocument: draftDoc(o) }, 'home', { width: 1366, height: 768 });
@@ -87,6 +117,25 @@ describe('operator workflow (renderer)', () => {
     expect(await page.locator('#plan-identity').innerText()).toContain('armed snapshot');
     expect(await noOverflow(page)).toBe(true);
     await page.screenshot({ path: '.local/operator-workflow/1366-armed.png', fullPage: true });
+    // Monitor the simulated run through the same published state used by the controller.
+    await page.setViewportSize({ width: 560, height: 800 });
+    await publish(page, { activeApiRelease: { releaseMs: Date.now(), targetDate: o.wings.MANGO.bookingDate, phase: 'RUNNING' },
+      live: { parents: [{ key: 'fixture', wave: 'WAVE_1', workerId: 'A', children: [
+        { attemptId: 'fixture-1', label: '1', fanOutIndex: 0, fanOutCount: 3, state: 'READY' }
+      ] }], predictions: [], notes: [] } });
+    await expect.poll(() => page.locator('#next-preflight').innerText()).toContain('RELEASE IN PROGRESS');
+    expect(await primary(page).innerText()).toBe('Emergency Stop');
+    expect(await noOverflow(page)).toBe(true);
+    await publish(page, { operation: 'idle', activeApiRelease: null, ready: false, termsAuthorized: false,
+      runSummary: summarizeRunOutcome([{ state: 'QR_READY' }, { state: 'NOT_DISPATCHED' }, { state: 'NOT_DISPATCHED' }], 3),
+      qrHandoffs: [{ status: 'qr-ready', wing: 'MANGO', checkout: 'A', courts: [7], date: o.wings.MANGO.bookingDate,
+        startTime: '19:00', endTime: '22:00', amount: 2100, verifiedAt: new Date().toISOString(), holdExpiresAt: new Date(Date.now() + 300_000).toISOString() }] });
+    await expect.poll(() => page.locator('#run-summary').innerText()).toContain('HOLD VERIFIED');
+    expect(await page.locator('#run-summary').innerText()).toContain('pay manually');
+    expect(await page.locator('#strategy-inspector .outcome').innerText()).toContain('1 payment pending (manual)');
+    expect(await noOverflow(page)).toBe(true);
+    await page.screenshot({ path: '.local/operator-workflow/560-outcome.png', fullPage: true });
+    expect(await calls(page)).toEqual(['saveBooking', 'objective:save', 'resetPrepare', 'authorizeTerms', 'armFullBooking']);
     await page.close();
   }, 60_000);
 
