@@ -364,6 +364,8 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
   const observe=(callback:()=>void)=>{if(strictDispatch && now()>=firstTriggerMs-FINAL_APPROACH_MS && now()<=armed.releaseMs+FINAL_APPROACH_MS)deferredEvents.push(callback);else {try{callback();}catch{}}};
   // Observers must never change an outcome (a failed trace write is not a failed prewarm or an unknown POST).
   const emit = (event: Parameters<NonNullable<ArmedDispatchDeps['onEvent']>>[0]) => {observe(()=>deps.onEvent?.(event));};
+  // Synchronous trigger-path telemetry: a recorder failure must not skip the send or escape as an unhandled rejection.
+  const mark = (attempt: ArmedAttempt, name: string) => { try { deps.onMark?.(attempt.target.workerId, name, attempt); } catch { /* telemetry only */ } };
   const waitFor = (epochMs: number, isAborted = deps.isAborted, sleep = deps.sleep) =>
     waitForMonotonicDeadline(() => clock.monotonicDeadline(epochMs), { spinTailMs, isAborted, ...(sleep ? { sleep } : {}) });
   // A plain timer: after something was sent, a wait must never throw (the runner's abort-aware sleep does).
@@ -456,7 +458,7 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
       catch (error) { emitPlan({ workerId: attempt.target.workerId, attemptId:attempt.attempt.id, mode: 'node-fallback', code: safeCode(error, 'RENDERER_PLAN_FAILED'), calibration }); continue; }
       // Too close to (or past) the trigger to arm safely: leave it to the Node path at its trigger.
       if (!(now() < triggerMs - 1)) { emitPlan({ workerId: attempt.target.workerId, attemptId:attempt.attempt.id, mode: 'node-fallback', code: 'RENDERER_ARM_TOO_LATE', calibration }); continue; }
-      deps.onMark?.(attempt.target.workerId,'rendererArm',attempt);
+      mark(attempt,'rendererArm');
       const sent = fireArmedAttemptRenderer(attempt, transport, clock, armedWindow(armed, attempt), {...plan,...(attempt.shotDeadlineMs!==undefined?{missedCode:'SHOTGUN_TRIGGER_MISSED' as const}:{})}, deps.isAborted, rendererOptions.armLeadMs,lifecycle(attempt));
       sent.catch(() => undefined);
       sends[index] = sent;
@@ -467,6 +469,14 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
   };
   /** ---- Trigger: one synchronous, in-memory pass. No I/O, hashing or request building here. ---- */
   const strictMissed=new Set<number>();
+  /** Why a strict shot was never sent: security preparation failed, the tier was omitted, the browser was gone, or it was not ready inside its allowance. */
+  const strictUnsentReason=(index:number):{state:PrecisionAttemptState;code:string}=>{
+    const attempt=armed.attempts[index]!,ready=readiness[index]!,failedCode=prewarmFailures.get(attempt.attempt.id);
+    return ready.settled&&!ready.ok&&!ready.omitted&&failedCode!=='SHOTGUN_TRIGGER_MISSED'?{state:'PREWARM_FAILED',code:'SECURITY_PREWARM_FAILED'}
+      :ready.omitted?{state:'NOT_DISPATCHED',code:'PREWARM_TIER_OMITTED'}
+        :ready.settled&&ready.ok&&!deps.transportFor(attempt.target.workerId,attempt)?{state:'NOT_DISPATCHED',code:'API_CHECKOUT_WORKER_MISSING'}
+          :{state:'NOT_DISPATCHED',code:'SHOTGUN_TRIGGER_MISSED'};
+  };
   const fireGroup = (triggerMs: number, retry=false) => {
     for (const index of groupOf(triggerMs)) {
       const attempt = armed.attempts[index]!, ready = readiness[index]!;
@@ -481,7 +491,7 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
       const stop=stopFor(attempt);if(stop){suppressed[index]=stop;continue;}
       const transport = deps.transportFor(attempt.target.workerId,attempt);
       if (!transport) continue;
-      deps.onMark?.(attempt.target.workerId,'transportCall',attempt);
+      mark(attempt,'transportCall');
       const sent = fireArmedAttempt(attempt, transport, clock, armedWindow(armed, attempt), deps.isAborted,lifecycle(attempt),()=>{const reason=stopFor(attempt);if(reason)throw new SubmissionDispatchError(reason,false);});
       sent.catch(() => undefined); // observed below; marked handled so a refusal is never an unhandled rejection meanwhile
       sends[index] = sent;
@@ -499,6 +509,13 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
     }
     return false;
   };
+  // A late-ready strict child is fired from its readiness callback while a trigger wait is already running, so the
+  // wait re-checks on every pass whether anything was sent: from then on it may no longer throw (or the POST that
+  // left would be abandoned with every outcome unrecorded), and the runner's abort-aware sleep is no longer used.
+  const committed = () => sends.some(Boolean);
+  const stepAborted = () => committed() ? committedAbort() : deps.isAborted();
+  const stepSleep = (ms: number) => committed() ? timerSleep(ms)
+    : (deps.sleep ?? timerSleep)(ms).catch((error: unknown) => { if (!committed()) throw error; });
   let clockRefreshOpen = true;
   try {
     assertPrecisionFreezeIntact(armed.race);
@@ -561,9 +578,12 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
     assertPrecisionFreezeIntact(armed.race);
     if (clockRefresh) {
       // Bounded: the refreshed clock must be adopted before calibration and dispatch, and never hold the run open.
+      // Stop is honoured here too (nothing has been sent); once decided, the cutoff wait ends on its next pass.
       const timedOut = Symbol('clock-refresh-timeout');
-      const clockFailure = await Promise.race([clockRefresh,
-        waitFor(refreshCutoffMs, () => false, timerSleep).then(() => timedOut)]);
+      let decided = false;
+      const cutoff = waitFor(refreshCutoffMs, () => decided || deps.isAborted()).then(() => timedOut);
+      cutoff.catch(() => undefined);
+      const clockFailure = await Promise.race([clockRefresh, cutoff]).finally(() => { decided = true; });
       if (clockFailure === timedOut) throw Error('RELEASE_CLOCK_REFRESH_TIMEOUT');
       if (clockFailure && typeof clockFailure === 'object') throw clockFailure.error;
     }
@@ -591,14 +611,13 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
     }
     if (deps.onFinalApproach) { await waitFor(firstTriggerMs - FINAL_APPROACH_MS); try { deps.onFinalApproach(); } catch { /* optional tuning */ } }
     for (const step of steps) {
-      if (sends.some(Boolean)) await waitFor(step.at, committedAbort, timerSleep);
-      else await waitFor(step.at);
+      await waitFor(step.at, stepAborted, stepSleep);
       if(step.kind==='expire'){for(const index of groupOf(step.triggerMs)){const attempt=armed.attempts[index]!;
         if(!sends[index] && attempt.shotDeadlineMs!==undefined && now()>attempt.shotDeadlineMs && attempt.state==='armed'){
           revokeSubmissionPermit(attempt.permit);attempt.state='refused';strictMissed.add(index);
         }}
       }else if (step.kind === 'arm') armRendererGroup(step.triggerMs);
-      else { deps.onWake?.(step.triggerMs); fireGroup(step.triggerMs); }
+      else { try { deps.onWake?.(step.triggerMs); } catch { /* telemetry only */ } fireGroup(step.triggerMs); }
     }
   } catch (error) {
     clockRefreshOpen = false;
@@ -606,6 +625,12 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
     try { deps.onReleaseWindowEnd?.(); } catch { /* optional tuning */ }
     // Aborted (or failed) before anything was sent: nothing was fired; record every attempt as provably unsent.
     await disarmUnfired(armed, safeCode(error, 'ARMED_NOT_DISPATCHED'), now);
+    // A strict shot that expired unsent was refused (permit revoked) but is journaled only at settlement, which this
+    // path skips; without this its journal would stay armed and read as possibly sent after a restart.
+    await Promise.allSettled(armed.attempts.map((attempt, index) => attempt.state === 'refused' && !sends[index] && strictMissed.has(index)
+      ? attempt.journal.mark(attempt.key, 'rejected', new Date(now()), undefined, undefined, strictUnsentReason(index).code) : undefined));
+    // Nothing can be sent any more: deliver what the final second deferred (e.g. why a preparation failed).
+    for (const callback of deferredEvents.splice(0)) { try { callback(); } catch { /* observability only */ } }
     throw error;
   } finally {
     clockRefreshOpen = false;
@@ -630,13 +655,7 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
     if(attempt.shotDeadlineMs!==undefined && !sends[index]){
       if(!ready.settled && now()<=attempt.shotDeadlineMs)await Promise.race([ready.promise,waitFor(attempt.shotDeadlineMs,()=>false,timerSleep)]);
       if(outcomes[index])return outcomes[index]!;
-      // Never sent. The recorded reason says why: security preparation failed, the tier was omitted, the browser
-      // was gone, or it was simply not ready inside its strict allowance.
-      const failedCode=prewarmFailures.get(attempt.attempt.id);
-      const reason:{state:PrecisionAttemptState;code:string}=ready.settled&&!ready.ok&&!ready.omitted&&failedCode!=='SHOTGUN_TRIGGER_MISSED'?{state:'PREWARM_FAILED',code:'SECURITY_PREWARM_FAILED'}
-        :ready.omitted?{state:'NOT_DISPATCHED',code:'PREWARM_TIER_OMITTED'}
-          :ready.settled&&ready.ok&&!deps.transportFor(attempt.target.workerId,attempt)?{state:'NOT_DISPATCHED',code:'API_CHECKOUT_WORKER_MISSING'}
-            :{state:'NOT_DISPATCHED',code:'SHOTGUN_TRIGGER_MISSED'};
+      const reason=strictUnsentReason(index);
       if(attempt.state==='refused')await attempt.journal.mark(attempt.key,'rejected',new Date(now()),undefined,undefined,reason.code).catch(()=>undefined);
       else await disarmAttempt(attempt,reason.code,now).catch(()=>undefined);
       return reason;
