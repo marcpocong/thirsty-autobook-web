@@ -12,7 +12,8 @@ import { adoptConsensus, DEFAULT_SPIN_TAIL_MS, RELEASE_CLOCK_ROUNDS, TrustedRele
 import { releaseTriggerMs } from '../release-offset.js';
 import { armedNothingFired, armPrecisionRace, disarmUnfired, dispatchArmedPrecisionRace, type ArmedAttempt, type ArmedPrecisionRace } from './armed-dispatch.js';
 import { dispatchPhase3Wave1 } from './phase3-wave1-reporting.js';
-import { classifyTargetEvidence, readPreReleaseEvidence } from './pre-release-evidence.js';
+import { classifyTargetEvidence, readPreReleaseEvidence, type PreReleaseEvidence } from './pre-release-evidence.js';
+import {readBeforePreparation} from './prewarm-deadline.js';
 import { freezePrecisionRace, precisionAttemptSet, precisionTargetPlan, reducePrecisionOutcome, PRECISION_UNSENT_STATES,
   validatePrecisionTargets, VerifiedHoldQrError, classifyPrecisionDispatchError,
   type PrecisionAttempt, type PrecisionAttemptState, type PrecisionTarget } from './precision-race.js';
@@ -740,13 +741,15 @@ try {
      * Every release reserves its measured preparation round, including one child per worker. Fan-out children
      * prepare tier by tier with one preparation per browser. The forecast uses this same exact-task lead model.
      */
-    const fanOutPrewarm=(attempts:readonly ArmedAttempt[])=>{
-      const width=Math.max(1,...attempts.map(attempt=>attempt.attempt.fanOutCount));
-      const groups=new Set(attempts.map(attempt=>attempt.target.workerId)).size,history=securityPrepHistory('.',groups);
+    const prewarmPlan=(tasks:readonly PrewarmTask[])=>{
+      const groups=new Set(tasks.map(task=>task.group)).size,history=securityPrepHistory('.',groups);
       const compatibleP95Ms=history.atConcurrency===groups?history.p95Ms:null,prepP95Ms=compatibleP95Ms??12_000,
         prewarmPolicy={concurrency:Math.max(1,groups),perGroupConcurrency:1,tierBarrierTimeoutMs:Math.max(4_000,Math.round(prepP95Ms*1.5))};
-      const tasks:PrewarmTask[]=attempts.map((attempt,index)=>({id:attempt.attempt.id,tier:attempt.attempt.fanOutIndex,order:index,group:attempt.target.workerId}));
-      const prewarmLeadMs=exactPrewarmLeadMs(tasks,prewarmPolicy,prepP95Ms);
+      return {prewarmLeadMs:exactPrewarmLeadMs(tasks,prewarmPolicy,prepP95Ms),prewarmPolicy,prepP95Ms,compatibleP95Ms,groups,history};
+    };
+    const fanOutPrewarm=(attempts:readonly ArmedAttempt[])=>{
+      const width=Math.max(1,...attempts.map(attempt=>attempt.attempt.fanOutCount));
+      const {prewarmLeadMs,prewarmPolicy,prepP95Ms,compatibleP95Ms,groups,history}=prewarmPlan(attempts.map((attempt,index)=>({id:attempt.attempt.id,tier:attempt.attempt.fanOutIndex,order:index,group:attempt.target.workerId})));
       stage('PREWARM_PLAN',{prewarmLeadMs,fanOutCount:width,workerCount:groups,sampleCount:history.samples,
         ...(compatibleP95Ms!==null?{durationMs:Math.round(compatibleP95Ms)}:{})});
       let last='';
@@ -969,9 +972,15 @@ try {
       // Freeze-time public evidence for immediate targets: a target that now shows a known public booking is left out
       // (visibly), unless the operator deliberately force-included it (OPERATOR_OVERRIDE_PUBLIC_CONFLICT), in which case it
       // is kept with a warning. A failed read is reported but never removes an operator-authorized target.
-      const freezeEvidence=await readEvidence(date,releaseMs,'FREEZE');
+      // Preserve the preparation window even if public evidence hangs. The two-second margin budgets
+      // durable arming after this read; it never extends a dispatch deadline or invents OPEN evidence.
+      const plannedOffsets=authorization.wave1.map(value=>value.fanOutOffsetsMs??[value.releaseOffsetMs??0]);
+      const plannedLeadMs=prewarmPlan(authorization.wave1.flatMap((value,order)=>plannedOffsets[order]!.map((_,tier)=>({id:`${value.workerId}:${tier}`,tier,order,group:value.workerId})))).prewarmLeadMs;
+      const freezeEvidenceDeadlineMs=releaseMs+Math.min(0,...plannedOffsets.flat())-plannedLeadMs-2_000;
+      const freezeAnswered=await readBeforePreparation(()=>readEvidence(date,releaseMs,'FREEZE'),freezeEvidenceDeadlineMs,abort.signal,nowMs);
+      const freezeEvidence:PreReleaseEvidence=freezeAnswered??{availabilityAttempts:0,blocks:[],failedCourts:[1,2,3,4,5,6,7],bookingAttempts:0,dateState:'UNKNOWN'};
       stage('PHASE3_EVIDENCE_READ',{checkpoint:'FREEZE',availabilityState:freezeEvidence.snapshot?freezeEvidence.dateState:'READ_FAILED',
-        ok:!!freezeEvidence.snapshot&&!freezeEvidence.failedCourts.length,...(freezeEvidence.failedCourts.length?{failedCourts:freezeEvidence.failedCourts.join(',')}:{})});
+        ok:!!freezeEvidence.snapshot&&!freezeEvidence.failedCourts.length,...(freezeEvidence.failedCourts.length?{failedCourts:freezeEvidence.failedCourts.join(',')}:{}),...(freezeAnswered?{}:{code:'FREEZE_EVIDENCE_DEADLINE'})});
       const conflictExcluded=new Set<string>();
       for(const assignment of authorization.wave1){
         const candidate=byId.get(assignment.candidateId)!,result=classifyTargetEvidence(candidate,freezeEvidence,date);
