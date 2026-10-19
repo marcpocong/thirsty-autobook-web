@@ -60,11 +60,14 @@ export function reduceLiveRun(previous: LiveRunView | null | undefined, event: S
       else setState(child, event.state ?? 'UNKNOWN', event.code);
       return view;
     }
-    case 'PHASE3_WAVE1_UNSENT': case 'PHASE3_WAVE1_EXCLUDED': case 'PHASE3_OVERRIDE_KEPT': {
-      const parent = view.parents.find(value => value.wave === 'WAVE_1' && (value.candidateId === event.candidateId || (!event.candidateId && value.workerId === event.workerId)));
+    case 'PHASE3_WAVE1_UNSENT': {
+      const known=target(event.candidateId),parent=parentFor(view,`W1/${event.candidateId??event.workerId}`,{wave:'WAVE_1',workerId:event.workerId,
+        candidateId:event.candidateId,court:event.court??known?.court,startTime:event.startTime??known?.startTime,endTime:event.endTime??known?.endTime});
+      setState(childFor(parent,event),event.code==='PREWARM_TIER_OMITTED'?'OMITTED':event.state??'NOT_DISPATCHED',event.code);return view;
+    }
+    case 'PHASE3_WAVE1_EXCLUDED': case 'PHASE3_OVERRIDE_KEPT': {
       if (event.stage === 'PHASE3_OVERRIDE_KEPT') { view.notes.push(`Worker ${event.workerId}: kept despite a known public booking (operator override).`); return view; }
       if (event.stage === 'PHASE3_WAVE1_EXCLUDED') { view.notes.push(`Worker ${event.workerId}: left out at freeze (${(event.code ?? 'EXCLUDED').replaceAll('_', ' ').toLowerCase()}).`); return view; }
-      if (parent) setState(childFor(parent, event), event.code==='PREWARM_TIER_OMITTED'?'OMITTED':event.state ?? 'NOT_DISPATCHED', event.code);
       return view;
     }
     case 'PRECISION_ATTEMPT_STATE': {

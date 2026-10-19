@@ -11,6 +11,7 @@ import { consensusState, NETWORK_CLOCK_MAX_AGE_MS, queryGoogleClockConsensus, re
 import { adoptConsensus, DEFAULT_SPIN_TAIL_MS, RELEASE_CLOCK_ROUNDS, TrustedReleaseClock } from '../release-clock.js';
 import { releaseTriggerMs } from '../release-offset.js';
 import { armedNothingFired, armPrecisionRace, disarmUnfired, dispatchArmedPrecisionRace, type ArmedAttempt, type ArmedPrecisionRace } from './armed-dispatch.js';
+import { dispatchPhase3Wave1 } from './phase3-wave1-reporting.js';
 import { classifyTargetEvidence, readPreReleaseEvidence } from './pre-release-evidence.js';
 import { freezePrecisionRace, precisionAttemptSet, precisionTargetPlan, reducePrecisionOutcome, PRECISION_UNSENT_STATES,
   validatePrecisionTargets, VerifiedHoldQrError, classifyPrecisionDispatchError,
@@ -1203,7 +1204,7 @@ try {
           recorder.describe(attempt.attempt.id,{parentGoalId:candidateOf(attempt.attempt).id,workerId:attempt.target.workerId,fanOutIndex:attempt.attempt.fanOutIndex,
             fanOutCount:attempt.attempt.fanOutCount,configuredOffsetMs:attempt.triggerMs-releaseMs,...shotgunTopology.get(attempt.attempt.id)!,wave:'WAVE_1'});}
         const transportOf=(attempt:ArmedAttempt)=>releaseTransports.get(transportKeyOf(attempt.target.workerId,attempt.attempt.fanOutIndex));
-        const outcome=await dispatchArmedPrecisionRace(armed,{clock:releaseClock,spinTailMs:DEFAULT_SPIN_TAIL_MS,isAborted:()=>abort.signal.aborted,sleep:pause,
+        const outcome=await dispatchPhase3Wave1(armed,()=>dispatchArmedPrecisionRace(armed,{clock:releaseClock!,spinTailMs:DEFAULT_SPIN_TAIL_MS,isAborted:()=>abort.signal.aborted,sleep:pause,
           refreshClock:()=>prepareReleaseClock(releaseMs,releaseClock!),onClockRefreshed:clock=>reanchorArmedTiming(clock,releaseMs),onPrewarmWindow:prewarmWindowStage,
           onObjectiveStop:reason=>{if(reason==='SHOTGUN_PROVIDER_THROTTLE_STOP'||reason==='SHOTGUN_PAYMENT_IN_PROGRESS_STOP')providerStopCode=reason;},
           ...fanOutPrewarm(armed.attempts),
@@ -1241,7 +1242,9 @@ try {
               stage('PHASE3_SETTLED',{workerId:event.workerId,candidateId:attempt?.candidateId??(child?candidateOf(child).id:''),wave:'WAVE_1',
                 attemptId:binding.correlation.attemptId,state:event.state??'UNKNOWN',...(event.code?{code:event.code}:{}),...fanOut});
               unbindProoflessAttempt(binding);}
-          }});
+          }}),{stage,fieldsFor:child=>{const binding=bindings.get(child.id);return {candidateId:candidateOf(child).id,
+            ...(binding?{attemptId:binding.correlation.attemptId}:{}),...shotgunTopology.get(child.id)!};},
+          releaseBinding:child=>{const binding=bindings.get(child.id);if(binding)unbindProoflessAttempt(binding);}});
         wave1Settled=true;
         stage('PHASE3_WAVE1_COMPLETE',{attemptCount:outcome.results.length,
           unsentCount:outcome.results.filter(result=>PRECISION_UNSENT_STATES.has(result.state)).length});
