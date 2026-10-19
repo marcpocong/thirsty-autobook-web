@@ -5,6 +5,7 @@ import {compileSmartPlan,confirmSmartRates,emptySmartDraft} from '../src/precisi
 import {quickShotgunSettings} from '../src/quick-shotgun.js';
 import {evaluatePrewarmFeasibility} from '../src/api-booking/prewarm-feasibility.js';
 import type {ChildSample} from '../src/fanout-capacity.js';
+import type {ShotgunTimingReadiness} from '../src/shotgun-timing.js';
 const date='2026-10-07';
 const draft={...emptySmartDraft(),rates:confirmSmartRates(600,700,'VENUE_SCHEDULE',date,new Date()),immediate:[{court:7,start:'19:00',durationHours:3}]};
 const compiled=compileSmartPlan({...draft,shotgun:quickShotgunSettings(draft,20)!},{targetDate:date,unavailable:new Set(),shotgunCapacity:{meaningfulSpacingMs:105}});
@@ -48,7 +49,7 @@ describe('exact Shotgun readiness',()=>{
   it('rejects malformed or contradictory READY calibration records for the exact saved topology',()=>{
     const tiny=exactShotgunTopology({candidates:[{court:7,start:'19:00',durationHours:3}],wave1:[{workerId:'A',releaseOffsetMs:-500,candidateIndex:0}]});
     const ready=summarizeShotgunTiming(tiny,[sample()],compatibility,1);
-    const patches=[{p50:null},{p95:NaN},{max:Infinity},{max:80},{p50:-1},{p50:10,p95:8},
+    const patches:Partial<ShotgunTimingReadiness>[]=[{p50:null},{p95:NaN},{max:Infinity},{max:80},{p50:-1},{p50:10,p95:8},
       {outsideTolerance:1},{omittedShots:1},{compressedPairs:1},{compressedPairs:-1},
       {runs:1.5},{runs:Infinity},{tabsPerWorker:{A:2}},{tabsPerWorker:{A:1,B:1}},
       {configuredMinimumSpacingMs:0},{predictedCompression:true}];
