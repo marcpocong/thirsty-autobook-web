@@ -12,6 +12,7 @@ import { classifyPrecisionDispatchError, freezePrecisionRace, precisionAttemptSe
 import type { DirectTransport, ProoflessCheckoutRequest } from '../../src/api-booking/proofless-checkout.js';
 import { TrustedReleaseClock } from '../../src/release-clock.js';
 import type { BookingPlan } from '../../src/api-booking/types.js';
+import { summarizeRunOutcome } from '../../src/run-outcome.js';
 
 
 const hotPathAudit=vi.hoisted(()=>({deny:false,calls:[] as string[]}));
@@ -577,7 +578,9 @@ describe('strict Shotgun deadlines',()=>{
   });
   it('late tier 0 and tier 1 never use generic readiness recovery',async()=>{
     const {armed,clock}=await strict([-500,0],1400),{transport,calls}=fakeTransport(conflict);
-    const outcome=await dispatchArmedPrecisionRace(armed,{clock,prewarmLeadMs:1300,spinTailMs:0,isAborted:()=>false,prewarm:()=>new Promise(done=>setTimeout(done,1500)),transportFor:()=>transport,onWake:trigger=>{if(trigger===armed.releaseMs)expect(isSubmissionPermitUnspent(armed.attempts[0]!.permit)).toBe(false);}});
+    let firstPermitUnspentAtRelease:boolean|undefined;
+    const outcome=await dispatchArmedPrecisionRace(armed,{clock,prewarmLeadMs:1300,spinTailMs:0,isAborted:()=>false,prewarm:()=>new Promise(done=>setTimeout(done,1500)),transportFor:()=>transport,onWake:trigger=>{if(trigger===armed.releaseMs)firstPermitUnspentAtRelease=isSubmissionPermitUnspent(armed.attempts[0]!.permit);}});
+    expect(firstPermitUnspentAtRelease).toBe(false);
     expect(calls).toHaveLength(0);expect(outcome.results.map(r=>[r.attempt.fanOutIndex,r.state,r.code])).toEqual([[0,'NOT_DISPATCHED','SHOTGUN_TRIGGER_MISSED'],[1,'NOT_DISPATCHED','SHOTGUN_TRIGGER_MISSED']]);
     for(const a of armed.attempts)expect((await a.journal.read(a.key)).failureCode).toBe('SHOTGUN_TRIGGER_MISSED');
   });
@@ -614,4 +617,65 @@ describe('diversified one-court objective coordination',()=>{
       expect(isSubmissionPermitUnspent(armed.attempts[1]!.permit)).toBe(false);
     }
   });
+});
+
+
+/** Exact local topology: two Mango workers, one strict zero-offset child each; no browser or provider calls. */
+describe('two workers with one strict zero-offset child each', () => {
+  async function twoZeroOffsetChildren() {
+    const releaseMs = Date.now() + 1_500;
+    const targets = validatePrecisionTargets([7, 6].map(court => ({ court, start: '19:00', durationHours: 3, releaseOffsetMs: 0 })), date);
+    const race = freezePrecisionRace(date, releaseMs, targets.map(target => ({ target, plan: precisionTargetPlan(target, date), dispatchTimingPolicy: 'SHOTGUN_STRICT' as const })));
+    const clock = TrustedReleaseClock.fromOffset(0, { method: 'test', sampleCount: 5 });
+    const armed = await armPrecisionRace(race, { customerFor: () => customer, journalRoot: root, releaseMs, now: () => clock.nowMs() });
+    return { armed, clock, releaseMs };
+  }
+
+  it('settles a late-ready POST after Stop rejects the already-pending production-style sleep', async () => {
+    const { armed, clock, releaseMs } = await twoZeroOffsetChildren(), stop = new AbortController();
+    const posts: number[] = [];
+    let pendingSleepAbortRejections = 0;
+    // Like the runner pause: reject immediately when stopped, or reject its outstanding timer on abort.
+    const sleep = (ms: number) => new Promise<void>((done, fail) => {
+      if (stop.signal.aborted) { fail(Error('USER_ABORT')); return; }
+      const onAbort = () => {
+        clearTimeout(timer); stop.signal.removeEventListener('abort', onAbort);
+        pendingSleepAbortRejections++; fail(Error('USER_ABORT'));
+      };
+      const timer = setTimeout(() => { stop.signal.removeEventListener('abort', onAbort); done(); }, ms);
+      stop.signal.addEventListener('abort', onAbort, { once: true });
+    });
+    const transport: DirectTransport = { publicCheckoutProofless: async (request, permit, options) => {
+      consumeSubmissionPermit(permit, requestKey(request)); options?.beforePost?.(); posts.push(clock.nowMs()); stop.abort();
+      throw new BrowserSessionTransportError('ONDA_HTTP_STATUS_INVALID', true,
+        { status: 409, category: 'http-rejection', contentKind: 'json', responseSource: 'application', errorHint: 'availability' }, true);
+    } };
+    const outcome = await dispatchArmedPrecisionRace(armed, { clock, prewarmLeadMs: 1_200, spinTailMs: 0, sleep,
+      isAborted: () => stop.signal.aborted, transportFor: () => transport,
+      prewarm: attempt => attempt.target.workerId === 'A'
+        ? new Promise(done => setTimeout(done, Math.max(0, releaseMs + 20 - clock.nowMs()))) : new Promise(() => undefined) });
+    expect(pendingSleepAbortRejections).toBeGreaterThan(0);
+    expect(posts).toHaveLength(1);
+    expect(posts[0]! - releaseMs).toBeGreaterThanOrEqual(0); expect(posts[0]! - releaseMs).toBeLessThanOrEqual(50);
+    expect(outcome.results.map(result => result.state)).toEqual(['REJECTED', 'NOT_DISPATCHED']);
+    expect(summarizeRunOutcome(outcome.results, 2)).toMatchObject({ initiated: 1, rejected: 1, unsent: 1, unknown: 0, settled: true });
+    for (const attempt of armed.attempts) {
+      expect(isSubmissionPermitUnspent(attempt.permit)).toBe(false);
+      expect(await attempt.journal.read(attempt.key)).toMatchObject({ state: 'rejected' });
+    }
+  }, 10_000);
+
+  it('an onMark-only telemetry failure cannot cancel either ready zero-offset child', async () => {
+    const { armed, clock, releaseMs } = await twoZeroOffsetChildren(), { transport, calls } = fakeTransport(conflict);
+    const posts: number[] = [];
+    const outcome = await dispatchArmedPrecisionRace(armed, { clock, prewarmLeadMs: 1_200, spinTailMs: 0,
+      isAborted: () => false, prewarm: async () => undefined,
+      transportFor: () => ({ publicCheckoutProofless: (...args) => { posts.push(clock.nowMs()); return transport.publicCheckoutProofless(...args); } }),
+      onMark: () => { throw Error('MARK_ONLY_BROKEN'); } });
+    expect(calls).toHaveLength(2);
+    expect(posts).toHaveLength(2);
+    for (const at of posts) { expect(at - releaseMs).toBeGreaterThanOrEqual(0); expect(at - releaseMs).toBeLessThanOrEqual(50); }
+    expect(outcome.results.map(result => result.state)).toEqual(['REJECTED', 'REJECTED']);
+    expect(armed.attempts.every(attempt => !isSubmissionPermitUnspent(attempt.permit))).toBe(true);
+  }, 10_000);
 });
