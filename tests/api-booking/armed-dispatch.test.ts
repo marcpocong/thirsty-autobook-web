@@ -597,7 +597,8 @@ describe('strict Shotgun deadlines',()=>{
 
 describe('diversified one-court objective coordination',()=>{
   it.each(['hold','unknown','throttle','payment','rejection'] as const)('coordinates different courts on %s',async kind=>{
-    const releaseMs=Date.now()+1700;
+    // Allow durable arming to finish before the strict no-new-preparation interval begins.
+    const releaseMs=Date.now()+4000;
     const targets=validatePrecisionTargets([{court:7,start:'17:00',durationHours:3,releaseOffsetMs:-500},{court:6,start:'17:00',durationHours:3,releaseOffsetMs:0}],date);
     const race=freezePrecisionRace(date,releaseMs,targets.map(target=>({target,plan:precisionTargetPlan(target,date),dispatchTimingPolicy:'SHOTGUN_STRICT' as const})));
     const clock=TrustedReleaseClock.fromOffset(0,{method:'test',sampleCount:5});
