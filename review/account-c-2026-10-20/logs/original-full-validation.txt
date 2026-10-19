@@ -1,0 +1,87 @@
+
+> thirsty-autobook-web@0.1.0 test
+> node scripts/test-all.mjs
+
+
+ RUN  v5.0.0 <LOCAL_WORKTREE>
+
+
+ Test Files  157 passed (157)
+      Tests  1721 passed (1721)
+   Start at  01:21:51
+   Duration  71.14s (tests 85%, import 13%, transform 2%)
+
+    Isolate  157 workers spawned · ~103ms startup each (spawn + environment, per file)
+             at least ~3.94s faster with isolate: false — reuses workers across files instead of one per file
+
+
+ RUN  v5.0.0 <LOCAL_WORKTREE>
+
+
+ Test Files  1 passed (1)
+      Tests  24 passed (24)
+   Start at  01:23:02
+   Duration  260.07s (tests 100%)
+
+
+ RUN  v5.0.0 <LOCAL_WORKTREE>
+
+
+ Test Files  1 passed (1)
+      Tests  5 passed (5)
+   Start at  01:27:22
+   Duration  15.02s (tests 95%, transform 3%, import 2%)
+
+
+ RUN  v5.0.0 <LOCAL_WORKTREE>
+
+
+ Test Files  1 passed (1)
+      Tests  4 passed (4)
+   Start at  01:27:38
+   Duration  7.62s (tests 97%, transform 2%)
+
+
+ RUN  v5.0.0 <LOCAL_WORKTREE>
+
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  01:27:46
+   Duration  7.62s (tests 90%, transform 5%, import 5%)
+
+
+ RUN  v5.0.0 <LOCAL_WORKTREE>
+
+
+ Test Files  1 passed (1)
+      Tests  53 passed (53)
+   Start at  01:27:54
+   Duration  54.02s (tests 99%, transform 1%)
+
+
+ RUN  v5.0.0 <LOCAL_WORKTREE>
+
+
+ Test Files  1 passed (1)
+      Tests  12 passed (12)
+   Start at  01:28:48
+   Duration  10.31s (tests 94%, transform 4%, import 1%)
+
+
+ RUN  v5.0.0 <LOCAL_WORKTREE>
+
+
+ Test Files  1 passed (1)
+      Tests  26 passed (26)
+   Start at  01:28:59
+   Duration  103.83s (tests 100%)
+
+
+ RUN  v5.0.0 <LOCAL_WORKTREE>
+
+
+ Test Files  1 passed (1)
+      Tests  6 passed (6)
+   Start at  01:30:43
+   Duration  11.49s (tests 94%, transform 4%, import 1%)

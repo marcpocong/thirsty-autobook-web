@@ -1,0 +1,75 @@
+
+ RUN  v5.0.0 <LOCAL_WORKTREE>
+
+ ❯ tests/review-cancellation.test.ts (1 test | 1 failed) 42ms
+   ❯ independent Account A review: cancellation while arming (1)
+     × Stop while confirmation is pending must prevent a later confirmation from starting the runner 40ms
+ ❯ tests/review-preconfirmation-stop.test.ts (1 test | 1 failed) 43ms
+   ❯ independent Account A review: cancellation while arming (1)
+     × Stop during the pre-confirmation clock refresh must prevent later arming 42ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/review-cancellation.test.ts > independent Account A review: cancellation while arming > Stop while confirmation is pending must prevent a later confirmation from starting the runner
+AssertionError: expected [ { kind: 'apiRun', …(6) } ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   {
++     "checkoutMethod": "proofless",
++     "clockOffsetMs": 0,
++     "date": "2026-10-22",
++     "fingerprint": "6009bb5f856e2bc84477a3cf961669a4e68625eae827fa4ef5ad11b45e160696",
++     "kind": "apiRun",
++     "mode": "live",
++     "releaseMs": 1792434911282,
++   },
++ ]
+
+ ❯ tests/review-cancellation.test.ts:47:31
+     45|     resolveConfirm(true);
+     46|     await arming;
+     47|     expect(liveRuns(h.calls)).toEqual([]);
+       |                               ^
+     48|   });
+     49| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/review-preconfirmation-stop.test.ts > independent Account A review: cancellation while arming > Stop during the pre-confirmation clock refresh must prevent later arming
+AssertionError: expected [ { kind: 'apiRun', …(6) } ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   {
++     "checkoutMethod": "proofless",
++     "clockOffsetMs": 0,
++     "date": "2026-10-22",
++     "fingerprint": "6009bb5f856e2bc84477a3cf961669a4e68625eae827fa4ef5ad11b45e160696",
++     "kind": "apiRun",
++     "mode": "live",
++     "releaseMs": 1792434911824,
++   },
++ ]
+
+ ❯ tests/review-preconfirmation-stop.test.ts:47:31
+     45|     resolveConfirm(true);
+     46|     await arming;
+     47|     expect(liveRuns(h.calls)).toEqual([]);
+       |                               ^
+     48|   });
+     49| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  2 failed (2)
+   Start at  01:35:10
+   Duration  1.69s (import 53%, transform 41%, tests 6%, worker 1%)

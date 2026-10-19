@@ -1,0 +1,52 @@
+
+ RUN  v5.0.0 <LOCAL_WORKTREE>
+
+ ❯ tests/operator-verification-ui.test.ts (3 tests | 1 failed | 2 skipped) 1017ms
+   ❯ independent integrated-source verification (3)
+     × uses the saved two-court quota in the detailed summary 645ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/operator-verification-ui.test.ts > independent integrated-source verification > uses the saved two-court quota in the detailed summary
+AssertionError: expected 'Precision Release\n\nSmart backups · …' not to contain 'Goal: 1 successful court'
+
+- Expected
++ Received
+
+- Goal: 1 successful court
++ Precision Release
++
++ Smart backups · Configured
++ 2 immediate + up to 0 backups + up to 0 reopened-slot attempts · maximum 2 sends
++ Availability status: Waiting for the released schedule
++
++ Immediate · Worker A · Court 7 · 7:00 PM–10:00 PM
++ Waiting for the released schedule
++ Expected ₱2,100
++ Immediate · Worker B · Court 6 · 7:00 PM–10:00 PM
++ Waiting for the released schedule
++ Expected ₱2,100
++ Backup 1 · Court 5 · 7:00 PM–10:00 PM
++ Waiting for the released schedule
++ Uses the released price
++ Backup 2 · Court 4 · 7:00 PM–10:00 PM
++ Waiting for the released schedule
++ Uses the released price
++
++ Goal: 1 successful court. These are independent checkout attempts; more than one temporary QR hold may be created. Payment remains manual.
+
+ ❯ tests/operator-verification-ui.test.ts:109:68
+    107|     expect(await page.locator('#saved-plan-summary').innerText()).toCo…
+    108|     expect(await page.locator('#saved-plan-summary').innerText()).not.…
+    109|     expect(await page.locator('#precision-panel').innerText()).not.toC…
+       |                                                                    ^
+    110|     await page.locator('#saved-plan-summary').scrollIntoViewIfNeeded();
+    111|     await page.screenshot({ path: '.local/operator-workflow/two-court-…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 2 skipped (3)
+   Start at  01:19:59
+   Duration  1.90s (tests 56%, transform 23%, import 20%)

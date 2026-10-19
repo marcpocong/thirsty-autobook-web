@@ -1,0 +1,367 @@
+diff --git a/src/execution-state.ts b/src/execution-state.ts
+index 5525c83..e167c23 100644
+--- a/src/execution-state.ts
++++ b/src/execution-state.ts
+@@ -52,7 +52,7 @@ export function editEffect(state: ExecutionState): 'ALLOW' | 'INVALIDATES_PREPAR
+ // unavailable always carries a plain-language reason and one recovery the operator can press. These gates mirror,
+ // and never replace, the controller and runner checks that remain authoritative.
+ export type RecoveryAction = 'REVIEW_PROBLEMS' | 'REVIEW_CHANGES' | 'SAVE_PLAN' | 'PREPARE' | 'RECHECK_BROWSERS' | 'REVIEW_READINESS' | 'REVIEW_LOCK'
+-  | 'REVIEW_SUBMISSION' | 'AUTHORIZE_TERMS' | 'CONFIGURE_PLAYERS' | 'REVIEW_CAPACITY' | 'STOP' | 'WAIT' | 'OPEN_ACTIVITY';
++  | 'REVIEW_SUBMISSION' | 'AUTHORIZE_TERMS' | 'CONFIGURE_PLAYERS' | 'REVIEW_CAPACITY' | 'SYNC_CLOCK' | 'STOP' | 'WAIT' | 'OPEN_ACTIVITY';
+ export interface Recovery { label: string; action: RecoveryAction }
+ export interface Gate { enabled: boolean; reason: string | null; recovery: Recovery | null }
+ export type PrimaryAction = 'SAVE_PLAN' | 'PREPARE' | 'AUTHORIZE_ARM' | 'STOP' | 'WAIT' | 'REVIEW_LOCK' | 'REVIEW_SUBMISSION';
+@@ -75,6 +75,9 @@ export interface OperatorInputs {
+   /** Required browsers of the prepared plan that are currently disconnected (letters). */
+   disconnected: readonly string[];
+   playersMissing: readonly string[];
++  identityIssues?: readonly string[];
++  /** Published controller checks only; the renderer never estimates capacity or timing. */
++  readinessBlockers?: readonly { reason: string; recovery: Recovery }[];
+   termsAuthorized: boolean;
+   /** Shotgun plans require a complete preparation forecast; other plans pass NOT_APPLICABLE when none applies. */
+   forecast: { verdict: ForecastVerdict; ready: number; configured: number; omitted: number; required: boolean };
+@@ -143,6 +146,8 @@ export function operatorGates(i: OperatorInputs): OperatorGates {
+   else if (!terms.enabled) arm = terms;
+   else if (i.disconnected.length) arm = closed(`Browser ${i.disconnected.join(', ')} ${i.disconnected.length === 1 ? 'is' : 'are'} disconnected.`, { label: 'Recheck browsers', action: 'RECHECK_BROWSERS' });
+   else if (i.playersMissing.length) arm = closed(`Browser ${i.playersMissing.join(', ')} has no configured player/customer.`, { label: 'Configure players', action: 'CONFIGURE_PLAYERS' });
++  else if (i.identityIssues?.length) arm = closed(i.identityIssues.join('; '), { label: 'Recheck browsers', action: 'RECHECK_BROWSERS' });
++  else if (release && i.readinessBlockers?.length) arm = closed(i.readinessBlockers[0]!.reason, i.readinessBlockers[0]!.recovery);
+   else if (release && i.forecast.required && i.forecast.verdict === 'NOT_FEASIBLE')
+     arm = closed(`Preparation forecast: only ${i.forecast.ready} of ${i.forecast.configured} attempts can be ready before their triggers (${i.forecast.omitted} would be omitted). Reduce attempts or widen the schedule, then save and prepare again.`, { label: 'Review capacity', action: 'REVIEW_CAPACITY' });
+   else if (release && i.forecast.required && i.forecast.verdict === 'UNAVAILABLE')
+@@ -202,7 +207,7 @@ export function planLadder(i: OperatorInputs & { executed?: string | null }): La
+ // Five separate claims. None of them implies another: a valid plan is not a prepared environment, a favorable
+ // forecast is not live security readiness, and nothing here predicts a provider outcome.
+ export type LayerStatus = 'OK' | 'WARN' | 'BLOCKED' | 'PENDING' | 'NA';
+-export interface ReadinessLayer { id: 'PLAN' | 'ENVIRONMENT' | 'FORECAST' | 'SECURITY' | 'ARMED'; label: string; status: LayerStatus; detail: string }
++export interface ReadinessLayer { id: 'PLAN' | 'ENVIRONMENT' | 'FORECAST' | 'SECURITY' | 'ARMED' | 'RUNTIME'; label: string; status: LayerStatus; detail: string }
+ export interface ReadinessInputs {
+   plan: { problems: number; runtime: RuntimeValidation; saved: boolean };
+   environment: { prepared: boolean; forOtherPlan: boolean; required: number; connected: number; identityIssues: number };
+@@ -210,6 +215,7 @@ export interface ReadinessInputs {
+     /** Which forecast this is (capacity before preparation, or live over connected browsers) and what limits it. */ basis?: string; limits?: string[] } | null;
+   security: { planned: number; ready: number; preparing: number; failed: number; omitted: number; leadMs: number | null } | null;
+   armed: { armed: boolean; running: boolean };
++  readinessBlockers?: readonly { reason: string }[];
+ }
+ export function readinessLayers(i: ReadinessInputs): ReadinessLayer[] {
+   const layers: ReadinessLayer[] = [];
+@@ -220,6 +226,7 @@ export function readinessLayers(i: ReadinessInputs): ReadinessLayer[] {
+   layers.push({ id: 'ENVIRONMENT', label: 'Environment prepared', status: e.forOtherPlan ? 'BLOCKED' : !e.prepared ? 'PENDING' : e.connected < e.required || e.identityIssues ? 'BLOCKED' : 'OK',
+     detail: e.forOtherPlan ? 'Prepared for an older plan — prepare again' : !e.prepared ? 'Not prepared' : `${e.connected}/${e.required} browsers connected${e.identityIssues ? ` · ${plural(e.identityIssues, 'identity issue')}` : ''} · sessions checked during preparation` });
+   const f = i.forecast;
++  if (i.readinessBlockers?.length) layers.push({ id: 'RUNTIME', label: 'Release checks', status: 'BLOCKED', detail: i.readinessBlockers.map(b => b.reason).join('; ') });
+   layers.push(!f || f.verdict === 'NOT_APPLICABLE' ? { id: 'FORECAST', label: 'Timing forecast', status: 'NA', detail: 'No staged preparation forecast applies to this plan' }
+     : { id: 'FORECAST', label: 'Timing forecast', status: f.verdict === 'READY' ? 'OK' : f.verdict === 'AT_RISK' ? 'WARN' : 'BLOCKED',
+       detail: f.verdict === 'UNAVAILABLE' ? 'Forecast unavailable' : `${f.ready}/${f.configured} predicted ready${f.atRisk ? ` · ${f.atRisk} at risk` : ''}${f.omitted ? ` · ${f.omitted} predicted omitted` : ''}${f.limits?.length ? ` (limited by ${[...new Set(f.limits)].join(', ')})` : ''}${f.basis ? ` · ${f.basis}` : ''} · ${f.measured ? `${plural(f.samples, 'measured sample')}` : 'fallback estimate'} · a forecast is not proof of security readiness` });
+@@ -240,6 +247,8 @@ export function readinessSummary(layers: readonly ReadinessLayer[]): string {
+   if (armed.status === 'OK') return security.status === 'OK' ? 'Armed · live security ready for every planned attempt' : security.status === 'BLOCKED' ? `Armed · live security: ${security.detail}` : 'Armed · live security has not yet been verified for every attempt';
+   if (env.status === 'BLOCKED') return `${env.label}: ${env.detail}`;
+   if (env.status !== 'OK') return `Saved plan is valid · not prepared yet${forecast.status === 'BLOCKED' ? ` · forecast: ${forecast.detail}` : ''}`;
++  const runtime = layers.find(l => l.id === 'RUNTIME');
++  if (runtime?.status === 'BLOCKED') return `${runtime.label}: ${runtime.detail}`;
+   if (forecast.status === 'BLOCKED') return `Prepared · forecast: ${forecast.detail}`;
+   return `Prepared${forecast.status === 'OK' ? ' · forecast feasible' : forecast.status === 'WARN' ? ' · forecast at risk' : ''} · live security is verified only after arming`;
+ }
+diff --git a/tests/operator-workflow-ui.test.ts b/tests/operator-workflow-ui.test.ts
+index 59d1562..8146ec5 100644
+--- a/tests/operator-workflow-ui.test.ts
++++ b/tests/operator-workflow-ui.test.ts
+@@ -3,7 +3,9 @@ import { chromium, type Browser, type Page } from 'playwright';
+ import { mkdir } from 'node:fs/promises';
+ import { openRenderer } from './renderer-harness.js';
+ import { bookingView, defaultSetup } from '../ui/booking.js';
+-import { BookingSetupSchema, ConfigSchema } from '../src/config.js';
++import { BookingSetupSchema, ConfigSchema, ObservationSchema, type BookingSetup } from '../src/config.js';
++import { clockStatus } from '../ui/status.js';
++import { DateTime } from 'luxon';
+ import { compileObjective, defaultObjective, enumerateTargets, savedMangoReleaseSetup, withStrategy, type BookingObjective } from '../src/booking-objective.js';
+ import { nextReleaseFor } from '../src/wing-release-data.js';
+ 
+@@ -42,6 +44,91 @@ async function publish(page: Page, patch: Record<string, unknown>) {
+ const noOverflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth <= 1);
+ 
+ describe('operator workflow (renderer)', () => {
++  it.each(['General', 'Fixed Precision', 'Smart standby'] as const)('%s checks every worker required by the saved authorization', async kind => {
++    let setup: BookingSetup = { ...defaultSetup, BOOKING_METHOD: 'proofless', COURT_COUNT: 3 };
++    if (kind === 'Fixed Precision') setup = { ...setup, RELEASE_STRATEGY: 'precision', PRECISION_TARGETS: [
++      { court: 7, start: '19:00', durationHours: 3 }, { court: 6, start: '19:00', durationHours: 3 }
++    ] };
++    if (kind === 'Smart standby') {
++      const source = savedView(objective({ 7: 3 }, 3)).setup;
++      setup = { ...source, STRATEGY_V2: undefined, PRECISION_PHASE3: { ...source.PRECISION_PHASE3!, standby: ['B'], budgets: { wave2: 1, rescue: 0, total: 4 } } };
++    }
++    const saved = bookingView(ConfigSchema.parse({ ...setup, ...players }));
++    const page = await openRenderer(browser, { booking: saved, playerStatus, objectiveDocument: draftDoc(objective({ 7: 2 }, 2)),
++      ready: true, apiFirstReady: true, workflow: 'release', preparedPlanFingerprint: saved.fingerprint, termsAuthorized: true,
++      browserHealth: { A: true, B: false } }, 'home', { width: 560, height: 800 });
++    await step5(page); await page.locator('#conflict-keep-saved').click();
++    await expect.poll(() => page.locator('#action-blockers').innerText()).toContain('Browser B is disconnected');
++    expect(await primary(page).isDisabled()).toBe(true);
++    expect(await page.locator('#readiness-layers [data-layer="ENVIRONMENT"]').innerText()).toContain('1/2 browsers connected');
++    expect(await page.locator('#next-preflight').innerText()).toContain('1/2 browsers connected');
++    await publish(page, { browserHealth: { A: true, B: true }, playerStatus: { ...playerStatus, extended: false } });
++    await expect.poll(() => page.locator('#action-blockers').innerText()).toContain('Browser B has no configured player/customer');
++    expect(await calls(page)).toEqual([]); await page.close();
++  }, 60_000);
++
++  it('shows a wrong profile and controller hard blockers beside Arm with working recoveries', async () => {
++    const o = objective({ 7: 2 }, 2), saved = savedView(o);
++    const page = await openRenderer(browser, { booking: saved, playerStatus, objectiveDocument: draftDoc(o), ready: true,
++      workflow: 'release', preparedPlanFingerprint: saved.fingerprint, browserHealth: { A: true }, termsAuthorized: true,
++      identityIssues: ['Worker A belongs to the wrong profile'],
++      prewarmFeasibility: { verdict: 'READY', projectedReady: 2, configuredWave1Attempts: 2, projectedAtRisk: 0, projectedOmitted: 0 },
++      releaseReadiness: { verdict: 'NOT_READY', readyWorkers: [], degradedWorkers: [], unavailableWorkers: [], checks: [{ id: 'clock', label: 'Trusted clock', level: 'UNAVAILABLE', hardBlock: true, detail: 'No valid trusted clock' }] }
++    }, 'home', { width: 1366, height: 768 });
++    await step5(page);
++    await expect.poll(() => page.locator('#action-blockers').innerText()).toContain('wrong profile');
++    expect(await primary(page).isDisabled()).toBe(true);
++    await page.locator('#action-blockers [data-recovery="RECHECK_BROWSERS"]').click();
++    expect(await calls(page)).toEqual(['resetPrepare']);
++    await publish(page, { identityIssues: [] });
++    await expect.poll(() => page.locator('#action-blockers').innerText()).toContain('No valid trusted clock');
++    expect(await primary(page).isDisabled()).toBe(true);
++    expect(await page.locator('#next-preflight').innerText()).toContain('No valid trusted clock');
++    await page.screenshot({ path: '.local/operator-workflow/1366-clock-blocker.png', fullPage: true });
++    await page.locator('#action-blockers [data-recovery="SYNC_CLOCK"]').click();
++    await expect.poll(() => calls(page)).toEqual(['resetPrepare', 'syncClock']);
++    await page.close();
++  }, 60_000);
++
++  it('prevents repeated Prepare, Arm and Save Draft while a bridge call is pending', async () => {
++    const o = objective({ 7: 2 }, 2), saved = savedView(o);
++    const page = await openRenderer(browser, { booking: saved, playerStatus, objectiveDocument: draftDoc(o), clock: clockStatus(ObservationSchema.parse({}), DateTime.now()) }, 'home');
++    await step5(page);
++    // Defer bridge responses, not renderer state or controls. All submissions use visible operator controls.
++    await page.evaluate(() => { const w = window as any;
++      for (const name of ['resetPrepare', 'armFullBooking']) w.thirsty[name] = async () => { w.fixtureCalls.push(name); await new Promise(resolve => w.fixtureResolve = resolve); };
++      const original = w.thirsty.objective;
++      w.thirsty.objective = async (request: any) => { if (request.action === 'save') await new Promise(resolve => w.fixtureResolve = resolve); return original(request); };
++    });
++    await expect.poll(() => primary(page).innerText()).toBe('Prepare');
++    await primary(page).click();
++    expect(await primary(page).isDisabled()).toBe(true);
++    expect(await page.locator('#save-draft').isDisabled()).toBe(true);
++    await page.locator('#inline-stop').click();
++    expect(await calls(page)).toEqual(['resetPrepare', 'abortAutomation']);
++    await page.evaluate(() => (window as any).fixtureResolve());
++    await publish(page, { ready: true, workflow: 'release', preparedPlanFingerprint: saved.fingerprint, browserHealth: { A: true }, termsAuthorized: true,
++      prewarmFeasibility: { verdict: 'READY', projectedReady: 2, configuredWave1Attempts: 2, projectedAtRisk: 0, projectedOmitted: 0 } });
++    await expect.poll(() => primary(page).innerText()).toBe('Authorize and Arm');
++    await primary(page).click(); expect(await primary(page).isDisabled()).toBe(true);
++    await page.evaluate(() => (window as any).fixtureResolve());
++    await expect.poll(() => page.locator('#save-draft').isEnabled()).toBe(true);
++    await page.locator('#save-draft').click(); expect(await page.locator('#save-draft').isDisabled()).toBe(true);
++    await page.evaluate(() => (window as any).fixtureResolve());
++    await expect.poll(() => calls(page)).toEqual(['resetPrepare', 'abortAutomation', 'armFullBooking', 'objective:save']);
++    await page.close();
++  }, 60_000);
++
++  it('uses the saved two-court quota in the detailed summary', async () => {
++    const o = objective({ 7: 1, 6: 1 }, 2); o.wings.MANGO.minimum = 2; o.wings.MANGO.ideal = 2;
++    const saved = savedView(o);
++    const page = await openRenderer(browser, { booking: saved, playerStatus, objectiveDocument: draftDoc(o), clock: clockStatus(ObservationSchema.parse({}), DateTime.now()) }, 'home');
++    await step5(page);
++    await page.locator('#execution-console summary').first().click();
++    expect(await page.locator('#saved-plan-summary').innerText()).toContain('GOAL: 2 COURTS');
++    expect(await page.locator('#saved-plan-summary').innerText()).not.toContain('GOAL: 1 HOLD');
++    await page.close();
++  }, 60_000);
+   it('Draft → Save → Prepare → Terms → Authorize and Arm, preparing exactly the saved plan with no substitution', async () => {
+     const o = objective({ 7: 3 }, 3), old = savedView(objective({ 7: 20 }, 20));
+     const page = await openRenderer(browser, { booking: old, playerStatus, objectiveDocument: draftDoc(o) }, 'home', { width: 1366, height: 768 });
+diff --git a/ui/renderer/app.ts b/ui/renderer/app.ts
+index b1ea91c..afd0d0f 100644
+--- a/ui/renderer/app.ts
++++ b/ui/renderer/app.ts
+@@ -997,7 +997,7 @@ function renderPanes(state: Dashboard) {
+    const savedSetup=state.booking?.setup;
+    if(savedSetup?.RELEASE_STRATEGY==='precision'){
+      const p=savedSetup.PRECISION_PHASE3;
+-     byId('saved-plan-summary').textContent=p?smartSavedSummary(p,state.booking!.targetDate):
++     byId('saved-plan-summary').textContent=p?smartSavedSummary(p,state.booking!.targetDate,savedSetup.STRATEGY_V2?.objective):
+        `PRECISION RELEASE · GOAL: 1 COURT · PROOFLESS DIRECT\n${savedSetup.PRECISION_TARGETS.map((t,i)=>`Worker ${PRECISION_WORKERS[i]} · Court ${t.court} · ${friendly(t.start)}–${endFriendly(t.start,t.durationHours)} · ${t.durationHours} h`).join('\n')}\nIndependent attempts: more than one temporary QR hold may be created. Payment remains manual.\nTarget: ${dateLabel(state.booking!.targetDate)}`;
+    }
+    else byId('saved-plan-summary').textContent=state.booking?(`${state.booking.setup.BOOKING_METHOD.toUpperCase()} · ${state.booking.setup.BOOKING_TYPE.toUpperCase()} · ${state.booking.setup.COURT_COUNT} court${state.booking.setup.COURT_COUNT===1?'':'s'}\n${friendly(state.booking.setup.START_TIME)}–${endFriendly(state.booking.setup.START_TIME,state.booking.setup.DURATION_HOURS)} · ${state.booking.setup.DURATION_HOURS} hours\nCourt priority: ${state.booking.setup.PREFERRED_COURTS.join(' → ')}\nFallback starts: ${state.booking.setup.FALLBACK_TIMES.map(friendly).join(', ')||'None'}\nTarget: ${dateLabel(state.booking.targetDate)}`):'No saved plan available.';
+@@ -1304,9 +1304,11 @@ const PRECISION_STATE_TEXT:Record<string,[string,'ok'|'warn'|'bad'|'']>={EXCLUDE
+   UNKNOWN:['UNKNOWN — may have been sent · do not retry','bad'],HOLD_VERIFIED:['HOLD VERIFIED','ok'],
+   HOLD_VERIFIED_QR_ATTENTION:['HOLD VERIFIED · QR HANDOFF NEEDS ATTENTION — use Show Browser','bad'],QR_READY:['HOLD VERIFIED · QR READY','ok']};
+ /** Next Release summary of a saved Smart plan, generated from the saved authorization itself. */
+-function smartSavedSummary(plan:NonNullable<BookingSetup['PRECISION_PHASE3']>,targetDate:string){
++function smartSavedSummary(plan:NonNullable<BookingSetup['PRECISION_PHASE3']>,targetDate:string,objective?:NonNullable<BookingSetup['STRATEGY_V2']>['objective']){
+   const description=describeSmartPlan(plan as SmartPhase3,{unavailable:unreadyWorkers()});
+-  return ['PRECISION · SMART BACKUPS · GOAL: 1 HOLD',`${description.summary} · maximum ${description.maxSends} sends`,
++  const quota=objective?.scope==='ANY_WING'?objective.overall:objective?.wings.MANGO;
++  const goal=quota?`${quota.ideal} COURT${quota.ideal===1?'':'S'} · MINIMUM ${quota.minimum}`:'1 HOLD';
++  return [`PRECISION · SMART BACKUPS · GOAL: ${goal}`,`${description.summary} · maximum ${description.maxSends} sends`,
+     ...description.sections.flatMap(section=>[section.title.toUpperCase(),...section.lines.map(line=>`  ${line}`)]),...description.warnings,`Target: ${dateLabel(targetDate)}`].join('\n');
+ }
+ const SMART_OUTCOME:Record<string,string>={OBJECTIVE_ACHIEVED:'Hold verified',OBJECTIVE_ACHIEVED_EXTRA_HOLD:'Hold verified · another attempt also holds a court',
+diff --git a/ui/renderer/booking-setup.ts b/ui/renderer/booking-setup.ts
+index 1797c55..f30cbd1 100644
+--- a/ui/renderer/booking-setup.ts
++++ b/ui/renderer/booking-setup.ts
+@@ -17,7 +17,8 @@ import { layerForecast } from './next-release.js';
+ import { initTestLab, renderTestLab } from './test-lab.js';
+ import { forecastPreparation } from '../../src/quick-shotgun.js';
+ import { capacityAdvice } from '../../src/capacity-advice.js';
+-import { preparationText } from './operator-status.js';
++import { preparationText, releaseBlockers } from './operator-status.js';
++import { planWorkerIds } from '../../src/workers.js';
+ 
+ /**
+  * Booking Setup: one guided workspace from goal to QR. The objective is the single editable source; every plan,
+@@ -40,6 +41,7 @@ interface RuntimeCheck { key: string; status: RuntimeValidation; problems: strin
+   differences: { summary: PlanDifference[]; fields: PlanDifference[]; total: number } | null }
+ let runtimeCheck: RuntimeCheck = { key: '', status: 'UNAVAILABLE', problems: [], matchesSaved: null, differences: null };
+ let showAllDifferences = false, savingPlan = false;
++let pendingAction: 'saving' | 'prepare' | 'arming' | null = null;
+ const byId = (id: string) => document.getElementById(id)!;
+ const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+ 
+@@ -82,7 +84,7 @@ function revalidate() { runtimeCheck = { ...runtimeCheck, key: '' }; refreshRunt
+ const release = () => objective.mode === 'NEXT_RELEASE';
+ /** Live run state as the controller reports it; the armed snapshot is whatever the controller froze. */
+ function runState() {
+-  const s = state, operation = s?.operation ?? 'idle';
++  const s = state, operation = s?.operation && s.operation !== 'idle' ? s.operation : pendingAction ?? (savingPlan ? 'saving' : 'idle');
+   const armed = !!s?.scheduledRelease || (operation === 'full' && !!s?.activeApiRelease && s.activeApiRelease.phase !== 'RUNNING');
+   const running = s?.activeApiRelease?.phase === 'RUNNING' || operation === 'fullPractice' || operation === 'selection';
+   return { operation, armed, running };
+@@ -96,7 +98,7 @@ function preparedForSaved() {
+ const PLAYER_FLAG: Record<string, keyof NonNullable<Dashboard['playerStatus']>> = { A: 'primary', B: 'extended', C: 'third', D: 'fourth', E: 'fifth', F: 'sixth', G: 'seventh', H: 'eighth' };
+ function requiredWorkers(): string[] {
+   if (!release()) return compiled.normalSteps[activeStep]?.workers ?? [];
+-  return [...new Set(state?.booking?.setup.PRECISION_PHASE3?.wave1.map(a => a.workerId) ?? [])];
++  return state?.booking ? planWorkerIds(state.booking.setup) : [];
+ }
+ function operatorInputs(): OperatorInputs {
+   const s = state, { operation, armed, running } = runState(), live = liveSetup(), workers = requiredWorkers();
+@@ -109,6 +111,7 @@ function operatorInputs(): OperatorInputs {
+     armed, running, lock: { present: !!s?.lock, canPrepareOver: !!s?.canPrepareOverHold, unresolvedSubmission: !!s?.lock && !s.canPrepareOverHold && s.retainedLockStage === 'FINAL_ACTION_DISPATCHING' },
+     disconnected: prepared ? workers.filter(w => !s?.browserHealth?.[w as 'A']) : [],
+     playersMissing: workers.filter(w => s?.playerStatus?.[PLAYER_FLAG[w]!] === false),
++    identityIssues: s?.identityIssues ?? [], readinessBlockers: s ? releaseBlockers(s) : [],
+     termsAuthorized: !!s?.termsAuthorized,
+     forecast: phase3 ? { verdict: feasibility ? feasibility.verdict : 'UNAVAILABLE', ready: feasibility?.projectedReady ?? 0, configured: feasibility?.configuredWave1Attempts ?? 0, omitted: feasibility?.projectedOmitted ?? 0, required: true }
+       : { verdict: 'NOT_APPLICABLE', ready: 0, configured: 0, omitted: 0, required: false },
+@@ -172,14 +175,16 @@ async function saveReleasePlan() {
+ async function prepareSaved() {
+   const g = gates(); if (!g.prepare.enabled) { flash(g.prepare.reason ?? 'Preparation is not available now.'); return; }
+   if (!release()) { await hooks.prepare(); return; }
++  pendingAction = 'prepare'; renderAll(true);
+   try { await window.thirsty.resetPrepare({ workflow: 'release', strategy: state?.booking?.setup.BOOKING_TYPE ?? 'standard' }); }
+   catch { /* the controller records a typed failure with its recovery */ }
+-  state = await window.thirsty.getStatus().catch(() => state); renderAll(true);
++  finally { state = await window.thirsty.getStatus().catch(() => state); pendingAction = null; renderAll(true); }
+ }
+ async function armPrepared() {
+   const g = gates(); if (!g.arm.enabled) { flash(g.arm.reason ?? 'Arming is not available now.'); return; }
++  pendingAction = 'arming'; renderAll(true);
+   try { await window.thirsty.armFullBooking(); } catch { /* typed failure is published by the controller */ }
+-  state = await window.thirsty.getStatus().catch(() => state); renderAll(true);
++  finally { state = await window.thirsty.getStatus().catch(() => state); pendingAction = null; renderAll(true); }
+ }
+ function scrollTo(id: string) { document.getElementById(id)?.scrollIntoView({ block: 'center' }); }
+ /** Every recovery button in the app routes through here; nothing patches the page or bypasses a controller gate. */
+@@ -190,6 +195,7 @@ function recover(action: RecoveryAction) {
+     case 'SAVE_PLAN': void saveReleasePlan(); return;
+     case 'PREPARE': case 'RECHECK_BROWSERS': void prepareSaved(); return;
+     case 'REVIEW_READINESS': scrollTo('readiness-layers'); return;
++    case 'SYNC_CLOCK': void window.thirsty.syncClock().catch(() => undefined); return;
+     case 'REVIEW_LOCK': case 'REVIEW_SUBMISSION': void window.thirsty.reviewLock().catch(() => undefined); (document.getElementById('execution-console') as HTMLDetailsElement | null)?.setAttribute('open', ''); scrollTo('lock-card'); return;
+     case 'AUTHORIZE_TERMS': byId('terms').scrollIntoView({ block: 'center' }); byId('terms').focus(); return;
+     case 'CONFIGURE_PLAYERS': hooks.showView('tools'); return;
+@@ -252,7 +258,11 @@ export function initBookingSetup() {
+   for (const button of document.querySelectorAll<HTMLButtonElement>('#setup-steps [data-step]')) button.addEventListener('click', () => goStep(Number(button.dataset.step)));
+   byId('setup-back').addEventListener('click', () => goStep(Math.max(1, step - 1)));
+   byId('setup-next').addEventListener('click', () => goStep(Math.min(5, step + 1)));
+-  byId('save-draft').addEventListener('click', () => { void saveDraft().then(() => renderAll(true)).catch(() => flash('The draft could not be saved.')); });
++  byId('save-draft').addEventListener('click', () => {
++    if (pendingAction || savingPlan || !gates().saveDraft.enabled) return;
++    pendingAction = 'saving'; renderAll(true);
++    void saveDraft().catch(() => flash('The draft could not be saved.')).finally(() => { pendingAction = null; renderAll(true); });
++  });
+   byId('inline-stop').addEventListener('click', () => { void window.thirsty.abortAutomation().catch(() => undefined); });
+   byId('test-this-plan').addEventListener('click', () => { const g = gates().test; if (!g.enabled) { flash(g.reason ?? 'Testing is not available now.'); return; }
+     byId('test-lab').scrollIntoView({ block: 'start' }); byId('test-lab').querySelector<HTMLButtonElement>('#lab-run-offline')?.focus(); });
+@@ -647,7 +657,7 @@ function renderReview(v: ExecutionView) {
+     forecast: release() && s ? layerForecast(s, preparedForSaved()) : null,
+     security: release() ? { planned: plannedSends, ready: children.filter(c => c.state === 'READY').length, preparing: children.filter(c => c.state === 'PREPARING').length,
+       failed: children.filter(c => ['FAILED', 'PREWARM_FAILED'].includes(c.state)).length, omitted: children.filter(c => c.state === 'OMITTED').length, leadMs: s?.live?.prewarm?.leadMs ?? f?.prewarmLeadMs ?? null } : null,
+-    armed: { armed, running } });
++    armed: { armed, running }, readinessBlockers: s ? releaseBlockers(s) : [] });
+   const layersHost = byId('readiness-layers');
+   layersHost.hidden = !release();
+   fill(layersHost, el('p', { class: 'readiness-summary', text: readinessSummary(layers) }),
+@@ -718,7 +728,7 @@ function renderConflict(liveSaveable: boolean) {
+   const row = (x: PlanDifference) => el('tr', {}, el('th', { text: x.label }), el('td', { text: x.saved }), el('td', { text: x.draft }));
+   const table = (rows: PlanDifference[], id: string) => el('div', { class: 'table-scroll' }, el('table', { class: 'attempt-table diff-table', id },
+     el('thead', {}, el('tr', {}, ...['Field', `Saved plan ${s!.booking!.fingerprint.slice(0, 8)}`, 'This draft'].map(h => el('th', { text: h })))), el('tbody', {}, ...rows.map(row))));
+-  const button = (text: string, id: string, onclick: () => void, primary = false) => { const b = el('button', { type: 'button', class: primary ? 'compact' : 'secondary compact', id, text }) as HTMLButtonElement; b.onclick = onclick; return b; };
++  const button = (text: string, id: string, onclick: () => void, primary = false) => { const b = el('button', { type: 'button', class: primary ? 'compact' : 'secondary compact', id, text }) as HTMLButtonElement; b.disabled = !!pendingAction || savingPlan || (s?.operation ?? 'idle') !== 'idle'; b.onclick = onclick; return b; };
+   const loadSaved = () => { if (!s?.booking) return; const m = objectiveFromLegacySetup(s.booking.setup as never, Date.now()); objective = m.objective; notes = m.notes; owns = true; recompile(); revalidate(); flash('Loaded the saved release plan into Booking Setup. The previous draft changes were discarded.', 'good'); renderAll(true); };
+   if (!owns) {
+     fill(host, el('h3', { text: 'Using the saved plan from the advanced editor' }), el('p', { class: 'small', text: 'Preparation and arming use the saved plan. This Booking Setup draft is ignored until you choose otherwise.' }),
+diff --git a/ui/renderer/next-release.ts b/ui/renderer/next-release.ts
+index 1eec97a..f32f0cc 100644
+--- a/ui/renderer/next-release.ts
++++ b/ui/renderer/next-release.ts
+@@ -5,6 +5,8 @@ import { describeSmartPlan, smartImmediateSends, type SmartPhase3, type SmartWor
+ import { STRATEGY_PRESET_LABEL } from '../../src/strategy-engine.js';
+ import { byId, el, facts } from './dom.js';
+ import { readinessLayers, readinessSummary } from '../../src/execution-state.js';
++import { planWorkerIds } from '../../src/workers.js';
++import { releaseBlockers } from './operator-status.js';
+ 
+ /**
+  * NEXT RELEASE summary, generated only from the SAVED authorization (never from the editor draft), so it always states
+@@ -106,7 +108,7 @@ export function renderReleasePreflight(state:Dashboard):void {
+   const apiRelease=state.operation==='full'?state.activeApiRelease:null;
+   const armed=!!state.scheduledRelease||!!apiRelease;
+   byId('release-action-title').textContent=armed?'Armed':'Saved plan readiness';
+-  const workers=[...new Set(plan?.wave1.map(value=>value.workerId)??[])];
++  const workers=setup?planWorkerIds(setup):[];
+   const children=state.live?.parents.filter(parent=>parent.wave==='WAVE_1').flatMap(parent=>parent.children)??[];
+   const required=setup?.STRATEGY_V2?.shotgun?.exactSchedule.length??(plan?smartImmediateSends(plan.wave1):0);
+   const ready=children.filter(child=>child.state==='READY').length;
+@@ -117,7 +119,7 @@ export function renderReleasePreflight(state:Dashboard):void {
+     forecast:layerForecast(state,prepared),
+     security:plan?{planned:required,ready,preparing:children.filter(child=>child.state==='PREPARING').length,failed:children.filter(child=>['FAILED','PREWARM_FAILED'].includes(child.state)).length,
+       omitted:children.filter(child=>child.state==='OMITTED').length,leadMs:state.live?.prewarm?.leadMs??f?.prewarmLeadMs??null}:null,
+-    armed:{armed:armed&&apiRelease?.phase!=='RUNNING',running:apiRelease?.phase==='RUNNING'}});
++    armed:{armed:armed&&apiRelease?.phase!=='RUNNING',running:apiRelease?.phase==='RUNNING'},readinessBlockers:releaseBlockers(state)});
+   const title=apiRelease?{PREPARING:'ARMED · PREPARING RELEASE CONTEXTS',WAITING:'WAITING FOR RELEASE',RUNNING:'RELEASE IN PROGRESS',FAILED:'RELEASE NEEDS ATTENTION'}[apiRelease.phase]:armed?'WAITING FOR RELEASE':readinessSummary(layers);
+   const first=plan?.wave1[0],candidate=first?plan?.candidates[first.candidateIndex]:undefined,offsets=setup?.STRATEGY_V2?.shotgun?.exactSchedule.map(shot=>shot.configuredOffsetMs)??[];
+   const details=el('dl','fact-grid');facts(details,[['Plan',state.booking?`Saved release authorization ${state.booking.fingerprint.slice(0,12)}`:'No saved release plan'],
+@@ -127,4 +129,4 @@ export function renderReleasePreflight(state:Dashboard):void {
+     ['Browsers',`${workers.filter(worker=>state.browserHealth?.[worker]).length}/${workers.length} connected`],['Terms',armed?'AUTHORIZED FOR THIS RUN':state.termsAuthorized?'AUTHORIZED':'Needs authorization']]);
+   const list=el('ul','readiness-layers-list');list.append(...layers.map(layer=>{const item=el('li','',`${layer.label}: ${layer.status==='NA'?'N/A':layer.status} · ${layer.detail}`);item.dataset.status=layer.status;return item;}));
+   card.replaceChildren(el('h3','',title),list,details);
+-}
+\ No newline at end of file
++}
+diff --git a/ui/renderer/operator-status.ts b/ui/renderer/operator-status.ts
+index 50b27ad..882d0d5 100644
+--- a/ui/renderer/operator-status.ts
++++ b/ui/renderer/operator-status.ts
+@@ -1,6 +1,18 @@
+ import type { PrewarmFeasibilityResult } from '../../src/api-booking/prewarm-feasibility.js';
+ import type { Dashboard } from '../types.js';
+ import { HOLD_STATES, UNSENT_STATES, summarizeRunOutcome } from '../../src/run-outcome.js';
++import type { Recovery } from '../../src/execution-state.js';
++
++/** Preserve the controller's reasons; this adapter changes presentation only. */
++export function releaseBlockers(state: Dashboard): Array<{ reason: string; recovery: Recovery }> {
++  return (state.releaseReadiness?.checks ?? []).filter(c => c.hardBlock && c.level !== 'GOOD').map(c => ({
++    reason: `${c.label}: ${c.detail}`,
++    recovery: c.id === 'clock' ? { label: 'Refresh trusted clock', action: 'SYNC_CLOCK' }
++      : c.id === 'wave1-preparation-capacity' || c.id === 'shotgun-timing' ? { label: 'Review capacity', action: 'REVIEW_CAPACITY' }
++      : c.id === 'shotgun-topology' ? { label: 'Recheck browsers', action: 'RECHECK_BROWSERS' }
++      : { label: 'Review release checks', action: 'REVIEW_READINESS' }
++  }));
++}
+ 
+ export const offsetText = (value: number): string => `${value > 0 ? '+' : ''}${value} ms`;
+ export function acknowledgementKind(problem: string): 'timing' | 'standby' | null {

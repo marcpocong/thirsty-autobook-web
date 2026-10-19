@@ -1,0 +1,5 @@
+
+> thirsty-autobook-web@0.1.0 verify:dist
+> node scripts/verify-dist.mjs
+
+DIST CONSISTENT · 468 compiled files checked · 0 problem(s) · <LOCAL_WORKTREE>

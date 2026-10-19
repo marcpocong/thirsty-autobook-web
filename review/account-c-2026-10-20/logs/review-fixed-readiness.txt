@@ -1,0 +1,35 @@
+
+ RUN  v5.0.0 <LOCAL_WORKTREE>
+
+stdout | tests/review-fixed-readiness.test.ts > review: a schema-valid prepared Fixed Precision plan remains armable after a real controller refresh
+REAL_CONTROLLER_BLOCKERS [{"reason":"Configuration: Saved authorization does not compile","recovery":{"label":"Review release checks","action":"REVIEW_READINESS"}}]
+
+ ❯ tests/review-fixed-readiness.test.ts (1 test | 1 failed) 43ms
+   × review: a schema-valid prepared Fixed Precision plan remains armable after a real controller refresh 42ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/review-fixed-readiness.test.ts > review: a schema-valid prepared Fixed Precision plan remains armable after a real controller refresh
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ tests/review-fixed-readiness.test.ts:51:29
+     49|   await h.controller.armFullBooking();
+     50|   expect(liveRuns(h.calls)).toHaveLength(1);
+     51|   expect(gates.arm.enabled).toBe(true);
+       |                             ^
+     52| });
+     53|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed (1)
+   Start at  01:36:23
+   Duration  1.16s (transform 58%, import 37%, tests 4%)

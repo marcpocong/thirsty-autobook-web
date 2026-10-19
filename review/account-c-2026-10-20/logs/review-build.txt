@@ -1,0 +1,5 @@
+
+> thirsty-autobook-web@0.1.0 ui:build
+> node scripts/build-ui.mjs
+
+{"dist":"<LOCAL_WORKTREE>","buildId":"c6c01ed-e2226f2723","gitSha":"c6c01eddbac2f4c33cd9e051249b7a8db686da53","dirty":false}
