@@ -93,6 +93,54 @@ describe('October 18 release timing (offline, intercepted)', () => {
     }
   }, 20_000);
 
+  it('a refresh completed after its cutoff is refused even when prewarm starts later', async () => {
+    const { armed, clock, firstTriggerMs } = await armIncident(5_000), { transport, posts } = interceptedTransport();
+    let reanchored = false;
+    // Consensus completes after T-2 s; prewarm begins at T-1 s. Both promises were
+    // fulfilled by the old Promise.race, which incorrectly preferred the late refresh.
+    await expect(dispatchArmedPrecisionRace(armed, { clock, prewarmLeadMs: 1_000, spinTailMs: 0, isAborted: () => false,
+      refreshClock: () => new Promise(done => setTimeout(() => done(clock), Math.max(0, firstTriggerMs - 1_500 - clock.nowMs()))),
+      onClockRefreshed: () => { reanchored = true; }, prewarm: async () => undefined, transportFor: () => transport,
+    })).rejects.toThrow('RELEASE_CLOCK_REFRESH_TIMEOUT');
+    expect(reanchored).toBe(false);
+    expect(posts).toEqual([]);
+    expect(armed.attempts.every(a => a.state === 'disarmed')).toBe(true);
+  }, 20_000);
+
+  it('a refresh that completes after timeout cannot mutate the shared clock or timing evidence', async () => {
+    const { armed, clock, releaseMs } = await armIncident(5_000), { transport, posts } = interceptedTransport();
+    const deadline = clock.monotonicDeadline(releaseMs);
+    let finish!: (clock: TrustedReleaseClock) => void, reanchored = false;
+    await expect(dispatchArmedPrecisionRace(armed, { clock, prewarmLeadMs: 3_000, spinTailMs: 0, isAborted: () => false,
+      refreshClock: () => new Promise(done => { finish = done; }),
+      onClockRefreshed: () => { reanchored = true; }, prewarm: async () => undefined, transportFor: () => transport,
+    })).rejects.toThrow('RELEASE_CLOCK_REFRESH_TIMEOUT');
+    finish(TrustedReleaseClock.fromOffset(-50, { method: 'late', sampleCount: 5 }));
+    await new Promise<void>(done => setImmediate(done));
+    expect(clock.monotonicDeadline(releaseMs)).toBe(deadline);
+    expect(clock.evidence.method).toBe('test');
+    expect(reanchored).toBe(false);
+    expect(posts).toEqual([]);
+  }, 20_000);
+
+  it('Stop before the prewarm wait notices abort prevents a completed refresh from being adopted', async () => {
+    const { armed, clock, releaseMs } = await armIncident(5_000), { transport, posts } = interceptedTransport();
+    const deadline = clock.monotonicDeadline(releaseMs);
+    let finish!: (clock: TrustedReleaseClock) => void, aborted = false, reanchored = false;
+    const outcome = dispatchArmedPrecisionRace(armed, { clock, prewarmLeadMs: 3_000, spinTailMs: 0, isAborted: () => aborted,
+      refreshClock: () => new Promise(done => { finish = done; }),
+      onClockRefreshed: () => { reanchored = true; }, prewarm: async () => undefined, transportFor: () => transport,
+    }).catch(error => error as Error);
+    aborted = true;
+    finish(TrustedReleaseClock.fromOffset(-50, { method: 'after-stop', sampleCount: 5 }));
+    await new Promise<void>(done => setImmediate(done));
+    expect(clock.monotonicDeadline(releaseMs)).toBe(deadline);
+    expect(reanchored).toBe(false);
+    expect(await outcome).toMatchObject({ message: 'USER_ABORT' });
+    expect(posts).toEqual([]);
+    expect(armed.attempts.every(a => a.state === 'disarmed')).toBe(true);
+  }, 20_000);
+
   it('a stale or failed clock consensus never permits dispatch on untrusted timing', async () => {
     const { armed, clock } = await armIncident(4_000), { transport, posts } = interceptedTransport();
     await expect(dispatchArmedPrecisionRace(armed, { clock, prewarmLeadMs: 3_000, isAborted: () => false, transportFor: () => transport,
