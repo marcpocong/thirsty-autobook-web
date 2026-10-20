@@ -62,7 +62,7 @@ describe('Precision Release UI boundary', () => {
       expect(controller.state.detail).toContain('3 API browsers are ready');
       await controller.authorizeTerms(true); await controller.armFullBooking();
       expect(calls.map(command => typeof command === 'object' && command.kind === 'apiRun' ? `${command.mode}:${command.checkoutMethod}` : 'other'))
-        .toEqual(['prepare:proofless', 'dry:proofless', 'live:proofless']);
+        .toEqual(['prepare:proofless', 'dry:proofless', 'security-check:proofless', 'live:proofless']);
       expect(controller.state.headline).toBe('OBJECTIVE ACHIEVED · UNRESOLVED EXTRA ATTEMPT — another attempt may also hold a court');
       expect(controller.state.precision?.targets.map(target => [target.workerId, target.state])).toEqual([['A', 'QR_READY'], ['B', 'REJECTED'], ['C', 'UNKNOWN']]);
       expect(controller.state.precision?.frozen).toBe(true);
@@ -106,7 +106,7 @@ describe('Precision Release with seven attempts (A-G)', () => {
       await controller.resetPrepare({ workflow: 'release', strategy: 'standard', setup: view.setup });
       expect(controller.state.detail).toContain('7 API browsers are ready');
       await controller.authorizeTerms(true); await controller.armFullBooking();
-      expect(calls.map(command => typeof command === 'object' && command.kind === 'apiRun' ? command.mode : 'other')).toEqual(['prepare', 'dry', 'live']);
+      expect(calls.map(command => typeof command === 'object' && command.kind === 'apiRun' ? command.mode : 'other')).toEqual(['prepare', 'dry', 'security-check', 'live']);
     } finally { if (previous === undefined) delete process.env.THIRSTY_API_INSTALLATION; else process.env.THIRSTY_API_INSTALLATION = previous; }
   });
   it('refuses preparation when a configured Precision worker has no player (no fallback identity)', async () => {
