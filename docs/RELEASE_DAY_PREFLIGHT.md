@@ -40,7 +40,7 @@ Saving a plan that differs from the saved one opens a review first. It lists the
 1. In **Booking Setup**, if the date banner appears, press **Plan the next release**. This changes only the draft.
 2. Check the courts, hours and required court count. Then press **Save release plan** and confirm the listed differences.
 3. Press **Prepare**. It opens the assigned browsers and runs the genuine security check. Complete any VERIFY HERE window yourself.
-4. If **Timing calibration** is not VERIFIED, press **Run timing calibration**. It runs locally in about 1–2 minutes.
+4. If **Timing calibration** is not VERIFIED, press **Run timing calibration**. It runs locally and takes about 4 minutes on this machine.
 5. If the clock row asks for it, press **Refresh clock**.
 6. Wait for **READY FOR OPERATOR AUTHORIZATION**. Then tick Terms, press **Authorize and Arm**, and attest for the exact plan.
 7. Stay at the computer until release. If a THIRSTY BOT window says VERIFY HERE, complete the check there.

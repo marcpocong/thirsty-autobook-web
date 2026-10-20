@@ -1059,6 +1059,8 @@ export class Controller {
           const saved=this.deps.saveBooking(candidate.setup);release=this.deps.booking();if(saved.fingerprint!==release.fingerprint)throw Error('BOOKING_PLAN_CHANGED');
           this.state.bookingAdjustment=removed.length?{valid:release.setup.FALLBACK_TIMES,removed}:null;
            if(release.setup.BOOKING_TYPE!==input.strategy)throw Error('BOOKING_PLAN_CHANGED');this.state.booking=release;
+           // The runner refuses such a plan (PRECISION_CANDIDATE_INVALID) only after opening browsers; refuse it here first.
+           if(!planDateArmable(savedPlanDate(release.setup,release.targetDate)))throw Error('SAVED_PLAN_DATE_STALE');
            if(['api-first','proofless'].includes(release.setup.BOOKING_METHOD)){
               this.state.playerStatus=this.requirePlayers(planWorkerIds(release.setup));
              await this.reconcileLockForApiPrepare(gen,input);
@@ -1420,8 +1422,10 @@ export class Controller {
     finally{if(keepReady&&gen===this.generation&&this.state.apiFirstReady&&this.state.preparedPlanFingerprint===plan.fingerprint)this.state.ready=true;}
     await this.refresh();
     const verdict=this.state.shotgunTimingVerdict;
-    this.state.headline=verdict?.status==='READY'?'TIMING CALIBRATION READY':'TIMING CALIBRATION NEEDS ATTENTION';
-    this.state.detail=verdict?`${verdict.status.replaceAll('_',' ')} · ${verdict.reason}${verdict.p95!==null?` · p95 ${verdict.p95} ms · max ${verdict.max} ms`:''}`:'The calibration result could not be read for the saved plan.';
+    const awaitingChrome=verdict?.status==='INCOMPATIBLE'&&verdict.mismatches.length===1&&verdict.mismatches[0]!.includes('not open');
+    this.state.headline=verdict?.status==='READY'?'TIMING CALIBRATION READY':awaitingChrome?'TIMING CALIBRATION RECORDED':'TIMING CALIBRATION NEEDS ATTENTION';
+    this.state.detail=awaitingChrome?`Measured p95 ${verdict!.p95} ms · max ${verdict!.max} ms for this plan and build. It applies once the bot browsers are open: Prepare confirms their Chrome version.`
+      :verdict?`${verdict.status.replaceAll('_',' ')} · ${verdict.reason}${verdict.p95!==null?` · p95 ${verdict.p95} ms · max ${verdict.max} ms`:''}`:'The calibration result could not be read for the saved plan.';
     this.log(`Timing calibration: ${verdict?.status??'UNKNOWN'} · ${verdict?.reason??''}`,verdict?.status!=='READY');
   });}
   /** A different plan replaces the saved authorization only after the operator reviewed the exact differences. */

@@ -9,6 +9,7 @@ import type { Command } from '../ui/types.js';
 import type { UiEvent } from '../src/ui-events.js';
 import { UiEventSchema, UI_EVENT_PROTOCOL_VERSION } from '../src/ui-events.js';
 import { preregistered } from './arbitration-manifest-stub.js';
+import { compileSmartPlan, confirmSmartRates, emptySmartDraft } from '../src/precision-simple.js';
 
 const players = { PLAYER_FULL_NAME: 'Fixture Player', PLAYER_PHONE: '09123456789', PLAYER_EMAIL: 'fixture@example.invalid' };
 const precision = (targets: Array<{ court: number; start: string; durationHours: number }>) =>
@@ -80,6 +81,18 @@ describe('replacing the saved release plan needs an explicit review', () => {
     expect(h.calls).toEqual([]);
     expect(h.controller.validateReleaseSetup(precision(two).setup)).toMatchObject({ ok: true, matchesSaved: true });
     expect(h.controller.state.preparedPlanFingerprint ?? null).toBeNull();
+  });
+});
+describe('a plan saved for a passed release is never prepared or re-dated', () => {
+  it('refuses release preparation before any browser opens, with the plan-date recovery', async () => {
+    const target = precision(one).targetDate, earlier = DateTime.fromISO(target).minus({ days: 1 }).toISODate()!;
+    const draft = { ...emptySmartDraft(), rates: confirmSmartRates(600, 700, 'VENUE_SCHEDULE', earlier, new Date()), immediate: [{ court: 7, start: '19:00', durationHours: 3 }] };
+    const stale = bookingView(ConfigSchema.parse({ ...defaultSetup, ...players, BOOKING_METHOD: 'proofless', RELEASE_STRATEGY: 'precision', PRECISION_TARGETS: [], PRECISION_PHASE3: compileSmartPlan(draft, { targetDate: earlier }).phase3! }));
+    const h = harness(stale);
+    await h.controller.resetPrepare({ workflow: 'release', strategy: 'standard' });
+    expect(h.calls).toEqual([]);
+    expect(h.controller.state.attention).toMatchObject({ code: 'SAVED_PLAN_DATE_STALE', category: 'INVALID_PLAN', recovery: { action: 'REVIEW_PLAN_DATE' } });
+    expect(h.controller.state.booking!.setup.PRECISION_PHASE3!.candidates[0]!.rateEvidence.date).toBe(earlier);
   });
 });
 describe('preparation is bound to the exact saved plan', () => {

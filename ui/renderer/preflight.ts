@@ -2,6 +2,21 @@ import type { Dashboard } from '../types.js';
 import type { ReadinessLayer, Recovery, RecoveryAction } from '../../src/execution-state.js';
 import { releasePreflight, type Preflight, type PreflightInput, type PreflightRow } from '../../src/release-preflight.js';
 import { el, fill, dateText, manilaTime, rangeText } from './navigation.js';
+import { forecastPreparation } from '../../src/quick-shotgun.js';
+import type { SmartPhase3 } from '../../src/precision-simple.js';
+
+const PLAYER_KEYS = { A: 'primary', B: 'extended', C: 'third', D: 'fourth', E: 'fifth', F: 'sixth', G: 'seventh' } as const;
+/**
+ * The one preparation forecast every readiness display uses. Before preparation: the CAPACITY forecast of the saved
+ * plan (configured browsers, measured history). After preparation: the engine's live forecast over the browsers
+ * actually connected. Never the connected-browser forecast before anything was prepared (no browser is connected yet).
+ */
+export function planForecast(state: Dashboard, prepared: boolean) {
+  const plan = state.booking?.setup.PRECISION_PHASE3 as SmartPhase3 | undefined; if (!plan) return null;
+  if (prepared) return state.prewarmFeasibility ?? null;
+  const unavailable = new Set(Object.entries(PLAYER_KEYS).filter(([worker, key]) => state.playerStatus?.[key] === false || (state.identityIssues ?? []).some(issue => issue.startsWith(`Worker ${worker} `))).map(([worker]) => worker));
+  return forecastPreparation(plan, unavailable, state.prewarmFeasibility);
+}
 
 /**
  * Release Day Preflight and the saved-plan summary, rendered identically wherever the saved release authorization is
@@ -46,7 +61,7 @@ export function renderPlanSummary(host: HTMLElement, state: Dashboard, stateLabe
 /** One input shape for every view: the saved plan, its runtime state and the shared readiness layers. */
 export function preflightInput(state: Dashboard, layers: readonly ReadinessLayer[], extra: { prepared: boolean; forOther: boolean; armed: boolean; running: boolean;
   securityCheck: Dashboard['securityCheck'] | null; draft?: PreflightInput['savedPlan']['draft'] }): PreflightInput {
-  const b = state.booking, setup = b?.setup, f = state.prewarmFeasibility;
+  const b = state.booking, setup = b?.setup, f = planForecast(state, extra.prepared || extra.armed || extra.running);
   const s = setup ? shape(setup) : null;
   return { now: Date.now(), shotgun: !!setup?.STRATEGY_V2?.shotgun?.enabled && !!setup.PRECISION_PHASE3,
     savedPlan: { exists: !!b, fingerprint: b?.fingerprint ?? null, summary: s ? `${s.courts} · ${s.time} · ${s.attempts}` : '', ...(extra.draft !== undefined ? { draft: extra.draft } : {}) },

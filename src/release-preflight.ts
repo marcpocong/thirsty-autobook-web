@@ -133,7 +133,10 @@ export function releasePreflight(i: PreflightInput): Preflight {
   // 6. Preparation forecast (a forecast, never security evidence).
   const fl = layer('FORECAST'), capacity = check('wave1-preparation-capacity'); covered.add('wave1-preparation-capacity');
   if (fl && fl.status !== 'NA') {
-    const status: PreflightStatus = capacity ? fromCheck(capacity) : fl.status === 'OK' ? 'VERIFIED' : fl.status === 'BLOCKED' ? 'BLOCKED' : fl.status === 'WARN' ? 'NEEDS_ACTION' : 'UNKNOWN';
+    // Before preparation the controller's capacity check counts closed browsers as omissions; the row then follows the
+    // capacity forecast its text describes. Once prepared (or armed) the live check is authoritative.
+    const fromLayer: PreflightStatus = fl.status === 'OK' ? 'VERIFIED' : fl.status === 'BLOCKED' ? 'BLOCKED' : fl.status === 'WARN' ? 'NEEDS_ACTION' : 'UNKNOWN';
+    const status: PreflightStatus = capacity && (i.prepared.forSaved || live) ? fromCheck(capacity) : fromLayer;
     const f = i.forecast, retryWithinMs = f ? f.leadMs - (f.retryCutoffLeadMs ?? 7_000) : 0;
     rows.push({ id: 'forecast', layer: 'FORECAST', label: 'Preparation forecast', status, detail: fl.detail,
       ...(f ? { caution: `Starts ${s1(f.leadMs)} before the first trigger for a ${s1(f.p95Ms)} ${f.measured ? `measured p95 (${f.samples} successful preparations; failures are not in this figure)` : 'fallback estimate'}. A first attempt that fails within ${s1(Math.max(0, retryWithinMs))} can be retried once; a longer stall fails closed and nothing is sent late.` } : {}),

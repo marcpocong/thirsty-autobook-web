@@ -72,6 +72,12 @@ describe('release day preflight', () => {
     expect(row(slow, 'security').caution).toMatch(/verification frame in browser A/);
     expect(row(slow, 'forecast').caution).toMatch(/fails within 46\.1 s can be retried once; a longer stall fails closed/);
   });
+  it('before preparation follows the capacity forecast, not the live check that counts closed browsers as omissions', () => {
+    const omitted = { id: 'wave1-preparation-capacity', label: 'Wave 1 preparation capacity', level: 'UNAVAILABLE' as const, hardBlock: true, detail: 'NOT FEASIBLE · 2 configured · 0 projected ready' };
+    const checks = [...input().checks.filter(c => c.id !== 'wave1-preparation-capacity'), omitted];
+    expect(row(releasePreflight(input({ checks, prepared: { forSaved: false, forOther: false } })), 'forecast').status).toBe('VERIFIED');
+    expect(row(releasePreflight(input({ checks })), 'forecast').status).toBe('BLOCKED');
+  });
   it('keeps UNKNOWN results and retained locks review-first, and never drops an unmapped controller hard block', () => {
     expect(row(releasePreflight(input({ unknownResults: 1 })), 'locks')).toMatchObject({ status: 'BLOCKED', recovery: { action: 'OPEN_ACTIVITY' } });
     expect(row(releasePreflight(input({ lock: { present: true, unresolvedSubmission: true, canPrepareOver: false } })), 'locks')).toMatchObject({ status: 'BLOCKED', recovery: { action: 'REVIEW_SUBMISSION' } });
