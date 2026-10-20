@@ -23,6 +23,7 @@ import { runAdaptiveAttempt, type AdaptiveSelection } from './adaptive-attempt.j
 import { browserIdentity, starterFailureCode, verifyDedicatedChromeAsync } from '../browser.js';
 import { preparationStep, starterStepCode } from './browser-preparation-step.js';
 import { writeSecurityCheck, type SecurityCheck, type SecurityCheckWorker } from '../security-check.js';
+import { probeBrowserSessionId } from '../browser-session.js';
 import { API_RUN_MODES } from '../api-run-modes.js';
 import { emitUiEvent, type ApiStageFields } from '../ui-events.js';
 import { discoverApiAvailability } from './availability-engine.js';
@@ -266,8 +267,10 @@ async function prepareWorker(workerId:WorkerId,fanOutCount=1): Promise<WorkerSes
  */
 async function runSecurityCheck(sessions:readonly WorkerSession[]){
   const workers:SecurityCheck['workers']={};
-  await Promise.all(sessions.map(async({workerId,page})=>{
+  await Promise.all(sessions.map(async({workerId,page,port})=>{
     const context={workerId,lane:diagnosticLaneForWorker(workerId)};
+    // The Chrome launch this evidence belongs to: a restarted or replaced browser no longer counts as checked.
+    const browserSession=await probeBrowserSessionId(port);
     let finish:((stage:string,extra?:Record<string,unknown>)=>void)|undefined,completion:Extract<BrowserTransportObservation,{event:'SECURITY_PREPARATION_COMPLETED'}>|undefined;
     const transport=new OndaBrowserSessionTransport(page,()=>calendarFreeSecurityContext(page)(),undefined,
       {onHumanVerificationRequired:async()=>{
@@ -282,9 +285,10 @@ async function runSecurityCheck(sessions:readonly WorkerSession[]){
     const failure=await transport.checkSecurityReadiness().then(()=>undefined,(error:unknown)=>error??Error('SECURITY_CHECK_FAILED'));
     const code=failure===undefined?undefined:safeApiFailureCode(failure,'SECURITY_CHECK_FAILED');
     const result:SecurityCheckWorker={outcome:code?'FAILED':'READY',durationMs:completion?.durationMs??0,...(code?{code}:{}),
-      ...(completion?.challengeFrame?{challengeFrame:completion.challengeFrame}:{}),...(completion?.failedHelper?{failedHelper:completion.failedHelper}:{})};
+      ...(completion?.challengeFrame?{challengeFrame:completion.challengeFrame}:{}),...(completion?.failedHelper?{failedHelper:completion.failedHelper}:{}),...(browserSession?{browserSession}:{})};
     workers[workerId]=result;
-    stage('SECURITY_CHECK',{workerId,...result});
+    const {browserSession:_session,...reported}=result;
+    stage('SECURITY_CHECK',{workerId,...reported});
   }));
   writeSecurityCheck(process.cwd(),{schema:'security-check/v1',checkedAt:new Date(nowMs()).toISOString(),targetDate:command.date,fingerprint:command.fingerprint,workers});
   const failed=Object.values(workers).filter(value=>value.outcome==='FAILED').length;

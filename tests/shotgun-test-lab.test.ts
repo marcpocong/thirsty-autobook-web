@@ -9,7 +9,7 @@ import { prooflessRequest } from '../src/api-booking/proofless-checkout.js';
 import { validatePublicCheckoutResponse } from '../src/api-booking/public-checkout.js';
 import { assertLabSlotEvidence } from '../src/lab-slot-evidence.js';
 import { BookingTestLabService as ShotgunLabService } from '../ui/booking-test-lab-service.js';
-import { defaultObjective, withStrategy, type BookingObjective } from '../src/booking-objective.js';
+import { defaultObjective, enumerateTargets, withStrategy, type BookingObjective } from '../src/booking-objective.js';
 const root=resolve('.');
 async function child(scenario:LabScenario,objective:'ANY_ONE'|'ONE_PER_WING'='ANY_ONE') {
   const base=join(root,'.local/shotgun-test-lab/tests');await mkdir(base,{recursive:true});
@@ -101,4 +101,77 @@ describe('Booking Test Lab · exact objective, distinct-court quotas',()=>{
     for(const scenario of ['APP_RESTART_RETAINED_UNKNOWN','UNSUPPORTED_RELEASE_POLICY','DUPLICATE_TARGET'] as const){
       const r=await objectiveChild(scenario,quotaObjective(1));expect(r.initiated).toBe(0);expect(r.warnings.join(' ')).toContain('PREFLIGHT_REFUSED');}
   },90000);
+});
+
+/**
+ * Release-boundary rehearsal of the exact saved two-court plan (Mango Court 7 → A, Court 6 → B, 19:00–22:00, both
+ * required, two attempts at 0 ms) through the production freeze/arm/dispatch modules, real isolated Chrome and locally
+ * intercepted checkouts. Time is accelerated (8 s countdown, 6 s lead); deadline semantics are the production ones.
+ */
+function twoCourtObjective():BookingObjective{
+  const o=withStrategy(defaultObjective(Date.now(),'NEXT_RELEASE'),'SHOTGUN');o.wings.BUKO.enabled=false;
+  o.wings.MANGO={...o.wings.MANGO,courts:[{court:7,priority:1},{court:6,priority:2}],startTimes:['19:00'],durationHours:3,minimum:2,ideal:2};
+  const ids=enumerateTargets(o).targets.map(t=>t.id);
+  o.shotgun={...o.shotgun,allocationMode:'CUSTOM',budget:2,timingMode:'CUSTOM',customOffsetsMs:[0,0],timingCapacityOverride:true,customCounts:{[ids[0]!]:1,[ids[1]!]:1}};
+  return o;
+}
+async function rehearse(scenario:LabScenario){
+  const base=join(root,'.local/shotgun-test-lab/tests');await mkdir(base,{recursive:true});
+  const directory=await mkdtemp(join(base,'rehearsal-')),file=join(directory,'input.json');
+  await writeFile(file,JSON.stringify({objective:twoCourtObjective(),scenario,countdownSeconds:8}));
+  await new Promise<void>((done,fail)=>{const worker=spawn(process.execPath,['--import','tsx',join(root,'src/booking-test-lab-child.ts'),file,directory],{cwd:root,stdio:['ignore','ignore','pipe','ipc'],windowsHide:true});let error:string|undefined,stderr='';worker.stderr?.on('data',chunk=>{stderr+=String(chunk);});
+    worker.on('message',(m:unknown)=>{error=(m as {error?:string}).error??error;});worker.on('error',fail);worker.on('exit',code=>code===0?done():fail(Error(error||stderr.slice(-3000).trim()||`LAB_TEST_CHILD_EXIT ${code}`)));});
+  return JSON.parse(await readFile(join(directory,'result.json'),'utf8')) as LabResult;
+}
+const byWorker=(r:LabResult,worker:string)=>r.outcomes.filter(o=>o.worker===worker);
+describe('two-court release-boundary rehearsal (exact saved Mango 7/6 plan, intercepted)',()=>{
+  it('compiles to exactly two strict Shotgun attempts on two browsers',()=>{
+    const p=validateLabRequest({objective:twoCourtObjective(),scenario:'ALL_REJECTED',countdownSeconds:8});
+    expect(p.strict).toBe(true);expect(p.topology.tabsPerWorker).toEqual({A:1,B:1});expect(p.topology.shots.map(s=>s.configuredOffsetMs)).toEqual([0,0]);
+    expect(p.quota).toMatchObject({scope:'PER_WING',wings:{MANGO:{minimum:2,ideal:2}}});
+  });
+  it('success: both browsers prepare, both attempts are initiated and two distinct courts meet the quota',async()=>{
+    const r=await rehearse('MANGO_SUCCESS');
+    expect(r.planned).toBe(2);expect(r.initiated).toBe(2);expect(r.missedDeadlines).toBe(0);expect(r.preparation.every(p=>p.ready)).toBe(true);
+    expect(r.wings[0]).toMatchObject({wing:'MANGO',holds:2,distinctCourts:2,complete:true});expect(r.objectiveOutcome.status).toBe('IDEAL');
+    expect(r.timing.max!).toBeLessThanOrEqual(50);
+  },60000);
+  it('slow security preparation inside the lead still dispatches both attempts on time',async()=>{
+    const r=await rehearse('SLOW_SECURITY');
+    expect(r.initiated).toBe(2);expect(r.missedDeadlines).toBe(0);expect(r.preparation.every(p=>p.ready)).toBe(true);
+    expect(Math.max(...r.preparation.map(p=>p.durationMs??0))).toBeGreaterThanOrEqual(3_000);
+  },60000);
+  it('a security stall that outlasts the lead fails closed for that attempt; the other worker still dispatches',async()=>{
+    const r=await rehearse('SECURITY_STALL');
+    // The dispatcher does not wait for the stalled preparation: A settles unsent at its strict deadline.
+    expect(r.initiated).toBe(1);expect(r.preparation.filter(p=>p.ready)).toHaveLength(1);
+    expect(byWorker(r,'A')).toEqual([expect.objectContaining({state:'NOT_DISPATCHED',code:'SHOTGUN_TRIGGER_MISSED'})]);
+    expect(byWorker(r,'B')).toHaveLength(1);expect(r.objectiveOutcome.status).not.toBe('IDEAL');
+  },60000);
+  for(const scenario of ['BROWSER_CLOSED','PREPARE_FAILED'] as const)it(`${scenario}: one worker fails while the other is ready; nothing is sent for the failed worker`,async()=>{
+    const r=await rehearse(scenario);
+    expect(r.initiated).toBe(1);expect(byWorker(r,'B')).toHaveLength(1);
+    expect(byWorker(r,'A').every(o=>!['IN_FLIGHT','REJECTED','UNKNOWN','HOLD_VERIFIED_QR_ATTENTION'].includes(o.state))).toBe(true);
+  },60000);
+  it('a late scheduled attempt is refused at its strict deadline, never sent late',async()=>{
+    const r=await rehearse('MISSED_TRIGGER');
+    expect(r.missedDeadlines).toBeGreaterThan(0);expect(r.initiated).toBeLessThan(2);
+    expect(r.outcomes.filter(o=>o.code==='SHOTGUN_TRIGGER_MISSED').every(o=>o.worker==='A')).toBe(true);
+  },60000);
+  it('Emergency Stop before the trigger leaves every attempt unsent',async()=>{
+    const r=await rehearse('STOP_BEFORE_DISPATCH');
+    expect(r.initiated).toBe(0);expect(r.wings[0]!.holds).toBe(0);expect(r.preparation.every(p=>p.ready)).toBe(true);
+    expect(r.outcomes.map(o=>[o.worker,o.state,o.code]).sort()).toEqual([['A','NOT_DISPATCHED','USER_ABORT'],['B','NOT_DISPATCHED','USER_ABORT']]);
+  },60000);
+  it('partial provider success: one verified hold is not the two-court objective',async()=>{
+    const r=await rehearse('FIRST_SUCCESS');
+    expect(r.wings[0]!.holds).toBe(1);expect(r.wings[0]!.complete).toBe(false);
+    expect(r.objectiveOutcome.status).toBe('PARTIAL');
+  },60000);
+  for(const scenario of ['UNKNOWN','THROTTLE'] as const)it(`${scenario}: the uncertain or throttled result is kept as such and nothing is retried`,async()=>{
+    const r=await rehearse(scenario);
+    expect(r.initiated).toBeLessThanOrEqual(2);expect(r.wings[0]!.complete).toBe(false);
+    if(scenario==='UNKNOWN'){expect(r.outcomes.some(o=>o.state==='UNKNOWN')).toBe(true);expect(r.objectiveOutcome.status).not.toBe('IDEAL');}
+    expect(r.outcomes.every(o=>o.state!=='HOLD_VERIFIED_QR_ATTENTION')).toBe(true);
+  },60000);
 });

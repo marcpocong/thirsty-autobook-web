@@ -40,6 +40,12 @@ export function commandSpec(command: Command, root: string, node: string) {
       const c=z.object({kind:z.literal('courtBrowse'),date:z.iso.date()}).strict().parse(command);
       return {executable:node,args:['--import','tsx',resolve(root,'src/api-booking/court-browser-runner.ts'),JSON.stringify({date:c.date})],automation:true};
     }
+    // Local timing calibration of the saved Shotgun plan (offline Chrome; every checkout is answered locally, nothing reaches Onda).
+    if(command.kind==='timingCalibration'){
+      const c=z.object({kind:z.literal('timingCalibration'),date:z.iso.date()}).strict().parse(command);
+      return {executable:node,args:['--import','tsx',resolve(root,'scripts/benchmark-fanout-capacity.ts'),'--saved-plan',resolve(root,'config.local.json'),'--target-date',c.date,
+        '--runs','10','--headed','true','--label','app-calibration'],automation:true};
+    }
     if(command.kind==='blockAudit'){
       const c=z.object({kind:z.literal('blockAudit'),date:z.iso.date()}).strict().parse(command);
       return {executable:node,args:['--import','tsx',resolve(root,'src/api-booking/block-audit-runner.ts'),

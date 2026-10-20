@@ -6,6 +6,7 @@ import { monitorEventLoopDelay } from 'node:perf_hooks';
 import type { BuildInfo } from './build-info.js';
 import type {PrewarmFeasibilityResult} from './api-booking/prewarm-feasibility.js';
 import type {SecurityCheckVerdict} from './security-check.js';
+import {planDateArmable,type SavedPlanDate} from './release-plan-date.js';
 
 export type ReadinessLevel='GOOD'|'DEGRADED'|'UNAVAILABLE';
 export type ReleaseGateVerdict='READY'|'READY_WITH_WARNINGS'|'NOT_READY';
@@ -26,13 +27,16 @@ export function readLastReleaseBuild(root:string):{gitSha:string;dirty:boolean|n
 export function evaluateReleaseReadiness(input:{build:BuildInfo|null;testedBuild:{gitSha:string;dirty:boolean|null;finishedAt:string;packaged:boolean}|null;configValid:boolean;authorizationValid:boolean;
   clock:{synced:boolean;ageMs:number|null;uncertaintyMs:number|null;offsetMs:number|null};machine:MachineHealth;workers:Record<string,{connected:boolean;identityValid:boolean;securityReady:boolean;targetReady?:boolean;tabCount?:number;latencyP95Ms?:number|null}>;
   observer:{online:boolean;lastReadAgeMs:number|null;availabilityLatencyMs:number|null};fanOut:{compatible:boolean;stale:boolean;width:number}|null;prewarm:boolean;
-  shotgun?:{tabsPerWorker:Record<string,number>;shotCount:number;timingStatus?:string}|null;
-  prewarmFeasibility?:PrewarmFeasibilityResult|null;securityCheck?:SecurityCheckVerdict|null}):ReleaseReadinessGate{
+  shotgun?:{tabsPerWorker:Record<string,number>;shotCount:number;timingStatus?:string;timingReason?:string}|null;
+  prewarmFeasibility?:PrewarmFeasibilityResult|null;securityCheck?:SecurityCheckVerdict|null;planDate?:SavedPlanDate|null}):ReleaseReadinessGate{
   const checks:ReadinessCheck[]=[];const add=(check:ReadinessCheck)=>checks.push(check);
   const buildMatch=!!input.build&&!!input.testedBuild&&input.build.gitSha===input.testedBuild.gitSha&&input.testedBuild.packaged;
   add({id:'build',label:'Build integrity',level:!input.build||!input.testedBuild?'UNAVAILABLE':buildMatch&&!input.build.dirty?'GOOD':'DEGRADED',hardBlock:false,
     detail:!input.build?'Running build metadata unavailable':!input.testedBuild?'No verified release build record':buildMatch?input.build.dirty?'SHA matches tested build, but source was dirty':`running/tested/packaged ${input.build.gitSha.slice(0,7)}`:'Running SHA does not match the last tested packaged build'});
-  add({id:'config',label:'Configuration',level:input.configValid&&input.authorizationValid?'GOOD':'UNAVAILABLE',hardBlock:true,detail:input.configValid?(input.authorizationValid?'Saved release authorization is valid':'Saved authorization does not compile'):'Configuration is invalid'});
+  // A plan saved for an earlier release is not this release's authorization, however valid its schema.
+  const dated=planDateArmable(input.planDate);
+  add({id:'config',label:'Configuration',level:input.configValid&&input.authorizationValid&&dated?'GOOD':'UNAVAILABLE',hardBlock:true,
+    detail:!input.configValid?'Configuration is invalid':!input.authorizationValid?'Saved authorization does not compile':!dated?input.planDate!.detail:'Saved release authorization is valid'});
   const clockGood=input.clock.synced&&input.clock.ageMs!==null&&input.clock.ageMs<=15*60_000&&input.clock.uncertaintyMs!==null&&input.clock.uncertaintyMs<=25;
   add({id:'clock',label:'Trusted clock',level:clockGood?'GOOD':input.clock.synced?'DEGRADED':'UNAVAILABLE',hardBlock:!input.clock.synced,
     detail:input.clock.synced?`offset ${input.clock.offsetMs?.toFixed(1)??'?'} ms · uncertainty ${input.clock.uncertaintyMs?.toFixed(1)??'?'} ms · age ${input.clock.ageMs===null?'?':Math.round(input.clock.ageMs/1000)+' s'}`:'No valid trusted clock'});
@@ -53,12 +57,14 @@ export function evaluateReleaseReadiness(input:{build:BuildInfo|null;testedBuild
   if(input.shotgun && !feasibility)add({id:'wave1-preparation-capacity',label:'Wave 1 preparation capacity',level:'UNAVAILABLE',hardBlock:true,detail:'Shotgun requires a complete exact-plan preparation forecast.'});
   if(input.shotgun){const missing=Object.entries(input.shotgun.tabsPerWorker).some(([worker,count])=>{const w=input.workers[worker];return !w?.connected||!w.targetReady||(w.tabCount??0)<count;});
     add({id:'shotgun-topology',label:'Exact Shotgun topology',level:missing?'UNAVAILABLE':'GOOD',hardBlock:missing,detail:`${input.shotgun.shotCount} shots · tabs ${Object.values(input.shotgun.tabsPerWorker).join('/')} · strict tolerance ${SHOTGUN_MAX_TRIGGER_LATENESS_MS} ms`});
-    const status=input.shotgun.timingStatus??'NOT_TESTED';add({id:'shotgun-timing',label:'Local Shotgun timing test',level:status==='READY'?'GOOD':status==='NOT_TESTED'?'DEGRADED':'UNAVAILABLE',hardBlock:status==='FAILED'||status==='AT_RISK',detail:`${status} · configured trigger to local Chrome only; provider outcome unknown`});
+    // Live Shotgun requires an applicable READY calibration: missing, expired, mismatched, failed and at-risk all block.
+    const status=input.shotgun.timingStatus??'NOT_TESTED';add({id:'shotgun-timing',label:'Local Shotgun timing test',level:status==='READY'?'GOOD':'UNAVAILABLE',hardBlock:status!=='READY',
+      detail:`${status.replaceAll('_',' ')}${input.shotgun.timingReason?` · ${input.shotgun.timingReason}`:''} · configured trigger to local Chrome only; provider outcome unknown`});
   }
   // Genuine verification in the prepared browsers minutes before release. Live Shotgun requires it; otherwise informative.
   const check=input.securityCheck;
   if(check)add({id:'security-check',label:'Pre-release security check',level:check.status==='PASSED'?'GOOD':check.status==='FAILED'?'UNAVAILABLE':'DEGRADED',hardBlock:!!input.shotgun&&check.status!=='PASSED',
-    detail:`${check.status==='PASSED'?'passed':check.status==='FAILED'?'failed':check.status==='MISSING'?'not run':check.status==='STALE'?'stale':'for another plan'} · ${check.detail}${check.checkedAt?` · ${check.checkedAt.slice(11,16)} UTC`:''}`});
+    detail:`${check.status==='PASSED'?'passed':check.status==='FAILED'?'failed':check.status==='MISSING'?'not run':check.status==='STALE'?'stale':check.status==='OTHER_BROWSER'?'browser changed':'for another plan'} · ${check.detail}${check.checkedAt?` · ${check.checkedAt.slice(11,16)} UTC`:''}`});
   // Preparation is not release security: per-attempt security runs only after arming, shortly before the first trigger.
   add({id:'prewarm',label:'Environment prepared',level:input.prewarm?'GOOD':'DEGRADED',hardBlock:false,detail:input.prewarm?'browser sessions prepared for the saved plan · live release security runs only after arming':'not yet prepared'});
   const hard=checks.some(value=>value.hardBlock&&value.level!=='GOOD'),warnings=checks.some(value=>value.level!=='GOOD');

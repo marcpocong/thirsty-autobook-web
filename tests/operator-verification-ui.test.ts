@@ -111,6 +111,8 @@ describe('independent integrated-source verification', () => {
     await publish(page, { identityIssues: [] });
     await expect.poll(() => page.locator('#action-blockers').innerText()).toContain('No valid trusted clock');
     expect(await primary(page).isDisabled()).toBe(true);
+    // The execution console is collapsed by default; its saved-plan readiness is read after opening it.
+    await page.locator('#execution-console').evaluate(node => { (node as HTMLDetailsElement).open = true; });
     expect(await page.locator('#next-preflight').innerText()).toContain('No valid trusted clock');
     for (const viewport of [{width:1366,height:768},{width:1440,height:900},{width:390,height:844}]) {
       await page.setViewportSize(viewport);
