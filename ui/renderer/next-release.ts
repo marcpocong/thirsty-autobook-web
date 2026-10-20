@@ -7,6 +7,7 @@ import { byId, el, facts } from './dom.js';
 import { readinessLayers, readinessSummary } from '../../src/execution-state.js';
 import { planWorkerIds } from '../../src/workers.js';
 import { releaseBlockers } from './operator-status.js';
+import { preflightInput, releasePreflight, renderPreflight } from './preflight.js';
 
 /**
  * NEXT RELEASE summary, generated only from the SAVED authorization (never from the editor draft), so it always states
@@ -44,7 +45,7 @@ export function renderNextRelease(state: Dashboard): void {
       : meta.fanOut.source === 'MACHINE_RECOMMENDED' ? ' · machine recommendation' : ' · no capacity profile' : '';
     name.textContent = meta?.shotgun?.enabled ? 'Shotgun' : meta ? `Normal · ${STRATEGY_PRESET_LABEL[meta.preset]}` : 'Smart (custom)';
     const firstTarget=plan.wave1[0],firstCandidate=firstTarget?plan.candidates[firstTarget.candidateIndex]:undefined,range=meta?.shotgun?.exactSchedule.length?`${meta.shotgun.exactSchedule[0]!.configuredOffsetMs} → ${meta.shotgun.exactSchedule.at(-1)!.configuredOffsetMs} ms`:'Measured timing';
-    facts(target, [['Wing','Mango Wing'],['Primary target',firstCandidate?`Court ${firstCandidate.court} · ${firstCandidate.start} · ${firstCandidate.durationHours} h`:'—'],['Strategy',meta?.shotgun?.enabled?`Shotgun · Dense Core · ${sends} attempts`:`Normal · ${sends} attempts`],['Timing',range],...(meta?.shotgun?.enabled?[['Strict trigger tolerance',`${SHOTGUN_MAX_TRIGGER_LATENESS_MS} ms · late attempts omitted`] as [string,string],['Tabs required',plan.wave1.map(a=>`${a.workerId}: ${a.fanOutOffsetsMs?.length??1}`).join(' / ')] as [string,string],['Local timing test',state.shotgunTiming?`${state.shotgunTiming.status} · p95 ${state.shotgunTiming.p95??'unmeasured'} ms · max ${state.shotgunTiming.max??'unmeasured'} ms · ${state.shotgunTiming.omittedShots} omitted · ${state.shotgunTiming.compressedPairs} compressed pairs`:'NOT TESTED for this plan and build'] as [string,string]]:[]),['Preparation forecast',feasibility?`${feasibility.projectedReady}/${feasibility.configuredWave1Attempts} ${feasibility.verdict?.replaceAll('_',' ')??'checking'}`:'Checked during Prepare for Release'],['Browsers',`${new Set(plan.wave1.map(value=>value.workerId)).size} release groups`],['Backup attempts',plan.budgets.wave2>0?`Up to ${plan.budgets.wave2}`:'Off'],['Reopened-slot rescue',plan.rescueEnabled&&plan.budgets.rescue>0?`ON · up to ${plan.budgets.rescue}`:'OFF']]);
+    facts(target, [['Wing','Mango Wing'],['Primary target',firstCandidate?`Court ${firstCandidate.court} · ${firstCandidate.start} · ${firstCandidate.durationHours} h`:'—'],['Strategy',meta?.shotgun?.enabled?`Shotgun · Dense Core · ${sends} attempts`:`Normal · ${sends} attempts`],['Timing',range],...(meta?.shotgun?.enabled?[['Strict trigger tolerance',`${SHOTGUN_MAX_TRIGGER_LATENESS_MS} ms · late attempts omitted`] as [string,string],['Tabs required',plan.wave1.map(a=>`${a.workerId}: ${a.fanOutOffsetsMs?.length??1}`).join(' / ')] as [string,string],['Local timing test',state.shotgunTimingVerdict?`${state.shotgunTimingVerdict.status.replaceAll('_',' ')} · ${state.shotgunTimingVerdict.p95!==null?`p95 ${state.shotgunTimingVerdict.p95} ms · max ${state.shotgunTimingVerdict.max} ms · `:''}${state.shotgunTimingVerdict.reason}`:state.shotgunTiming?`${state.shotgunTiming.status} · p95 ${state.shotgunTiming.p95??'unmeasured'} ms · max ${state.shotgunTiming.max??'unmeasured'} ms · ${state.shotgunTiming.omittedShots} omitted · ${state.shotgunTiming.compressedPairs} compressed pairs`:'NOT TESTED for this plan and build'] as [string,string]]:[]),['Preparation forecast',feasibility?`${feasibility.projectedReady}/${feasibility.configuredWave1Attempts} ${feasibility.verdict?.replaceAll('_',' ')??'checking'}`:'Checked during Prepare for Release'],['Browsers',`${new Set(plan.wave1.map(value=>value.workerId)).size} release groups`],['Backup attempts',plan.budgets.wave2>0?`Up to ${plan.budgets.wave2}`:'Off'],['Reopened-slot rescue',plan.rescueEnabled&&plan.budgets.rescue>0?`ON · up to ${plan.budgets.rescue}`:'OFF']]);
     facts(technical, [
       ['Engine checks (detail)', state.releaseReadiness?.verdict.replaceAll('_',' ') ?? 'checking'],
       ['Build integrity', state.releaseReadiness?.checks.find(value=>value.id==='build')?.detail ?? build],
@@ -119,6 +120,8 @@ export function renderReleasePreflight(state:Dashboard):void {
     forecast:layerForecast(state,prepared),
     security:plan?{planned:required,ready,preparing:children.filter(child=>child.state==='PREPARING').length,failed:children.filter(child=>['FAILED','PREWARM_FAILED'].includes(child.state)).length,
       omitted:children.filter(child=>child.state==='OMITTED').length,leadMs:state.live?.prewarm?.leadMs??f?.prewarmLeadMs??null}:null,
+    // The same pre-release security evidence Booking Setup shows (only for the prepared saved plan).
+    securityCheck:prepared?state.securityCheck??null:null,
     armed:{armed:armed&&apiRelease?.phase!=='RUNNING',running:apiRelease?.phase==='RUNNING'},readinessBlockers:releaseBlockers(state)});
   const title=apiRelease?{PREPARING:'ARMED · PREPARING RELEASE CONTEXTS',WAITING:'WAITING FOR RELEASE',RUNNING:'RELEASE IN PROGRESS',FAILED:'RELEASE NEEDS ATTENTION'}[apiRelease.phase]:armed?'WAITING FOR RELEASE':readinessSummary(layers);
   const first=plan?.wave1[0],candidate=first?plan?.candidates[first.candidateIndex]:undefined,offsets=setup?.STRATEGY_V2?.shotgun?.exactSchedule.map(shot=>shot.configuredOffsetMs)??[];
@@ -127,6 +130,9 @@ export function renderReleasePreflight(state:Dashboard):void {
     ['Timing',offsets.length?`${Math.min(...offsets)} → ${Math.max(...offsets)} ms`:'Saved release timing'],
     ['Live security',children.length?`${ready}/${required} ready (actual evidence for this run)`:'not yet prepared · runs only after arming'],
     ['Browsers',`${workers.filter(worker=>state.browserHealth?.[worker]).length}/${workers.length} connected`],['Terms',armed?'AUTHORIZED FOR THIS RUN':state.termsAuthorized?'AUTHORIZED':'Needs authorization']]);
-  const list=el('ul','readiness-layers-list');list.append(...layers.map(layer=>{const item=el('li','',`${layer.label}: ${layer.status==='NA'?'N/A':layer.status} · ${layer.detail}`);item.dataset.status=layer.status;return item;}));
-  card.replaceChildren(el('h3','',title),list,details);
+  // One preflight model for every view (src/release-preflight.ts); actions stay in Review & Run.
+  const rows=el('div','preflight compact');
+  renderPreflight(rows,releasePreflight(preflightInput(state,layers,{prepared,forOther:!!state.ready&&!!state.preparedPlanFingerprint&&!prepared,
+    armed:armed&&apiRelease?.phase!=='RUNNING',running:apiRelease?.phase==='RUNNING',securityCheck:prepared?state.securityCheck??null:null})),{compact:true});
+  card.replaceChildren(el('h3','',title),rows,details);
 }

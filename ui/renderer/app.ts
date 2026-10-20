@@ -396,7 +396,8 @@ initStrategy({state:()=>latest,mainCourtOrder:()=>[...courtOrder],draft:()=>smar
     ...(strategyMeta.fanOut.basedOnTiming?{timing:strategyMeta.fanOut.basedOnTiming}: {})}};renderSmart(true);changed();},
   save:()=>saveBookingPlan(),
   activateSmart:()=>{input('precision-strategy').value='precision';precisionMode='smart';syncStrategy();},
-  nextRelease:()=>showView('release')});
+  // An explicit request for the Next Release details opens the (collapsed by default) execution console.
+  nextRelease:()=>{showView('release');(document.getElementById('execution-console') as HTMLDetailsElement|null)?.setAttribute('open','');}});
 byId('smart-add-immediate').onclick=()=>smartEdit(draft=>{draft.immediate.push(smartNewSlot());});
 byId('smart-add-backup').onclick=()=>smartEdit(draft=>{draft.backups.push(smartNewSlot());});
 byId('release-lab-preset').onclick=()=>{

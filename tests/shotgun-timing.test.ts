@@ -1,5 +1,6 @@
 import {describe,it,expect} from 'vitest';
-import {exactShotgunTopology,assertShotgunPrewarm,assertShotgunTabs,assertShotgunSchedule,summarizeShotgunTiming,applicableShotgunTiming,shotgunMachineKey,calibrationTargetDate,calibrationBuildKey} from '../src/shotgun-timing.js';
+import {exactShotgunTopology,assertShotgunPrewarm,assertShotgunTabs,assertShotgunSchedule,summarizeShotgunTiming,applicableShotgunTiming,shotgunMachineKey,calibrationTargetDate,calibrationBuildKey,shotgunTimingVerdict,SHOTGUN_TIMING_MAX_AGE_MS} from '../src/shotgun-timing.js';
+import {SHOTGUN_MAX_TRIGGER_LATENESS_MS as SHOTGUN_MAX_TRIGGER_LATENESS} from '../src/shotgun.js';
 import {EXPERIMENTAL_DENSE_CORE_20} from '../src/shotgun.js';
 import {compileSmartPlan,confirmSmartRates,emptySmartDraft} from '../src/precision-simple.js';
 import {quickShotgunSettings} from '../src/quick-shotgun.js';
@@ -104,5 +105,31 @@ describe('saved-plan calibration identity',()=>{
     expect(calibrationBuildKey({gitSha:'unknown',dirty:null},{kind:'installation',gitSha:sha,dirty:true})).toBe(`${sha}+dirty`);
     expect(calibrationBuildKey({gitSha:'unknown',dirty:null},{kind:'source',gitSha:sha,dirty:false})).toBe('unknown');
     expect(calibrationBuildKey({gitSha:'unknown',dirty:null},null)).toBe('unknown');
+  });
+});describe('calibration verdict shown to the operator and used by arming',()=>{
+  const saved=exactShotgunTopology({candidates:[{court:7,start:'19:00',durationHours:3},{court:6,start:'19:00',durationHours:3}],wave1:[{workerId:'A',candidateIndex:0},{workerId:'B',candidateIndex:1}]});
+  const rows=(error=4)=>saved.shots.map((shot,index)=>({...sample(),workerIndex:index,workerId:shot.workerId,fanOutIndex:shot.fanOutIndex,fanOutCount:1,configuredOffsetMs:shot.configuredOffsetMs,chromeStartMs:shot.configuredOffsetMs+error}));
+  const ready=summarizeShotgunTiming(saved,rows(),compatibility,1),testedAt=Date.parse(ready.testedAt!);
+  const verdict=(value:unknown,now=testedAt+60_000,chrome:string|null='Chrome/test',build='build1')=>shotgunTimingVerdict(value,saved,build,now,chrome,compatibility.machineKey);
+  it('names READY, NOT TESTED, EXPIRED, INCOMPATIBLE and FAILED distinctly, with test and expiry times',()=>{
+    expect(verdict(ready)).toMatchObject({status:'READY',matchesPlan:true,p95:4,max:4,shotCount:2,runs:1,testedAt:ready.testedAt,expiresAt:new Date(testedAt+SHOTGUN_TIMING_MAX_AGE_MS).toISOString()});
+    expect(verdict(null).status).toBe('NOT_TESTED');
+    expect(verdict(ready,testedAt+SHOTGUN_TIMING_MAX_AGE_MS+1)).toMatchObject({status:'EXPIRED',reason:expect.stringContaining('24 hours')});
+    expect(verdict(ready,testedAt+60_000,'Chrome/other')).toMatchObject({status:'INCOMPATIBLE',mismatches:['Chrome version']});
+    expect(verdict(ready,testedAt+60_000,null).mismatches).toEqual(['Chrome version (bot browsers not open)']);
+    expect(verdict(ready,testedAt+60_000,'Chrome/test','build2').mismatches).toEqual(['installed build']);
+    expect(verdict(ready,testedAt+60_000,'Chrome/test','build1+dirty').mismatches).toEqual(['installed build']);
+    expect(verdict({...ready,machineKey:'other'}).mismatches).toEqual(['machine or dispatcher runtime']);
+    expect(verdict({...ready,dispatcher:'renderer'}).mismatches).toEqual(['dispatcher']);
+    const other=exactShotgunTopology({candidates:[{court:7,start:'19:00',durationHours:3}],wave1:[{workerId:'A',candidateIndex:0,fanOutOffsetsMs:[-80,0]}]});
+    expect(shotgunTimingVerdict(summarizeShotgunTiming(other,other.shots.map((shot,i)=>({...sample(),workerIndex:i,workerId:'A',fanOutIndex:shot.fanOutIndex,fanOutCount:2,configuredOffsetMs:shot.configuredOffsetMs,chromeStartMs:shot.configuredOffsetMs+4})),compatibility,1),saved,'build1',testedAt+1,'Chrome/test',compatibility.machineKey))
+      .toMatchObject({status:'INCOMPATIBLE',matchesPlan:false});
+    const late=summarizeShotgunTiming(saved,rows(SHOTGUN_MAX_TRIGGER_LATENESS+1),compatibility,1);
+    expect(verdict(late)).toMatchObject({status:'FAILED'});
+    expect(verdict({...ready,status:'READY',max:SHOTGUN_MAX_TRIGGER_LATENESS+1,p95:SHOTGUN_MAX_TRIGGER_LATENESS+1}).status).toBe('INCOMPATIBLE');
+  });
+  it('the arming filter accepts exactly the profiles the verdict does not call EXPIRED or INCOMPATIBLE',()=>{
+    for(const [value,now,chrome] of [[ready,testedAt+1,'Chrome/test'],[ready,testedAt+SHOTGUN_TIMING_MAX_AGE_MS+1,'Chrome/test'],[ready,testedAt+1,'Chrome/x'],[{...ready,status:'FAILED'},testedAt+1,'Chrome/test']] as const)
+      expect(applicableShotgunTiming(value as ShotgunTimingReadiness,saved,'build1',now,chrome,compatibility.machineKey)).toBe(!['EXPIRED','INCOMPATIBLE'].includes(verdict(value,now,chrome).status));
   });
 });

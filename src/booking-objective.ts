@@ -336,7 +336,7 @@ export function compileObjective(o: BookingObjective, ctx: CompileContext): Comp
     // Separate scheduled cohorts per release instant; dates are never rewritten to share one release.
     const releaseOf = new Map<Wing, number>();
     for (const wing of wings) { try { releaseOf.set(wing, releaseInstantFor(o.wings[wing].bookingDate, wing)); } catch { problems.push(`${wing}: release policy unknown.`); } }
-    for (const [wing, releaseMs] of releaseOf) if (releaseMs <= ctx.nowMs) problems.push(`${wing === 'MANGO' ? 'Mango' : 'Buko'} ${o.wings[wing].bookingDate} was released at ${new Date(releaseMs).toISOString()}; use Available Now for a published date.`);
+    for (const [wing, releaseMs] of releaseOf) if (releaseMs <= ctx.nowMs) problems.push(`${wing === 'MANGO' ? 'Mango' : 'Buko'} ${o.wings[wing].bookingDate} was already released (${new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).format(releaseMs)} Manila). Choose the next release date explicitly, or use Available Now for a published date.`);
     const instants = unique([...releaseOf.values()]).sort((a, b) => a - b);
     if (instants.length > 1) warnings.push('Mango and Buko targets release at different instants. They are separate scheduled cohorts under one objective; each is prepared and armed for its own release.');
     for (const releaseMs of instants) {
@@ -423,7 +423,9 @@ export function savedMangoReleaseSetup(compiled: CompiledObjective, nextMangoBoo
   if (compiled.problems.length) return { setup: null, problems: ['Resolve the plan problems first.'] };
   if (o.wings.BUKO.enabled) problems.push('The live release plan is Mango-only. Turn Buko off to save a live plan; Buko stays in offline rehearsal.');
   if (!o.wings.MANGO.enabled) problems.push('Enable Mango to save a live release plan.');
-  if (o.wings.MANGO.bookingDate !== nextMangoBookingDate) problems.push(`The next release publishes Mango ${nextMangoBookingDate}. ${o.wings.MANGO.bookingDate} cannot be saved as the live plan now; keep it as a draft and save it after the earlier release.`);
+  if (o.wings.MANGO.bookingDate !== nextMangoBookingDate) problems.push(o.wings.MANGO.bookingDate < nextMangoBookingDate
+    ? `Mango ${o.wings.MANGO.bookingDate} has already been released. The next release publishes ${nextMangoBookingDate}; choose that date explicitly to save a live plan.`
+    : `The next release publishes Mango ${nextMangoBookingDate}. ${o.wings.MANGO.bookingDate} cannot be saved as the live plan now; keep it as a draft and save it after the earlier release.`);
   if (problems.length) return { setup: null, problems };
   const g = o.wings.MANGO, ordered = [...g.courts].sort((a, b) => a.priority - b.priority || a.court - b.court).map(c => c.court);
   const preferred = [...ordered, ...[7, 6, 5, 4, 3, 2, 1].filter(c => !ordered.includes(c))];

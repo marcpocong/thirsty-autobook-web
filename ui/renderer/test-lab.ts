@@ -11,6 +11,7 @@ const BROWSER_SCENARIOS: Array<[string, string]> = [['ALL_REJECTED', 'Every atte
   ['BOTH_SUCCESS', 'Every response succeeds · quota fill and extra holds'], ['MANGO_SUCCESS', 'Only Mango succeeds · per-wing quota'], ['BUKO_SUCCESS', 'Only Buko succeeds · per-wing quota'],
   ['TWO_IN_FLIGHT_SUCCESS', 'Two concurrent holds while in flight'], ['WRONG_WING', 'Wrong wing/court in the response'], ['UNKNOWN', 'Unknown POST outcome'], ['PAYMENT_IN_PROGRESS', 'HTTP 409 payment already in progress'],
   ['THROTTLE', 'HTTP 429 throttling'], ['PREPARE_FAILED', 'Browser preparation failure'], ['WORKER_UNAVAILABLE', 'Worker unavailable'], ['MISSED_TRIGGER', 'Delayed attempt · missed deadline'],
+  ['SLOW_SECURITY', 'Slow security preparation · still in time'], ['SECURITY_STALL', 'Security stall outlasts the lead · fails closed'], ['STOP_BEFORE_DISPATCH', 'Emergency Stop before the trigger'],
   ['BROWSER_CLOSED', 'Browser closed before the trigger'], ['DUPLICATE_TARGET', 'Duplicate submission refused'], ['PREVIOUS_HOLD', 'Retained hold blocks the target'], ['APP_RESTART_RETAINED_UNKNOWN', 'Restart keeps UNKNOWN blocking'],
   ['STALE_AVAILABILITY', 'Stale availability refused'], ['MISSING_AVAILABILITY', 'Missing availability refused'], ['UNSUPPORTED_RELEASE_POLICY', 'Unsupported release policy refused']];
 const NORMAL_SCENARIOS: Array<[string, string]> = [['NORMAL_SUCCESS', 'Normal success · every checkout holds'], ['PARTIAL_COMPLETION', 'Partial completion'], ['ALL_REJECTED', 'Every checkout rejected'],

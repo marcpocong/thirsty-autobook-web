@@ -76,22 +76,56 @@ export function summarizeShotgunTiming(topology:ShotgunTopology,children:readonl
     configuredMinimumSpacingMs:topology.minimumSpacingMs,p50:summary.p50,p95:summary.p95,max:summary.max,outsideTolerance,omittedShots,compressedPairs,predictedCompression,
     fingerprint:topology.fingerprint,testedAt:children.length?new Date().toISOString():null,...compatibility,runs};
 }
+/** A calibration describes this machine, build, Chrome and plan for one day; it is never extended to obtain READY. */
+export const SHOTGUN_TIMING_MAX_AGE_MS=24*60*60_000;
+export type ShotgunTimingStatus='READY'|'AT_RISK'|'FAILED'|'NOT_TESTED'|'EXPIRED'|'INCOMPATIBLE';
+export interface ShotgunTimingVerdict {
+  /** READY is the only status that authorizes live Shotgun. */ status:ShotgunTimingStatus;
+  /** One plain sentence: why this status. */ reason:string;
+  testedAt:string|null;expiresAt:string|null;p95:number|null;max:number|null;shotCount:number|null;runs:number|null;
+  /** The profile was measured for exactly the saved Shotgun topology (worker/tab counts and literal offsets). */ matchesPlan:boolean;
+  /** What differs from the current installation when INCOMPATIBLE (plain words, no identity values). */ mismatches:string[];
+}
+/**
+ * Classifies the latest calibration for the exact saved topology and the actual runtime. Missing, malformed, expired
+ * and mismatched profiles are distinct statuses so the operator sees why; none of them is ever READY.
+ */
+export function shotgunTimingVerdict(value:unknown,topology:ShotgunTopology,buildKey:string,now=Date.now(),chromeVersion:string|null=null,machineKey:string|null=shotgunMachineKey()):ShotgunTimingVerdict{
+  const none={testedAt:null,expiresAt:null,p95:null,max:null,shotCount:null,runs:null,matchesPlan:false,mismatches:[] as string[]};
+  if(!value||typeof value!=='object')return {status:'NOT_TESTED',reason:'No local timing calibration has been run on this machine.',...none};
+  const v=value as ShotgunTimingReadiness;
+  const counts=[v.outsideTolerance,v.omittedShots,v.compressedPairs];
+  const metrics=[v.p50,v.p95,v.max];
+  const measured=metrics.every(x=>typeof x==='number'&&Number.isFinite(x))&&v.p50! <= v.p95! && v.p95! <= v.max!;
+  const absent=metrics.every(x=>x===null);
+  const cleanTiming=measured&&v.p50! >= 0 && v.max! <= SHOTGUN_MAX_TRIGGER_LATENESS_MS&&v.outsideTolerance===0&&v.omittedShots===0;
+  const wellFormed=v.schema==='shotgun-timing/v1'&&['READY','AT_RISK','FAILED','NOT_TESTED'].includes(v.status)&&counts.every(x=>Number.isSafeInteger(x)&&x>=0)&&
+    Number.isSafeInteger(v.runs)&&v.runs>0&&(measured||absent)&&!(v.status==='READY'&&(!cleanTiming||v.compressedPairs!==0))&&!(v.status==='AT_RISK'&&(!cleanTiming||v.compressedPairs===0));
+  const testedMs=typeof v.testedAt==='string'?Date.parse(v.testedAt):NaN;
+  const facts={testedAt:Number.isFinite(testedMs)?v.testedAt:null,expiresAt:Number.isFinite(testedMs)?new Date(testedMs+SHOTGUN_TIMING_MAX_AGE_MS).toISOString():null,
+    p95:typeof v.p95==='number'?v.p95:null,max:typeof v.max==='number'?v.max:null,shotCount:Number.isSafeInteger(v.shotCount)?v.shotCount:null,runs:Number.isSafeInteger(v.runs)?v.runs:null};
+  if(!wellFormed)return {status:'INCOMPATIBLE',reason:'The saved timing result is incomplete or inconsistent. Run the calibration again.',...facts,matchesPlan:false,mismatches:['result format']};
+  const tabs=v.tabsPerWorker;
+  const sameTabs=!!tabs&&typeof tabs==='object'&&!Array.isArray(tabs)&&Object.keys(tabs).length===Object.keys(topology.tabsPerWorker).length&&
+    Object.entries(topology.tabsPerWorker).every(([worker,count])=>tabs[worker]===count);
+  const matchesPlan=sameTabs&&v.configuredMinimumSpacingMs===topology.minimumSpacingMs&&
+    v.predictedCompression===(topology.minimumSpacingMs!==null&&topology.minimumSpacingMs<SHOTGUN_MEANINGFUL_SPACING_MS)&&
+    v.shotCount===topology.shots.filter(s=>s.shotgun).length&&v.workerCount===Object.keys(topology.tabsPerWorker).length&&v.fingerprint===topology.fingerprint;
+  const mismatches=[...(matchesPlan?[]:['saved Shotgun plan (browsers, tabs or offsets)']),...(v.buildKey!==buildKey||buildKey.includes('dirty')?['installed build']:[]),
+    ...(chromeVersion===null?['Chrome version (bot browsers not open)']:v.chromeVersion===null||v.chromeVersion!==chromeVersion?['Chrome version']:[]),
+    ...(v.machineKey!==machineKey?['machine or dispatcher runtime']:[]),...(v.dispatcher!=='central'?['dispatcher']:[])];
+  if(mismatches.length)return {status:'INCOMPATIBLE',reason:`Calibrated for a different ${mismatches.join(', ')}.`,...facts,matchesPlan,mismatches};
+  const age=now-testedMs;
+  if(!(age>=0)||age>SHOTGUN_TIMING_MAX_AGE_MS)return {status:'EXPIRED',reason:!Number.isFinite(testedMs)?'The calibration has no test time.':age<0?'The calibration time is in the future.':'The calibration is older than 24 hours.',...facts,matchesPlan,mismatches};
+  const reason=v.status==='READY'?`Every calibrated attempt started within ${SHOTGUN_MAX_TRIGGER_LATENESS_MS} ms of its trigger.`:v.status==='AT_RISK'?'Calibrated attempts started too close together (compression).'
+    :v.status==='FAILED'?`Some calibrated attempts started late (over ${SHOTGUN_MAX_TRIGGER_LATENESS_MS} ms) or were omitted.`:'The calibration recorded no measurement.';
+  return {status:v.status,reason,...facts,matchesPlan,mismatches};
+}
 /** Stale, other-plan, dirty-build and experimental-dispatcher results cannot authorize the default path. */
 export function applicableShotgunTiming(value:ShotgunTimingReadiness,topology:ShotgunTopology,buildKey:string,now=Date.now(),chromeVersion:string|null=value?.chromeVersion??null,machineKey:string|null=shotgunMachineKey()):boolean {
   if(!value||typeof value!=='object')return false;
-  const counts=[value.outsideTolerance,value.omittedShots,value.compressedPairs];
-  const metrics=[value.p50,value.p95,value.max];
-  const measured=metrics.every(v=>typeof v==='number'&&Number.isFinite(v))&&value.p50! <= value.p95! && value.p95! <= value.max!;
-  const absent=metrics.every(v=>v===null);
-  const tabs=value.tabsPerWorker;
-  const sameTabs=tabs&&typeof tabs==='object'&&!Array.isArray(tabs)&&Object.keys(tabs).length===Object.keys(topology.tabsPerWorker).length&&
-    Object.entries(topology.tabsPerWorker).every(([worker,count])=>tabs[worker]===count);
-  const cleanTiming=measured&&value.p50! >= 0 && value.max! <= SHOTGUN_MAX_TRIGGER_LATENESS_MS&&value.outsideTolerance===0&&value.omittedShots===0;
-  if(!sameTabs||!counts.every(v=>Number.isSafeInteger(v)&&v>=0)||!Number.isSafeInteger(value.runs)||value.runs<=0||
-    (!measured&&!absent)||value.configuredMinimumSpacingMs!==topology.minimumSpacingMs||
-    value.predictedCompression!==(topology.minimumSpacingMs!==null&&topology.minimumSpacingMs<SHOTGUN_MEANINGFUL_SPACING_MS)||
-    value.status==='READY'&&(!cleanTiming||value.compressedPairs!==0)||value.status==='AT_RISK'&&(!cleanTiming||value.compressedPairs===0))return false;
-  return value.chromeVersion!==null && value.chromeVersion===chromeVersion && ['READY','AT_RISK','FAILED','NOT_TESTED'].includes(value.status) && value.shotCount===topology.shots.filter(s=>s.shotgun).length && value.workerCount===Object.keys(topology.tabsPerWorker).length && Number.isSafeInteger(value.outsideTolerance) && value.outsideTolerance>=0 && Number.isSafeInteger(value.omittedShots) && value.omittedShots>=0 && value.schema==='shotgun-timing/v1' && value.fingerprint===topology.fingerprint && value.machineKey===machineKey && value.buildKey===buildKey && !buildKey.includes('dirty') && value.dispatcher==='central' && value.testedAt!==null && now-Date.parse(value.testedAt)>=0 && now-Date.parse(value.testedAt)<=24*60*60_000 && value.runs>0;
+  const verdict=shotgunTimingVerdict(value,topology,buildKey,now,chromeVersion,machineKey);
+  return verdict.status!=='INCOMPATIBLE'&&verdict.status!=='EXPIRED';
 }
 const isoDate=(value:string)=>/^\d{4}-\d{2}-\d{2}$/.test(value)&&new Date(`${value}T00:00:00Z`).toISOString().slice(0,10)===value;
 /** Booking date of a saved-plan calibration: the candidates' own date or an explicit one, never a silent substitute. */
@@ -112,4 +146,9 @@ export function calibrationBuildKey(git:{gitSha:string;dirty:boolean|null},insta
 }
 export function readShotgunTiming(path:string,topology:ShotgunTopology,buildKey:string,chromeVersion:string|null=null,machineKey?:string|null):ShotgunTimingReadiness|null {
   try{const value=JSON.parse(readFileSync(path,'utf8')) as ShotgunTimingReadiness;return applicableShotgunTiming(value,topology,buildKey,Date.now(),chromeVersion,machineKey)?value:null;}catch{return null;}
+}
+/** The latest calibration's verdict for this exact topology and runtime (NOT_TESTED when absent or unreadable). */
+export function readShotgunTimingVerdict(path:string,topology:ShotgunTopology,buildKey:string,chromeVersion:string|null=null,machineKey?:string|null,now=Date.now()):ShotgunTimingVerdict {
+  let value:unknown=null;try{value=JSON.parse(readFileSync(path,'utf8'));}catch{value=null;}
+  return shotgunTimingVerdict(value,topology,buildKey,now,chromeVersion,machineKey===undefined?shotgunMachineKey():machineKey);
 }
