@@ -9,7 +9,7 @@ import { createServer } from 'node:net';
 import { chromium } from 'playwright';
 import { identifyWorkerPage } from './browser-window.js';
 import { DateTime } from 'luxon';
-import { browserIdentity,candidateBrowserIdentity,cdpCodes,rememberBrowserPort,verifyDedicatedChrome,verifyCandidateChrome,monitorConnection } from './browser.js';
+import { browserIdentity,candidateBrowserIdentity,cdpCodes,rememberBrowserPort,starterFailureCode,verifyDedicatedChrome,verifyCandidateChrome,monitorConnection } from './browser.js';
 import { ONDA_URL, VENUE } from './config.js';
 import { inspectLockPage, type BrowserReview } from './lock-browser.js';
 import { snapshot, validateSnapshot, navigateDate, type Snapshot } from './grid.js';
@@ -176,15 +176,10 @@ async function available(port:number){
     server.listen({host:'127.0.0.1',port,exclusive:true},()=>server.close(()=>resolveAvailable(true)));
   });
 }
-function failureCode(error:unknown){
-  const e=error as {message?:unknown;stdout?:unknown;stderr?:unknown};
-  const text=[e?.message,e?.stdout,e?.stderr].filter(v=>typeof v==='string').join('\n');
-  return [...cdpCodes,'CHROME_NOT_INSTALLED','CHROME_START_TIMEOUT'].find(code=>new RegExp(`(?:^|[^A-Z_])${code}(?:$|[^A-Z_])`).test(text));
-}
 async function launch(b:BrowserIdentity){
   try{
     await promisify(execFile)('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',resolve('scripts/start-onda-chrome.ps1'),'-Worker',b.workerId,'-Port',String(b.port)],{windowsHide:true,timeout:60000});
-  }catch(error){throw Error(failureCode(error)??'CHROME_START_FAILED');}
+  }catch(error){throw Error(starterFailureCode(error)??'CHROME_START_FAILED');}
 }
 export interface PreparationStarterDependencies {available?:(port:number)=>Promise<boolean>;launch?:(identity:BrowserIdentity)=>Promise<void>;verify?:(identity:BrowserIdentity)=>void;persist?:(workerId:WorkerId,port:number)=>BrowserIdentity}
 export async function startForPreparation(initial:BrowserIdentity,deps:PreparationStarterDependencies={}):Promise<BrowserIdentity>{

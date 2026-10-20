@@ -21,7 +21,7 @@ const allowedFields = new Set([
   'workerId','lane','attemptId','attemptType','operation','timingKind','eventAt','durationMs','networkDurationMs',
   'status','statusCode','failureCategory','dispatchState','initiationEvidence','resultCategory','success','isAvailable',
   'targetDatePresent','responseComplete','slotCount','availableCount','takenCount','unreleasedCount','unknownCount',
-  'courtHourSummary','securitySource','preparedContextAgeMs',
+  'courtHourSummary','securitySource','preparedContextAgeMs','challengeFrame','failedHelper',
   'challengeState','activeAvailability','activeSecurity','activeSlotChecks','activeCheckouts','droppedCount','retryCount',
   'verifiedHoldCount','qrHandoffCount','partialHolds','coreElapsedMs','slowestStages',
   'absentEvidence','finalCode','aborted','workerOutcome','court','startTime','durationHours','price','responseObserved',

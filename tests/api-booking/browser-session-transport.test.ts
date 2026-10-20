@@ -272,6 +272,26 @@ describe('browser session transport, offline', () => {
     expect(evaluate).not.toHaveBeenCalled();
   });
 
+  it('records a challenge frame Onda rendered but never displayed, and which helper failed, without prompting anyone', async () => {
+    process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT = 'SUPERVISED_ONE_SHOT';
+    let fail: ((error: Error) => void) | undefined;
+    const current = vi.fn(() => new Promise<{ turnstileToken: string; publicFingerprint: string }>((_, reject) => { fail = reject; }));
+    const required = vi.fn(async () => undefined);
+    const observations: unknown[] = [];
+    const page = { isClosed: () => false, url: () => 'https://app.onda.fit/book/thirsty-pickle',
+      locator: (selector: string) => ({ count: async () => {
+        if (selector.endsWith(':visible')) return 0;
+        fail?.(new CalendarFreeSecurityError('ONDA_SECURITY_VERIFICATION_FAILED', { failedHelper: 'challenge' }));
+        return 1;
+      } }) } as unknown as Page;
+    const transport = new OndaBrowserSessionTransport(page, current, undefined, { onHumanVerificationRequired: required },
+      observation => observations.push(observation));
+    await expect(transport.prepareCheckoutContext()).rejects.toThrow('ONDA_SECURITY_VERIFICATION_FAILED');
+    expect(required).not.toHaveBeenCalled();
+    expect(observations).toContainEqual(expect.objectContaining({ event: 'SECURITY_PREPARATION_COMPLETED', securitySource: 'FRESH_ACQUISITION',
+      failureCategory: 'ONDA_SECURITY_VERIFICATION_FAILED', challengeFrame: 'hidden', failedHelper: 'challenge' }));
+  });
+
   it('shows one identified browser while a visible Cloudflare challenge is pending, then continues', async () => {
     process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT = 'SUPERVISED_ONE_SHOT';
     let finish: ((headers: { turnstileToken: string; publicFingerprint: string }) => void) | undefined;
@@ -280,12 +300,17 @@ describe('browser session transport, offline', () => {
     const completed = vi.fn(async () => undefined);
     const page = { isClosed: () => false, url: () => 'https://app.onda.fit/book/thirsty-pickle',
       locator: () => ({ count: async () => 1 }) } as unknown as Page;
+    const observations: unknown[] = [];
     const transport = new OndaBrowserSessionTransport(page, current, undefined,
-      { onHumanVerificationRequired: required, onHumanVerificationCompleted: completed });
+      { onHumanVerificationRequired: required, onHumanVerificationCompleted: completed }, observation => observations.push(observation));
     await transport.prepareCheckoutContext();
     expect(current).toHaveBeenCalledOnce();
     expect(required).toHaveBeenCalledOnce();
     expect(completed).toHaveBeenCalledOnce();
+    const completion = observations.find(value => (value as { event?: string }).event === 'SECURITY_PREPARATION_COMPLETED');
+    expect(completion).toMatchObject({ securitySource: 'FRESH_ACQUISITION', challengeFrame: 'visible' });
+    expect(completion).not.toHaveProperty('failedHelper');
+    expect(completion).not.toHaveProperty('failureCategory');
   });
 
   it('stops before proof checks or a journal claim when normal verification fails', async () => {

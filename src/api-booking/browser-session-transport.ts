@@ -26,7 +26,9 @@ export interface CheckoutContextHooks {
 }
 export type BrowserTransportObservation =
   | { event: 'SECURITY_PREPARATION_STARTED'; securitySource: 'FRESH_ACQUISITION' | 'RECENT_CONTEXT_REUSE' | 'SHARED_ACQUISITION' }
-  | { event: 'SECURITY_PREPARATION_COMPLETED'; securitySource: 'FRESH_ACQUISITION' | 'RECENT_CONTEXT_REUSE' | 'SHARED_ACQUISITION'; durationMs: number; failureCategory?: string }
+  | { event: 'SECURITY_PREPARATION_COMPLETED'; securitySource: 'FRESH_ACQUISITION' | 'RECENT_CONTEXT_REUSE' | 'SHARED_ACQUISITION'; durationMs: number; failureCategory?: string;
+      /** Fresh acquisitions: the most visible Cloudflare challenge frame seen on the page meanwhile, and which helper rejected. Observations, not a provider verdict. */
+      challengeFrame?: 'none' | 'hidden' | 'visible'; failedHelper?: 'challenge' | 'fingerprint' }
   | { event: 'SECURITY_CHALLENGE_OBSERVED' | 'SECURITY_CHALLENGE_COMPLETED' }
   | { event: 'SLOT_CHECK_STARTED' }
   | { event: 'SLOT_CHECK_COMPLETED'; durationMs: number; resultCategory: string; success: boolean; isAvailable?: boolean; failureCategory?: string }
@@ -186,6 +188,9 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
     const started = performance.now();
     this.observe({ event: 'SECURITY_PREPARATION_STARTED', securitySource: 'FRESH_ACQUISITION' });
     let settled = false, verificationShown = false;
+    // Seen while polling (2026-10-03/10-18 failures took 36-60 s with no visible challenge): a frame Onda rendered but
+    // did not display means verification waited where nobody could answer it. Observation only; never touched.
+    let challengeFrame: 'none' | 'hidden' | 'visible' = 'none';
     const acquisition = this.currentCheckoutHeaders().finally(() => { settled = true; });
     try {
       while (!settled) {
@@ -193,6 +198,9 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
           new Promise<void>(resolve => setTimeout(resolve, 200))]);
         if (settled) break;
         const challengeVisible = await this.page.locator('iframe[src*="challenges.cloudflare.com"]:visible').count().then(count => count > 0).catch(() => false);
+        if (challengeVisible) challengeFrame = 'visible';
+        else if (challengeFrame === 'none' && await this.page.locator('iframe[src*="challenges.cloudflare.com"]').count().then(count => count > 0).catch(() => false))
+          challengeFrame = 'hidden';
         if (challengeVisible && !verificationShown) {
           verificationShown = true;
           this.observe({ event: 'SECURITY_CHALLENGE_OBSERVED' });
@@ -205,15 +213,27 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
         this.observe({ event: 'SECURITY_CHALLENGE_COMPLETED' });
       }
       this.observe({ event: 'SECURITY_PREPARATION_COMPLETED', securitySource: 'FRESH_ACQUISITION',
-        durationMs: Math.max(0, Math.round(performance.now() - started)) });
+        durationMs: Math.max(0, Math.round(performance.now() - started)), challengeFrame });
       return headers;
     } catch (error) {
+      const failedHelper = error instanceof CalendarFreeSecurityError ? error.detail.failedHelper : undefined;
       this.observe({ event: 'SECURITY_PREPARATION_COMPLETED', securitySource: 'FRESH_ACQUISITION',
         durationMs: Math.max(0, Math.round(performance.now() - started)),
         failureCategory: error instanceof CalendarFreeSecurityError && /^[A-Z][A-Z0-9_]{0,63}$/.test(error.code)
-          ? error.code : 'SECURITY_CONTEXT_ACQUISITION_FAILED' });
+          ? error.code : 'SECURITY_CONTEXT_ACQUISITION_FAILED', challengeFrame, ...(failedHelper ? { failedHelper } : {}) });
       throw error;
     }
+  }
+
+  /**
+   * Pre-release security check: one genuine acquisition through exactly the path a run uses (same helpers, same
+   * challenge prompt and observations), with the value discarded at once. It is never stored, so no checkout can use
+   * it, and it needs no live-submission gate because nothing here can submit. Evidence for now, not for the release.
+   */
+  async checkSecurityReadiness(): Promise<void> {
+    this.assertPage();
+    if (this.preparation) throw new BrowserSessionTransportError('SECURITY_CHECK_BUSY');
+    await this.acquireCheckoutHeaders();
   }
 
   /** `reuseWithinMs`: a prepared, unused context at most this old is kept (default 20 s; Rescue V2 allows up to 60 s, still inside the 120 s submit limit). */

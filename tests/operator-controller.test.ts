@@ -164,3 +164,33 @@ describe('run outcome and protocol diagnostics', () => {
       expect(UiEventSchema.safeParse({ type: 'apiStage', elapsedMs: 0, ...extra }).success, extra.stage).toBe(true);
   });
 });
+
+describe('pre-release security check (genuine verification minutes before release, value discarded)', () => {
+  const record = (view: BookingView, outcome: 'READY' | 'FAILED') => ({ schema: 'security-check/v1' as const, checkedAt: new Date().toISOString(), targetDate: view.targetDate,
+    fingerprint: view.fingerprint, workers: { A: { outcome, durationMs: 4100, ...(outcome === 'FAILED' ? { code: 'ONDA_SECURITY_VERIFICATION_FAILED', challengeFrame: 'none' as const } : {}) },
+      B: { outcome: 'READY' as const, durationMs: 3900 } } });
+  it('runs after the release dry run; a failed check is evidence, never a failed preparation', async () => {
+    const view = precision(two); let written: ReturnType<typeof record> | null = null;
+    const h = harness(view, command => { if (typeof command === 'object' && command.kind === 'apiRun' && command.mode === 'security-check') { written = record(view, 'FAILED'); return 1; } return 0; },
+      { securityCheck: () => written });
+    await h.controller.resetPrepare({ workflow: 'release', strategy: 'standard' });
+    expect(h.calls.map(c => typeof c === 'object' && c.kind === 'apiRun' ? c.mode : c)).toEqual(['prepare', 'dry', 'security-check']);
+    expect(h.calls[2]).toMatchObject({ kind: 'apiRun', mode: 'security-check', fingerprint: view.fingerprint, date: view.targetDate });
+    expect(h.controller.state).toMatchObject({ apiFirstReady: true, ready: true, preparedPlanFingerprint: view.fingerprint, securityCheck: { status: 'FAILED' } });
+    expect(h.controller.state.securityCheck!.detail).toMatch(/A failed \(ONDA_SECURITY_VERIFICATION_FAILED\)/);
+    expect(h.controller.state.releaseReadiness?.checks.find(c => c.id === 'security-check')).toMatchObject({ level: 'UNAVAILABLE', hardBlock: false });
+  });
+  it('one-click re-check runs only for the prepared saved plan and keeps the preparation', async () => {
+    const view = precision(two); let written: ReturnType<typeof record> | null = null;
+    const h = harness(view, command => { if (typeof command === 'object' && command.kind === 'apiRun' && command.mode === 'security-check') written = record(view, 'READY'); return 0; },
+      { securityCheck: () => written });
+    await h.controller.checkSecurity();
+    expect(h.calls).toEqual([]);
+    expect(h.controller.state.detail).toMatch(/Prepare the saved release plan first/);
+    await h.controller.resetPrepare({ workflow: 'release', strategy: 'standard' });
+    written = null; h.calls.length = 0;
+    await h.controller.checkSecurity();
+    expect(h.calls).toEqual([expect.objectContaining({ kind: 'apiRun', mode: 'security-check', fingerprint: view.fingerprint })]);
+    expect(h.controller.state).toMatchObject({ ready: true, apiFirstReady: true, preparedPlanFingerprint: view.fingerprint, headline: 'SECURITY CHECK PASSED', securityCheck: { status: 'PASSED' } });
+  });
+});

@@ -52,7 +52,7 @@ export function editEffect(state: ExecutionState): 'ALLOW' | 'INVALIDATES_PREPAR
 // unavailable always carries a plain-language reason and one recovery the operator can press. These gates mirror,
 // and never replace, the controller and runner checks that remain authoritative.
 export type RecoveryAction = 'REVIEW_PROBLEMS' | 'REVIEW_CHANGES' | 'SAVE_PLAN' | 'PREPARE' | 'RECHECK_BROWSERS' | 'REVIEW_READINESS' | 'REVIEW_LOCK'
-  | 'REVIEW_SUBMISSION' | 'AUTHORIZE_TERMS' | 'CONFIGURE_PLAYERS' | 'REVIEW_CAPACITY' | 'SYNC_CLOCK' | 'STOP' | 'WAIT' | 'OPEN_ACTIVITY';
+  | 'REVIEW_SUBMISSION' | 'AUTHORIZE_TERMS' | 'CONFIGURE_PLAYERS' | 'REVIEW_CAPACITY' | 'SYNC_CLOCK' | 'STOP' | 'WAIT' | 'OPEN_ACTIVITY' | 'CHECK_SECURITY';
 export interface Recovery { label: string; action: RecoveryAction }
 export interface Gate { enabled: boolean; reason: string | null; recovery: Recovery | null }
 export type PrimaryAction = 'SAVE_PLAN' | 'PREPARE' | 'AUTHORIZE_ARM' | 'STOP' | 'WAIT' | 'REVIEW_LOCK' | 'REVIEW_SUBMISSION';
@@ -214,6 +214,8 @@ export interface ReadinessInputs {
   forecast: { verdict: ForecastVerdict; ready: number; configured: number; atRisk: number; omitted: number; measured: boolean; samples: number;
     /** Which forecast this is (capacity before preparation, or live over connected browsers) and what limits it. */ basis?: string; limits?: string[] } | null;
   security: { planned: number; ready: number; preparing: number; failed: number; omitted: number; leadMs: number | null } | null;
+  /** Pre-release security check (genuine verification minutes before release); only PASSED is evidence. */
+  securityCheck?: { status: 'PASSED' | 'FAILED' | 'STALE' | 'OTHER_PLAN' | 'MISSING'; detail: string } | null;
   armed: { armed: boolean; running: boolean };
   readinessBlockers?: readonly { reason: string }[];
 }
@@ -230,9 +232,13 @@ export function readinessLayers(i: ReadinessInputs): ReadinessLayer[] {
   layers.push(!f || f.verdict === 'NOT_APPLICABLE' ? { id: 'FORECAST', label: 'Timing forecast', status: 'NA', detail: 'No staged preparation forecast applies to this plan' }
     : { id: 'FORECAST', label: 'Timing forecast', status: f.verdict === 'READY' ? 'OK' : f.verdict === 'AT_RISK' ? 'WARN' : 'BLOCKED',
       detail: f.verdict === 'UNAVAILABLE' ? 'Forecast unavailable' : `${f.ready}/${f.configured} predicted ready${f.atRisk ? ` · ${f.atRisk} at risk` : ''}${f.omitted ? ` · ${f.omitted} predicted omitted` : ''}${f.limits?.length ? ` (limited by ${[...new Set(f.limits)].join(', ')})` : ''}${f.basis ? ` · ${f.basis}` : ''} · ${f.measured ? `${plural(f.samples, 'measured sample')}` : 'fallback estimate'} · a forecast is not proof of security readiness` });
-  const s = i.security;
+  const s = i.security, check = i.securityCheck;
   layers.push(!s || (!s.ready && !s.preparing && !s.failed && !s.omitted)
-    ? { id: 'SECURITY', label: 'Live security', status: 'PENDING', detail: i.armed.armed || i.armed.running ? `Not started yet${s?.leadMs ? ` · starts about ${Math.round(s.leadMs / 1000)} s before the first trigger` : ''}` : 'Not started · runs only after arming, shortly before the first trigger. A dry run or forecast does not prove it will succeed.' }
+    ? !(i.armed.armed || i.armed.running) && check
+      ? { id: 'SECURITY', label: 'Security check', status: check.status === 'PASSED' ? 'OK' : check.status === 'FAILED' ? 'BLOCKED' : 'PENDING',
+        detail: check.status === 'PASSED' ? `Pre-release check passed · ${check.detail} · the run still acquires its own fresh verification shortly before release`
+          : check.status === 'FAILED' ? `Pre-release check failed · ${check.detail}` : `${check.detail} Run the security check (nothing is submitted).` }
+      : { id: 'SECURITY', label: 'Live security', status: 'PENDING', detail: i.armed.armed || i.armed.running ? `Not started yet${s?.leadMs ? ` · starts about ${Math.round(s.leadMs / 1000)} s before the first trigger` : ''}` : 'Not started · runs only after arming, shortly before the first trigger. A dry run or forecast does not prove it will succeed.' }
     : { id: 'SECURITY', label: 'Live security', status: s.failed || s.omitted ? 'BLOCKED' : s.ready >= s.planned ? 'OK' : 'WARN',
       detail: `${s.ready}/${s.planned} ready${s.preparing ? ` · ${s.preparing} preparing` : ''}${s.failed ? ` · ${s.failed} failed` : ''}${s.omitted ? ` · ${s.omitted} omitted` : ''} · actual evidence for this run` });
   layers.push({ id: 'ARMED', label: 'Armed', status: i.armed.running ? 'OK' : i.armed.armed ? 'OK' : 'PENDING', detail: i.armed.running ? 'Running' : i.armed.armed ? 'Exact plan authorized and waiting for its scheduled time' : 'Not armed' });
@@ -250,5 +256,7 @@ export function readinessSummary(layers: readonly ReadinessLayer[]): string {
   const runtime = layers.find(l => l.id === 'RUNTIME');
   if (runtime?.status === 'BLOCKED') return `${runtime.label}: ${runtime.detail}`;
   if (forecast.status === 'BLOCKED') return `Prepared · forecast: ${forecast.detail}`;
-  return `Prepared${forecast.status === 'OK' ? ' · forecast feasible' : forecast.status === 'WARN' ? ' · forecast at risk' : ''} · live security is verified only after arming`;
+  if (security.label === 'Security check' && security.status === 'BLOCKED') return `Prepared · ${security.detail}`;
+  return `Prepared${forecast.status === 'OK' ? ' · forecast feasible' : forecast.status === 'WARN' ? ' · forecast at risk' : ''} · ${security.label === 'Security check' && security.status === 'OK'
+    ? 'pre-release security check passed; live security is verified again after arming' : 'live security is verified only after arming'}`;
 }

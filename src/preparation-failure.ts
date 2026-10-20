@@ -18,12 +18,14 @@ export interface ClassifiedFailure {
 }
 const CODES: Record<Exclude<FailureCategory, 'INTERNAL_ERROR'>, readonly string[]> = {
   BROWSER_DISCONNECTED: ['CHROME_DISCONNECTED', 'CDP_ENDPOINT_UNAVAILABLE', 'CHROME_START_TIMEOUT', 'CHROME_START_FAILED', 'CHROME_NOT_INSTALLED', 'CDP_PROFILE_OR_BIND_UNVERIFIED',
-    'API_CHECKOUT_WORKER_MISSING', 'BROWSER_FAILED', 'DEDICATED_CHROME_CLOSE_TIMEOUT'],
-  WRONG_PROFILE: ['WRONG_CHROME_PROFILE', 'DEDICATED_CHROME_NOT_IDENTIFIED', 'DEDICATED_PROFILE_UNVERIFIED'],
+    'API_CHECKOUT_WORKER_MISSING', 'BROWSER_FAILED', 'DEDICATED_CHROME_CLOSE_TIMEOUT', 'CDP_NOT_LISTENING', 'CDP_PROCESS_METADATA_UNAVAILABLE', 'API_BROWSER_CONTEXT_MISSING'],
+  WRONG_PROFILE: ['WRONG_CHROME_PROFILE', 'DEDICATED_CHROME_NOT_IDENTIFIED', 'DEDICATED_PROFILE_UNVERIFIED', 'CDP_WRONG_PROFILE', 'CDP_PROFILE_MISSING', 'CDP_WRONG_PORT',
+    'CDP_PROCESS_NOT_CHROME', 'CDP_UNSAFE_BIND', 'CDP_AMBIGUOUS_LISTENER'],
   INVALID_VENUE_OR_TAB: ['WRONG_VENUE', 'ONDA_TAB_AMBIGUOUS_OR_MISSING', 'TAB_NOT_VISIBLE', 'STALE_OR_INCOMPLETE_GRID', 'COURT_FILTER_NOT_ALL', 'PREEXISTING_SELECTION',
+    'ONDA_TAB_OPEN_FAILED', 'ONDA_PAGE_NAVIGATION_FAILED', 'ONDA_PAGE_LOAD_TIMEOUT', 'ONDA_PAGE_NOT_READY', 'BROWSER_PRESENTATION_FAILED', 'API_BROWSER_PAGE_TIMEOUT',
     'TARGET_DATE_UNAVAILABLE', 'TARGET_NOT_AVAILABLE', 'SHOTGUN_TOPOLOGY_NOT_READY', 'LOCK_SELECTED_SLOTS'],
   SECURITY_VERIFICATION_FAILED: ['SECURITY_CHALLENGE', 'ONDA_SECURITY_VERIFICATION_FAILED', 'SECURITY_PREWARM_FAILED', 'SECURITY_PREWARM_RETRY_FAILED', 'HUMAN_VERIFICATION_REQUIRED',
-    'CLOUDFLARE_CHALLENGE', 'SECURITY_CONTEXT_STALE'],
+    'CLOUDFLARE_CHALLENGE', 'SECURITY_CONTEXT_STALE', 'SECURITY_CHECK_FAILED', 'SECURITY_CHECK_REQUIRED', 'SECURITY_CHECK_NEEDS_PREPARATION'],
   PROVIDER_THROTTLED: ['RATE_LIMITED', 'SHOTGUN_PROVIDER_THROTTLE_STOP', 'PROVIDER_THROTTLED'],
   STALE_PREPARATION: ['RESET_REQUIRED', 'TODAYS_RELEASE_PASSED', 'TOO_LATE_FOR_PREFLIGHT', 'RELEASE_MISSED', 'PRECISION_TOO_LATE_TO_ARM', 'PREPARATION_STALE'],
   PLAN_FINGERPRINT_MISMATCH: ['PREPARATION_RESULT_MISMATCH', 'PREPARED_FINGERPRINT_MISMATCH', 'BOOKING_PLAN_CHANGED', 'SCHEDULE_CONTEXT_MISMATCH', 'PREPARED_PLAN_CHANGED'],
@@ -47,7 +49,7 @@ const TEXT: Record<FailureCategory, { title: string; detail: string; recovery: R
   BROWSER_DISCONNECTED: { title: 'Browser not available', detail: 'A required dedicated Chrome browser is closed, disconnected or did not start. Nothing was submitted.', recovery: { label: 'Recheck browsers', action: 'RECHECK_BROWSERS' }, retrySafe: true },
   WRONG_PROFILE: { title: 'Wrong Chrome profile', detail: 'The debugging port belongs to a Chrome that is not the dedicated bot profile. Close that window; the bot never takes over your own Chrome.', recovery: { label: 'Recheck browsers', action: 'RECHECK_BROWSERS' }, retrySafe: true },
   INVALID_VENUE_OR_TAB: { title: 'Onda page not ready', detail: 'The expected Thirsty Pickle booking page or tab could not be verified in a dedicated browser. Nothing was submitted.', recovery: { label: 'Recheck browsers', action: 'RECHECK_BROWSERS' }, retrySafe: true },
-  SECURITY_VERIFICATION_FAILED: { title: 'Security verification not completed', detail: 'Onda security verification did not complete. The bot never solves challenges; use the matching THIRSTY BOT window if one asks for you. These logs establish the failure, not the provider-side reason.', recovery: { label: 'Review readiness', action: 'REVIEW_READINESS' }, retrySafe: true },
+  SECURITY_VERIFICATION_FAILED: { title: 'Security verification not completed', detail: 'Onda security verification did not complete. The bot never solves challenges: if a THIRSTY BOT window says VERIFY HERE, complete the check Onda shows there. Otherwise keep the bot windows open and Prepare again; the run log records which helper failed and whether a challenge frame appeared (shown or not). These logs establish the failure, not the provider-side reason.', recovery: { label: 'Review readiness', action: 'REVIEW_READINESS' }, retrySafe: true },
   PROVIDER_THROTTLED: { title: 'Provider is limiting requests', detail: 'Onda reported rate limiting. Every unsent attempt stops and nothing is retried automatically. Wait before trying again.', recovery: { label: 'Open Activity', action: 'OPEN_ACTIVITY' }, retrySafe: false },
   STALE_PREPARATION: { title: 'Preparation is too late or stale', detail: 'The release window for this preparation has passed or is too close. Nothing was sent late.', recovery: { label: 'Prepare again', action: 'PREPARE' }, retrySafe: true },
   PLAN_FINGERPRINT_MISMATCH: { title: 'Saved plan changed', detail: 'The saved release plan no longer matches the plan that was prepared or armed. Nothing was armed with the changed plan.', recovery: { label: 'Review changes', action: 'REVIEW_CHANGES' }, retrySafe: true },
@@ -72,7 +74,9 @@ export function classifyFailure(rawCode: string, context: FailureContext, at = n
   const category = failureCategory(code), text = TEXT[category];
   // An unexplained failure is retry-safe only when no lock or submission record remains afterwards.
   const retrySafe = category === 'INTERNAL_ERROR' ? context.lockPresent === false : text.retrySafe && !(context.lockPresent && category !== 'RETAINED_LOCK');
-  const recovery = category === 'INTERNAL_ERROR' && retrySafe ? { label: 'Prepare again', action: 'PREPARE' as const } : text.recovery;
+  const recovery = category === 'INTERNAL_ERROR' && retrySafe ? { label: 'Prepare again', action: 'PREPARE' as const }
+    : code === 'SECURITY_CHECK_REQUIRED' || code === 'SECURITY_CHECK_FAILED' ? { label: 'Run security check', action: 'CHECK_SECURITY' as const }
+      : code === 'SECURITY_CHECK_NEEDS_PREPARATION' ? { label: 'Prepare again', action: 'PREPARE' as const } : text.recovery;
   const where = [context.step ? `step ${context.step}` : '', context.workerId ? `browser ${context.workerId}` : ''].filter(Boolean).join(' · ');
   return { category, code, title: text.title, detail: `${text.detail}${where ? ` (${where})` : ''}${retrySafe ? '' : ' Retrying is not offered until it is reviewed.'}`,
     operation: context.operation, step: context.step ?? null, workerId: context.workerId ?? null, retrySafe, recovery, at };

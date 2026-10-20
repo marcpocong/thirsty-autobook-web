@@ -70,7 +70,9 @@ export const UiEventSchema = z.discriminatedUnion('type', [
     parentGoalCount:z.number().int().nonnegative().optional(),
     // Rescue V2 reopen predictions (release-relative ms) and their observed error.
     predictedStartMs:z.number().finite().optional(),predictedEndMs:z.number().finite().optional(),errorMs:z.number().finite().optional(),
-    confidence:z.string().regex(/^[A-Z][A-Z0-9_]{0,40}$/).optional(),contextReused:z.boolean().optional()}).strict(),
+    confidence:z.string().regex(/^[A-Z][A-Z0-9_]{0,40}$/).optional(),contextReused:z.boolean().optional(),
+    // Pre-release security check (SECURITY_CHECK): observations of the genuine acquisition, never a value.
+    challengeFrame:z.enum(['none','hidden','visible']).optional(),failedHelper:z.enum(['challenge','fingerprint']).optional()}).strict(),
   z.object({type:z.literal('preparationResult'),result:PreparationResultSchema}).strict(),
   z.object({type:z.literal('preparationProgress'),step:z.enum(['starting','previous-session','holds','onda','calendar','grids','availability','final'])}).strict(),
   z.object({type:z.literal('preparationBlocked'),browser:WorkerIdSchema,hold:z.enum(['Active','Expired','Not detected','Unknown']),countdownSeconds:z.number().int().nonnegative().nullable()}).strict(),

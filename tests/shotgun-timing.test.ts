@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {exactShotgunTopology,assertShotgunPrewarm,assertShotgunTabs,assertShotgunSchedule,summarizeShotgunTiming,applicableShotgunTiming,shotgunMachineKey} from '../src/shotgun-timing.js';
+import {exactShotgunTopology,assertShotgunPrewarm,assertShotgunTabs,assertShotgunSchedule,summarizeShotgunTiming,applicableShotgunTiming,shotgunMachineKey,calibrationTargetDate,calibrationBuildKey} from '../src/shotgun-timing.js';
 import {EXPERIMENTAL_DENSE_CORE_20} from '../src/shotgun.js';
 import {compileSmartPlan,confirmSmartRates,emptySmartDraft} from '../src/precision-simple.js';
 import {quickShotgunSettings} from '../src/quick-shotgun.js';
@@ -79,4 +79,30 @@ it('retains ordinary Precision policy beside selected Shotgun targets in a mixed
   const schedule=[{logicalTargetId:'court-7:19:00:3h',configuredOffsetMs:-500},{logicalTargetId:'court-7:19:00:3h',configuredOffsetMs:0}];
   const t=exactShotgunTopology(mixed,schedule);expect(t.shots.map(s=>s.shotgun)).toEqual([true,true,false]);expect(()=>assertShotgunSchedule(t,schedule)).not.toThrow();
   expect(t.tabsPerWorker).toEqual({A:2,B:1});expect(t.minimumSpacingMs).toBe(500);
+});
+
+describe('saved-plan calibration identity',()=>{
+  const undated=[{court:7,start:'19:00',durationHours:3},{court:6,start:'19:00',durationHours:3}];
+  it('requires an explicit date when the saved plan has none, and never substitutes a historical one',()=>{
+    expect(()=>calibrationTargetDate(undated)).toThrow('BENCH_TARGET_DATE_REQUIRED');
+    expect(calibrationTargetDate(undated,'2026-10-22')).toBe('2026-10-22');
+    expect(()=>calibrationTargetDate(undated,'2026-02-30')).toThrow('BENCH_TARGET_DATE_INVALID');
+    expect(()=>calibrationTargetDate(undated,'22/10/2026')).toThrow('BENCH_TARGET_DATE_INVALID');
+  });
+  it('uses the candidates\' own date, refusing a conflicting explicit date or mixed dates',()=>{
+    const dated=undated.map(c=>({...c,bookingDate:'2026-10-22'}));
+    expect(calibrationTargetDate(dated)).toBe('2026-10-22');expect(calibrationTargetDate(dated,'2026-10-22')).toBe('2026-10-22');
+    expect(()=>calibrationTargetDate(dated,'2026-10-24')).toThrow('BENCH_TARGET_DATE_MISMATCH');
+    expect(()=>calibrationTargetDate([dated[0]!,undated[1]!],'2026-10-22')).toThrow('BENCH_TARGET_DATE_AMBIGUOUS');
+    expect(()=>calibrationTargetDate([dated[0]!,{...undated[1]!,bookingDate:'2026-10-23'}])).toThrow('BENCH_TARGET_DATE_AMBIGUOUS');
+  });
+  it('keys a calibration to the git build, or inside an installation to its clean verified build record',()=>{
+    const sha='c0ad9990686f017eb252de92805c447cfa53adbf';
+    expect(calibrationBuildKey({gitSha:sha,dirty:false},null)).toBe(sha);
+    expect(calibrationBuildKey({gitSha:sha,dirty:true},null)).toBe(`${sha}+dirty`);
+    expect(calibrationBuildKey({gitSha:'unknown',dirty:null},{kind:'installation',gitSha:sha,dirty:false})).toBe(sha);
+    expect(calibrationBuildKey({gitSha:'unknown',dirty:null},{kind:'installation',gitSha:sha,dirty:true})).toBe(`${sha}+dirty`);
+    expect(calibrationBuildKey({gitSha:'unknown',dirty:null},{kind:'source',gitSha:sha,dirty:false})).toBe('unknown');
+    expect(calibrationBuildKey({gitSha:'unknown',dirty:null},null)).toBe('unknown');
+  });
 });

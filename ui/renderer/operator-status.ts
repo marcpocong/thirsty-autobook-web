@@ -10,6 +10,7 @@ export function releaseBlockers(state: Dashboard): Array<{ reason: string; recov
     recovery: c.id === 'clock' ? { label: 'Refresh trusted clock', action: 'SYNC_CLOCK' }
       : c.id === 'wave1-preparation-capacity' || c.id === 'shotgun-timing' ? { label: 'Review capacity', action: 'REVIEW_CAPACITY' }
       : c.id === 'shotgun-topology' ? { label: 'Recheck browsers', action: 'RECHECK_BROWSERS' }
+      : c.id === 'security-check' ? { label: 'Run security check', action: 'CHECK_SECURITY' }
       : { label: 'Review release checks', action: 'REVIEW_READINESS' }
   }));
 }

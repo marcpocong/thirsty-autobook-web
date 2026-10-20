@@ -14,13 +14,17 @@ A 20-shot single-target Dense Core plan remains `6 / 6 / 6 / 2` tabs inside four
 
 ## Exact saved topology validation
 
-Run outside the live countdown:
+Run outside the live countdown, from the **installation root**, with the dispatcher runtime the installed app actually uses (`THIRSTY_NODE_EXEC`, `.local\runtime\node.exe`):
 
 ```powershell
-npm run bench:shotgun -- --saved-plan <saved-plan.json> --runs 10 --warmup 2 --out .local/shotgun-timing --lockdown
+.local\runtime\node.exe --import tsx scripts/benchmark-fanout-capacity.ts --saved-plan <saved-plan.json> --target-date <YYYY-MM-DD> --runs 10 --warmup 2 --lockdown
 ```
 
-The JSON must contain `PRECISION_PHASE3` and enabled `STRATEGY_V2.shotgun.exactSchedule` from the saved configuration. A sanitized extract containing those two objects is sufficient. Do not commit private configuration. The tool validates the schedule against the compiled plan and creates exactly the saved workers and tabs, with each original offset and fan-out tier. It uses the production armed dispatcher and prebuilt transport. Its default preparation lead is 15 seconds with synthetic security; use the saved preparation lead when studying prewarm capacity. Synthetic security does not establish real security-preparation readiness.
+The controller accepts a result only when the machine key (including that runtime's Node version), clean build SHA, Chrome version, exact plan fingerprint and dispatcher all match, within 24 hours. Inside an installation the build key comes from its verified `dist/build-info.json`; in a git checkout from `git`. With `--saved-plan` the result is written to `<root>/.local/shotgun-timing/latest.json`, the file the controller reads. A run from `Source` writes under `Source/.local` and does not apply to the installed app.
+
+The JSON must contain `PRECISION_PHASE3` and enabled `STRATEGY_V2.shotgun.exactSchedule` from the saved configuration. A sanitized extract containing those two objects is sufficient. Do not commit private configuration. Saved release candidates carry no booking date (arming supplies it), so `--target-date` is required and recorded in the result as `targetDate`; when candidates do carry one, it must match. No historical date is substituted. The tool validates the schedule against the compiled plan and creates exactly the saved workers and tabs, with each original offset and fan-out tier. It uses the production armed dispatcher and prebuilt transport.
+
+Its default preparation lead is 15 seconds with synthetic security. The lead only sets when synthetic preparation starts, so trigger→request calibration does not need the production lead (for example 53,115 ms for the October 22 two-shot plan) and the profile does not record it. `--prewarm-lead` accepts up to the production maximum (`MAX_PREWARM_LEAD_MS`, 105 s) when studying preparation capacity. Three things are measured separately: real security-preparation duration (run logs, `SECURITY_PREPARATION_COMPLETED`, plus the pre-release security check), preparation capacity (the forecast from those durations), and local trigger→request timing (this tool). Synthetic security does not establish real security-preparation readiness. Any failure prints one `BENCH_FAILED code=… error=… detail=…` line and exits 1 before writing `latest.json`.
 
 Every Chrome has isolated temporary profiles, DNS blocked except localhost, and a dead localhost proxy. Onda-shaped pages and all checkout responses are intercepted and fulfilled locally. No Onda checkout POST leaves the machine. This tool never runs automatically in countdown. Use `--dispatcher renderer` for an explicit experimental comparison; this never changes the production flag. Exact-plan coordinator benchmarking is refused rather than silently using a different timing architecture.
 

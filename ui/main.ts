@@ -36,6 +36,7 @@ import {readReleaseTelemetry} from '../src/release-telemetry.js';
 import {createMachineHealthSampler,readLastReleaseBuild} from '../src/release-readiness-gate.js';
 import {readSourceStatus,readUpdatePreflight} from '../src/source-status.js';
 import {readDispatcherMachineKey} from './runner-runtime.js';
+import {readSecurityCheck} from '../src/security-check.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 process.chdir(root);
@@ -64,6 +65,7 @@ function confirmModal(request: Omit<ConfirmRequest, 'id'>): Promise<boolean> {
 }
 const controller = new Controller({
   dispatcherMachineKey:readDispatcherMachineKey(node),
+  securityCheck:()=>readSecurityCheck(root),
   confirmShotgunLive:async plan=>{const shotgun=plan.setup.STRATEGY_V2!.shotgun!,offsets=shotgun.exactSchedule.map(s=>s.configuredOffsetMs).sort((a,b)=>a-b);
     return confirmModal({tone:'warning',title:'LIVE SHOTGUN PILOT · OWNER ATTESTATION',message:`Arm ${shotgun.exactSchedule.length} live Shotgun attempts for Mango ${plan.targetDate}?`,
       detail:`Attempts: ${shotgun.exactSchedule.length} across ${Object.keys(shotgun.counts).length} target(s) · offsets ${offsets[0]} … ${offsets.at(-1)} ms before release.\n`+
@@ -148,7 +150,7 @@ else {
     armObservation: () => controller.armObservation(), abortAutomation: () => {lab.stop();return controller.abortAutomation();}, getStatus: () => structuredClone(controller.state),
     armSelection: () => controller.armSelection(), dryRace: () => controller.dryRace(),
     armFullBooking:()=>controller.armFullBooking(),cancelScheduledRelease:()=>controller.cancelScheduledRelease(),invalidatePreparation:()=>controller.invalidatePreparation(),syncClock:()=>controller.syncClock(),
-    closeBotBrowsers:()=>controller.closeBotBrowsers(),watchNextRelease:()=>controller.watchNextRelease(),stopSlotWatch:()=>controller.stopSlotWatch(),
+    closeBotBrowsers:()=>controller.closeBotBrowsers(),checkSecurity:()=>controller.checkSecurity(),watchNextRelease:()=>controller.watchNextRelease(),stopSlotWatch:()=>controller.stopSlotWatch(),
     rebuildIntelligence:()=>controller.rebuildIntelligence(),clearIntelligence:()=>controller.clearIntelligence(),runNetworkCheck:()=>controller.runNetworkCheck(),
   };
   ipcMain.handle('thirsty:shotgunLab',async(event,...args:unknown[])=>{

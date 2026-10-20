@@ -171,6 +171,21 @@ describe('plan ladder and readiness layers', () => {
     expect(layers.find(l => l.id === 'SECURITY')).toMatchObject({ status: 'BLOCKED', detail: '0/3 ready · 1 preparing · 2 omitted · actual evidence for this run' });
     expect(readinessSummary(layers)).toContain('Armed · live security');
   });
+  it('shows the pre-release security check as evidence before arming, and live run evidence once armed', () => {
+    const base = { plan: { problems: 0, runtime: 'VALID' as const, saved: true }, environment: { prepared: true, forOtherPlan: false, required: 2, connected: 2, identityIssues: 0 },
+      forecast: { verdict: 'READY' as const, ready: 2, configured: 2, atRisk: 0, omitted: 0, measured: true, samples: 12 }, security: { planned: 2, ready: 0, preparing: 0, failed: 0, omitted: 0, leadMs: 53_115 } };
+    const passed = readinessLayers({ ...base, securityCheck: { status: 'PASSED', detail: 'A verified in 4.2 s · B verified in 3.8 s' }, armed: { armed: false, running: false } });
+    expect(passed.find(l => l.id === 'SECURITY')).toMatchObject({ label: 'Security check', status: 'OK' });
+    expect(passed.find(l => l.id === 'SECURITY')!.detail).toContain('the run still acquires its own fresh verification');
+    expect(readinessSummary(passed)).toBe('Prepared · forecast feasible · pre-release security check passed; live security is verified again after arming');
+    const failed = readinessLayers({ ...base, securityCheck: { status: 'FAILED', detail: 'A failed (ONDA_SECURITY_VERIFICATION_FAILED) after 60.2 s' }, armed: { armed: false, running: false } });
+    expect(failed.find(l => l.id === 'SECURITY')).toMatchObject({ status: 'BLOCKED' });
+    expect(readinessSummary(failed)).toBe('Prepared · Pre-release check failed · A failed (ONDA_SECURITY_VERIFICATION_FAILED) after 60.2 s');
+    const missing = readinessLayers({ ...base, securityCheck: { status: 'MISSING', detail: 'No pre-release security check has run for these browsers.' }, armed: { armed: false, running: false } });
+    expect(missing.find(l => l.id === 'SECURITY')).toMatchObject({ status: 'PENDING' });
+    const armed = readinessLayers({ ...base, securityCheck: { status: 'PASSED', detail: 'x' }, armed: { armed: true, running: false } });
+    expect(armed.find(l => l.id === 'SECURITY')).toMatchObject({ label: 'Live security', status: 'PENDING' });
+  });
   it('an unprepared saved plan leads with the earliest incomplete stage', () => {
     const layers = readinessLayers({ plan: { problems: 0, runtime: 'VALID', saved: true }, environment: { prepared: false, forOtherPlan: false, required: 1, connected: 0, identityIssues: 0 },
       forecast: { verdict: 'UNAVAILABLE', ready: 0, configured: 3, atRisk: 0, omitted: 0, measured: false, samples: 0 }, security: null, armed: { armed: false, running: false } });
