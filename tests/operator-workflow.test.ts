@@ -104,6 +104,17 @@ const base = (patch: Partial<OperatorInputs> = {}): OperatorInputs => ({ mode: '
   lock: { present: false, canPrepareOver: false, unresolvedSubmission: false }, disconnected: [], playersMissing: [], termsAuthorized: true,
   forecast: { verdict: 'READY', ready: 3, configured: 3, omitted: 0, required: true }, ...patch });
 
+describe('a saved plan dated for a passed release', () => {
+  it('closes Prepare with the date reason and its recovery, never offering a preparation the runner would refuse', () => {
+    const reason = 'Saved for 2026-10-22, whose release has already passed. The next release publishes 2026-10-23.';
+    const g = operatorGates(base({ prepared: { forSavedPlan: false, forOtherPlan: false }, savedPlanDateProblem: reason }));
+    expect(g.prepare).toMatchObject({ enabled: false, reason, recovery: { action: 'REVIEW_PLAN_DATE' } });
+    expect(g.primary).toMatchObject({ action: 'PREPARE', gate: { enabled: false } });
+    // A draft that already differs is reviewed first (saving it is how the new date is chosen deliberately).
+    expect(operatorGates(base({ savedPlan: { exists: true, matchesDraft: false, differences: 2 }, prepared: { forSavedPlan: false, forOtherPlan: false }, savedPlanDateProblem: reason })).prepare.recovery?.action).toBe('REVIEW_CHANGES');
+    expect(failureCategory('PRECISION_CANDIDATE_INVALID')).toBe('INVALID_PLAN');
+  });
+});
 describe('operator gates: one authority, a visible reason and a recovery for every blocked control', () => {
   it('walks Save → Prepare → Authorize and Arm → Emergency Stop', () => {
     expect(operatorGates(base({ savedPlan: { exists: true, matchesDraft: false, differences: 4 }, prepared: { forSavedPlan: false, forOtherPlan: false } })).primary).toMatchObject({ action: 'SAVE_PLAN', gate: { enabled: true } });
