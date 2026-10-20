@@ -3,9 +3,15 @@ import type { Page } from 'playwright';
 import { ONDA_URL } from '../config.js';
 import type { CurrentCheckoutHeadersProvider } from './browser-session-transport.js';
 
+/** Closed diagnostic facts about a failed acquisition; never a token, fingerprint or provider text. */
+export interface SecurityFailureDetail { failedHelper?: 'challenge' | 'fingerprint' }
+
 export class CalendarFreeSecurityError extends Error {
-  constructor(readonly code: string) { super(code); this.name = 'CalendarFreeSecurityError'; }
+  constructor(readonly code: string, readonly detail: SecurityFailureDetail = {}) { super(code); this.name = 'CalendarFreeSecurityError'; }
 }
+
+const failureDetail = (result: { failedHelper?: unknown }): SecurityFailureDetail =>
+  result.failedHelper === 'challenge' || result.failedHelper === 'fingerprint' ? { failedHelper: result.failedHelper } : {};
 
 /** Calls Onda's current booking challenge and fingerprint helpers in its own page runtime. */
 export function calendarFreeSecurityContext(page: Page): CurrentCheckoutHeadersProvider {
@@ -24,10 +30,10 @@ export function calendarFreeSecurityContext(page: Page): CurrentCheckoutHeadersP
       throw new CalendarFreeSecurityError('ONDA_SECURITY_BUNDLE_CHANGED');
     try {
       const source = await readFile(new URL('./calendar-free-security-context-browser.js', import.meta.url), 'utf8');
-      const result = await page.evaluate<{ code?: string; turnstileToken?: string; publicFingerprint?: string }>(
+      const result = await page.evaluate<{ code?: string; turnstileToken?: string; publicFingerprint?: string; failedHelper?: string }>(
         `(${source})()`);
       if (page.isClosed() || page.url() !== ONDA_URL) throw new CalendarFreeSecurityError('SECURITY_CONTEXT_PAGE_CHANGED');
-      if (result.code) throw new CalendarFreeSecurityError(result.code);
+      if (result.code) throw new CalendarFreeSecurityError(result.code, failureDetail(result));
       if (!result.turnstileToken || !result.publicFingerprint)
         throw new CalendarFreeSecurityError('SECURITY_CONTEXT_EMPTY');
       return { turnstileToken: result.turnstileToken, publicFingerprint: result.publicFingerprint };

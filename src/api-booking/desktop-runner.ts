@@ -20,7 +20,9 @@ import { freezePrecisionRace, precisionAttemptSet, precisionTargetPlan, reducePr
 import { authorizePrecision, candidateWirePlan, precisionCandidateId, PrecisionSession, classifyActionableObservation, pricedPrecisionPlan, adaptiveMaxAgeMs,
   adaptiveFitness, freshestAvailabilityObservation, isActionableEvidenceFitness, shouldContinueAdaptiveRun, type AvailabilityObservation } from './precision-phase3.js';
 import { runAdaptiveAttempt, type AdaptiveSelection } from './adaptive-attempt.js';
-import { browserIdentity, verifyDedicatedChromeAsync } from '../browser.js';
+import { browserIdentity, starterFailureCode, verifyDedicatedChromeAsync } from '../browser.js';
+import { preparationStep, starterStepCode } from './browser-preparation-step.js';
+import { writeSecurityCheck, type SecurityCheck, type SecurityCheckWorker } from '../security-check.js';
 import { emitUiEvent, type ApiStageFields } from '../ui-events.js';
 import { discoverApiAvailability } from './availability-engine.js';
 import { THIRSTY_PICKLE_FACILITY_ID } from './live-availability-provider.js';
@@ -70,7 +72,7 @@ const preferencesSchema = z.object({ wing: z.enum(['MANGO','BUKO']).optional(), 
   fallbackStarts: z.array(z.string().regex(/^(0[89]|1\d|2[0-3]):00$/)),
   exact: z.array(z.array(z.number().int().min(1).max(7))).optional(),
   workers: z.array(z.enum(['A','B','C','D','E','F','G','H'])).min(1).max(8).optional() }).strict();
-const command = z.object({ mode: z.enum(['prepare', 'dry', 'audit', 'live', 'live-now']), date: z.iso.date(),
+const command = z.object({ mode: z.enum(['prepare', 'dry', 'audit', 'security-check', 'live', 'live-now']), date: z.iso.date(),
   checkoutMethod:z.enum(['proof-based','proofless']).optional(),clockOffsetMs:z.number().finite().optional(),releaseMs: z.number().int().positive().optional(), fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
   shotgunAttestation: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   preferences: preferencesSchema.optional() }).strict().parse(JSON.parse(process.argv[2] ?? '{}'));
@@ -227,29 +229,66 @@ async function prepareWorker(workerId:WorkerId,fanOutCount=1): Promise<WorkerSes
   try { await verifyDedicatedChromeAsync(identity); }
   catch(error){
     if(!(error instanceof Error)||error.message!=='CDP_NOT_LISTENING')throw error;
-    await promisify(execFile)('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
-      resolve('scripts/start-onda-chrome.ps1'), '-Worker', workerId, '-Port', String(identity.port)],
-    { cwd: process.cwd(), windowsHide: true, timeout: 30_000 });
+    try{
+      await promisify(execFile)('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+        resolve('scripts/start-onda-chrome.ps1'), '-Worker', workerId, '-Port', String(identity.port)],
+      { cwd: process.cwd(), windowsHide: true, timeout: 30_000 });
+    }catch(startError){throw Error(starterStepCode(startError,starterFailureCode(startError)),{cause:startError});}
     // The starter exits successfully only after verifying the new listener,
     // Chrome process, port, and exact dedicated profile.
   }
-  const browser = await chromium.connectOverCDP(identity.cdpUrl);
+  const browser = await preparationStep('CDP_ENDPOINT_UNAVAILABLE',()=>chromium.connectOverCDP(identity.cdpUrl));
   connectedBrowsers.push(browser);
   const context = browser.contexts()[0];
   if (!context) throw Error('API_BROWSER_CONTEXT_MISSING');
   const matchingPages = context.pages().filter(candidate => candidate.url() === ONDA_URL);
   const pages=matchingPages.slice(0,fanOutCount);
-  while(pages.length<fanOutCount)pages.push(await context.newPage());
+  while(pages.length<fanOutCount)pages.push(await preparationStep('ONDA_TAB_OPEN_FAILED',()=>context.newPage()));
   await Promise.all(matchingPages.slice(fanOutCount).map(duplicate => duplicate.close().catch(() => undefined)));
   await Promise.all(pages.map(async page=>{
-    if (page.url() !== ONDA_URL) await page.goto(ONDA_URL, { waitUntil: 'domcontentloaded', timeout: 45_000 });
-    await page.getByTestId('public-booking-hero-title').first().waitFor({ state: 'visible', timeout: 45_000 });
-    if ((await page.getByTestId('public-booking-hero-title').first().innerText()).trim() !== VENUE) throw Error('WRONG_VENUE');
+    if (page.url() !== ONDA_URL) await preparationStep('ONDA_PAGE_NAVIGATION_FAILED',
+      ()=>page.goto(ONDA_URL, { waitUntil: 'domcontentloaded', timeout: 45_000 }),'ONDA_PAGE_LOAD_TIMEOUT');
+    const hero=page.getByTestId('public-booking-hero-title').first();
+    await preparationStep('ONDA_PAGE_NOT_READY',()=>hero.waitFor({ state: 'visible', timeout: 45_000 }));
+    if ((await preparationStep('ONDA_PAGE_NOT_READY',()=>hero.innerText())).trim() !== VENUE) throw Error('WRONG_VENUE');
   }));
   const page=pages[0]!;
-  await showWorkerPage(page,workerId);
+  await preparationStep('BROWSER_PRESENTATION_FAILED',()=>showWorkerPage(page,workerId));
   stage('BROWSER_READY', { workerId, port: identity.port });
   return { workerId, browser, page, pages:Object.freeze(pages), port: identity.port };
+}
+
+/**
+ * Pre-release security check (mode security-check): one genuine acquisition per worker's booking tab through the
+ * release transport path (see OndaBrowserSessionTransport.checkSecurityReadiness), value discarded. A visible Onda
+ * challenge raises that worker's window for the operator, exactly as in a run. Nothing is submitted or journaled.
+ */
+async function runSecurityCheck(sessions:readonly WorkerSession[]){
+  const workers:SecurityCheck['workers']={};
+  await Promise.all(sessions.map(async({workerId,page})=>{
+    const context={workerId,lane:diagnosticLaneForWorker(workerId)};
+    let finish:((stage:string,extra?:Record<string,unknown>)=>void)|undefined,completion:Extract<BrowserTransportObservation,{event:'SECURITY_PREPARATION_COMPLETED'}>|undefined;
+    const transport=new OndaBrowserSessionTransport(page,()=>calendarFreeSecurityContext(page)(),undefined,
+      {onHumanVerificationRequired:async()=>{
+        await page.evaluate(id=>{document.title=`THIRSTY BOT ${id} - VERIFY HERE`;},workerId).catch(()=>undefined);
+        await showWorkerPage(page,workerId).catch(()=>undefined);stage('HUMAN_VERIFICATION_REQUIRED',{workerId});
+      },onHumanVerificationCompleted:async()=>{stage('HUMAN_VERIFICATION_COMPLETE',{workerId});}},
+      observation=>{
+        if(observation.event==='SECURITY_PREPARATION_STARTED')finish=diagnostics.begin('security',observation.event,context,observation);
+        else if(observation.event==='SECURITY_PREPARATION_COMPLETED'){completion=observation;finish?.(observation.event,observation);}
+        else diagnostics.observe(observation.event,context,observation);
+      });
+    const failure=await transport.checkSecurityReadiness().then(()=>undefined,(error:unknown)=>error??Error('SECURITY_CHECK_FAILED'));
+    const code=failure===undefined?undefined:safeApiFailureCode(failure,'SECURITY_CHECK_FAILED');
+    const result:SecurityCheckWorker={outcome:code?'FAILED':'READY',durationMs:completion?.durationMs??0,...(code?{code}:{}),
+      ...(completion?.challengeFrame?{challengeFrame:completion.challengeFrame}:{}),...(completion?.failedHelper?{failedHelper:completion.failedHelper}:{})};
+    workers[workerId]=result;
+    stage('SECURITY_CHECK',{workerId,...result});
+  }));
+  writeSecurityCheck(process.cwd(),{schema:'security-check/v1',checkedAt:new Date(nowMs()).toISOString(),targetDate:command.date,fingerprint:command.fingerprint,workers});
+  const failed=Object.values(workers).filter(value=>value.outcome==='FAILED').length;
+  stage('SECURITY_CHECK_COMPLETE',{workerCount:sessions.length,failedWorkers:failed});
+  if(failed)throw Error('SECURITY_CHECK_FAILED');
 }
 
 /** One read-only availability GET; every read lands in the trace with its exact 112-cell matrix. */
@@ -461,6 +500,7 @@ try {
   if(!sessions.length)throw Error('API_BROWSER_PREPARATION_FAILED');
   availabilityPage=sessions[0]!.page;
   if (command.mode === 'prepare') { process.exitCode = 0; }
+  else if (command.mode === 'security-check') await runSecurityCheck(sessions);
   else {
     if(command.mode==='live'||command.mode==='live-now'){
       process.env.ONDA_CALENDAR_FREE_CHECKOUT='APPROVED_ONE_SHOT';

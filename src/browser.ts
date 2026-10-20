@@ -76,6 +76,12 @@ export async function verifyDedicatedChromeAsync(identity:BrowserIdentity = brow
   }catch{throw Error('CDP_PROCESS_METADATA_UNAVAILABLE');}
   if(code!=='CDP_VERIFIED')throw Error(cdpCodes.find(value=>value===code)??'CDP_PROCESS_METADATA_UNAVAILABLE');
 }
+/** The closed code start-onda-chrome.ps1 printed (or failed with), read from a rejected execFile; never its raw text. */
+export function starterFailureCode(error:unknown):string|undefined{
+  const e=error as {message?:unknown;stdout?:unknown;stderr?:unknown};
+  const text=[e?.message,e?.stdout,e?.stderr].filter(v=>typeof v==='string').join('\n');
+  return [...cdpCodes,'CHROME_NOT_INSTALLED','CHROME_START_TIMEOUT'].find(code=>new RegExp(`(?:^|[^A-Z_])${code}(?:$|[^A-Z_])`).test(text));
+}
 export function verifyCandidateChrome(identity:BrowserIdentity){
   const expected=candidateBrowserIdentity(identity.workerId,identity.port);
   if(identity.cdpUrl!==expected.cdpUrl||resolve(identity.expectedProfile).toLowerCase()!==resolve(expected.expectedProfile).toLowerCase())throw Error('CDP_IDENTITY_MISMATCH');

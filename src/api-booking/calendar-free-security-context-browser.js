@@ -21,11 +21,16 @@ async () => {
             finish({ code: 'ONDA_SECURITY_HELPER_UNAVAILABLE' });
             return;
           }
-          Promise.all([challenge(), fingerprint()]).then(([turnstileToken, publicFingerprint]) => {
-            finish(turnstileToken && publicFingerprint
-              ? { turnstileToken, publicFingerprint }
+          // Same concurrent invocation and settlement as Promise.all: the first rejection fails, success needs both.
+          // Diagnostics only: which helper rejected (never its reason or any value).
+          const pending = [[challenge(), 'challenge'], [fingerprint(), 'fingerprint']], values = [];
+          let remaining = pending.length;
+          pending.forEach(([value, failedHelper], index) => Promise.resolve(value).then(result => {
+            values[index] = result;
+            if (--remaining === 0) finish(values[0] && values[1]
+              ? { turnstileToken: values[0], publicFingerprint: values[1] }
               : { code: 'ONDA_SECURITY_CONTEXT_EMPTY' });
-          }, () => finish({ code: 'ONDA_SECURITY_VERIFICATION_FAILED' }));
+          }, () => finish({ code: 'ONDA_SECURITY_VERIFICATION_FAILED', failedHelper })));
         } catch { finish({ code: 'ONDA_SECURITY_HELPER_UNAVAILABLE' }); }
       }]);
       runtime.push([path, { otherChunks: [], runtimeModuleIds: [id] }]);

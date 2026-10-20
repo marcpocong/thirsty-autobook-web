@@ -7,7 +7,7 @@ const bridge: Bridge = {
   journalArchive:request=>ipcRenderer.invoke('thirsty:journalArchive',request),
   syncClock:()=>ipcRenderer.invoke('thirsty:syncClock'),
   focusBrowser:request=>ipcRenderer.invoke('thirsty:focusBrowser',request),
-  closeBotBrowsers:()=>ipcRenderer.invoke('thirsty:closeBotBrowsers'),
+  closeBotBrowsers:()=>ipcRenderer.invoke('thirsty:closeBotBrowsers'),checkSecurity:()=>ipcRenderer.invoke('thirsty:checkSecurity'),
   watchNextRelease:()=>ipcRenderer.invoke('thirsty:watchNextRelease'),
   stopSlotWatch:()=>ipcRenderer.invoke('thirsty:stopSlotWatch'),
   rebuildIntelligence:()=>ipcRenderer.invoke('thirsty:rebuildIntelligence'),

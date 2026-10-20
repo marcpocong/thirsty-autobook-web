@@ -9,6 +9,12 @@ import { logicalTargetId } from '../src/shotgun.js';
 import type { Runner } from '../ui/processes.js';
 import type { Command } from '../ui/types.js';
 import { preregistered } from './arbitration-manifest-stub.js';
+import type { SecurityCheck } from '../src/security-check.js';
+
+/** A genuine pre-release check record as the runner writes it: every worker verified just now for this exact plan. */
+const passedCheck = (view: { targetDate: string; fingerprint: string }, outcome: 'READY' | 'FAILED' = 'READY', at = new Date()): SecurityCheck => ({ schema: 'security-check/v1',
+  checkedAt: at.toISOString(), targetDate: view.targetDate, fingerprint: view.fingerprint,
+  workers: Object.fromEntries(['A', 'B', 'C', 'D', 'E', 'F', 'G'].map(id => [id, { outcome, durationMs: 4200, ...(outcome === 'FAILED' ? { code: 'ONDA_SECURITY_VERIFICATION_FAILED' } : {}) }])) });
 
 const players = { PLAYER_FULL_NAME: 'Fixture Player', PLAYER_PHONE: '09123456789', PLAYER_EMAIL: 'fixture@example.invalid' };
 function shotgunView(objective?: { ideal: number }) {
@@ -35,7 +41,8 @@ async function arm(view: ReturnType<typeof shotgunView>, extra: Partial<Dependen
       browserHealth: async () => ({ A: true, B: true, C: true, D: true, E: true, F: true, G: true }), playerStatus: () => ({ primary: true, extended: true, third: true, fourth: true, fifth: true, sixth: true, seventh: true }),
       browserReadiness: async () => ({ A: probe, B: probe, C: probe, D: probe, E: probe, F: probe, G: probe }) as never, machineHealth: () => ({ eventLoopP95Ms: 4, memoryUsedPct: 40 }) as never,
       clock: () => ({ ...clockStatus(ObservationSchema.parse({}), DateTime.fromISO('2026-10-14T21:00:00+08:00')), releaseMs, targetDate: view.targetDate, networkSynced: true, clockOffsetMs: 0 }),
-      confirm: async () => true, publish: () => undefined, booking: () => view, saveBooking: () => view, recordShotgunAttestation: record => attestations.push(record), ...extra });
+      confirm: async () => true, publish: () => undefined, booking: () => view, saveBooking: () => view, recordShotgunAttestation: record => attestations.push(record),
+      securityCheck: () => passedCheck(view), ...extra });
     // Preparation is bound to the exact saved plan it prepared (as resetPrepare records it).
     controller.state.apiFirstReady = true; controller.state.ready = true; controller.state.termsAuthorized = true; controller.state.preparedPlanFingerprint = view.fingerprint;
     beforeArm?.(controller);
@@ -87,6 +94,20 @@ describe('live Shotgun capability gate', () => {
     const live = calls.find(c => typeof c === 'object' && c.kind === 'apiRun' && c.mode === 'live') as Extract<Command, { kind: 'apiRun' }>;
     expect(live).toMatchObject({ fingerprint: view.fingerprint, shotgunAttestation: view.fingerprint });
     expect(attestations).toEqual([expect.objectContaining({ fingerprint: view.fingerprint, attempts: 6 })]);
+  });
+  it.each([
+    ['no check has run', () => null, 'SECURITY_CHECK_REQUIRED'],
+    ['a worker failed verification', (view: ReturnType<typeof shotgunView>) => passedCheck(view, 'FAILED'), 'SECURITY_CHECK_FAILED'],
+    ['the check is over an hour old', (view: ReturnType<typeof shotgunView>) => passedCheck(view, 'READY', new Date(Date.now() - 61 * 60_000)), 'SECURITY_CHECK_REQUIRED'],
+    ['the check was for another saved plan', (view: ReturnType<typeof shotgunView>) => ({ ...passedCheck(view), fingerprint: 'f'.repeat(64) }), 'SECURITY_CHECK_REQUIRED'],
+  ] as const)('refuses live Shotgun before any confirmation when %s', async (_name, record, code) => {
+    const view = shotgunView();
+    let asked = false;
+    const { calls, controller } = await arm(view, { securityCheck: () => record(view), confirm: async () => { asked = true; return true; }, confirmShotgunLive: async () => true });
+    expect(calls.filter(c => typeof c === 'object' && c.kind === 'apiRun')).toEqual([]);
+    expect(asked).toBe(false);
+    expect(controller.state.attention).toMatchObject({ code, recovery: { action: 'CHECK_SECURITY' } });
+    expect(controller.state.securityCheck?.status).not.toBe('PASSED');
   });
   it('includes a saved distinct-court objective in the authorization fingerprint only when present', () => {
     const plain = shotgunView(), quota = shotgunView({ ideal: 2 });

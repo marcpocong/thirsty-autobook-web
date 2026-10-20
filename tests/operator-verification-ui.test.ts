@@ -123,6 +123,27 @@ describe('independent integrated-source verification', () => {
     await page.close();
   }, 60_000);
 
+  it('shows a failed pre-release security check with a working one-click re-check and the Shotgun Arm blocker', async () => {
+    const o = objective({ 7: 2 }, 2), saved = savedView(o);
+    const securityCheck = { status: 'FAILED', detail: 'A failed (ONDA_SECURITY_VERIFICATION_FAILED) after 60.2 s', checkedAt: new Date().toISOString() };
+    const page = await openRenderer(browser, { booking: saved, playerStatus, objectiveDocument: draftDoc(o), ready: true, apiFirstReady: true, operation: 'idle',
+      workflow: 'release', preparedPlanFingerprint: saved.fingerprint, browserHealth: { A: true }, termsAuthorized: true, prewarmFeasibility: forecast, securityCheck,
+      releaseReadiness: { verdict: 'NOT_READY', readyWorkers: ['A'], degradedWorkers: [], unavailableWorkers: [], checks: [{ id: 'security-check', label: 'Pre-release security check', level: 'UNAVAILABLE', hardBlock: true, detail: 'failed · ' + securityCheck.detail }] }
+    }, 'home', { width: 1366, height: 768 });
+    await step5(page);
+    await expect.poll(() => page.locator('#readiness-layers [data-layer="SECURITY"]').innerText()).toContain('Pre-release check failed');
+    expect(await page.locator('#readiness-layers [data-layer="SECURITY"]').getAttribute('data-status')).toBe('BLOCKED');
+    await expect.poll(() => page.locator('#action-blockers').innerText()).toContain('Pre-release security check');
+    expect(await primary(page).isDisabled()).toBe(true);
+    await page.locator('#security-check-run').click();
+    await page.locator('#action-blockers [data-recovery="CHECK_SECURITY"]').click();
+    await expect.poll(() => calls(page)).toEqual(['checkSecurity', 'checkSecurity']);
+    await publish(page, { securityCheck: { ...securityCheck, status: 'PASSED', detail: 'A verified in 4.2 s' }, releaseReadiness: { verdict: 'READY', readyWorkers: ['A'], degradedWorkers: [], unavailableWorkers: [], checks: [] } });
+    await expect.poll(() => page.locator('#readiness-layers [data-layer="SECURITY"]').innerText()).toContain('Pre-release check passed');
+    expect(await page.locator('#security-check-run').innerText()).toBe('Check again');
+    await page.close();
+  }, 60_000);
+
   it('prevents repeated Prepare, Arm and Save Draft while a bridge call is pending', async () => {
     const o = objective({ 7: 2 }, 2), saved = savedView(o);
     const page = await openRenderer(browser, { booking: saved, playerStatus, objectiveDocument: draftDoc(o), clock: clockStatus(ObservationSchema.parse({}), DateTime.now()) }, 'home');

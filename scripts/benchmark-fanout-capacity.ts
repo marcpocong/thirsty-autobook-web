@@ -1,6 +1,7 @@
 import { offlineCandidatePlan } from '../src/shotgun-test-lab.js';
 import type { SmartPhase3 } from '../src/precision-simple.js';
-import {exactShotgunTopology,assertShotgunSchedule,summarizeShotgunTiming,shotgunMachineKey,type ShotgunTopologyInput} from '../src/shotgun-timing.js';
+import {exactShotgunTopology,assertShotgunSchedule,summarizeShotgunTiming,shotgunMachineKey,calibrationTargetDate,calibrationBuildKey,type ShotgunTopologyInput} from '../src/shotgun-timing.js';
+import {MAX_PREWARM_LEAD_MS} from '../src/api-booking/prewarm-scheduler.js';
 /**
  * Fan-out Capacity Benchmark (offline; it NEVER contacts Onda — see scripts/bench-support.ts).
  *
@@ -19,10 +20,17 @@ import {exactShotgunTopology,assertShotgunSchedule,summarizeShotgunTiming,shotgu
  * Options:
  *   --pattern burst | offsets:-35,-30,-25,-10 | spaced:<ms>   child offsets (default burst: every child at the release instant)
  *   --dispatcher central | coordinator | renderer              (coordinator: experimental per-browser processes; renderer: experimental)
- *   --prewarm-lead <ms> (default 1500)  --prewarm-concurrency <n> (tiered policy, as production fan-out)  --synthetic-prewarm cpu:<ms>,wait:<ms>  --page-busy <ms per 10 ms>
+ *   --prewarm-lead <ms> (default 1500; saved plan 15000; up to the production maximum MAX_PREWARM_LEAD_MS) — only how early the
+ *     synthetic preparation starts. Trigger→request timing does not need the production lead; pass it to study preparation capacity.
+ *   --prewarm-concurrency <n> (tiered policy, as production fan-out)  --synthetic-prewarm cpu:<ms>,wait:<ms>  --page-busy <ms per 10 ms>
+ *   --target-date YYYY-MM-DD   booking date the offline requests carry. Required with --saved-plan when its candidates have no
+ *     bookingDate (the live date comes from arming); must match it when they do. Never substituted.
  *   --headed (real windows; background tabs as in production)  --traces (passive CDP provider traces on every tab, as production)
  *   --lockdown (production final-second HIGH priority plus in-memory RELEASE_CRITICAL_LOCKDOWN lifecycle)
- *   --chrome <path>  --label <text>  --out <dir>
+ *   --chrome <path>  --label <text>  --out <dir> (saved plan default: <root>/.local/shotgun-timing, where the controller reads latest.json)
+ *
+ * A calibration the installed app accepts must run from the installation root with the dispatcher runtime it uses
+ * (THIRSTY_NODE_EXEC, .local/runtime/node.exe):  .local\runtime\node.exe --import tsx scripts/benchmark-fanout-capacity.ts --saved-plan …
  */
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { constants as osConstants, cpus, getPriority, platform, release as osRelease, setPriority, totalmem } from 'node:os';
@@ -31,6 +39,16 @@ import { performance } from 'node:perf_hooks';
 import { pathToFileURL } from 'node:url';
 import { busyPercent, cpuSnapshot, closeOfflineChrome, findChrome, launchOfflineChrome, startPageBusyWork, syntheticSecurityPreparation, type OfflineChrome } from './bench-support.js';
 
+// A bare exit code 1 cannot be acted on: every failure (top-level await included) prints one closed reason line.
+const benchFailure = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  process.stderr.write(`BENCH_FAILED code=${/^[A-Z][A-Z0-9_]{0,79}$/.test(message) ? message : 'BENCH_UNEXPECTED_ERROR'} `
+    + `error=${error instanceof Error ? error.name : typeof error} detail=${message.split('\n')[0]!.slice(0, 200)}\n`);
+  // Still terminate as an unhandled error would: a run must never continue to write latest.json after one.
+  process.exit(1);
+};
+process.on('uncaughtException', benchFailure);
+process.on('unhandledRejection', benchFailure);
 const args = new Map<string, string>();
 for (let index = 2; index < process.argv.length; index++) {
   const key = process.argv[index]!.replace(/^--/, ''), next = process.argv[index + 1];
@@ -56,7 +74,11 @@ const tracesOn = args.get('traces') === 'true';
 const lockdownOn = args.get('lockdown') === 'true';
 const label = args.get('label') ?? `${dispatcher}-${pattern.replace(/[^a-z0-9-]/gi, '')}${headed ? '-headed' : ''}`;
 if (!(workerCount >= 1 && workerCount <= 7) || widths.some(width => !(width >= 1 && width <= 6)) || !(runs >= 1) || !['central', 'coordinator', 'renderer'].includes(dispatcher) ||
-  !(prewarmLeadMs >= 200 && prewarmLeadMs <= 30_000) || (dispatcher === 'renderer' && prewarmLeadMs < 1300)) throw Error('BENCH_ARGS_INVALID');
+  !(prewarmLeadMs >= 200 && prewarmLeadMs <= MAX_PREWARM_LEAD_MS) || (dispatcher === 'renderer' && prewarmLeadMs < 1300)) throw Error('BENCH_ARGS_INVALID');
+// Synthetic capacity sweeps have no plan; their fixed date is labelled as such. A saved plan's date is exact.
+const SYNTHETIC_SWEEP_DATE = '2026-09-26';
+const date = savedInput ? calibrationTargetDate(savedInput.PRECISION_PHASE3.candidates, args.get('target-date'))
+  : args.has('target-date') ? calibrationTargetDate([], args.get('target-date')) : SYNTHETIC_SWEEP_DATE;
 const [syntheticCpuMs = 0, syntheticWaitMs = 0] = [/cpu:(\d+)/.exec(syntheticPrewarm)?.[1], /wait:(\d+)/.exec(syntheticPrewarm)?.[1]].map(value => Number(value ?? 0));
 const pageBusyMs = Number(pageBusy);
 
@@ -79,7 +101,7 @@ function countCodes(records: RunSample[]): Record<string, number> {
 
 const sourceRoot = resolve(import.meta.dirname, '..');
 const scratch = resolve(args.get('scratch') ?? join(process.env.TEMP ?? sourceRoot, 'thirsty-fanout-bench'));
-const outDir = resolve(args.get('out') ?? join(sourceRoot, '.local/fanout-capacity'));
+const outDir = resolve(args.get('out') ?? join(sourceRoot, savedInput ? '.local/shotgun-timing' : '.local/fanout-capacity'));
 process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT = 'SUPERVISED_ONE_SHOT';
 const moduleUrl = (path: string) => pathToFileURL(join(sourceRoot, path)).href;
 await mkdir(scratch, { recursive: true });
@@ -105,7 +127,6 @@ const customer = { clientId: '00000000-0000-4000-8000-00000000c11e', customerId:
   customerEmail: 'offline-bench@example.invalid', customerPhone: '09000000000', customerFirstName: 'Offline', customerLastName: 'Bench' };
 const {DurableSubmissionJournal}=await import(moduleUrl('src/api-booking/durable-submission-journal.ts')) as typeof import('../src/api-booking/durable-submission-journal.js');
 const awaitedJournalKey=(spaceId:string,date:string,start:string,end:string)=>DurableSubmissionJournal.key('5f8786bd-dc61-4509-b893-74cda8f783f7',spaceId,date,start,end);
-const date = savedInput?.PRECISION_PHASE3.candidates[0]?.bookingDate ?? '2026-09-26';
 const maxWidth = Math.max(...widths);
 const sessions: OfflineChrome[] = [];
 let coordinatorPool: import('../src/api-booking/dispatch-coordinator.js').CoordinatorPool | undefined;
@@ -245,7 +266,9 @@ try {
   const recommendation = capacity.recommendFanOutWidth(summaries);
   const gitInfo = (await import(moduleUrl('scripts/build-support.mjs')) as { gitInfo: (root?:string) => { gitSha: string; dirty: boolean | null } }).gitInfo(sourceRoot);
   const createdAt = new Date().toISOString();
-  if(savedTopology){const result=summarizeShotgunTiming(savedTopology,raw.flatMap(r=>r.children),{machineKey:shotgunMachineKey(),buildKey:gitInfo.gitSha+(gitInfo.dirty?'+dirty':''),dispatcher,chromeVersion:sessions[0]?.version??null},runs);
+  // Inside an installation there is no .git: key the result to its verified build record, as the controller does.
+  const installedBuild=await readFile(join(sourceRoot,'dist/build-info.json'),'utf8').then(text=>JSON.parse(text) as Record<string,unknown>,()=>null);
+  if(savedTopology){const result={...summarizeShotgunTiming(savedTopology,raw.flatMap(r=>r.children),{machineKey:shotgunMachineKey(),buildKey:calibrationBuildKey(gitInfo,installedBuild),dispatcher,chromeVersion:sessions[0]?.version??null},runs),targetDate:date};
     await mkdir(outDir,{recursive:true});await writeFile(join(outDir,'latest.json'),JSON.stringify(result,null,2));
     process.stdout.write(`Exact Shotgun timing: ${JSON.stringify(result)}\n`);
   }

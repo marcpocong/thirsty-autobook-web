@@ -49,6 +49,8 @@ export interface ShotgunTimingReadiness {
   schema:'shotgun-timing/v1';status:'READY'|'AT_RISK'|'FAILED'|'NOT_TESTED';shotCount:number;workerCount:number;tabsPerWorker:Record<string,number>;
   configuredMinimumSpacingMs:number|null;p50:number|null;p95:number|null;max:number|null;outsideTolerance:number;omittedShots:number;
   compressedPairs:number;predictedCompression:boolean;fingerprint:string;testedAt:string|null;machineKey:string;buildKey:string;dispatcher:string;chromeVersion:string|null;runs:number;
+  /** Booking date the offline requests carried (explicit; recorded for traceability, local timing does not depend on it). */
+  targetDate?:string;
 }
 /** Local configured-trigger -> Chrome request-start only. No network/provider/booking guarantee. */
 export function summarizeShotgunTiming(topology:ShotgunTopology,children:readonly ChildSample[],compatibility:{machineKey:string;buildKey:string;dispatcher:string;chromeVersion:string|null},runs:number):ShotgunTimingReadiness {
@@ -90,6 +92,23 @@ export function applicableShotgunTiming(value:ShotgunTimingReadiness,topology:Sh
     value.predictedCompression!==(topology.minimumSpacingMs!==null&&topology.minimumSpacingMs<SHOTGUN_MEANINGFUL_SPACING_MS)||
     value.status==='READY'&&(!cleanTiming||value.compressedPairs!==0)||value.status==='AT_RISK'&&(!cleanTiming||value.compressedPairs===0))return false;
   return value.chromeVersion!==null && value.chromeVersion===chromeVersion && ['READY','AT_RISK','FAILED','NOT_TESTED'].includes(value.status) && value.shotCount===topology.shots.filter(s=>s.shotgun).length && value.workerCount===Object.keys(topology.tabsPerWorker).length && Number.isSafeInteger(value.outsideTolerance) && value.outsideTolerance>=0 && Number.isSafeInteger(value.omittedShots) && value.omittedShots>=0 && value.schema==='shotgun-timing/v1' && value.fingerprint===topology.fingerprint && value.machineKey===machineKey && value.buildKey===buildKey && !buildKey.includes('dirty') && value.dispatcher==='central' && value.testedAt!==null && now-Date.parse(value.testedAt)>=0 && now-Date.parse(value.testedAt)<=24*60*60_000 && value.runs>0;
+}
+const isoDate=(value:string)=>/^\d{4}-\d{2}-\d{2}$/.test(value)&&new Date(`${value}T00:00:00Z`).toISOString().slice(0,10)===value;
+/** Booking date of a saved-plan calibration: the candidates' own date or an explicit one, never a silent substitute. */
+export function calibrationTargetDate(candidates:ShotgunTopologyInput['candidates'],explicit?:string):string{
+  if(explicit!==undefined&&!isoDate(explicit))throw Error('BENCH_TARGET_DATE_INVALID');
+  const dated=candidates.filter(c=>c.bookingDate!==undefined),dates=[...new Set(dated.map(c=>c.bookingDate!))];
+  if(dated.length&&dated.length!==candidates.length||dates.length>1||dates.some(d=>!isoDate(d)))throw Error('BENCH_TARGET_DATE_AMBIGUOUS');
+  if(dates[0]!==undefined&&explicit!==undefined&&dates[0]!==explicit)throw Error('BENCH_TARGET_DATE_MISMATCH');
+  const date=dates[0]??explicit;
+  if(date===undefined)throw Error('BENCH_TARGET_DATE_REQUIRED');
+  return date;
+}
+/** Build a calibration is keyed to: the git checkout's identity, or inside an installation (no .git) its verified build record. */
+export function calibrationBuildKey(git:{gitSha:string;dirty:boolean|null},installed:{kind?:unknown;gitSha?:unknown;dirty?:unknown}|null):string{
+  if(git.gitSha!=='unknown')return git.gitSha+(git.dirty?'+dirty':'');
+  if(installed?.kind==='installation'&&typeof installed.gitSha==='string'&&/^[0-9a-f]{40}$/.test(installed.gitSha))return installed.gitSha+(installed.dirty===false?'':'+dirty');
+  return 'unknown';
 }
 export function readShotgunTiming(path:string,topology:ShotgunTopology,buildKey:string,chromeVersion:string|null=null,machineKey?:string|null):ShotgunTimingReadiness|null {
   try{const value=JSON.parse(readFileSync(path,'utf8')) as ShotgunTimingReadiness;return applicableShotgunTiming(value,topology,buildKey,Date.now(),chromeVersion,machineKey)?value:null;}catch{return null;}

@@ -202,6 +202,7 @@ function recover(action: RecoveryAction) {
     case 'REVIEW_CAPACITY': goStep(3); return;
     case 'STOP': void window.thirsty.abortAutomation().catch(() => undefined); return;
     case 'OPEN_ACTIVITY': hooks.showView('live'); return;
+    case 'CHECK_SECURITY': void window.thirsty.checkSecurity().catch(() => undefined); return;
     case 'WAIT': return;
   }
 }
@@ -657,11 +658,15 @@ function renderReview(v: ExecutionView) {
     forecast: release() && s ? layerForecast(s, preparedForSaved()) : null,
     security: release() ? { planned: plannedSends, ready: children.filter(c => c.state === 'READY').length, preparing: children.filter(c => c.state === 'PREPARING').length,
       failed: children.filter(c => ['FAILED', 'PREWARM_FAILED'].includes(c.state)).length, omitted: children.filter(c => c.state === 'OMITTED').length, leadMs: s?.live?.prewarm?.leadMs ?? f?.prewarmLeadMs ?? null } : null,
+    securityCheck: release() && preparedForSaved() ? s?.securityCheck ?? null : null,
     armed: { armed, running }, readinessBlockers: s ? releaseBlockers(s) : [] });
   const layersHost = byId('readiness-layers');
   layersHost.hidden = !release();
   fill(layersHost, el('p', { class: 'readiness-summary', text: readinessSummary(layers) }),
-    el('ul', {}, ...layers.map(l => el('li', { 'data-status': l.status, 'data-layer': l.id }, el('strong', { text: l.label }), el('span', { class: 'layer-status', text: l.status === 'NA' ? 'N/A' : l.status }), el('span', { class: 'layer-detail', text: l.detail })))));
+    el('ul', {}, ...layers.map(l => el('li', { 'data-status': l.status, 'data-layer': l.id }, el('strong', { text: l.label }), el('span', { class: 'layer-status', text: l.status === 'NA' ? 'N/A' : l.status }), el('span', { class: 'layer-detail', text: l.detail }),
+      // Safe one-click: genuine verification in the prepared browsers, nothing submitted; the controller refuses while busy.
+      l.id === 'SECURITY' && l.label === 'Security check' && !armed && !running && s?.operation === 'idle'
+        ? recoveryButton({ label: l.status === 'OK' ? 'Check again' : 'Run security check', action: 'CHECK_SECURITY' }, 'security-check-run') : null))));
   renderAttention();
   renderConflict(live.setup !== null);
   const bindingText = !release() ? 'Available Now runs each checkout directly; nothing is pre-armed.' : keepSaved ? 'Preparation and arming use the saved plan from the advanced editor.'

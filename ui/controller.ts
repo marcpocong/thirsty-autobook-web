@@ -24,6 +24,7 @@ import type {PreparationInput,PreparationResult} from '../src/booking-plan.js';
 import {scheduledReleaseContext,type ScheduledReleaseContext} from '../src/scheduled-release.js';
 import {formatReleaseOffset} from '../src/release-offset.js';
 import {normalWorkerIds,planWorkerIds,requiredWorkerIds,type CourtCount,type WorkerId} from '../src/workers.js';
+import {securityCheckVerdict} from '../src/security-check.js';
 import type {SlotWatchCandidate,SlotWatchDigest,SlotWatchSummary,SlotWatchView} from '../src/slot-watch.js';
 import type {AvailabilityObservation} from '../src/slot-evidence.js';
 import type {ReleaseForensicsDigest} from '../src/release-forensics.js';
@@ -82,6 +83,9 @@ const errors: Record<string, string> = {
   SHOTGUN_PREWARM_NOT_FULLY_READY:'The preparation forecast cannot ready every configured attempt before its deadline. Reduce the attempts per browser and prepare again. A READY forecast does not guarantee provider security verification will succeed.',
   SHOTGUN_TOPOLOGY_NOT_READY:'The exact Shotgun browser tabs are not ready. Reset & Prepare, then check every required browser group.',
   SHOTGUN_TIMING_NOT_READY:'The matching local Shotgun timing test failed or showed compression. Reduce the shot count, widen the schedule, or test again.',
+  SECURITY_CHECK_REQUIRED:'Live Shotgun needs a passing pre-release security check for this prepared plan within the last hour. Run the security check (nothing is submitted).',
+  SECURITY_CHECK_FAILED:'The pre-release security check did not pass in every bot browser. If a THIRSTY BOT window says VERIFY HERE, complete the check Onda shows there, then run the security check again.',
+  SECURITY_CHECK_NEEDS_PREPARATION:'Prepare the saved release plan first; the security check runs in its prepared browsers.',
   SHOTGUN_MACHINE_NOT_READY:'Machine load exceeds the strict Shotgun timing allowance. Prepare again when the machine is less busy.',
   PREWARM_FEASIBILITY_UNAVAILABLE:'Preparation feasibility for the exact saved Wave 1 plan is unavailable. Reset & Prepare, then recheck Release Readiness before arming.',
   ARBITRATION_MANIFEST_STORAGE_FAILED:'Investigation setup could not be saved. Nothing was armed. Check that the app can write to its local data folder, then try again.',
@@ -186,6 +190,8 @@ interface SlotWatchHandle { id:string; reason:'release'|'manual'; date:string; r
 export interface Dependencies {
   /** Measured in the actual createRunner executable; null means the probe failed. */
   dispatcherMachineKey?:string|null;
+  /** Latest pre-release security check record (.local/security-check/latest.json), as written by the runner. */
+  securityCheck?:()=>import('../src/security-check.js').SecurityCheck|null;
   activityJournal?:Pick<ActivityJournal,'begin'|'record'|'ready'|'handoff'|'end'|'history'>;
   /** Live Shotgun pilot: explicit owner attestation for this exact plan (warning dialog). Absent means refuse. */
   confirmShotgunLive?:(plan:BookingView)=>Promise<boolean>;
@@ -713,6 +719,7 @@ export class Controller {
         securityReady:this.apiReadyWorkers.has(id)||!!this.state.apiFirstReady,...(probe?{targetReady:probe.targetReady,tabCount:probe.tabCount,latencyP95Ms:probe.commandLatencyMs}: {})}];})) as Record<string,{connected:boolean;identityValid:boolean;securityReady:boolean;targetReady?:boolean;tabCount?:number;latencyP95Ms?:number|null}>;
       const latestProfile=this.state.fanOut?.latest,observerView=this.state.slotWatch,latestRead=observerView?.lastPollAt?Date.parse(observerView.lastPollAt):NaN;
       this.state.prewarmFeasibility=this.state.booking?this.forecastPrewarm(this.state.booking):null;
+      this.refreshSecurityCheck();
       const fallbackMachine:MachineHealth={measuredAt:new Date().toISOString(),cpuCount:0,memoryUsedPct:100,eventLoopP95Ms:100,processRssMb:0};
       this.state.releaseReadiness=evaluateReleaseReadiness({build:this.state.build??null,testedBuild:this.deps.testedBuild?.()??null,configValid:!!this.state.booking,
         authorizationValid:!!this.state.booking&&BookingSetupSchema.safeParse(this.state.booking.setup).success,
@@ -721,7 +728,7 @@ export class Controller {
         ...(this.state.booking?.setup.STRATEGY_V2?.shotgun?.enabled&&this.state.booking.setup.PRECISION_PHASE3?{shotgun:{...(()=>{const t=exactShotgunTopology(this.state.booking!.setup.PRECISION_PHASE3!,this.state.booking!.setup.STRATEGY_V2!.shotgun!.exactSchedule);return {tabsPerWorker:t.tabsPerWorker,shotCount:t.shots.length};})(),timingStatus:this.state.shotgunTiming?.status}}:{}),observer:{online:!!this.slotWatch&&!!observerView&&['waiting','watching'].includes(observerView.status),
           lastReadAgeMs:Number.isFinite(latestRead)?Date.now()-latestRead:null,availabilityLatencyMs:observerView?.lastLatencyMs??null},
         fanOut:latestProfile?{compatible:latestProfile.compatible,stale:latestProfile.stale,width:latestProfile.recommendedWidth}:null,prewarm:!!this.state.apiFirstReady,
-        prewarmFeasibility:this.state.prewarmFeasibility});
+        prewarmFeasibility:this.state.prewarmFeasibility,securityCheck:this.state.securityCheck??null});
       this.publish();
     } finally { this.polling = false; }
   }
@@ -1042,10 +1049,14 @@ export class Controller {
              this.state.workflow='release';this.state.headline='PREPARING API BROWSER';this.publish();
              await this.run({kind:'apiRun',mode:'prepare',date:release.targetDate,fingerprint:release.fingerprint,checkoutMethod:release.setup.BOOKING_METHOD==='proofless'?'proofless':'proof-based'},gen);
              if(release.setup.BOOKING_METHOD==='proofless')await this.run({kind:'apiRun',mode:'dry',date:release.targetDate,fingerprint:release.fingerprint,checkoutMethod:'proofless'},gen);
+             // Real evidence instead of none: one genuine verification per browser now, so a failure or a person-required
+             // check surfaces minutes before release rather than ~50 s before it. Its result never fails the preparation.
+             if(release.setup.BOOKING_METHOD==='proofless')await this.runSecurityCheck(gen,release);
              // Preparation is bound to this exact saved plan; a later save of any other plan clears it (refresh) and arming refuses it.
              this.state.apiFirstReady=true;this.state.ready=true;this.state.preparedPlanFingerprint=release.fingerprint;this.state.attention=null;this.state.headline='API BROWSER READY';
               const count=planWorkerIds(release.setup).length;
-             this.state.detail=`${count} API browser${count===1?' is':'s are'} ready. Authorize Terms, then arm the next release.`+(this.state.identityIssues?.length?`\n${this.state.identityIssues.join('\n')}`:'');
+             this.state.detail=`${count} API browser${count===1?' is':'s are'} ready. Authorize Terms, then arm the next release.`+(this.state.identityIssues?.length?`\n${this.state.identityIssues.join('\n')}`:'')+
+               (this.state.securityCheck?`\nSecurity check: ${this.state.securityCheck.status==='PASSED'?'passed':'needs attention'} · ${this.state.securityCheck.detail}`:'');
              return;
            }
         }
@@ -1193,6 +1204,9 @@ export class Controller {
       assertShotgunPrewarm(this.forecastPrewarm(plan),topology.shots.length);
       const timing=readShotgunTiming('.local/shotgun-timing/latest.json',topology,this.state.build?.dirty?'dirty':this.state.build?.gitSha??'unknown',shotgunBrowserVersion(topology,probes??{}),this.deps.dispatcherMachineKey);
       if(timing && timing.status!=='READY')throw Error('SHOTGUN_TIMING_NOT_READY');
+      // Genuine verification in these browsers within the hour, for this exact plan; a forecast or dry run never counts.
+      this.refreshSecurityCheck(plan);
+      if(this.state.securityCheck?.status!=='PASSED')throw Error(this.state.securityCheck?.status==='FAILED'?'SECURITY_CHECK_FAILED':'SECURITY_CHECK_REQUIRED');
     }
     if(plan.setup.PRECISION_PHASE3){this.state.prewarmFeasibility=this.forecastPrewarm(plan);if(!this.state.prewarmFeasibility)throw Error('PREWARM_FEASIBILITY_UNAVAILABLE');
       if(this.state.prewarmFeasibility.projectedOmitted)throw Error('PREWARM_PLAN_NOT_FEASIBLE');}
@@ -1338,6 +1352,28 @@ export class Controller {
    * Closes every Chrome window the bot started (profiles under .local) and never the operator's own Chrome.
    * Blocked while anything runs or a release is armed, because that would break a booking in progress.
    */
+  /** One genuine Onda verification per prepared bot browser through the release transport path; nothing is submitted. */
+  private async runSecurityCheck(gen:number,release:BookingView){
+    this.state.headline='CHECKING ONDA SECURITY';this.state.detail='One genuine Onda verification per bot browser. The result is discarded; nothing is submitted or held.';this.publish();
+    try{await this.run({kind:'apiRun',mode:'security-check',date:release.targetDate,fingerprint:release.fingerprint,checkoutMethod:'proofless'},gen);}
+    catch(error){if(error instanceof Error&&error.message==='CANCELLED')throw error;/* the written record is the result */}
+    this.refreshSecurityCheck(release);
+    this.log(`Security check: ${this.state.securityCheck?.status??'MISSING'} · ${this.state.securityCheck?.detail??''}`,this.state.securityCheck?.status!=='PASSED');
+  }
+  private refreshSecurityCheck(plan:BookingView|null|undefined=this.state.booking){
+    this.state.securityCheck=plan?securityCheckVerdict(this.deps.securityCheck?.()??null,{fingerprint:plan.fingerprint,workers:planWorkerIds(plan.setup)}):null;}
+  checkSecurity(){return this.operation('checkingSecurity',async gen=>{
+    const release=this.deps.booking();
+    if(!['api-first','proofless'].includes(release.setup.BOOKING_METHOD)||!this.state.apiFirstReady||this.state.preparedPlanFingerprint!==release.fingerprint)
+      throw Error('SECURITY_CHECK_NEEDS_PREPARATION');
+    this.state.booking=release;
+    // operation() clears the ready flag; the preparation itself is untouched by a check, so it is restored afterwards.
+    try{await this.runSecurityCheck(gen,release);}
+    finally{if(gen===this.generation&&this.state.apiFirstReady&&this.state.preparedPlanFingerprint===release.fingerprint)this.state.ready=true;}
+    const check=this.state.securityCheck;
+    this.state.headline=check?.status==='PASSED'?'SECURITY CHECK PASSED':'SECURITY CHECK NEEDS ATTENTION';
+    this.state.detail=check?.status==='PASSED'?`${check.detail}. The run still acquires its own fresh verification shortly before release.`:check?.detail??errors.SECURITY_CHECK_FAILED!;
+  });}
   closeBotBrowsers(){return this.operation('closingBrowsers',async gen=>{
     if(!this.deps.closeBotBrowsers)throw Error('CLOSE_BROWSERS_UNAVAILABLE');
     const open=this.deps.countBotBrowsers?await this.deps.countBotBrowsers():Object.values(this.state.browserHealth??{}).filter(Boolean).length;
