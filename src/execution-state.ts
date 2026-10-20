@@ -77,6 +77,8 @@ export interface OperatorInputs {
   disconnected: readonly string[];
   playersMissing: readonly string[];
   identityIssues?: readonly string[];
+  /** NEXT_RELEASE: why the SAVED plan cannot be prepared for the next release (dated for a passed release). */
+  savedPlanDateProblem?: string | null;
   /** Published controller checks only; the renderer never estimates capacity or timing. */
   readinessBlockers?: readonly { reason: string; recovery: Recovery }[];
   termsAuthorized: boolean;
@@ -126,6 +128,7 @@ export function operatorGates(i: OperatorInputs): OperatorGates {
     : closed('A retained automation lock or payment hold needs review before another run.', { label: 'Review lock', action: 'REVIEW_LOCK' });
   else if (release && i.owns && draftCount) prepare = closed(`${plural(draftCount, 'plan problem')} must be fixed first: ${i.draftProblems[0]}`, reviewProblems);
   else if (release && i.owns && i.liveSaveProblems.length) prepare = closed(i.liveSaveProblems[0]!, reviewProblems);
+  else if (release && i.savedPlan.exists && i.savedPlanDateProblem && !(i.owns && i.savedPlan.matchesDraft === false)) prepare = closed(i.savedPlanDateProblem, { label: 'Review plan date', action: 'REVIEW_PLAN_DATE' });
   else if (release && !i.savedPlan.exists) prepare = closed('There is no saved release plan yet. Save this plan first.', { label: 'Save release plan', action: 'SAVE_PLAN' });
   else if (release && i.owns && i.savedPlan.matchesDraft === false) prepare = closed(`The current draft is different from your saved release plan (${plural(i.savedPlan.differences, 'change')}). Save it, or load the saved plan back, before preparing.`, { label: 'Review changes', action: 'REVIEW_CHANGES' });
   else if (release && i.owns && i.savedPlan.matchesDraft === null) prepare = closed('Checking whether this draft matches the saved release plan…', { label: 'Wait', action: 'WAIT' });
