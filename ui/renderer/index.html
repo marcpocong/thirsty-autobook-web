@@ -35,6 +35,7 @@
       <div class="setup-status"><span id="setup-state" class="state-badge" data-tone="muted">DRAFT</span><span id="setup-fingerprint" class="fingerprint" title="Plan fingerprint">—</span><span id="setup-save-status" class="small" role="status"></span></div>
       <ol id="setup-steps" class="setup-steps" aria-label="Booking Setup steps"><li><button type="button" data-step="1" aria-current="step"><b>1</b> Goal</button></li><li><button type="button" data-step="2"><b>2</b> Strategy</button></li><li><button type="button" data-step="3"><b>3</b> Customize</button></li><li><button type="button" data-step="4"><b>4</b> Browsers</button></li><li><button type="button" data-step="5"><b>5</b> Review &amp; Run</button></li></ol>
     </section>
+    <section id="stale-plan-banner" class="panel stale-banner" aria-label="Release date check" hidden></section>
     <section id="setup-step-1" class="setup-step" aria-label="Step 1 · Goal">
       <div id="objective-editor" class="panel objective-editor"></div>
       <section class="panel court-browser"><div class="section-title"><div><p class="eyebrow">Read only · both wings · no checkout</p><h2>Live availability</h2></div><button id="browse-courts" type="button" class="secondary">Check Availability</button></div><p class="small">Opens a small dedicated read-only Chrome window, reads Mango and Buko, then closes it. No booking browser needs to be prepared. Missing or stale evidence is UNKNOWN; absence of bookings never means open.</p><div id="court-browser-grid" class="court-browser-grid"></div><p id="court-browser-status" role="status"></p></section>
@@ -188,10 +189,14 @@
     <section id="setup-step-4" class="setup-step" aria-label="Step 4 · Browsers" hidden><div id="browser-manager" class="panel"></div></section>
     <section id="setup-step-5" class="setup-step" aria-label="Step 5 · Review and run" hidden>
       <section id="attention-panel" class="panel attention-panel" role="alert" hidden></section>
+      <div id="release-overview" class="release-overview">
+        <section id="plan-summary" class="panel plan-summary" aria-label="Saved release plan"></section>
+        <section id="readiness-layers" class="panel preflight" aria-label="Release day preflight"></section>
+      </div>
       <section id="action-bar" class="panel action-bar" aria-label="Plan actions">
-        <div class="plan-identity-row"><p id="plan-identity" class="plan-identity" role="status"></p><ol id="plan-ladder" class="plan-ladder" aria-label="Plan stages"></ol></div>
-        <div id="readiness-layers" class="readiness-layers" aria-label="Readiness"></div>
+        <p id="operation-status" class="operation-status" role="status" hidden></p><div class="plan-identity-row"><p id="plan-identity" class="plan-identity" role="status"></p><ol id="plan-ladder" class="plan-ladder" aria-label="Plan stages"></ol></div>
         <div class="action-row"><button type="button" id="save-draft" class="secondary">Save Draft</button><button id="main-action" class="primary-action" type="button">Prepare</button><button id="test-main-action" class="primary-action" type="button">Prepare</button><button type="button" id="test-this-plan" class="secondary">Test This Plan</button><button type="button" id="view-live-progress" class="secondary" data-dest="activity">View Live Progress</button><button type="button" id="inline-stop" class="stop compact">■ Emergency Stop</button></div>
+        <dl id="action-explainer" class="action-explainer" aria-label="What the main button does"></dl>
         <div id="action-terms" class="action-terms"><label class="terms-choice"><input id="terms" type="checkbox" disabled> I authorize accepting Onda Terms for this booking</label></div>
         <ul id="action-blockers" class="action-blockers" aria-label="Why an action is unavailable" hidden></ul>
         <div class="action-hints"><p id="main-action-hint" class="small"></p><p id="test-main-action-hint" class="small"></p><p id="action-bar-hint" class="small"></p></div>
@@ -199,7 +204,7 @@
       </section>
       <section id="plan-conflict" class="panel plan-conflict" aria-label="Draft and saved plan differ" hidden></section>
       <div id="strategy-inspector" class="panel inspector"></div>
-      <details id="execution-console" class="panel execution-console" open><summary>Execution console · readiness, release clock, holds and QR details</summary>
+      <details id="execution-console" class="panel execution-console"><summary>Execution console · release clock, saved strategy details, holds, QR and arming checklist</summary>
         <div id="view-release" hidden class="view-grid" aria-label="Next Release">
     <section id="release-schedule" class="panel release-hero">
       <div class="hero-release">
@@ -269,7 +274,7 @@
     <div id="view-live" class="view-grid" aria-label="Live" hidden>
     <section id="live-attempts-card" class="panel live-attempts"><div class="section-title"><div><p class="eyebrow">Live release</p><h2 id="live-primary-target">Waiting for a release</h2></div><span id="live-run-state" class="status-label">○ IDLE</span></div>
       <div class="live-overview" aria-live="polite"><div><span>Planned</span><strong id="live-planned">0</strong></div><div><span>Ready</span><strong id="live-ready">0</strong></div><div><span>Dispatched</span><strong id="live-dispatched">0</strong></div><div><span>In flight</span><strong id="live-pending">0</strong></div></div><p id="live-attempt-counts" role="status"></p><div id="live-result" class="live-result" data-tone="muted">WAITING FOR A RUN</div><p id="live-guidance" class="small">Prepare and arm from Next Release. No action is needed here.</p>
-      <p id="live-prewarm" class="small" role="status"></p><div id="live-attempts" aria-live="polite"><p class="empty">Attempts appear here when a release run starts.</p></div>
+      <p id="live-prewarm" class="small" role="status"></p><p id="live-objective" class="live-objective" hidden></p><ul id="live-workers" class="live-workers" aria-label="Browsers in this run" hidden></ul><dl id="live-report" class="fact-grid live-report" aria-label="Run summary" hidden></dl><div id="live-attempts" aria-live="polite"><p class="empty">Attempts appear here when a release run starts.</p></div>
       <div id="live-rescue" class="live-rescue"></div></section>
     <section id="slot-watch-card" class="panel slot-watch">
       <div class="section-title"><div><p class="eyebrow">Release slot watch · read only</p><h2>Court/hour timeline</h2></div><div class="button-row"><button id="watch-next-release" class="secondary" type="button">Watch next release</button><button id="stop-slot-watch" class="secondary" type="button" hidden>Stop watching</button></div></div>

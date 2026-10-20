@@ -63,6 +63,8 @@ describe('operator workflow (renderer)', () => {
     await expect.poll(() => page.locator('#action-blockers').innerText()).toContain('Browser B is disconnected');
     expect(await primary(page).isDisabled()).toBe(true);
     expect(await page.locator('#readiness-layers [data-layer="ENVIRONMENT"]').innerText()).toContain('1/2 browsers connected');
+    // The execution console is collapsed by default; its saved-plan readiness is read after opening it.
+    await page.locator('#execution-console').evaluate(node => { (node as HTMLDetailsElement).open = true; });
     expect(await page.locator('#next-preflight').innerText()).toContain('1/2 browsers connected');
     await publish(page, { browserHealth: { A: true, B: true }, playerStatus: { ...playerStatus, extended: false } });
     await expect.poll(() => page.locator('#action-blockers').innerText()).toContain('Browser B has no configured player/customer');
@@ -123,6 +125,8 @@ describe('operator workflow (renderer)', () => {
       live: { parents: [{ key: 'fixture', wave: 'WAVE_1', workerId: 'A', children: [
         { attemptId: 'fixture-1', label: '1', fanOutIndex: 0, fanOutCount: 3, state: 'READY' }
       ] }], predictions: [], notes: [] } });
+    // The execution console is collapsed by default; its saved-plan readiness is read after opening it.
+    await page.locator('#execution-console').evaluate(node => { (node as HTMLDetailsElement).open = true; });
     await expect.poll(() => page.locator('#next-preflight').innerText()).toContain('RELEASE IN PROGRESS');
     expect(await primary(page).innerText()).toBe('Emergency Stop');
     expect(await noOverflow(page)).toBe(true);

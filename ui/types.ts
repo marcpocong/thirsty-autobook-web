@@ -24,7 +24,7 @@ import type {ReleaseLabDigest} from '../src/release-lab-analysis.js';
 export type DualPracticeCommand = { kind:'dualDry'; date:string } | { kind:'dualPractice'|'dualFullPractice'; input:DualPracticeInput };
 export interface ConfirmRequest { id:string; tone:'question'|'warning'; title:string; message:string; detail:string; confirmLabel:string; cancelLabel?:string }
 export interface ApiRunPreferences {wing?:'MANGO'|'BUKO';strategy:'standard'|'extended';date:string;start:string;duration:number;courtCount:CourtCount;maximum?:number;priority:number[];fallbackStarts:string[];exact?:number[][];workers?:WorkerId[]}
-export type Command = {kind:'courtBrowse';date:string} | {kind:'resetPrepare';input:PreparationInput} | {kind:'testBooking';input:TestBookingInput} | {kind:'apiRun';mode:import('../src/api-run-modes.js').ApiRunMode;date:string;fingerprint:string;checkoutMethod?:'proof-based'|'proofless';clockOffsetMs?:number;releaseMs?:number;preferences?:ApiRunPreferences;shotgunAttestation?:string} | {kind:'blockAudit';date:string} | {kind:'apiPreview';date:string} | DualPracticeCommand | 'chromeDual' | 'dualReadiness' | 'dualPrepare' | {kind:'fullPractice';input:FullPracticeInput} | 'chrome' | 'inspect' | 'observe' | { kind:'selection' | 'dry'; planHash:string } | {kind:'full';context:ScheduledReleaseContext;authorizeTerms:true} | { kind:'practice'; input:PracticeInput };
+export type Command = {kind:'courtBrowse';date:string} | {kind:'timingCalibration';date:string} | {kind:'resetPrepare';input:PreparationInput} | {kind:'testBooking';input:TestBookingInput} | {kind:'apiRun';mode:import('../src/api-run-modes.js').ApiRunMode;date:string;fingerprint:string;checkoutMethod?:'proof-based'|'proofless';clockOffsetMs?:number;releaseMs?:number;preferences?:ApiRunPreferences;shotgunAttestation?:string} | {kind:'blockAudit';date:string} | {kind:'apiPreview';date:string} | DualPracticeCommand | 'chromeDual' | 'dualReadiness' | 'dualPrepare' | {kind:'fullPractice';input:FullPracticeInput} | 'chrome' | 'inspect' | 'observe' | { kind:'selection' | 'dry'; planHash:string } | {kind:'full';context:ScheduledReleaseContext;authorizeTerms:true} | { kind:'practice'; input:PracticeInput };
 export type Inspection = Extract<UiEvent, { type: 'inspection' }>;
 export interface Activity { at: string; text: string; level: 'info' | 'error'; elapsedMs?:number; deltaMs?:number }
 export interface RunTiming { runId:string; label:string; startedAt:string; elapsedMs:number; endedAt?:string; logPath?:string; readyAt?:string; readyElapsedMs?:number }
@@ -62,6 +62,10 @@ export interface Dashboard {
   releaseReadiness?:import('../src/release-readiness-gate.js').ReleaseReadinessGate;
   /** Deterministic forecast for the exact saved PRECISION_PHASE3 Wave 1 authorization. */
   shotgunTiming?:import('../src/shotgun-timing.js').ShotgunTimingReadiness|null;
+  /** Why the latest calibration does or does not authorize live Shotgun (READY is the only pass). */
+  shotgunTimingVerdict?:import('../src/shotgun-timing.js').ShotgunTimingVerdict|null;
+  /** The saved plan's booking date against the next release target; a STALE plan cannot be armed. */
+  planDate?:import('../src/release-plan-date.js').SavedPlanDate|null;
   /** Pre-release security check for the saved plan: genuine verification minutes before release; only PASSED is evidence. */
   securityCheck?:import('../src/security-check.js').SecurityCheckVerdict|null;
   prewarmFeasibility?:import('../src/api-booking/prewarm-feasibility.js').PrewarmFeasibilityResult|null;
@@ -83,7 +87,7 @@ export interface Dashboard {
   courtBrowser?:Extract<UiEvent,{type:'courtBrowser'}>|null;
   /** State of the one-click read-only availability check (independent of booking preparation). */
   availabilityCheck?:{status:'RUNNING'|'DONE'|'FAILED';date:string;startedAt:string;finishedAt?:string;code?:string}|null;
-  operation: 'idle' | 'scheduled' | 'chrome' | 'inspect' | 'prepare' | 'confirming' | 'observe' | 'selection' | 'full' | 'dry' | 'practice' | 'stopping' | 'saving' | 'reviewing' | 'clearing' | 'resetting' | 'fullPractice' | 'apiPreview' | 'blockAudit' | 'closingBrowsers' | 'checkingSecurity';
+  operation: 'idle' | 'scheduled' | 'chrome' | 'inspect' | 'prepare' | 'confirming' | 'observe' | 'selection' | 'full' | 'dry' | 'practice' | 'stopping' | 'saving' | 'reviewing' | 'clearing' | 'resetting' | 'fullPractice' | 'apiPreview' | 'blockAudit' | 'closingBrowsers' | 'checkingSecurity' | 'calibrating';
   /** Live read-only court/hour observation around the next or current release. */
   slotWatch?:SlotWatchView|null;
   slotWatchHistory?:SlotWatchDigest[];
@@ -142,6 +146,8 @@ export interface Bridge {
   closeBotBrowsers():Promise<void>;
   /** Pre-release security check for the prepared saved plan (genuine verification, value discarded, nothing submitted). */
   checkSecurity():Promise<void>;
+  /** Local-only timing calibration of the saved Shotgun plan (nothing reaches Onda). */
+  calibrateTiming():Promise<void>;
   watchNextRelease():Promise<void>;
   stopSlotWatch():Promise<void>;
   rebuildIntelligence():Promise<void>; clearIntelligence():Promise<void>; runNetworkCheck():Promise<void>;

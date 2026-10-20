@@ -27,7 +27,7 @@ import type { BookingPlan } from './api-booking/types.js';
 import type { WorkerId } from './workers.js';
 
 export const LAB_SCENARIOS = ['ALL_REJECTED','FIRST_SUCCESS','LATER_SUCCESS','MANGO_SUCCESS','BUKO_SUCCESS','BOTH_SUCCESS','UNKNOWN','PAYMENT_IN_PROGRESS','THROTTLE','PREPARE_FAILED','WORKER_UNAVAILABLE','MISSED_TRIGGER','TWO_IN_FLIGHT_SUCCESS','PREVIOUS_HOLD','DUPLICATE_TARGET','WRONG_WING','STALE_AVAILABILITY','MISSING_AVAILABILITY',
-  'BROWSER_CLOSED','APP_RESTART_RETAINED_UNKNOWN','UNSUPPORTED_RELEASE_POLICY'] as const;
+  'BROWSER_CLOSED','APP_RESTART_RETAINED_UNKNOWN','UNSUPPORTED_RELEASE_POLICY','SLOW_SECURITY','SECURITY_STALL','STOP_BEFORE_DISPATCH'] as const;
 export type LabScenario = typeof LAB_SCENARIOS[number];
 /** Legacy dual-wing planning wrapper, or the exact Booking Setup objective (preferred). */
 export type LabRequest = {plan:DualWingPlan;scenario:LabScenario;countdownSeconds:number} | {objective:BookingObjective;cohortIndex?:number;scenario:LabScenario;countdownSeconds:number;nowMs?:number};
@@ -213,16 +213,30 @@ export async function runShotgunLab(input:LabRequest, options:{directory:string;
       customerEmail:`offline-${worker}@example.invalid`,customerPhone:'09000000000',customerFirstName:'Offline',customerLastName:'Fixture'})});
     const before=cpuSnapshot();
     options.onPhase?.(`OFFLINE countdown: ${input.countdownSeconds}s to test trigger; ${armed.attempts.length} frozen attempts`);
-    const result=await dispatchArmedPrecisionRace(armed,{clock,prewarmLeadMs:6000,prewarmPolicy:{concurrency:4,perGroupConcurrency:1,tierBarrierTimeoutMs:Infinity},isAborted:options.isAborted,
+    // Accelerated release-boundary rehearsal (6 s lead instead of the measured production lead):
+    //  SLOW_SECURITY  the first worker's genuine-path preparation takes half the lead and must still be ready in time;
+    //  SECURITY_STALL it outlasts the whole lead and then fails, as a 36-60 s stall does against a 53 s production lead:
+    //                 that attempt must stay unsent (strict deadline), the other worker proceeds;
+    //  STOP_BEFORE_DISPATCH Emergency Stop 1.5 s before the trigger: every attempt unsent, nothing initiated.
+    const isAborted=()=>options.isAborted()||input.scenario==='STOP_BEFORE_DISPATCH'&&clock.nowMs()>=triggerMs-1_500;
+    const dispatched=dispatchArmedPrecisionRace(armed,{clock,prewarmLeadMs:6000,prewarmPolicy:{concurrency:4,perGroupConcurrency:1,tierBarrierTimeoutMs:Infinity},isAborted,
       transportFor:(_worker,a)=>transports.get(a.attempt.id)!,prewarm:async a=>{
         const started=performance.now();
         try {
           if(a.target.workerId===waves[0]&&['PREPARE_FAILED','WORKER_UNAVAILABLE'].includes(input.scenario))throw Error(input.scenario);
+          if(a.target.workerId===waves[0]&&input.scenario==='SLOW_SECURITY')await new Promise(done=>setTimeout(done,3_000));
+          if(a.target.workerId===waves[0]&&input.scenario==='SECURITY_STALL'){await new Promise(done=>setTimeout(done,Math.max(0,a.triggerMs-clock.nowMs()+1_500)));throw Error('ONDA_SECURITY_VERIFICATION_FAILED');}
           await transports.get(a.attempt.id)!.prepareCheckoutContext();
           if(a.target.workerId===waves[0]&&input.scenario==='MISSED_TRIGGER')await pageOf(a.attempt).evaluate(when=>{setTimeout(()=>{const end=performance.now()+200;while(performance.now()<end){}},Math.max(0,when-Date.now()-25));},a.triggerMs);
           prepared.push({attemptId:a.attempt.id,ready:true,durationMs:performance.now()-started});
         } catch(error){prepared.push({attemptId:a.attempt.id,ready:false,code:(error as Error).message});throw error;}
       },afterFire:()=>lock!.dispatching(),onVerifiedHold:async(_attempt,verified)=>{await lock!.held(verified.holdExpiresAt);return {state:'HOLD_VERIFIED_QR_ATTENTION'};}});
+    // The production dispatcher rejects with USER_ABORT when stopped before anything was committed. In the Stop
+    // rehearsal that is the expected result: every planned attempt is definitively unsent (never UNKNOWN or rejected).
+    const result=await dispatched.catch((error:unknown)=>{
+      if(input.scenario!=='STOP_BEFORE_DISPATCH'||(error as Error)?.message!=='USER_ABORT'||observed.length)throw error;
+      return {results:race.attempts.map(attempt=>({attempt,state:'NOT_DISPATCHED',code:'USER_ABORT'}))};
+    });
     for(const row of result.results) {
       const c=labTargets.find(t=>t.spaceId===row.attempt.plan.courts[0]!.spaceId&&t.bookingDate===row.attempt.plan.targetDate&&t.start===row.attempt.plan.startTime)!;
       outcomes.push({targetId:c.id,wing:c.wing,date:c.bookingDate,court:c.court,worker:row.attempt.target.workerId,offsetMs:row.attempt.target.releaseOffsetMs??0,state:row.state,...(row.code?{code:row.code}:{})});
