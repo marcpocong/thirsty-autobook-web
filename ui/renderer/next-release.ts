@@ -7,7 +7,7 @@ import { byId, el, facts } from './dom.js';
 import { readinessLayers, readinessSummary } from '../../src/execution-state.js';
 import { planWorkerIds } from '../../src/workers.js';
 import { releaseBlockers } from './operator-status.js';
-import { preflightInput, releasePreflight, renderPreflight } from './preflight.js';
+import { planForecast, preflightInput, releasePreflight, renderPreflight } from './preflight.js';
 
 /**
  * NEXT RELEASE summary, generated only from the SAVED authorization (never from the editor draft), so it always states
@@ -94,8 +94,7 @@ const LIMIT_TEXT:Record<string,string>={PREWARM_WORKER_UNAVAILABLE:'a required b
  */
 export function layerForecast(state:Dashboard,prepared:boolean):Parameters<typeof readinessLayers>[0]['forecast']{
   const plan=state.booking?.setup.PRECISION_PHASE3 as SmartPhase3|undefined;if(!plan)return null;
-  const unavailable=new Set(Object.entries(PLAYER_KEYS).filter(([worker,key])=>state.playerStatus?.[key]===false||(state.identityIssues??[]).some(issue=>issue.startsWith(`Worker ${worker} `))).map(([worker])=>worker));
-  const f=prepared?state.prewarmFeasibility:forecastPreparation(plan,unavailable,state.prewarmFeasibility);
+  const f=planForecast(state,prepared);
   if(!f)return {verdict:'UNAVAILABLE',ready:0,configured:smartImmediateSends(plan.wave1),atRisk:0,omitted:0,measured:false,samples:0};
   return {verdict:f.verdict,ready:f.projectedReady,configured:f.configuredWave1Attempts,atRisk:f.projectedAtRisk,omitted:f.projectedOmitted,measured:f.p95Source!=='FALLBACK',samples:f.sampleCount,
     basis:prepared?'live, connected browsers':'capacity, before preparation',limits:(f.limitingConstraints??[]).map(code=>LIMIT_TEXT[code]??code)};

@@ -113,6 +113,7 @@ function operatorInputs(): OperatorInputs {
     disconnected: prepared ? workers.filter(w => !s?.browserHealth?.[w as 'A']) : [],
     playersMissing: workers.filter(w => s?.playerStatus?.[PLAYER_FLAG[w]!] === false),
     identityIssues: s?.identityIssues ?? [], readinessBlockers: s ? releaseBlockers(s) : [],
+    savedPlanDateProblem: release() && s?.planDate && !['CURRENT', 'UNDATED'].includes(s.planDate.status) ? s.planDate.detail : null,
     termsAuthorized: !!s?.termsAuthorized,
     forecast: phase3 ? { verdict: feasibility ? feasibility.verdict : 'UNAVAILABLE', ready: feasibility?.projectedReady ?? 0, configured: feasibility?.configuredWave1Attempts ?? 0, omitted: feasibility?.projectedOmitted ?? 0, required: true }
       : { verdict: 'NOT_APPLICABLE', ready: 0, configured: 0, omitted: 0, required: false },
