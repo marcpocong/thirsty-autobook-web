@@ -7,7 +7,7 @@ export interface PlanDifference { label: string; saved: string; draft: string }
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 interface SetupLike {
   BOOKING_METHOD?: string; RELEASE_STRATEGY?: string; START_TIME?: string; DURATION_HOURS?: number; COURT_COUNT?: number;
-  PRECISION_PHASE3?: { candidates: Array<{ court: number; start: string; durationHours: number; wing?: string }>; wave1: Array<{ candidateIndex: number; workerId: string; releaseOffsetMs?: number; fanOutOffsetsMs?: number[] }>;
+  PRECISION_PHASE3?: { candidates: Array<{ court: number; start: string; durationHours: number; wing?: string; rateEvidence?: { date?: string } }>; wave1: Array<{ candidateIndex: number; workerId: string; releaseOffsetMs?: number; fanOutOffsetsMs?: number[] }>;
     budgets?: { wave2: number; rescue: number; total: number }; rescueEnabled?: boolean };
   STRATEGY_V2?: { shotgun?: { enabled?: boolean; exactSchedule?: Array<{ configuredOffsetMs: number }>; counts?: Record<string, number> } };
 }
@@ -27,6 +27,7 @@ const allocation = (s: SetupLike) => {
 const browsers = (s: SetupLike) => s.PRECISION_PHASE3?.wave1.map(a => `${a.workerId}:${a.fanOutOffsetsMs?.length ?? 1}`).join(' ');
 const backups = (s: SetupLike) => s.PRECISION_PHASE3 ? `wave 2 ${s.PRECISION_PHASE3.budgets?.wave2 ?? 0} · rescue ${s.PRECISION_PHASE3.rescueEnabled ? s.PRECISION_PHASE3.budgets?.rescue ?? 0 : 'off'}` : undefined;
 const SUMMARY: Array<[string, (s: SetupLike) => unknown]> = [
+  ['Booking date', s => s.PRECISION_PHASE3 ? [...new Set(s.PRECISION_PHASE3.candidates.map(c => c.rateEvidence?.date ?? '—'))].join(', ') : undefined],
   ['Checkout method', s => s.BOOKING_METHOD], ['Release strategy', s => s.STRATEGY_V2?.shotgun?.enabled ? 'Shotgun' : s.RELEASE_STRATEGY],
   ['Attempts', sends], ['Court allocation', allocation], ['Exact offsets (ms)', offsets], ['Browsers (tabs)', browsers], ['Backups / rescue', backups],
   ['Start · duration', s => s.START_TIME !== undefined ? `${s.START_TIME} · ${s.DURATION_HOURS} h` : undefined],

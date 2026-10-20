@@ -10,7 +10,7 @@ import type { Recovery } from './execution-state.js';
  */
 export type FailureCategory = 'BROWSER_DISCONNECTED' | 'WRONG_PROFILE' | 'INVALID_VENUE_OR_TAB' | 'SECURITY_VERIFICATION_FAILED' | 'PROVIDER_THROTTLED'
   | 'STALE_PREPARATION' | 'PLAN_FINGERPRINT_MISMATCH' | 'INVALID_PREPARATION_EVIDENCE' | 'INVALID_PLAN' | 'PLAYER_CONFIGURATION'
-  | 'CLOCK_UNTRUSTED' | 'CAPACITY_LIMITED' | 'RUN_NOT_ACHIEVED' | 'RETAINED_LOCK' | 'VERIFIED_HOLD' | 'UNKNOWN_SUBMISSION' | 'OPERATOR_CANCELLED' | 'INTERNAL_ERROR';
+  | 'CLOCK_UNTRUSTED' | 'TIMING_UNCALIBRATED' | 'CAPACITY_LIMITED' | 'RUN_NOT_ACHIEVED' | 'RETAINED_LOCK' | 'VERIFIED_HOLD' | 'UNKNOWN_SUBMISSION' | 'OPERATOR_CANCELLED' | 'INTERNAL_ERROR';
 export interface FailureContext { operation: 'prepare' | 'arm' | 'run'; step?: string | null; workerId?: string | null; lockPresent?: boolean }
 export interface ClassifiedFailure {
   category: FailureCategory; code: string; title: string; detail: string; operation: FailureContext['operation'];
@@ -31,10 +31,11 @@ const CODES: Record<Exclude<FailureCategory, 'INTERNAL_ERROR'>, readonly string[
   PLAN_FINGERPRINT_MISMATCH: ['PREPARATION_RESULT_MISMATCH', 'PREPARED_FINGERPRINT_MISMATCH', 'BOOKING_PLAN_CHANGED', 'SCHEDULE_CONTEXT_MISMATCH', 'PREPARED_PLAN_CHANGED'],
   INVALID_PREPARATION_EVIDENCE: ['PREPARATION_RESULT_INVALID', 'PREPARATION_RESULT_MISSING'],
   INVALID_PLAN: ['BOOKING_SETTINGS_INVALID', 'CONFIG_INVALID', 'PREPARATION_INPUT_INVALID', 'SHOTGUN_PLAN_INCOMPATIBLE_POSITIVE_OFFSET', 'PRECISION_REQUIRES_PROOFLESS_STANDARD',
-    'EXTENDED_DURATION_LIMIT', 'BUKO_SCHEDULED_LIVE_BLOCKED', 'SHOTGUN_IMMEDIATE_BURST_BLOCKED', 'PRECISION_NO_ELIGIBLE_TARGET'],
+    'EXTENDED_DURATION_LIMIT', 'SAVED_PLAN_DATE_STALE', 'BUKO_SCHEDULED_LIVE_BLOCKED', 'SHOTGUN_IMMEDIATE_BURST_BLOCKED', 'PRECISION_NO_ELIGIBLE_TARGET'],
   PLAYER_CONFIGURATION: ['PLAYER_INFO_MISSING', 'EXTENDED_PLAYER_INFO_MISSING', 'THIRD_PLAYER_INFO_MISSING', 'FOURTH_PLAYER_INFO_MISSING', 'DUPLICATE_ONDA_CUSTOMER_ID',
     'PRECISION_NO_VALID_CUSTOMER_IDENTITY'],
   CLOCK_UNTRUSTED: ['NETWORK_CLOCK_SYNC_REQUIRED', 'NETWORK_CLOCK_SYNC_FAILED', 'NETWORK_CLOCK_STALE', 'RELEASE_CLOCK_REFRESH_TIMEOUT', 'NETWORK_CLOCK_OFFSET_INVALID'],
+  TIMING_UNCALIBRATED: ['SHOTGUN_TIMING_REQUIRED', 'TIMING_CALIBRATION_FAILED', 'TIMING_CALIBRATION_UNAVAILABLE'],
   CAPACITY_LIMITED: ['PREWARM_PLAN_NOT_FEASIBLE', 'SHOTGUN_PREWARM_NOT_FULLY_READY', 'PREWARM_FEASIBILITY_UNAVAILABLE', 'SHOTGUN_TIMING_NOT_READY', 'SHOTGUN_MACHINE_NOT_READY'],
   RUN_NOT_ACHIEVED: ['NOTHING_DISPATCHED', 'OBJECTIVE_NOT_ACHIEVED_NOTHING_DISPATCHED', 'OBJECTIVE_NOT_ACHIEVED_ALL_REJECTED', 'ARMED_NOT_DISPATCHED', 'SHOTGUN_TRIGGER_MISSED'],
   RETAINED_LOCK: ['AUTOMATION_LOCK_EXISTS', 'LOCK_PID_RUNNING', 'AUTOMATION_STILL_RUNNING', 'LOCK_BROWSER_STATE_UNKNOWN', 'STOP_NOT_CONFIRMED', 'OPERATION_ALREADY_RUNNING'],
@@ -57,6 +58,7 @@ const TEXT: Record<FailureCategory, { title: string; detail: string; recovery: R
   INVALID_PLAN: { title: 'Plan needs attention', detail: 'The saved plan is invalid or not permitted for live use. Fix the listed problem; nothing was changed automatically.', recovery: { label: 'Review problems', action: 'REVIEW_PROBLEMS' }, retrySafe: true },
   PLAYER_CONFIGURATION: { title: 'Player or customer configuration', detail: 'A required player or Onda customer identity is missing, invalid or duplicated.', recovery: { label: 'Configure players', action: 'CONFIGURE_PLAYERS' }, retrySafe: true },
   CLOCK_UNTRUSTED: { title: 'Trusted clock unavailable', detail: 'The Google network clock could not be verified. Dispatch never proceeds on an untrusted clock.', recovery: { label: 'Review readiness', action: 'REVIEW_READINESS' }, retrySafe: true },
+  TIMING_UNCALIBRATED: { title: 'Timing calibration needed', detail: 'Live Shotgun requires a READY local timing calibration for this exact plan, installed build, Chrome and machine from the last 24 hours. The calibration is local only; nothing reaches Onda. Nothing was armed.', recovery: { label: 'Run timing calibration', action: 'CALIBRATE_TIMING' }, retrySafe: true },
   CAPACITY_LIMITED: { title: 'Plan exceeds measured capacity', detail: 'This machine cannot ready every configured attempt in time. Reduce attempts or widen the schedule; the plan is never reduced automatically.', recovery: { label: 'Review capacity', action: 'REVIEW_CAPACITY' }, retrySafe: true },
   RUN_NOT_ACHIEVED: { title: 'Release did not achieve the goal', detail: 'The run settled without a verified hold. The outcome summary lists every planned, sent, rejected and definitively unsent attempt.', recovery: { label: 'Open Activity', action: 'OPEN_ACTIVITY' }, retrySafe: true },
   RETAINED_LOCK: { title: 'Automation lock retained', detail: 'A safety lock from an earlier or running automation is still present. It is never cleared automatically.', recovery: { label: 'Review lock', action: 'REVIEW_LOCK' }, retrySafe: false },
@@ -76,7 +78,8 @@ export function classifyFailure(rawCode: string, context: FailureContext, at = n
   const retrySafe = category === 'INTERNAL_ERROR' ? context.lockPresent === false : text.retrySafe && !(context.lockPresent && category !== 'RETAINED_LOCK');
   const recovery = category === 'INTERNAL_ERROR' && retrySafe ? { label: 'Prepare again', action: 'PREPARE' as const }
     : code === 'SECURITY_CHECK_REQUIRED' || code === 'SECURITY_CHECK_FAILED' ? { label: 'Run security check', action: 'CHECK_SECURITY' as const }
-      : code === 'SECURITY_CHECK_NEEDS_PREPARATION' ? { label: 'Prepare again', action: 'PREPARE' as const } : text.recovery;
+      : code === 'SECURITY_CHECK_NEEDS_PREPARATION' ? { label: 'Prepare again', action: 'PREPARE' as const }
+        : code === 'SAVED_PLAN_DATE_STALE' ? { label: 'Review plan date', action: 'REVIEW_PLAN_DATE' as const } : text.recovery;
   const where = [context.step ? `step ${context.step}` : '', context.workerId ? `browser ${context.workerId}` : ''].filter(Boolean).join(' · ');
   return { category, code, title: text.title, detail: `${text.detail}${where ? ` (${where})` : ''}${retrySafe ? '' : ' Retrying is not offered until it is reviewed.'}`,
     operation: context.operation, step: context.step ?? null, workerId: context.workerId ?? null, retrySafe, recovery, at };

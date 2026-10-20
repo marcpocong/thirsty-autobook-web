@@ -52,7 +52,8 @@ export function editEffect(state: ExecutionState): 'ALLOW' | 'INVALIDATES_PREPAR
 // unavailable always carries a plain-language reason and one recovery the operator can press. These gates mirror,
 // and never replace, the controller and runner checks that remain authoritative.
 export type RecoveryAction = 'REVIEW_PROBLEMS' | 'REVIEW_CHANGES' | 'SAVE_PLAN' | 'PREPARE' | 'RECHECK_BROWSERS' | 'REVIEW_READINESS' | 'REVIEW_LOCK'
-  | 'REVIEW_SUBMISSION' | 'AUTHORIZE_TERMS' | 'CONFIGURE_PLAYERS' | 'REVIEW_CAPACITY' | 'SYNC_CLOCK' | 'STOP' | 'WAIT' | 'OPEN_ACTIVITY' | 'CHECK_SECURITY';
+  | 'REVIEW_SUBMISSION' | 'AUTHORIZE_TERMS' | 'CONFIGURE_PLAYERS' | 'REVIEW_CAPACITY' | 'SYNC_CLOCK' | 'STOP' | 'WAIT' | 'OPEN_ACTIVITY' | 'CHECK_SECURITY'
+  | 'CALIBRATE_TIMING' | 'REVIEW_PLAN_DATE';
 export interface Recovery { label: string; action: RecoveryAction }
 export interface Gate { enabled: boolean; reason: string | null; recovery: Recovery | null }
 export type PrimaryAction = 'SAVE_PLAN' | 'PREPARE' | 'AUTHORIZE_ARM' | 'STOP' | 'WAIT' | 'REVIEW_LOCK' | 'REVIEW_SUBMISSION';
@@ -215,7 +216,7 @@ export interface ReadinessInputs {
     /** Which forecast this is (capacity before preparation, or live over connected browsers) and what limits it. */ basis?: string; limits?: string[] } | null;
   security: { planned: number; ready: number; preparing: number; failed: number; omitted: number; leadMs: number | null } | null;
   /** Pre-release security check (genuine verification minutes before release); only PASSED is evidence. */
-  securityCheck?: { status: 'PASSED' | 'FAILED' | 'STALE' | 'OTHER_PLAN' | 'MISSING'; detail: string } | null;
+  securityCheck?: { status: 'PASSED' | 'FAILED' | 'STALE' | 'OTHER_PLAN' | 'OTHER_BROWSER' | 'MISSING'; detail: string } | null;
   armed: { armed: boolean; running: boolean };
   readinessBlockers?: readonly { reason: string }[];
 }
@@ -259,4 +260,28 @@ export function readinessSummary(layers: readonly ReadinessLayer[]): string {
   if (security.label === 'Security check' && security.status === 'BLOCKED') return `Prepared · ${security.detail}`;
   return `Prepared${forecast.status === 'OK' ? ' · forecast feasible' : forecast.status === 'WARN' ? ' · forecast at risk' : ''} · ${security.label === 'Security check' && security.status === 'OK'
     ? 'pre-release security check passed; live security is verified again after arming' : 'live security is verified only after arming'}`;
+}
+
+// ── Primary action explanation ───────────────────────────────────────────────────────────────────────────────
+/**
+ * What the one primary button does for its typed action. Derived from the semantic action only (never from button
+ * text), so the operator and test automation can see before pressing whether it changes the saved plan or can lead to
+ * live dispatch.
+ */
+export interface PrimaryActionFacts { does: string; doesNot: string; changesSavedPlan: boolean; liveDispatch: 'NO' | 'AFTER_CONFIRMATION' | 'ARMED' }
+export function primaryActionFacts(action: PrimaryAction, context: { shotgun?: boolean; release?: boolean } = {}): PrimaryActionFacts {
+  switch (action) {
+    case 'SAVE_PLAN': return { does: 'Checks this exact draft against the release configuration and, after you confirm the before/after differences, makes it the saved release plan.',
+      doesNot: 'Does not open browsers, run checks, authorize Terms or arm anything.', changesSavedPlan: true, liveDispatch: 'NO' };
+    case 'PREPARE': return { does: context.release === false ? 'Opens and checks the browsers this checkout needs.'
+      : `Opens the dedicated browsers the saved plan needs, checks the Onda page${context.shotgun ? ', then runs one genuine security check per browser (the result is discarded)' : ''}.`,
+      doesNot: 'Does not change the saved plan, submit a checkout, authorize Terms or arm.', changesSavedPlan: false, liveDispatch: 'NO' };
+    case 'AUTHORIZE_ARM': return { does: context.release === false ? 'Re-checks every gate and asks you to confirm before creating a temporary hold.'
+      : `Re-checks every gate, asks you to confirm the exact plan${context.shotgun ? ' and to attest as owner' : ''}, then arms dispatch for the release time.`,
+      doesNot: 'Does not pay, cancel a hold, or retry an unknown result.', changesSavedPlan: false, liveDispatch: 'AFTER_CONFIRMATION' };
+    case 'STOP': return { does: 'Disarms and cancels every attempt that has not been sent.', doesNot: 'Cannot recall a request already sent; holds already created stay with the provider until they expire or you pay.',
+      changesSavedPlan: false, liveDispatch: 'ARMED' };
+    case 'WAIT': return { does: 'Nothing until the current operation finishes.', doesNot: 'Does not start anything. Emergency Stop stays available.', changesSavedPlan: false, liveDispatch: 'NO' };
+    case 'REVIEW_LOCK': case 'REVIEW_SUBMISSION': return { does: 'Opens the retained lock or earlier submission for review.', doesNot: 'Does not clear, cancel or retry anything automatically.', changesSavedPlan: false, liveDispatch: 'NO' };
+  }
 }

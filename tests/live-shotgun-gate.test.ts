@@ -10,15 +10,28 @@ import type { Runner } from '../ui/processes.js';
 import type { Command } from '../ui/types.js';
 import { preregistered } from './arbitration-manifest-stub.js';
 import type { SecurityCheck } from '../src/security-check.js';
+import { exactShotgunTopology, shotgunMachineKey, summarizeShotgunTiming } from '../src/shotgun-timing.js';
+import type { ChildSample } from '../src/fanout-capacity.js';
+
+/** Opaque launch identity of the fixture browsers (src/browser-session.ts). */
+const SESSION = 'a1b2c3d4e5f60718';
 
 /** A genuine pre-release check record as the runner writes it: every worker verified just now for this exact plan. */
 const passedCheck = (view: { targetDate: string; fingerprint: string }, outcome: 'READY' | 'FAILED' = 'READY', at = new Date()): SecurityCheck => ({ schema: 'security-check/v1',
   checkedAt: at.toISOString(), targetDate: view.targetDate, fingerprint: view.fingerprint,
-  workers: Object.fromEntries(['A', 'B', 'C', 'D', 'E', 'F', 'G'].map(id => [id, { outcome, durationMs: 4200, ...(outcome === 'FAILED' ? { code: 'ONDA_SECURITY_VERIFICATION_FAILED' } : {}) }])) });
+  workers: Object.fromEntries(['A', 'B', 'C', 'D', 'E', 'F', 'G'].map(id => [id, { outcome, durationMs: 4200, browserSession: SESSION, ...(outcome === 'FAILED' ? { code: 'ONDA_SECURITY_VERIFICATION_FAILED' } : {}) }])) });
+/** A READY local calibration of exactly this saved topology, build ('unknown' in tests), Chrome '155' and this machine. */
+function readyTiming(view: { setup: { PRECISION_PHASE3?: unknown; STRATEGY_V2?: { shotgun?: { exactSchedule: Array<{ logicalTargetId: string; configuredOffsetMs: number }> } } } }, patch: Record<string, unknown> = {}) {
+  const topology = exactShotgunTopology(view.setup.PRECISION_PHASE3 as never, view.setup.STRATEGY_V2!.shotgun!.exactSchedule);
+  const children = topology.shots.map((shot, index): ChildSample => ({ run: 0, workerIndex: index, workerId: shot.workerId, fanOutIndex: shot.fanOutIndex, fanOutCount: topology.tabsPerWorker[shot.workerId]!,
+    configuredOffsetMs: shot.configuredOffsetMs, schedulerWakeMs: null, workerInvokedMs: null, transportEnteredMs: null, prePostMs: null, evaluateEnteredMs: null, fetchInvokedMs: null,
+    chromeStartMs: shot.configuredOffsetMs + 3, requestEventMs: null, responseMs: null, state: 'REJECTED' }) as ChildSample);
+  return { ...summarizeShotgunTiming(topology, children, { machineKey: shotgunMachineKey(), buildKey: 'unknown', dispatcher: 'central', chromeVersion: '155' }, 1), ...patch };
+}
 
 const players = { PLAYER_FULL_NAME: 'Fixture Player', PLAYER_PHONE: '09123456789', PLAYER_EMAIL: 'fixture@example.invalid' };
-function shotgunView(objective?: { ideal: number }) {
-  const base = bookingView(ConfigSchema.parse({ ...defaultSetup, ...players })), targetDate = base.targetDate;
+function shotgunView(objective?: { ideal: number }, rateDate?: string) {
+  const base = bookingView(ConfigSchema.parse({ ...defaultSetup, ...players })), targetDate = rateDate ?? base.targetDate;
   const immediate = [{ court: 7, start: '19:00', durationHours: 2 }, { court: 6, start: '19:00', durationHours: 2 }];
   const shotgun = { enabled: true, budget: 6, allocationMode: 'EQUAL' as const, selectedTargetIds: immediate.map(logicalTargetId), windowStartMs: -2000, windowEndMs: 0, timingMode: 'AUTO' as const, timingCapacityOverride: false, allowStandbyConsumption: true };
   const compiled = compileSmartPlan({ ...emptySmartDraft(), rates: confirmSmartRates(600, 700, 'VENUE_SCHEDULE', targetDate, new Date()), immediate, shotgun, advanced: { wave2: 0, rescue: 0 } }, { targetDate });
@@ -36,13 +49,13 @@ async function arm(view: ReturnType<typeof shotgunView>, extra: Partial<Dependen
   try {
     const calls: Command[] = [], releaseMs = Date.now() + 3_600_000, attestations: unknown[] = [];
     const runner: Runner = command => { calls.push(command); return { pid: 1, done: Promise.resolve(0), stop: async () => undefined }; };
-    const probe = { connected: true, targetReady: true, tabCount: 6, chromeVersion: '155' };
+    const probe = { connected: true, targetReady: true, tabCount: 6, chromeVersion: '155', sessionId: SESSION };
     const controller = new Controller({ ensureArbitrationManifest: preregistered, runner, lock: async () => false, cdp: async () => true,
       browserHealth: async () => ({ A: true, B: true, C: true, D: true, E: true, F: true, G: true }), playerStatus: () => ({ primary: true, extended: true, third: true, fourth: true, fifth: true, sixth: true, seventh: true }),
       browserReadiness: async () => ({ A: probe, B: probe, C: probe, D: probe, E: probe, F: probe, G: probe }) as never, machineHealth: () => ({ eventLoopP95Ms: 4, memoryUsedPct: 40 }) as never,
       clock: () => ({ ...clockStatus(ObservationSchema.parse({}), DateTime.fromISO('2026-10-14T21:00:00+08:00')), releaseMs, targetDate: view.targetDate, networkSynced: true, clockOffsetMs: 0 }),
       confirm: async () => true, publish: () => undefined, booking: () => view, saveBooking: () => view, recordShotgunAttestation: record => attestations.push(record),
-      securityCheck: () => passedCheck(view), ...extra });
+      securityCheck: () => passedCheck(view), shotgunTimingProfile: () => readyTiming(view), ...extra });
     // Preparation is bound to the exact saved plan it prepared (as resetPrepare records it).
     controller.state.apiFirstReady = true; controller.state.ready = true; controller.state.termsAuthorized = true; controller.state.preparedPlanFingerprint = view.fingerprint;
     beforeArm?.(controller);
@@ -108,6 +121,41 @@ describe('live Shotgun capability gate', () => {
     expect(asked).toBe(false);
     expect(controller.state.attention).toMatchObject({ code, recovery: { action: 'CHECK_SECURITY' } });
     expect(controller.state.securityCheck?.status).not.toBe('PASSED');
+  });
+  it.each([
+    ['no calibration exists', () => null, 'SHOTGUN_TIMING_REQUIRED', 'CALIBRATE_TIMING'],
+    ['the calibration is older than 24 hours', (view: ReturnType<typeof shotgunView>) => readyTiming(view, { testedAt: new Date(Date.now() - 24 * 3600_000 - 1000).toISOString() }), 'SHOTGUN_TIMING_REQUIRED', 'CALIBRATE_TIMING'],
+    ['the calibration was for another build', (view: ReturnType<typeof shotgunView>) => readyTiming(view, { buildKey: 'f'.repeat(40) }), 'SHOTGUN_TIMING_REQUIRED', 'CALIBRATE_TIMING'],
+    ['the calibration was for another Chrome', (view: ReturnType<typeof shotgunView>) => readyTiming(view, { chromeVersion: '154' }), 'SHOTGUN_TIMING_REQUIRED', 'CALIBRATE_TIMING'],
+    ['the calibration FAILED', (view: ReturnType<typeof shotgunView>) => readyTiming(view, { status: 'FAILED' }), 'SHOTGUN_TIMING_NOT_READY', 'REVIEW_CAPACITY'],
+  ] as const)('refuses live Shotgun before any confirmation when %s', async (_name, profile, code, action) => {
+    const view = shotgunView();
+    let asked = false;
+    const { calls, controller } = await arm(view, { shotgunTimingProfile: () => profile(view), confirm: async () => { asked = true; return true; }, confirmShotgunLive: async () => true });
+    expect(calls.filter(c => typeof c === 'object' && c.kind === 'apiRun')).toEqual([]);
+    expect(asked).toBe(false);
+    expect(controller.state.attention).toMatchObject({ code, recovery: { action } });
+    expect(controller.state.shotgunTimingVerdict?.status).not.toBe('READY');
+  });
+  it.each([
+    ['a dedicated browser was restarted after the check', (view: ReturnType<typeof shotgunView>) => passedCheck(view), 'b'.repeat(16), 'OTHER_BROWSER'],
+    ['the check carries no browser identity', (view: ReturnType<typeof shotgunView>) => ({ ...passedCheck(view), workers: { A: { outcome: 'READY' as const, durationMs: 4200 } } }), SESSION, 'OTHER_BROWSER'],
+    ['the check was for another booking date', (view: ReturnType<typeof shotgunView>) => ({ ...passedCheck(view), targetDate: '2026-01-01' }), SESSION, 'OTHER_PLAN'],
+  ] as const)('refuses live Shotgun when %s, even with every other field matching', async (_name, record, session, status) => {
+    const view = shotgunView(), probe = { connected: true, targetReady: true, tabCount: 6, chromeVersion: '155', sessionId: session };
+    const { calls, controller } = await arm(view, { securityCheck: () => record(view), confirmShotgunLive: async () => true,
+      browserReadiness: async () => ({ A: probe, B: probe, C: probe, D: probe, E: probe, F: probe, G: probe }) as never });
+    expect(calls.filter(c => typeof c === 'object' && c.kind === 'apiRun')).toEqual([]);
+    expect(controller.state.securityCheck?.status).toBe(status);
+    expect(controller.state.attention).toMatchObject({ code: 'SECURITY_CHECK_REQUIRED', recovery: { action: 'CHECK_SECURITY' } });
+  });
+  it('refuses a plan saved for an earlier release date and never re-dates it', async () => {
+    const current = shotgunView(), earlier = DateTime.fromISO(current.targetDate).minus({ days: 1 }).toISODate()!, stale = shotgunView(undefined, earlier);
+    expect(stale.targetDate).toBe(current.targetDate);
+    const { calls, controller } = await arm(stale, { confirmShotgunLive: async () => true });
+    expect(calls).toEqual([]);
+    expect(controller.state.attention).toMatchObject({ code: 'SAVED_PLAN_DATE_STALE', recovery: { action: 'REVIEW_PLAN_DATE' } });
+    expect(stale.setup.PRECISION_PHASE3!.candidates.every(c => c.rateEvidence.date === earlier)).toBe(true);
   });
   it('includes a saved distinct-court objective in the authorization fingerprint only when present', () => {
     const plain = shotgunView(), quota = shotgunView({ ideal: 2 });

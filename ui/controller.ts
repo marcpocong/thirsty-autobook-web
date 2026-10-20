@@ -1,5 +1,7 @@
 import {SHOTGUN_MAX_TRIGGER_LATENESS_MS,shotgunCriticalInterval} from '../src/shotgun.js';
-import {exactShotgunTopology,assertShotgunSchedule,assertShotgunPrewarm,assertShotgunTabs,readShotgunTiming,shotgunBrowserVersion} from '../src/shotgun-timing.js';
+import {exactShotgunTopology,assertShotgunSchedule,assertShotgunPrewarm,assertShotgunTabs,shotgunTimingVerdict,shotgunMachineKey,shotgunBrowserVersion,type ShotgunTimingReadiness} from '../src/shotgun-timing.js';
+import {readFileSync} from 'node:fs';
+import {savedPlanDate,planDateArmable} from '../src/release-plan-date.js';
 import { PreparationSchema, TestBookingSchema, type BookingPlan } from '../src/booking-plan.js';
 import { z } from 'zod';
 import { DualPracticeSchema, requireDualFullAuthorization } from '../src/dual-practice.js';
@@ -83,6 +85,10 @@ const errors: Record<string, string> = {
   SHOTGUN_PREWARM_NOT_FULLY_READY:'The preparation forecast cannot ready every configured attempt before its deadline. Reduce the attempts per browser and prepare again. A READY forecast does not guarantee provider security verification will succeed.',
   SHOTGUN_TOPOLOGY_NOT_READY:'The exact Shotgun browser tabs are not ready. Reset & Prepare, then check every required browser group.',
   SHOTGUN_TIMING_NOT_READY:'The matching local Shotgun timing test failed or showed compression. Reduce the shot count, widen the schedule, or test again.',
+  SHOTGUN_TIMING_REQUIRED:'Live Shotgun needs a READY local timing calibration for this exact plan, installed build, Chrome and machine from the last 24 hours. Run the timing calibration (local only; nothing reaches Onda).',
+  SAVED_PLAN_DATE_STALE:'The saved release plan was authorized for a different booking date than the next release publishes. Review the plan and save it for the new date deliberately; nothing is re-dated automatically.',
+  TIMING_CALIBRATION_FAILED:'The local timing calibration did not complete. Nothing was sent to Onda. See Activity for the reason, then run it again.',
+  TIMING_CALIBRATION_UNAVAILABLE:'Timing calibration applies to a saved live Shotgun plan.',
   SECURITY_CHECK_REQUIRED:'Live Shotgun needs a passing pre-release security check for this prepared plan within the last hour. Run the security check (nothing is submitted).',
   SECURITY_CHECK_FAILED:'The pre-release security check did not pass in every bot browser. If a THIRSTY BOT window says VERIFY HERE, complete the check Onda shows there, then run the security check again.',
   SECURITY_CHECK_NEEDS_PREPARATION:'Prepare the saved release plan first; the security check runs in its prepared browsers.',
@@ -192,9 +198,13 @@ export interface Dependencies {
   dispatcherMachineKey?:string|null;
   /** Latest pre-release security check record (.local/security-check/latest.json), as written by the runner. */
   securityCheck?:()=>import('../src/security-check.js').SecurityCheck|null;
+  /** The latest local timing calibration as written (default .local/shotgun-timing/latest.json); judged by shotgunTimingVerdict. */
+  shotgunTimingProfile?:()=>unknown;
   activityJournal?:Pick<ActivityJournal,'begin'|'record'|'ready'|'handoff'|'end'|'history'>;
   /** Live Shotgun pilot: explicit owner attestation for this exact plan (warning dialog). Absent means refuse. */
   confirmShotgunLive?:(plan:BookingView)=>Promise<boolean>;
+  /** Explicit review before a different plan replaces the saved release authorization (exact before/after differences). */
+  confirmPlanReplace?:(review:{savedFingerprint:string;savedDate:string|null;newDate:string|null;differences:ReturnType<typeof setupDifferences>})=>Promise<boolean>;
   recordShotgunAttestation?:(record:{fingerprint:string;targetDate:string;releaseMs:number;attempts:number})=>void;
   confirmStopPrepare?:()=>Promise<boolean>;
   confirmBooking?:(plan:BookingPlan,maximum?:number)=>Promise<boolean>;
@@ -206,7 +216,7 @@ export interface Dependencies {
   recentQrHandoffs?(expiresAt:string):Promise<QrHandoffSummary[]>;
   previousHolds?():Promise<Dashboard['previousHolds']>;
   browserHealth?():Promise<Partial<Record<WorkerId,boolean>>>;
-  browserReadiness?():Promise<Partial<Record<WorkerId,{connected:boolean;commandLatencyMs:number|null;tabCount:number;targetReady:boolean;chromeVersion?:string|null}>>>;
+  browserReadiness?():Promise<Partial<Record<WorkerId,{connected:boolean;commandLatencyMs:number|null;tabCount:number;targetReady:boolean;chromeVersion?:string|null;sessionId?:string|null}>>>;
   playerStatus?():Pick<NonNullable<Dashboard['playerStatus']>,'primary'|'extended'> & Partial<NonNullable<Dashboard['playerStatus']>>;
   confirm(kind?: 'observe'|'selection'|'dry'|'full', plan?:BookingView): Promise<boolean>; publish(status: Dashboard): void;
   booking(): BookingView; saveBooking(input:unknown): BookingView;
@@ -287,7 +297,7 @@ export class Controller {
   private lastLogMono = 0;
   private runReadyMono?:number;
   private apiReadyWorkers=new Set<WorkerId>();
-  private workerProbes:Partial<Record<WorkerId,{connected:boolean;commandLatencyMs:number|null;tabCount:number;targetReady:boolean;chromeVersion?:string|null}>>={};
+  private workerProbes:Partial<Record<WorkerId,{connected:boolean;commandLatencyMs:number|null;tabCount:number;targetReady:boolean;chromeVersion?:string|null;sessionId?:string|null}>>={};
   private slotWatch?:SlotWatchHandle;
   /** The watch shown in the UI; it keeps showing its final state after it ends until another watch replaces it. */
   private displayedSlotWatchId?:string;
@@ -662,14 +672,18 @@ export class Controller {
     try {
       const wasReady = this.state.ready;
       const [lock, observedHealth,workerProbes] = await Promise.all([this.deps.lock(), this.deps.browserHealth?this.deps.browserHealth():this.deps.cdp().then(A=>({A,B:A,C:false,D:false})),
-        this.deps.browserReadiness?.()??Promise.resolve({} as Partial<Record<WorkerId,{connected:boolean;commandLatencyMs:number|null;tabCount:number;targetReady:boolean;chromeVersion?:string|null}>>)]);
+        this.deps.browserReadiness?.()??Promise.resolve({} as Partial<Record<WorkerId,{connected:boolean;commandLatencyMs:number|null;tabCount:number;targetReady:boolean;chromeVersion?:string|null;sessionId?:string|null}>>)]);
       const health:Record<WorkerId,boolean>={A:false,B:false,C:false,D:false,E:false,F:false,G:false,H:false,...observedHealth};
       this.workerProbes=workerProbes;
       const savedSetup=this.state.booking?.setup;
       if(savedSetup?.STRATEGY_V2?.shotgun?.enabled && savedSetup.PRECISION_PHASE3){
         try{const topology=exactShotgunTopology(savedSetup.PRECISION_PHASE3,savedSetup.STRATEGY_V2.shotgun.exactSchedule);
-          this.state.shotgunTiming=readShotgunTiming('.local/shotgun-timing/latest.json',topology,this.state.build?.dirty?'dirty':this.state.build?.gitSha??'unknown',shotgunBrowserVersion(topology,workerProbes),this.deps.dispatcherMachineKey);}catch{this.state.shotgunTiming=null;}
-      }else this.state.shotgunTiming=null;
+          const buildKey=this.state.build?.dirty?'dirty':this.state.build?.gitSha??'unknown',chrome=shotgunBrowserVersion(topology,workerProbes);
+          const profile=this.timingProfile(),verdict=shotgunTimingVerdict(profile,topology,buildKey,Date.now(),chrome,this.deps.dispatcherMachineKey===undefined?shotgunMachineKey():this.deps.dispatcherMachineKey);
+          this.state.shotgunTiming=verdict.status==='INCOMPATIBLE'||verdict.status==='EXPIRED'||!profile?null:profile as ShotgunTimingReadiness;
+          this.state.shotgunTimingVerdict=verdict;}
+        catch{this.state.shotgunTiming=null;this.state.shotgunTimingVerdict=null;}
+      }else{this.state.shotgunTiming=null;this.state.shotgunTimingVerdict=null;}
       this.state.lock = lock; this.state.browserHealth=health;this.state.cdp = !!health.A;this.state.playerStatus=this.players();
       const retained=lock&&this.state.operation==='idle'?await this.deps.retainedHold?.():null;
       if(retained?.stage==='HOLD_VERIFIED'&&retained.expiresAt&&!this.qrRecoveryChecked&&!this.state.qrHandoffs?.length){
@@ -720,15 +734,16 @@ export class Controller {
       const latestProfile=this.state.fanOut?.latest,observerView=this.state.slotWatch,latestRead=observerView?.lastPollAt?Date.parse(observerView.lastPollAt):NaN;
       this.state.prewarmFeasibility=this.state.booking?this.forecastPrewarm(this.state.booking):null;
       this.refreshSecurityCheck();
+      this.state.planDate=this.state.booking?savedPlanDate(this.state.booking.setup,this.state.booking.targetDate):null;
       const fallbackMachine:MachineHealth={measuredAt:new Date().toISOString(),cpuCount:0,memoryUsedPct:100,eventLoopP95Ms:100,processRssMb:0};
       this.state.releaseReadiness=evaluateReleaseReadiness({build:this.state.build??null,testedBuild:this.deps.testedBuild?.()??null,configValid:!!this.state.booking,
         authorizationValid:!!this.state.booking&&BookingSetupSchema.safeParse(this.state.booking.setup).success,
         clock:{synced:!!clock?.networkSynced,ageMs:Number.isFinite(clockAt)?Date.now()-clockAt:null,uncertaintyMs:clockRoundTrip===null||clockRoundTrip===undefined?null:clockRoundTrip/2,offsetMs:clock?.clockOffsetMs??null},
         machine:this.deps.machineHealth?.()??fallbackMachine,workers,
-        ...(this.state.booking?.setup.STRATEGY_V2?.shotgun?.enabled&&this.state.booking.setup.PRECISION_PHASE3?{shotgun:{...(()=>{const t=exactShotgunTopology(this.state.booking!.setup.PRECISION_PHASE3!,this.state.booking!.setup.STRATEGY_V2!.shotgun!.exactSchedule);return {tabsPerWorker:t.tabsPerWorker,shotCount:t.shots.length};})(),timingStatus:this.state.shotgunTiming?.status}}:{}),observer:{online:!!this.slotWatch&&!!observerView&&['waiting','watching'].includes(observerView.status),
+        ...(this.state.booking?.setup.STRATEGY_V2?.shotgun?.enabled&&this.state.booking.setup.PRECISION_PHASE3?{shotgun:{...(()=>{const t=exactShotgunTopology(this.state.booking!.setup.PRECISION_PHASE3!,this.state.booking!.setup.STRATEGY_V2!.shotgun!.exactSchedule);return {tabsPerWorker:t.tabsPerWorker,shotCount:t.shots.length};})(),timingStatus:this.state.shotgunTimingVerdict?.status??'NOT_TESTED',...(this.state.shotgunTimingVerdict?{timingReason:this.state.shotgunTimingVerdict.reason}:{})}}:{}),observer:{online:!!this.slotWatch&&!!observerView&&['waiting','watching'].includes(observerView.status),
           lastReadAgeMs:Number.isFinite(latestRead)?Date.now()-latestRead:null,availabilityLatencyMs:observerView?.lastLatencyMs??null},
         fanOut:latestProfile?{compatible:latestProfile.compatible,stale:latestProfile.stale,width:latestProfile.recommendedWidth}:null,prewarm:!!this.state.apiFirstReady,
-        prewarmFeasibility:this.state.prewarmFeasibility,securityCheck:this.state.securityCheck??null});
+        prewarmFeasibility:this.state.prewarmFeasibility,securityCheck:this.state.securityCheck??null,planDate:this.state.planDate??null});
       this.publish();
     } finally { this.polling = false; }
   }
@@ -1039,6 +1054,7 @@ export class Controller {
         }
         if(input.workflow==='release'){
           const existing=this.deps.booking(),candidate=this.releaseSetup(input.setup??existing.setup);
+          if(input.setup&&!await this.confirmReplacement(candidate.setup,gen))return;
           const removed=candidate.reconciliation.removed.length?candidate.reconciliation.removed:existing.fallbackReconciliation.removed;
           const saved=this.deps.saveBooking(candidate.setup);release=this.deps.booking();if(saved.fingerprint!==release.fingerprint)throw Error('BOOKING_PLAN_CHANGED');
           this.state.bookingAdjustment=removed.length?{valid:release.setup.FALLBACK_TIMES,removed}:null;
@@ -1131,9 +1147,10 @@ export class Controller {
     this.log('Observation authorized for this run'); await this.run('observe', gen);
     this.state.headline = 'Observation complete'; this.state.detail = 'No court slots were selected. Review activity and local telemetry.';
   }); }
-  saveBooking(input: unknown) { return this.operation('saving', async () => {
+  saveBooking(input: unknown) { return this.operation('saving', async gen => {
     if((input as {DURATION_HOURS?:number})?.DURATION_HOURS!>6)throw Error('EXTENDED_DURATION_LIMIT');
     const candidate=this.releaseSetup(input);
+    if(!await this.confirmReplacement(candidate.setup,gen))return;
     this.state.booking=this.deps.saveBooking(candidate.setup);this.state.bookingAdjustment=candidate.reconciliation.removed.length?candidate.reconciliation:null;
     this.state.headline='Booking plan saved'; this.state.detail='Review the compiled plan, then Prepare Booking. Terms authorization is off.';
   }); }
@@ -1181,6 +1198,8 @@ export class Controller {
     // Arm exactly the plan that was prepared: never a plan saved afterwards, never an unbound preparation.
     if(!this.state.preparedPlanFingerprint)throw Error('RESET_REQUIRED');
     if(plan.fingerprint!==this.state.preparedPlanFingerprint)throw Error('PREPARED_PLAN_CHANGED');
+    // A plan saved for an earlier release is never moved to the new date here; the operator re-saves it deliberately.
+    if(!planDateArmable(savedPlanDate(plan.setup,plan.targetDate)))throw Error('SAVED_PLAN_DATE_STALE');
     const liveShotgun=!!plan.setup.STRATEGY_V2?.shotgun?.enabled;
     if(liveShotgun&&plan.setup.PRECISION_PHASE3?.candidates.some(candidate=>candidate.wing==='BUKO'))throw Error('BUKO_SCHEDULED_LIVE_BLOCKED');
     if(plan.setup.STRATEGY_V2?.shotgun?.exactSchedule.some(shot=>shot.configuredOffsetMs>0)||plan.setup.PRECISION_PHASE3?.wave1.some(assignment=>(assignment.fanOutOffsetsMs??[assignment.releaseOffsetMs??0]).some(offset=>offset>0)))
@@ -1202,10 +1221,13 @@ export class Controller {
       const machine=this.deps.machineHealth?.();
       if(!machine || machine.eventLoopP95Ms>=SHOTGUN_MAX_TRIGGER_LATENESS_MS || machine.memoryUsedPct>=92)throw Error('SHOTGUN_MACHINE_NOT_READY');
       assertShotgunPrewarm(this.forecastPrewarm(plan),topology.shots.length);
-      const timing=readShotgunTiming('.local/shotgun-timing/latest.json',topology,this.state.build?.dirty?'dirty':this.state.build?.gitSha??'unknown',shotgunBrowserVersion(topology,probes??{}),this.deps.dispatcherMachineKey);
-      if(timing && timing.status!=='READY')throw Error('SHOTGUN_TIMING_NOT_READY');
-      // Genuine verification in these browsers within the hour, for this exact plan; a forecast or dry run never counts.
-      this.refreshSecurityCheck(plan);
+      // Only an applicable READY calibration authorizes live Shotgun; a missing, expired or mismatched one is not a pass.
+      const timing=shotgunTimingVerdict(this.timingProfile(),topology,this.state.build?.dirty?'dirty':this.state.build?.gitSha??'unknown',Date.now(),shotgunBrowserVersion(topology,probes??{}),
+        this.deps.dispatcherMachineKey===undefined?shotgunMachineKey():this.deps.dispatcherMachineKey);
+      this.state.shotgunTimingVerdict=timing;
+      if(timing.status!=='READY')throw Error(timing.status==='FAILED'||timing.status==='AT_RISK'?'SHOTGUN_TIMING_NOT_READY':'SHOTGUN_TIMING_REQUIRED');
+      // Genuine verification in these browsers within the hour, for this exact plan and date; a forecast or dry run never counts.
+      this.refreshSecurityCheck(plan,probes??{});
       if(this.state.securityCheck?.status!=='PASSED')throw Error(this.state.securityCheck?.status==='FAILED'?'SECURITY_CHECK_FAILED':'SECURITY_CHECK_REQUIRED');
     }
     if(plan.setup.PRECISION_PHASE3){this.state.prewarmFeasibility=this.forecastPrewarm(plan);if(!this.state.prewarmFeasibility)throw Error('PREWARM_FEASIBILITY_UNAVAILABLE');
@@ -1360,8 +1382,15 @@ export class Controller {
     this.refreshSecurityCheck(release);
     this.log(`Security check: ${this.state.securityCheck?.status??'MISSING'} · ${this.state.securityCheck?.detail??''}`,this.state.securityCheck?.status!=='PASSED');
   }
-  private refreshSecurityCheck(plan:BookingView|null|undefined=this.state.booking){
-    this.state.securityCheck=plan?securityCheckVerdict(this.deps.securityCheck?.()??null,{fingerprint:plan.fingerprint,workers:planWorkerIds(plan.setup)}):null;}
+  private timingProfile():unknown{
+    if(this.deps.shotgunTimingProfile)return this.deps.shotgunTimingProfile();
+    try{return JSON.parse(readFileSync('.local/shotgun-timing/latest.json','utf8'));}catch{return null;}
+  }
+  /** The check must match this saved plan, its booking date and the Chrome processes running now (src/security-check.ts). */
+  private refreshSecurityCheck(plan:BookingView|null|undefined=this.state.booking,probes:Partial<Record<WorkerId,{sessionId?:string|null}>>=this.workerProbes){
+    const workers=plan?planWorkerIds(plan.setup):[];
+    this.state.securityCheck=plan?securityCheckVerdict(this.deps.securityCheck?.()??null,{fingerprint:plan.fingerprint,workers,targetDate:plan.targetDate,
+      ...(this.deps.browserReadiness?{sessions:Object.fromEntries(workers.map(id=>[id,probes[id]?.sessionId??null]))}:{})}):null;}
   checkSecurity(){return this.operation('checkingSecurity',async gen=>{
     const release=this.deps.booking();
     if(!['api-first','proofless'].includes(release.setup.BOOKING_METHOD)||!this.state.apiFirstReady||this.state.preparedPlanFingerprint!==release.fingerprint)
@@ -1374,6 +1403,39 @@ export class Controller {
     this.state.headline=check?.status==='PASSED'?'SECURITY CHECK PASSED':'SECURITY CHECK NEEDS ATTENTION';
     this.state.detail=check?.status==='PASSED'?`${check.detail}. The run still acquires its own fresh verification shortly before release.`:check?.detail??errors.SECURITY_CHECK_FAILED!;
   });}
+  /**
+   * Local timing calibration of the SAVED Shotgun plan through the supported benchmark: real offline Chrome, the
+   * production dispatcher, every checkout answered locally. Nothing reaches Onda and the bot browsers are untouched.
+   */
+  calibrateTiming(){return this.operation('calibrating',async gen=>{
+    const plan=this.deps.booking(),shotgun=plan.setup.STRATEGY_V2?.shotgun;
+    if(!shotgun?.enabled||!plan.setup.PRECISION_PHASE3)throw Error('TIMING_CALIBRATION_UNAVAILABLE');
+    const keepReady=this.state.apiFirstReady&&this.state.preparedPlanFingerprint===plan.fingerprint;
+    // The offline requests carry the plan's own date (local timing does not depend on it); never a substituted date.
+    const date=savedPlanDate(plan.setup,plan.targetDate).planDate??plan.targetDate;
+    this.state.headline='RUNNING TIMING CALIBRATION';
+    this.state.detail='Local only: isolated Chrome windows open briefly and every checkout is answered on this computer. Nothing is sent to Onda; your bot browsers are not touched.';this.publish();
+    try{await this.run({kind:'timingCalibration',date},gen);}
+    catch(error){if(error instanceof Error&&error.message==='CANCELLED')throw error;throw Error('TIMING_CALIBRATION_FAILED');}
+    finally{if(keepReady&&gen===this.generation&&this.state.apiFirstReady&&this.state.preparedPlanFingerprint===plan.fingerprint)this.state.ready=true;}
+    await this.refresh();
+    const verdict=this.state.shotgunTimingVerdict;
+    this.state.headline=verdict?.status==='READY'?'TIMING CALIBRATION READY':'TIMING CALIBRATION NEEDS ATTENTION';
+    this.state.detail=verdict?`${verdict.status.replaceAll('_',' ')} · ${verdict.reason}${verdict.p95!==null?` · p95 ${verdict.p95} ms · max ${verdict.max} ms`:''}`:'The calibration result could not be read for the saved plan.';
+    this.log(`Timing calibration: ${verdict?.status??'UNKNOWN'} · ${verdict?.reason??''}`,verdict?.status!=='READY');
+  });}
+  /** A different plan replaces the saved authorization only after the operator reviewed the exact differences. */
+  private async confirmReplacement(next:BookingView['setup'],gen:number):Promise<boolean>{
+    let saved:BookingView|null=null;try{saved=this.deps.booking();}catch{saved=null;}
+    if(!saved)return true;
+    const differences=setupDifferences(saved.setup,next);
+    if(differences.total===0||!this.deps.confirmPlanReplace)return true;
+    const after=savedPlanDate(next,saved.targetDate).planDate,before=savedPlanDate(saved.setup,saved.targetDate).planDate;
+    const accepted=await this.deps.confirmPlanReplace({savedFingerprint:saved.fingerprint,savedDate:before,newDate:after,differences});
+    if(gen!==this.generation)throw Error('CANCELLED');
+    if(!accepted){this.state.headline='Saved plan unchanged';this.state.detail='You kept the current saved release plan. Nothing was saved, prepared or armed.';this.log('PLAN_REPLACE_DECLINED · saved plan kept');}
+    return accepted;
+  }
   closeBotBrowsers(){return this.operation('closingBrowsers',async gen=>{
     if(!this.deps.closeBotBrowsers)throw Error('CLOSE_BROWSERS_UNAVAILABLE');
     const open=this.deps.countBotBrowsers?await this.deps.countBotBrowsers():Object.values(this.state.browserHealth??{}).filter(Boolean).length;

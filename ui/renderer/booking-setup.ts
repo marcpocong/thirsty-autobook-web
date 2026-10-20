@@ -3,7 +3,7 @@ import type { Wing } from '../../src/court-registry.js';
 import { compileObjective, rebaseReleasedDates, courtLabel, defaultObjective, enabledWings, evaluateObjectiveOutcome, objectiveFromLegacySetup, parseStoredObjective, savedMangoReleaseSetup, withMode, withStrategy, WINGS,
   OUTCOME_LABEL, type BookingObjective, type CompiledObjective, type NormalCheckoutStep, type ObjectiveShotgun, type WingGoal } from '../../src/booking-objective.js';
 import { METHOD_LABEL, METHOD_TO_SETUP, STRATEGY_LABEL, evaluateCapability, methodsForStrategy, strategiesFor, type CapabilityVerdict, type CheckoutMethodId, type StrategyId } from '../../src/capability-matrix.js';
-import { editEffect, executionState, operatorGates, planLadder, readinessLayers, readinessSummary, type ExecutionView, type OperatorGates, type OperatorInputs,
+import { editEffect, executionState, operatorGates, planLadder, primaryActionFacts, readinessLayers, readinessSummary, type ExecutionView, type OperatorGates, type OperatorInputs,
   type RecoveryAction, type Recovery, type RuntimeValidation } from '../../src/execution-state.js';
 import type { PlanDifference } from '../../src/plan-diff.js';
 import { canonicalJson } from '../../src/sha256-pure.js';
@@ -19,6 +19,7 @@ import { forecastPreparation } from '../../src/quick-shotgun.js';
 import { capacityAdvice } from '../../src/capacity-advice.js';
 import { preparationText, releaseBlockers } from './operator-status.js';
 import { planWorkerIds } from '../../src/workers.js';
+import { preflightInput, releasePreflight, renderPlanSummary, renderPreflight } from './preflight.js';
 
 /**
  * Booking Setup: one guided workspace from goal to QR. The objective is the single editable source; every plan,
@@ -203,6 +204,8 @@ function recover(action: RecoveryAction) {
     case 'STOP': void window.thirsty.abortAutomation().catch(() => undefined); return;
     case 'OPEN_ACTIVITY': hooks.showView('live'); return;
     case 'CHECK_SECURITY': void window.thirsty.checkSecurity().catch(() => undefined); return;
+    case 'CALIBRATE_TIMING': void window.thirsty.calibrateTiming().catch(() => undefined); return;
+    case 'REVIEW_PLAN_DATE': goStep(1); scrollTo('stale-plan-banner'); return;
     case 'WAIT': return;
   }
 }
@@ -219,8 +222,8 @@ async function load() {
     if (result.document) { documentSaved = result.document; objective = parseStoredObjective(result.document.objective) ?? objective; }
     else if (result.migrated) { objective = parseStoredObjective(result.migrated) ?? objective; notes = result.notes ?? []; }
   } catch { notes = ['The saved Booking Setup draft could not be read. A new draft was started; nothing was overwritten.']; }
-  // A stored next-release date that has already been released is moved to the next release only with a visible note.
-  { const rebased = rebaseReleasedDates(objective, Date.now()); objective = rebased.objective; notes.push(...rebased.notes); }
+  // A stored next-release date that has already been released is NOT moved: the stale-plan banner offers the next
+  // release explicitly, and saving it still requires reviewing the exact differences.
   loaded = true; recompile(); renderAll(true);
 }
 async function saveDraft(binding?: ObjectiveBinding | null) {
@@ -291,6 +294,7 @@ function renderAll(force: boolean) {
   if (!loaded) return;
   const v = view();
   renderHead(v);
+  renderStaleBanner(v);
   for (let i = 1; i <= 5; i++) byId(`setup-step-${i}`).hidden = i !== step;
   (byId('setup-back') as HTMLButtonElement).disabled = step === 1; const next = byId('setup-next') as HTMLButtonElement; next.hidden = step === 5;
   next.textContent = ['', 'Choose strategy →', 'Customize →', 'Browsers →', 'Review & Run →'][step] ?? 'Next →';
@@ -306,6 +310,35 @@ function renderAll(force: boolean) {
   if (step === 1) renderAvailability(editable);
   if (step === 4) renderBrowsers();
   if (step === 5) renderReview(v);
+}
+/** Enabled wings whose draft date has already been released (Next Release only). */
+function releasedDraftDates(now = Date.now()) {
+  if (objective.mode !== 'NEXT_RELEASE') return [];
+  return enabledWings(objective).flatMap(wing => { try { const releasedAt = releaseInstantFor(objective.wings[wing].bookingDate, wing);
+    return releasedAt <= now ? [{ wing, date: objective.wings[wing].bookingDate, releasedAt }] : []; } catch { return []; } });
+}
+/**
+ * A plan or draft dated for a release that has already happened is shown, never silently re-dated. Moving the draft to
+ * the next release is an explicit button that edits the draft only; the saved plan changes only through Save release
+ * plan and its before/after review.
+ */
+function renderStaleBanner(v: ExecutionView) {
+  const host = byId('stale-plan-banner'), draft = releasedDraftDates(), saved = release() && state?.planDate && !['CURRENT', 'UNDATED'].includes(state.planDate.status) ? state.planDate : null;
+  host.hidden = !draft.length && !saved;
+  if (host.hidden) { host.replaceChildren(); return; }
+  const next = nextReleaseFor(Date.now(), 'MANGO');
+  const move = el('button', { type: 'button', class: 'secondary compact', id: 'stale-plan-move', text: `Plan the next release (${dateText(next.bookingDate)})` }) as HTMLButtonElement;
+  move.disabled = !v.can.edit;
+  move.onclick = () => {
+    edit(d => { Object.assign(d, rebaseReleasedDates(d, Date.now()).objective); });
+    flash(`Draft now targets ${dateText(next.bookingDate)}. Review it, then Save release plan — you confirm the exact differences first. Nothing was saved.`, 'good');
+  };
+  fill(host, el('p', { class: 'eyebrow', text: 'Release date check' }),
+    el('h3', { text: saved ? `The saved plan is for ${dateText(saved.planDate ?? saved.targetDate)}, whose release has passed` : `This draft targets ${dateText(draft[0]!.date)}, whose release has passed` }),
+    el('p', { class: 'small', text: [saved ? 'It cannot be armed for the next release and is never re-dated automatically.' : '',
+      draft.length ? `The draft targets ${draft.map(d => `${wingName(d.wing)} ${dateText(d.date)} (released ${manilaTime(d.releasedAt)})`).join(' and ')}.` : 'The draft already targets the next release: review it, then save it deliberately.',
+      `The next release, ${manilaTime(next.releaseMs)}, publishes ${dateText(next.bookingDate)}.`].filter(Boolean).join(' ') }),
+    draft.length ? el('div', { class: 'button-row' }, move, el('span', { class: 'small muted', text: 'Changes the draft only. The saved plan is unchanged until you save and confirm.' })) : null);
 }
 function renderHead(v: ExecutionView) {
   for (const radio of document.querySelectorAll<HTMLInputElement>('input[name="setup-mode"]')) { radio.checked = radio.value === objective.mode; radio.disabled = !v.can.edit; }
@@ -660,13 +693,18 @@ function renderReview(v: ExecutionView) {
       failed: children.filter(c => ['FAILED', 'PREWARM_FAILED'].includes(c.state)).length, omitted: children.filter(c => c.state === 'OMITTED').length, leadMs: s?.live?.prewarm?.leadMs ?? f?.prewarmLeadMs ?? null } : null,
     securityCheck: release() && preparedForSaved() ? s?.securityCheck ?? null : null,
     armed: { armed, running }, readinessBlockers: s ? releaseBlockers(s) : [] });
-  const layersHost = byId('readiness-layers');
-  layersHost.hidden = !release();
-  fill(layersHost, el('p', { class: 'readiness-summary', text: readinessSummary(layers) }),
-    el('ul', {}, ...layers.map(l => el('li', { 'data-status': l.status, 'data-layer': l.id }, el('strong', { text: l.label }), el('span', { class: 'layer-status', text: l.status === 'NA' ? 'N/A' : l.status }), el('span', { class: 'layer-detail', text: l.detail }),
-      // Safe one-click: genuine verification in the prepared browsers, nothing submitted; the controller refuses while busy.
-      l.id === 'SECURITY' && l.label === 'Security check' && !armed && !running && s?.operation === 'idle'
-        ? recoveryButton({ label: l.status === 'OK' ? 'Check again' : 'Run security check', action: 'CHECK_SECURITY' }, 'security-check-run') : null))));
+  // Release Day Preflight: the same model as the execution console, over the SAVED plan and actual runtime state.
+  const layersHost = byId('readiness-layers'), summaryHost = byId('plan-summary');
+  byId('release-overview').hidden = !release();
+  if (release() && s) {
+    const preflight = releasePreflight(preflightInput(s, layers, { prepared: preparedForSaved(), forOther: inputs.prepared.forOtherPlan, armed, running,
+      securityCheck: preparedForSaved() ? s.securityCheck ?? null : null,
+      draft: owns ? { matches: runtimeCheck.matchesSaved, differences: runtimeCheck.differences?.total ?? 0, problems: compiled.problems.length } : null }));
+    // Inspections are offered only while idle; the controller refuses them otherwise anyway.
+    renderPreflight(layersHost, preflight, { summaryLine: readinessSummary(layers), onRecover: recover, securityButtonId: 'security-check-run', busy: s.operation !== 'idle' || armed || running });
+    const savedLabel = armed || running ? 'ARMED' : preparedForSaved() ? 'PREPARED' : 'SAVED';
+    renderPlanSummary(summaryHost, s, savedLabel, savedLabel === 'ARMED' ? 'live' : savedLabel === 'PREPARED' ? 'ready' : 'info');
+  }
   renderAttention();
   renderConflict(live.setup !== null);
   const bindingText = !release() ? 'Available Now runs each checkout directly; nothing is pre-armed.' : keepSaved ? 'Preparation and arming use the saved plan from the advanced editor.'
@@ -693,11 +731,18 @@ function renderReview(v: ExecutionView) {
         : g.primary.action === 'AUTHORIZE_ARM' ? (s?.booking?.setup.STRATEGY_V2?.shotgun?.enabled ? 'Live Shotgun pilot: arming re-checks browsers and timing, then asks for your owner attestation for this exact plan. Payment stays manual.' : 'Arming re-checks every gate and asks you to confirm the exact plan. Payment stays manual.')
           : g.primary.action === 'STOP' ? 'Emergency Stop cancels attempts that have not been sent. Holds already created stay with the provider until they expire or you pay.'
             : g.primary.action === 'WAIT' ? 'Working. Emergency Stop is available while anything runs.' : 'A retained lock or earlier checkout needs review first.';
+    byId('main-action-hint').hidden = true;
+    // What the button does for its typed action (never inferred from its text), shown before it is pressed.
+    const facts = primaryActionFacts(g.primary.action, { shotgun: !!s?.booking?.setup.STRATEGY_V2?.shotgun?.enabled, release: true }), explainer = byId('action-explainer');
+    explainer.hidden = false; explainer.dataset.action = g.primary.action;
+    fill(explainer, ...([['This button', facts.does], ['It will not', facts.doesNot],
+      ['Saved plan', facts.changesSavedPlan ? 'Replaced — only after you confirm the exact differences' : 'Unchanged'],
+      ['Live dispatch', facts.liveDispatch === 'NO' ? 'Not possible from this step' : facts.liveDispatch === 'ARMED' ? 'Armed now' : `Only after your confirmation${s?.booking?.setup.STRATEGY_V2?.shotgun?.enabled ? ' and owner attestation' : ''}`]] as Array<[string, string]>).map(([k, val]) => el('div', { 'data-fact': k }, el('dt', { text: k }), el('dd', { text: val }))));
     byId('action-terms').hidden = g.primary.action !== 'AUTHORIZE_ARM';
     (byId('terms') as HTMLInputElement).disabled = !g.terms.enabled;
   } else {
     // Available Now keeps its own Terms row visible (the Next Release flow hides it until arming).
-    byId('action-terms').hidden = false;
+    byId('action-terms').hidden = false; byId('action-explainer').hidden = true;
     if (owns && /Prepare/.test(test.textContent ?? '') && (compiled.problems.length || !compiled.normalSteps[activeStep])) test.disabled = true;
   }
   const blockersHost = byId('action-blockers'), blockers = g.blockers;
@@ -707,6 +752,10 @@ function renderReview(v: ExecutionView) {
   (byId('save-draft') as HTMLButtonElement).disabled = !g.saveDraft.enabled; byId('save-draft').title = g.saveDraft.reason ?? 'Saves this Booking Setup draft only. It never changes the saved release authorization.';
   (byId('test-this-plan') as HTMLButtonElement).disabled = !g.test.enabled;
   byId('action-bar-hint').textContent = v.state === 'ARMED' ? 'Armed. Emergency Stop disarms; holds already created stay with the provider.' : v.detail;
+  // The controller's own words for whatever is running or just finished (prepare, security check, calibration, save).
+  const status = byId('operation-status'), busy = (s?.operation ?? 'idle') !== 'idle';
+  status.hidden = !s?.headline || !release(); status.dataset.tone = busy ? 'running' : /NEEDS ATTENTION|FAILED|Needs attention/.test(s?.headline ?? '') ? 'bad' : 'idle';
+  status.textContent = s?.headline ? `${busy ? 'In progress · ' : 'Latest · '}${s.headline}${s.detail ? ` — ${s.detail.split('\n')[0]}` : ''}` : '';
   const stepsHost = byId('available-now-steps'); stepsHost.hidden = !now || compiled.normalSteps.length < 1;
   if (now) fill(stepsHost, el('p', { class: 'eyebrow', text: `Checkouts for this goal · run one at a time (${compiled.normalSteps.length})` }), stepsTable(true));
   renderTestLab();

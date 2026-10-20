@@ -10,6 +10,36 @@ const check = (overrides: Partial<SecurityCheck> = {}): SecurityCheck => ({ sche
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
+describe('security check binding to the booking date and the running browsers', () => {
+  const sessionA = 'a'.repeat(16), sessionB = 'b'.repeat(16);
+  const bound = (overrides: Partial<SecurityCheck> = {}) => check({ workers: { A: { outcome: 'READY', durationMs: 4200, browserSession: sessionA }, B: { outcome: 'READY', durationMs: 3800, browserSession: sessionB } }, ...overrides });
+  const plan = { fingerprint, workers: ['A', 'B'], targetDate: '2026-10-24', sessions: { A: sessionA, B: sessionB } };
+  it('passes only for the same booking date and the same Chrome launches, and reports when it expires', () => {
+    const verdict = securityCheckVerdict(bound(), plan, now);
+    expect(verdict.status).toBe('PASSED');
+    expect(verdict.expiresAt).toBe(new Date(Date.parse(bound().checkedAt) + SECURITY_CHECK_MAX_AGE_MS).toISOString());
+    expect(verdict.workers?.map(w => [w.id, w.outcome, w.durationMs])).toEqual([['A', 'READY', 4200], ['B', 'READY', 3800]]);
+  });
+  it('does not accept a different booking date even when the fingerprint, time and workers match', () => {
+    const verdict = securityCheckVerdict(bound({ targetDate: '2026-10-23' }), plan, now);
+    expect(verdict.status).toBe('OTHER_PLAN'); expect(verdict.detail).toContain('2026-10-23'); expect(verdict.detail).toContain('2026-10-24');
+  });
+  it('does not accept a record from a browser that was closed, restarted or is not connected now', () => {
+    expect(securityCheckVerdict(bound(), { ...plan, sessions: { A: sessionA, B: 'f'.repeat(16) } }, now)).toMatchObject({ status: 'OTHER_BROWSER', detail: expect.stringContaining('Browser B') });
+    expect(securityCheckVerdict(bound(), { ...plan, sessions: { A: sessionA, B: null } }, now).status).toBe('OTHER_BROWSER');
+    expect(securityCheckVerdict(check(), plan, now).status).toBe('OTHER_BROWSER');
+  });
+  it('a failed check from an older browser no longer describes the current browser', () => {
+    const failed = bound({ workers: { A: { outcome: 'FAILED', durationMs: 60_200, code: 'ONDA_SECURITY_VERIFICATION_FAILED', browserSession: sessionA }, B: { outcome: 'READY', durationMs: 3800, browserSession: sessionB } } });
+    expect(securityCheckVerdict(failed, plan, now).status).toBe('FAILED');
+    expect(securityCheckVerdict(failed, { ...plan, sessions: { A: 'e'.repeat(16), B: sessionB } }, now).status).toBe('OTHER_BROWSER');
+  });
+  it('stores only an opaque 16-hex launch identity, never a raw CDP id', () => {
+    const root = mkdtempSync(join(tmpdir(), 'security-check-')); roots.push(root);
+    expect(() => writeSecurityCheck(root, bound({ workers: { A: { outcome: 'READY', durationMs: 1, browserSession: 'ws://127.0.0.1:9222/devtools/browser/abc' } } }))).toThrow();
+  });
+});
+
 describe('pre-release security check verdict', () => {
   it('passes only for this exact plan, every required worker verified, within the hour', () => {
     const verdict = securityCheckVerdict(check(), { fingerprint, workers: ['A', 'B'] }, now);

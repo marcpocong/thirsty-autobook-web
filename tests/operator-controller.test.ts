@@ -54,6 +54,34 @@ describe('runtime validation before a plan becomes the saved authorization', () 
   });
 });
 
+describe('replacing the saved release plan needs an explicit review', () => {
+  it('shows the exact differences, keeps the saved plan when declined and saves only when accepted', async () => {
+    const reviews: Array<{ total: number; labels: string[]; savedFingerprint: string }> = [];
+    let answer = false;
+    const original = precision(two);
+    const h = harness(original, () => 0, { confirmPlanReplace: async review => { reviews.push({ total: review.differences.total, labels: review.differences.summary.map(d => d.label), savedFingerprint: review.savedFingerprint }); return answer; } });
+    await h.controller.saveBooking(precision(one).setup);
+    expect(reviews).toHaveLength(1);
+    expect(reviews[0]).toMatchObject({ savedFingerprint: original.fingerprint });
+    expect(reviews[0]!.total).toBeGreaterThan(0);
+    expect(h.controller.validateReleaseSetup(precision(two).setup)).toMatchObject({ ok: true, matchesSaved: true });
+    expect(h.controller.state.headline).toBe('Saved plan unchanged');
+    answer = true;
+    await h.controller.saveBooking(precision(one).setup);
+    expect(h.controller.validateReleaseSetup(precision(one).setup)).toMatchObject({ ok: true, matchesSaved: true });
+    // Saving the identical plan again is not a replacement and asks nothing.
+    await h.controller.saveBooking(precision(one).setup);
+    expect(reviews).toHaveLength(2);
+  });
+  it('a Prepare that carries a different setup asks the same question and prepares nothing when declined', async () => {
+    const original = precision(two);
+    const h = harness(original, () => 0, { confirmPlanReplace: async () => false });
+    await h.controller.resetPrepare({ workflow: 'release', strategy: 'standard', setup: precision(one).setup });
+    expect(h.calls).toEqual([]);
+    expect(h.controller.validateReleaseSetup(precision(two).setup)).toMatchObject({ ok: true, matchesSaved: true });
+    expect(h.controller.state.preparedPlanFingerprint ?? null).toBeNull();
+  });
+});
 describe('preparation is bound to the exact saved plan', () => {
   it('records the prepared fingerprint, clears it when a different plan is saved, and refuses to arm a changed plan', async () => {
     const h = harness(precision(two));

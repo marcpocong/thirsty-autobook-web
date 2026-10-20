@@ -3,6 +3,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {describe,expect,it} from 'vitest';
 import {evaluateReleaseReadiness,readLastReleaseBuild} from '../src/release-readiness-gate.js';
+import {savedPlanDate} from '../src/release-plan-date.js';
 
 describe('tested release build record',()=>{
   it('reads the record written by scripts/release-build.mjs and returns null when absent or malformed',()=>{
@@ -111,4 +112,27 @@ it('Shotgun hard-blocks incomplete exact tabs, failed timing and severe load wit
   input.shotgun={tabsPerWorker:{A:6,B:6,C:6,D:2},shotCount:20,timingStatus:'FAILED'};
   expect(evaluateReleaseReadiness(input).verdict).toBe('NOT_READY');
   expect(check(input,'shotgun-topology').hardBlock).toBe(true);expect(check(input,'shotgun-timing').hardBlock).toBe(true);expect(check(input,'machine').hardBlock).toBe(true);
+});
+it('live Shotgun treats a missing, expired or mismatched calibration as a hard block, never a warning',()=>{
+  const input=base();
+  for(const status of ['NOT_TESTED','EXPIRED','INCOMPATIBLE','AT_RISK','FAILED'] as const){
+    input.shotgun={tabsPerWorker:{A:1,B:1},shotCount:2,timingStatus:status,timingReason:'fixture reason'};
+    const timing=check(input,'shotgun-timing');
+    expect(timing).toMatchObject({level:'UNAVAILABLE',hardBlock:true});expect(timing.detail).toContain('fixture reason');
+    expect(evaluateReleaseReadiness(input).verdict).toBe('NOT_READY');
+  }
+  input.shotgun={tabsPerWorker:{A:1,B:1},shotCount:2};
+  expect(check(input,'shotgun-timing')).toMatchObject({level:'UNAVAILABLE',hardBlock:true});
+  input.shotgun={tabsPerWorker:{A:1,B:1},shotCount:2,timingStatus:'READY'};
+  expect(check(input,'shotgun-timing')).toMatchObject({level:'GOOD',hardBlock:false});
+});
+it('a saved plan dated for an earlier release blocks the configuration check with the exact dates',()=>{
+  const input=base();
+  input.planDate=savedPlanDate({PRECISION_PHASE3:{candidates:[{rateEvidence:{date:'2026-10-22'}},{rateEvidence:{date:'2026-10-22'}}]}},'2026-10-23');
+  expect(check(input,'config')).toMatchObject({level:'UNAVAILABLE',hardBlock:true});
+  expect(check(input,'config').detail).toContain('Saved for 2026-10-22');expect(check(input,'config').detail).toContain('2026-10-23');
+  input.planDate=savedPlanDate({PRECISION_PHASE3:{candidates:[{rateEvidence:{date:'2026-10-23'}}]}},'2026-10-23');
+  expect(check(input,'config').level).toBe('GOOD');
+  input.planDate=savedPlanDate({},'2026-10-23');
+  expect(check(input,'config').level).toBe('GOOD');
 });
