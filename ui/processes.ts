@@ -3,6 +3,7 @@ import {FullPracticeSchema} from '../src/full-practice.js';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { resolve } from 'node:path';
 import { UiEventSchema, type UiEvent } from '../src/ui-events.js';
+import { API_RUN_MODES } from '../src/api-run-modes.js';
 import type { Command } from './types.js';
 import type { AvailabilityObservation } from '../src/slot-evidence.js';
 import { z } from 'zod';
@@ -47,7 +48,7 @@ export function commandSpec(command: Command, root: string, node: string) {
     if(command.kind==='apiRun'){
       const preferences=z.object({wing:z.enum(['MANGO','BUKO']).optional(),strategy:z.enum(['standard','extended']),date:z.iso.date(),start:z.string().regex(/^(0[89]|1\d|2[0-3]):00$/),duration:z.number().int().min(1).max(6),courtCount:z.union([z.literal(1),z.literal(2),z.literal(3),z.literal(4),z.literal(5),z.literal(6),z.literal(7)]),
         maximum:z.number().optional(),priority:z.array(z.number().int().min(1).max(7)).min(1),fallbackStarts:z.array(z.string().regex(/^(0[89]|1\d|2[0-3]):00$/)),exact:z.array(z.array(z.number().int().min(1).max(7))).optional(),workers:z.array(z.enum(['A','B','C','D','E','F','G','H'])).min(1).max(8).optional()}).strict();
-      const c=z.object({kind:z.literal('apiRun'),mode:z.enum(['prepare','dry','audit','live','live-now']),date:z.iso.date(),
+      const c=z.object({kind:z.literal('apiRun'),mode:z.enum(API_RUN_MODES),date:z.iso.date(),
         fingerprint:z.string().regex(/^[a-f0-9]{64}$/),checkoutMethod:z.enum(['proof-based','proofless']).optional(),clockOffsetMs:z.number().finite().optional(),releaseMs:z.number().int().positive().optional(),preferences:preferences.optional(),shotgunAttestation:z.string().regex(/^[a-f0-9]{64}$/).optional()}).strict().parse(command);
       if(process.env.THIRSTY_API_INSTALLATION!=='1'&&process.env.THIRSTY_API_TEST_INSTALLATION!=='1')throw Error('API_INSTALLATION_REQUIRED');
       return {executable:node,args:['--import','tsx',resolve(root,'src/api-booking/desktop-runner.ts'),

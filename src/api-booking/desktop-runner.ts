@@ -23,6 +23,7 @@ import { runAdaptiveAttempt, type AdaptiveSelection } from './adaptive-attempt.j
 import { browserIdentity, starterFailureCode, verifyDedicatedChromeAsync } from '../browser.js';
 import { preparationStep, starterStepCode } from './browser-preparation-step.js';
 import { writeSecurityCheck, type SecurityCheck, type SecurityCheckWorker } from '../security-check.js';
+import { API_RUN_MODES } from '../api-run-modes.js';
 import { emitUiEvent, type ApiStageFields } from '../ui-events.js';
 import { discoverApiAvailability } from './availability-engine.js';
 import { THIRSTY_PICKLE_FACILITY_ID } from './live-availability-provider.js';
@@ -72,7 +73,7 @@ const preferencesSchema = z.object({ wing: z.enum(['MANGO','BUKO']).optional(), 
   fallbackStarts: z.array(z.string().regex(/^(0[89]|1\d|2[0-3]):00$/)),
   exact: z.array(z.array(z.number().int().min(1).max(7))).optional(),
   workers: z.array(z.enum(['A','B','C','D','E','F','G','H'])).min(1).max(8).optional() }).strict();
-const command = z.object({ mode: z.enum(['prepare', 'dry', 'audit', 'security-check', 'live', 'live-now']), date: z.iso.date(),
+const command = z.object({ mode: z.enum(API_RUN_MODES), date: z.iso.date(),
   checkoutMethod:z.enum(['proof-based','proofless']).optional(),clockOffsetMs:z.number().finite().optional(),releaseMs: z.number().int().positive().optional(), fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
   shotgunAttestation: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   preferences: preferencesSchema.optional() }).strict().parse(JSON.parse(process.argv[2] ?? '{}'));
