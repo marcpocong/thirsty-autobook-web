@@ -1,6 +1,6 @@
 # Production release report: September 28, 2026 (target Wednesday September 30)
 
-Prepared by Claude on 2026-09-28 from the installed app's local evidence. The analysis read files and ran the offline Wave 1 arbitration analyzer, with its output kept outside the repo. Nothing was sent to Onda, and no booking, lock, journal or configuration was changed.
+Prepared on 2026-09-28 from the installed app's local evidence. The analysis read files and ran the offline Wave 1 arbitration analyzer, with its output kept outside the repo. Nothing was sent to Onda, and no booking, lock, journal or configuration was changed.
 
 **This version** answers why Court 7 (Worker A) was not won, and reconstructs what the app showed for it at 08:00. It pastes the exact log lines throughout the text. Every log is also reproduced in full in the appendices, and the complete Slot Watch log is in the companion file [RELEASE_RUN_REPORT_2026-09-28_RAW_LOGS.md](RELEASE_RUN_REPORT_2026-09-28_RAW_LOGS.md). It also corrects the first version, which read every runner timestamp as PC-clock time; section 14 explains the correction.
 
