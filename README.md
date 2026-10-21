@@ -2,14 +2,28 @@
 
 Windows 11 / Node 24 / TypeScript / Playwright / dedicated Chrome. All files live directly in this project root.
 
-The existing single-court booking flow has live evidence, including the [September 12 production run](RELEASE_RUN_REPORT_2026-09-12.md). That is the only release win on record, and no competing bot was contesting that release. It does not show that the proof-backed lane wins contested releases ([why](REVIEW_GUIDE.md#read-first-the-one-release-win-was-uncontested)). Automation stops at the verified QR payment hold; payment remains manual. The current tree adds API-first booking, up to seven courts, per-checkout worker isolation, richer run/QR history, a read-only release slot watch, and a one-click close for all bot browsers. Precision Release Phases 1–3 add fast pre-armed Wave 1 dispatch, release forensics, and an explicitly authorized adaptive candidate pool; they have offline verification but no live 08:00 validation. The one-off Special Friday session experiment is archived under [archive/special-friday](archive/special-friday/README.md). Start with [the current Phase 1–3 review guide](REVIEW_PHASES_1_TO_3_2026-09-24.md) for human or AI review; [REVIEW_GUIDE.md](REVIEW_GUIDE.md) covers the broader desktop application at an earlier checkpoint.
+The existing single-court booking flow has live evidence, including the [September 12 production run](RELEASE_RUN_REPORT_2026-09-12.md). That is the only release win on record, and no competing bot was contesting that release. It does not show that the proof-backed lane wins contested releases ([why](REVIEW_GUIDE.md#read-first-the-one-release-win-was-uncontested)). Automation stops at the verified QR payment hold; payment remains manual. The current tree adds API-first booking, up to seven courts, per-checkout worker isolation, richer run/QR history, a read-only release slot watch, and a one-click close for all bot browsers. Precision Release Phases 1–3 add fast pre-armed Wave 1 dispatch, release forensics, and an explicitly authorized adaptive candidate pool; they have offline verification but no live 08:00 validation. Live Shotgun is a Mango LIVE PILOT and has not yet reached a provider hold. The one-off Special Friday session experiment is archived under [archive/special-friday](archive/special-friday/README.md).
+
+Start with [Release day preflight](docs/RELEASE_DAY_PREFLIGHT.md) and [Booking Setup v3](docs/BOOKING_SETUP_V3.md) for the current app, and [Build and release](docs/BUILD_AND_RELEASE.md) for updating the installation. [docs/INDEX.md](docs/INDEX.md) lists every report. [The Phase 1–3 review guide](REVIEW_PHASES_1_TO_3_2026-09-24.md) and [REVIEW_GUIDE.md](REVIEW_GUIDE.md) are review guides from earlier checkpoints.
 
 
 ## Operator flow
 
-The app has four destinations — **Home**, **Booking Setup**, **Activity**, **Settings**. Everything from goal to QR happens in Booking Setup: **1 Goal** (Available Now or Next Release; per-wing dates, minimum/ideal courts, acceptable courts and times, one-click read-only availability for both wings) → **2 Strategy** (Shotgun default for releases, Normal for open dates; checkout method separate, with per-wing capability) → **3 Customize** (full Shotgun editor, Precision, legacy saved-plan editor in a drawer) → **4 Browsers** → **5 Review & Run** (Strategy Inspector, one state-dependent action: Prepare → Authorize and Arm / Authorize and Book to QR → Emergency Stop, and the Booking Test Lab). Payment always remains manual; the bot stops at QR. See [Booking Setup v3](docs/BOOKING_SETUP_V3.md) for the guide, the capability matrix and remaining limitations, and [wing compatibility](docs/WING_COMPATIBILITY.md).
+The app has four destinations — **Home**, **Booking Setup**, **Activity**, **Settings**. Everything from goal to QR happens in Booking Setup: **1 Goal** (Available Now or Next Release; per-wing dates, minimum/ideal courts, acceptable courts and times, one-click read-only availability for both wings) → **2 Strategy** (Shotgun default for releases, Normal for open dates; checkout method separate, with per-wing capability) → **3 Customize** (full Shotgun editor, Precision, legacy saved-plan editor in a drawer) → **4 Browsers** → **5 Review & Run** (Strategy Inspector, one state-dependent action: Save release plan → Prepare → Authorize and Arm / Authorize and Book to QR → Emergency Stop, and the Booking Test Lab). Payment always remains manual; the bot stops at QR. See [Booking Setup v3](docs/BOOKING_SETUP_V3.md) for the guide, the capability matrix and remaining limitations, and [wing compatibility](docs/WING_COMPATIBILITY.md).
 
-## Strategy Engine V2 (current)
+Before arming a release, Review & Run shows one **release day preflight** verdict: READY FOR OPERATOR AUTHORIZATION, NEEDS ACTION, BLOCKED or ARMED. READY requires all of the following:
+
+- The saved plan is for the date the next release publishes. A plan for a passed date is refused, never re-dated.
+- Every assigned browser is prepared for this plan.
+- A genuine pre-release security check passed within 60 minutes in the Chrome process that is running now. Nothing is submitted.
+- For live Shotgun, a READY local timing calibration from the last 24 hours matches this plan, the installed build, the Chrome version and the machine.
+- Clock, machine, lock and UNKNOWN checks pass.
+
+Terms and the owner attestation remain the operator's final step. READY does not predict that Onda accepts the checkout at 08:00. See [Release day preflight](docs/RELEASE_DAY_PREFLIGHT.md) for every check and the shortest release-day workflow.
+
+## Strategy Engine V2
+
+Booking Setup v3 compiles through this engine. The view names in this section (Strategy, Next Release, Live, History & Insights, Tools) and the button names in the engine sections below (Reset & Prepare, Run Test to QR, Arm Next Release) come from earlier layouts. The current sequence is the one under [Operator flow](#operator-flow).
 
 The normal Precision workflow is one strategy: immediate logical targets with independently tracked fan-out children, adaptive Wave 2 backups and Reopen Rescue, all compiled into the single saved authorization (`PRECISION_PHASE3`).
 
@@ -18,9 +32,9 @@ The normal Precision workflow is one strategy: immediate logical targets with in
 - **Next Release** states the saved strategy; **Live** shows attempts by logical target with children, prewarm tiers and Rescue predictions; **History & Insights** holds runs, forensics, Release Lab, fan-out capacity, offset calibration and reopen-prediction accuracy; **Tools** holds diagnostics, build information and test booking tools.
 - **Release Precision V3** keeps that architecture and tightens local execution: only fresh (≤30 days) real-release timing calibrates Auto, with one vote per release; a bounded (±12 ms) worker/index de-skew learned only from each worker's own invocation → Chrome lag; a `RELEASE_CRITICAL_LOCKDOWN` window that defers nonessential runner work from T−1 s until the POSTs have left; Slot Watch in its own observer process; and a Release Readiness Gate (READY / READY WITH WARNINGS / NOT READY) on Next Release. Auto fan-out stays at the machine recommendation and renderer-resident dispatch stays experimental. See [docs/RELEASE_PRECISION_V3.md](docs/RELEASE_PRECISION_V3.md).
 - Details: [docs/STRATEGY_ENGINE_V2.md](docs/STRATEGY_ENGINE_V2.md), [docs/RESCUE_V2.md](docs/RESCUE_V2.md), [docs/FANOUT_CAPACITY_BENCHMARK.md](docs/FANOUT_CAPACITY_BENCHMARK.md), [docs/BUILD_AND_RELEASE.md](docs/BUILD_AND_RELEASE.md). Historical reports are indexed in [docs/INDEX.md](docs/INDEX.md).
-- Build and install with `npm run release:build` (typecheck, tests, clean build, dist verification, packaging, build metadata). The running build's SHA is shown in the app.
+- Update the installed app with `npm run app:update` from `Source`. It runs the same pipeline as `release:build`: typecheck, tests, clean build, dist verification, packaging and build metadata. See [Build and release](docs/BUILD_AND_RELEASE.md). The running build's SHA is shown in the app.
 
-The sections below describe the underlying booking engine; view names were updated for the V2 layout.
+The sections below describe the underlying booking engine. Their view and button names come from the V2 and earlier layouts.
 
 ## Current booking model
 
@@ -130,7 +144,7 @@ npm test
 npm run ui:build
 ```
 
-The offline suite (122 files, 1327 tests on 2026-09-29) runs in CI on every push together with a clean build and the source-vs-dist check. It must stay network-isolated: it uses fixtures and test-owned Chromium, never a live booking. `npm run exe:build` is a Windows packaging/deployment command; it refreshes the parent installation as well as the launcher and should be run only when that local installation update is intended.
+The offline suite (177 files, 1,962 tests on 2026-10-21) runs in CI on every push together with a clean build and the source-vs-dist check. It must stay network-isolated: it uses fixtures and test-owned Chromium, never a live booking. `npm run app:update` (also reachable as `release:build` and `exe:build`) refreshes the parent installation and its launcher. Run it only when you intend to update that installation. It refuses while a release is armed or another lifecycle record is active. `release:build -- --no-package` is not a read-only check, because it overwrites the tested-build record. For source-only validation use `npm run typecheck`, `npm test` and `npm run verify:dist`.
 
 Practice requires all four explicit target arguments. If either requested slot is unavailable, it stops; it never silently picks another target. On an uncertain selection, failure or abort, inspect and clear selection manually. Only rerun practice for an appropriate noncompetitive target.
 
@@ -181,17 +195,21 @@ Respect Onda's applicable terms and venue rules. Do not defeat restrictions. API
 
 Tests use test-owned Chrome/Chromium and minimal synthetic HTML with all external requests blocked. `browser.close()` exists only for that test-owned browser, never the user's Chrome. CI runs install/typecheck/offline tests, never the CLI against Onda. On Linux test hosts run `npx playwright install --with-deps chromium` first.
 
-The repository is private at [marcpocong/thirsty-autobook-web](https://github.com/marcpocong/thirsty-autobook-web), on main. Diagnostics, profile, env files and logs are ignored.
+The repository is public at [marcpocong/thirsty-autobook-web](https://github.com/marcpocong/thirsty-autobook-web), on main. Local diagnostics (`DiagnosticsLocal/`), private state (`.local/`), browser profiles, env files and logs are ignored. `diagnostics-archive/` holds release evidence that was committed deliberately.
 
 ## Desktop control panel
 
-On Windows, double-click **Thirsty Bot.exe** in the project root to open the panel without a terminal. Build or refresh it with `npm run exe:build` after installing dependencies with `npm ci`. This is a local launcher, not a standalone installer: keep it with the project, installed dependencies and built `dist` folder. It uses the Node.js runtime recorded locally during the build, with PATH as a fallback. It preserves the same local configuration, browser profile, process ownership and retained automation lock. No booking is armed by launching it. The executable is included in Git; the machine-specific runtime path remains ignored. The executable is unsigned.
+On Windows, open **Thirsty Pickle Bot.exe** in the installation folder (the parent of `Source`) to use the panel without a terminal. `npm run app:update`, run from `Source`, builds, verifies and installs it in place. It is the only supported way to update the installed app ([Build and release](docs/BUILD_AND_RELEASE.md)). The launcher uses the Node.js and Electron runtime recorded in the installation. It preserves the same local configuration, browser profiles, process ownership and retained automation lock. No booking is armed by launching it. The launcher is unsigned and is not tracked in Git.
+
+For development from `Source`:
 
 ```powershell
 npm run ui
 ```
 
 The Electron desktop window uses the existing CLI engine. The first launch may download the Electron runtime; subsequent launches build the small TypeScript UI and open it directly. No installer or additional terminal is needed.
+
+The steps below describe the layout before Booking Setup v3. For the current release-day sequence, see [Release day preflight](docs/RELEASE_DAY_PREFLIGHT.md#shortest-workflow-for-the-next-authorized-release).
 
 1. Use the five top-level views: **Next Release**, **Strategy**, **Live** (attempts by logical target and the release slot watch), **History & Insights** (runs, forensics and analysis), and **Tools** (build information, bot browsers, block audit, test booking tools and legacy diagnostics). The header always shows the network clock, bot browsers A–H with **Close all**, the automation lock, and the slot watch. Choose the booking method, booking type, court count, start and duration under Strategy → Advanced overrides. For Test Now choose an explicit date.
 2. Press **Reset & Prepare**. Test Now verifies the exact requested calendar date and a clean grid in every required browser without selecting reservation slots. Release settings are saved before preparation; Test Now fields remain independent. If a UI-owned run is active, confirm stopping it first. Retained hold and uncertain final-action protections still apply.
@@ -222,7 +240,7 @@ For a separately authorized noncompetitive development test only, `npm run hando
 
 Run `npm run release:preopen-check` after today's release from a visible, clean dedicated Onda schedule and with no automation lock. It opens the normal calendar for 60 seconds, checks tomorrow's unreleased target at five checkpoints, closes the calendar and verifies unchanged booking state. It never selects a date or slot, reloads, or clicks Proceed. Failure leaves the browser and lock for review. Successful results are saved locally under ignored `DiagnosticsLocal/preopen-check-<runID>.json`.
 
-Keep `RELEASE_PREOPEN_CALENDAR=false` until a real check passes. After a live PASS, enable only the ignored local `.env.local` setting; the global default stays false. UI stability does not prove the target will auto-enable at 08:00. Both paths retain strict target-grid validation and the immediate bounded reload fallback. See [next-release readiness](NEXT_RELEASE_READINESS.md) for the current validation status and [telemetry specification](TELEMETRY_SPEC.md) for timing summaries.
+Keep `RELEASE_PREOPEN_CALENDAR=false` until a real check passes. After a live PASS, enable only the ignored local `.env.local` setting; the global default stays false. UI stability does not prove the target will auto-enable at 08:00. Both paths retain strict target-grid validation and the immediate bounded reload fallback. See [next-release readiness](NEXT_RELEASE_READINESS.md) for the 2026-09-12 validation status and [telemetry specification](TELEMETRY_SPEC.md) for timing summaries.
 
 ## Hybrid availability discovery
 
