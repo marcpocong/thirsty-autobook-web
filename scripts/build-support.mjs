@@ -17,7 +17,7 @@ export const BUILD_INFO_FILE = 'build-info.json';
 /** Files a dist legitimately contains that tsc does not produce. */
 export const COPIED_ASSETS = Object.freeze([
   'ui/renderer/index.html', 'ui/renderer/styles.css', 'ui/renderer/thirsty-pickle-bot.png',
-  'src/api-booking/calendar-free-security-context-browser.js', BUILD_INFO_FILE,
+  'src/api-booking/calendar-free-security-context-browser.js', 'src/api-booking/browser-availability-fetch.js', BUILD_INFO_FILE,
 ]);
 
 const posix = path => path.split(sep).join('/');
@@ -43,7 +43,7 @@ export async function copyAssets(outDir, root = sourceRoot) {
   await mkdir(join(outDir, 'src/api-booking'), { recursive: true });
   for (const name of ['index.html', 'styles.css']) await copyFile(join(root, 'ui/renderer', name), join(outDir, 'ui/renderer', name));
   await copyFile(join(root, 'assets/brand/thirsty-pickle-bot.png'), join(outDir, 'ui/renderer/thirsty-pickle-bot.png'));
-  await copyFile(join(root, 'src/api-booking/calendar-free-security-context-browser.js'), join(outDir, 'src/api-booking/calendar-free-security-context-browser.js'));
+  for(const name of ['calendar-free-security-context-browser.js','browser-availability-fetch.js']) await copyFile(join(root,'src/api-booking',name),join(outDir,'src/api-booking',name));
 }
 
 /** Git provenance of the source tree ('unknown' outside a repository). */

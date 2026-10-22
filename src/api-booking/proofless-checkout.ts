@@ -4,7 +4,7 @@ import { THIRSTY_PICKLE_FACILITY_ID } from './live-availability-provider.js';
 import type { AvailabilitySnapshot, BookingPlan, AvailabilitySlot, BookingPreferences, PlannedCourt } from './types.js';
 import { observedResponse, standardPlanJournalKeys, type CheckoutCustomer, type TwoHourCheckoutRequest } from './two-hour-reservation.js';
 import type { PublicCheckoutRequest, VerifiedPublicCheckout } from './public-checkout.js';
-import { ondaCheckoutBoundary, validatePublicCheckoutResponse } from './public-checkout.js';
+import { ondaCheckoutBoundary, PublicCheckoutValidationError, validatePublicCheckoutResponse } from './public-checkout.js';
 import type { OndaBrowserSessionTransport } from './browser-session-transport.js';
 import { armCheckoutRequest } from './armed-request.js';
 import { assertWireCheckoutBody } from './wire-payload-check.js';
@@ -193,7 +193,11 @@ export async function recordDirectCheckoutOutcome(send:()=>Promise<unknown>,requ
     // Response validation compares booking identities, amounts, dates and sessions; it does not inspect proof strings.
     let verified:VerifiedPublicCheckout;
     try{verified=validatePublicCheckoutResponse(raw,request as unknown as PublicCheckoutRequest,plan,new Date(now()),plan.totalPrice);}
-    catch{await markAll('unknown',undefined,observedResponse(raw,'DIRECT_RESPONSE_VALIDATION_FAILED'),'DIRECT_RESPONSE_VALIDATION_FAILED');throw Error('SUBMISSION_OUTCOME_UNKNOWN_RECONCILIATION_REQUIRED');}
+    catch(error){
+      const code=error instanceof PublicCheckoutValidationError?error.code:'DIRECT_RESPONSE_VALIDATION_FAILED';
+      await markAll('unknown',undefined,observedResponse(raw,code),code);
+      throw Error('SUBMISSION_OUTCOME_UNKNOWN_RECONCILIATION_REQUIRED');
+    }
     await markAll('verified',undefined,observedResponse(raw,'CHECKOUT_RESPONSE_VERIFIED'));
     return verified;
   }catch(error){

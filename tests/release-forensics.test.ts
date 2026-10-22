@@ -107,8 +107,8 @@ describe('post-run release forensics', () => {
       expect(a!.grid!.firstPublished).toMatchObject({ state: 'FULLY_OPEN', observation: { seq: 2 } });
       expect(a!.grid!.firstUnavailable).toEqual({ observation: { seq: 4, requestOffsetMs: 1_000, responseOffsetMs: 1_900 }, hours: ['16:00'] });
       expect(a!.grid!.firstRecord).toEqual({ observation: { seq: 2, requestOffsetMs: 2_000, responseOffsetMs: 2_300 }, hours: ['16:00'] });
-      // Headers/body = POST instant + browser-measured intervals.
-      expect(a!.provider).toMatchObject({ protocol: 'h2', reused: true, headersOffsetMs: 17_483.4, bodyOffsetMs: 17_544, timingSource: 'browser',
+      // Do not add CDP ResourceTiming intervals to the Playwright event origin.
+      expect(a!.provider).toMatchObject({ protocol: 'h2', reused: true, headersOffsetMs: 17_484.2, bodyOffsetMs: 17_545, timingSource: 'node-observed',
         vercelId: 'sin1::sin1::xz9xx-1790208017480-48ab0f0d95c1', requestId: '0f8fad5b-d9cb-469f-a165-70867728950e' });
       expect(b).toMatchObject({ workerId: 'B', court: 6, post: { offsetMs: 5.1 }, provider: null });
       expect(b!.grid!.firstPublished).toMatchObject({ state: 'PARTIALLY_UNAVAILABLE' });
@@ -121,8 +121,8 @@ describe('post-run release forensics', () => {
       expect(report).toContain('Worker A · Court 3 · 15:00–18:00 · core-A-official-1');
       expect(report).toContain('First published state:       FULLY OPEN (15:00 open, 16:00 open, 17:00 open)');
       expect(report).toContain('#2 request +0.000 s → response +3.900 s');
-      expect(report).toContain('Response headers:            +17.483 s');
-      expect(report).toContain('Body complete:               +17.544 s');
+      expect(report).toContain('Response headers:            +17.484 s (Node receipt)');
+      expect(report).toContain('Body complete:               +17.545 s');
       expect(report).toContain('Public booking record:       #b2 request +2.000 s → response +2.300 s (16:00)');
       expect(report).toContain('Checkout:                    HTTP 409 · hint availability · REJECTED (ONDA_HTTP_STATUS_INVALID)');
       expect(report).toContain('Provider trace:              unavailable');
@@ -131,7 +131,7 @@ describe('post-run release forensics', () => {
       // Evidence only: no ownership or causal claims.
       expect(report).not.toMatch(/venue block|admin block|bot hold|competitor|likely|because|caused by|took the slot|stole/i);
       expect(readReleaseForensicsHistory(join(root, '.local/release-forensics'))).toMatchObject([{ runId, status: 'final', firstPostOffsetMs: 3.4, lastPostOffsetMs: 5.1,
-        firstPublished: { seq: 2 }, traceAvailable: true, targets: [{ workerId: 'A', firstPublishedState: 'FULLY OPEN', headersOffsetMs: 17_483.4 }, { workerId: 'B' }, { workerId: 'C', postOffsetMs: null }] }]);
+        firstPublished: { seq: 2 }, traceAvailable: true, targets: [{ workerId: 'A', firstPublishedState: 'FULLY OPEN', headersOffsetMs: 17_484.2 }, { workerId: 'B' }, { workerId: 'C', postOffsetMs: null }] }]);
     } finally { await cleanup(root); }
   });
 

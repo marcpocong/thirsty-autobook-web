@@ -2,6 +2,7 @@ import type { AvailabilitySnapshot } from './types.js';
 import type { PublicBookingRecords } from './public-bookings.js';
 import type { PublicBookingBlock } from './proofless-checkout.js';
 import { targetDateState, type TargetDateState } from './court-hour-matrix.js';
+import { LiveAvailabilityError } from './live-availability-provider.js';
 
 /** Bounded, rate-respectful retries: the first read plus at most two more. */
 export const PRE_RELEASE_RETRY_DELAYS_MS = [5_000, 15_000] as const;
@@ -25,7 +26,7 @@ export interface PreReleaseEvidenceOptions {
   now: () => number;
   sleep: (ms: number) => Promise<void>;
   retryDelaysMs?: readonly number[];
-  onRead?: (read: { source: 'availability' | 'bookings'; attempt: number; ok: boolean; failedCourts?: number[] }) => void;
+  onRead?: (read: { source: 'availability' | 'bookings'; attempt: number; ok: boolean; failedCourts?: number[];code?:string;httpStatus?:number;requestSent?:boolean }) => void;
 }
 
 /** Fills courts that failed in `first` from a later read; a court never recovered stays failed. */
@@ -44,10 +45,13 @@ export async function readPreReleaseEvidence(options: PreReleaseEvidenceOptions)
   const delays = options.retryDelaysMs ?? PRE_RELEASE_RETRY_DELAYS_MS;
   const availability = (async () => {
     for (let attempt = 1; ; attempt++) {
-      const snapshot = await options.readAvailability().catch(() => undefined);
+      let error:unknown;
+      const snapshot = await options.readAvailability().catch(value => {error=value;return undefined;});
       const observedAtMs = options.now();
-      options.onRead?.({ source: 'availability', attempt, ok: !!snapshot });
-      if (snapshot || attempt > delays.length) return { snapshot, observedAtMs, attempts: attempt };
+      options.onRead?.({ source: 'availability', attempt, ok: !!snapshot,
+        ...(error instanceof LiveAvailabilityError?{code:error.code,httpStatus:error.httpStatus,requestSent:error.requestSent}:{}) });
+      const refused=error instanceof LiveAvailabilityError&&([401,403,429].includes(error.httpStatus??0)||error.requestSent===false);
+      if (snapshot || refused || attempt > delays.length) return { snapshot, observedAtMs, attempts: attempt };
       await options.sleep(delays[attempt - 1]!);
     }
   })();

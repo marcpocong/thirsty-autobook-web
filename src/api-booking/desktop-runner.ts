@@ -37,6 +37,9 @@ import { loadLocalCheckoutCustomer } from './local-customer.js';
 import { assertActiveCustomersValid, resolveActiveCustomers } from './customer-identity.js';
 import { submitCalendarFreeTwoHourCheckout } from './calendar-free-checkout.js';
 import { officialCheckoutUrl } from './checkout-restoration.js';
+import { saveCheckoutRecovery } from './checkout-recovery.js';
+import { possibleHoldFields } from './possible-hold.js';
+import { LiveAvailabilityError } from './live-availability-provider.js';
 import type { AvailabilitySnapshot, BookingPlan, BookingPreferences } from './types.js';
 import { OndaBrowserSessionTransport, type BrowserTransportObservation, type CheckoutHttpResponse } from './browser-session-transport.js';
 import { ProviderTraceSet, type CdpSessionLike } from './checkout-provider-trace.js';
@@ -297,7 +300,7 @@ async function runSecurityCheck(sessions:readonly WorkerSession[]){
 }
 
 /** One read-only availability GET; every read lands in the trace with its exact 112-cell matrix. */
-async function readAvailabilitySnapshot(date:string):Promise<AvailabilitySnapshot|undefined>{
+async function readAvailabilitySnapshot(date:string,propagate=false):Promise<AvailabilitySnapshot|undefined>{
   ensureActive();
   const requestedAt=performance.now();
   const finish=diagnostics.begin('availability','AVAILABILITY_REQUEST_STARTED',{},{});
@@ -312,9 +315,11 @@ async function readAvailabilitySnapshot(date:string):Promise<AvailabilitySnapsho
   }catch(error){
     const code=error instanceof Error&&/^[A-Z][A-Z0-9_]{0,79}$/.test(error.message)
       ?error.message:'AVAILABILITY_READ_FAILED';
-    trace('AVAILABILITY_SAMPLE_FAILED',{durationMs:Math.round(performance.now()-requestedAt),code});
+    const diagnostic=error instanceof LiveAvailabilityError?{...(error.httpStatus?{statusCode:error.httpStatus}:{}),...(error.requestSent!==undefined?{requestSent:error.requestSent}:{})}:{};
+    trace('AVAILABILITY_SAMPLE_FAILED',{durationMs:Math.round(performance.now()-requestedAt),code,...diagnostic});
     finish('AVAILABILITY_REQUEST_COMPLETED',{status:'FAILED',failureCategory:code,targetDatePresent:false,
-      responseComplete:false,slotCount:0,availableCount:0});
+      responseComplete:false,slotCount:0,availableCount:0,...diagnostic});
+    if(propagate)throw error;
     return;
   }
 }
@@ -322,7 +327,7 @@ const readKnownCourtHourBlocks=(date:string)=>readPublicBookingRecords(date,
   {onCourt:(court,outcome)=>trace('PUBLIC_BOOKING_BLOCK_SAMPLE',{court,...outcome})});
 /** One pre-release evidence checkpoint with bounded retries; failures stay failures. */
 const readEvidence=(date:string,releaseMs:number,checkpoint:string,retry=true)=>readPreReleaseEvidence({date,releaseMs,
-  readAvailability:()=>readAvailabilitySnapshot(date),readBookings:()=>readKnownCourtHourBlocks(date),now:nowMs,sleep:pause,
+  readAvailability:()=>readAvailabilitySnapshot(date,true),readBookings:()=>readKnownCourtHourBlocks(date),now:nowMs,sleep:pause,
   ...(retry?{}:{retryDelaysMs:[]}),
   onRead:read=>stage('PRE_RELEASE_AUDIT_READ',{checkpoint,readSource:read.source,attemptNo:read.attempt,ok:read.ok,
     ...(read.failedCourts?.length?{failedCourts:read.failedCourts.join(',')}:{})})});
@@ -601,6 +606,8 @@ try {
       const key = keys[0]!, directory = directories[0]!, journal = journals[0]!;
       let token: string | undefined, bookingNo: string | undefined;
       const capture = async (response: CheckoutHttpResponse) => {
+        const possible=possibleHoldFields(response,chunkPlan);if(possible)stage('POSSIBLE_HOLD_DETECTED',{...possible,workerId});
+        await saveCheckoutRecovery(directory,response,chunkPlan,workerId,new Date(nowMs()));
         await saveOnce(directory, 'checkout-response-private.json', sanitizedCheckoutCapture(response));
         try {
           const value = JSON.parse(response.body) as { success?: boolean; bookings?: Array<{ id?: string; booking_no?: string; checkoutToken?: string }> };
@@ -608,7 +615,7 @@ try {
             value.bookings[0]?.id && value.bookings[0]?.booking_no && value.bookings[0]?.checkoutToken) {
             token = value.bookings[0].checkoutToken; bookingNo = value.bookings[0].booking_no;
           }
-        } catch { /* Raw response is in the private journal. */ }
+        } catch { /* Only allowlisted recovery fields are saved privately. */ }
       };
       if(command.mode==='live')responseCaptures.set(workerId,capture);
       stage('FRESH_VERIFICATION_AND_PROOFS', { workerId });
@@ -693,7 +700,9 @@ try {
       diagnostics.observe(startedStage,correlation,{court:plan.courts[0]!.court,startTime:plan.startTime,durationHours:plan.durationHours});
       const captured:{token?:string;bookingNo?:string}={};
       responseCaptures.set(transportKey,async response=>{
+        const possible=possibleHoldFields(response,plan);if(possible)stage('POSSIBLE_HOLD_DETECTED',{...possible,workerId});
         providerTraces?.captureFallback({workerId:transportKey,attemptId:value.attemptId,...activeWaveContexts.get(workerId)},response);
+        await saveCheckoutRecovery(value.directory,response,plan,workerId,new Date(nowMs()));
         await saveOnce(value.directory,'checkout-response-private.json',sanitizedCheckoutCapture(response));
         try{const parsed=JSON.parse(response.body) as {bookings?:Array<{booking_no?:string;checkoutToken?:string}>};
           captured.bookingNo=parsed.bookings?.[0]?.booking_no;captured.token=parsed.bookings?.[0]?.checkoutToken;}catch{}

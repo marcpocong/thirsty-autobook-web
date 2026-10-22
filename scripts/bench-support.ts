@@ -8,7 +8,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
-import { cpus } from 'node:os';
+import { cpus,freemem } from 'node:os';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import type { Browser, Page } from 'playwright';
@@ -73,6 +73,7 @@ export async function launchOfflineChrome(options: { chromium: typeof import('pl
     browser=launched.browser()!;version=browser.version();
   } else {
   trace('spawn');
+  trace(`spawn resources rss=${process.memoryUsage().rss} freeMem=${freemem()}`);
   child = spawn(options.chromePath, [...(options.headed ? [`--window-position=${40 + options.index * 30},${40 + options.index * 30}`, '--window-size=900,700'] : ['--headless=new']),
     `--remote-debugging-port=${port}`, '--remote-debugging-address=127.0.0.1', `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check',
     '--disable-background-networking', '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1', '--proxy-server=http://127.0.0.1:9',

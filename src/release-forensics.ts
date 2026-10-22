@@ -125,12 +125,15 @@ export interface ReleaseForensicsDigest {
 
 export interface ForensicInputs {
   runProgressPath: string; observerLogPath?: string; providerTracePath?: string; outputDirectory: string;
+  criticalPathPath?:string;
   status: 'preliminary' | 'final'; now?: () => number;
 }
 
 /** Builds and writes summary.json and report.txt. Only file reads and two small writes. */
 export function buildReleaseForensics(input: ForensicInputs): ReleaseForensicsSummary {
   const lines = readLines(input.runProgressPath);
+  const criticalPath=input.criticalPathPath??join(input.outputDirectory,'critical-path.ndjson');
+  const critical=existsSync(criticalPath)?readLines(criticalPath):[];
   const first = lines[0] ?? {}, runId = str(first.runId) ?? 'unknown', mode = str(first.mode) ?? 'unknown', date = str(first.targetDate) ?? 'unknown';
   const stages = (name: string) => lines.filter(line => line.stage === name);
   const releaseMs = num(stages('PRECISION_RACE_CONFIGURED')[0]?.releaseMs) ?? num(stages('RUN_CONFIGURATION')[0]?.releaseMs) ?? null;
@@ -161,7 +164,8 @@ export function buildReleaseForensics(input: ForensicInputs): ReleaseForensicsSu
   const rows = precision.length ? precision.map(line => ({ workerId: String(line.workerId), court: num(line.court)!, startTime: String(line.startTime), endTime: String(line.endTime) }))
     : [...new Map(attemptLines.filter(line => num(line.court) !== undefined && str(line.startTime) && num(line.durationHours) !== undefined)
       .map(line => [String(line.workerId), { workerId: String(line.workerId), court: num(line.court)!, startTime: String(line.startTime), endTime: endOf(String(line.startTime), num(line.durationHours)!) }])).values()];
-  const lastState = (worker: string) => stages('PRECISION_ATTEMPT_STATE').filter(line => line.workerId === worker).at(-1)
+  const lastState = (worker: string) => stages('PHASE3_SETTLED').filter(line => line.workerId === worker).at(-1)
+    ?? stages('PRECISION_ATTEMPT_STATE').filter(line => line.workerId === worker).at(-1)
     ?? stages('PRIMARY_PROOFLESS_OUTCOME').filter(line => line.workerId === worker).at(-1);
   const byWorker = (name: string, worker: string) => stages(name).filter(line => line.workerId === worker).at(-1);
   const targets: ForensicTarget[] = rows.map(row => {
@@ -174,22 +178,22 @@ export function buildReleaseForensics(input: ForensicInputs): ReleaseForensicsSu
     const postOffset = runOffset ?? null;
     // Response time = POST offset + PC-clock time between the two run-trace events (both stamped by the same clock).
     const postAt = Date.parse(String(posted?.eventAt ?? posted?.at)), answerAt = Date.parse(String(answered?.eventAt ?? answered?.at));
-    const completedOffsetMs = postOffset !== null && Number.isFinite(postAt) && Number.isFinite(answerAt) ? tenth(postOffset + answerAt - postAt) : null;
+    const path=critical.find(value=>((value.meta as {workerId?:string}|undefined)?.workerId??value.workerId)===row.workerId);
+    const completedOffsetMs = num(path?.responseObservedMs)??(postOffset !== null && Number.isFinite(postAt) && Number.isFinite(answerAt) ? tenth(postOffset + answerAt - postAt) : null);
     let provider: ForensicTarget['provider'] = null;
     if (trace) {
-      // Header/body times: the POST instant plus Chrome's own intervals from its network request start.
-      const browser = trace.browser, anchor = postOffset, nodeTimes = reference === 'release';
-      const headersDelta = browser.headersStartMs ?? browser.headersEndMs, bodyDelta = browser.bodyCompleteMs ?? browser.failedMs;
-      const viaBrowser = anchor !== null && headersDelta !== null;
+      const browser = trace.browser, nodeTimes = reference === 'release';
+      // CDP ResourceTiming.requestTime is not proven to equal the Playwright
+      // request-event anchor. Preserve intervals but never add incompatible origins.
       provider = { complete: trace.complete, protocol: trace.connection.protocol, reused: trace.connection.reused,
-        headersOffsetMs: viaBrowser ? tenth(anchor! + headersDelta!) : nodeTimes ? trace.nodeObserved.headersOffsetMs : null,
-        bodyOffsetMs: anchor !== null && bodyDelta !== null ? tenth(anchor + bodyDelta) : nodeTimes ? trace.nodeObserved.finishedOffsetMs : null,
-        timingSource: viaBrowser ? 'browser' : nodeTimes && trace.nodeObserved.headersOffsetMs !== null ? 'node-observed' : null,
+        headersOffsetMs: nodeTimes ? trace.nodeObserved.headersOffsetMs : null,
+        bodyOffsetMs: nodeTimes ? trace.nodeObserved.finishedOffsetMs : null,
+        timingSource: nodeTimes && trace.nodeObserved.headersOffsetMs !== null ? 'node-observed' : null,
         dnsMs: browser.dnsMs, connectMs: browser.connectMs, tlsMs: browser.tlsMs, sendMs: browser.sendMs, waitMs: browser.waitMs,
         server: trace.response.server, cfRay: trace.response.cfRay, cfMitigated: trace.response.cfMitigated, vercelId: trace.response.vercelId,
         requestId: trace.response.requestId, vercelCache: trace.response.vercelCache, ageS: trace.response.ageS, serverTiming: trace.response.serverTiming, failure: trace.failure };
     }
-    return { ...row, attemptId, finalState: str(state?.attemptState) ?? str(state?.status) ?? null, finalCode: str(state?.code) ?? null,
+    return { ...row, attemptId, finalState: str(state?.state) ?? str(state?.attemptState) ?? str(state?.status) ?? null, finalCode: str(state?.code) ?? null,
       post: { offsetMs: postOffset, source: runOffset !== undefined ? 'run-trace' : null },
       response: { statusCode: num(answered?.statusCode) ?? trace?.response.status ?? null, errorHint: str(answered?.errorHint) ?? null,
         responseSource: str(answered?.responseSource) ?? null, completedOffsetMs, networkDurationMs: num(answered?.networkDurationMs) ?? null },
@@ -255,9 +259,10 @@ function limitations(summary: ReleaseForensicsSummary, observer: ObserverLog | u
     'An availability read shows Onda\'s state at an unknown moment between its request start and its response. No source here gives the provider-side moment of a change.',
     'Unavailable without a matching public booking record: the cause is not visible in Onda\'s public data.',
     'A public booking record shows that a booking record exists. It does not show who made it, whether it belongs to this bot, or why.',
-    'POST initiation is the Playwright request event in the runner (trusted release clock). Header and body times are that instant plus Chrome intervals from its network request start (under 1 ms after the request event); they carry the few-ms delivery lag of that event.',
+    'POST initiation is the Playwright request event on the trusted release clock. Header and body offsets are Node receipt times. Chrome intervals have a separate ResourceTiming origin and are not added to the request-event timestamp. None establishes provider receive time.',
     'The provider trace enables DevTools Network only after each POST has left, so it never adds work at the release instant; a response that arrives before it is enabled (tens of ms) is not traced.',
     'Response timing and headers describe what arrived at this PC. They do not establish how Onda queued or ordered requests, or why a request was accepted or rejected.',
+    'Historical failed availability observations without requestSent evidence do not establish network request counts. Pre-V2 observers could block subsequent reads locally after one refusal; current readers record those as not-launched.',
   ];
   if (!observer) list.push('No Slot Watch log was found for this run: there is no grid evidence.');
   else if (observer.version === 1) list.push('The Slot Watch log is version 1 (before Phase 2): reads were serial, request/response times are network-corrected wall times, and public booking records were not itemized per read, so public-record evidence is not available here.');

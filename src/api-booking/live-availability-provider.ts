@@ -14,7 +14,8 @@ function validDate(value: string) {
 }
 
 export class LiveAvailabilityError extends Error {
-  constructor(readonly code: string, readonly httpStatus?: number) { super(code); this.name = 'LiveAvailabilityError'; }
+  constructor(readonly code: string, readonly httpStatus?: number, readonly requestSent?: boolean,
+    readonly retryAfterMs?: number) { super(code); this.name = 'LiveAvailabilityError'; }
 }
 
 export interface LiveAvailabilityOptions {
@@ -58,8 +59,13 @@ export class OndaLiveAvailabilityProvider implements AvailabilityProvider {
     try {
       response = await this.fetcher(url, { method: 'GET', redirect: 'error', credentials: 'omit',
         headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(this.timeoutMs) });
-    } catch { throw new LiveAvailabilityError('AVAILABILITY_TRANSPORT_FAILED'); }
-    if (!response.ok) throw new LiveAvailabilityError(response.status === 429 ? 'AVAILABILITY_RATE_LIMITED' : 'AVAILABILITY_HTTP_FAILED', response.status);
+    } catch(error) { if(error instanceof LiveAvailabilityError)throw error;throw new LiveAvailabilityError('AVAILABILITY_TRANSPORT_FAILED'); }
+    if (!response.ok) {
+      const retry=response.headers.get('retry-after'),seconds=retry&&/^\d{1,6}$/.test(retry)?Number(retry):undefined;
+      const retryDate=retry&&seconds===undefined?Date.parse(retry):NaN;
+      throw new LiveAvailabilityError(response.status === 429 ? 'AVAILABILITY_RATE_LIMITED' : 'AVAILABILITY_HTTP_FAILED', response.status,true,
+        seconds!==undefined?Math.max(1000,seconds*1000):Number.isFinite(retryDate)?Math.max(1000,retryDate-this.clock().getTime()):undefined);
+    }
     if (!response.headers.get('content-type')?.toLowerCase().includes('application/json')) throw new LiveAvailabilityError('AVAILABILITY_CONTENT_TYPE_INVALID');
     const length = Number(response.headers.get('content-length'));
     if (Number.isFinite(length) && length > MAX_RESPONSE_BYTES) throw new LiveAvailabilityError('AVAILABILITY_RESPONSE_TOO_LARGE');

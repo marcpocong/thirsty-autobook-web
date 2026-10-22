@@ -50,6 +50,7 @@ export interface CriticalPathRow {
   responseHeadersMs: Bounded | null;
   responseCompleteMs: Bounded | null;
   responseObservedMs: number | null;
+  resourceTiming?:{source:'PERFORMANCE_RESOURCE_TIMING';startMs:Bounded|null;fetchMs:Bounded|null;requestMs:Bounded|null;headersMs:Bounded|null;completeMs:Bounded|null;workerMs:Bounded|null;protocol:string};
   segments: {
     /** Node's last gate → renderer entry (CDP command transit + renderer scheduling). */
     nodeToRendererMs: number | null;
@@ -173,6 +174,10 @@ export class CriticalPathRecorder {
         rendererArmSentMs: rel(node.rendererArmSent), rendererArmedMs: mapped(record.renderer?.armedAt),
         evaluateEnteredMs: evaluateEntered, fetchInvokedMs: fetchInvoked, browserRequestStartMs: browserRequestStart, requestObservedMs: requestObserved,
         responseHeadersMs: mapped(record.renderer?.headersAt), responseCompleteMs: mapped(record.renderer?.completedAt), responseObservedMs: rel(node.responseObserved),
+        ...(record.renderer?.resource?{resourceTiming:{source:'PERFORMANCE_RESOURCE_TIMING' as const,startMs:mapped(record.renderer.resource.startTime),
+          fetchMs:mapped(record.renderer.resource.fetchStart),requestMs:record.renderer.resource.requestStart>0?mapped(record.renderer.resource.requestStart):null,
+          headersMs:record.renderer.resource.responseStart>0?mapped(record.renderer.resource.responseStart):null,completeMs:mapped(record.renderer.resource.responseEnd),
+          workerMs:record.renderer.resource.workerStart>0?mapped(record.renderer.resource.workerStart):null,protocol:record.renderer.resource.nextHopProtocol.slice(0,24)}}:{}),
         segments: { nodeToRendererMs: record.dispatchMode === 'node' ? diff(prePost, evaluateEntered?.ms) : null, rendererToFetchMs: diff(evaluateEntered?.ms, fetchInvoked?.ms),
           fetchToRequestStartMs: diff(fetchInvoked?.ms, browserRequestStart), requestEventLagMs: diff(browserRequestStart, requestObserved) },
         calibration: calibration ? { samples: calibration.samples, uncertaintyMs: round(calibration.uncertaintyMs), minRoundTripMs: round(calibration.minRoundTripMs), consistent: calibration.consistent } : null,

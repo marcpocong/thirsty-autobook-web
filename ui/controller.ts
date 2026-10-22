@@ -213,6 +213,7 @@ export interface Dependencies {
   /** Creates or verifies the Wave 1 preregistration manifest in the app's .local (main process), before the runner starts. */
   ensureArbitrationManifest?(input:{targetDate:string;releaseMs:number;clockOffsetMs:number}):EnsureManifestResult;
   retainedHold?():Promise<RetainedHoldStatus|null>;
+  possibleHolds?():Promise<NonNullable<Dashboard['possibleHolds']>>;
   recentQrHandoffs?(expiresAt:string):Promise<QrHandoffSummary[]>;
   previousHolds?():Promise<Dashboard['previousHolds']>;
   browserHealth?():Promise<Partial<Record<WorkerId,boolean>>>;
@@ -305,6 +306,7 @@ export class Controller {
   private runnerRunId?:string;
   /** Runner runs whose forensic report waits for this slot watch (by watch ID) to finish. */
   private readonly pendingForensics=new Map<string,string[]>();
+  private possibleHoldsReadAt=0;
   constructor(private deps: Dependencies) {try{this.state.build=this.deps.buildInfo?.()??null;}catch{this.state.build=null;}
     try{this.state.sourceStatus=this.deps.sourceStatus?.()??null;}catch{this.state.sourceStatus=null;}
     try{this.state.updatePreflight=this.deps.updatePreflight?.()??null;}catch{this.state.updatePreflight=null;}
@@ -671,6 +673,11 @@ export class Controller {
     this.polling = true;
     try {
       const wasReady = this.state.ready;
+      if(this.state.operation==='idle'&&!this.state.scheduledRelease&&Date.now()-this.possibleHoldsReadAt>15_000&&this.deps.possibleHolds){
+        const stored=await this.deps.possibleHolds();
+        const volatile=(this.state.possibleHolds??[]).filter(v=>v.code==='CHECKOUT_RESPONSE_NOT_YET_VERIFIED'&&!stored.some(s=>s.bookingIds.some(id=>v.bookingIds.includes(id))));
+        this.state.possibleHolds=[...stored,...volatile];this.possibleHoldsReadAt=Date.now();
+      }
       const [lock, observedHealth,workerProbes] = await Promise.all([this.deps.lock(), this.deps.browserHealth?this.deps.browserHealth():this.deps.cdp().then(A=>({A,B:A,C:false,D:false})),
         this.deps.browserReadiness?.()??Promise.resolve({} as Partial<Record<WorkerId,{connected:boolean;commandLatencyMs:number|null;tabCount:number;targetReady:boolean;chromeVersion?:string|null;sessionId?:string|null}>>)]);
       const health:Record<WorkerId,boolean>={A:false,B:false,C:false,D:false,E:false,F:false,G:false,H:false,...observedHealth};
@@ -777,6 +784,14 @@ export class Controller {
         if(required.length&&required.every(worker=>this.apiReadyWorkers.has(worker)))this.markBrowserReady(event.at);
       }
       this.state.apiStage=event;
+      if(event.stage==='POSSIBLE_HOLD_DETECTED'&&event.bookingId&&event.date&&event.court&&event.startTime&&event.holdExpiresAt){
+        const hold={key:event.bookingId,date:event.date,courts:[event.court,...(event.courtB?[event.courtB]:[])],startTime:event.startTime,
+          endTime:`${String(Number(event.startTime.slice(0,2))+(event.durationHours??1)).padStart(2,'0')}:00`,amount:event.price??null,
+          holdExpiresAt:event.holdExpiresAt,bookingIds:[event.bookingId],bookingNumbers:event.bookingNo?[event.bookingNo]:[],code:'CHECKOUT_RESPONSE_NOT_YET_VERIFIED'};
+        this.state.possibleHolds=[...(this.state.possibleHolds??[]).filter(v=>!v.bookingIds.includes(event.bookingId!)),hold];
+        this.state.headline='POSSIBLE HOLD DETECTED — VERIFY BEFORE EXPIRY';
+      }
+      if(['PENDING_HOLD','OFFICIAL_QRPH_HANDOFF'].includes(event.stage)&&event.bookingId)this.state.possibleHolds=(this.state.possibleHolds??[]).filter(v=>!v.bookingIds.includes(event.bookingId!));
       this.trackPrecision(event);
       this.trackPhase3(event);
       this.trackLive(event);

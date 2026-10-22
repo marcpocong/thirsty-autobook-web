@@ -4,6 +4,7 @@ import { launchObserverChrome } from '../observer-chrome.js';
 import { OndaBrowserAvailabilityProvider } from './browser-availability-provider.js';
 import { parseAvailability } from './availability-parser.js';
 import { COURT_REGISTRY, type Wing } from '../court-registry.js';
+import { LiveAvailabilityError } from './live-availability-provider.js';
 
 /**
  * One-click read-only availability. The checker owns a dedicated guest Chrome profile and process; it never attaches to
@@ -13,7 +14,7 @@ import { COURT_REGISTRY, type Wing } from '../court-registry.js';
  */
 export type CellState = 'OPEN' | 'BLOCKED' | 'UNRELEASED' | 'UNKNOWN';
 export interface ObservedCell { wing: Wing; court: number; start: string; state: CellState; available: boolean; price: number | null }
-export interface WingRead { wing: Wing; status: 'OK' | 'UNRELEASED' | 'ERROR'; capturedAt?: string; code?: string; cells: number }
+export interface WingRead { wing: Wing; status: 'OK' | 'UNRELEASED' | 'ERROR'; capturedAt?: string; code?: string; cells: number; httpStatus?:number; requestSent?:boolean }
 export interface AvailabilityCheck { date: string; capturedAt: string; observer: 'headless' | 'window'; cells: ObservedCell[]; wings: WingRead[] }
 const HOURS = Array.from({ length: 16 }, (_, index) => `${String(8 + index).padStart(2, '0')}:00`);
 const safeCode = (error: unknown) => error instanceof Error && /^[A-Z][A-Z0-9_]{2,80}$/.test(error.message) ? error.message : 'AVAILABILITY_READ_FAILED';
@@ -31,8 +32,11 @@ export function cellsFromSnapshot(wing: Wing, date: string, snapshot: { slots: R
 }
 
 async function readWing(page: Page, wing: Wing, date: string) {
-  const provider = new OndaBrowserAvailabilityProvider(page, { wing, allowIncompleteRange: true, timeoutMs: 15_000 });
+  let headers=new Headers();
+  const provider = new OndaBrowserAvailabilityProvider(page, { wing, allowIncompleteRange: true, timeoutMs: 15_000,onHeaders:value=>{headers=value;} });
   const envelope = await provider.getAvailability({ startDate: date, endDate: date });
+  const age=headers.get('age');
+  if(age&&/^\d+$/.test(age)&&Number(age)>15)throw new LiveAvailabilityError('AVAILABILITY_STALE',200,true);
   return { capturedAt: envelope.capturedAt, snapshot: parseAvailability(envelope.raw, { wing, startDate: date, endDate: date, capturedAt: envelope.capturedAt, fixtureKind: envelope.fixtureKind,
     label: 'DEDICATED READ-ONLY OBSERVER', now: new Date(), maximumAgeMs: 15_000, requireCompleteRange: false }) };
 }
@@ -44,14 +48,18 @@ export async function checkAvailability(date: string, options: { directory: stri
   const session = await (options.open ?? (() => launchObserverChrome(join(options.directory, 'observer-chrome-profile'))))();
   try {
     const wings: WingRead[] = [], cells: ObservedCell[] = [];
+    let refusal:LiveAvailabilityError|undefined;
     for (const wing of ['MANGO', 'BUKO'] as const) {
       if (options.isAborted?.()) throw Error('USER_ABORT');
       try {
+        if(refusal)throw new LiveAvailabilityError(refusal.code,refusal.httpStatus,false,refusal.retryAfterMs);
         const read = await readWing(session.page, wing, date);
         wings.push({ wing, status: read.snapshot.emptyUnreleasedResponse ? 'UNRELEASED' : 'OK', capturedAt: read.capturedAt, cells: read.snapshot.slots.length });
         cells.push(...cellsFromSnapshot(wing, date, read.snapshot));
       } catch (error) {
-        wings.push({ wing, status: 'ERROR', code: safeCode(error), cells: 0 });
+        if(error instanceof LiveAvailabilityError&&[401,403,429].includes(error.httpStatus??0))refusal=error;
+        wings.push({ wing, status: 'ERROR', code: safeCode(error), cells: 0,
+          ...(error instanceof LiveAvailabilityError?{httpStatus:error.httpStatus,requestSent:error.requestSent}:{}) });
         cells.push(...cellsFromSnapshot(wing, date, null));
       }
     }

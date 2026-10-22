@@ -2,6 +2,7 @@ import type { PreparationInput, TestBookingInput } from '../src/booking-plan.js'
 import type {FullPracticeInput} from '../src/full-practice.js';
 import type {LockReview} from './locks.js';
 import type { UiEvent } from '../src/ui-events.js';
+import type { PossibleHold } from '../src/api-booking/possible-hold.js';
 import type { clockStatus } from './status.js';
 import type { BookingView } from './booking.js';
 import type { BookingSetup } from '../src/config.js';
@@ -111,6 +112,7 @@ export interface Dashboard {
   blockAudit?:Extract<UiEvent,{type:'blockAudit'}>|null;
   observedPrice?:number|null;
   qrHandoffs?:QrHandoffSummary[];
+  possibleHolds?:PossibleHold[];
   runTiming?:RunTiming|null;
   runHistory?:RunHistoryEntry[];
   bookingAdjustment?:FallbackReconciliation|null;

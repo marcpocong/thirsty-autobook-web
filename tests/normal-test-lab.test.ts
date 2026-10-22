@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { spawn } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { defaultObjective, type BookingObjective } from '../src/booking-objective.js';
@@ -18,10 +19,10 @@ async function run(scenario: NormalLabScenario, objective: BookingObjective): Pr
   const directory = await mkdtemp(join(base, 'normal-'));
   const file = join(directory, 'input.json'); await writeFile(file, JSON.stringify({ kind: 'normal', request: { objective, scenario } }));
   await new Promise<void>((done, fail) => {
-    const worker = spawn(process.execPath, ['--import', 'tsx', join(root, 'src/booking-test-lab-child.ts'), file, directory], { cwd: root, stdio: ['ignore', 'ignore', 'pipe', 'ipc'], windowsHide: true });
+    const worker = spawn(process.execPath, ['--report-on-fatalerror', `--report-directory=${directory}`, '--import', 'tsx', join(root, 'src/booking-test-lab-child.ts'), file, directory], { cwd: root, stdio: ['ignore', 'ignore', 'pipe', 'ipc'], windowsHide: true });
     let error: string | undefined, stderr = ''; worker.stderr?.on('data', chunk => { stderr += String(chunk); });
     worker.on('message', (m: unknown) => { error = (m as { error?: string }).error ?? error; }); worker.on('error', fail);
-    worker.on('exit', code => code === 0 ? done() : fail(Error(error || stderr.slice(-2000) || `EXIT ${code}`)));
+    worker.on('close', (code,signal) => {writeFileSync(join(directory,'child-exit.json'),JSON.stringify({code,signal,at:new Date().toISOString()}));writeFileSync(join(directory,'child-stderr-private.log'),stderr);code === 0 ? done() : fail(Error(error || stderr.slice(-2000) || `EXIT ${code}`));});
   });
   return JSON.parse(await readFile(join(directory, 'result.json'), 'utf8')) as Result;
 }

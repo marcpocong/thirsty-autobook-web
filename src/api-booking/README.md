@@ -1,5 +1,55 @@
 # API-first booking experiment
 
+## Availability fingerprint repair (October 22, 2026)
+
+Current official availability reads use Onda's genuine `getPublicFingerprintId`
+helper. Browser-session GETs now call that same helper inside the dedicated page
+and send its result only to the scoped same-origin availability endpoint. The
+value never returns to Node or diagnostics. No captured header/cookie is copied,
+no checkout challenge is acquired, and there is no headerless fallback. A changed,
+missing, failed or timed-out helper stops unsent; HTTP refusal still stops retries.
+The existing checkout helper module contract is checked at runtime and fails
+closed if Onda changes it. The observer still blocks every non-GET request.
+
+## Existing-checkout recovery (October 22, 2026)
+
+Successful checkout responses are now saved **before validation** in
+`checkout-recovery-private.json` beside the original durable journal. This
+secret-bearing file contains allowlisted booking/session/transaction fields,
+checkout access tokens, the exact plan, and the worker identity. It excludes
+contact details, cookies, request security headers, and availability proofs.
+Keep it local under the ignored `.local/` directory; never include it in
+diagnostic exports or publication. Sanitized captures and journals still exclude tokens.
+
+The response validator accepts either one continuous session per court or one
+session per hourly booking. Every session must still match the original request
+reference, court, date, hours, duration, and exact booking membership. Unsupported
+or mismatched structures remain UNKNOWN; proofless failures now retain the
+specific validation error. The hourly fixture is synthetic: the original October
+22 raw response was not retained, so compatibility with every field of that
+historical response has not been established.
+
+For an authorized recovery of an existing, unexpired reservation, run from the
+runtime root:
+
+```powershell
+npm run checkout:recover -- .local/api-booking/api-first-journals/<original-journal-directory>
+```
+
+The command revalidates the saved response, checks the original durable journal,
+verifies the dedicated worker browser, obtains official checkout access using
+the saved token, and opens the original booking URL. It reports success only
+after checking the exact visible court/date/time/amount and QR canvas. Replacement
+checkout requests are blocked while it runs. It never creates or retries a
+reservation, changes a journal, pays, or cancels. Expired, missing-token,
+unsupported, ambiguous-browser, and mismatched-summary cases stop. A valid hourly
+response may still fail QR summary verification if the official page does not
+present the complete intended order; that is deliberately not reported as success.
+
+This cannot reconstruct the token lost from the October 22 process or clear that
+run's UNKNOWN journal. Deployment remains subject to the canonical updater's
+existing lifecycle checks.
+
 ## Two-court Extended API checkpoint (September 21, 2026)
 
 The separate API Test installation now accepts Extended bookings of 4–6 consecutive hours on one or two courts. For two courts, the availability planner selects both courts for each of two consecutive time chunks. Browser A uses the primary player for the first chunk; Browser B uses the Extended player for the second. Each browser sends one checkout containing two continuous court sessions, with a separate `sessionRef` and fresh hourly proof for each court. The response validator checks both session groups, every booking, the combined price, and the pending hold. Each court and chunk has its own durable collision journal, so a prior submission record on any of the four parts blocks that candidate.
