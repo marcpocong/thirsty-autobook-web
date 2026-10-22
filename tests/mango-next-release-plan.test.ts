@@ -2,6 +2,7 @@ import {describe,it,expect} from 'vitest';
 import {compileObjective,defaultObjective,savedMangoReleaseSetup,withStrategy} from '../src/booking-objective.js';
 import {nextReleaseFor,releaseInstantFor} from '../src/wing-release-data.js';
 import {BookingSetupSchema} from '../src/config.js';
+import {exactShotgunTopology,assertShotgunSchedule} from '../src/shotgun-timing.js';
 const nowMs=Date.parse('2026-10-22T08:00:00Z');
 function objective(){
   const o=withStrategy(defaultObjective(nowMs),'SHOTGUN');
@@ -22,7 +23,19 @@ describe('next Mango release: two distinct courts from 7, 6, 5',()=>{
     const setup=BookingSetupSchema.parse(saved.setup);
     expect(setup.PRECISION_PHASE3!.candidates.map(t=>t.court)).toEqual([7,6]);
     expect(Object.values(setup.STRATEGY_V2!.shotgun!.counts)).toEqual([4,4]);
-    expect(setup.STRATEGY_V2!.shotgun!.exactSchedule.map(s=>s.configuredOffsetMs)).toEqual(c.cohorts[0]!.smart!.shotgun!.shots.map(s=>s.configuredOffsetMs));
+    const expected=c.cohorts[0]!.smart!.shotgun!.shots.map(s=>({court:c.targets.find(t=>t.id===s.logicalTargetId)!.court,offset:s.configuredOffsetMs})).sort((a,b)=>a.offset-b.offset);
+    const actual=setup.STRATEGY_V2!.shotgun!.exactSchedule.map(s=>({court:Number(/^court-(\d+):/.exec(s.logicalTargetId)![1]),offset:s.configuredOffsetMs})).sort((a,b)=>a.offset-b.offset);
+    expect(actual).toEqual(expected);
+    assertShotgunSchedule(exactShotgunTopology(setup.PRECISION_PHASE3!,setup.STRATEGY_V2!.shotgun!.exactSchedule),setup.STRATEGY_V2!.shotgun!.exactSchedule);
+  });
+  it.each(['BALANCED','AUTO','CUSTOM'] as const)('preserves reviewed identities and offsets for %s with measured spacing',timingMode=>{
+    const o=objective();o.shotgun.timingMode=timingMode;
+    if(timingMode==='CUSTOM')o.shotgun.customOffsetsMs=[-1500,-1200,-1000,-750,-500,-300,-150,0];
+    const c=compileObjective(o,{nowMs,shotgunCapacity:{meaningfulSpacingMs:110}});
+    expect(c.problems).toEqual([]);
+    const setup=BookingSetupSchema.parse(savedMangoReleaseSetup(c,nextReleaseFor(nowMs,'MANGO').bookingDate).setup);
+    const table=(p:typeof setup.PRECISION_PHASE3)=>p!.wave1.flatMap(a=>(a.fanOutOffsetsMs??[a.releaseOffsetMs??0]).map(offset=>({court:p!.candidates[a.candidateIndex]!.court,worker:a.workerId,offset}))).sort((a,b)=>a.offset-b.offset);
+    expect(table(setup.PRECISION_PHASE3)).toEqual(table(c.cohorts[0]!.smart!.phase3!));
   });
   it.each([[6,[7,5]],[7,[6,5]],[5,[7,6]]] as const)('selects approved alternatives when Court %s is freshly blocked', (court,expected)=>{
     const o=objective(),before=JSON.stringify(o),c=compileObjective(o,{nowMs,blockedCells:new Set([`MANGO:${court}:20:00`])});
