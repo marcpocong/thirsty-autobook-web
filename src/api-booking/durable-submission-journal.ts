@@ -51,6 +51,7 @@ export interface ObservedCheckoutResponse {
   transactionAmount?: number;
   trustedTotalAmount?: number;
   validationCode: string;
+  structure?:{bookingCount:number|null;sessionCount:number|null;missingSessionLinks:number;shapeFingerprint:string;paths:string[]};
 }
 export interface SubmissionPermit { readonly key: string }
 const unspentPermits = new WeakSet<SubmissionPermit>();
@@ -231,6 +232,9 @@ export class DurableSubmissionJournal {
       throw Error('SUBMISSION_OBSERVATION_INVALID');
     if (failureCode !== undefined && !/^[A-Z][A-Z0-9_]{0,79}$/.test(failureCode))
       throw Error('SUBMISSION_FAILURE_CODE_INVALID');
+    if(observedResponse?.structure){const s=observedResponse.structure;
+      if([s.bookingCount,s.sessionCount].some(n=>n!==null&&(!Number.isSafeInteger(n)||n<0))||!Number.isSafeInteger(s.missingSessionLinks)||s.missingSessionLinks<0||
+        !/^[a-f0-9]{64}$/.test(s.shapeFingerprint)||!Array.isArray(s.paths)||s.paths.length>64||s.paths.some(p=>!/^[A-Za-z.[\]_:]{1,100}$/.test(p)))throw Error('SUBMISSION_OBSERVATION_INVALID');}
     const handle = await open(path, 'r+');
     try {
       await handle.truncate(0);

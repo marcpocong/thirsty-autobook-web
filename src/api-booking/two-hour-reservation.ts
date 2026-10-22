@@ -45,9 +45,18 @@ export function observedResponse(raw: unknown, validationCode: string): Observed
   const bookings = Array.isArray(root?.bookings) ? root.bookings.slice(0, 12).map(object) : [];
   const sessions = Array.isArray(root?.bookingSessions) ? root.bookingSessions.slice(0, 12).map(object) : [];
   const transaction = object(root?.transaction);
+  const paths:string[]=[];
+  const kind=(v:unknown)=>v===null?'null':Array.isArray(v)?'array':typeof v;
+  for(const key of ['success','bookings','bookingSessions','transaction','trustedTotalAmount'])paths.push(`${key}:${kind(root?.[key])}`);
+  for(const [name,values,fields] of [['bookings',bookings,['id','booking_session_id','space_id','date','start_time','end_time','hold_expires_at']],
+    ['bookingSessions',sessions,['requestSessionRef','bookingSessionId','bookingIds','spaceId','date','startTime','endTime','durationHours']]] as const)
+    for(const key of fields)for(const type of new Set(values.map(v=>kind(v?.[key]))))paths.push(`${name}[].${key}:${type}`);
+  const structure={bookingCount:Array.isArray(root?.bookings)?root.bookings.length:null,sessionCount:Array.isArray(root?.bookingSessions)?root.bookingSessions.length:null,
+    missingSessionLinks:bookings.filter(booking=>!sessions.some(session=>typeof booking?.booking_session_id==='string'&&session?.bookingSessionId===booking.booking_session_id)).length,
+    shapeFingerprint:createHash('sha256').update(JSON.stringify(paths)).digest('hex'),paths:paths.slice(0,64)};
   const ids = (key: string, values: Array<Record<string, unknown> | null>) =>
     values.map(value => value?.[key]).filter(safeIdentifier);
-  return { success: root?.success === true, bookingIds: ids('id', bookings),
+    return { success: root?.success === true, structure,bookingIds: ids('id', bookings),
     bookingNumbers: ids('booking_no', bookings), bookingSessionIds: ids('bookingSessionId', sessions),
     holdExpiresAt: bookings.map(value => value?.hold_expires_at).filter((value): value is string =>
       typeof value === 'string' && value.length <= 40 && Number.isFinite(Date.parse(value))),

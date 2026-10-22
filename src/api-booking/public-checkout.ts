@@ -147,30 +147,42 @@ export function validatePublicCheckoutResponse(
   const bookingsValue = root.bookings, sessionsValue = root.bookingSessions, transaction = object(root.transaction);
   const total = request.items.reduce((sum, item) => sum + item.chargedAmount, 0);
   if (root.success !== true || !Array.isArray(bookingsValue) || bookingsValue.length !== request.items.length ||
-    !Array.isArray(sessionsValue) || sessionsValue.length !== courts.length || !transaction || transaction.status !== 'pending' ||
+    !Array.isArray(sessionsValue) || ![courts.length, request.items.length].includes(sessionsValue.length) || !transaction || transaction.status !== 'pending' ||
     !nonempty(transaction.id) || !sameAmount(transaction.amount, total) || !sameAmount(root.trustedTotalAmount, total))
     fail('CHECKOUT_RESPONSE_INVALID');
   const validTransaction = transaction!;
   const bookings = bookingsValue as unknown[], sessions = sessionsValue as unknown[];
   const sessionIds: string[] = [];
-  const sessionByRef = new Map<string, Record<string, unknown>>();
-  for (const [index, rawSession] of sessions.entries()) {
+  const sessionById = new Map<string, Record<string, unknown>>();
+  const hourlySessions = sessions.length === request.items.length;
+  for (const rawSession of sessions) {
     const session = requiredObject(rawSession, 'CHECKOUT_SESSION_INVALID');
-    const ref = `session_${index + 1}`, court = courts[index]!;
-    const items = request.items.filter(item => item.sessionRef === ref);
-    if (session.requestSessionRef !== ref || !nonempty(session.bookingSessionId) ||
-      session.facilityId !== request.facilityId || session.spaceId !== court.spaceId || session.date !== court.date ||
+    if (!nonempty(session.bookingSessionId) || sessionById.has(session.bookingSessionId) ||
+      !Array.isArray(session.bookingIds) || session.bookingIds.length === 0 ||
+      new Set(session.bookingIds).size !== session.bookingIds.length) fail('CHECKOUT_SESSION_INVALID');
+    // Bind sessions by their returned identity, never their array position. A provider may
+    // return one continuous session per court or one session per hourly booking.
+    const entries = bookings.map((booking, index) => ({ booking: object(booking), item: request.items[index]! }))
+      .filter(entry => entry.booking?.booking_session_id === session.bookingSessionId);
+    const items = entries.map(entry => entry.item);
+    const first = items[0];
+    if (!first || (hourlySessions ? items.length !== 1 : items.length !== plan.durationHours)) fail('CHECKOUT_SESSION_INVALID');
+    const expectedIds = entries.map(entry => entry.booking?.id);
+    if ((session.bookingIds as unknown[]).length !== expectedIds.length || expectedIds.some(id => !(session.bookingIds as unknown[]).includes(id)))
+      fail('CHECKOUT_GROUPING_INVALID');
+    if (session.requestSessionRef !== first!.sessionRef ||
+      items.some(item => item.sessionRef !== first!.sessionRef || item.spaceId !== first!.spaceId || item.date !== first!.date) ||
+      session.facilityId !== request.facilityId || session.spaceId !== first!.spaceId || session.date !== first!.date ||
       session.startTime !== seconds(items[0]!.startTime) || session.endTime !== seconds(items.at(-1)!.endTime) ||
-      session.durationHours !== plan.durationHours || !Array.isArray(session.bookingIds) ||
-      session.bookingIds.length !== items.length) fail('CHECKOUT_SESSION_INVALID');
-    sessionIds.push(session.bookingSessionId as string); sessionByRef.set(ref, session);
+      session.durationHours !== items.length) fail('CHECKOUT_SESSION_INVALID');
+    sessionIds.push(session.bookingSessionId as string); sessionById.set(session.bookingSessionId as string, session);
   }
   if (new Set(sessionIds).size !== sessionIds.length) fail('CHECKOUT_SESSION_INVALID');
   const bookingIds: string[] = [], bookingNumbers: string[] = [], keys = new Set<string>();
   let responseCustomerId: string | undefined;
   let holdExpiresAt: string | undefined;
   for (const [index, rawBooking] of bookings.entries()) {
-    const booking = object(rawBooking), item = request.items[index]!, session = sessionByRef.get(item.sessionRef);
+    const booking = object(rawBooking), item = request.items[index]!, session = sessionById.get(String(booking?.booking_session_id));
     if (!booking) fail('CHECKOUT_BOOKING_INVALID');
     const validBooking = booking!;
     const returnedCustomerId = typeof validBooking.customer_id === 'string' ? validBooking.customer_id : '';
@@ -192,9 +204,9 @@ export function validatePublicCheckoutResponse(
     holdExpiresAt = validBooking.hold_expires_at as string;
     bookingIds.push(validBooking.id as string); bookingNumbers.push(validBooking.booking_no as string);
   }
-  for (const [ref, session] of sessionByRef) {
+  for (const [sessionId, session] of sessionById) {
     const expected = bookings.map((value, index) => ({ value: object(value), item: request.items[index]! }))
-      .filter(entry => entry.item.sessionRef === ref).map(entry => entry.value?.id);
+      .filter(entry => entry.value?.booking_session_id === sessionId).map(entry => entry.value?.id);
     const actual = session.bookingIds as unknown[];
     if (new Set(actual).size !== expected.length || expected.some(id => !actual.includes(id))) fail('CHECKOUT_GROUPING_INVALID');
   }
