@@ -15,10 +15,10 @@ export class OndaBrowserAvailabilityProvider extends OndaLiveAvailabilityProvide
     const fetcher: typeof fetch = async (input, init) => {
       const url = new URL(String(input));
       let pageUrl: URL;
-      try { pageUrl = new URL(page.url()); } catch { throw new LiveAvailabilityError('AVAILABILITY_BROWSER_ORIGIN_INVALID'); }
+      try { pageUrl = new URL(page.url()); } catch { throw new LiveAvailabilityError('AVAILABILITY_BROWSER_ORIGIN_INVALID',undefined,false); }
       if (pageUrl.origin !== ORIGIN || url.origin !== ORIGIN || url.pathname !== PATH ||
           init?.method !== 'GET' || url.username || url.password)
-        throw new LiveAvailabilityError('AVAILABILITY_BROWSER_SCOPE_INVALID');
+        throw new LiveAvailabilityError('AVAILABILITY_BROWSER_SCOPE_INVALID',undefined,false);
       const result = await page.evaluate(async ({ path, timeoutMs, maximum }) => {
         if (location.origin !== 'https://app.onda.fit') throw Error('AVAILABILITY_BROWSER_ORIGIN_INVALID');
         let response:Response;

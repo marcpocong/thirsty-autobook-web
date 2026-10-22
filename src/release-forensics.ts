@@ -132,7 +132,8 @@ export interface ForensicInputs {
 /** Builds and writes summary.json and report.txt. Only file reads and two small writes. */
 export function buildReleaseForensics(input: ForensicInputs): ReleaseForensicsSummary {
   const lines = readLines(input.runProgressPath);
-  const critical=readLines(input.criticalPathPath??join(input.outputDirectory,'critical-path.ndjson'));
+  const criticalPath=input.criticalPathPath??join(input.outputDirectory,'critical-path.ndjson');
+  const critical=existsSync(criticalPath)?readLines(criticalPath):[];
   const first = lines[0] ?? {}, runId = str(first.runId) ?? 'unknown', mode = str(first.mode) ?? 'unknown', date = str(first.targetDate) ?? 'unknown';
   const stages = (name: string) => lines.filter(line => line.stage === name);
   const releaseMs = num(stages('PRECISION_RACE_CONFIGURED')[0]?.releaseMs) ?? num(stages('RUN_CONFIGURATION')[0]?.releaseMs) ?? null;

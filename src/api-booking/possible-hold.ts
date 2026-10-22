@@ -34,6 +34,12 @@ export async function readPossibleHolds(root:string):Promise<PossibleHold[]> {
         const r=JSON.parse(await readFile(file,'utf8')),o=r.observedResponse,a=r.attempt;
         if(r.state!=='unknown'||a?.executionMode==='OFFLINE_INTERCEPTED'||o?.success!==true||!Array.isArray(o.bookingIds)||!o.bookingIds.length||
           !Array.isArray(o.holdExpiresAt)||!o.holdExpiresAt.length||o.holdExpiresAt.some((v:unknown)=>typeof v!=='string'||!Number.isFinite(Date.parse(v))))continue;
+        if(typeof r.key!=='string'||!/^[a-f0-9]{64}$/.test(r.key)||!/^\d{4}-\d{2}-\d{2}$/.test(a.targetDate)||
+          !Array.isArray(a.courtIds)||!a.courtIds.length||a.courtIds.some((v:unknown)=>!Number.isInteger(v)||Number(v)<1||Number(v)>7)||
+          !Array.isArray(a.hourlyBoundaries)||!a.hourlyBoundaries.length||a.hourlyBoundaries.some((v:{startTime?:unknown;endTime?:unknown})=>
+            !v||typeof v.startTime!=='string'||!/^\d{2}:00$/.test(v.startTime)||typeof v.endTime!=='string'||!/^\d{2}:00$/.test(v.endTime))||
+          o.bookingIds.length>12||o.bookingIds.some((v:unknown)=>typeof v!=='string'||!/^[A-Za-z0-9_-]{1,200}$/.test(v))||
+          !Array.isArray(o.bookingNumbers)||o.bookingNumbers.some((v:unknown)=>typeof v!=='string'||!/^[A-Za-z0-9_-]{1,200}$/.test(v)))continue;
         result.push({key:r.key,date:a.targetDate,courts:a.courtIds,startTime:a.hourlyBoundaries[0].startTime,endTime:a.hourlyBoundaries.at(-1).endTime,
           amount:typeof o.transactionAmount==='number'?o.transactionAmount:null,holdExpiresAt:[...o.holdExpiresAt].sort()[0],
           bookingIds:o.bookingIds,bookingNumbers:o.bookingNumbers??[],code:r.failureCode??'UNKNOWN'});

@@ -62,8 +62,9 @@ export class OndaLiveAvailabilityProvider implements AvailabilityProvider {
     } catch(error) { if(error instanceof LiveAvailabilityError)throw error;throw new LiveAvailabilityError('AVAILABILITY_TRANSPORT_FAILED'); }
     if (!response.ok) {
       const retry=response.headers.get('retry-after'),seconds=retry&&/^\d{1,6}$/.test(retry)?Number(retry):undefined;
+      const retryDate=retry&&seconds===undefined?Date.parse(retry):NaN;
       throw new LiveAvailabilityError(response.status === 429 ? 'AVAILABILITY_RATE_LIMITED' : 'AVAILABILITY_HTTP_FAILED', response.status,true,
-        seconds===undefined?undefined:Math.max(1000,seconds*1000));
+        seconds!==undefined?Math.max(1000,seconds*1000):Number.isFinite(retryDate)?Math.max(1000,retryDate-this.clock().getTime()):undefined);
     }
     if (!response.headers.get('content-type')?.toLowerCase().includes('application/json')) throw new LiveAvailabilityError('AVAILABILITY_CONTENT_TYPE_INVALID');
     const length = Number(response.headers.get('content-length'));

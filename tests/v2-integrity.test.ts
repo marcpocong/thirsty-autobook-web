@@ -3,7 +3,7 @@ import { mkdtemp,mkdir,readFile,writeFile,rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AvailabilityReadPolicy } from '../src/api-booking/availability-read-policy.js';
-import { LiveAvailabilityError } from '../src/api-booking/live-availability-provider.js';
+import { LiveAvailabilityError,OndaLiveAvailabilityProvider } from '../src/api-booking/live-availability-provider.js';
 import { readPreReleaseEvidence } from '../src/api-booking/pre-release-evidence.js';
 import { SlotWatch } from '../src/slot-watch.js';
 import { compileObjective,defaultObjective,withStrategy } from '../src/booking-objective.js';
@@ -27,6 +27,11 @@ describe('V2 availability and settlement integrity',()=>{
     p.failure(new LiveAvailabilityError('AVAILABILITY_READ_TIMEOUT'));now+=2000;p.beforeRead();
     p.failure(new LiveAvailabilityError('AVAILABILITY_TRANSPORT_FAILED'));
     expect(()=>p.beforeRead()).toThrow('AVAILABILITY_RETRY_BUDGET_EXHAUSTED');
+  });
+  it('preserves an HTTP-date Retry-After deadline',async()=>{
+    const provider=new OndaLiveAvailabilityProvider({clock:()=>new Date('2026-10-22T00:00:00Z'),
+      fetcher:async()=>new Response('',{status:429,headers:{'retry-after':'Thu, 22 Oct 2026 00:02:00 GMT'}})});
+    await expect(provider.getAvailability({startDate:'2026-10-24',endDate:'2026-10-24'})).rejects.toMatchObject({httpStatus:429,requestSent:true,retryAfterMs:120_000});
   });
   it.each([401,403,429])('does not repeat a pre-release HTTP %s refusal',async(status)=>{
     let reads=0,sleeps=0;
