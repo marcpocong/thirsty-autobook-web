@@ -59,11 +59,16 @@ export class BookingTestLabService {
       const file = join(directory, 'input.json'); await writeFile(file, JSON.stringify({ kind, request: input }));
       return await new Promise<unknown>((done, fail) => {
         let result: unknown, error: string | undefined;
-        const child = spawn(this.node, [join(this.root, 'dist/src/booking-test-lab-child.js'), file, directory], { cwd: this.root, stdio: ['ignore', 'ignore', 'ignore', 'ipc'], windowsHide: true });
+        const child = spawn(this.node, ['--report-on-fatalerror',`--report-directory=${directory}`,join(this.root, 'dist/src/booking-test-lab-child.js'), file, directory], { cwd: this.root, stdio: ['ignore', 'ignore', 'pipe', 'ipc'], windowsHide: true });
+        let stderr='';child.stderr?.on('data',chunk=>{stderr=(stderr+String(chunk)).slice(-16_384);});
         this.child = child; if (this.stopRequested) child.send('stop');
         child.on('message', (value: unknown) => { const message = value as { result?: LabResult; error?: string; phase?: string }; if (message.phase) this.onPhase?.(message.phase); if (message.result) result = message.result; if (message.error) error = message.error; });
         child.on('error', e => { this.child = null; fail(e); });
-        child.on('exit', code => { this.child = null; if (code === 0 && result) done(result); else fail(Error(error ?? 'LAB_CHILD_FAILED')); });
+        child.on('close', (code,signal) => { this.child = null;
+          void Promise.all([writeFile(join(directory,'child-exit.json'),JSON.stringify({code,signal,at:new Date().toISOString()})),
+            writeFile(join(directory,'child-stderr-private.log'),stderr)]).catch(()=>undefined).finally(()=>{
+            if(code===0&&result)done(result);else fail(Error(error??(code!==null&&code>255?`LAB_CHILD_NATIVE_EXIT_${code}`:'LAB_CHILD_FAILED')));
+          });});
       });
     } finally { this.busy = false; this.finished?.(); }
   }

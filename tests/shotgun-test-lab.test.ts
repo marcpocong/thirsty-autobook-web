@@ -1,5 +1,6 @@
 import { describe,it,expect } from 'vitest';
 import { spawn } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
 import { mkdir, mkdtemp, writeFile, readFile } from 'node:fs/promises';
 import { resolve,join } from 'node:path';
 import { fixturePlan } from '../scripts/dual-wing-fixtures.js';
@@ -15,8 +16,8 @@ async function child(scenario:LabScenario,objective:'ANY_ONE'|'ONE_PER_WING'='AN
   const base=join(root,'.local/shotgun-test-lab/tests');await mkdir(base,{recursive:true});
   const directory=await mkdtemp(join(base,'case-'));
   const file=join(directory,'input.json');await writeFile(file,JSON.stringify({plan:fixturePlan(['MANGO','BUKO'],objective),scenario,countdownSeconds:8}));
-  await new Promise<void>((done,fail)=>{const worker=spawn(process.execPath,['--import','tsx',join(root,'src/booking-test-lab-child.ts'),file,directory],{cwd:root,stdio:['ignore','ignore','pipe','ipc'],windowsHide:true});let error:string|undefined,stderr='';worker.stderr?.on('data',chunk=>{stderr+=String(chunk);});
-    worker.on('message',(m:unknown)=>{error=(m as {error?:string}).error??error;});worker.on('error',fail);worker.on('exit',code=>code===0?done():fail(Error(error||stderr.slice(-3000).trim()||`LAB_TEST_CHILD_EXIT ${code}`)));});
+  await new Promise<void>((done,fail)=>{const worker=spawn(process.execPath,['--report-on-fatalerror',`--report-directory=${directory}`,'--import','tsx',join(root,'src/booking-test-lab-child.ts'),file,directory],{cwd:root,stdio:['ignore','ignore','pipe','ipc'],windowsHide:true});let error:string|undefined,stderr='';worker.stderr?.on('data',chunk=>{stderr+=String(chunk);});
+    worker.on('message',(m:unknown)=>{error=(m as {error?:string}).error??error;});worker.on('error',fail);worker.on('close',(code,signal)=>{writeFileSync(join(directory,'child-exit.json'),JSON.stringify({code,signal,at:new Date().toISOString()}));writeFileSync(join(directory,'child-stderr-private.log'),stderr);code===0?done():fail(Error(error||stderr.slice(-3000).trim()||`LAB_TEST_CHILD_EXIT ${code}`));});});
   return JSON.parse(await readFile(join(directory,'result.json'),'utf8')) as LabResult;
 }
 describe('intercepted lab safety and exact provider fixtures',()=>{
@@ -68,8 +69,8 @@ async function objectiveChild(scenario:LabScenario,objective:BookingObjective) {
   const base=join(root,'.local/booking-test-lab/tests');await mkdir(base,{recursive:true});
   const directory=await mkdtemp(join(base,'case-'));
   const file=join(directory,'input.json');await writeFile(file,JSON.stringify({kind:'browser',request:{objective,scenario,countdownSeconds:8}}));
-  await new Promise<void>((done,fail)=>{const worker=spawn(process.execPath,['--import','tsx',join(root,'src/booking-test-lab-child.ts'),file,directory],{cwd:root,stdio:['ignore','ignore','pipe','ipc'],windowsHide:true});let error:string|undefined,stderr='';worker.stderr?.on('data',chunk=>{stderr+=String(chunk);});
-    worker.on('message',(m:unknown)=>{error=(m as {error?:string}).error??error;});worker.on('error',fail);worker.on('exit',code=>code===0?done():fail(Error(error||stderr.slice(-3000).trim()||`LAB_TEST_CHILD_EXIT ${code}`)));});
+  await new Promise<void>((done,fail)=>{const worker=spawn(process.execPath,['--report-on-fatalerror',`--report-directory=${directory}`,'--import','tsx',join(root,'src/booking-test-lab-child.ts'),file,directory],{cwd:root,stdio:['ignore','ignore','pipe','ipc'],windowsHide:true});let error:string|undefined,stderr='';worker.stderr?.on('data',chunk=>{stderr+=String(chunk);});
+    worker.on('message',(m:unknown)=>{error=(m as {error?:string}).error??error;});worker.on('error',fail);worker.on('close',(code,signal)=>{writeFileSync(join(directory,'child-exit.json'),JSON.stringify({code,signal,at:new Date().toISOString()}));writeFileSync(join(directory,'child-stderr-private.log'),stderr);code===0?done():fail(Error(error||stderr.slice(-3000).trim()||`LAB_TEST_CHILD_EXIT ${code}`));});});
   return JSON.parse(await readFile(join(directory,'result.json'),'utf8')) as LabResult;
 }
 describe('Booking Test Lab · exact objective, distinct-court quotas',()=>{
@@ -119,8 +120,8 @@ async function rehearse(scenario:LabScenario){
   const base=join(root,'.local/shotgun-test-lab/tests');await mkdir(base,{recursive:true});
   const directory=await mkdtemp(join(base,'rehearsal-')),file=join(directory,'input.json');
   await writeFile(file,JSON.stringify({objective:twoCourtObjective(),scenario,countdownSeconds:8}));
-  await new Promise<void>((done,fail)=>{const worker=spawn(process.execPath,['--import','tsx',join(root,'src/booking-test-lab-child.ts'),file,directory],{cwd:root,stdio:['ignore','ignore','pipe','ipc'],windowsHide:true});let error:string|undefined,stderr='';worker.stderr?.on('data',chunk=>{stderr+=String(chunk);});
-    worker.on('message',(m:unknown)=>{error=(m as {error?:string}).error??error;});worker.on('error',fail);worker.on('exit',code=>code===0?done():fail(Error(error||stderr.slice(-3000).trim()||`LAB_TEST_CHILD_EXIT ${code}`)));});
+  await new Promise<void>((done,fail)=>{const worker=spawn(process.execPath,['--report-on-fatalerror',`--report-directory=${directory}`,'--import','tsx',join(root,'src/booking-test-lab-child.ts'),file,directory],{cwd:root,stdio:['ignore','ignore','pipe','ipc'],windowsHide:true});let error:string|undefined,stderr='';worker.stderr?.on('data',chunk=>{stderr+=String(chunk);});
+    worker.on('message',(m:unknown)=>{error=(m as {error?:string}).error??error;});worker.on('error',fail);worker.on('close',(code,signal)=>{writeFileSync(join(directory,'child-exit.json'),JSON.stringify({code,signal,at:new Date().toISOString()}));writeFileSync(join(directory,'child-stderr-private.log'),stderr);code===0?done():fail(Error(error||stderr.slice(-3000).trim()||`LAB_TEST_CHILD_EXIT ${code}`));});});
   return JSON.parse(await readFile(join(directory,'result.json'),'utf8')) as LabResult;
 }
 const byWorker=(r:LabResult,worker:string)=>r.outcomes.filter(o=>o.worker===worker);

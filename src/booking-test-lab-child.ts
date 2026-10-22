@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { appendFileSync } from 'node:fs';
+import { freemem,totalmem } from 'node:os';
 import { resolve } from 'node:path';
 import { runShotgunLab, type LabRequest } from './shotgun-test-lab.js';
 import { runNormalLab, type NormalLabScenario } from './normal-test-lab.js';
@@ -16,6 +17,7 @@ process.chdir(directory);
 const trace = (text: string) => { try { appendFileSync(resolve(directory, 'child-trace.log'), `${new Date().toISOString()} ${text}
 `); } catch { /* diagnostics only */ } };
 trace(`start ${kind}`);
+trace(`runtime ${process.version} ${process.platform}; rss ${process.memoryUsage().rss}; freeMem ${freemem()}; totalMem ${totalmem()}`);
 process.on('exit', code => trace(`exit ${code}`));
 process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT = 'SUPERVISED_ONE_SHOT';
 let stopped = false;
