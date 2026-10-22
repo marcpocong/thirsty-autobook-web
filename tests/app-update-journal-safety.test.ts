@@ -84,7 +84,7 @@ describe('installation safety is separate from booking submission safety',()=>{
       if(reason==='future-deadline')value.attempt.dispatchDeadlineMs=NOW+60000;
       if(reason==='unsuccessful-response')value.observedResponse.success=false;
       await writeFile(record.path,JSON.stringify(value));await utimes(record.path,at,reason==='recent-write'?new Date(NOW):at);
-      const processes=reason==='process'?[{ProcessId:55,ExecutablePath:join(root,'.local/runtime/node.exe'),CommandLine:'booking'}]:[];
+      const processes=reason==='process'?[{ProcessId:55,ExecutablePath:join(root,'.local/runtime/node.exe'),CommandLine:`node "${join(root,'dist/ui/main.js')}"`}]:[];
       const report=await inspectUpdateSafety(root,{processes,now:NOW});
       expect(report.eligibility).toBe('REFUSED');expect(report.historicalUnknown).toHaveLength(0);
     });
