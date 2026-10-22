@@ -1,3 +1,4 @@
+import { installAvailabilityHelper } from './availability-browser-fixture.js';
 import { afterAll,beforeAll,expect,it } from 'vitest';
 import { chromium,type Browser } from 'playwright';
 import { openSlotWatchBrowser } from '../src/slot-watch-browser.js';
@@ -6,7 +7,7 @@ import { VENUE } from '../src/config.js';
 let browser:Browser;
 beforeAll(async()=>{browser=await chromium.launch({headless:true});});afterAll(async()=>{await browser.close();});
 it('uses isolated guest context, refuses POST and preserves read metadata',async()=>{
- const context=await browser.newContext();let posts=0,reads=0;
+ const context=await browser.newContext();await installAvailabilityHelper(context);let posts=0,reads=0;
  await context.route('**/*',async route=>{
   if(route.request().method()!=='GET'){posts++;await route.abort();return;}
   if(route.request().url().includes('date-availability')){reads++;await route.fulfill({json:availabilityFixture('2026-10-14'),headers:{'x-vercel-cache':'MISS','age':'0','x-matched-path':'/api/public/facilities/[id]/date-availability'}});}

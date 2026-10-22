@@ -1,5 +1,16 @@
 # API-first booking experiment
 
+## Availability fingerprint repair (October 22, 2026)
+
+Current official availability reads use Onda's genuine `getPublicFingerprintId`
+helper. Browser-session GETs now call that same helper inside the dedicated page
+and send its result only to the scoped same-origin availability endpoint. The
+value never returns to Node or diagnostics. No captured header/cookie is copied,
+no checkout challenge is acquired, and there is no headerless fallback. A changed,
+missing, failed or timed-out helper stops unsent; HTTP refusal still stops retries.
+The existing checkout helper module contract is checked at runtime and fails
+closed if Onda changes it. The observer still blocks every non-GET request.
+
 ## Existing-checkout recovery (October 22, 2026)
 
 Successful checkout responses are now saved **before validation** in

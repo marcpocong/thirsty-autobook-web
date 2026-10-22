@@ -1,3 +1,4 @@
+import { installAvailabilityHelper } from './availability-browser-fixture.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { chromium, type Browser } from 'playwright';
 import { checkAvailability, cellsFromSnapshot } from '../src/api-booking/availability-observer.js';
@@ -19,7 +20,7 @@ let browser: Browser;
 beforeAll(async () => { browser = await chromium.launch({ headless: true }); });
 afterAll(async () => { await browser.close(); });
 async function fixtureSession(respond: (url: URL) => { status: number; body: unknown }) {
-  const context = await browser.newContext(); let posts = 0, reads = 0;
+  const context = await browser.newContext(); await installAvailabilityHelper(context); let posts = 0, reads = 0;
   await context.route('**/*', async route => {
     const request = route.request(), url = new URL(request.url());
     if (request.method() !== 'GET') { posts++; await route.abort(); return; }
