@@ -74,6 +74,15 @@ async function objectiveChild(scenario:LabScenario,objective:BookingObjective) {
   return JSON.parse(await readFile(join(directory,'result.json'),'utf8')) as LabResult;
 }
 describe('Booking Test Lab · exact objective, distinct-court quotas',()=>{
+  it('keeps the second Mango target hold distinct and never activates a draft-only third court',async()=>{
+    const o=withStrategy(defaultObjective(Date.now(),'NEXT_RELEASE'),'SHOTGUN');
+    o.wings.MANGO={...o.wings.MANGO,courts:[7,6,5].map((court,i)=>({court,priority:i+1})),minimum:2,ideal:2,startTimes:['19:00'],durationHours:3};
+    o.wings.BUKO.enabled=false;o.shotgun={...o.shotgun,budget:8,allocationMode:'EQUAL',timingMode:'BALANCED',limitToIdeal:true};
+    const r=await objectiveChild('SECOND_TARGET_SUCCESS',o);
+    expect(r.planned).toBe(8);expect(r.objectiveOutcome.status).toBe('PARTIAL');
+    expect(r.outcomes.filter(x=>x.state==='HOLD_VERIFIED_QR_ATTENTION').map(x=>x.court)).toEqual([6]);
+    expect(r.outcomes.some(x=>x.court===5)).toBe(false);
+  },90000);
   it('fills a two-court quota in each wing and suppresses the rest per wing',async()=>{
     const r=await objectiveChild('BOTH_SUCCESS',quotaObjective(2));
     expect(r.environment).toBe('OFFLINE_SIMULATION');expect(r.strategy).toBe('SHOTGUN');expect(r.planned).toBe(12);

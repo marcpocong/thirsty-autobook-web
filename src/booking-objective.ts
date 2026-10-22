@@ -44,6 +44,8 @@ export interface ObjectiveShotgun {
   /** Literal signed offsets. With customAssignments, index-aligned (offset i goes to target customAssignments[i]). */
   customOffsetsMs?: number[]; customAssignments?: string[];
   timingCapacityOverride?: boolean; allowStandbyConsumption?: boolean;
+  /** Select only the ideal number of distinct courts; other acceptable courts stay draft alternatives. */
+  limitToIdeal?: boolean;
   presetId: string; source: 'SUGGESTED' | 'PRESET' | 'CUSTOM';
 }
 export interface ObjectivePrecision { offsetsMs: Record<string, number[]>; useBackups: boolean; retryReopened: boolean }
@@ -354,9 +356,18 @@ export function compileObjective(o: BookingObjective, ctx: CompileContext): Comp
       const capacity = o.strategy === 'NORMAL' ? 0 : Math.min(SMART_WORKERS.length, ready);
       const cohort: CompiledCohort = { releaseMs, releaseAt: new Date(releaseMs).toISOString(), wings: cohortWings, targetIds: cohortTargets.map(t => t.id), immediate: [], backups: [], smart: null };
       if (o.strategy !== 'NORMAL') {
-        const selection = selectImmediate(cohortTargets, cohortQuota, capacity);
+        const limitToIdeal=o.strategy==='SHOTGUN'&&o.shotgun.limitToIdeal===true;
+        const selection = selectImmediate(cohortTargets, cohortQuota, limitToIdeal?Math.min(capacity,quotaIdealTotal(cohortQuota)):capacity);
+        if(limitToIdeal){
+          if(cohortTargets.some(t=>t.mandatory&&!selection.immediate.includes(t)))problems.push('A mandatory target does not fit the ideal-court limit. Review the goal before saving.');
+          if(cohortQuota.scope==='ANY_WING'){
+            if(new Set(selection.immediate.map(t=>`${t.wing}:${t.court}`)).size<cohortQuota.overall!.minimum)problems.push('The selected immediate targets cannot meet the minimum distinct-court goal.');
+          }else for(const wing of cohortWings)if(new Set(selection.immediate.filter(t=>t.wing===wing).map(t=>t.court)).size<cohortQuota.wings[wing]!.minimum)
+            problems.push(`${wing}: the selected immediate targets cannot meet the minimum distinct-court goal.`);
+        }
         warnings.push(...selection.warnings);
         cohort.immediate = selection.immediate; cohort.backups = o.strategy === 'PRECISION' && o.precision.useBackups ? selection.backups : [];
+        if(o.strategy==='SHOTGUN'&&selection.backups.length)warnings.push(`Draft alternatives only: ${selection.backups.map(t=>`${t.wing} Court ${t.court}`).join(', ')}. Fresh conflicts can change the immediate targets before you review and save. These alternatives have no prepared shots and cannot replace an armed target after a rejection.`);
         const slot = (t: ObjectiveTarget, immediate: boolean): SmartSlot => {
           const rate = rateFor(t), offsets = immediate && o.strategy === 'PRECISION' ? o.precision.offsetsMs[t.id] ?? [0] : [0];
           return { court: t.court, start: t.start, durationHours: t.durationHours, wing: t.wing, spaceId: t.spaceId, bookingDate: t.bookingDate, priority: t.priority,

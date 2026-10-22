@@ -26,7 +26,7 @@ import { FACILITY_ID, courtBySpace, type Wing } from './court-registry.js';
 import type { BookingPlan } from './api-booking/types.js';
 import type { WorkerId } from './workers.js';
 
-export const LAB_SCENARIOS = ['ALL_REJECTED','FIRST_SUCCESS','LATER_SUCCESS','MANGO_SUCCESS','BUKO_SUCCESS','BOTH_SUCCESS','UNKNOWN','PAYMENT_IN_PROGRESS','THROTTLE','PREPARE_FAILED','WORKER_UNAVAILABLE','MISSED_TRIGGER','TWO_IN_FLIGHT_SUCCESS','PREVIOUS_HOLD','DUPLICATE_TARGET','WRONG_WING','STALE_AVAILABILITY','MISSING_AVAILABILITY',
+export const LAB_SCENARIOS = ['ALL_REJECTED','FIRST_SUCCESS','SECOND_TARGET_SUCCESS','LATER_SUCCESS','MANGO_SUCCESS','BUKO_SUCCESS','BOTH_SUCCESS','UNKNOWN','PAYMENT_IN_PROGRESS','THROTTLE','PREPARE_FAILED','WORKER_UNAVAILABLE','MISSED_TRIGGER','TWO_IN_FLIGHT_SUCCESS','PREVIOUS_HOLD','DUPLICATE_TARGET','WRONG_WING','STALE_AVAILABILITY','MISSING_AVAILABILITY',
   'BROWSER_CLOSED','APP_RESTART_RETAINED_UNKNOWN','UNSUPPORTED_RELEASE_POLICY','SLOW_SECURITY','SECURITY_STALL','STOP_BEFORE_DISPATCH'] as const;
 export type LabScenario = typeof LAB_SCENARIOS[number];
 /** Legacy dual-wing planning wrapper, or the exact Booking Setup objective (preferred). */
@@ -183,7 +183,7 @@ export async function runShotgunLab(input:LabRequest, options:{directory:string;
           observed.push({wing:target.wing,at:req.timing().startTime,offset:shot.configuredOffsetMs,targetId:target.id});
           if(input.scenario==='TWO_IN_FLIGHT_SUCCESS')await new Promise(done=>setTimeout(done,800));
           let status=409,body:unknown={success:false,error:'Slot unavailable (offline fixture)'};
-          const success=input.scenario==='FIRST_SUCCESS'&&ordinal===1||input.scenario==='LATER_SUCCESS'&&ordinal===3||input.scenario==='MANGO_SUCCESS'&&target.wing==='MANGO'||input.scenario==='BUKO_SUCCESS'&&target.wing==='BUKO'||input.scenario==='BOTH_SUCCESS'||input.scenario==='TWO_IN_FLIGHT_SUCCESS'&&ordinal<=2||input.scenario==='WRONG_WING'&&ordinal===1;
+          const success=input.scenario==='FIRST_SUCCESS'&&ordinal===1||input.scenario==='SECOND_TARGET_SUCCESS'&&target.id===labTargets[1]?.id||input.scenario==='LATER_SUCCESS'&&ordinal===3||input.scenario==='MANGO_SUCCESS'&&target.wing==='MANGO'||input.scenario==='BUKO_SUCCESS'&&target.wing==='BUKO'||input.scenario==='BOTH_SUCCESS'||input.scenario==='TWO_IN_FLIGHT_SUCCESS'&&ordinal<=2||input.scenario==='WRONG_WING'&&ordinal===1;
           if(success){status=200;body=simulatedPending(request,ordinal);if(input.scenario==='WRONG_WING')(body as ReturnType<typeof simulatedPending>).bookings[0]!.space_id='wrong-wing-space';}
           if(ordinal===1&&input.scenario==='UNKNOWN'){status=200;body={success:true};}
           if(ordinal===1&&input.scenario==='THROTTLE'){status=429;body={success:false,error:'Too many requests'};}

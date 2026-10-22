@@ -101,13 +101,16 @@ export function renderShotgunEditor(host: HTMLElement, ctx: ShotgunEditorContext
   const standby = el('label', { class: 'terms-choice' }, el('input', { type: 'checkbox', id: 'shotgun-standby-override' }), ' Let Shotgun use workers that would otherwise be held back for backups');
   (standby.firstChild as HTMLInputElement).checked = !!s.allowStandbyConsumption; (standby.firstChild as HTMLInputElement).disabled = disabled;
   (standby.firstChild as HTMLInputElement).onchange = event => set({ allowStandbyConsumption: (event.target as HTMLInputElement).checked });
+  const limit = el('label', { class: 'terms-choice' }, el('input', { type: 'checkbox', id: 'shotgun-limit-ideal' }), ' Limit dispatched courts to the ideal goal; keep other acceptable courts as draft alternatives');
+  (limit.firstChild as HTMLInputElement).checked = s.limitToIdeal===true; (limit.firstChild as HTMLInputElement).disabled = disabled;
+  (limit.firstChild as HTMLInputElement).onchange = event => set({ limitToIdeal: (event.target as HTMLInputElement).checked });
   const manual = el('section', { class: 'shotgun-card', id: 'shotgun-manual' }, el('p', { class: 'eyebrow', text: 'Manual timing' }),
     el('div', { class: 'setup-grid' },
       numberField('Total attempts', custom ? rows.length || (s.customOffsetsMs?.length ?? 0) : s.budget, { id: 'shotgun-budget', min: '1', max: String(PRECISION_MAX_SENDS) }, value => set({ budget: value }), disabled || custom),
       el('label', {}, 'Allocation', allocation), el('label', {}, 'Timing', timingMode),
       numberField('First attempt (ms before release)', s.windowStartMs, { id: 'shotgun-window-start', min: '-2000', max: '0' }, value => set({ windowStartMs: value }), disabled || custom || s.timingMode === 'DENSE_CORE'),
       numberField('Last attempt (ms)', s.windowEndMs, { id: 'shotgun-window-end', min: '-2000', max: '0' }, value => set({ windowEndMs: value }), disabled || custom || s.timingMode === 'DENSE_CORE')),
-    counts, override, standby,
+    counts, limit, override, standby,
     el('p', { class: 'small', text: `Supported limits (unchanged, audited): offsets −2000…0 ms (positive offsets are invalid, never clamped); strict ${SHOTGUN_MAX_TRIGGER_LATENESS_MS} ms local lateness bound; ${SHOTGUN_MEANINGFUL_SPACING_MS} ms meaningful-spacing reference; up to ${PRECISION_MAX_FAN_OUT} tabs per worker × ${PRECISION_MAX_ATTEMPTS} Precision workers = ${PRECISION_MAX_FAN_OUT * PRECISION_MAX_ATTEMPTS} immediate attempts (${PRECISION_MAX_SENDS} total sends including backups and Rescue). More attempts are not automatically better.` }));
   // 4. Literal attempt table
   const metrics = scheduleMetrics(rows.map(r => ({ targetId: r.targetId, offsetMs: r.offsetMs, workerId: r.workerId })), ctx.meaningfulSpacingMs);

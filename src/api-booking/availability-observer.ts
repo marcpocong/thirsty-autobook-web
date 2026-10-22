@@ -5,6 +5,7 @@ import { OndaBrowserAvailabilityProvider } from './browser-availability-provider
 import { parseAvailability } from './availability-parser.js';
 import { COURT_REGISTRY, type Wing } from '../court-registry.js';
 import { LiveAvailabilityError } from './live-availability-provider.js';
+import { releaseInstantFor, WING_RELEASE_POLICIES } from '../wing-release-data.js';
 
 /**
  * One-click read-only availability. The checker owns a dedicated guest Chrome profile and process; it never attaches to
@@ -31,6 +32,15 @@ export function cellsFromSnapshot(wing: Wing, date: string, snapshot: { slots: R
   }));
 }
 
+/** A complete closed grid before a verified release is not evidence that every court is booked. */
+export function applyReleaseWindow(cells: ObservedCell[], wing: Wing, date: string, capturedAt: string): ObservedCell[] {
+  const expected=COURT_REGISTRY.filter(c=>c.wing===wing).length*HOURS.length;
+  if(WING_RELEASE_POLICIES[wing]?.status==='VERIFIED'&&Number.isFinite(Date.parse(capturedAt))
+    &&releaseInstantFor(date,wing)>Date.parse(capturedAt)&&cells.length===expected&&cells.every(c=>c.state==='BLOCKED'))
+    return cells.map(c=>({...c,state:'UNRELEASED',available:false}));
+  return cells;
+}
+
 async function readWing(page: Page, wing: Wing, date: string) {
   let headers=new Headers();
   const provider = new OndaBrowserAvailabilityProvider(page, { wing, allowIncompleteRange: true, timeoutMs: 15_000,onHeaders:value=>{headers=value;} });
@@ -54,8 +64,11 @@ export async function checkAvailability(date: string, options: { directory: stri
       try {
         if(refusal)throw new LiveAvailabilityError(refusal.code,refusal.httpStatus,false,refusal.retryAfterMs);
         const read = await readWing(session.page, wing, date);
-        wings.push({ wing, status: read.snapshot.emptyUnreleasedResponse ? 'UNRELEASED' : 'OK', capturedAt: read.capturedAt, cells: read.snapshot.slots.length });
-        cells.push(...cellsFromSnapshot(wing, date, read.snapshot));
+        const observed=applyReleaseWindow(cellsFromSnapshot(wing,date,read.snapshot),wing,date,read.capturedAt);
+        const unreleased=observed.every(c=>c.state==='UNRELEASED');
+        wings.push({ wing, status: unreleased ? 'UNRELEASED' : 'OK', capturedAt: read.capturedAt, cells: read.snapshot.slots.length,
+          ...(unreleased&&!read.snapshot.emptyUnreleasedResponse?{code:'VERIFIED_RELEASE_NOT_REACHED'}:{}) });
+        cells.push(...observed);
       } catch (error) {
         if(error instanceof LiveAvailabilityError&&[401,403,429].includes(error.httpStatus??0))refusal=error;
         wings.push({ wing, status: 'ERROR', code: safeCode(error), cells: 0,
