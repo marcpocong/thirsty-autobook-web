@@ -19,7 +19,7 @@ type DiagnosticExtra = Record<string, DiagnosticValue>;
 const safeCode = /^[A-Z][A-Z0-9_]{0,79}$/;
 const allowedFields = new Set([
   'workerId','lane','attemptId','attemptType','operation','timingKind','eventAt','durationMs','networkDurationMs',
-  'status','statusCode','failureCategory','dispatchState','initiationEvidence','resultCategory','success','isAvailable',
+  'status','statusCode','requestSent','failureCategory','dispatchState','initiationEvidence','resultCategory','success','isAvailable',
   'targetDatePresent','responseComplete','slotCount','availableCount','takenCount','unreleasedCount','unknownCount',
   'courtHourSummary','securitySource','preparedContextAgeMs','challengeFrame','failedHelper',
   'challengeState','activeAvailability','activeSecurity','activeSlotChecks','activeCheckouts','droppedCount','retryCount',

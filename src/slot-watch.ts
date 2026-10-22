@@ -199,6 +199,7 @@ export class SlotWatch {
   private readonly availability: AvailabilityObservation[] = [];
   private readonly bookings: BookingObservation[] = [];
   private readonly availabilityCounts: SlotWatchCounts = { launched: 0, answered: 0, failed: 0, aborted: 0, notLaunched: 0 };
+  private availabilitySequence=0;
   private readonly bookingCounts: SlotWatchCounts = { launched: 0, answered: 0, failed: 0, aborted: 0, notLaunched: 0 };
   private failedCourtQueries = 0;
   private availabilityInFlight = 0;
@@ -345,7 +346,7 @@ export class SlotWatch {
     return this.finish();
   }
 
-  private notLaunched(kind: 'availability' | 'bookings', scheduledOffsetMs: number, reason: 'CAP_REACHED' | 'LATE' | 'PREVIOUS_READ_IN_FLIGHT') {
+  private notLaunched(kind: 'availability' | 'bookings', scheduledOffsetMs: number, reason: string) {
     (kind === 'availability' ? this.availabilityCounts : this.bookingCounts).notLaunched++;
     this.write({ type: 'not-launched', kind, scheduledOffsetMs, at: new Date(this.now()).toISOString(), atOffsetMs: this.offset(this.now()), reason,
       inFlight: kind === 'availability' ? this.availabilityInFlight : this.bookingInFlight });
@@ -372,7 +373,8 @@ export class SlotWatch {
   private launchAvailability(scheduledOffsetMs: number) {
     if (this.availabilityInFlight >= this.maxInFlight) { this.notLaunched('availability', scheduledOffsetMs, 'CAP_REACHED'); return; }
     this.recordClock();
-    const seq = ++this.availabilityCounts.launched, inFlight = ++this.availabilityInFlight;
+    const seq = ++this.availabilitySequence, inFlight = ++this.availabilityInFlight;
+    this.availabilityCounts.launched++;
     this.maxObservedInFlight = Math.max(this.maxObservedInFlight, inFlight);
     const reader = this.options.readAvailability ?? liveAvailability;
     const requestMs = this.now();
@@ -401,6 +403,9 @@ export class SlotWatch {
       this.lastLatencyMs = Math.max(0, Math.round(read.responseMs - read.requestMs)); this.lastResponseMs = read.responseMs; this.lastError = undefined;
     } else {
       const code = safeCode(error), aborted = code === 'SLOT_WATCH_STOPPED';
+      const info=error as {requestSent?:boolean;httpStatus?:number};
+      if(info?.requestSent===false){this.availabilityCounts.launched--;this.lastError=code;this.notLaunched('availability',read.scheduledOffsetMs,code);return;}
+      detail={...detail,requestSent:info?.requestSent??null,...(typeof info?.httpStatus==='number'?{httpStatus:info.httpStatus}:{})};
       observation = { ...base, outcome: aborted ? 'aborted' : 'failed', code, targetDatePresent: false };
       if (aborted) this.availabilityCounts.aborted++; else { this.availabilityCounts.failed++; this.lastError = code; }
     }

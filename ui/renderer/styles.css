@@ -1111,3 +1111,7 @@ footer > div { display: flex; align-items: center; gap: 8px; font-size: 11px; co
 .live-workers li[data-tone=danger] { border-color: var(--danger-line); background: var(--danger-bg); } .live-workers li[data-tone=danger] .live-worker-status { color: #ffd7d3; }
 .live-report { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); }
 .live-report > div[data-fact="Next action"] { grid-column: 1 / -1; }
+.possible-hold { border: 2px solid var(--danger-line); background: var(--danger-bg); margin-bottom: 16px; padding: 18px; overflow-wrap: anywhere; }
+.possible-hold strong { color: #ffd7d3; }
+.possible-hold p { line-height: 1.5; margin: 8px 0; }
+.possible-hold details { margin-top: 10px; }

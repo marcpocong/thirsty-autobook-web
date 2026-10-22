@@ -13,5 +13,5 @@ if (!runId) throw Error('Usage: npm run release:forensics -- --run <runId> [--wa
 const watch = args.get('watch'), out = args.get('out');
 const inputs = forensicInputsFor(resolve(args.get('root') ?? '.'), runId, watch ? resolve(watch) : undefined);
 if (!inputs) throw Error('RUN_TRACE_NOT_FOUND');
-const summary = buildReleaseForensics({ ...inputs, ...(out ? { outputDirectory: resolve(out) } : {}), status: 'final' });
+const summary = buildReleaseForensics({ ...inputs,criticalPathPath:resolve(args.get('root')??'.','.local/release-forensics',runId,'critical-path.ndjson'), ...(out ? { outputDirectory: resolve(out) } : {}), status: 'final' });
 process.stdout.write(`${summary.reportPath}\n`);

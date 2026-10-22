@@ -274,7 +274,7 @@ export interface CompiledObjective {
 }
 export interface CompileContext { nowMs: number; unavailableWorkers?: ReadonlySet<string>; shotgunCapacity?: { meaningfulSpacingMs: number };
   /** Optional fresh availability (open cells) to rank flexible Available Now courts. Never invents openness. */
-  openCells?: ReadonlySet<string>; releaseVerified?: Partial<Record<Wing, boolean>>;
+  openCells?: ReadonlySet<string>; blockedCells?:ReadonlySet<string>; releaseVerified?: Partial<Record<Wing, boolean>>;
   /** Available Now: browsers that must not take a new checkout (pending/verified hold in that customer context, or no configured customer). */
   normalSkip?: ReadonlySet<string> }
 
@@ -341,7 +341,14 @@ export function compileObjective(o: BookingObjective, ctx: CompileContext): Comp
     if (instants.length > 1) warnings.push('Mango and Buko targets release at different instants. They are separate scheduled cohorts under one objective; each is prepared and armed for its own release.');
     for (const releaseMs of instants) {
       const cohortWings = wings.filter(wing => releaseOf.get(wing) === releaseMs);
-      const cohortTargets = targets.filter(t => cohortWings.includes(t.wing));
+      const conflicts=(t:ObjectiveTarget)=>Array.from({length:t.durationHours},(_,i)=>`${t.wing}:${t.court}:${String(hourOf(t.start)+i).padStart(2,'0')}:00`).some(key=>ctx.blockedCells?.has(key));
+      const allCohortTargets = targets.filter(t => cohortWings.includes(t.wing));
+      const blocked=allCohortTargets.filter(conflicts);
+      for(const target of blocked) {
+        warnings.push(`${target.wing} Court ${target.court} ${target.start}–${target.end}: fresh availability reports a conflict. Review and save any alternative before preparing.`);
+        if(target.mandatory)problems.push(`${target.wing} mandatory Court ${target.court} conflicts with fresh availability. The mandatory court was not substituted.`);
+      }
+      const cohortTargets = allCohortTargets.filter(t=>!conflicts(t));
       const cohortQuota: ObjectiveQuota = { ...quota, wings: Object.fromEntries(cohortWings.map(w => [w, quota.wings[w]!])) };
       const ready = SMART_WORKERS.filter(w => !ctx.unavailableWorkers?.has(w)).length;
       const capacity = o.strategy === 'NORMAL' ? 0 : Math.min(SMART_WORKERS.length, ready);

@@ -21,26 +21,29 @@ export class OndaBrowserAvailabilityProvider extends OndaLiveAvailabilityProvide
         throw new LiveAvailabilityError('AVAILABILITY_BROWSER_SCOPE_INVALID');
       const result = await page.evaluate(async ({ path, timeoutMs, maximum }) => {
         if (location.origin !== 'https://app.onda.fit') throw Error('AVAILABILITY_BROWSER_ORIGIN_INVALID');
-        const response = await fetch(path, { method: 'GET', credentials: 'same-origin', redirect: 'error',
-          headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(timeoutMs) });
+        let response:Response;
+        try {response = await fetch(path, { method: 'GET', credentials: 'same-origin', redirect: 'error',
+          headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(timeoutMs) });}
+        catch(error){return {status:0,contentType:'',body:'',failure:error instanceof Error&&['TimeoutError','AbortError'].includes(error.name)?'AVAILABILITY_READ_TIMEOUT':'AVAILABILITY_TRANSPORT_FAILED'};}
         const contentType = response.headers.get('content-type') ?? '';
-        const metadata=Object.fromEntries(['x-vercel-cache','age','date','x-matched-path','x-vercel-id'].flatMap(key=>{const value=response.headers.get(key);return value&&value.length<=240&&/^[\x20-\x7E]+$/.test(value)?[[key,value]]:[];}));
+        const metadata=Object.fromEntries(['x-vercel-cache','age','date','x-matched-path','x-vercel-id','retry-after'].flatMap(key=>{const value=response.headers.get(key);return value&&value.length<=240&&/^[\x20-\x7E]+$/.test(value)?[[key,value]]:[];}));
         // Rejections never return provider text or security values to Node.
-        if (!response.ok) return { status: response.status, contentType, body: '' };
+        if (!response.ok) return { status: response.status, contentType, body: '', metadata };
         if (!contentType.toLowerCase().includes('application/json')) return { status: response.status, contentType, body: '' };
         const reader = response.body?.getReader();
-        if (!reader) throw Error('AVAILABILITY_BODY_FAILED');
+        if (!reader) return {status:0,contentType:'',body:'',failure:'AVAILABILITY_BODY_FAILED'};
         const chunks: Uint8Array[] = []; let length = 0;
         for (;;) {
           const { done, value } = await reader.read(); if (done) break;
           length += value.byteLength;
-          if (length > maximum) { await reader.cancel(); throw Error('AVAILABILITY_RESPONSE_TOO_LARGE'); }
+          if (length > maximum) { await reader.cancel(); return {status:0,contentType:'',body:'',failure:'AVAILABILITY_RESPONSE_TOO_LARGE'}; }
           chunks.push(value);
         }
         const bytes = new Uint8Array(length); let offset = 0;
         for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
         return { status: response.status, contentType, body: new TextDecoder().decode(bytes), metadata };
       }, { path: url.pathname + url.search, timeoutMs, maximum: MAX_BYTES });
+      if('failure' in result&&result.failure)throw new LiveAvailabilityError(result.failure,undefined,true);
       const response=new Response(result.body, { status: result.status, headers: { 'content-type': result.contentType, ...('metadata' in result?result.metadata:{}) } });
       options.onHeaders?.(response.headers);return response;
     };

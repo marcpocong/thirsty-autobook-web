@@ -58,6 +58,7 @@ export type CurrentCheckoutHeadersProvider = () => Promise<CurrentCheckoutHeader
  * They cost one clock read before fetch() and are returned with the response, never on the path to it.
  */
 export interface CheckoutRendererTiming { timeOrigin: number; enteredAt: number; fetchAt: number; headersAt: number; completedAt: number;
+  resource?:{startTime:number;fetchStart:number;requestStart:number;responseStart:number;responseEnd:number;workerStart:number;nextHopProtocol:string};
   /** Renderer-resident dispatch only: when the page accepted the arm command and when it called fetch(). */
   armedAt?: number; firedAt?: number }
 export interface CheckoutHttpResponse { status: number; contentType: string; server: string;
@@ -326,6 +327,9 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
         const headersAt = performance.now();
         const body = await response.text();
         const completedAt = performance.now();
+        // Post-response only: independent renderer-origin resource timing. No URL,
+        // headers or payload retained, and no Network.enable work before dispatch.
+        const resource=performance.getEntriesByName(url,'resource').filter(entry=>entry.startTime>=started-1).at(-1) as PerformanceResourceTiming|undefined;
         // Read after the response only: provider diagnostics (validated again in Node before anything is stored).
         const kept: Record<string, string> = {};
         for (const name of ['content-length', 'date', 'age', 'cache-control', 'x-vercel-cache', 'x-matched-path', 'retry-after', 'x-ratelimit-limit',
@@ -339,7 +343,9 @@ export class OndaBrowserSessionTransport implements TwoHourTransport {
           vercelId: response.headers.get('x-vercel-id') ?? '', requestId: response.headers.get('x-request-id') ?? '',
           serverTiming: response.headers.get('server-timing') ?? '', responseReceivedMs: headersAt - started,
           responseCompletedMs: completedAt - started, body, headers: kept,
-          renderer: { timeOrigin: performance.timeOrigin, enteredAt, fetchAt: started, headersAt, completedAt } };
+          renderer: { timeOrigin: performance.timeOrigin, enteredAt, fetchAt: started, headersAt, completedAt,
+            ...(resource?{resource:{startTime:resource.startTime,fetchStart:resource.fetchStart,requestStart:resource.requestStart,
+              responseStart:resource.responseStart,responseEnd:resource.responseEnd,workerStart:resource.workerStart,nextHopProtocol:resource.nextHopProtocol}}:{}) } };
       }, bodyText === undefined ? { url: `${ORIGIN}${path}`, payload: body, text: undefined, headers: extraHeaders ?? {},strictTiming }
         : { url: `${ORIGIN}${path}`, payload: null, text: bodyText, headers: extraHeaders ?? {},strictTiming });
         if('refused' in outcome)refused=outcome.refused;else result=outcome;

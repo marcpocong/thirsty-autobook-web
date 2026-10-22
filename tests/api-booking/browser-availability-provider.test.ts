@@ -23,7 +23,7 @@ describe('normal browser-session availability',()=>{
     await expect(new OndaBrowserAvailabilityProvider(page).getAvailability({startDate:date,endDate:date})).rejects.toThrow(status===429?'AVAILABILITY_RATE_LIMITED':'AVAILABILITY_HTTP_FAILED');expect(requests).toBe(1);
   });
   it('refuses the wrong origin before any read',async()=>{
-    await page.goto('https://example.invalid/');await expect(new OndaBrowserAvailabilityProvider(page).getAvailability({startDate:date,endDate:date})).rejects.toThrow('AVAILABILITY_TRANSPORT_FAILED');
+    await page.goto('https://example.invalid/');await expect(new OndaBrowserAvailabilityProvider(page).getAvailability({startDate:date,endDate:date})).rejects.toThrow('AVAILABILITY_BROWSER_SCOPE_INVALID');
   });
   it('validates Buko separately without reinterpreting its court number as Mango',async()=>{
     const raw=availabilityFixture(date);raw.data.slotsBySpace[BUKO_SPACE_IDS[4]]=structuredClone(raw.data.slotsBySpace[MANGO_SPACE_IDS[4]]!);
@@ -36,6 +36,6 @@ describe('normal browser-session availability',()=>{
   });
   it('rejects an oversized body before parsing',async()=>{
     await page.route('**/date-availability?*',r=>r.fulfill({contentType:'application/json',body:' '.repeat(4_000_001)}));
-    await expect(new OndaBrowserAvailabilityProvider(page).getAvailability({startDate:date,endDate:date})).rejects.toThrow('AVAILABILITY_TRANSPORT_FAILED');
+    await expect(new OndaBrowserAvailabilityProvider(page).getAvailability({startDate:date,endDate:date})).rejects.toThrow('AVAILABILITY_RESPONSE_TOO_LARGE');
   });
 });

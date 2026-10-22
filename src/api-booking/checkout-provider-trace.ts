@@ -53,6 +53,8 @@ export interface ProviderTraceRecord {
   nodeObserved: { enabledOffsetMs: number | null; headersOffsetMs: number | null; finishedOffsetMs: number | null };
   /** Browser-monotonic ms after Chrome's network request start (ResourceTiming.requestTime), exact within Chrome. */
   browser: {
+    /** Raw CDP monotonic origin in seconds; never an epoch/provider timestamp. */
+    requestTimeSeconds?:number|null;
     dnsMs: number | null; connectMs: number | null; tlsMs: number | null; sendMs: number | null;
     /** Request sent → first response-header byte (includes provider processing and queueing). */
     waitMs: number | null;
@@ -219,7 +221,7 @@ export class CheckoutProviderTrace {
         ...(court !== undefined && startTime && endTime ? { target: { court, startTime, endTime } } : {}),
         method: 'POST', path: '/api/bookings/public-checkout',
         nodeObserved: { enabledOffsetMs: this.enabledAt, headersOffsetMs: this.now(), finishedOffsetMs: null },
-        browser: { dnsMs: span(timing?.dnsStart, timing?.dnsEnd), connectMs: span(timing?.connectStart, timing?.connectEnd), tlsMs: span(timing?.sslStart, timing?.sslEnd),
+        browser: { requestTimeSeconds:base??null,dnsMs: span(timing?.dnsStart, timing?.dnsEnd), connectMs: span(timing?.connectStart, timing?.connectEnd), tlsMs: span(timing?.sslStart, timing?.sslEnd),
           sendMs: span(timing?.sendStart, timing?.sendEnd),
           waitMs: span(timing?.sendEnd, headersStart !== undefined && headersStart >= 0 ? headersStart : timing?.receiveHeadersEnd),
           headersStartMs: at(timing?.receiveHeadersStart), headersEndMs: at(timing?.receiveHeadersEnd), bodyCompleteMs: null, failedMs: null },

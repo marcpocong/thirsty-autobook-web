@@ -52,9 +52,10 @@ function context() {
   const holds = activeHolds(now), normalSkip = new Set([...unavailable, ...holds.map(h => h.checkout!).filter(Boolean)]);
   const evidence = state?.courtBrowser, fresh = evidence && now - Date.parse(evidence.capturedAt) >= 0 && now - Date.parse(evidence.capturedAt) < 15_000;
   const openCells = fresh ? new Set(evidence!.cells.filter(c => (c.state ?? (c.available ? 'OPEN' : 'BLOCKED')) === 'OPEN' && objective.wings[c.wing].bookingDate === evidence!.date).map(c => `${c.wing}:${c.court}:${c.start}`)) : undefined;
+  const blockedCells=fresh?new Set(evidence!.cells.filter(c=>c.state==='BLOCKED'&&objective.wings[c.wing].bookingDate===evidence!.date).map(c=>`${c.wing}:${c.court}:${c.start}`)):undefined;
   const profile = state?.fanOut?.latest, usable = profile?.compatible && !profile.stale ? profile.profile : null;
   const spacing = Math.max(SHOTGUN_MEANINGFUL_SPACING_MS, minimumMeaningfulSpacingMs(usable, Math.max(1, Math.min(6, objective.shotgun.budget))).spacingMs);
-  return { nowMs: now, unavailableWorkers: new Set([...unavailable].filter(w => w !== 'H')), shotgunCapacity: { meaningfulSpacingMs: spacing }, normalSkip, ...(openCells ? { openCells } : {}) };
+  return { nowMs: now, unavailableWorkers: new Set([...unavailable].filter(w => w !== 'H')), shotgunCapacity: { meaningfulSpacingMs: spacing }, normalSkip, ...(openCells ? { openCells } : {}),...(blockedCells?{blockedCells}:{}) };
 }
 function activeHolds(now = Date.now()) { return (state?.qrHandoffs ?? []).filter(h => h.holdExpiresAt && Date.parse(h.holdExpiresAt) > now); }
 function recompile() { compiled = compileObjective(objective, context()); refreshRuntimeCheck(); }
@@ -292,6 +293,7 @@ function syncPane() {
 
 // ── Rendering ─────────────────────────────────────────────────────────────────────────────────────────────
 function renderAll(force: boolean) {
+  renderPossibleHolds();
   if (!loaded) return;
   const v = view();
   renderHead(v);
@@ -311,6 +313,22 @@ function renderAll(force: boolean) {
   if (step === 1) renderAvailability(editable);
   if (step === 4) renderBrowsers();
   if (step === 5) renderReview(v);
+}
+
+function renderPossibleHolds(){
+  const parent=document.getElementById('dest-setup');if(!parent)return;
+  let host=document.getElementById('possible-hold-alert');
+  if(!host){host=el('section',{id:'possible-hold-alert',class:'card possible-hold',role:'alert'});parent.prepend(host);}
+  const holds=state?.possibleHolds??[];host.hidden=!holds.length;
+  const now=Date.now()+(state?.clock?.clockOffsetMs??0);
+  fill(host,...holds.map(hold=>{
+    const remaining=Math.ceil((Date.parse(hold.holdExpiresAt)-now)/1000);
+    return el('div',{},el('strong',{text:'POSSIBLE HOLD DETECTED — VERIFY BEFORE EXPIRY'}),
+      el('p',{text:`Court ${hold.courts.join(' / ')} · ${hold.date} · ${hold.startTime}–${hold.endTime} · ${hold.amount===null?'Amount unverified':peso(hold.amount)}`}),
+      el('p',{text:`Recorded hold deadline ${manilaTime(Date.parse(hold.holdExpiresAt))} · ${remaining>0?`${Math.floor(remaining/60)}:${String(remaining%60).padStart(2,'0')} remaining`:'Deadline passed; provider status remains UNKNOWN'}`}),
+      el('p',{text:'Response contains creation evidence, but the booking is not verified or paid. Do not submit again. Use the saved private recovery record to verify the existing reservation.'}),
+      el('details',{},el('summary',{text:'Private recovery identifiers'}),el('p',{text:`Bookings: ${hold.bookingNumbers.join(', ')||hold.bookingIds.join(', ')} · ${hold.code}`})));
+  }));
 }
 /** Enabled wings whose draft date has already been released (Next Release only). */
 function releasedDraftDates(now = Date.now()) {
@@ -432,7 +450,7 @@ function renderAvailability(editable: boolean) {
     const read = evidence?.wings?.find(w => w.wing === wing);
     const table = el('div', { class: 'availability-wing', 'data-wing': wing }, el('div', { class: 'availability-head' }, el('strong', { text: `${wingName(wing)} Wing` }),
       el('span', { class: 'small', 'data-tone': !fresh ? 'muted' : read?.status === 'ERROR' ? 'bad' : read?.status === 'UNRELEASED' ? 'warn' : 'good',
-        text: !evidence || evidence.date !== date!.value ? 'UNKNOWN · not checked' : !fresh ? 'UNKNOWN · evidence older than 15 s' : read?.status === 'ERROR' ? `UNKNOWN · read failed (${read.code ?? 'error'})` : read?.status === 'UNRELEASED' ? 'UNRELEASED · not published yet' : 'Fresh' })));
+        text: !evidence || evidence.date !== date!.value ? 'UNKNOWN · not checked' : !fresh ? 'UNKNOWN · evidence older than 15 s' : read?.status === 'ERROR' ? `UNKNOWN · ${read.code ?? 'read failed'}${read.httpStatus?` · HTTP ${read.httpStatus}`:''}${read.requestSent===false?' · NOT SENT':''}` : read?.status === 'UNRELEASED' ? 'UNRELEASED · not published yet' : 'Fresh' })));
     table.append(el('div', { class: 'court-browser-row hour-header', 'aria-hidden': 'true' }, el('span', { text: '' }), ...HOURS.map(h => el('span', { text: String(Number(h.slice(0, 2)) % 12 || 12) + (Number(h.slice(0, 2)) < 12 ? 'a' : 'p') }))));
     for (let court = 1; court <= 7; court++) {
       const row = el('div', { class: 'court-browser-row' }, el('strong', { text: `Court ${court}` }));
@@ -451,7 +469,7 @@ function renderAvailability(editable: boolean) {
   }));
   const status = byId('court-browser-status');
   status.textContent = check?.status === 'RUNNING' ? 'Opening the dedicated read-only observer and reading both wings…' : check?.status === 'FAILED' && !fresh ? `Availability could not be read (${check.code ?? 'unknown'}). Every cell stays UNKNOWN; nothing was booked.`
-    : fresh ? `Verified ${manilaTime(Date.parse(evidence!.capturedAt), { hour: '2-digit', minute: '2-digit', second: '2-digit' })} Manila (oldest wing read) · expires after 15 s · dedicated read-only ${evidence!.observer ?? 'browser'} · checkout always rechecks every hour and price.${objective.mode === 'AVAILABLE_NOW' ? ' Click an open cell to make it your first choice.' : ''}`
+    : fresh ? `Checked ${manilaTime(Date.parse(evidence!.capturedAt), { hour: '2-digit', minute: '2-digit', second: '2-digit' })} Manila (oldest wing read) · expires after 15 s · dedicated read-only ${evidence!.observer ?? 'browser'} · checkout always rechecks every hour and price.${objective.mode === 'AVAILABLE_NOW' ? ' Click an open cell to make it your first choice.' : ''}`
     : 'UNKNOWN · press Check Availability. Absence of bookings never means a court is open.';
 }
 function renderSuggestions(editable: boolean) {
