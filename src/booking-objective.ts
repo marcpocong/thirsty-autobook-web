@@ -466,8 +466,15 @@ export function savedMangoReleaseSetup(compiled: CompiledObjective, nextMangoBoo
     shotgun = { ...scoped, selectedTargetIds: scoped.selectedTargetIds.map(id => legacyId.get(id)!),
       ...(scoped.customCounts ? { customCounts: Object.fromEntries(Object.entries(scoped.customCounts).map(([id, n]) => [legacyId.get(id)!, n])) } : {}) };
   }
+  // Renaming exact target IDs to legacy IDs changes lexical tie ordering in planShotgun.
+  // Serialize the already-reviewed target/offset pairs literally instead of planning them again.
+  const reviewedShots = cohort.smart?.shotgun;
+  const literal = shotgun && reviewedShots ? literalShotgunSchedule(reviewedShots.shots.map(s => ({ targetId: legacyId.get(s.logicalTargetId)!, offsetMs: s.configuredOffsetMs }))) : null;
+  const frozenShotgun = shotgun && literal ? { ...shotgun, timingMode: 'CUSTOM' as const, allocationMode: 'CUSTOM' as const,
+    customCounts: { ...Object.fromEntries(shotgun.selectedTargetIds.map(id => [id, 0])), ...literal.counts }, customOffsetsMs: literal.offsets } : shotgun;
   const smart = compileSmartPlan({ ...emptySmartDraft(), immediate: cohort.immediate.map(t => legacy(t, true)), backups: cohort.backups.map(t => legacy(t, false)),
-    retryReopened: o.strategy === 'PRECISION' && o.precision.retryReopened, ...(shotgun ? { shotgun } : {}), advanced: o.strategy === 'SHOTGUN' ? { wave2: 0, rescue: 0 } : {} }, { targetDate: g.bookingDate });
+    retryReopened: o.strategy === 'PRECISION' && o.precision.retryReopened, ...(frozenShotgun ? { shotgun: frozenShotgun } : {}), advanced: o.strategy === 'SHOTGUN' ? { wave2: 0, rescue: 0 } : {} },
+    { targetDate: g.bookingDate, ...(reviewedShots ? { shotgunCapacity: { meaningfulSpacingMs: reviewedShots.meaningfulSpacingMs } } : {}) });
   if (!smart.phase3) return { setup: null, problems: smart.problems };
   const hours = cohort.immediate.map(t => hourOf(t.start));
   const quota = compiled.quota;
@@ -480,7 +487,7 @@ export function savedMangoReleaseSetup(compiled: CompiledObjective, nextMangoBoo
     fanOut: { width: 1, source: 'OPERATOR_OVERRIDE', recommendedWidth: null, timing: 'BALANCED', profileCreatedAt: null },
     ...(smart.shotgun && shotgun ? { shotgun: { version: 1, enabled: true, budget: shotgun.budget, allocationMode: shotgun.allocationMode, selectedTargetIds: shotgun.selectedTargetIds.filter(id => activeShotgunIds.has(id)),
       ...(shotgun.customCounts ? { customCounts: activeCounts(shotgun.customCounts) } : {}), windowStartMs: shotgun.windowStartMs, windowEndMs: shotgun.windowEndMs, timingMode: shotgun.timingMode,
-      ...(shotgun.customOffsetsMs ? { customOffsetsMs: shotgun.customOffsetsMs } : {}), timingCapacityOverride: !!shotgun.timingCapacityOverride, allowStandbyConsumption: !!shotgun.allowStandbyConsumption,
+      ...(shotgun.customOffsetsMs ? { customOffsetsMs: smart.shotgun.shots.map(s => s.configuredOffsetMs) } : {}), timingCapacityOverride: !!shotgun.timingCapacityOverride, allowStandbyConsumption: !!shotgun.allowStandbyConsumption,
       counts: activeCounts(smart.shotgun.counts), exactSchedule: smart.shotgun.shots.map(({ logicalTargetId, shotIndex, configuredOffsetMs }) => ({ logicalTargetId, shotIndex, configuredOffsetMs })),
       capacity: { meaningfulSpacingMs: smart.shotgun.meaningfulSpacingMs, recommendedMaximum: smart.shotgun.recommendedMaximum, warning: smart.shotgun.capacityWarning, groupAnchorMs: smart.shotgun.groupAnchorMs } } } : {}),
     objective: { version: 3, fingerprint: compiled.fingerprint, scope: quota.scope, wings: { MANGO: quota.wings.MANGO! }, ...(quota.overall ? { overall: quota.overall } : {}) } };
