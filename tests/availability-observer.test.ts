@@ -1,7 +1,7 @@
 import { installAvailabilityHelper } from './availability-browser-fixture.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { chromium, type Browser } from 'playwright';
-import { checkAvailability, cellsFromSnapshot } from '../src/api-booking/availability-observer.js';
+import { checkAvailability, cellsFromSnapshot, applyReleaseWindow } from '../src/api-booking/availability-observer.js';
 import { MANGO_SPACE_IDS, BUKO_SPACE_IDS } from '../src/court-registry.js';
 import { ONDA_URL, VENUE } from '../src/config.js';
 
@@ -32,6 +32,14 @@ async function fixtureSession(respond: (url: URL) => { status: number; body: unk
 }
 
 describe('one-click read-only availability', () => {
+  it('keeps a complete closed pre-release grid out of conflict selection without hiding explicit open or partial evidence',()=>{
+    const date='2026-10-25',before='2026-10-22T08:00:00Z',after='2026-10-23T00:00:00Z';
+    const cells=cellsFromSnapshot('MANGO',date,{slots:Object.keys(MANGO_SPACE_IDS).flatMap(court=>Array.from({length:16},(_,i)=>({court:Number(court),date,startTime:`${String(i+8).padStart(2,'0')}:00`,isAvailable:false,price:700})))});
+    expect(applyReleaseWindow(cells,'MANGO',date,before).every(c=>c.state==='UNRELEASED'&&c.price===700)).toBe(true);
+    expect(applyReleaseWindow(cells,'MANGO',date,after).every(c=>c.state==='BLOCKED')).toBe(true);
+    const partial=[...cells.slice(1),{...cells[0]!,state:'UNKNOWN' as const}];expect(applyReleaseWindow(partial,'MANGO',date,before)).toEqual(partial);
+    const open=[...cells.slice(1),{...cells[0]!,state:'OPEN' as const,available:true}];expect(applyReleaseWindow(open,'MANGO',date,before)).toEqual(open);
+  });
   it('maps every registered court/hour to OPEN, BLOCKED, UNRELEASED or UNKNOWN without inventing openness', () => {
     expect(cellsFromSnapshot('BUKO', DATE, null).every(c => c.state === 'UNKNOWN' && !c.available)).toBe(true);
     expect(cellsFromSnapshot('MANGO', DATE, { slots: [], emptyUnreleasedResponse: true }).every(c => c.state === 'UNRELEASED')).toBe(true);

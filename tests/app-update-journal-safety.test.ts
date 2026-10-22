@@ -62,6 +62,32 @@ async function installationWithHistory(){
 const launchers=async(dir:string):Promise<string[]>=>(await readdir(dir,{recursive:true})).map(String).filter(f=>/(^|[\\/])thirsty pickle bot\.exe$/i.test(f));
 
 describe('installation safety is separate from booking submission safety',()=>{
+  it('permits maintenance after guarded recovery and a quiet completed response without unblocking UNKNOWN',async()=>{
+    const root=await recognized(),at=new Date(NOW-60*60*1000);
+    const record=await unknownRecord(root,91,{at,holdExpiresAt:new Date(at.getTime()+600000).toISOString()});
+    const before=await readFile(record.path,'utf8'),manifest=await protectedStateManifest(root);
+    const report=await inspectUpdateSafety(root,{processes:[],now:NOW});
+    expect(report).toMatchObject({eligibility:'READY',blockers:[],historicalUnknown:[{key:record.key,installationBasis:'SETTLED_RESPONSE_QUIET'}]});
+    expect(await readFile(record.path,'utf8')).toBe(before);
+    await expect(assertProtectedStateUnchanged(root,manifest)).resolves.toMatchObject({digest:manifest.digest});
+    await expect(record.journal.arm(record.key,new Date(NOW),attempt(record.key,'armed',new Date(NOW)))).rejects.toThrow();
+  });
+  it.each(['lock','process','recent-write','recent-timer','no-timer','no-deadline','future-deadline','unsuccessful-response'])(
+    'refuses the quiet response exception when %s evidence is unsafe',async(reason)=>{
+      const root=await recognized(),at=new Date(NOW-60*60*1000);
+      const record=await unknownRecord(root,92,{at,holdExpiresAt:new Date(at.getTime()+600000).toISOString()});
+      const value=JSON.parse(await readFile(record.path,'utf8'));
+      if(reason==='lock')await put(root,'.local/automation.lock',JSON.stringify({pid:55,stage:'FINAL_ACTION_DISPATCHING',stageAt:at.toISOString()}));
+      if(reason==='recent-timer')value.observedResponse.holdExpiresAt=[new Date(NOW-60000).toISOString()];
+      if(reason==='no-timer')delete value.observedResponse.holdExpiresAt;
+      if(reason==='no-deadline')delete value.attempt.dispatchDeadlineMs;
+      if(reason==='future-deadline')value.attempt.dispatchDeadlineMs=NOW+60000;
+      if(reason==='unsuccessful-response')value.observedResponse.success=false;
+      await writeFile(record.path,JSON.stringify(value));await utimes(record.path,at,reason==='recent-write'?new Date(NOW):at);
+      const processes=reason==='process'?[{ProcessId:55,ExecutablePath:join(root,'.local/runtime/node.exe'),CommandLine:`node "${join(root,'dist/ui/main.js')}"`}]:[];
+      const report=await inspectUpdateSafety(root,{processes,now:NOW});
+      expect(report.eligibility).toBe('REFUSED');expect(report.historicalUnknown).toHaveLength(0);
+    });
   it('reports historical UNKNOWN journals separately and permits a code-only update with zero active blockers',async()=>{
     const {root}=await installationWithHistory();
     const report=await inspectUpdateSafety(root,{processes:[],now:NOW});

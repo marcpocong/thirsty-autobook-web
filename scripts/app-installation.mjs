@@ -47,6 +47,10 @@ export const protectedLifecycleFiles=Object.freeze(['.local/automation.lock']);
  * for this long. Age is never evidence about the provider outcome; the record stays UNKNOWN and keeps blocking its target.
  */
 export const HISTORICAL_QUIET_MS=24*60*60*1000;
+// A completed response with explicit elapsed hold timers can be replaced sooner only after
+// guarded lifecycle recovery removed the lock and all installation-owned processes stopped.
+// This permits code maintenance, never journal recycling or a new booking of that target.
+export const SETTLED_RESPONSE_QUIET_MS=15*60*1000;
 const slash=path=>path.split('\\').join('/');
 /**
  * Read-only installation preflight. Separates historical UNKNOWN submissions (preserved, target still blocked by the
@@ -78,13 +82,19 @@ export async function inspectUpdateSafety(root,{processes=windowsProcesses(),now
       return block('APP_UPDATE_UNRESOLVED_JOURNAL',path,'UNKNOWN_RECORD_UNRECOGNIZED');
     const lastWrite=Math.max(created,updated,mtime);
     if(updated>now+60_000||created>now+60_000)return block('APP_UPDATE_UNRESOLVED_JOURNAL',path,'UNKNOWN_RECORD_FUTURE_DATED');
-    if(now-lastWrite<HISTORICAL_QUIET_MS)return block('APP_UPDATE_UNRESOLVED_JOURNAL',path,'UNKNOWN_RECORD_RECENT');
     for(const deadline of [a.releaseMs,a.dispatchDeadlineMs,a.triggerMs,a.shotDeadlineMs])
       if(deadline!==undefined&&(!Number.isSafeInteger(deadline)||deadline>now))return block('APP_UPDATE_UNRESOLVED_JOURNAL',path,'UNKNOWN_RECORD_DISPATCH_WINDOW_OPEN');
     const expiries=v.observedResponse?.holdExpiresAt;
     if(expiries!==undefined&&(!Array.isArray(expiries)||expiries.some(x=>!Number.isFinite(time(x))||time(x)>now)))
       return block('APP_UPDATE_ACTIVE_OR_UNKNOWN_HOLD',path,'UNKNOWN_RECORD_HOLD_MAY_BE_ACTIVE');
+    const settledResponseQuiet=v.observedResponse?.success===true&&Array.isArray(expiries)&&expiries.length>0
+      &&now-lastWrite>=SETTLED_RESPONSE_QUIET_MS&&expiries.every(x=>now-time(x)>=SETTLED_RESPONSE_QUIET_MS)
+      &&Number.isSafeInteger(a.releaseMs)&&Number.isSafeInteger(a.dispatchDeadlineMs)
+      &&a.dispatchDeadlineMs>=a.releaseMs&&now-a.dispatchDeadlineMs>=SETTLED_RESPONSE_QUIET_MS
+      &&!existsSync(join(root,'.local/automation.lock'))&&!blockers.some(b=>b.code==='APP_UPDATE_ACTIVE_PROCESS');
+    if(now-lastWrite<HISTORICAL_QUIET_MS&&!settledResponseQuiet)return block('APP_UPDATE_UNRESOLVED_JOURNAL',path,'UNKNOWN_RECORD_RECENT');
     historicalUnknown.push({path:slash(relative(root,path)),key,targetDate:a.targetDate,...(a.wing?{wing:a.wing}:{}),courtIds:a.courtIds,stage:a.stage,
+      ...(now-lastWrite<HISTORICAL_QUIET_MS?{installationBasis:'SETTLED_RESPONSE_QUIET'}:{}),
       lastWriteAt:new Date(lastWrite).toISOString(),...(v.diagnostic?.status?{httpStatus:v.diagnostic.status}:{}),...(v.failureCode?{failureCode:v.failureCode}:{}),
       ...(Array.isArray(expiries)&&expiries.length?{recordedHoldExpired:true}:{})});
   }

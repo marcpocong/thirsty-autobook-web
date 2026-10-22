@@ -274,3 +274,5 @@ When a newly built Normal target plan outgrows old attempt limits, SAVE NORMAL S
 
 Rebuilding targets preserves Quick Shotgun provenance and offers REFRESH & SAVE SHOTGUN for the new #1 target. It does not relabel Quick as Custom or establish readiness. Actual manual Custom edits remain Custom and are never automatically replaced.
 If Custom settings cannot be saved after rebuilding targets, the main action becomes REPLACE WITH QUICK SHOTGUN. Clicking it explicitly replaces the incompatible Custom settings and runs the full Quick readiness/save checks; Advanced remains available for manual repair. This also recovers older saved Shotgun plans that have no Quick provenance marker.
+
+Shotgun Booking Setup can explicitly **limit dispatched courts to the ideal goal**. With three acceptable courts and an ideal of two, only the two highest-priority eligible courts receive shots. A fresh observed conflict can select the third court in the draft before review/save; it has no prepared fallback shots after arming. The option defaults off for existing plans. An unreachable minimum blocks this limited plan.

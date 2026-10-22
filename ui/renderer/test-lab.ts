@@ -8,6 +8,7 @@ import { hooks, el, fill, wingName } from './navigation.js';
  * child with every checkout intercepted. Authorized live tests and production use the action bar's normal flow.
  */
 const BROWSER_SCENARIOS: Array<[string, string]> = [['ALL_REJECTED', 'Every attempt rejected · timing comparison'], ['FIRST_SUCCESS', 'First attempt holds · partial completion'], ['LATER_SUCCESS', 'A later attempt holds'],
+  ['SECOND_TARGET_SUCCESS', 'Only the second target holds · first target rejected'],
   ['BOTH_SUCCESS', 'Every response succeeds · quota fill and extra holds'], ['MANGO_SUCCESS', 'Only Mango succeeds · per-wing quota'], ['BUKO_SUCCESS', 'Only Buko succeeds · per-wing quota'],
   ['TWO_IN_FLIGHT_SUCCESS', 'Two concurrent holds while in flight'], ['WRONG_WING', 'Wrong wing/court in the response'], ['UNKNOWN', 'Unknown POST outcome'], ['PAYMENT_IN_PROGRESS', 'HTTP 409 payment already in progress'],
   ['THROTTLE', 'HTTP 429 throttling'], ['PREPARE_FAILED', 'Browser preparation failure'], ['WORKER_UNAVAILABLE', 'Worker unavailable'], ['MISSED_TRIGGER', 'Delayed attempt · missed deadline'],
