@@ -1,11 +1,13 @@
 import { BookingTestLabService } from './booking-test-lab-service.js';
 import { ObjectiveStore } from './objective-store.js';
+import { DailyPlanning, planningMutationBlocked, restorationBlocked } from './daily-planning.js';
+import { preferenceDifferences } from '../src/automatic-release.js';
 import { archiveHistoricalUnknown, journalOverview, restoreArchived, verifyArchive } from '../src/journal-archive.js';
 import { describeBookingPlan } from '../src/booking-plan.js';
 import { loadConfig,loadPlayerProfiles } from '../src/config.js';
 import { readPossibleHolds } from '../src/api-booking/possible-hold.js';
 import {reviewLock,clearVerifiedLock,browserProbe} from './locks.js';
-import { app, BrowserWindow, ipcMain, session, powerSaveBlocker } from 'electron';
+import { app, BrowserWindow, ipcMain, session, powerSaveBlocker, Notification } from 'electron';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -35,7 +37,7 @@ import {readBuildInfo} from '../src/build-info.js';
 import {currentMachineIdentity,fanOutDigest} from '../src/fanout-capacity.js';
 import {readReleaseTelemetry} from '../src/release-telemetry.js';
 import {createMachineHealthSampler,readLastReleaseBuild} from '../src/release-readiness-gate.js';
-import {readSourceStatus,readUpdatePreflight} from '../src/source-status.js';
+import {readSourceStatus,readUpdatePreflight,readUpdateHistory} from '../src/source-status.js';
 import {readDispatcherMachineKey} from './runner-runtime.js';
 import {readSecurityCheck} from '../src/security-check.js';
 
@@ -48,6 +50,7 @@ const node = process.env.THIRSTY_NODE_EXEC;
 if (!node) throw new Error('Launch the panel with npm run ui.');
 const lab = new BookingTestLabService(root,node,phase=>{if(window&&!window.isDestroyed())window.webContents.send('thirsty:labPhase',phase);});
 const objectives = new ObjectiveStore(root);
+const daily = new DailyPlanning(root);
 const index = resolve(root, 'dist/ui/renderer/index.html');
 const indexUrl = pathToFileURL(index).href;
 let window: BrowserWindow;
@@ -134,7 +137,9 @@ const controller = new Controller({
   // Profiles are measured offline by scripts/benchmark-fanout-capacity.ts on this machine (source tree or installation).
   releaseTelemetry:()=>readReleaseTelemetry(root),
   fanOutDigest:()=>fanOutDigest([root,resolve(root,'Source')],{machine:currentMachineIdentity(),gitSha:readBuildInfo(resolve(root,'dist/build-info.json'))?.gitSha??'unknown',dispatcher:'central'}),
-  publish: status => { if (window && !window.isDestroyed()) window.webContents.send('thirsty:status', status); },
+  publish: status => { if (window && !window.isDestroyed()) window.webContents.send('thirsty:status', status);
+    if(status.runTiming?.endedAt&&status.runSummary?.settled&&status.runSummaryRunId===status.runTiming.runId){const snapshot=structuredClone(status);void daily.tick(snapshot).catch(()=>undefined);}
+  },
 });
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
@@ -150,6 +155,12 @@ else {
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', event => event.preventDefault());
   window.webContents.on('will-attach-webview', event => event.preventDefault());
+  const deliverNotice=(notice:import('../src/release-reminders.js').LocalNotice)=>{
+    if(!Notification.isSupported())return false;
+    try{const notification=new Notification({title:notice.title,body:notice.body,timeoutType:'default'});
+      notification.on('click',()=>{if(window.isDestroyed())return;window.show();window.focus();window.webContents.send('thirsty:destination',notice.destination);});
+      notification.show();return true;}catch{return false;}
+  };
   const actions = {
     reviewLock:()=>controller.reviewLock(),clearLock:()=>controller.clearLock(),resetPractice:()=>controller.resetPractice(),
     startChrome: () => controller.startChrome(), inspectOnda: () => controller.inspectOnda(), prepare: () => controller.prepare(), prepareDual:()=>controller.prepareDual(),
@@ -159,6 +170,36 @@ else {
     closeBotBrowsers:()=>controller.closeBotBrowsers(),checkSecurity:()=>controller.checkSecurity(),calibrateTiming:()=>controller.calibrateTiming(),watchNextRelease:()=>controller.watchNextRelease(),stopSlotWatch:()=>controller.stopSlotWatch(),
     rebuildIntelligence:()=>controller.rebuildIntelligence(),clearIntelligence:()=>controller.clearIntelligence(),runNetworkCheck:()=>controller.runNetworkCheck(),
   };
+  ipcMain.handle('thirsty:daily',async(event,...args:unknown[])=>{
+    if(event.sender!==window.webContents||event.senderFrame!==window.webContents.mainFrame||event.senderFrame?.url!==indexUrl||args.length!==1)throw Error('IPC_NOT_ALLOWED');
+    const request=args[0] as {action?:string;value?:unknown;id?:string};
+    if(!request||JSON.stringify(request).length>200_000)throw Error('DAILY_REQUEST_INVALID');
+    if(request.action==='status'){controller.state.daily=await daily.tick(controller.state,deliverNotice);return controller.state.daily;}
+    if(planningMutationBlocked(controller.state))throw Error('PLAN_ACTIVE');
+    if(request.action==='saveProfile'){controller.state.daily=await daily.saveProfile(request.value,controller.state);return controller.state.daily;}
+    if(request.action==='generate'){controller.state.daily=await daily.tick(controller.state,deliverNotice,Date.now(),true);return controller.state.daily;}
+    if(request.action==='snapshot'){
+      const stored=await objectives.load(readBooking().setup);
+      return daily.snapshot(controller.state,stored.document?.binding?.configFingerprint===controller.state.booking?.fingerprint?stored.document?.objective??null:null);
+    }
+    if((request.action==='restorePreview'||request.action==='restore')&&typeof request.id==='string'){
+      const entry=await daily.snapshotById(request.id);
+      const stored=await objectives.load(readBooking().setup),current=await daily.view(controller.state);
+      const changes=preferenceDifferences({setup:controller.state.booking?.setup,objective:stored.document?.objective??null,profile:current.profile},
+        {setup:entry.setup,objective:entry.objective,profile:entry.profile?{...entry.profile,enabled:false}:current.profile});
+      if(request.action==='restorePreview')return {entry,changes,blocked:restorationBlocked(controller.state)};
+      if(restorationBlocked(controller.state))throw Error('BOOKING_STATE_REQUIRES_REVIEW');
+      const restored=await controller.restoreConfiguration(entry.setup,()=>confirmModal({tone:'warning',title:'Restore validated configuration?',message:'Restore configuration only and require a fresh review?',
+        detail:[`Snapshot ${entry.createdAt} · ${entry.reason}`, ...changes.slice(0,30).map(d=>`${d.field}: ${d.before} → ${d.after}`),
+          'Old authorization is not restored. Preparation and security are invalidated. Historical calibration is context only; current applicability is checked again. Journals, holds and browser pages stay intact.'].join('\n'),confirmLabel:'Restore configuration',cancelLabel:'Keep current configuration'}));
+      if(restored){
+        if(entry.objective)await objectives.save(entry.objective,null);
+        if(entry.profile)await daily.saveProfile({...entry.profile,enabled:false},controller.state);
+      }
+      return {...await daily.view(controller.state),restored};
+    }
+    throw Error('DAILY_ACTION_INVALID');
+  });
   ipcMain.handle('thirsty:shotgunLab',async(event,...args:unknown[])=>{
     if(event.sender!==window.webContents||event.senderFrame!==window.webContents.mainFrame||event.senderFrame.url!==indexUrl||args.length!==1)throw Error('IPC_NOT_ALLOWED');
     const request=args[0] as {action:string;value?:unknown};
@@ -183,7 +224,12 @@ else {
     if(request.action==='save'){const b=request.binding as {objectiveFingerprint?:unknown;configFingerprint?:unknown}|null|undefined;
       const binding=b===undefined?undefined:b===null?null:typeof b.objectiveFingerprint==='string'&&/^[a-f0-9]{64}$/.test(b.objectiveFingerprint)&&typeof b.configFingerprint==='string'&&/^[a-f0-9]{64}$/.test(b.configFingerprint)
         ?{objectiveFingerprint:b.objectiveFingerprint,configFingerprint:b.configFingerprint,savedAt:new Date().toISOString()}:(()=>{throw Error('OBJECTIVE_BINDING_INVALID');})();
-      return objectives.save(request.value,binding);}
+      const document=await objectives.save(request.value,binding);
+      if(binding&&binding.configFingerprint===controller.state.booking?.fingerprint){
+        // A failed snapshot never changes the successful plan save or its booking-state protections.
+        await daily.snapshot(controller.state,document.objective).catch(()=>undefined);
+      }
+      return document;}
     if(request.action==='savePresets')return objectives.savePresets(request.value);
     // Validation of the exact runtime representation against the real configuration schema; never saves.
     if(request.action==='validateRelease')return controller.validateReleaseSetup(request.value);
@@ -235,7 +281,15 @@ else {
     settle(response.confirmed);
   });
   window.once('ready-to-show', () => window.show());
-  const poll = setInterval(() => { void controller.refresh(); }, 2000);
+  let lastDailyPoll=0,dailyPolling=false;
+  const refreshDaily=async()=>{if(dailyPolling)return;dailyPolling=true;try{
+    controller.state.daily=await daily.tick(controller.state,deliverNotice);
+    if(!planningMutationBlocked(controller.state)){
+      const overview=await journalOverview(root);controller.state.journalEvidence={unknown:overview.counts.unknown,armedOrDispatching:overview.counts.armedOrDispatching,checkedAt:overview.checkedAt};
+      controller.state.updateHistory=readUpdateHistory(root);
+    }
+  }catch{controller.state.daily={profile:null,generated:null,migrationRequired:false,advice:null,snapshots:[],reports:[],error:'Daily planning metadata could not be read. Existing plans and booking records are unchanged.'};}finally{dailyPolling=false;}};
+  const poll = setInterval(() => { void controller.refresh().then(()=>{if(Date.now()-lastDailyPoll>30_000){lastDailyPoll=Date.now();void refreshDaily();}}); }, 2000);
   app.on('before-quit', event => {
     if (exiting) return;
     event.preventDefault();
@@ -253,5 +307,6 @@ else {
   window.webContents.on('render-process-gone', () => { void controller.abortAutomation(); });
   await window.loadFile(index);
   await controller.refresh();
+  await refreshDaily();
   });
 }

@@ -1,5 +1,8 @@
 # Documentation index
 
+- [Daily release assistant guide](THIRSTY_V3_DAILY_GUIDE.md)
+- [V3 implementation boundaries](THIRSTY_V3_IMPLEMENTATION.md)
+
 The historical reports stay at the repository root so that existing links keep working. This index groups them.
 
 ## Current

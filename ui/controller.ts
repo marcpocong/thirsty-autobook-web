@@ -558,6 +558,8 @@ export class Controller {
     const live=this.state.live;if(!live?.parents.length){return;}
     const plan=this.state.booking?.setup.PRECISION_PHASE3,planned=plan?plan.wave1.reduce((n,a)=>n+(a.fanOutOffsetsMs?.length??1),0):undefined;
     this.state.runSummary=summarizeRunOutcome(live.parents.flatMap(parent=>parent.children.map(child=>({state:child.state,...(child.code?{code:child.code}:{})}))),planned);
+    this.state.runSummaryRunId=this.state.runTiming?.runId;
+    this.state.runSummaryRunnerId=this.runnerRunId;
   }
   /** Rejected runtime events stay visible (stage, field paths and codes only) instead of disappearing into the log. */
   private recordProtocolIssue(line:string){
@@ -1171,6 +1173,25 @@ export class Controller {
     this.state.booking=this.deps.saveBooking(candidate.setup);this.state.bookingAdjustment=candidate.reconciliation.removed.length?candidate.reconciliation:null;
     this.state.headline='Booking plan saved'; this.state.detail='Review the compiled plan, then Prepare Booking. Terms authorization is off.';
   }); }
+  /** Configuration-only restoration. Rechecks provider-state guards after owner confirmation. */
+  async restoreConfiguration(input: unknown, confirm:()=>Promise<boolean>) {
+    let restored=false;
+    await this.operation('saving',async gen=>{
+    const candidate=this.releaseSetup(input);
+    const check=()=>{if(gen!==this.generation)throw Error('CANCELLED');};
+    const inspect=async()=>{
+      await this.noLock(check);
+      const possible=await this.deps.possibleHolds?.()??[];check();
+      if(possible.length||this.state.runSummary?.unknown||(this.state.qrHandoffs??[]).some(h=>!h.holdExpiresAt||Date.parse(h.holdExpiresAt)>Date.now()))throw Error('BOOKING_STATE_REQUIRES_REVIEW');
+    };
+    await inspect();if(!await confirm())return;check();await inspect();
+    this.clearPreparation();this.state.securityCheck=null;this.state.shotgunTimingVerdict=null;
+    this.state.booking=this.deps.saveBooking(candidate.setup);
+    restored=true;
+    this.state.headline='Configuration restored — review required';
+    this.state.detail='Review the booking date and current environment, then prepare and calibrate again. Owner authorization is off. Booking records and browser pages are unchanged.';
+    });return restored;
+  }
   armSelection() { return this.armBooking('selection'); }
   dryRace() { return this.armBooking('dry'); }
   async setMode(mode:unknown){

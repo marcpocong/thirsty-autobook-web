@@ -2,6 +2,7 @@ import { hooks, PANE_DESTINATION, type Destination, type Pane } from './navigati
 import { initBookingSetup } from './booking-setup.js';
 import { initHome } from './home.js';
 import { initActivity } from './activity.js';
+import { initDailyDashboard } from './daily-dashboard.js';
 import { COURT_REGISTRY } from '../../src/court-registry.js';
 import {shotgunCriticalInterval} from '../../src/shotgun.js';
 import type { Bridge, Dashboard, RunHistoryEntry } from '../types.js';
@@ -752,6 +753,9 @@ function renderBuild(state: Dashboard) {
     ['CI verified', build.kind === 'installation' ? 'Required by the canonical updater for this exact commit before it was installed' : 'Not established for a development build'],
     ['Installed runtime verified', build.kind === 'installation' ? 'Checked by the updater against a fresh compile (BUILD-INFO.txt); re-check with npm run verify:dist -- --dist ../dist' : 'Not applicable'],
     ['Source checkout', provenance.detail],
+    ['GitHub/source verification', 'Local source identity is shown above. Remote GitHub freshness and CI are not inferred from local refs.'],
+    ['Last successful update',state.updateHistory?.lastSuccessfulUpdate??'No successful local update transaction recorded'],
+    ['Rollback',state.updateHistory?.rollbackAvailable?'Backup files available; the canonical rollback must still pass lifecycle and provenance checks.':'No complete rollback backup verified'],
     ['Last installation preflight', state.updatePreflight ? `${state.updatePreflight.eligibility} · ${state.updatePreflight.blockers} active lifecycle blocker${state.updatePreflight.blockers === 1 ? '' : 's'} · ${state.updatePreflight.historicalUnknown} historical UNKNOWN record${state.updatePreflight.historicalUnknown === 1 ? '' : 's'} preserved (never reclassified) · checked ${state.updatePreflight.checkedAt}` : 'Not recorded. Run npm run app:update-check (read-only) from Source.']]
     : [['Build', 'No build-info.json was found. Rebuild with npm run release:build (or npm run ui:build for development).'], ['Source checkout', provenance.detail]];
   details.replaceChildren(...rows.flatMap(([term, value]) => { const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = term; dd.textContent = value; return [dt, dd]; }));
@@ -1384,6 +1388,6 @@ input('book-now-start').value='18:00';
 // The both-wing availability grid is rendered by Booking Setup (booking-setup.ts).
 
 hooks.prepare=async()=>{byId('prepare').click();};
-initBookingSetup();initHome();initActivity();
+initBookingSetup();initHome();initActivity();initDailyDashboard();
 // Buko or both wings are planned in Booking Setup (the saved legacy plan stays Mango).
 input('strategy-wing').onchange=()=>{const value=input('strategy-wing').value;if(value!=='MANGO'){input('strategy-wing').value='MANGO';document.dispatchEvent(new CustomEvent('booking-setup:wing',{detail:value}));}};

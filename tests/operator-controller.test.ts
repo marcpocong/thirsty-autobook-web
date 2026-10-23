@@ -235,3 +235,28 @@ describe('pre-release security check (genuine verification minutes before releas
     expect(h.controller.state).toMatchObject({ ready: true, apiFirstReady: true, preparedPlanFingerprint: view.fingerprint, headline: 'SECURITY CHECK PASSED', securityCheck: { status: 'PASSED' } });
   });
 });
+
+
+describe('V3 configuration-only restoration',()=>{
+  it('requires confirmation, invalidates preparation and leaves browser/runner actions untouched',async()=>{
+    const original=precision(two), h=harness(original);
+    h.controller.state.ready=true;h.controller.state.preparedPlanFingerprint=original.fingerprint;h.controller.state.termsAuthorized=true;
+    expect(await h.controller.restoreConfiguration(precision(one).setup,async()=>false)).toBe(false);
+    expect(h.controller.validateReleaseSetup(original.setup)).toMatchObject({matchesSaved:true});
+    expect(await h.controller.restoreConfiguration(precision(one).setup,async()=>true)).toBe(true);
+    expect(h.controller.state).toMatchObject({ready:false,termsAuthorized:false,preparedPlanFingerprint:null});
+    expect(h.calls).toEqual([]);expect(h.controller.validateReleaseSetup(precision(one).setup)).toMatchObject({matchesSaved:true});
+  });
+  it('rechecks lock and hold evidence after the confirmation and does not save when it changes',async()=>{
+    const original=precision(two),h=harness(original);
+    expect(await h.controller.restoreConfiguration(precision(one).setup,async()=>{h.setLock(true);return true;})).toBe(false);
+    expect(h.controller.validateReleaseSetup(original.setup)).toMatchObject({matchesSaved:true});expect(h.calls).toEqual([]);
+  });
+  it('protects UNKNOWN, possible holds, active runs and genuine QR handoffs',async()=>{
+    const original=precision(two), h=harness(original);
+    h.controller.state.runSummary={unknown:1} as never;
+    expect(await h.controller.restoreConfiguration(precision(one).setup,async()=>true)).toBe(false);
+    h.controller.state.operation='full';await expect(h.controller.restoreConfiguration(precision(one).setup,async()=>true)).rejects.toThrow('OPERATION_ALREADY_RUNNING');
+    expect(h.controller.validateReleaseSetup(original.setup)).toMatchObject({matchesSaved:true});expect(h.calls).toEqual([]);
+  });
+});

@@ -49,6 +49,8 @@ const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 function context() {
   const now = Date.now(), status = state?.playerStatus, configured: Record<string, boolean | undefined> = { A: status?.primary, B: status?.extended, C: status?.third, D: status?.fourth, E: status?.fifth, F: status?.sixth, G: status?.seventh, H: status?.eighth };
   const unavailable = new Set(Object.entries(configured).filter(([, ok]) => ok === false).map(([w]) => w));
+  const preferred=state?.daily?.profile?.workers;
+  if(preferred)for(const w of ['A','B','C','D','E','F','G'])if(!preferred.includes(w))unavailable.add(w);
   const holds = activeHolds(now), normalSkip = new Set([...unavailable, ...holds.map(h => h.checkout!).filter(Boolean)]);
   const evidence = state?.courtBrowser, fresh = evidence && now - Date.parse(evidence.capturedAt) >= 0 && now - Date.parse(evidence.capturedAt) < 15_000;
   const openCells = fresh ? new Set(evidence!.cells.filter(c => (c.state ?? (c.available ? 'OPEN' : 'BLOCKED')) === 'OPEN' && objective.wings[c.wing].bookingDate === evidence!.date).map(c => `${c.wing}:${c.court}:${c.start}`)) : undefined;
@@ -683,6 +685,25 @@ function inspectorFacts(): Array<[string, string]> {
   rows.push(['Live capability', `${compiled.liveStatus.replace('_', ' ')}${wings.length > 1 ? ' (most restrictive wing)' : ''}`]);
   return rows;
 }
+function sharedReadinessLayers(){
+  const s=state, inputs=operatorInputs(), {armed,running}=runState(), keepSaved=release()&&!owns;
+  // Five separate readiness claims; a forecast is never presented as security readiness.
+  const children = s?.live?.parents.filter(p => p.wave === 'WAVE_1').flatMap(p => p.children) ?? [];
+  const plannedSends = s?.booking?.setup.PRECISION_PHASE3?.wave1.reduce((n, a) => n + (a.fanOutOffsetsMs?.length ?? 1), 0) ?? 0;
+  const workers = requiredWorkers(), f = s?.prewarmFeasibility;
+  const layers = readinessLayers({ plan: { problems: keepSaved ? 0 : compiled.problems.length, runtime: keepSaved ? 'VALID' : runtimeCheck.status, saved: keepSaved || runtimeCheck.matchesSaved === true },
+    environment: { prepared: preparedForSaved(), forOtherPlan: inputs.prepared.forOtherPlan, required: workers.length, connected: workers.filter(w => s?.browserHealth?.[w as 'A']).length, identityIssues: s?.identityIssues?.length ?? 0 },
+    forecast: release() && s ? layerForecast(s, preparedForSaved()) : null,
+    security: release() ? { planned: plannedSends, ready: children.filter(c => c.state === 'READY').length, preparing: children.filter(c => c.state === 'PREPARING').length,
+      failed: children.filter(c => ['FAILED', 'PREWARM_FAILED'].includes(c.state)).length, omitted: children.filter(c => c.state === 'OMITTED').length, leadMs: s?.live?.prewarm?.leadMs ?? f?.prewarmLeadMs ?? null } : null,
+    securityCheck: release() && preparedForSaved() ? s?.securityCheck ?? null : null,
+    armed: { armed, running }, readinessBlockers: s ? releaseBlockers(s) : [] });
+  return layers;
+}
+export function dashboardPreflight(){
+  const s=state;if(!s)return null;const inputs=operatorInputs(),{armed,running}=runState();
+  return releasePreflight(preflightInput(s,sharedReadinessLayers(),{prepared:preparedForSaved(),forOther:inputs.prepared.forOtherPlan,armed,running,securityCheck:preparedForSaved()?s.securityCheck??null:null,draft:release()&&owns?{matches:runtimeCheck.matchesSaved,differences:runtimeCheck.differences?.total??0,problems:compiled.problems.length}:null}));
+}
 function renderReview(v: ExecutionView) {
   const host = byId('strategy-inspector'), outcome = runOutcome(), s = state;
   const risks = [...compiled.problems.map(p => ({ tone: 'bad', text: p })), ...wingsBlocked(), ...compiled.warnings.map(w => ({ tone: 'warn', text: w }))];
@@ -701,17 +722,7 @@ function renderReview(v: ExecutionView) {
   fill(byId('plan-ladder'), ...(release() ? planLadder({ ...inputs, executed: s?.runSummary?.settled ? s.runSummary.headline : null }) : []).map(step =>
     el('li', { 'data-status': step.status, title: step.detail }, el('strong', { text: step.label }), el('span', { text: step.detail }))));
   byId('plan-ladder').hidden = !release();
-  // Five separate readiness claims; a forecast is never presented as security readiness.
-  const children = s?.live?.parents.filter(p => p.wave === 'WAVE_1').flatMap(p => p.children) ?? [];
-  const plannedSends = s?.booking?.setup.PRECISION_PHASE3?.wave1.reduce((n, a) => n + (a.fanOutOffsetsMs?.length ?? 1), 0) ?? 0;
-  const workers = requiredWorkers(), f = s?.prewarmFeasibility;
-  const layers = readinessLayers({ plan: { problems: keepSaved ? 0 : compiled.problems.length, runtime: keepSaved ? 'VALID' : runtimeCheck.status, saved: keepSaved || runtimeCheck.matchesSaved === true },
-    environment: { prepared: preparedForSaved(), forOtherPlan: inputs.prepared.forOtherPlan, required: workers.length, connected: workers.filter(w => s?.browserHealth?.[w as 'A']).length, identityIssues: s?.identityIssues?.length ?? 0 },
-    forecast: release() && s ? layerForecast(s, preparedForSaved()) : null,
-    security: release() ? { planned: plannedSends, ready: children.filter(c => c.state === 'READY').length, preparing: children.filter(c => c.state === 'PREPARING').length,
-      failed: children.filter(c => ['FAILED', 'PREWARM_FAILED'].includes(c.state)).length, omitted: children.filter(c => c.state === 'OMITTED').length, leadMs: s?.live?.prewarm?.leadMs ?? f?.prewarmLeadMs ?? null } : null,
-    securityCheck: release() && preparedForSaved() ? s?.securityCheck ?? null : null,
-    armed: { armed, running }, readinessBlockers: s ? releaseBlockers(s) : [] });
+  const layers=sharedReadinessLayers();
   // Release Day Preflight: the same model as the execution console, over the SAVED plan and actual runtime state.
   const layersHost = byId('readiness-layers'), summaryHost = byId('plan-summary');
   byId('release-overview').hidden = !release();
@@ -828,4 +839,15 @@ function renderConflict(liveSaveable: boolean) {
 function wingsBlocked() {
   return enabledWings(objective).flatMap(w => { const v = compiled.capability[w]; return v && !v.live && v.status !== 'BLOCKED' ? [{ tone: 'warn', text: `${wingName(w)} is ${v.status.replace('_', ' ')} for live use: ${v.reasons[0]}` }] : []; });
 }
-export const bookingSetupState = () => ({ objective, compiled, documentSaved, view: loaded ? view() : null });
+export const bookingSetupState = () => ({ objective, compiled, documentSaved, view: loaded ? view() : null, gates:loaded?gates():null });
+/** A generated proposal becomes an editable draft ONLY after an explicit click. Saving remains separate. */
+export function acceptGeneratedDraft(next:BookingObjective){
+  if(!loaded||!view().can.edit)throw Error('DRAFT_LOCKED');
+  const dirty=documentSaved?!same(documentSaved.objective,objective):true;
+  if(dirty&&!window.confirm('Replace the current unsaved draft with this proposal? Your saved release plan is unchanged.'))return false;
+  edit(d=>Object.assign(d,structuredClone(next)));goStep(5);return true;
+}
+export function prepareFromDashboard(){goStep(5);void prepareSaved();}
+export function primaryFromDashboard(){goStep(5);hooks.primaryAction?.();}
+export function reloadRestoredDraft(){void load();}
+export function recoverFromDashboard(action:RecoveryAction){goStep(5);recover(action);}

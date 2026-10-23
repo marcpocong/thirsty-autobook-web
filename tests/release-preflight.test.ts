@@ -102,3 +102,10 @@ describe('primary action facts come from the typed action, never the button text
     expect(primaryActionFacts('STOP').doesNot).toMatch(/holds already created stay/);
   });
 });
+
+
+it('V3 exposes full-lead security overruns, scheduled preparation time and possible-hold reconciliation',()=>{
+  const i=input(),p=releasePreflight({...i,forecast:{...i.forecast!,firstOffsetMs:-1000},securityCheck:{...i.securityCheck!,workers:[{id:'A',outcome:'FAILED',durationMs:60000,challengeFrame:'none'}]},possibleHolds:1});
+  expect(row(p,'security').caution).toContain('exceeded the entire current release preparation lead');
+  expect(row(p,'forecast').detail).toContain('preparation scheduled');expect(row(p,'locks').status).toBe('BLOCKED');expect(row(p,'locks').detail).toContain('not verified bookings');
+});

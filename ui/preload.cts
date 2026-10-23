@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { Dashboard, Bridge, ConfirmRequest } from './types.js';
 const bridge: Bridge = {
+  daily:request=>ipcRenderer.invoke('thirsty:daily',request),
+  onDestination:callback=>{const listener=(_event:unknown,destination:'home'|'release'|'live')=>callback(destination);ipcRenderer.on('thirsty:destination',listener);return()=>ipcRenderer.removeListener('thirsty:destination',listener);},
   onLabPhase:callback=>{const listener=(_event:unknown,phase:string)=>callback(phase);ipcRenderer.on('thirsty:labPhase',listener);return()=>ipcRenderer.removeListener('thirsty:labPhase',listener);},
   shotgunLab:request=>ipcRenderer.invoke('thirsty:shotgunLab',request),
   objective:request=>ipcRenderer.invoke('thirsty:objective',request),

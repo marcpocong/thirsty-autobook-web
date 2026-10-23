@@ -619,14 +619,15 @@ export function objectiveFromDualWingPlan(plan: { objective: 'ANY_ONE' | 'ONE_PE
  * (October 18: a moved draft showed 0 attempts). Values are never changed; every move is reported in a note, and the
  * result is only a draft until the operator saves it.
  */
-export function rebaseReleasedDates(o: BookingObjective, nowMs: number): { objective: BookingObjective; notes: string[] } {
+export function rebaseReleasedDates(o: BookingObjective, nowMs: number, recurringPreferences = false): { objective: BookingObjective; notes: string[] } {
   if (o.mode !== 'NEXT_RELEASE') return { objective: o, notes: [] };
   const next: BookingObjective = JSON.parse(JSON.stringify(o)), notes: string[] = [], moved: Wing[] = [];
   for (const wing of WINGS) {
     try {
-      if (releaseInstantFor(next.wings[wing].bookingDate, wing) > nowMs) continue;
+      if (!recurringPreferences && releaseInstantFor(next.wings[wing].bookingDate, wing) > nowMs) continue;
       const to = nextReleaseFor(nowMs, wing).bookingDate;
-      if (next.wings[wing].enabled) notes.push(`${wing === 'MANGO' ? 'Mango' : 'Buko'} ${next.wings[wing].bookingDate} has already been released; the draft now targets the next release date ${to}. Review it, then save the release plan.`);
+      if (to === next.wings[wing].bookingDate) continue;
+      if (next.wings[wing].enabled) notes.push(`${wing === 'MANGO' ? 'Mango' : 'Buko'} ${next.wings[wing].bookingDate}${recurringPreferences ? ' is the reusable preference date' : ' has already been released'}; the draft now targets the next release date ${to}. Review it, then save the release plan.`);
       next.wings[wing].bookingDate = to; moved.push(wing);
     } catch { /* an invalid date is reported by compile */ }
   }

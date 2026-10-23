@@ -69,10 +69,10 @@ export function preflightInput(state: Dashboard, layers: readonly ReadinessLayer
     operation: state.operation, prepared: { forSaved: extra.prepared, forOther: extra.forOther }, armed: extra.armed, running: extra.running,
     securityCheck: extra.securityCheck ?? null,
     forecast: f && typeof f.prewarmLeadMs === 'number' && typeof f.preparationP95Ms === 'number' ? { leadMs: f.prewarmLeadMs, p95Ms: f.preparationP95Ms, measured: f.p95Source !== 'FALLBACK', samples: f.sampleCount ?? 0,
-      retryCutoffLeadMs: f.retryAssumption?.retryCutoffLeadMs } : null,
+      retryCutoffLeadMs: f.retryAssumption?.retryCutoffLeadMs,firstOffsetMs:Math.min(0,...(setup?.STRATEGY_V2?.shotgun?.exactSchedule.map(s=>s.configuredOffsetMs)??[])) } : null,
     timing: state.shotgunTimingVerdict ?? null,
     lock: { present: !!state.lock, unresolvedSubmission: !!state.lock && !state.canPrepareOverHold && state.retainedLockStage === 'FINAL_ACTION_DISPATCHING', canPrepareOver: !!state.canPrepareOverHold },
-    unknownResults: state.runSummary?.unknown ?? 0, termsAuthorized: !!state.termsAuthorized };
+    unknownResults: state.runSummary?.unknown ?? 0,possibleHolds:state.possibleHolds?.length??0,journalEvidence:state.journalEvidence??null, termsAuthorized: !!state.termsAuthorized };
 }
 
 export function renderPreflight(host: HTMLElement, preflight: Preflight, options: { summaryLine?: string; onRecover?: (action: RecoveryAction) => void; securityButtonId?: string; busy?: boolean; compact?: boolean }) {
