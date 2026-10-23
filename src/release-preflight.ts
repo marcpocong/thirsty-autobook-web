@@ -151,9 +151,11 @@ export function releasePreflight(i: PreflightInput): Preflight {
   const clock = check('clock'); covered.add('clock');
   if (clock) rows.push({ id: 'clock', label: 'Trusted clock', status: fromCheck(clock), detail: `${clock.detail}${clock.level === 'GOOD' ? '' : ' · arming refreshes it again, but refresh now to confirm'}`,
     ...(clock.level === 'GOOD' ? {} : { recovery: { label: 'Refresh clock', action: 'SYNC_CLOCK' } }) });
+  else rows.push({id:'clock',label:'Trusted clock',status:'UNKNOWN',detail:'The controller has not reported a current clock check.',recovery:{label:'Refresh clock',action:'SYNC_CLOCK'}});
   const machine = check('machine'), build = check('build'); covered.add('machine'); covered.add('build');
-  if (machine) rows.push({ id: 'machine', label: 'Machine & build', status: fromCheck(machine) === 'VERIFIED' && build && build.level !== 'GOOD' ? 'NEEDS_ACTION' : fromCheck(machine),
+  if (machine) rows.push({ id: 'machine', label: 'Machine & build', status: fromCheck(machine)==='VERIFIED'&&!build?'UNKNOWN':fromCheck(machine) === 'VERIFIED' && build && build.level !== 'GOOD' ? 'NEEDS_ACTION' : fromCheck(machine),
     detail: [machine.detail, build ? `build ${build.detail}` : ''].filter(Boolean).join(' · ') });
+  else rows.push({id:'machine',label:'Machine & build',status:'UNKNOWN',detail:'The controller has not reported current machine/build checks.',recovery:{label:'Review readiness',action:'REVIEW_READINESS'}});
   // 8. Locks, holds and unknown results: review-first, never cleared or retried automatically.
   rows.push((i.possibleHolds??0)>0
     ?{id:'locks',label:'Locks, holds & unknown results',status:'BLOCKED',detail:`${i.possibleHolds} possibly created hold(s) require provider reconciliation. They are not verified bookings. Do not retry.`,recovery:{label:'Review previous submission',action:'REVIEW_SUBMISSION'}}

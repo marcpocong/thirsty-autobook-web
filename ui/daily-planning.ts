@@ -9,6 +9,7 @@ import { nextReleaseFor, releaseInstantFor } from '../src/wing-release-data.js';
 import { adviseDailyBudget, type BudgetAdvice } from '../src/daily-budget.js';
 import { releaseNotices, type LocalNotice } from '../src/release-reminders.js';
 import { postRunReport, type PostRunReport } from '../src/post-run-report.js';
+import { setupDifferences } from '../src/plan-diff.js';
 import type { Dashboard } from './types.js';
 
 export interface ConfigurationSnapshot {
@@ -78,7 +79,8 @@ export class DailyPlanning {
     const compiled = objective ? compileObjective(objective,{nowMs:Date.now(),unavailableWorkers:unavailable}) : null;
     const setup = compiled ? savedMangoReleaseSetup(compiled,nextReleaseFor(Date.now(),'MANGO').bookingDate).setup : null;
     // A saved calibration never qualifies a different generated proposal.
-    const matchesSaved = setup && s.booking && preferenceDifferences(s.booking.setup,setup).length === 0;
+    const runtime=setup?BookingSetupSchema.safeParse(setup):null;
+    const matchesSaved = runtime?.success && s.booking && setupDifferences(s.booking.setup,runtime.data).total === 0;
     return { profile: d.profile, generated: d.generated, migrationRequired: !d.profile,
       advice: objective?.strategy === 'SHOTGUN' ? adviseDailyBudget(objective,{nowMs:Date.now(),unavailableWorkers:unavailable},{prior:s.prewarmFeasibility,
         connectedWorkers:connected,calibrationMatches:!!matchesSaved && s.shotgunTimingVerdict?.status==='READY',providerVolumePermitted:false,blockedSubmission:restorationBlocked(s) && !planningMutationBlocked(s)}) : null,
