@@ -740,7 +740,9 @@ function manifestGate(state:Dashboard,releaseMs:number|undefined):Gate{
 function renderBuild(state: Dashboard) {
   const build = state.build;
   const label = byId('build-label');
-  const provenance = provenanceStatus(build?.gitSha === 'unknown' ? null : build?.gitSha, state.sourceStatus);
+  const provenance = build?.kind==='source-build'
+    ?{label:'Source candidate · not installed',detail:`Source candidate ${build.gitSha.slice(0,7)} · local checkout ${state.sourceStatus?.headSha?.slice(0,7)??'unverified'}. This is not the canonical installation.`,tone:'muted' as const}
+    :provenanceStatus(build?.gitSha === 'unknown' ? null : build?.gitSha, state.sourceStatus);
   label.textContent = build ? `Build ${build.gitSha.slice(0, 7)}${build.dirty ? ' + uncommitted' : ''}${provenance.tone === 'warn' && state.sourceStatus?.headSha ? ' · newer source not installed' : ''}` : 'Build: unknown';
   label.dataset.tone = !build || build.dirty !== false || provenance.tone === 'warn' ? 'warn' : 'muted';
   label.title = build ? `${build.gitSha} · ${build.branch} · built ${build.builtAt} · ${build.buildId}` : 'No build-info.json: this run was not produced by a clean build.';
