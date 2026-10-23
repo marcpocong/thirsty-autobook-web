@@ -73,7 +73,9 @@ export class DailyPlanning {
   async view(s: Dashboard, metadataOnly=false): Promise<DailyView> {
     const d = await this.load(), objective = d.generated?.objective;
     if(metadataOnly)return {profile:d.profile,generated:d.generated,migrationRequired:!d.profile,advice:null,snapshots:d.snapshots.map(({setup,profile,objective,...metadata})=>metadata),reports:d.reports,error:null};
-    const connected = new Set(Object.entries(s.browserHealth ?? {}).filter(([,ok])=>ok).map(([w])=>w));
+    const configured:Record<string,boolean|undefined>={A:s.playerStatus?.primary,B:s.playerStatus?.extended,C:s.playerStatus?.third,D:s.playerStatus?.fourth,E:s.playerStatus?.fifth,F:s.playerStatus?.sixth,G:s.playerStatus?.seventh};
+    const bindingVerified=!!s.ready&&!!s.preparedPlanFingerprint&&s.preparedPlanFingerprint===s.booking?.fingerprint;
+    const connected = new Set(Object.entries(s.browserHealth ?? {}).filter(([w,ok])=>bindingVerified&&ok&&configured[w]===true&&!(s.identityIssues??[]).some(issue=>issue.startsWith(`Worker ${w} `))).map(([w])=>w));
     const permitted = new Set(d.profile?.workers ?? []);
     const unavailable = new Set(['A','B','C','D','E','F','G'].filter(w=>!permitted.has(w)));
     const compiled = objective ? compileObjective(objective,{nowMs:Date.now(),unavailableWorkers:unavailable}) : null;

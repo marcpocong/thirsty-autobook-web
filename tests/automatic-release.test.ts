@@ -54,6 +54,8 @@ describe('automatic recurring drafts',()=>{
     expect((await service.view(s)).migrationRequired).toBe(true);
     await service.saveProfile(goal(),s);
     const views=await Promise.all(Array.from({length:4},()=>service.tick(s,undefined,now)));expect(new Set(views.map(v=>v.generated?.id)).size).toBe(1);
+    // A responding CDP endpoint alone is not verified worker ownership/authentication capacity.
+    expect(views[0]?.advice?.recommended).toBeNull();expect(views[0]?.advice?.executable).toBe(0);
     const restarted=await new DailyPlanning(root).tick(s,undefined,now+30_000);expect(restarted.generated?.id).toBe(views[0]?.generated?.id);expect(restarted.generated?.generatedAt).toBe(views[0]?.generated?.generatedAt);
     const next=await new DailyPlanning(root).tick(s,undefined,now+61_000);expect(next.generated?.id).not.toBe(restarted.generated?.id);
     expect(await readFile(join(root,'config.local.json'),'utf8')).toBe('owner saved bytes');expect(await readFile(join(root,'.local/booking-objective/draft.json'),'utf8')).toBe('manual unsaved/saved draft bytes');expect(await readFile(join(root,'.local/api-booking/unknown.json'),'utf8')).toBe('UNKNOWN original bytes');
