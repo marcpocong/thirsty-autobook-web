@@ -154,10 +154,17 @@ else {
     webPreferences: { preload: resolve(root, 'dist/ui/preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, webviewTag: false } });
   window.removeMenu();
   const launcher=resolve(root,'Thirsty Pickle Bot.exe');
-  if(process.platform==='win32'&&existsSync(launcher))window.setAppDetails({
-    appId:'com.thirstypickle.bot',appIconPath:launcher,appIconIndex:0,
-    relaunchCommand:`"${launcher}"`,relaunchDisplayName:'Thirsty Pickle Bot',
-  });
+  if(process.platform==='win32'&&existsSync(launcher)){
+    // Setting AppUserModel.ID tells Windows to refresh the taskbar group. Its
+    // relaunch/icon properties must already exist when that notification fires.
+    // Electron's combined call writes the ID first, so use two ordered calls.
+    // https://learn.microsoft.com/windows/win32/properties/props-system-appusermodel-id
+    window.setAppDetails({
+      appIconPath:existsSync(brandIcon)?brandIcon:launcher,appIconIndex:0,
+      relaunchCommand:`"${launcher}"`,relaunchDisplayName:'Thirsty Pickle Bot',
+    });
+    window.setAppDetails({appId:'com.thirstypickle.bot'});
+  }
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', event => event.preventDefault());
   window.webContents.on('will-attach-webview', event => event.preventDefault());
