@@ -1,5 +1,7 @@
 # Release day preflight
 
+V3 source candidate: Home now shares this same preflight and recovery routing. Recurring proposals are drafts only; review and save before preparing. See [Daily release assistant](THIRSTY_V3_DAILY_GUIDE.md). The installed application changes only after an authorized canonical update.
+
 Booking Setup → **Review & Run** shows the saved release plan, a single preflight verdict and the main button. The execution console shows the same verdict, because both read one model (`src/release-preflight.ts`). That model restates the controller's checks. It never validates, saves or arms anything itself.
 
 ## Verdicts

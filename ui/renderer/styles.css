@@ -1,4 +1,19 @@
 /* Thirsty Pickle Bot control panel. One dark theme; every control keeps its existing ID. */
+.daily-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.daily-heading h2{font-size:clamp(1.1rem,2vw,1.65rem);margin:4px 0 18px}
+.daily-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:8px 0 20px}
+.daily-metrics>div{padding:14px;background:var(--surface-2);border:1px solid var(--line);border-radius:10px;min-width:0}
+.daily-metrics dt{font-size:.75rem;color:var(--muted);margin-bottom:8px}
+.daily-metrics dd{font-size:1rem;font-weight:600;margin:0;overflow-wrap:anywhere}
+.daily-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:16px 0}
+.daily-field{display:flex;flex-direction:column;gap:8px;min-width:0;font-size:.82rem;color:var(--text-2)}
+.daily-field input,.daily-field select{max-width:100%;min-width:0;width:100%;box-sizing:border-box}
+.daily-field input[type=checkbox]{width:auto;align-self:flex-start}
+#daily-dashboard{border-top:3px solid var(--brand);overflow-wrap:anywhere;min-width:0}
+#daily-dashboard pre{overflow:auto;max-height:300px;max-width:100%;font-size:.74rem}
+.daily-readiness{margin-top:20px}.daily-live{padding:16px;border:1px solid var(--line);border-radius:10px;margin:16px 0}
+.snapshot-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+@media(max-width:700px){.daily-metrics,.daily-form{grid-template-columns:minmax(0,1fr)}.snapshot-row{align-items:flex-start;flex-direction:column}.daily-actions>*{width:100%}}
 :root {
   color-scheme: dark;
   --bg: #07140f;
@@ -1115,3 +1130,7 @@ footer > div { display: flex; align-items: center; gap: 8px; font-size: 11px; co
 .possible-hold strong { color: #ffd7d3; }
 .possible-hold p { line-height: 1.5; margin: 8px 0; }
 .possible-hold details { margin-top: 10px; }
+.daily-actions{display:flex;flex-wrap:wrap;align-items:stretch;gap:10px}
+.daily-actions>.primary-action{width:auto;flex:1 1 300px;min-height:48px;max-height:80px;overflow-wrap:normal}
+.daily-actions>.secondary{flex:0 1 auto;min-width:150px;white-space:normal;overflow-wrap:normal}
+@media(max-width:700px){.daily-actions>.primary-action,.daily-actions>.secondary{flex:1 1 100%;width:100%}}

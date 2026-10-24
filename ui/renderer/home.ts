@@ -2,7 +2,8 @@ import type { Dashboard } from '../types.js';
 import { enabledWings } from '../../src/booking-objective.js';
 import { capabilityMatrix, METHOD_LABEL, STRATEGY_LABEL } from '../../src/capability-matrix.js';
 import { nextReleaseFor, WING_RELEASE_POLICIES } from '../../src/wing-release-data.js';
-import { bookingSetupState } from './booking-setup.js';
+import { bookingSetupState, dashboardPreflight } from './booking-setup.js';
+import { planWorkerIds } from '../../src/workers.js';
 import { el, fill, manilaTime, dateText, wingName, onRender, peso } from './navigation.js';
 
 /** Home: what happens next, what is saved, what is ready and what needs a person. Read-only. */
@@ -41,13 +42,15 @@ export function renderHome(state: Dashboard) {
   fill(byId('home-state-body'), el('span', { class: 'state-badge', 'data-tone': v?.tone ?? 'muted', text: v?.label ?? '—' }), el('p', { class: 'small', text: v?.detail ?? '' }),
     state.activeApiRelease ? el('p', { class: 'small', text: `Armed for ${manilaTime(state.activeApiRelease.releaseMs)} · ${state.activeApiRelease.phase}` }) : state.scheduledRelease ? el('p', { class: 'small', text: 'A scheduled release is armed.' }) : null,
     el('p', { class: 'small muted', text: `Live capability for this goal: ${compiled.liveStatus.replace('_', ' ')}` }));
-  const health: Partial<Record<string, boolean>> = state.browserHealth ?? {}, needed = new Set([...compiled.normalSteps.flatMap(s => s.workers), ...(compiled.cohorts[0]?.smart?.phase3?.wave1.map(a => a.workerId) ?? [])]);
+  const health: Partial<Record<string, boolean>> = state.browserHealth ?? {}, needed = new Set(o.mode==='NEXT_RELEASE'&&state.booking?planWorkerIds(state.booking.setup):[...compiled.normalSteps.flatMap(s => s.workers), ...(compiled.cohorts[0]?.smart?.phase3?.wave1.map(a => a.workerId) ?? [])]);
   fill(byId('home-browsers-body'), el('div', { class: 'browser-dots' }, ...(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'] as const).map(w => el('span', { class: 'browser-dot', 'data-open': String(!!health[w]), 'data-needed': String(needed.has(w)), title: `Browser ${w}${needed.has(w) ? ' · needed by this plan' : ''} · ${health[w] ? 'open' : 'not running'}`, text: w }))),
     el('p', { class: 'small', text: `${[...needed].filter(w => health[w]).length}/${needed.size} needed browsers open · ${state.ready ? 'prepared' : 'not prepared'} · availability uses its own read-only observer` }));
   const holds = (state.qrHandoffs ?? []).filter(h => h.holdExpiresAt && Date.parse(h.holdExpiresAt) > now);
   fill(byId('home-holds-body'), holds.length ? el('ul', { class: 'plain-list' }, ...holds.map(h => el('li', { text: `${wingName(h.wing ?? 'MANGO')} Court ${h.courts.join(' + ')} · ${dateText(h.date)} ${h.startTime}–${h.endTime} · ${peso(h.amount)} · temporary hold until ${manilaTime(Date.parse(h.holdExpiresAt!), { hour: '2-digit', minute: '2-digit' })} · PAYMENT PENDING (manual)${h.checkout ? ` · Browser ${h.checkout}` : ''}` })))
     : el('p', { class: 'small', text: `No current verified hold.${state.previousHolds?.length ? ` ${state.previousHolds.length} retained hold record(s) in History.` : ''} A hold is never a paid booking until you pay on Onda.` }));
   const warnings: Array<[string, string]> = [];
+  const preflight=dashboardPreflight();
+  if(o.mode==='NEXT_RELEASE'&&preflight&&['NEEDS_ACTION','BLOCKED'].includes(preflight.verdict))warnings.push(['warn',`Release readiness: ${preflight.summary}`]);
   // The same typed failure and run accounting Booking Setup shows, first.
   if (state.attention) warnings.push(['bad', `${state.attention.title}: ${state.attention.detail} → ${state.attention.recovery.label} in Booking Setup → Review & Run.`]);
   if (state.runSummary?.settled && state.runSummary.planned && !state.runSummary.holds) warnings.push([state.runSummary.unknown ? 'bad' : 'warn', `Last release run · ${state.runSummary.headline}: ${state.runSummary.detail}. ${state.runSummary.nextStep}`]);
@@ -58,6 +61,6 @@ export function renderHome(state: Dashboard) {
   for (const w of enabledWings(o)) { const c = compiled.capability[w]; if (c && !c.live) warnings.push(['muted', `${wingName(w)}: ${c.status.replace('_', ' ')} for live use — ${c.reasons[0]}`]); }
   if (compiled.problems.length) warnings.push(['warn', `Booking Setup has ${compiled.problems.length} item(s) to fix.`]);
   fill(byId('home-warnings-body'), warnings.length ? el('ul', { class: 'strategy-warnings' }, ...warnings.map(([tone, text]) => el('li', { 'data-tone': tone, text })))
-    : el('p', { class: 'small good-text', text: `✓ Nothing needs attention.${journals ? ` ${journals.archived} historical record(s) archived.` : ''}` }));
+    : el('p', { class: 'small', text: `No additional alerts. Use the shared readiness above for release eligibility.${journals ? ` ${journals.archived} historical record(s) archived.` : ''}` }));
   byId('home-title').textContent = v?.state === 'ARMED' ? 'Armed and waiting for release' : v?.state === 'RUNNING' ? 'Release running' : v?.state === 'PREPARED' ? 'Prepared — authorize and arm next' : holds.length ? 'You have a temporary hold' : state.attention ? 'Needs attention' : v?.state === 'DRAFT' ? 'Draft — save the release plan next' : v?.state === 'SAVED' ? 'Saved — prepare next' : 'Ready when you are';
 }

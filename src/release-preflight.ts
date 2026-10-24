@@ -34,10 +34,12 @@ export interface PreflightInput {
   securityCheck: { status: 'PASSED' | 'FAILED' | 'STALE' | 'OTHER_PLAN' | 'OTHER_BROWSER' | 'MISSING'; detail: string; checkedAt: string | null; expiresAt?: string | null;
     workers?: ReadonlyArray<{ id: string; outcome: string; durationMs: number | null; challengeFrame: string | null }> } | null;
   /** The engine's preparation forecast for the saved plan (lead and the measured duration it was sized for). */
-  forecast: { leadMs: number; p95Ms: number; measured: boolean; samples: number; retryCutoffLeadMs?: number } | null;
+  forecast: { leadMs: number; p95Ms: number; measured: boolean; samples: number; retryCutoffLeadMs?: number; firstOffsetMs?:number } | null;
   timing: ShotgunTimingVerdict | null;
   lock: { present: boolean; unresolvedSubmission: boolean; canPrepareOver: boolean };
   unknownResults: number;
+  possibleHolds?:number;
+  journalEvidence?:{unknown:number;armedOrDispatching:number;checkedAt:string}|null;
   termsAuthorized: boolean;
 }
 export interface Preflight { verdict: PreflightVerdict; title: string; summary: string; rows: PreflightRow[] }
@@ -105,6 +107,8 @@ export function releasePreflight(i: PreflightInput): Preflight {
     if (sc.status === 'PASSED') {
       const slow = (sc.workers ?? []).filter(w => w.durationMs !== null && i.forecast && w.durationMs > i.forecast.p95Ms);
       if (slow.length) cautions.push(`${slow.map(w => `${w.id} took ${s1(w.durationMs!)}`).join(', ')} — slower than the ${s1(i.forecast!.p95Ms)} the release lead is sized for. Check again closer to release.`);
+      const overLead=(sc.workers??[]).filter(w=>w.durationMs!==null&&i.forecast&&w.durationMs>i.forecast.leadMs);
+      if(overLead.length)cautions.push(`${overLead.map(w=>w.id).join(', ')} exceeded the entire current release preparation lead. The release-time acquisition could miss its strict trigger; review this evidence before arming.`);
       const challenged = (sc.workers ?? []).filter(w => w.challengeFrame === 'visible' || w.challengeFrame === 'hidden');
       if (challenged.length) cautions.push(`Onda showed a verification frame in browser ${challenged.map(w => w.id).join(', ')}. Stay at this computer at release: if a window says VERIFY HERE, complete it there.`);
     }
@@ -138,7 +142,8 @@ export function releasePreflight(i: PreflightInput): Preflight {
     const fromLayer: PreflightStatus = fl.status === 'OK' ? 'VERIFIED' : fl.status === 'BLOCKED' ? 'BLOCKED' : fl.status === 'WARN' ? 'NEEDS_ACTION' : 'UNKNOWN';
     const status: PreflightStatus = capacity && (i.prepared.forSaved || live) ? fromCheck(capacity) : fromLayer;
     const f = i.forecast, retryWithinMs = f ? f.leadMs - (f.retryCutoffLeadMs ?? 7_000) : 0;
-    rows.push({ id: 'forecast', layer: 'FORECAST', label: 'Preparation forecast', status, detail: fl.detail,
+    const deadline=f&&i.releaseMs?` · preparation scheduled ${manila(i.releaseMs+(f.firstOffsetMs??0)-f.leadMs,true)} Manila; first trigger ${manila(i.releaseMs+(f.firstOffsetMs??0),true)} Manila`:'';
+    rows.push({ id: 'forecast', layer: 'FORECAST', label: 'Preparation forecast', status, detail: fl.detail+deadline,
       ...(f ? { caution: `Starts ${s1(f.leadMs)} before the first trigger for a ${s1(f.p95Ms)} ${f.measured ? `measured p95 (${f.samples} successful preparations; failures are not in this figure)` : 'fallback estimate'}. A first attempt that fails within ${s1(Math.max(0, retryWithinMs))} can be retried once; a longer stall fails closed and nothing is sent late.` } : {}),
       ...(status === 'BLOCKED' || status === 'NEEDS_ACTION' ? { recovery: { label: 'Review capacity', action: 'REVIEW_CAPACITY' } } : {}) });
   }
@@ -146,11 +151,15 @@ export function releasePreflight(i: PreflightInput): Preflight {
   const clock = check('clock'); covered.add('clock');
   if (clock) rows.push({ id: 'clock', label: 'Trusted clock', status: fromCheck(clock), detail: `${clock.detail}${clock.level === 'GOOD' ? '' : ' · arming refreshes it again, but refresh now to confirm'}`,
     ...(clock.level === 'GOOD' ? {} : { recovery: { label: 'Refresh clock', action: 'SYNC_CLOCK' } }) });
+  else rows.push({id:'clock',label:'Trusted clock',status:'UNKNOWN',detail:'The controller has not reported a current clock check.',recovery:{label:'Refresh clock',action:'SYNC_CLOCK'}});
   const machine = check('machine'), build = check('build'); covered.add('machine'); covered.add('build');
-  if (machine) rows.push({ id: 'machine', label: 'Machine & build', status: fromCheck(machine) === 'VERIFIED' && build && build.level !== 'GOOD' ? 'NEEDS_ACTION' : fromCheck(machine),
+  if (machine) rows.push({ id: 'machine', label: 'Machine & build', status: fromCheck(machine)==='VERIFIED'&&!build?'UNKNOWN':fromCheck(machine) === 'VERIFIED' && build && build.level !== 'GOOD' ? 'NEEDS_ACTION' : fromCheck(machine),
     detail: [machine.detail, build ? `build ${build.detail}` : ''].filter(Boolean).join(' · ') });
+  else rows.push({id:'machine',label:'Machine & build',status:'UNKNOWN',detail:'The controller has not reported current machine/build checks.',recovery:{label:'Review readiness',action:'REVIEW_READINESS'}});
   // 8. Locks, holds and unknown results: review-first, never cleared or retried automatically.
-  rows.push(i.lock.present && i.lock.unresolvedSubmission
+  rows.push((i.possibleHolds??0)>0
+    ?{id:'locks',label:'Locks, holds & unknown results',status:'BLOCKED',detail:`${i.possibleHolds} possibly created hold(s) require provider reconciliation. They are not verified bookings. Do not retry.`,recovery:{label:'Review previous submission',action:'REVIEW_SUBMISSION'}}
+    :i.lock.present && i.lock.unresolvedSubmission
     ? { id: 'locks', label: 'Locks, holds & unknown results', status: 'BLOCKED', detail: 'An earlier checkout outcome is UNKNOWN and its lock is retained. It is never retried or cleared automatically; check Onda manually and review it.', recovery: { label: 'Review previous submission', action: 'REVIEW_SUBMISSION' } }
     : i.unknownResults > 0
       ? { id: 'locks', label: 'Locks, holds & unknown results', status: 'BLOCKED', detail: `The last run has ${i.unknownResults} UNKNOWN result${i.unknownResults === 1 ? '' : 's'}. Check Onda manually; it stays UNKNOWN and that target is never retried.`, recovery: { label: 'Open Activity', action: 'OPEN_ACTIVITY' } }
@@ -158,7 +167,9 @@ export function releasePreflight(i: PreflightInput): Preflight {
       ? { id: 'locks', label: 'Locks, holds & unknown results', status: 'NEEDS_ACTION', detail: 'A verified temporary hold is still pending manual payment. It stays with the provider until it expires or you pay.', recovery: { label: 'Review hold', action: 'REVIEW_LOCK' } }
       : i.lock.present
         ? { id: 'locks', label: 'Locks, holds & unknown results', status: 'BLOCKED', detail: 'A retained automation lock needs review before another run.', recovery: { label: 'Review lock', action: 'REVIEW_LOCK' } }
-        : { id: 'locks', label: 'Locks, holds & unknown results', status: 'VERIFIED', detail: 'No retained lock, pending hold or unknown result.' });
+        :(i.journalEvidence?.armedOrDispatching??0)>0
+          ?{id:'locks',label:'Locks, holds & unknown results',status:'BLOCKED',detail:'Durable armed/dispatching journals need review before preparing another release.',recovery:{label:'Open Activity',action:'OPEN_ACTIVITY'}}
+          : { id: 'locks', label: 'Locks, holds & unknown results', status: 'VERIFIED', detail:i.journalEvidence?.unknown?`No current lock or possible hold detected. ${i.journalEvidence.unknown} historical UNKNOWN journal(s) remain unresolved and keep their original targets duplicate-blocked. Checked ${at(i.journalEvidence.checkedAt,i.now)}.`:'No retained lock or current pending/unknown result detected. Durable duplicate protection is checked again by the runner.' });
   // 9. Any other controller hard block is shown, never dropped.
   const other = i.checks.filter(c => !covered.has(c.id) && c.hardBlock && c.level !== 'GOOD');
   if (other.length) rows.push({ id: 'other', label: 'Other release checks', status: 'BLOCKED', detail: other.map(c => `${c.label}: ${c.detail}`).join(' · '), recovery: { label: 'Review readiness', action: 'REVIEW_READINESS' } });

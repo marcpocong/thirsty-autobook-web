@@ -1,5 +1,7 @@
 # Booking Setup v3 — one plan from goal to QR (October 15, 2026)
 
+For the recurring daily planner, dashboard, reminder and configuration-recovery additions, see [Daily release assistant](THIRSTY_V3_DAILY_GUIDE.md). Existing users opt in; automatic proposals do not overwrite this editable objective or the saved release plan.
+
 The application has four destinations: **Home**, **Booking Setup**, **Activity** and **Settings**. Booking Setup is the single workspace for the goal, strategy, Shotgun customization, browsers, review, testing and execution. Payment is always manual; the bot stops at the genuine QR checkout.
 
 ## Operator guide

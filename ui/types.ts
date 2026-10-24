@@ -51,6 +51,11 @@ export interface FanOutDigest { latest:(FanOutProfileView&{profile:import('../sr
 export interface ArbitrationManifestView { status:'ready'|'blocked'; targetDate:string; releaseMs:number;
   /** true when an existing matching preregistration was verified and reused. */ verified?:boolean; createdAt?:string; code?:string; reason?:string }
 export interface Dashboard {
+  daily?:import('./daily-planning.js').DailyView;
+  runSummaryRunId?:string;
+  runSummaryRunnerId?:string;
+  journalEvidence?:{unknown:number;armedOrDispatching:number;checkedAt:string}|null;
+  updateHistory?:{lastSuccessfulUpdate:string|null;rollbackAvailable:boolean;transactionStatus:string}|null;
   phase3?:{fitness?:string;cache?:string;seq?:number;outcome?:string;frozen?:boolean;
     attempts:Array<{workerId:string;candidateId:string;wave:string;state:string}>};
   precision?:PrecisionView|null;
@@ -139,6 +144,8 @@ export interface Dashboard {
   mode:'selection'|'full'; handoff:Extract<UiEvent,{type:'handoff'}>|null;
 }
 export interface Bridge {
+  daily(request:{action:'status'|'saveProfile'|'generate'|'snapshot'|'restorePreview'|'restore';value?:unknown;id?:string}):Promise<any>;
+  onDestination(callback:(destination:'home'|'release'|'live')=>void):()=>void;
   onLabPhase?(callback:(phase:string)=>void):()=>void;
   shotgunLab(request:{action:'defaults'|'preview'|'previewObjective'|'save'|'load'|'run'|'stop';value?:unknown}):Promise<any>;
   objective(request:{action:'load'|'save'|'savePresets'|'validateRelease';value?:unknown;binding?:{objectiveFingerprint:string;configFingerprint:string}|null}):Promise<any>;
