@@ -72,7 +72,9 @@ export function preflightInput(state: Dashboard, layers: readonly ReadinessLayer
       retryCutoffLeadMs: f.retryAssumption?.retryCutoffLeadMs,firstOffsetMs:Math.min(0,...(setup?.STRATEGY_V2?.shotgun?.exactSchedule.map(s=>s.configuredOffsetMs)??[])) } : null,
     timing: state.shotgunTimingVerdict ?? null,
     lock: { present: !!state.lock, unresolvedSubmission: !!state.lock && !state.canPrepareOverHold && state.retainedLockStage === 'FINAL_ACTION_DISPATCHING', canPrepareOver: !!state.canPrepareOverHold },
-    unknownResults: state.runSummary?.unknown ?? 0,possibleHolds:state.possibleHolds?.length??0,journalEvidence:state.journalEvidence??null, termsAuthorized: !!state.termsAuthorized };
+    // Dismissal is presentation only. The reader validates age and archive digest, and
+    // still returns all records to the controller/runner's independent safety checks.
+    unknownResults: state.runSummary?.unknown ?? 0,possibleHolds:state.possibleHolds?.filter(h=>!h.archived||!h.dismissible).length??0,journalEvidence:state.journalEvidence??null, termsAuthorized: !!state.termsAuthorized };
 }
 
 export function renderPreflight(host: HTMLElement, preflight: Preflight, options: { summaryLine?: string; onRecover?: (action: RecoveryAction) => void; securityButtonId?: string; busy?: boolean; compact?: boolean }) {

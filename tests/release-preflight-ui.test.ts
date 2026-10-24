@@ -48,6 +48,28 @@ const publish = (page: Page, patch: Record<string, unknown>) => page.evaluate(va
 const calls = (page: Page) => page.evaluate(() => (window as any).fixtureCalls as string[]);
 
 describe('Release Day Preflight (renderer)', () => {
+  it('dismisses historical warnings in both preflight panels while active, restored and changed records still block',async()=>{
+    const old={key:'historical',date:'2026-09-21',courts:[6],startTime:'08:00',endTime:'11:00',amount:1800,
+      holdExpiresAt:iso(Date.now()-3*86400_000),bookingIds:['old-booking'],bookingNumbers:['OLD-ONLY'],code:'UNKNOWN',
+      archivePath:'.local/api-booking/api-first-journals/old.json',dismissible:true,archived:false};
+    const page=await openRenderer(browser,{...readyState(),possibleHolds:[old]},'home',{width:1440,height:1000});
+    try{
+      await step5(page);
+      const setup=page.locator('#readiness-layers [data-row="locks"]'),consoleRow=page.locator('#next-preflight [data-row="locks"]');
+      expect(await setup.getAttribute('data-status')).toBe('BLOCKED');
+      await page.getByRole('button',{name:'Dismiss old warning'}).click();
+      await expect.poll(()=>setup.getAttribute('data-status')).toBe('VERIFIED');
+      expect(await consoleRow.getAttribute('data-status')).toBe('VERIFIED');
+      expect(await page.locator('#dismissed-hold-notices').innerText()).toContain('records remain UNKNOWN');
+      await publish(page,{possibleHolds:[{...old,archived:true},{...old,key:'live',archivePath:undefined,dismissible:false,holdExpiresAt:iso(Date.now()+300_000)}]});
+      await expect.poll(()=>setup.getAttribute('data-status')).toBe('BLOCKED');
+      await publish(page,{possibleHolds:[{...old,archived:true,dismissible:false}]});
+      await expect.poll(()=>setup.getAttribute('data-status')).toBe('BLOCKED');
+      await publish(page,{possibleHolds:[old]});
+      await expect.poll(()=>consoleRow.getAttribute('data-status')).toBe('BLOCKED');
+      expect(await page.evaluate(()=>(window as any).fixtureCalls)).toEqual(['journalArchive:archive']);
+    }finally{await page.close();}
+  });
   it('shows one verdict in Booking Setup and the execution console, and a calibration recovery that only calibrates', async () => {
     const page = await openRenderer(browser, readyState(), 'home', { width: 1440, height: 1000 });
     await step5(page);

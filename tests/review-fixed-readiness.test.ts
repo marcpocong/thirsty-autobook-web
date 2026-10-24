@@ -52,6 +52,21 @@ it('review: a schema-valid prepared Fixed Precision plan remains armable after a
 });
 
 describe('real controller readiness by applicable authorization',()=>{
+  it('refreshes readiness immediately after clock sync using consensus uncertainty and corrected clock age',async()=>{
+    let synced=false;
+    const h=harness(precision(one),()=>0,{
+      syncClock:async()=>{synced=true;},
+      clock:()=>({...clockStatus(ObservationSchema.parse({})),networkSynced:synced,clockOffsetMs:1166.4,clockRoundTripMs:58,
+        clockUncertaintyMs:29.1577,clockQuality:'GOOD',clockSynchronizedAt:new Date(Date.now()+1166.4).toISOString()})
+    });
+    await h.controller.refresh();
+    expect(h.controller.state.releaseReadiness?.checks.find(c=>c.id==='clock')?.level).toBe('UNAVAILABLE');
+    await h.controller.syncClock();
+    expect(h.controller.state.releaseReadiness?.checks.find(c=>c.id==='clock')).toMatchObject({level:'GOOD',detail:expect.stringContaining('uncertainty 29.2 ms · age 0 s')});
+    expect(h.controller.state.headline).toBe('NETWORK CLOCK SYNCHRONIZED');
+    expect(h.calls).toEqual([]);
+    expect(h.controller.state.scheduledRelease).toBeFalsy();
+  });
   function smart(){
     const base=precision(two),compiled=compileSmartPlan({...emptySmartDraft(),rates:confirmSmartRates(600,700,'VENUE_SCHEDULE',base.targetDate,new Date()),
       immediate:two,advanced:{wave2:0,rescue:0}},{targetDate:base.targetDate});
