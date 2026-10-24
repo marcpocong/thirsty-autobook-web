@@ -75,7 +75,13 @@ export async function openRenderer(browser: Browser, extra: Record<string, unkno
           const saved = w.fixtureState.booking?.setup, matches = !!saved && canon(saved) === canon(request.value);
           // The real comparison the controller uses (src/plan-diff.ts), evaluated in Node through an exposed function.
           return { ok: true, problems: [], matchesSaved: matches, differences: saved ? await w.nodeSetupDifferences(saved, request.value) : null }; } },
-      journalArchive: async (request: any) => { (['overview', 'verify'].includes(request.action) ? (w.fixtureReads ??= []) : w.fixtureCalls).push(`journalArchive:${request.action}`); return w.fixtureJournals?.[request.action] ?? { counts: {}, activeUnknown: [], archived: [], eligible: [], checkedAt: new Date().toISOString() }; },
+      journalArchive: async (request: any) => { (['overview', 'verify'].includes(request.action) ? (w.fixtureReads ??= []) : w.fixtureCalls).push(`journalArchive:${request.action}`);
+        const result=w.fixtureJournals?.[request.action] ?? { counts: {}, activeUnknown: [], archived: [], eligible: [], checkedAt: new Date().toISOString() };
+        if(['archive','restore'].includes(request.action)&&!result.cancelled&&!result.refused?.length){
+          w.fixtureState.possibleHolds=w.fixtureState.possibleHolds?.map((h:any)=>request.keys?.includes(h.archivePath)?{...h,archived:request.action==='archive'}:h);
+          w.fixturePublish?.(w.fixtureState);
+        }
+        return result; },
       strategyEvidence: async () => ({ targetDate: '', dayOfWeek: '', releasesConsidered: 0, wellObservedReleases: 0, realReleases: 0, historicalPrePhase3: 0, strength: 'NONE', ranges: [], sharedRisk: [] }),
       onLabPhase: () => () => {} };
   }, state);

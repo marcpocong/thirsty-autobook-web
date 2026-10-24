@@ -18,7 +18,7 @@ import { readLock, readHandoff, readRetainedHold, readPreviousHolds, readLatestQ
 import { readBooking, saveBooking, describePlan } from './booking.js';
 import { resetPracticeSession } from './practice-reset.js';
 import {normalWorkerIds,WORKER_IDS} from '../src/workers.js';
-import {appendFileSync,mkdirSync} from 'node:fs';
+import {appendFileSync,mkdirSync,existsSync} from 'node:fs';
 import {focusDedicatedBrowser} from '../src/browser-window.js';
 import type {ConfirmRequest} from './types.js';
 import {readNetworkClock,synchronizeNetworkClock} from '../src/network-clock.js';
@@ -148,10 +148,16 @@ else {
   void app.whenReady().then(async () => {
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
   session.defaultSession.setPermissionCheckHandler(() => false);
-  window = new BrowserWindow({ width: 1060, height: 800, minWidth: 560, minHeight: 600, title: 'Thirsty Pickle Bot · Onda Booking Control', backgroundColor: '#07140f', icon:resolve(root,'assets/brand/thirsty-pickle-bot.png'),
+  const brandIcon=resolve(root,'.local/thirsty-pickle-bot.ico');
+  window = new BrowserWindow({ width: 1060, height: 800, minWidth: 560, minHeight: 600, title: 'Thirsty Pickle Bot · Onda Booking Control', backgroundColor: '#07140f', icon:existsSync(brandIcon)?brandIcon:resolve(root,'assets/brand/thirsty-pickle-bot.png'),
     autoHideMenuBar: true, show: false,
     webPreferences: { preload: resolve(root, 'dist/ui/preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, webviewTag: false } });
   window.removeMenu();
+  const launcher=resolve(root,'Thirsty Pickle Bot.exe');
+  if(process.platform==='win32'&&existsSync(launcher))window.setAppDetails({
+    appId:'com.thirstypickle.bot',appIconPath:launcher,appIconIndex:0,
+    relaunchCommand:`"${launcher}"`,relaunchDisplayName:'Thirsty Pickle Bot',
+  });
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', event => event.preventDefault());
   window.webContents.on('will-attach-webview', event => event.preventDefault());
@@ -250,9 +256,10 @@ else {
       const ok=await confirmModal({tone:'question',title:'Archive historical UNKNOWN records?',message:`Archive ${keys.length} historical UNKNOWN record${keys.length===1?'':'s'}?`,
         detail:'Each original journal stays exactly where it is, byte for byte, still UNKNOWN. Its target stays blocked against duplicate submission. Archiving only moves the record out of active screens and records a SHA-256 audit entry. It does not retry, reclassify or cancel anything. You can restore it at any time.',confirmLabel:'Archive records'});
       if(!ok)return {archived:[],refused:[],cancelled:true};
-      return archiveHistoricalUnknown(root,keys,note||'operator archival from Activity');
+      const result=await archiveHistoricalUnknown(root,keys,note||'operator archival from Activity');
+      await controller.refreshPossibleHolds();return result;
     }
-    if(request?.action==='restore'){if(!keys.length)throw Error('ARCHIVE_KEYS_REQUIRED');return restoreArchived(root,keys,note||'operator restore from Activity');}
+    if(request?.action==='restore'){if(!keys.length)throw Error('ARCHIVE_KEYS_REQUIRED');const result=await restoreArchived(root,keys,note||'operator restore from Activity');await controller.refreshPossibleHolds();return result;}
     throw Error('ARCHIVE_ACTION_INVALID');
   });
   for (const [name, action] of Object.entries(actions)) ipcMain.handle(`thirsty:${name}`, (event, ...args: unknown[]) => {

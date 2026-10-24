@@ -1130,6 +1130,10 @@ footer > div { display: flex; align-items: center; gap: 8px; font-size: 11px; co
 .possible-hold strong { color: #ffd7d3; }
 .possible-hold p { line-height: 1.5; margin: 8px 0; }
 .possible-hold details { margin-top: 10px; }
+.hold-notice + .hold-notice { border-top: 1px solid var(--danger-line); margin-top: 18px; padding-top: 18px; }
+.hold-notice-action { margin-top: 10px; }
+.dismissed-holds { margin-bottom: 16px; overflow-wrap: anywhere; }
+.dismissed-holds .hold-notice { margin-top: 16px; }
 .daily-actions{display:flex;flex-wrap:wrap;align-items:stretch;gap:10px}
 .daily-actions>.primary-action{width:auto;flex:1 1 300px;min-height:48px;max-height:80px;overflow-wrap:normal}
 .daily-actions>.secondary{flex:0 1 auto;min-width:150px;white-space:normal;overflow-wrap:normal}
