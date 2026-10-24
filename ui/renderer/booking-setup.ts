@@ -317,20 +317,41 @@ function renderAll(force: boolean) {
   if (step === 5) renderReview(v);
 }
 
+let holdNoticeBusy=false,holdNoticeError='',showDismissedHolds=false;
+async function changeHoldNotice(action:'archive'|'restore',path:string){
+  if(holdNoticeBusy)return;
+  holdNoticeBusy=true;holdNoticeError='';renderPossibleHolds();
+  try {
+    const result=await window.thirsty.journalArchive({action,keys:[path],note:'Historical warning dismissed from Booking Setup'});
+    if(result.refused?.length)holdNoticeError='This warning could not be dismissed. Review the record in Activity.';
+  }catch{holdNoticeError='The warning could not be updated. Try again or review the record in Activity.';}
+  finally{holdNoticeBusy=false;renderPossibleHolds();}
+}
 function renderPossibleHolds(){
   const parent=document.getElementById('dest-setup');if(!parent)return;
   let host=document.getElementById('possible-hold-alert');
   if(!host){host=el('section',{id:'possible-hold-alert',class:'card possible-hold',role:'alert'});parent.prepend(host);}
-  const holds=state?.possibleHolds??[];host.hidden=!holds.length;
+  let history=document.getElementById('dismissed-hold-notices');
+  if(!history){history=el('section',{id:'dismissed-hold-notices',class:'card dismissed-holds'});host.after(history);}
+  const holds=state?.possibleHolds??[],active=holds.filter(h=>!h.archived),dismissed=holds.filter(h=>h.archived);
+  host.hidden=!active.length&&!holdNoticeError;history.hidden=!dismissed.length;
   const now=Date.now()+(state?.clock?.clockOffsetMs??0);
-  fill(host,...holds.map(hold=>{
+  const row=(hold:typeof holds[number])=>{
     const remaining=Math.ceil((Date.parse(hold.holdExpiresAt)-now)/1000);
-    return el('div',{},el('strong',{text:'POSSIBLE HOLD DETECTED — VERIFY BEFORE EXPIRY'}),
+    const button=hold.archivePath&&(hold.archived||hold.dismissible)?el('button',{type:'button',class:'hold-notice-action',text:hold.archived?'Show warning again':'Dismiss old warning'}):null;
+    if(button){button.disabled=holdNoticeBusy||state?.operation!=='idle'||hooks.labRunning;
+      button.addEventListener('click',()=>void changeHoldNotice(hold.archived?'restore':'archive',hold.archivePath!));}
+    return el('div',{class:'hold-notice'},el('strong',{text:remaining>0?'POSSIBLE HOLD DETECTED — VERIFY BEFORE EXPIRY':'PAST HOLD WARNING — PROVIDER STATUS UNKNOWN'}),
       el('p',{text:`Court ${hold.courts.join(' / ')} · ${hold.date} · ${hold.startTime}–${hold.endTime} · ${hold.amount===null?'Amount unverified':peso(hold.amount)}`}),
       el('p',{text:`Recorded hold deadline ${manilaTime(Date.parse(hold.holdExpiresAt))} · ${remaining>0?`${Math.floor(remaining/60)}:${String(remaining%60).padStart(2,'0')} remaining`:'Deadline passed; provider status remains UNKNOWN'}`}),
       el('p',{text:'Response contains creation evidence, but the booking is not verified or paid. Do not submit again. Use the saved private recovery record to verify the existing reservation.'}),
-      el('details',{},el('summary',{text:'Private recovery identifiers'}),el('p',{text:`Bookings: ${hold.bookingNumbers.join(', ')||hold.bookingIds.join(', ')} · ${hold.code}`})));
-  }));
+      el('details',{},el('summary',{text:'Private recovery identifiers'}),el('p',{text:`Bookings: ${hold.bookingNumbers.join(', ')||hold.bookingIds.join(', ')} · ${hold.code}`})),
+      button,button&&!hold.archived?el('p',{class:'muted',text:'Dismisses this notice only. The UNKNOWN record and duplicate-submission protection stay in place.'}):null);
+  };
+  fill(host,...active.map(row),holdNoticeError?el('p',{role:'status',text:holdNoticeError}):null);
+  const details=el('details',{},el('summary',{text:`Dismissed hold warnings (${dismissed.length}) — records remain UNKNOWN`}),...dismissed.map(row));
+  details.open=showDismissedHolds;details.addEventListener('toggle',()=>{showDismissedHolds=details.open;});
+  fill(history,details);
 }
 /** Enabled wings whose draft date has already been released (Next Release only). */
 function releasedDraftDates(now = Date.now()) {

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, relative, sep } from 'node:path';
 import { DurableSubmissionJournal } from '../src/api-booking/durable-submission-journal.js';
 import { archiveHistoricalUnknown, journalOverview, readArchiveIndex, restoreArchived, scanJournals, verifyArchive } from '../src/journal-archive.js';
+import { readPossibleHolds } from '../src/api-booking/possible-hold.js';
 // @ts-expect-error plain ESM installation helper
 import { inspectUpdateSafety } from '../scripts/app-installation.mjs';
 
@@ -21,6 +22,30 @@ async function journal(root: string, k: string, state: 'unknown' | 'verified' | 
 }
 
 describe('historical UNKNOWN archival', () => {
+  it('persists warning dismissal without removing UNKNOWN holds from safety reads; changed evidence resurfaces',async()=>{
+    const root=await mkdtemp(join(tmpdir(),'hold-notice-'));
+    const file=await journal(root,key(9),'unknown',OLD);
+    const value=JSON.parse(await readFile(file,'utf8'));
+    value.attempt.hourlyBoundaries=[{startTime:'08:00',endTime:'09:00'}];
+    value.observedResponse={success:true,bookingIds:['synthetic'],bookingNumbers:['SYNTHETIC'],holdExpiresAt:['2026-10-01T00:00:00Z'],transactionAmount:700};
+    await writeFile(file,JSON.stringify(value));await utimes(file,OLD,OLD);
+    const before=await readFile(file),hold=(await readPossibleHolds(root))[0]!;
+    expect(hold).toMatchObject({dismissible:true,archived:false});
+    await archiveHistoricalUnknown(root,[hold.archivePath!],'dismiss old warning');
+    // A fresh read (including after restart) still supplies the UNKNOWN hold to every safety consumer.
+    expect(await readPossibleHolds(root)).toEqual([{...hold,archived:true}]);
+    expect(await readFile(file)).toEqual(before);
+    await expect(new DurableSubmissionJournal(join(root,'.local/api-booking/api-first-journals',key(9))).begin(key(9))).rejects.toThrow('DUPLICATE_LOGICAL_BOOKING_BLOCKED');
+    await writeFile(file,`${before.toString()}\n`);await utimes(file,OLD,OLD);
+    expect((await readPossibleHolds(root))[0]).toMatchObject({archived:false});
+    await writeFile(file,before);await utimes(file,OLD,OLD);
+    await restoreArchived(root,[hold.archivePath!],'show warning again');
+    expect((await readPossibleHolds(root))[0]).toMatchObject({archived:false});
+    value.observedResponse.holdExpiresAt=[new Date(Date.now()+300_000).toISOString()];
+    await writeFile(file,JSON.stringify(value));await utimes(file,OLD,OLD);
+    expect((await readPossibleHolds(root))[0]).toMatchObject({dismissible:false,archived:false});
+    expect((await archiveHistoricalUnknown(root,[hold.archivePath!],'active')).archived).toEqual([]);
+  });
   it('archives only eligible historical records, keeps the original bytes and the duplicate guard, and can verify and restore', async () => {
     const root = await mkdtemp(join(tmpdir(), 'journal-archive-'));
     const oldUnknown = await journal(root, key(1), 'unknown', OLD);

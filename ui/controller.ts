@@ -669,6 +669,13 @@ export class Controller {
     if (this.state.logs.length > 400) this.state.logs.splice(0, this.state.logs.length - 400);
     this.publish();
   }
+  async refreshPossibleHolds() {
+    if(!this.deps.possibleHolds)return;
+    const stored=await this.deps.possibleHolds();
+    const volatile=(this.state.possibleHolds??[]).filter(v=>v.code==='CHECKOUT_RESPONSE_NOT_YET_VERIFIED'&&!stored.some(s=>s.bookingIds.some(id=>v.bookingIds.includes(id))));
+    this.state.possibleHolds=[...stored,...volatile];this.possibleHoldsReadAt=Date.now();
+    this.publish();
+  }
   async refresh() {
     if(this.state.booking?.setup.STRATEGY_V2?.shotgun?.enabled && this.state.activeApiRelease && shotgunCriticalInterval(this.state.activeApiRelease.releaseMs,Date.now()+(this.state.clock?.clockOffsetMs??0)))return;
     if (this.polling) return;
@@ -676,9 +683,7 @@ export class Controller {
     try {
       const wasReady = this.state.ready;
       if(this.state.operation==='idle'&&!this.state.scheduledRelease&&Date.now()-this.possibleHoldsReadAt>15_000&&this.deps.possibleHolds){
-        const stored=await this.deps.possibleHolds();
-        const volatile=(this.state.possibleHolds??[]).filter(v=>v.code==='CHECKOUT_RESPONSE_NOT_YET_VERIFIED'&&!stored.some(s=>s.bookingIds.some(id=>v.bookingIds.includes(id))));
-        this.state.possibleHolds=[...stored,...volatile];this.possibleHoldsReadAt=Date.now();
+        await this.refreshPossibleHolds();
       }
       const [lock, observedHealth,workerProbes] = await Promise.all([this.deps.lock(), this.deps.browserHealth?this.deps.browserHealth():this.deps.cdp().then(A=>({A,B:A,C:false,D:false})),
         this.deps.browserReadiness?.()??Promise.resolve({} as Partial<Record<WorkerId,{connected:boolean;commandLatencyMs:number|null;tabCount:number;targetReady:boolean;chromeVersion?:string|null;sessionId?:string|null}>>)]);
