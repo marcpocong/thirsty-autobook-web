@@ -101,6 +101,7 @@ export function clockStatus(config: ReleaseSettings, now?: DateTime) {
     canArmToday: next.releaseMs > effective.toMillis(), canArmNext:true, todayReleasePassed:effective.toMillis()>=today.releaseMs,
     remainingMs: Math.max(0, next.releaseMs - effective.toMillis()), horizon: config.BOOKING_HORIZON_DAYS, maxReloads: config.MAX_RELEASE_RELOADS, leadMs: config.RELEASE_LEAD_MS, preopenCalendar: config.RELEASE_PREOPEN_CALENDAR,
     networkSynced:injected||networkClockFresh(network,effective.toMillis()),clockSource:injected?'injected-test-clock':network?.source??null,clockOffsetMs:network?.offsetMs??0,clockRoundTripMs:injected?0:network?.roundTripMs??null,clockSynchronizedAt:injected?effective.toISO():network?.synchronizedAt??null,
+    clockQuality:injected?'GOOD' as const:network?.quality??null,clockUncertaintyMs:injected?0:network?.uncertaintyMs??(network?network.roundTripMs/2:null),
     preflightSecondsBefore:config.PREFLIGHT_SECONDS_BEFORE,wakeSecondsBefore:config.SCHEDULE_WAKE_SECONDS_BEFORE };
 }
 export function readClock() { return clockStatus(loadObservationConfig()); }

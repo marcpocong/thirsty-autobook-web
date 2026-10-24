@@ -25,7 +25,7 @@ export function readLastReleaseBuild(root:string):{gitSha:string;dirty:boolean|n
     return typeof value.gitSha==='string'&&typeof value.finishedAt==='string'&&typeof value.packaged==='boolean'?{gitSha:value.gitSha,dirty:typeof value.dirty==='boolean'?value.dirty:null,finishedAt:value.finishedAt,packaged:value.packaged}:null;}catch{return null;}
 }
 export function evaluateReleaseReadiness(input:{build:BuildInfo|null;testedBuild:{gitSha:string;dirty:boolean|null;finishedAt:string;packaged:boolean}|null;configValid:boolean;authorizationValid:boolean;
-  clock:{synced:boolean;ageMs:number|null;uncertaintyMs:number|null;offsetMs:number|null};machine:MachineHealth;workers:Record<string,{connected:boolean;identityValid:boolean;securityReady:boolean;targetReady?:boolean;tabCount?:number;latencyP95Ms?:number|null}>;
+  clock:{synced:boolean;ageMs:number|null;uncertaintyMs:number|null;offsetMs:number|null;quality?:'GOOD'|'DEGRADED'|null};machine:MachineHealth;workers:Record<string,{connected:boolean;identityValid:boolean;securityReady:boolean;targetReady?:boolean;tabCount?:number;latencyP95Ms?:number|null}>;
   observer:{online:boolean;lastReadAgeMs:number|null;availabilityLatencyMs:number|null};fanOut:{compatible:boolean;stale:boolean;width:number}|null;prewarm:boolean;
   shotgun?:{tabsPerWorker:Record<string,number>;shotCount:number;timingStatus?:string;timingReason?:string}|null;
   prewarmFeasibility?:PrewarmFeasibilityResult|null;securityCheck?:SecurityCheckVerdict|null;planDate?:SavedPlanDate|null}):ReleaseReadinessGate{
@@ -37,9 +37,15 @@ export function evaluateReleaseReadiness(input:{build:BuildInfo|null;testedBuild
   const dated=planDateArmable(input.planDate);
   add({id:'config',label:'Configuration',level:input.configValid&&input.authorizationValid&&dated?'GOOD':'UNAVAILABLE',hardBlock:true,
     detail:!input.configValid?'Configuration is invalid':!input.authorizationValid?'Saved authorization does not compile':!dated?input.planDate!.detail:'Saved release authorization is valid'});
-  const clockGood=input.clock.synced&&input.clock.ageMs!==null&&input.clock.ageMs<=15*60_000&&input.clock.uncertaintyMs!==null&&input.clock.uncertaintyMs<=25;
+  // Consensus quality is the production clock's authority. RTT/2 above 25 ms is normal for
+  // Manila's 50–60 ms NTP path; refreshing cannot remove network travel time. Keep the
+  // precision advisory visible, and retain the conservative rule for legacy single samples.
+  const uncertainty=input.clock.uncertaintyMs;
+  const clockGood=input.clock.synced&&input.clock.ageMs!==null&&input.clock.ageMs>=0&&input.clock.ageMs<=15*60_000&&
+    uncertainty!==null&&Number.isFinite(uncertainty)&&uncertainty>=0&&
+    (input.clock.quality==='GOOD'||input.clock.quality==null&&uncertainty<=25);
   add({id:'clock',label:'Trusted clock',level:clockGood?'GOOD':input.clock.synced?'DEGRADED':'UNAVAILABLE',hardBlock:!input.clock.synced,
-    detail:input.clock.synced?`offset ${input.clock.offsetMs?.toFixed(1)??'?'} ms · uncertainty ${input.clock.uncertaintyMs?.toFixed(1)??'?'} ms · age ${input.clock.ageMs===null?'?':Math.round(input.clock.ageMs/1000)+' s'}`:'No valid trusted clock'});
+    detail:input.clock.synced?`${clockGood?'Synchronized · ':''}offset ${input.clock.offsetMs?.toFixed(1)??'?'} ms · uncertainty ${uncertainty?.toFixed(1)??'?'} ms · age ${input.clock.ageMs===null?'?':Math.round(input.clock.ageMs/1000)+' s'}${input.clock.quality?` · consensus ${input.clock.quality}`:''}${uncertainty!==null&&uncertainty>25?' · network timing uncertainty exceeds 25 ms; another refresh may not reduce it':''}`:'No valid trusted clock'});
   const machineBad=input.machine.memoryUsedPct>=92||input.machine.eventLoopP95Ms>=SHOTGUN_MAX_TRIGGER_LATENESS_MS,machineWarn=input.machine.memoryUsedPct>=85||input.machine.eventLoopP95Ms>=20;
   add({id:'machine',label:'Machine',level:machineBad?'UNAVAILABLE':machineWarn?'DEGRADED':'GOOD',hardBlock:!!input.shotgun&&machineBad,detail:`memory ${input.machine.memoryUsedPct}% · event-loop p95 ${input.machine.eventLoopP95Ms} ms · app RSS ${input.machine.processRssMb} MB`});
   const readyWorkers:string[]=[],degradedWorkers:string[]=[],unavailableWorkers:string[]=[];

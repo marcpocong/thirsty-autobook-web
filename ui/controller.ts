@@ -741,7 +741,7 @@ export class Controller {
       if(retained&&['RESET REQUIRED','Preparation needs rechecking','PAYMENT HOLD ACTIVE','UNRESOLVED CHECKOUT LOCK','API BROWSER READY','API READY TO TEST','HOLD TIMER ELAPSED'].includes(this.state.headline)){
         this.state.headline=retained.stage==='FINAL_ACTION_DISPATCHING'?'UNRESOLVED CHECKOUT LOCK':retained.remainingSeconds===0?'HOLD TIMER ELAPSED':'PAYMENT HOLD ACTIVE';this.state.detail=this.holdDetail(retained);
       }
-      const clock=this.state.clock,clockAt=clock?.clockSynchronizedAt?Date.parse(clock.clockSynchronizedAt):NaN,clockRoundTrip=clock?.clockRoundTripMs;
+      const clock=this.state.clock,clockAt=clock?.clockSynchronizedAt?Date.parse(clock.clockSynchronizedAt):NaN;
       const workerIds=this.state.booking?planWorkerIds(this.state.booking.setup):[];
       const workers=Object.fromEntries(workerIds.map(id=>{const probe=workerProbes[id];return [id,{connected:probe?.connected??!!health[id],identityValid:!(this.state.identityIssues??[]).some(issue=>issue.startsWith(`Worker ${id} `)),
         securityReady:this.apiReadyWorkers.has(id)||!!this.state.apiFirstReady,...(probe?{targetReady:probe.targetReady,tabCount:probe.tabCount,latencyP95Ms:probe.commandLatencyMs}: {})}];})) as Record<string,{connected:boolean;identityValid:boolean;securityReady:boolean;targetReady?:boolean;tabCount?:number;latencyP95Ms?:number|null}>;
@@ -752,7 +752,7 @@ export class Controller {
       const fallbackMachine:MachineHealth={measuredAt:new Date().toISOString(),cpuCount:0,memoryUsedPct:100,eventLoopP95Ms:100,processRssMb:0};
       this.state.releaseReadiness=evaluateReleaseReadiness({build:this.state.build??null,testedBuild:this.deps.testedBuild?.()??null,configValid:!!this.state.booking,
         authorizationValid:!!this.state.booking&&BookingSetupSchema.safeParse(this.state.booking.setup).success,
-        clock:{synced:!!clock?.networkSynced,ageMs:Number.isFinite(clockAt)?Date.now()-clockAt:null,uncertaintyMs:clockRoundTrip===null||clockRoundTrip===undefined?null:clockRoundTrip/2,offsetMs:clock?.clockOffsetMs??null},
+        clock:{synced:!!clock?.networkSynced,ageMs:Number.isFinite(clockAt)?Math.max(0,Date.now()+(clock?.clockOffsetMs??0)-clockAt):null,uncertaintyMs:clock?.clockUncertaintyMs??null,quality:clock?.clockQuality??null,offsetMs:clock?.clockOffsetMs??null},
         machine:this.deps.machineHealth?.()??fallbackMachine,workers,
         ...(this.state.booking?.setup.STRATEGY_V2?.shotgun?.enabled&&this.state.booking.setup.PRECISION_PHASE3?{shotgun:{...(()=>{const t=exactShotgunTopology(this.state.booking!.setup.PRECISION_PHASE3!,this.state.booking!.setup.STRATEGY_V2!.shotgun!.exactSchedule);return {tabsPerWorker:t.tabsPerWorker,shotCount:t.shots.length};})(),timingStatus:this.state.shotgunTimingVerdict?.status??'NOT_TESTED',...(this.state.shotgunTimingVerdict?{timingReason:this.state.shotgunTimingVerdict.reason}:{})}}:{}),observer:{online:!!this.slotWatch&&!!observerView&&['waiting','watching'].includes(observerView.status),
           lastReadAgeMs:Number.isFinite(latestRead)?Date.now()-latestRead:null,availabilityLatencyMs:observerView?.lastLatencyMs??null},
@@ -764,7 +764,7 @@ export class Controller {
   async syncClock(){
     if(this.state.operation!=='idle')throw Error('OPERATION_ALREADY_RUNNING');
     this.state.headline='SYNCING NETWORK CLOCK';this.state.detail='Contacting Google Public NTP. The Windows clock will not be changed.';this.publish();
-    try{await this.deps.syncClock?.();this.state.clock=this.deps.clock();this.state.headline='NETWORK CLOCK SYNCHRONIZED';this.state.detail=`Source: ${this.state.clock.clockSource} · offset ${this.state.clock.clockOffsetMs.toFixed(1)} ms · round trip ${this.state.clock.clockRoundTripMs?.toFixed(1)??'unknown'} ms`;}
+    try{await this.deps.syncClock?.();this.state.clock=this.deps.clock();await this.refresh();this.state.headline='NETWORK CLOCK SYNCHRONIZED';this.state.detail=`Source: ${this.state.clock.clockSource} · offset ${this.state.clock.clockOffsetMs.toFixed(1)} ms · round trip ${this.state.clock.clockRoundTripMs?.toFixed(1)??'unknown'} ms`;}
     catch{this.state.headline='NETWORK CLOCK SYNC FAILED';this.state.detail='Google Public NTP could not be verified. Release arming remains blocked.';throw Error('NETWORK_CLOCK_SYNC_FAILED');}
     finally{this.publish();}
   }

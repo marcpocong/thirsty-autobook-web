@@ -67,6 +67,23 @@ describe('release readiness gate',()=>{
     const old=base();old.clock.ageMs=20*60_000;expect(check(old,'clock').level).toBe('DEGRADED');
   });
 
+  it('accepts fresh GOOD consensus at normal Manila latency while retaining its measured uncertainty',()=>{
+    const input=base();input.clock={synced:true,ageMs:2000,offsetMs:1166.4,uncertaintyMs:29.1577,quality:'GOOD'};
+    expect(check(input,'clock')).toMatchObject({level:'GOOD',hardBlock:false});
+    expect(check(input,'clock').detail).toContain('Synchronized');
+    expect(check(input,'clock').detail).toContain('uncertainty 29.2 ms');
+    expect(check(input,'clock').detail).toContain('exceeds 25 ms');
+    input.clock.quality='DEGRADED';input.clock.uncertaintyMs=2;
+    expect(check(input,'clock').level).toBe('DEGRADED');
+    input.clock.quality='GOOD';input.clock.ageMs=16*60_000;
+    expect(check(input,'clock').level).toBe('DEGRADED');
+    input.clock.ageMs=0;
+    for(const uncertainty of [null,NaN,Infinity,-1]){
+      input.clock.uncertaintyMs=uncertainty;expect(check(input,'clock').level).toBe('DEGRADED');
+    }
+    input.clock.synced=false;expect(check(input,'clock')).toMatchObject({level:'UNAVAILABLE',hardBlock:true});
+  });
+
   it('flags a running build that is not the tested packaged build, a dirty build, or no record',()=>{
     const wrong=base();wrong.testedBuild!.gitSha='c'.repeat(40);
     expect(check(wrong,'build')).toMatchObject({level:'DEGRADED',detail:'Running SHA does not match the last tested packaged build'});
