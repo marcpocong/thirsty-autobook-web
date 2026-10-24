@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { compile, copyAssets, verifyDist, writeBuildInfo, sourceRoot, gitInfo, distContentId } from './build-support.mjs';
 import { detectInstallation, assertSafeUpdate, inspectUpdateSafety, describeUpdateSafety, protectedStateManifest, assertProtectedStateUnchanged, applyUpdate, hashFile, treeDigest } from './app-installation.mjs';
+import { brandElectronRuntime, verifyRuntimeBranding } from './brand-electron-runtime.mjs';
 if(process.platform!=='win32')throw Error('WINDOWS_BUILD_REQUIRED');
 if(process.argv.length>2)throw Error('APP_UPDATE_OPTIONS_REFUSED (only the canonical installation may be updated)');
 const root=sourceRoot,git=gitInfo();
@@ -44,6 +45,12 @@ const compiler=['Framework64','Framework'].map(arch=>resolve(process.env.SystemR
 if(!compiler)throw Error('CSC_NOT_FOUND');
 const icon=join(stage,'.local/thirsty-pickle-bot.ico');
 execFileSync('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',join(root,'scripts/build-brand-assets.ps1'),'-Source',join(root,'assets/brand/thirsty-pickle-bot.png'),'-Icon',icon],{cwd:root,stdio:'inherit',windowsHide:true});
+// Windows can use the owning process's PE icon even when the launcher/window is branded.
+// Customize only the staged runtime; node_modules in the source checkout remains pristine.
+const runtime=join(stage,'node_modules/electron/dist/electron.exe'),iconBytes=await readFile(icon);
+await writeFile(runtime,brandElectronRuntime(await readFile(runtime),iconBytes));
+const runtimeBranding=verifyRuntimeBranding(await readFile(runtime),iconBytes);
+console.log(`Windows runtime branding verified: ${runtimeBranding.productName} (${runtimeBranding.iconFrames} icon sizes)`);
 execFileSync(compiler,['/nologo','/target:winexe','/optimize+',`/win32icon:${icon}`,'/reference:System.Windows.Forms.dll',`/out:${join(stage,'Thirsty Pickle Bot.exe')}`,join(root,'scripts/ThirstyPickleBotLauncher.cs')],{cwd:root,stdio:'inherit',windowsHide:true});
 const appHash=await hashFile(join(stage,'Thirsty Pickle Bot.exe'));
 await writeFile(join(stage,'BUILD-INFO.txt'),`Thirsty Pickle Bot self-contained installation\nBuilt: ${buildInfo.builtAt}\nSource Commit: ${buildInfo.gitSha}\nBranch: ${buildInfo.branch}\nDirty: no\nBuild ID: ${buildInfo.buildId}\nDist Content ID: ${buildInfo.contentId}\nDist Verified: yes (${verification.checkedFiles} files against a fresh compile of the source)\nLauncher SHA256: ${appHash.toUpperCase()}\nPayment remains manual. Canonical in-place installation.\n`);
@@ -53,12 +60,13 @@ const expected={};
 const {stat}=await import('node:fs/promises');
 const {managedFiles}=await import('./app-installation.mjs');
 for(const name of managedFiles){const p=join(stage,name),s=await stat(p);expected[name]=await(s.isDirectory()?treeDigest(p):hashFile(p));}
-await writeFile(join(home,'stage-manifest.json'),JSON.stringify({gitSha:git.gitSha,buildId:buildInfo.buildId,stagedDigest,expected,ci:ci[0],previous:installation.info,preserved,protectedState:{path:protectedPath,count:protectedState.count,digest:protectedState.digest}},null,2));
+await writeFile(join(home,'stage-manifest.json'),JSON.stringify({gitSha:git.gitSha,buildId:buildInfo.buildId,stagedDigest,expected,runtimeBranding,ci:ci[0],previous:installation.info,preserved,protectedState:{path:protectedPath,count:protectedState.count,digest:protectedState.digest}},null,2));
 async function validate(path) {
   const {managedFiles}=await import('./app-installation.mjs');const {stat}=await import('node:fs/promises');
   for(const name of managedFiles){const p=join(path,name),s=await stat(p),digest=await(s.isDirectory()?treeDigest(p):hashFile(p));if(digest!==expected[name])throw Error(`APP_UPDATE_INTEGRITY_FAILED ${name}`);}
   const info=JSON.parse(await readFile(join(path,'dist/build-info.json'),'utf8'));
   if(info.gitSha!==git.gitSha||info.dirty!==false||await distContentId(join(path,'dist'))!==info.contentId)throw Error('APP_UPDATE_PROVENANCE_FAILED');
+  verifyRuntimeBranding(await readFile(join(path,'node_modules/electron/dist/electron.exe')),await readFile(join(path,'.local/thirsty-pickle-bot.ico')));
   if(await hashFile(join(output,'config.local.json'))!==preserved.config||await treeDigest(join(output,'.local/private'))!==preserved.private)throw Error('APP_UPDATE_PRIVATE_STATE_CHANGED');
   // Any added, removed or changed lifecycle byte fails validation; an installed failure rolls back.
   await assertProtectedStateUnchanged(output,protectedState);
@@ -66,7 +74,7 @@ async function validate(path) {
 const result=await applyUpdate(output,stage,{validate,beforeApply:async()=>{if(gitInfo().gitSha!==git.gitSha||gitInfo().dirty)throw Error('APP_UPDATE_SOURCE_CHANGED');await assertSafeUpdate(output);await assertProtectedStateUnchanged(output,protectedState);}});
 await rm(stage,{recursive:true});
 const protectedAfter=await assertProtectedStateUnchanged(output,protectedState);
-await writeFile(join(home,'installed-update.json'),JSON.stringify({finishedAt:new Date().toISOString(),output,exe:join(output,'Thirsty Pickle Bot.exe'),previous:installation.info,current:buildInfo,sha256:appHash,preserved,
+await writeFile(join(home,'installed-update.json'),JSON.stringify({finishedAt:new Date().toISOString(),output,exe:join(output,'Thirsty Pickle Bot.exe'),previous:installation.info,current:buildInfo,sha256:appHash,preserved,runtimeBranding,
   protectedState:{path:protectedPath,count:protectedAfter.count,digest:protectedAfter.digest,unchangedAfterInstall:true},historicalUnknownPreserved:safety.historicalUnknown.length,ci:ci[0],...result},null,2));
 console.log(JSON.stringify({output,exe:join(output,'Thirsty Pickle Bot.exe'),buildId:buildInfo.buildId,gitSha:buildInfo.gitSha,version:buildInfo.packageVersion,privateStatePreserved:true,
   protectedLifecycleFiles:protectedAfter.count,protectedLifecycleUnchanged:true,historicalUnknownPreserved:safety.historicalUnknown.length}));
