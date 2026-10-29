@@ -25,4 +25,11 @@ describe('Release Lab movement forensics',()=>{
     expect(result.clusters[0]).toMatchObject({court:1,hours:['12:00','13:00'],confidence:'MEDIUM'});
     expect(JSON.stringify(result)).not.toMatch(/competitor|customer|email|actor/i);
   });
+  it('reports broad openings separately from broad closings with sampled bounds',()=>{
+    const taken=new Set<string>();for(let court=1;court<=7;court++)for(let hour=12;hour<16;hour++)taken.add(`${court}/${hour}:00`);
+    const result=analyzeMovementForensics([observation(1,0,taken),observation(2,70_000,new Set()),observation(3,95_000,taken)]);
+    expect(result.broadMovements).toMatchObject([{direction:'UNAVAILABLE_TO_OPEN',cells:28,windowMs:[0,70_100]},
+      {direction:'OPEN_TO_UNAVAILABLE',cells:28,windowMs:[70_000,95_100]}]);
+    expect(result.blankets.map(v=>v.direction)).toEqual(['UNAVAILABLE_TO_OPEN','OPEN_TO_UNAVAILABLE']);
+  });
 });

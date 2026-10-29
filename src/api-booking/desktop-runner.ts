@@ -11,7 +11,7 @@ import { consensusState, NETWORK_CLOCK_MAX_AGE_MS, queryGoogleClockConsensus, re
 import { adoptConsensus, DEFAULT_SPIN_TAIL_MS, RELEASE_CLOCK_ROUNDS, TrustedReleaseClock } from '../release-clock.js';
 import { releaseTriggerMs } from '../release-offset.js';
 import { armedNothingFired, armPrecisionRace, disarmUnfired, dispatchArmedPrecisionRace, type ArmedAttempt, type ArmedPrecisionRace } from './armed-dispatch.js';
-import { dispatchPhase3Wave1 } from './phase3-wave1-reporting.js';
+import { dispatchPhase3Wave1, reconcileWave1Attempts, phase3AttemptCounts } from './phase3-wave1-reporting.js';
 import { classifyTargetEvidence, readPreReleaseEvidence, type PreReleaseEvidence } from './pre-release-evidence.js';
 import {readBeforePreparation} from './prewarm-deadline.js';
 import { freezePrecisionRace, precisionAttemptSet, precisionTargetPlan, reducePrecisionOutcome, PRECISION_UNSENT_STATES,
@@ -1262,9 +1262,10 @@ try {
         const recorder=startCriticalPath(releaseClock,releaseMs,new Map(armed.attempts.flatMap(attempt=>{
           const page=pageOf(attempt.attempt);return page?[[attempt.attempt.id,page] as const]:[];})));
         for(const attempt of armed.attempts){recorder.alias(transportKeyOf(attempt.target.workerId,attempt.attempt.fanOutIndex),attempt.attempt.id);
-          recorder.describe(attempt.attempt.id,{parentGoalId:candidateOf(attempt.attempt).id,workerId:attempt.target.workerId,fanOutIndex:attempt.attempt.fanOutIndex,
+          recorder.describe(attempt.attempt.id,{attemptId:bindings.get(attempt.attempt.id)!.correlation.attemptId,parentGoalId:candidateOf(attempt.attempt).id,workerId:attempt.target.workerId,fanOutIndex:attempt.attempt.fanOutIndex,
             fanOutCount:attempt.attempt.fanOutCount,configuredOffsetMs:attempt.triggerMs-releaseMs,...shotgunTopology.get(attempt.attempt.id)!,wave:'WAVE_1'});}
         const transportOf=(attempt:ArmedAttempt)=>releaseTransports.get(transportKeyOf(attempt.target.workerId,attempt.attempt.fanOutIndex));
+        const preparedChildren=new Set<string>();
         const outcome=await dispatchPhase3Wave1(armed,()=>dispatchArmedPrecisionRace(armed,{clock:releaseClock!,spinTailMs:DEFAULT_SPIN_TAIL_MS,isAborted:()=>abort.signal.aborted,sleep:pause,
           refreshClock:()=>prepareReleaseClock(releaseMs,releaseClock!),onClockRefreshed:clock=>reanchorArmedTiming(clock,releaseMs),onPrewarmWindow:prewarmWindowStage,
           onObjectiveStop:reason=>{if(reason==='SHOTGUN_PROVIDER_THROTTLE_STOP'||reason==='SHOTGUN_PAYMENT_IN_PROGRESS_STOP')providerStopCode=reason;},
@@ -1283,7 +1284,7 @@ try {
           onFinalApproach:enterReleaseLockdown,
           onReleaseWindowEnd:exitReleaseLockdown,
           onEvent:event=>{const binding=bindings.get(event.attemptId),child=frozen.attempts.find(value=>value.id===event.attemptId);
-            if(event.kind==='prewarm-ready'){recorder.describe(event.attemptId,{prewarmReadyMs:Math.round((releaseClock?.nowMs()??nowMs())-releaseMs)});
+            if(event.kind==='prewarm-ready'){preparedChildren.add(event.attemptId);recorder.describe(event.attemptId,{prewarmReadyMs:Math.round((releaseClock?.nowMs()??nowMs())-releaseMs)});
               if(binding&&child)deferrableStage('SECURITY_PREWARM_READY',{workerId:event.workerId,candidateId:candidateOf(child).id,attemptId:binding.correlation.attemptId,
                 fanOutIndex:child.fanOutIndex,fanOutCount:child.fanOutCount,
                 ...(event.predictedReadyOffsetMs!==undefined?{predictedReadyOffsetMs:event.predictedReadyOffsetMs}:{}),...(event.actualReadyOffsetMs!==undefined?{actualReadyOffsetMs:event.actualReadyOffsetMs}:{}),
@@ -1315,14 +1316,15 @@ try {
             stage('PHASE3_WAVE1_UNSENT',{workerId:result.attempt.target.workerId,candidateId:candidateOf(result.attempt).id,
               ...(binding?{attemptId:binding.correlation.attemptId}:{}),state:result.state,...(result.code?{code:result.code}:{}),
               fanOutIndex:result.attempt.fanOutIndex,fanOutCount:result.attempt.fanOutCount,...shotgunTopology.get(result.attempt.id)!});}
+        reconcileWave1Attempts(session,frozen.attempts,outcome.results,child=>({id:bindings.get(child.id)!.correlation.attemptId,
+          candidateId:candidateOf(child).id,workerId:child.target.workerId}));
         await standbyReady;
         await adaptiveLoop;
         await persistLatestVerifiedHold();
-        if(providerStopCode&&!verifiedHold){stage('PHASE3_PROVIDER_STOPPED',{code:providerStopCode});throw Error(providerStopCode);}
         await persistProviderTraces().catch(()=>undefined);
-        stage('PHASE3_OUTCOME',{outcome:session.status,verifiedCount:session.attempts.filter(value=>value.state==='VERIFIED').length,
-          unknownCount:session.attempts.filter(value=>value.state==='UNKNOWN').length,attemptCount:session.attempts.length,
-          unsentCount:session.attempts.filter(value=>value.state==='NOT_DISPATCHED').length});
+        stage('PHASE3_OUTCOME',{outcome:session.status,...phase3AttemptCounts(session.attempts),
+          authorizedCount:frozen.attempts.length,preparedCount:preparedChildren.size});
+        if(providerStopCode&&!verifiedHold){stage('PHASE3_PROVIDER_STOPPED',{code:providerStopCode});throw Error(providerStopCode);}
         if(session.status==='ALL_REJECTED_WAITING_FOR_REOPEN'||session.status==='NOTHING_DISPATCHED'){
           retainLiveLock=false;await liveLock?.release();liveLock=undefined;
         }

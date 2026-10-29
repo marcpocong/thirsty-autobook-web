@@ -98,11 +98,11 @@ describe('post-run release forensics', () => {
       // First published = earliest REQUEST with the date (#2 at T+0, answered +3.9 s), not the earliest answer (#4 at +1.9 s).
       expect(summary.observer!.publication).toMatchObject({ lastUnpublished: { seq: 1 }, firstPublished: { seq: 2, requestOffsetMs: 0, responseOffsetMs: 3_900 },
         firstPublishedResponse: { seq: 4, requestOffsetMs: 1_000, responseOffsetMs: 1_900 } });
-      expect(summary.observer!.reads).toMatchObject({ answered: 5, notLaunched: 1, maxInFlight: 6 });
+      expect(summary.observer!.reads).toMatchObject({ answered: 5, notLaunched: 1, maxInFlight: 3 }); // observed peak, not configured cap
       const [a, b, c] = summary.targets;
       // Exact range → exact cells; a multi-hour target needs every hour open.
       expect(a).toMatchObject({ workerId: 'A', court: 3, startTime: '15:00', endTime: '18:00', attemptId: 'core-A-official-1', finalState: 'REJECTED',
-        post: { offsetMs: 3.4, source: 'run-trace' }, response: { statusCode: 409, errorHint: 'availability', completedOffsetMs: 17_503.4 } });
+        post: { offsetMs: 3.4, source: 'run-trace' }, response: { statusCode: 409, errorHint: 'availability', completedOffsetMs: null } }); // no calibrated renderer capture
       expect(a!.grid!.hours).toEqual(['15:00', '16:00', '17:00']);
       expect(a!.grid!.firstPublished).toMatchObject({ state: 'FULLY_OPEN', observation: { seq: 2 } });
       expect(a!.grid!.firstUnavailable).toEqual({ observation: { seq: 4, requestOffsetMs: 1_000, responseOffsetMs: 1_900 }, hours: ['16:00'] });
