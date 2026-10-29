@@ -197,7 +197,8 @@ describe('Strategy view (Goal → Known schedule → Preset → Suggested plan �
   it('composes worker de-skew into the displayed, reviewed and saved literal offsets', async () => {
     // Two fresh width-2 real releases: worker A's own invocation -> Chrome lag is 10 ms, every other worker 4 ms.
     const lagStats = { n: 14, p50: 5, p95: 11, p99: 11, max: 11, min: 5, mean: 6 }, none = { n: 0, p50: null, p95: null, p99: null, max: null, min: null, mean: null };
-    const telemetry = ['2026-09-28T00:00:00Z', '2026-09-29T00:00:00Z'].map((generatedAt, run) => ({ runId: `live-${run}`, date: '2026-10-01', generatedAt, releaseMs: Date.parse(generatedAt),
+    // Keep synthetic calibration within the real freshness window as the calendar advances.
+    const telemetry = [2, 1].map(daysAgo=>new Date(Date.now()-daysAgo*86_400_000).toISOString()).map((generatedAt, run) => ({ runId: `live-${run}`, date: '2026-10-01', generatedAt, releaseMs: Date.parse(generatedAt),
       origin: 'REAL_RELEASE', mode: 'live', machineKey: null, runtimeKey: null,
       children: 'ABCDEFG'.split('').flatMap((workerId, worker) => [0, 1].map(fanOutIndex => {
         const configuredOffsetMs = fanOutIndex ? 0 : -10, invoked = configuredOffsetMs + worker * 0.4, chrome = invoked + (workerId === 'A' ? 10 : 4);
@@ -211,8 +212,8 @@ describe('Strategy view (Goal → Known schedule → Preset → Suggested plan �
     await page.locator('#strategy-anchor-shift').fill('5');
     await page.locator('#strategy-anchor-shift').press('Tab');
     await page.locator('#strategy-suggest').click();
-    expect(await page.locator('#strategy-timing-children').innerText()).toContain('A0: base -10 ms + local de-skew -6 ms = final -16 ms · USABLE');
     await page.waitForFunction(()=>!document.getElementById('strategy-suggest')?.hasAttribute('disabled'));
+    expect(await page.locator('#strategy-timing-children').innerText()).toContain('A0: base -10 ms + local de-skew -6 ms = final -16 ms · USABLE');
     expect(await page.locator('#strategy-immediate-offset-0-0').inputValue()).toBe('16');
     expect(await page.locator('#strategy-immediate-offset-0-1').inputValue()).toBe('11');
     expect(await page.locator('#strategy-review-technical').innerText()).toContain('A0 16 ms early, A1 11 ms early');
@@ -230,7 +231,8 @@ describe('Strategy view (Goal → Known schedule → Preset → Suggested plan �
       chromeStartMs: configuredOffsetMs + 4.2, requestEventMs: configuredOffsetMs + 4.4, responseMs: 8_000 + index, errorMs: 4.2,
       prewarmReadyMs: -9_000, finalState: 'REJECTED', dispatchMode: 'node', trustedClockValid: true, dispatched: true }));
     const lagStats = { n: 7, p50: 4.2, p95: 4.2, p99: 4.2, max: 4.2, min: 4.2, mean: 4.2 }, none = { n: 0, p50: null, p95: null, p99: null, max: null, min: null, mean: null };
-    const telemetry = [{ runId: 'sep-28', date: '2026-09-30', generatedAt: '2026-09-28T00:00:00Z', releaseMs: Date.parse('2026-09-28T00:00:00Z'),
+    const generatedAt=new Date(Date.now()-86_400_000).toISOString();
+    const telemetry = [{ runId: 'sep-28', date: '2026-09-30', generatedAt, releaseMs: Date.parse(generatedAt),
       origin: 'REAL_RELEASE', mode: 'live', machineKey: null, runtimeKey: null, children, summary: { configuredToChrome: lagStats,
         perChildIndex: [{ fanOutIndex: 0, error: lagStats }], perWorker: {}, spreadMs: 50, compression: 1, prewarmHeadroomMs: none,
         adaptiveSelectionToPost: none, reopenPredictionErrorMs: none } }];

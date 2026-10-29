@@ -60,7 +60,15 @@ const object = (value: unknown): Record<string, unknown> | null =>
   value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
 const nonempty = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0;
 const safeIdentifier = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(value);
-const seconds = (time: string) => `${time}:00`;
+/** Checkout wire times only: no trimming, rollover, or discarded nonzero seconds. */
+export function canonicalCheckoutTime(value: unknown): string | null {
+  if (typeof value !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(value)) return null;
+  return value.length === 5 ? `${value}:00` : value;
+}
+const sameTime = (returned: unknown, expected: string): boolean => {
+  const actual = canonicalCheckoutTime(returned), planned = canonicalCheckoutTime(expected);
+  return actual !== null && planned !== null && actual === planned;
+};
 /** Onda's checkout endpoint represents the end of the 23:00 hour as midnight, never as 24:00. */
 export const ondaCheckoutBoundary = ondaWireBoundary;
 const cents = (value: number) => Math.round(value * 100);
@@ -173,7 +181,7 @@ export function validatePublicCheckoutResponse(
     if (session.requestSessionRef !== first!.sessionRef ||
       items.some(item => item.sessionRef !== first!.sessionRef || item.spaceId !== first!.spaceId || item.date !== first!.date) ||
       session.facilityId !== request.facilityId || session.spaceId !== first!.spaceId || session.date !== first!.date ||
-      session.startTime !== seconds(items[0]!.startTime) || session.endTime !== seconds(items.at(-1)!.endTime) ||
+      !sameTime(session.startTime, items[0]!.startTime) || !sameTime(session.endTime, items.at(-1)!.endTime) ||
       session.durationHours !== items.length) fail('CHECKOUT_SESSION_INVALID');
     sessionIds.push(session.bookingSessionId as string); sessionById.set(session.bookingSessionId as string, session);
   }
@@ -193,7 +201,7 @@ export function validatePublicCheckoutResponse(
       validBooking.payment_status !== 'pending' || !session || validBooking.booking_session_id !== session.bookingSessionId ||
       validBooking.space_id !== item.spaceId ||
       (validBooking.facility_id !== undefined && validBooking.facility_id !== item.facilityId) ||
-      validBooking.date !== item.date || validBooking.start_time !== seconds(item.startTime) || validBooking.end_time !== seconds(item.endTime) ||
+      validBooking.date !== item.date || !sameTime(validBooking.start_time, item.startTime) || !sameTime(validBooking.end_time, item.endTime) ||
       validBooking.duration !== 60 || !sameAmount(validBooking.rate, item.rate) || validBooking.guest_count !== 1 ||
       !nonempty(validBooking.hold_expires_at) || !Number.isFinite(Date.parse(validBooking.hold_expires_at)) ||
       Date.parse(validBooking.hold_expires_at) <= now.getTime()) fail('CHECKOUT_BOOKING_INVALID');

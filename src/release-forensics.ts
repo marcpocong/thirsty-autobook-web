@@ -33,7 +33,7 @@ export interface ObserverLog {
   /** False for version-1 logs, which did not itemize public records per read. */
   bookingsItemized: boolean;
   clockOffsetAtReleaseMs: number | null;
-  notLaunched: number; maxInFlight: number | null; earlyOffsetsMs: number[];
+  notLaunched: number; maxInFlight: number | null; configuredMaxInFlight?:number|null; earlyOffsetsMs: number[];
 }
 
 /** Reads a Slot Watch NDJSON log. Version-1 logs (before Phase 2) are converted for availability only. */
@@ -45,12 +45,16 @@ export function readObserverLog(path: string): ObserverLog | undefined {
     const releaseMs = num(header.releaseMs)!;
     const clock = lines.filter(line => line.type === 'clock' && Date.parse(String(line.at)) <= releaseMs).at(-1);
     const schedule = header.schedule as { availability?: number[]; maxInFlight?: number } | undefined;
+    const intervals=lines.filter(line=>line.type==='availability').flatMap(line=>[
+      {at:Number(line.requestOffsetMs),delta:1},{at:Number(line.responseOffsetMs),delta:-1}]).filter(e=>Number.isFinite(e.at))
+      .sort((a,b)=>a.at-b.at||a.delta-b.delta);
+    let active=0,peak=0;for(const event of intervals){active+=event.delta;peak=Math.max(peak,active);}
     return { version: header.version as 2 | 3, path, releaseMs, date: header.date,
       availability: lines.filter(line => line.type === 'availability').map(line => line as unknown as AvailabilityObservation),
       bookings: lines.filter(line => line.type === 'bookings').map(line => line as unknown as BookingObservation), bookingsItemized: true,
       clockOffsetAtReleaseMs: num(clock?.offsetMs) ?? num(header.clockOffsetMs) ?? null,
       notLaunched: lines.filter(line => line.type === 'not-launched' && line.kind === 'availability').length,
-      maxInFlight: num(schedule?.maxInFlight) ?? null, earlyOffsetsMs: (schedule?.availability ?? []).filter(offset => offset >= 0 && offset < 6_000) };
+      maxInFlight: intervals.length?peak:null,configuredMaxInFlight:num(schedule?.maxInFlight)??null, earlyOffsetsMs: (schedule?.availability ?? []).filter(offset => offset >= 0 && offset < 6_000) };
   }
   if (header.version === 1) {
     const releaseMs = Date.parse(String(header.releaseAt));
@@ -80,7 +84,7 @@ export interface ForensicTarget {
   workerId: string; attemptId: string | null; court: number; startTime: string; endTime: string;
   finalState: string | null; finalCode: string | null;
   post: { offsetMs: number | null; source: 'run-trace' | null };
-  response: { statusCode: number | null; errorHint: string | null; responseSource: string | null; completedOffsetMs: number | null; networkDurationMs: number | null };
+  response: { statusCode: number | null; errorHint: string | null; responseSource: string | null; completedOffsetMs: number | null; networkDurationMs: number | null;bookkeepingOffsetMs?:number|null };
   grid: TargetEvidence | null;
   provider: null | {
     complete: boolean; protocol: string | null; reused: boolean | null;
@@ -169,17 +173,27 @@ export function buildReleaseForensics(input: ForensicInputs): ReleaseForensicsSu
     ?? stages('PRIMARY_PROOFLESS_OUTCOME').filter(line => line.workerId === worker).at(-1);
   const byWorker = (name: string, worker: string) => stages(name).filter(line => line.workerId === worker).at(-1);
   const targets: ForensicTarget[] = rows.map(row => {
-    const state = lastState(row.workerId), posted = byWorker('CHECKOUT_HTTP_POST_INITIATED', row.workerId), answered = byWorker('CHECKOUT_RESPONSE_COMPLETED', row.workerId);
+    const posted = byWorker('CHECKOUT_HTTP_POST_INITIATED', row.workerId);
     const attemptId = str(posted?.attemptId) ?? str(attemptLines.filter(line => line.workerId === row.workerId).at(-1)?.attemptId) ?? null;
-    const trace = traces.find(value => value.workerId === row.workerId);
+    // This grouped view displays the latest sent child. Its state/response must belong
+    // to that child too, even when siblings answer or settle in a different order.
+    const multipleChildren=stages('PHASE3_FAN_OUT_CHILD').some(line=>line.workerId===row.workerId&&Number(line.fanOutCount)>1)||
+      new Set(attemptLines.filter(line=>line.workerId===row.workerId).map(line=>line.attemptId)).size>1;
+    const state=attemptId?stages('PHASE3_SETTLED').find(line=>line.attemptId===attemptId)??
+      stages('PRECISION_ATTEMPT_STATE').find(line=>line.attemptId===attemptId)??
+      stages('PRIMARY_PROOFLESS_OUTCOME').find(line=>line.attemptId===attemptId)??(!multipleChildren?lastState(row.workerId):undefined):lastState(row.workerId);
+    const answered=attemptId?stages('CHECKOUT_RESPONSE_COMPLETED').find(line=>line.attemptId===attemptId):byWorker('CHECKOUT_RESPONSE_COMPLETED',row.workerId);
+    const trace = traces.find(value => attemptId?value.attemptId===attemptId:value.workerId===row.workerId&&value.attemptId===undefined);
     // POST offset: the run trace's request event (trusted release clock; for an immediate test, PC-clock interval from the first POST).
     const postAtMs = Date.parse(String(posted?.eventAt ?? posted?.at));
     const runOffset = reference === 'release' ? num(posted?.releaseLatenessMs) : posted && referenceMs !== null && Number.isFinite(postAtMs) ? tenth(postAtMs - referenceMs) : undefined;
     const postOffset = runOffset ?? null;
-    // Response time = POST offset + PC-clock time between the two run-trace events (both stamped by the same clock).
-    const postAt = Date.parse(String(posted?.eventAt ?? posted?.at)), answerAt = Date.parse(String(answered?.eventAt ?? answered?.at));
-    const path=critical.find(value=>((value.meta as {workerId?:string}|undefined)?.workerId??value.workerId)===row.workerId);
-    const completedOffsetMs = num(path?.responseObservedMs)??(postOffset !== null && Number.isFinite(postAt) && Number.isFinite(answerAt) ? tenth(postOffset + answerAt - postAt) : null);
+    const child=stages('PHASE3_FAN_OUT_CHILD').find(value=>value.attemptId===attemptId);
+    const paths=critical.filter(value=>((value.meta as {workerId?:string}|undefined)?.workerId??value.workerId)===row.workerId&&
+      (child? (value.meta as {fanOutIndex?:number}|undefined)?.fanOutIndex===child.fanOutIndex:true));
+    const path=paths.length===1?paths[0]:undefined;
+    // Renderer completion and deferred Node bookkeeping are separate measurements. Never subtract mixed progress clocks.
+    const completedOffsetMs = num((path?.responseCompleteMs as {ms?:number}|undefined)?.ms)??null;
     let provider: ForensicTarget['provider'] = null;
     if (trace) {
       const browser = trace.browser, nodeTimes = reference === 'release';
@@ -196,19 +210,20 @@ export function buildReleaseForensics(input: ForensicInputs): ReleaseForensicsSu
     return { ...row, attemptId, finalState: str(state?.state) ?? str(state?.attemptState) ?? str(state?.status) ?? null, finalCode: str(state?.code) ?? null,
       post: { offsetMs: postOffset, source: runOffset !== undefined ? 'run-trace' : null },
       response: { statusCode: num(answered?.statusCode) ?? trace?.response.status ?? null, errorHint: str(answered?.errorHint) ?? null,
-        responseSource: str(answered?.responseSource) ?? null, completedOffsetMs, networkDurationMs: num(answered?.networkDurationMs) ?? null },
+        responseSource: str(answered?.responseSource) ?? null, completedOffsetMs,bookkeepingOffsetMs:num(path?.responseObservedMs)??null, networkDurationMs: num(answered?.networkDurationMs) ?? null },
       grid: observer ? targetEvidence(observer.availability, observer.bookings, row) : null, provider };
   });
   const p3Header=stages('PHASE3_AUTHORIZATION')[0];
   const p3Candidates=new Map(stages('PHASE3_CANDIDATE').map(line=>[str(line.candidateId),line]));
-  const p3Starts=[...stages('PHASE3_WAVE1_STARTED'),...stages('PHASE3_ATTEMPT_RESERVED')];
+  const p3Starts=[...new Map([...stages('PHASE3_FAN_OUT_CHILD'),...stages('PHASE3_WAVE1_UNSENT'),
+    ...stages('PHASE3_WAVE1_STARTED'),...stages('PHASE3_ATTEMPT_RESERVED')].filter(line=>str(line.attemptId)).map(line=>[str(line.attemptId),line])).values()];
   const phase3=p3Header?{fingerprint:str(p3Header.fingerprint)??null,candidateCount:num(p3Header.candidateCount)??0,
     maxWave2:num(p3Header.maxWave2)??0,maxRescue:num(p3Header.maxRescue)??0,maxTotal:num(p3Header.maxTotal)??0,
     attempts:p3Starts.flatMap(line=>{
-      const attemptId=str(line.attemptId),candidateId=str(line.candidateId),workerId=str(line.workerId),wave=str(line.wave);
+      const attemptId=str(line.attemptId),candidateId=str(line.candidateId),workerId=str(line.workerId),wave=str(line.wave)??'WAVE_1';
       if(!attemptId||!candidateId||!workerId||!wave)return [];
       const candidate=p3Candidates.get(candidateId),posted=stages('CHECKOUT_HTTP_POST_INITIATED').find(value=>value.attemptId===attemptId),
-        settled=stages('PHASE3_SETTLED').find(value=>value.attemptId===attemptId),answered=stages('CHECKOUT_RESPONSE_COMPLETED').find(value=>value.attemptId===attemptId),
+        settled=stages('PHASE3_SETTLED').find(value=>value.attemptId===attemptId)??stages('PHASE3_WAVE1_UNSENT').find(value=>value.attemptId===attemptId),answered=stages('CHECKOUT_RESPONSE_COMPLETED').find(value=>value.attemptId===attemptId),
         verifiedHold=stages('DIAGNOSTIC_VERIFIED_HOLD').some(value=>value.attemptId===attemptId),
         qrHandoff=verifiedHold&&stages('DIAGNOSTIC_QR_HANDOFF').some(value=>value.attemptId===attemptId),
         dispatched=stages('PHASE3_DISPATCH').find(value=>value.attemptId===attemptId);

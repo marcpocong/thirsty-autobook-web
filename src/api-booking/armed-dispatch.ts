@@ -395,6 +395,9 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
       achieved.set(wing,own);
       if (quota.scope === 'PER_WING') { if (own.size >= (quota.wings[wing] ?? 1)) wingStops.set(wing,reason); }
       else if ([...achieved.values()].reduce((sum,set)=>sum+set.size,0) >= (quota.overall ?? 1)) objectiveStop=reason;
+    // Ambiguity/throttle/payment remain race-wide, including PER_WING quotas: an unknown
+    // reservation can consume the shared objective or overlap another target. Only a
+    // validated hold supports the narrower distinct-court/wing quota calculation above.
     } else objectiveStop=reason;
     deps.onObjectiveStop?.(reason); targetStops.set(attempt.target.targetKey,reason);
   };

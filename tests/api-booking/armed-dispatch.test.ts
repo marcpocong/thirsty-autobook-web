@@ -596,30 +596,43 @@ describe('strict Shotgun deadlines',()=>{
 
 
 describe('diversified one-court objective coordination',()=>{
-  it.each(['hold','unknown','throttle','payment','rejection'] as const)('coordinates different courts on %s',async kind=>{
+  it.each(['hold','minute-hold','invalid-success','unknown','timeout','throttle','payment','rejection'] as const)('coordinates different courts under PER_WING quota on %s',async kind=>{
     // Allow durable arming to finish before the strict no-new-preparation interval begins.
     const releaseMs=Date.now()+4000;
     const targets=validatePrecisionTargets([{court:7,start:'17:00',durationHours:3,releaseOffsetMs:-500},{court:6,start:'17:00',durationHours:3,releaseOffsetMs:0}],date);
-    const race=freezePrecisionRace(date,releaseMs,targets.map(target=>({target,plan:precisionTargetPlan(target,date),dispatchTimingPolicy:'SHOTGUN_STRICT' as const})));
+    const race=freezePrecisionRace(date,releaseMs,targets.map(target=>({target,plan:precisionTargetPlan(target,date),dispatchTimingPolicy:'SHOTGUN_STRICT' as const})),
+      {objective:{scope:'PER_WING',wings:{MANGO:1}}});
     const clock=TrustedReleaseClock.fromOffset(0,{method:'test',sampleCount:5});
     const armed=await armPrecisionRace(race,{customerFor:()=>customer,journalRoot:root,releaseMs,now:()=>clock.nowMs()});
     const {transport,calls}=fakeTransport(async request=>{
       if(kind==='hold')return pendingResponse(request,armed.attempts[0]!.plan);
+      if(kind==='minute-hold'||kind==='invalid-success'){
+        const raw=pendingResponse(request,armed.attempts[0]!.plan);
+        for(const booking of raw.bookings){booking.start_time=booking.start_time.slice(0,5);booking.end_time=booking.end_time.slice(0,5);}
+        for(const session of raw.bookingSessions){session.startTime=session.startTime.slice(0,5);session.endTime=session.endTime.slice(0,5);}
+        if(kind==='invalid-success')raw.transaction.amount=1;
+        return raw;
+      }
       if(kind==='unknown')throw new BrowserSessionTransportError('OUTCOME_UNKNOWN',true);
+      if(kind==='timeout')throw new BrowserSessionTransportError('TRANSPORT_TIMEOUT',true);
       if(kind==='throttle')throw new BrowserSessionTransportError('ONDA_HTTP_STATUS_INVALID',true,{status:429,category:'http-rejection',contentKind:'json',responseSource:'application',errorHint:'rate-limit'},true);
       if(kind==='payment')throw new BrowserSessionTransportError('ONDA_HTTP_STATUS_INVALID',true,{status:409,category:'http-rejection',contentKind:'json',responseSource:'application',errorHint:'payment-in-progress'},true);
       return conflict();
     });
-    const outcome=await dispatchArmedPrecisionRace(armed,{clock,prewarmLeadMs:1300,spinTailMs:0,isAborted:()=>false,prewarm:async()=>{},transportFor:()=>transport});
+    const qrTimes:number[]=[];
+    const outcome=await dispatchArmedPrecisionRace(armed,{clock,prewarmLeadMs:1300,spinTailMs:0,isAborted:()=>false,prewarm:async()=>{},transportFor:()=>transport,
+      onVerifiedHold:async()=>{qrTimes.push(clock.nowMs());return {state:'QR_READY'};}});
+    const valid=kind==='hold'||kind==='minute-hold',ambiguous=kind==='unknown'||kind==='timeout'||kind==='invalid-success';
+    expect(qrTimes).toHaveLength(valid?1:0);if(valid)expect(qrTimes[0]!).toBeGreaterThanOrEqual(releaseMs+1000);
     expect(calls).toHaveLength(kind==='rejection'?2:1);
     if(kind!=='rejection'){
       expect(outcome.results[1]!.state).toBe('NOT_DISPATCHED');
-      expect(outcome.results[1]!.code).toBe({hold:'SHOTGUN_TARGET_ALREADY_ACHIEVED',unknown:'SHOTGUN_TARGET_OUTCOME_UNKNOWN',throttle:'SHOTGUN_PROVIDER_THROTTLE_STOP',payment:'SHOTGUN_PAYMENT_IN_PROGRESS_STOP'}[kind]);
+      expect(outcome.results[1]!.code).toBe(valid?'SHOTGUN_TARGET_ALREADY_ACHIEVED':ambiguous?'SHOTGUN_TARGET_OUTCOME_UNKNOWN':kind==='throttle'?'SHOTGUN_PROVIDER_THROTTLE_STOP':'SHOTGUN_PAYMENT_IN_PROGRESS_STOP');
       expect(isSubmissionPermitUnspent(armed.attempts[1]!.permit)).toBe(false);
       // A suppressed shot can expire with its permit revoked before off-path settlement; its journal must still settle.
       expect(await armed.attempts[1]!.journal.read(armed.attempts[1]!.key)).toMatchObject({state:'rejected',failureCode:outcome.results[1]!.code});
       expect(armed.attempts[0]!.state).toBe('fired');
-      expect((await armed.attempts[0]!.journal.read(armed.attempts[0]!.key)).state).toBe(kind==='hold'?'verified':kind==='unknown'?'unknown':'rejected');
+      expect((await armed.attempts[0]!.journal.read(armed.attempts[0]!.key)).state).toBe(valid?'verified':ambiguous?'unknown':'rejected');
     }
   });
 });
