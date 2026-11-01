@@ -61,3 +61,11 @@ it('accepts only explicit fresh current-run official QR handoffs and preserves c
   expect(presentedHolds(s,[row],now)[0]!.provider).toBe('UNKNOWN');
   expect(presentedHolds(s,[{...row,provider:'EXPIRED_OR_UNAVAILABLE'}],now)[0]!.provider).toBe('EXPIRED_OR_UNAVAILABLE');
 });
+it('uses the Available Now request instead of the unrelated saved release date and workers',()=>{
+  const s=state({operation:'full',workflow:'test',booking:{targetDate:'2026-11-04',fingerprint:'saved',setup:{PRECISION_PHASE3:{wave1:[{workerId:'A',fanOutOffsetsMs:[-100,0]}]}}},preparedContext:{workflow:'test',date:'2026-11-03',configFingerprint:'prepared-test',requiredBrowsers:['C']},apiStage:{date:'2026-11-03',workerId:'C',wing:'BUKO',court:4}});
+  expect(operationalState(s)).toMatchObject({availableNow:true,targetDate:'2026-11-03',fingerprint:'prepared-test',workers:['C']});
+  expect(attemptCounters(s).planned).toBe(0);
+  s.runTiming={startedAt:'2026-11-02T00:00:00Z'} as Dashboard['runTiming'];
+  s.apiStage={...s.apiStage!,date:'2026-01-01',workerId:'B',at:'2026-01-01T00:00:00Z'};
+  expect(operationalState(s)).toMatchObject({targetDate:'2026-11-03',workers:['C'],currentTarget:null});
+});

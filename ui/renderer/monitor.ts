@@ -66,7 +66,7 @@ export function renderMonitor(s: Dashboard, freshSample=true) {
   byId('monitor-stop-note').hidden = byId('monitor-stop').hidden;
   text('monitor-clock-note', `${op.releaseMs ? `${manilaTime(op.releaseMs, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })} Asia/Manila · ` : ''}${s.clock?.networkSynced ? `Trusted controller clock · ${s.clock.clockQuality ?? 'quality unavailable'}` : 'Network clock not synchronized · release countdown unavailable; hold time is a local estimate'}`);
   const setup = s.booking?.setup, c = attemptCounters(s);
-  const facts = !op.active&&confirmed.length&&!setup ? [['Booking date',confirmed[0]!.date],['Wing',confirmed[0]!.wing],['Operation','Existing checkout recovery'],['Saved authorization','Original immutable recovery record'],['Checkout browser',confirmed.map(r=>r.worker??'?').join(' · ')]] : [['Booking date', op.targetDate ?? 'No saved plan'], ['Wing', setup?.STRATEGY_V2?.objective ? Object.entries(setup.STRATEGY_V2.objective.wings ?? {}).filter(([, w]) => (w as { enabled?: boolean }).enabled).map(([w]) => w).join(' + ') || 'MANGO' : 'MANGO'],
+  const facts = op.availableNow?[['Current booking date',op.targetDate??'Awaiting current request evidence'],['Wing',op.currentTarget?.wing??'Awaiting current run evidence'],['Operation','Available Now'],['Prepared request reference',op.fingerprint??'Not published'],['Prepared / observed browsers',op.workers.join(' · ')||'Not yet reported']]:!op.active&&confirmed.length&&!setup ? [['Booking date',confirmed[0]!.date],['Wing',confirmed[0]!.wing],['Operation','Existing checkout recovery'],['Saved authorization','Original immutable recovery record'],['Checkout browser',confirmed.map(r=>r.worker??'?').join(' · ')]] : [['Booking date', op.targetDate ?? 'No saved plan'], ['Wing', setup?.STRATEGY_V2?.objective ? Object.entries(setup.STRATEGY_V2.objective.wings ?? {}).filter(([, w]) => (w as { enabled?: boolean }).enabled).map(([w]) => w).join(' + ') || 'MANGO' : 'MANGO'],
     ['Strategy', setup?.STRATEGY_V2?.shotgun?.enabled ? 'Shotgun' : setup?.RELEASE_STRATEGY === 'precision' ? 'Precision' : setup?.BOOKING_TYPE ?? '—'],
     ['Saved authorization', op.fingerprint ?? 'None'], ['Required browsers', op.workers.join(' · ') || 'None']];
   const key = JSON.stringify([facts, c, recovered.length, qr.length,currentQr.length, s.ready]);
@@ -75,17 +75,17 @@ export function renderMonitor(s: Dashboard, freshSample=true) {
     fill(byId('monitor-plan'), ...facts.map(([k, v]) => el('div', {}, el('dt', { text: k! }), el('dd', { text: v! }))));
     let counters = document.getElementById('monitor-counters');
     if (!counters) { counters = el('div', { id: 'monitor-counters', class: 'live-overview' }); byId('live-attempt-counts').after(counters); }
-    fill(counters, ...Object.entries({ Armed: c.armed, 'Recovery confirmed': recovered.length, 'Recovery QR ready': qr.length,'Current official QR':currentQr.length, UNKNOWN: c.unknown, Rejected: c.rejected, 'Internal failure': c.failed, 'Definitively unsent': c.unsent })
+    fill(counters, ...Object.entries({ 'Recovery confirmed': recovered.length, 'Recovery QR ready': qr.length,'Current official QR':currentQr.length,...(!op.availableNow||s.live?.parents.length?{Armed:c.armed,UNKNOWN:c.unknown,Rejected:c.rejected,'Internal failure':c.failed,'Definitively unsent':c.unsent}:{}) })
       .map(([k, v]) => el('div', {}, el('span', { text: k }), el('strong', { text: String(v) }))));
   }
   // Existing live.ts renders observed workers. Before the first attempt, show the frozen authorization's workers.
   if (!s.live?.parents.length && op.workers.length) {
     const host = byId('live-workers'); host.hidden = false;
-    const fallbackKey=JSON.stringify([op.workers,op.label,s.browserHealth,s.ready,setup?.PRECISION_PHASE3]);
+    const fallbackKey=JSON.stringify([op.workers,op.label,s.browserHealth,s.ready,setup?.PRECISION_PHASE3,op.availableNow,op.currentTarget]);
     if(fallbackKey!==fallbackSignature){fallbackSignature=fallbackKey;
     fill(host, ...op.workers.map(w => { const focus = el('button', { type: 'button', class: 'secondary compact', text: `Focus Browser ${w}` });
       focus.disabled = !s.browserHealth?.[w]; focus.onclick = () => { void window.thirsty.focusBrowser({ workerId: w }).catch(() => { focus.textContent = 'Browser unavailable'; }); };
-      const assigned = setup?.PRECISION_PHASE3?.wave1.filter(a => a.workerId === w).map(a => { const t = setup.PRECISION_PHASE3!.candidates[a.candidateIndex]; return t ? `Court ${t.court} · ${t.start} · ${t.durationHours} h · ${a.fanOutOffsetsMs?.length ?? 1} attempt(s)` : 'Target unavailable'; });
+      const assigned = op.availableNow?[op.currentTarget?.workerId===w&&op.currentTarget.court?`Court ${op.currentTarget.court} · ${op.currentTarget.startTime??'Time not yet reported'}`:'Current request · court assignment not yet reported']:setup?.PRECISION_PHASE3?.wave1.filter(a => a.workerId === w).map(a => { const t = setup.PRECISION_PHASE3!.candidates[a.candidateIndex]; return t ? `Court ${t.court} · ${t.start} · ${t.durationHours} h · ${a.fanOutOffsetsMs?.length ?? 1} attempt(s)` : 'Target unavailable'; });
       return el('li', { 'data-tone': s.browserHealth?.[w] ? 'running' : 'warn' }, el('strong', { text: `Browser ${w}` }), el('span', { text: assigned?.join(' / ') || 'Saved plan allocation' }), el('span', { text: `${s.browserHealth?.[w] ? 'Connected' : 'Missing browser'} · ${op.active ? op.label : s.ready ? 'Prepared' : 'Not prepared'}` }), focus); }));}
   } else fallbackSignature='';
   const events = [...new Map((s.logs ?? []).filter(e => !s.runTiming || Date.parse(e.at) >= Date.parse(s.runTiming.startedAt)).map(e => [`${e.at}:${e.text}`, e])).values()].slice(-80);

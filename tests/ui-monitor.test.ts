@@ -84,3 +84,13 @@ it('does not renew an old clock sample on renderer-only publications or steal na
     expect(await page.evaluate(()=>(window as any).fixtureCalls)).toEqual([]);
   }finally{await page.close();}
 });
+it('monitors an Available Now Buko request without substituting the saved Mango release',async()=>{
+  const page=await openRenderer(browser,{booking,operation:'full',workflow:'test',preparedContext:{workflow:'test',date:'2026-11-03',configFingerprint:'prepared-request',requiredBrowsers:['C']},apiStage:{workerId:'C',wing:'BUKO',court:4,startTime:'16:00',date:'2026-11-03'},browserHealth:{C:true}},'live');
+  try{
+    const facts=await page.locator('#monitor-plan').innerText();expect(facts).toContain('2026-11-03');expect(facts).toContain('BUKO');expect(facts).toContain('prepared-request');expect(facts).not.toContain(booking.fingerprint);
+    expect(await page.locator('#live-workers').innerText()).toContain('Browser C');expect(await page.locator('#live-workers').innerText()).toContain('Court 4');expect(await page.locator('#live-workers').innerText()).not.toContain('Court 7');
+    expect(await page.locator('#live-planned').isVisible()).toBe(false);expect(await page.locator('#live-attempt-counts').innerText()).toContain('not been published');
+    expect(await page.evaluate(()=>(window as any).fixtureCalls)).toEqual([]);
+    await page.screenshot({path:'.local/ui-overhaul/shots/1060-available-now-buko.png',fullPage:true});
+  }finally{await page.close();}
+});

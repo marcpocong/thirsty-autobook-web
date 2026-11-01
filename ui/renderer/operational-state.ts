@@ -9,6 +9,10 @@ export function operationalState(s: Dashboard, holds: readonly PendingHoldRow[] 
   const release = s.scheduledRelease ?? s.activeApiRelease;
   const children = s.runTiming?.endedAt && release ? [] : s.live?.parents.flatMap(p => p.children) ?? [];
   const running = ['full', 'selection', 'practice', 'fullPractice'].includes(s.operation);
+  const availableNow=s.workflow==='test'&&(running||['prepare','resetting'].includes(s.operation));
+  const testContext=s.preparedContext?.workflow==='test'?s.preparedContext:null;
+  const stage=s.apiStage&&(!s.runTiming?.startedAt||!s.apiStage.at||Date.parse(s.apiStage.at)>=Date.parse(s.runTiming.startedAt))?s.apiStage:null;
+  const currentTarget=stage?{date:stage.date,wing:stage.wing,court:stage.court,startTime:stage.startTime,workerId:stage.workerId}:null;
   const active = !!release || running;
   let label = 'IDLE', detail = 'Nothing currently running.', tone = 'muted';
   if (s.operation === 'stopping') { label = 'STOPPING'; detail = 'Future attempts are stopping. Dispatched requests cannot be retracted.'; tone = 'warn'; }
@@ -29,9 +33,10 @@ export function operationalState(s: Dashboard, holds: readonly PendingHoldRow[] 
   else if (s.booking) { label = 'SAVED'; detail = 'Continue Booking Setup to review and prepare the saved plan.'; }
   const confirmed=presentedHolds(s,holds,now).filter(row=>holdPresentation(row,now).confirmed);
   if(s.operation==='idle'&&confirmed.length) {label=confirmed.some(row=>holdPresentation(row,now).qrReady)?'QR READY':'HOLD CONFIRMED';detail='Existing reservation confirmed. Review its expiry and complete payment manually in its original browser.';tone='ok';}
-  return { label, detail, tone, active, releaseMs: release?.releaseMs, targetDate: release?.targetDate ?? s.booking?.targetDate,
-    fingerprint: s.scheduledRelease?.configFingerprint ?? s.booking?.fingerprint,
-    workers: s.scheduledRelease?.requiredBrowsers ?? (s.booking ? planWorkerIds(s.booking.setup) : []) };
+  return { label, detail, tone, active, availableNow, currentTarget, releaseMs: release?.releaseMs,
+    targetDate: availableNow?currentTarget?.date??testContext?.date:release?.targetDate ?? s.booking?.targetDate,
+    fingerprint: availableNow?testContext?.configFingerprint:s.scheduledRelease?.configFingerprint ?? s.booking?.fingerprint,
+    workers: availableNow?[...new Set([...(testContext?.requiredBrowsers??[]),...(currentTarget?.workerId?[currentTarget.workerId]:[])])]:s.scheduledRelease?.requiredBrowsers ?? (s.booking ? planWorkerIds(s.booking.setup) : []) };
 }
 
 /** Advance only a controller-published network-clock sample using monotonic elapsed time. */
@@ -79,7 +84,7 @@ export function presentedHolds(s:Dashboard, rows:readonly PendingHoldRow[],now:n
 
 export function attemptCounters(s: Dashboard) {
   const c = s.live?.parents.flatMap(p => p.children) ?? [];
-  const planned = s.booking?.setup.PRECISION_PHASE3?.wave1.reduce((n, a) => n + (a.fanOutOffsetsMs?.length ?? 1), 0) ?? c.length;
+  const planned = s.workflow==='test'&&s.operation!=='idle'?c.length:s.booking?.setup.PRECISION_PHASE3?.wave1.reduce((n, a) => n + (a.fanOutOffsetsMs?.length ?? 1), 0) ?? c.length;
   return { planned: Math.max(planned, c.length), armed: c.filter(a => a.state === 'ARMED').length,
     inFlight: c.filter(a => ['IN_FLIGHT', 'RESERVED'].includes(a.state)).length,
     unknown: c.filter(a => a.state === 'UNKNOWN').length, rejected: c.filter(a => a.state === 'REJECTED').length,

@@ -22,7 +22,9 @@ function parentSummary(parent: LiveParentView): string {
 let lastAttempts='',lastWorkers='';
 export function renderLive(state: Dashboard): void {
   const live = state.live, host = byId('live-attempts');
-  const children=live?.parents.flatMap(value=>value.children)??[],planned=state.booking?.setup.PRECISION_PHASE3?.wave1.reduce((count,group)=>count+(group.fanOutOffsetsMs?.length??1),0)??state.booking?.setup.STRATEGY_V2?.shotgun?.exactSchedule.length??children.length;
+  const children=live?.parents.flatMap(value=>value.children)??[],unreportedTest=state.workflow==='test'&&state.operation!=='idle'&&!children.length,
+    planned=unreportedTest?0:state.booking?.setup.PRECISION_PHASE3?.wave1.reduce((count,group)=>count+(group.fanOutOffsetsMs?.length??1),0)??state.booking?.setup.STRATEGY_V2?.shotgun?.exactSchedule.length??children.length;
+  (byId('live-planned').closest('.live-overview') as HTMLElement).hidden=unreportedTest;
   const releaseChildren=live?.parents.filter(parent=>parent.wave==='WAVE_1').flatMap(parent=>parent.children)??[];
   const ready=releaseChildren.filter(value=>['READY','IN_FLIGHT','REJECTED','UNKNOWN','QR_READY','VERIFIED','HOLD_VERIFIED','HOLD_VERIFIED_QR_ATTENTION'].includes(value.state)).length,dispatched=releaseChildren.filter(value=>['IN_FLIGHT','REJECTED','UNKNOWN','QR_READY','VERIFIED','HOLD_VERIFIED','HOLD_VERIFIED_QR_ATTENTION'].includes(value.state)).length;
   const pending=releaseChildren.filter(value=>value.state==='IN_FLIGHT').length,first=live?.parents.find(value=>value.wave==='WAVE_1')??live?.parents[0];
@@ -34,6 +36,7 @@ export function renderLive(state: Dashboard): void {
   const result=liveOutcome(state).replace('RESCUE HOLD VERIFIED','RESCUE LOCAL RESULT VALID').replace('HOLD VERIFIED','LOCAL RESULT VALID');
   // The controller's accounting is authoritative: unsent, rejected and unknown are never merged.
   byId('live-attempt-counts').textContent=state.runSummary?state.runSummary.detail.replace(/verified holds?/g,text=>text.endsWith('holds')?'local checkout results':'local checkout result'):`${planned} planned · ${ready} prepared · ${dispatched} dispatched · ${pending} still in flight · ${releaseChildren.filter(child=>child.state==='REJECTED').length} rejected`;
+  if(unreportedTest)byId('live-attempt-counts').textContent='Per-attempt accounting has not been published for this Available Now run. Follow its current target, recorded events and checkout evidence.';
   const tone=hold?'ok':unknown||throttle||paymentInProgress?'danger':allRejected?'warn':dispatched||ready?'running':'muted';
   byId('live-result').textContent=result;byId('live-result').dataset.tone=tone;
   byId('live-guidance').textContent=state.runSummary?.settled&&!hold&&!throttle&&!paymentInProgress?state.runSummary.nextStep:hold?'Local checkout result recorded. Review existing checkout recovery for independent provider confirmation; payment remains manual.':paymentInProgress?'An existing payment checkout is in progress. Remaining objective attempts stopped; review that checkout before preparing again.':throttle?'Remaining objective attempts, backups and Rescue were stopped. Do not manually retry.':unknown?'Reconcile the provider state before any retry. The safety lock remains authoritative.':allRejected?'No hold was verified. Review details after the run completes.':dispatched?'Requests have left; wait for provider outcomes.':ready?'Attempts are prepared. Keep the PC awake and do not change the saved plan.':'Prepare and arm from Next Release. No action is needed here.';

@@ -20,6 +20,8 @@ This change is renderer-only. It changes no booking engine, IPC contract, dispat
 
 Legacy `live` links now resolve to the primary monitor. `history` and `records` remain Activity panes; release, tests and strategy remain Setup panes. Legacy clock controls move to a Settings disclosure. The private local-handoff detail cards move to an Activity disclosure. The unique action handlers and recovery paths remain in place.
 
+Available Now monitoring uses the current prepared request and current-run target evidence, rather than substituting the separate saved release's booking date, fingerprint or worker allocation. Old events predating the current run are excluded. Where that engine has not published per-attempt accounting, the UI says so and omits unsupported counters.
+
 ## Operational state and evidence
 
 `operational-state.ts` is a side-effect-free renderer selector. Scheduled/active releases take precedence over retained historical warnings. An armed release requires no child records to appear ARMED. Sent requests, provider waiting, preparation, stopping, retained locks, stale plans and completed accounting are distinct. An old completed run does not establish an active session.
