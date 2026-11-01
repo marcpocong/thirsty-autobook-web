@@ -27,7 +27,7 @@ function response() {
 const http=(raw:unknown,status=200)=>({status,contentType:'application/json',body:JSON.stringify(raw)}) as CheckoutHttpResponse;
 
 describe('private checkout recovery',()=>{
-  it.each(['complete','wrong hours','wrong amount','access denied','expired during navigation'])('restoration stops safely or verifies the existing QR: %s',async(kind)=>{
+  it.each(['complete','image QR','missing QR','wrong hours','wrong amount','access denied','expired during navigation'])('restoration stops safely or verifies the existing QR: %s',async(kind)=>{
     const dir=await mkdtemp(join(tmpdir(),'checkout-open-recovery-'));
     try{
       const raw=response(),journal=new DurableSubmissionJournal(dir);
@@ -37,11 +37,15 @@ describe('private checkout recovery',()=>{
       const before=await readFile(join(dir,`${key}.json`),'utf8');
       const body=`Court 7: Mango Wing October 24, 2026 ${kind==='wrong hours'?'7:00 PM - 8:00 PM':'7:00 PM - 10:00 PM'} Pending QRPH ${kind==='wrong amount'?'700.00':'2,100.00'}`;
       const page={route:vi.fn(),unroute:vi.fn(),evaluate:vi.fn(async()=>kind==='access denied'?403:200),goto:vi.fn(),
-        getByText:vi.fn(()=>({first:()=>({waitFor:vi.fn()})})),locator:vi.fn(()=>({innerText:async()=>body,first:()=>({waitFor:vi.fn()})})),bringToFront:vi.fn()};
+        getByText:vi.fn(()=>({first:()=>({waitFor:vi.fn()})})),locator:vi.fn((selector:string)=>({innerText:async()=>body,first:()=>({waitFor:vi.fn(async()=>{
+          if(selector==='body')return;
+          const required=kind==='image QR'?'img[alt="Payment QR code"]':'canvas';
+          if(kind==='missing QR'||!selector.includes(required))throw Error('QR_NOT_VISIBLE');
+        })})})),bringToFront:vi.fn()};
       let clockReads=0;
       const opened=openCheckoutRecovery(page as unknown as Parameters<typeof openCheckoutRecovery>[0],dir,
         ()=>kind==='expired during navigation'&&++clockReads>1?new Date('2026-10-22T00:11:00Z'):now);
-      if(kind==='complete') {
+      if(kind==='complete'||kind==='image QR') {
         const result=await opened;
         expect(result).toMatchObject({hold:{trustedTotalAmount:2100}});
         expect(result).not.toHaveProperty('token');expect(page.bringToFront).toHaveBeenCalledOnce();

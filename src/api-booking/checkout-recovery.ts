@@ -99,7 +99,7 @@ export async function openCheckoutRecovery(page:Pick<Page,'evaluate'|'goto'|'get
     await page.goto(recovery.url,{waitUntil:'domcontentloaded',timeout:45_000});
     await page.getByText('QRPH',{exact:true}).first().waitFor({state:'visible',timeout:20_000});
     assertQrOrderSummary(await page.locator('body').innerText(),recovery.plan);
-    await page.locator('canvas').first().waitFor({state:'visible',timeout:20_000});
+    await page.locator('canvas, img[alt="Payment QR code"]').first().waitFor({state:'visible',timeout:20_000});
     await prepareCheckoutRecovery(directory,now());
     await page.bringToFront();
     // Callers receive only the safe result, never the checkout access token.

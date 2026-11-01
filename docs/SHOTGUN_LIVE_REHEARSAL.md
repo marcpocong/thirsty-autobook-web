@@ -18,4 +18,6 @@ For genuine security preparation alone, with both booking routes blocked and no 
 
 This discards the acquired context when the check process ends. A successful security-only check is not a live booking, recovery test or release-readiness guarantee.
 
+The November 1 [incident and rehearsal report](incidents/2026-11-01-release/README.md) records the initial unsent rehearsal and the subsequent one-attempt verified hold. The latter exposed a canvas-only installed QR wait; source recovery and both production handoff paths now accept the explicit `Payment QR code` image as well as a canvas, with exact order-summary checks unchanged. Installed module hashes must be checked independently: a source fix does not replace the modules this CLI imports from the canonical installation.
+
 A rehearsal is not a complete recreation of 08:00 contention, multi-attempt fan-out, priority/observer topology or the saved production preparation lead. One successful attempt does not establish full release readiness. An unsent failure is not automatically retried. Pending/unknown submissions retain their authoritative journal status.

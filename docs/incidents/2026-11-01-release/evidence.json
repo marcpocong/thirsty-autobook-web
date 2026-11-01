@@ -1,0 +1,4448 @@
+{
+  "schema": "nov1-release-forensics/v1",
+  "runId": "63a216a2-cc04-42bc-b982-df174537634d",
+  "releaseMs": 1793491200000,
+  "releaseUtc": "2026-11-01T00:00:00.000Z",
+  "releaseManila": "2026-11-01T08:00:00+08:00",
+  "targetDate": "2026-11-03",
+  "warning": "Historical evidence projection. UNKNOWN records are not rewritten. No active booking or future readiness is asserted. Private identifiers/tokens/contact/proofs omitted.",
+  "authorization": {
+    "date": "2026-11-03",
+    "releaseMs": 1793491200000,
+    "budgets": {
+      "wave2": 0,
+      "rescue": 0,
+      "total": 8
+    },
+    "rescueEnabled": false,
+    "concurrentWave2": false,
+    "authorizedAt": "2026-10-31T23:49:14.918Z",
+    "fingerprint": "7a3c2c478110f0c2ddee191b919801cbe6ac474ce5e86ea1d4ad92e120393b31",
+    "candidates": [
+      {
+        "id": "70275370668d147e1aed2258abf100c86a4b3397d7d699f7a06fd421d7d42276",
+        "logicalKey": "34c14a23cfdbd7f92d0cf0bb08bb891dafb37351d788104b0553f0a3aefc4836",
+        "court": 7,
+        "start": "19:00",
+        "end": "22:00",
+        "durationHours": 3,
+        "expectedAmount": 2100,
+        "priority": 1,
+        "permissions": {
+          "wave1": true,
+          "wave2": false,
+          "rescue": false
+        }
+      },
+      {
+        "id": "437b7cf44a2b18fa8b97b4389058a92c806d313abed32a5002c978b1352c253d",
+        "logicalKey": "34b4196e8209b03effb87f8c925e7ecc1d4497c2a063857a9b24a77383abcf39",
+        "court": 6,
+        "start": "19:00",
+        "end": "22:00",
+        "durationHours": 3,
+        "expectedAmount": 2100,
+        "priority": 2,
+        "permissions": {
+          "wave1": true,
+          "wave2": false,
+          "rescue": false
+        }
+      },
+      {
+        "id": "42a1bf5c65c7c42f243f5ffff881c98bb0872011773c63b15765436219208d5c",
+        "logicalKey": "cbccdd70162f48145b529da0e4ffc192d8ec37dfc2aab2ede0b983c7485acf3f",
+        "court": 5,
+        "start": "19:00",
+        "end": "22:00",
+        "durationHours": 3,
+        "expectedAmount": 2100,
+        "priority": 3,
+        "permissions": {
+          "wave1": true,
+          "wave2": false,
+          "rescue": false
+        }
+      }
+    ],
+    "wave1": [
+      {
+        "workerId": "A",
+        "candidateId": "70275370668d147e1aed2258abf100c86a4b3397d7d699f7a06fd421d7d42276",
+        "fanOutOffsetsMs": [
+          -2000,
+          -1143,
+          -286
+        ]
+      },
+      {
+        "workerId": "B",
+        "candidateId": "437b7cf44a2b18fa8b97b4389058a92c806d313abed32a5002c978b1352c253d",
+        "fanOutOffsetsMs": [
+          -1714,
+          -857,
+          0
+        ]
+      },
+      {
+        "workerId": "C",
+        "candidateId": "42a1bf5c65c7c42f243f5ffff881c98bb0872011773c63b15765436219208d5c",
+        "fanOutOffsetsMs": [
+          -1429,
+          -571
+        ]
+      }
+    ],
+    "shotgun": {
+      "enabled": true,
+      "budget": 8,
+      "selectedLogicalTargets": [
+        "court-7:19:00:3h",
+        "court-6:19:00:3h",
+        "court-5:19:00:3h"
+      ],
+      "allocationMode": "EQUAL",
+      "counts": {
+        "court-7:19:00:3h": 3,
+        "court-6:19:00:3h": 3,
+        "court-5:19:00:3h": 2
+      },
+      "windowStartMs": -2000,
+      "windowEndMs": 0,
+      "timingMode": "AUTO",
+      "timingCapacityOverride": false,
+      "allowStandbyConsumption": false,
+      "exactSchedule": [
+        {
+          "logicalTargetId": "court-6:19:00:3h",
+          "shotIndex": 0,
+          "configuredOffsetMs": -1714
+        },
+        {
+          "logicalTargetId": "court-7:19:00:3h",
+          "shotIndex": 0,
+          "configuredOffsetMs": -2000
+        },
+        {
+          "logicalTargetId": "court-5:19:00:3h",
+          "shotIndex": 0,
+          "configuredOffsetMs": -1429
+        },
+        {
+          "logicalTargetId": "court-6:19:00:3h",
+          "shotIndex": 1,
+          "configuredOffsetMs": -857
+        },
+        {
+          "logicalTargetId": "court-7:19:00:3h",
+          "shotIndex": 1,
+          "configuredOffsetMs": -1143
+        },
+        {
+          "logicalTargetId": "court-5:19:00:3h",
+          "shotIndex": 1,
+          "configuredOffsetMs": -571
+        },
+        {
+          "logicalTargetId": "court-6:19:00:3h",
+          "shotIndex": 2,
+          "configuredOffsetMs": 0
+        },
+        {
+          "logicalTargetId": "court-7:19:00:3h",
+          "shotIndex": 2,
+          "configuredOffsetMs": -286
+        }
+      ],
+      "groupAnchor": null
+    },
+    "frozenAt": "2026-10-31T23:58:00.351Z"
+  },
+  "clock": {
+    "rounds": [
+      {
+        "checkpoint": "T-10M",
+        "offsetMs": 617,
+        "roundTripMs": 42,
+        "sampleCount": 10,
+        "spreadMs": 4.5,
+        "uncertaintyMs": 22,
+        "deltaMs": 2,
+        "adopted": true
+      },
+      {
+        "checkpoint": "T-60S",
+        "offsetMs": 623.5,
+        "roundTripMs": 42,
+        "sampleCount": 10,
+        "spreadMs": 10.9,
+        "uncertaintyMs": 22.8,
+        "deltaMs": 6.2,
+        "adopted": true
+      },
+      {
+        "checkpoint": "T-30S",
+        "offsetMs": 622.3,
+        "roundTripMs": 41,
+        "sampleCount": 10,
+        "spreadMs": 1,
+        "uncertaintyMs": 20.6,
+        "deltaMs": -1.2,
+        "adopted": true
+      }
+    ],
+    "dispatchOffsetMs": 622.3,
+    "observerOffsetMs": 617.3,
+    "observerMinusDispatchMs": -5
+  },
+  "stageCounts": {
+    "RUN_STARTED": 1,
+    "RUN_CONFIGURATION": 1,
+    "SHOTGUN_LIVE_PILOT_ATTESTED": 1,
+    "WIRE_PAYLOAD_SELF_CHECK": 1,
+    "PREPARING_BROWSER": 3,
+    "BROWSER_READY": 3,
+    "BROWSER_PREPARATION_OUTCOME": 3,
+    "PHASE3_AUTHORIZATION": 1,
+    "PHASE3_CANDIDATE": 3,
+    "PHASE3_DIVERSIFICATION_WARNING": 1,
+    "NETWORK_CLOCK_REFRESHED": 1,
+    "AVAILABILITY_REQUEST_STARTED": 1,
+    "PRE_RELEASE_AUDIT_READ": 2,
+    "AVAILABILITY_SAMPLE_FAILED": 1,
+    "AVAILABILITY_REQUEST_COMPLETED": 1,
+    "PUBLIC_BOOKING_BLOCK_SAMPLE": 7,
+    "PHASE3_EVIDENCE_READ": 1,
+    "PHASE3_EVIDENCE_UNKNOWN": 3,
+    "PHASE3_WAVE1_PRICE": 3,
+    "PHASE3_OBJECTIVE_QUOTA": 1,
+    "PHASE3_FROZEN": 1,
+    "PHASE3_FAN_OUT_CHILD": 8,
+    "DIAGNOSTIC_ATTEMPT_ARMED": 8,
+    "RELEASE_OFFSET_SCHEDULED": 7,
+    "PREWARM_PLAN": 1,
+    "NETWORK_CLOCK_CONSENSUS": 2,
+    "PREWARM_WINDOW": 1,
+    "PREWARM_TIER_STATUS": 9,
+    "SECURITY_PREWARM_STARTED": 8,
+    "SECURITY_PREPARATION_STARTED": 8,
+    "SECURITY_PREWARM_READY": 8,
+    "SECURITY_PREPARATION_COMPLETED": 8,
+    "CHECKOUT_FUNCTION_ENTERED": 7,
+    "CHECKOUT_PRE_POST": 7,
+    "POSSIBLE_HOLD_DETECTED": 7,
+    "PHASE3_WAVE1_STARTED": 7,
+    "PHASE3_DISPATCH": 7,
+    "RELEASE_LOCKDOWN_COMPLETE": 1,
+    "CHECKOUT_RESPONSE_COMPLETED": 7,
+    "CHECKOUT_HTTP_POST_INITIATED": 7,
+    "PHASE3_SETTLED": 8,
+    "PHASE3_WAVE1_COMPLETE": 1,
+    "PHASE3_WAVE1_UNSENT": 1,
+    "CRITICAL_PATH_SAVED": 1,
+    "PHASE3_OUTCOME": 1,
+    "FAILED": 1,
+    "PROVIDER_TRACE_SAVED": 1,
+    "PROCESS_EXIT": 1,
+    "RUN_DIAGNOSTIC_SUMMARY": 1
+  },
+  "events": [
+    {
+      "stage": "RUN_STARTED",
+      "at": "2026-10-31T23:49:12.102Z",
+      "elapsedMs": 2,
+      "sincePreviousMs": 2
+    },
+    {
+      "stage": "RUN_CONFIGURATION",
+      "at": "2026-10-31T23:49:12.130Z",
+      "elapsedMs": 29,
+      "sincePreviousMs": 27,
+      "prewarmLeadMs": 15000,
+      "workerCount": 3
+    },
+    {
+      "stage": "SHOTGUN_LIVE_PILOT_ATTESTED",
+      "at": "2026-10-31T23:49:12.130Z",
+      "elapsedMs": 29,
+      "sincePreviousMs": 0,
+      "attempts": 8
+    },
+    {
+      "stage": "WIRE_PAYLOAD_SELF_CHECK",
+      "at": "2026-10-31T23:49:12.173Z",
+      "elapsedMs": 72,
+      "sincePreviousMs": 43
+    },
+    {
+      "stage": "PREPARING_BROWSER",
+      "at": "2026-10-31T23:49:12.174Z",
+      "elapsedMs": 73,
+      "sincePreviousMs": 1,
+      "workerId": "A"
+    },
+    {
+      "stage": "PREPARING_BROWSER",
+      "at": "2026-10-31T23:49:12.193Z",
+      "elapsedMs": 93,
+      "sincePreviousMs": 20,
+      "workerId": "B"
+    },
+    {
+      "stage": "PREPARING_BROWSER",
+      "at": "2026-10-31T23:49:12.209Z",
+      "elapsedMs": 108,
+      "sincePreviousMs": 15,
+      "workerId": "C"
+    },
+    {
+      "stage": "BROWSER_READY",
+      "at": "2026-10-31T23:49:14.800Z",
+      "elapsedMs": 2700,
+      "sincePreviousMs": 2592,
+      "workerId": "B"
+    },
+    {
+      "stage": "BROWSER_READY",
+      "at": "2026-10-31T23:49:14.904Z",
+      "elapsedMs": 2803,
+      "sincePreviousMs": 103,
+      "workerId": "C"
+    },
+    {
+      "stage": "BROWSER_READY",
+      "at": "2026-10-31T23:49:14.916Z",
+      "elapsedMs": 2815,
+      "sincePreviousMs": 12,
+      "workerId": "A"
+    },
+    {
+      "stage": "BROWSER_PREPARATION_OUTCOME",
+      "at": "2026-10-31T23:49:14.916Z",
+      "elapsedMs": 2816,
+      "sincePreviousMs": 1,
+      "workerId": "A",
+      "code": "COMPLETED",
+      "status": "fulfilled"
+    },
+    {
+      "stage": "BROWSER_PREPARATION_OUTCOME",
+      "at": "2026-10-31T23:49:14.916Z",
+      "elapsedMs": 2816,
+      "sincePreviousMs": 0,
+      "workerId": "B",
+      "code": "COMPLETED",
+      "status": "fulfilled"
+    },
+    {
+      "stage": "BROWSER_PREPARATION_OUTCOME",
+      "at": "2026-10-31T23:49:14.916Z",
+      "elapsedMs": 2816,
+      "sincePreviousMs": 0,
+      "workerId": "C",
+      "code": "COMPLETED",
+      "status": "fulfilled"
+    },
+    {
+      "stage": "PHASE3_AUTHORIZATION",
+      "at": "2026-10-31T23:49:14.919Z",
+      "elapsedMs": 2819,
+      "sincePreviousMs": 3
+    },
+    {
+      "stage": "PHASE3_CANDIDATE",
+      "at": "2026-10-31T23:49:14.919Z",
+      "elapsedMs": 2819,
+      "sincePreviousMs": 0,
+      "candidateId": "70275370668d147e1aed2258abf100c86a4b3397d7d699f7a06fd421d7d42276",
+      "court": 7,
+      "startTime": "19:00",
+      "endTime": "22:00",
+      "amount": 2100
+    },
+    {
+      "stage": "PHASE3_CANDIDATE",
+      "at": "2026-10-31T23:49:14.920Z",
+      "elapsedMs": 2819,
+      "sincePreviousMs": 0,
+      "candidateId": "437b7cf44a2b18fa8b97b4389058a92c806d313abed32a5002c978b1352c253d",
+      "court": 6,
+      "startTime": "19:00",
+      "endTime": "22:00",
+      "amount": 2100
+    },
+    {
+      "stage": "PHASE3_CANDIDATE",
+      "at": "2026-10-31T23:49:14.920Z",
+      "elapsedMs": 2819,
+      "sincePreviousMs": 0,
+      "candidateId": "42a1bf5c65c7c42f243f5ffff881c98bb0872011773c63b15765436219208d5c",
+      "court": 5,
+      "startTime": "19:00",
+      "endTime": "22:00",
+      "amount": 2100
+    },
+    {
+      "stage": "PHASE3_DIVERSIFICATION_WARNING",
+      "at": "2026-10-31T23:49:14.920Z",
+      "elapsedMs": 2819,
+      "sincePreviousMs": 0
+    },
+    {
+      "stage": "NETWORK_CLOCK_REFRESHED",
+      "at": "2026-10-31T23:50:00.210Z",
+      "elapsedMs": 48107,
+      "sincePreviousMs": 45288,
+      "sampleCount": 10,
+      "offsetMs": 617,
+      "roundTripMs": 42,
+      "spreadMs": 4.5,
+      "uncertaintyMs": 22,
+      "checkpoint": "T-10M",
+      "deltaMs": 2
+    },
+    {
+      "stage": "AVAILABILITY_REQUEST_STARTED",
+      "at": "2026-10-31T23:57:59.392Z",
+      "eventAt": "2026-10-31T23:57:59.392Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 527906,
+      "sincePreviousMs": 527906
+    },
+    {
+      "stage": "PRE_RELEASE_AUDIT_READ",
+      "at": "2026-10-31T23:58:00.035Z",
+      "elapsedMs": 527932,
+      "sincePreviousMs": 479825,
+      "checkpoint": "FREEZE"
+    },
+    {
+      "stage": "AVAILABILITY_SAMPLE_FAILED",
+      "at": "2026-10-31T23:58:00.035Z",
+      "elapsedMs": 527932,
+      "sincePreviousMs": 26,
+      "code": "AVAILABILITY_SITE_HELPER_UNAVAILABLE",
+      "durationMs": 26
+    },
+    {
+      "stage": "AVAILABILITY_REQUEST_COMPLETED",
+      "at": "2026-10-31T23:57:59.418Z",
+      "eventAt": "2026-10-31T23:57:59.418Z",
+      "timingKind": "MEASURED_DURATION",
+      "elapsedMs": 527932,
+      "sincePreviousMs": 0,
+      "status": "FAILED",
+      "durationMs": 26,
+      "failureCategory": "AVAILABILITY_SITE_HELPER_UNAVAILABLE"
+    },
+    {
+      "stage": "PUBLIC_BOOKING_BLOCK_SAMPLE",
+      "at": "2026-10-31T23:58:00.345Z",
+      "elapsedMs": 528242,
+      "sincePreviousMs": 310,
+      "court": 6,
+      "status": "SUCCESS"
+    },
+    {
+      "stage": "PUBLIC_BOOKING_BLOCK_SAMPLE",
+      "at": "2026-10-31T23:58:00.346Z",
+      "elapsedMs": 528243,
+      "sincePreviousMs": 1,
+      "court": 1,
+      "status": "SUCCESS"
+    },
+    {
+      "stage": "PRE_RELEASE_AUDIT_READ",
+      "at": "2026-10-31T23:58:00.347Z",
+      "elapsedMs": 528244,
+      "sincePreviousMs": 312,
+      "checkpoint": "FREEZE"
+    },
+    {
+      "stage": "PHASE3_EVIDENCE_READ",
+      "at": "2026-10-31T23:58:00.347Z",
+      "elapsedMs": 528244,
+      "sincePreviousMs": 0,
+      "checkpoint": "FREEZE"
+    },
+    {
+      "stage": "PHASE3_EVIDENCE_UNKNOWN",
+      "at": "2026-10-31T23:58:00.347Z",
+      "elapsedMs": 528245,
+      "sincePreviousMs": 1,
+      "workerId": "A",
+      "candidateId": "70275370668d147e1aed2258abf100c86a4b3397d7d699f7a06fd421d7d42276"
+    },
+    {
+      "stage": "PHASE3_EVIDENCE_UNKNOWN",
+      "at": "2026-10-31T23:58:00.347Z",
+      "elapsedMs": 528245,
+      "sincePreviousMs": 0,
+      "workerId": "B",
+      "candidateId": "437b7cf44a2b18fa8b97b4389058a92c806d313abed32a5002c978b1352c253d"
+    },
+    {
+      "stage": "PHASE3_EVIDENCE_UNKNOWN",
+      "at": "2026-10-31T23:58:00.347Z",
+      "elapsedMs": 528245,
+      "sincePreviousMs": 0,
+      "workerId": "C",
+      "candidateId": "42a1bf5c65c7c42f243f5ffff881c98bb0872011773c63b15765436219208d5c"
+    },
+    {
+      "stage": "PUBLIC_BOOKING_BLOCK_SAMPLE",
+      "at": "2026-10-31T23:58:00.346Z",
+      "elapsedMs": 528243,
+      "sincePreviousMs": 0,
+      "court": 2,
+      "status": "SUCCESS"
+    },
+    {
+      "stage": "PUBLIC_BOOKING_BLOCK_SAMPLE",
+      "at": "2026-10-31T23:58:00.346Z",
+      "elapsedMs": 528243,
+      "sincePreviousMs": 0,
+      "court": 7,
+      "status": "SUCCESS"
+    },
+    {
+      "stage": "PUBLIC_BOOKING_BLOCK_SAMPLE",
+      "at": "2026-10-31T23:58:00.346Z",
+      "elapsedMs": 528243,
+      "sincePreviousMs": 0,
+      "court": 5,
+      "status": "SUCCESS"
+    },
+    {
+      "stage": "PUBLIC_BOOKING_BLOCK_SAMPLE",
+      "at": "2026-10-31T23:58:00.346Z",
+      "elapsedMs": 528243,
+      "sincePreviousMs": 0,
+      "court": 4,
+      "status": "SUCCESS"
+    },
+    {
+      "stage": "PUBLIC_BOOKING_BLOCK_SAMPLE",
+      "at": "2026-10-31T23:58:00.347Z",
+      "elapsedMs": 528244,
+      "sincePreviousMs": 1,
+      "court": 3,
+      "status": "SUCCESS"
+    },
+    {
+      "stage": "PHASE3_WAVE1_PRICE",
+      "at": "2026-10-31T23:58:00.349Z",
+      "elapsedMs": 528246,
+      "sincePreviousMs": 1,
+      "workerId": "A",
+      "candidateId": "70275370668d147e1aed2258abf100c86a4b3397d7d699f7a06fd421d7d42276",
+      "amount": 2100,
+      "fanOutCount": 3
+    },
+    {
+      "stage": "PHASE3_WAVE1_PRICE",
+      "at": "2026-10-31T23:58:00.350Z",
+      "elapsedMs": 528247,
+      "sincePreviousMs": 1,
+      "workerId": "B",
+      "candidateId": "437b7cf44a2b18fa8b97b4389058a92c806d313abed32a5002c978b1352c253d",
+      "amount": 2100,
+      "fanOutCount": 3
+    },
+    {
+      "stage": "PHASE3_WAVE1_PRICE",
+      "at": "2026-10-31T23:58:00.351Z",
+      "elapsedMs": 528248,
+      "sincePreviousMs": 1,
+      "workerId": "C",
+      "candidateId": "42a1bf5c65c7c42f243f5ffff881c98bb0872011773c63b15765436219208d5c",
+      "amount": 2100,
+      "fanOutCount": 2
+    },
+    {
+      "stage": "PHASE3_OBJECTIVE_QUOTA",
+      "at": "2026-10-31T23:58:00.351Z",
+      "elapsedMs": 528248,
+      "sincePreviousMs": 0
+    },
+    {
+      "stage": "PHASE3_FROZEN",
+      "at": "2026-10-31T23:58:00.360Z",
+      "elapsedMs": 528258,
+      "sincePreviousMs": 10
+    },
+    {
+      "stage": "PHASE3_FAN_OUT_CHILD",
+      "at": "2026-10-31T23:58:00.361Z",
+      "elapsedMs": 528258,
+      "sincePreviousMs": 0,
+      "workerId": "A",
+      "attemptId": "core-A-official-1",
+      "candidateId": "70275370668d147e1aed2258abf100c86a4b3397d7d699f7a06fd421d7d42276",
+      "fanOutIndex": 0,
+      "fanOutCount": 3,
+      "shotIndex": 0,
+      "shotCount": 3,
+      "releaseOffsetMs": -2000
+    },
+    {
+      "stage": "PHASE3_FAN_OUT_CHILD",
+      "at": "2026-10-31T23:58:00.361Z",
+      "elapsedMs": 528258,
+      "sincePreviousMs": 0,
+      "workerId": "A",
+      "attemptId": "core-A-official-2",
+      "candidateId": "70275370668d147e1aed2258abf100c86a4b3397d7d699f7a06fd421d7d42276",
+      "fanOutIndex": 1,
+      "fanOutCount": 3,
+      "shotIndex": 1,
+      "shotCount": 3,
+      "releaseOffsetMs": -1143
+    },
+    {
+      "stage": "PHASE3_FAN_OUT_CHILD",
+      "at": "2026-10-31T23:58:00.361Z",
+      "elapsedMs": 528258,
+      "sincePreviousMs": 0,
+      "workerId": "A",
+      "attemptId": "core-A-official-3",
+      "candidateId": "70275370668d147e1aed2258abf100c86a4b3397d7d699f7a06fd421d7d42276",
+      "fanOutIndex": 2,
+      "fanOutCount": 3,
+      "shotIndex": 2,
+      "shotCount": 3,
+      "releaseOffsetMs": -286
+    },
+    {
+      "stage": "PHASE3_FAN_OUT_CHILD",
+      "at": "2026-10-31T23:58:00.361Z",
+      "elapsedMs": 528258,
+      "sincePreviousMs": 0,
+      "workerId": "B",
+      "attemptId": "core-B-official-4",
+      "candidateId": "437b7cf44a2b18fa8b97b4389058a92c806d313abed32a5002c978b1352c253d",
+      "fanOutIndex": 0,
+      "fanOutCount": 3,
+      "shotIndex": 0,
+      "shotCount": 3,
+      "releaseOffsetMs": -1714
+    },
+    {
+      "stage": "PHASE3_FAN_OUT_CHILD",
+      "at": "2026-10-31T23:58:00.361Z",
+      "elapsedMs": 528258,
+      "sincePreviousMs": 0,
+      "workerId": "B",
+      "attemptId": "core-B-official-5",
+      "candidateId": "437b7cf44a2b18fa8b97b4389058a92c806d313abed32a5002c978b1352c253d",
+      "fanOutIndex": 1,
+      "fanOutCount": 3,
+      "shotIndex": 1,
+      "shotCount": 3,
+      "releaseOffsetMs": -857
+    },
+    {
+      "stage": "PHASE3_FAN_OUT_CHILD",
+      "at": "2026-10-31T23:58:00.361Z",
+      "elapsedMs": 528258,
+      "sincePreviousMs": 0,
+      "workerId": "B",
+      "attemptId": "core-B-official-6",
+      "candidateId": "437b7cf44a2b18fa8b97b4389058a92c806d313abed32a5002c978b1352c253d",
+      "fanOutIndex": 2,
+      "fanOutCount": 3,
+      "shotIndex": 2,
+      "shotCount": 3,
+      "releaseOffsetMs": 0
+    },
+    {
+      "stage": "PHASE3_FAN_OUT_CHILD",
+      "at": "2026-10-31T23:58:00.361Z",
+      "elapsedMs": 528258,
+      "sincePreviousMs": 0,
+      "workerId": "C",
+      "attemptId": "core-C-official-7",
+      "candidateId": "42a1bf5c65c7c42f243f5ffff881c98bb0872011773c63b15765436219208d5c",
+      "fanOutIndex": 0,
+      "fanOutCount": 2,
+      "shotIndex": 0,
+      "shotCount": 2,
+      "releaseOffsetMs": -1429
+    },
+    {
+      "stage": "PHASE3_FAN_OUT_CHILD",
+      "at": "2026-10-31T23:58:00.361Z",
+      "elapsedMs": 528258,
+      "sincePreviousMs": 0,
+      "workerId": "C",
+      "attemptId": "core-C-official-8",
+      "candidateId": "42a1bf5c65c7c42f243f5ffff881c98bb0872011773c63b15765436219208d5c",
+      "fanOutIndex": 1,
+      "fanOutCount": 2,
+      "shotIndex": 1,
+      "shotCount": 2,
+      "releaseOffsetMs": -571
+    },
+    {
+      "stage": "DIAGNOSTIC_ATTEMPT_ARMED",
+      "at": "2026-10-31T23:57:59.744Z",
+      "eventAt": "2026-10-31T23:57:59.744Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 528258,
+      "sincePreviousMs": 14,
+      "workerId": "A",
+      "attemptId": "core-A-official-1",
+      "court": 7,
+      "startTime": "19:00"
+    },
+    {
+      "stage": "DIAGNOSTIC_ATTEMPT_ARMED",
+      "at": "2026-10-31T23:57:59.744Z",
+      "eventAt": "2026-10-31T23:57:59.744Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 528258,
+      "sincePreviousMs": 0,
+      "workerId": "A",
+      "attemptId": "core-A-official-2",
+      "court": 7,
+      "startTime": "19:00"
+    },
+    {
+      "stage": "DIAGNOSTIC_ATTEMPT_ARMED",
+      "at": "2026-10-31T23:57:59.744Z",
+      "eventAt": "2026-10-31T23:57:59.744Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 528258,
+      "sincePreviousMs": 0,
+      "workerId": "A",
+      "attemptId": "core-A-official-3",
+      "court": 7,
+      "startTime": "19:00"
+    },
+    {
+      "stage": "DIAGNOSTIC_ATTEMPT_ARMED",
+      "at": "2026-10-31T23:57:59.744Z",
+      "eventAt": "2026-10-31T23:57:59.744Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 528258,
+      "sincePreviousMs": 0,
+      "workerId": "B",
+      "attemptId": "core-B-official-4",
+      "court": 6,
+      "startTime": "19:00"
+    },
+    {
+      "stage": "DIAGNOSTIC_ATTEMPT_ARMED",
+      "at": "2026-10-31T23:57:59.744Z",
+      "eventAt": "2026-10-31T23:57:59.744Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 528258,
+      "sincePreviousMs": 0,
+      "workerId": "B",
+      "attemptId": "core-B-official-5",
+      "court": 6,
+      "startTime": "19:00"
+    },
+    {
+      "stage": "DIAGNOSTIC_ATTEMPT_ARMED",
+      "at": "2026-10-31T23:57:59.744Z",
+      "eventAt": "2026-10-31T23:57:59.744Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 528258,
+      "sincePreviousMs": 0,
+      "workerId": "B",
+      "attemptId": "core-B-official-6",
+      "court": 6,
+      "startTime": "19:00"
+    },
+    {
+      "stage": "DIAGNOSTIC_ATTEMPT_ARMED",
+      "at": "2026-10-31T23:57:59.744Z",
+      "eventAt": "2026-10-31T23:57:59.744Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 528258,
+      "sincePreviousMs": 0,
+      "workerId": "C",
+      "attemptId": "core-C-official-7",
+      "court": 5,
+      "startTime": "19:00"
+    },
+    {
+      "stage": "DIAGNOSTIC_ATTEMPT_ARMED",
+      "at": "2026-10-31T23:57:59.744Z",
+      "eventAt": "2026-10-31T23:57:59.744Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 528258,
+      "sincePreviousMs": 0,
+      "workerId": "C",
+      "attemptId": "core-C-official-8",
+      "court": 5,
+      "startTime": "19:00"
+    },
+    {
+      "stage": "RELEASE_OFFSET_SCHEDULED",
+      "at": "2026-10-31T23:58:00.427Z",
+      "elapsedMs": 528324,
+      "sincePreviousMs": 66,
+      "workerId": "A",
+      "releaseOffsetMs": -2000
+    },
+    {
+      "stage": "RELEASE_OFFSET_SCHEDULED",
+      "at": "2026-10-31T23:58:00.427Z",
+      "elapsedMs": 528324,
+      "sincePreviousMs": 0,
+      "workerId": "A",
+      "releaseOffsetMs": -1143
+    },
+    {
+      "stage": "RELEASE_OFFSET_SCHEDULED",
+      "at": "2026-10-31T23:58:00.427Z",
+      "elapsedMs": 528324,
+      "sincePreviousMs": 0,
+      "workerId": "A",
+      "releaseOffsetMs": -286
+    },
+    {
+      "stage": "RELEASE_OFFSET_SCHEDULED",
+      "at": "2026-10-31T23:58:00.427Z",
+      "elapsedMs": 528324,
+      "sincePreviousMs": 0,
+      "workerId": "B",
+      "releaseOffsetMs": -1714
+    },
+    {
+      "stage": "RELEASE_OFFSET_SCHEDULED",
+      "at": "2026-10-31T23:58:00.427Z",
+      "elapsedMs": 528324,
+      "sincePreviousMs": 0,
+      "workerId": "B",
+      "releaseOffsetMs": -857
+    },
+    {
+      "stage": "RELEASE_OFFSET_SCHEDULED",
+      "at": "2026-10-31T23:58:00.427Z",
+      "elapsedMs": 528324,
+      "sincePreviousMs": 0,
+      "workerId": "C",
+      "releaseOffsetMs": -1429
+    },
+    {
+      "stage": "RELEASE_OFFSET_SCHEDULED",
+      "at": "2026-10-31T23:58:00.427Z",
+      "elapsedMs": 528324,
+      "sincePreviousMs": 0,
+      "workerId": "C",
+      "releaseOffsetMs": -571
+    },
+    {
+      "stage": "PREWARM_PLAN",
+      "at": "2026-10-31T23:58:00.450Z",
+      "elapsedMs": 528347,
+      "sincePreviousMs": 23,
+      "fanOutCount": 3,
+      "durationMs": 4584,
+      "prewarmLeadMs": 32190,
+      "workerCount": 3,
+      "sampleCount": 34
+    },
+    {
+      "stage": "NETWORK_CLOCK_CONSENSUS",
+      "at": "2026-10-31T23:59:00.184Z",
+      "elapsedMs": 588076,
+      "sincePreviousMs": 59729,
+      "sampleCount": 10,
+      "offsetMs": 623.5,
+      "roundTripMs": 42,
+      "spreadMs": 10.9,
+      "uncertaintyMs": 22.8,
+      "checkpoint": "T-60S",
+      "deltaMs": 6.2
+    },
+    {
+      "stage": "PREWARM_WINDOW",
+      "at": "2026-10-31T23:59:25.816Z",
+      "elapsedMs": 613707,
+      "sincePreviousMs": 25631,
+      "releaseOffsetMs": -2000,
+      "prewarmLeadMs": 32190,
+      "lateByMs": 0
+    },
+    {
+      "stage": "PREWARM_TIER_STATUS",
+      "at": "2026-10-31T23:59:25.819Z",
+      "elapsedMs": 613711,
+      "sincePreviousMs": 4
+    },
+    {
+      "stage": "SECURITY_PREWARM_STARTED",
+      "at": "2026-10-31T23:59:25.832Z",
+      "elapsedMs": 613723,
+      "sincePreviousMs": 12,
+      "workerId": "A",
+      "attemptId": "core-A-official-1",
+      "candidateId": "70275370668d147e1aed2258abf100c86a4b3397d7d699f7a06fd421d7d42276",
+      "fanOutIndex": 0,
+      "fanOutCount": 3,
+      "shotIndex": 0,
+      "shotCount": 3
+    },
+    {
+      "stage": "SECURITY_PREWARM_STARTED",
+      "at": "2026-10-31T23:59:25.835Z",
+      "elapsedMs": 613726,
+      "sincePreviousMs": 3,
+      "workerId": "B",
+      "attemptId": "core-B-official-4",
+      "candidateId": "437b7cf44a2b18fa8b97b4389058a92c806d313abed32a5002c978b1352c253d",
+      "fanOutIndex": 0,
+      "fanOutCount": 3,
+      "shotIndex": 0,
+      "shotCount": 3
+    },
+    {
+      "stage": "SECURITY_PREPARATION_STARTED",
+      "at": "2026-10-31T23:59:25.209Z",
+      "eventAt": "2026-10-31T23:59:25.209Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 613723,
+      "sincePreviousMs": 85465,
+      "workerId": "A",
+      "attemptId": "core-A-official-1",
+      "securitySource": "FRESH_ACQUISITION"
+    },
+    {
+      "stage": "SECURITY_PREWARM_STARTED",
+      "at": "2026-10-31T23:59:25.836Z",
+      "elapsedMs": 613728,
+      "sincePreviousMs": 2,
+      "workerId": "C",
+      "attemptId": "core-C-official-7",
+      "candidateId": "42a1bf5c65c7c42f243f5ffff881c98bb0872011773c63b15765436219208d5c",
+      "fanOutIndex": 0,
+      "fanOutCount": 2,
+      "shotIndex": 0,
+      "shotCount": 2
+    },
+    {
+      "stage": "SECURITY_PREPARATION_STARTED",
+      "at": "2026-10-31T23:59:25.212Z",
+      "eventAt": "2026-10-31T23:59:25.212Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 613726,
+      "sincePreviousMs": 3,
+      "workerId": "B",
+      "attemptId": "core-B-official-4",
+      "securitySource": "FRESH_ACQUISITION"
+    },
+    {
+      "stage": "SECURITY_PREPARATION_STARTED",
+      "at": "2026-10-31T23:59:25.214Z",
+      "eventAt": "2026-10-31T23:59:25.214Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 613728,
+      "sincePreviousMs": 2,
+      "workerId": "C",
+      "attemptId": "core-C-official-7",
+      "securitySource": "FRESH_ACQUISITION"
+    },
+    {
+      "stage": "SECURITY_PREWARM_READY",
+      "at": "2026-10-31T23:59:28.621Z",
+      "elapsedMs": 616512,
+      "sincePreviousMs": 2784,
+      "workerId": "B",
+      "attemptId": "core-B-official-4",
+      "candidateId": "437b7cf44a2b18fa8b97b4389058a92c806d313abed32a5002c978b1352c253d",
+      "fanOutIndex": 0,
+      "fanOutCount": 3,
+      "shotIndex": 0,
+      "shotCount": 3,
+      "predictedReadyOffsetMs": -29602.985595703125,
+      "actualReadyOffsetMs": -31385.846923828125,
+      "predictionErrorMs": -1782.861328125,
+      "queueDelayMs": 3.014404296875,
+      "prepDurationMs": 2801.138671875
+    },
+    {
+      "stage": "PREWARM_TIER_STATUS",
+      "at": "2026-10-31T23:59:28.621Z",
+      "elapsedMs": 616512,
+      "sincePreviousMs": 0
+    },
+    {
+      "stage": "SECURITY_PREPARATION_COMPLETED",
+      "at": "2026-10-31T23:59:27.997Z",
+      "eventAt": "2026-10-31T23:59:27.997Z",
+      "timingKind": "MEASURED_DURATION",
+      "elapsedMs": 616511,
+      "sincePreviousMs": 2783,
+      "workerId": "B",
+      "attemptId": "core-B-official-4",
+      "durationMs": 2785,
+      "securitySource": "FRESH_ACQUISITION",
+      "challengeFrame": "none"
+    },
+    {
+      "stage": "SECURITY_PREWARM_READY",
+      "at": "2026-10-31T23:59:28.723Z",
+      "elapsedMs": 616614,
+      "sincePreviousMs": 102,
+      "workerId": "C",
+      "attemptId": "core-C-official-7",
+      "candidateId": "42a1bf5c65c7c42f243f5ffff881c98bb0872011773c63b15765436219208d5c",
+      "fanOutIndex": 0,
+      "fanOutCount": 2,
+      "shotIndex": 0,
+      "shotCount": 2,
+      "predictedReadyOffsetMs": -29602.820068359375,
+      "actualReadyOffsetMs": -31283.655029296875,
+      "predictionErrorMs": -1680.8349609375,
+      "queueDelayMs": 3.179931640625,
+      "prepDurationMs": 2903.1650390625
+    },
+    {
+      "stage": "PREWARM_TIER_STATUS",
+      "at": "2026-10-31T23:59:28.723Z",
+      "elapsedMs": 616614,
+      "sincePreviousMs": 0
+    },
+    {
+      "stage": "SECURITY_PREPARATION_COMPLETED",
+      "at": "2026-10-31T23:59:28.099Z",
+      "eventAt": "2026-10-31T23:59:28.099Z",
+      "timingKind": "MEASURED_DURATION",
+      "elapsedMs": 616614,
+      "sincePreviousMs": 103,
+      "workerId": "C",
+      "attemptId": "core-C-official-7",
+      "durationMs": 2886,
+      "securitySource": "FRESH_ACQUISITION",
+      "challengeFrame": "none"
+    },
+    {
+      "stage": "SECURITY_PREWARM_READY",
+      "at": "2026-10-31T23:59:28.812Z",
+      "elapsedMs": 616703,
+      "sincePreviousMs": 89,
+      "workerId": "A",
+      "attemptId": "core-A-official-1",
+      "candidateId": "70275370668d147e1aed2258abf100c86a4b3397d7d699f7a06fd421d7d42276",
+      "fanOutIndex": 0,
+      "fanOutCount": 3,
+      "shotIndex": 0,
+      "shotCount": 3,
+      "predictedReadyOffsetMs": -29604.904541015625,
+      "actualReadyOffsetMs": -31193.922607421875,
+      "predictionErrorMs": -1589.01806640625,
+      "queueDelayMs": 1.095458984375,
+      "prepDurationMs": 2994.98193359375
+    },
+    {
+      "stage": "PREWARM_TIER_STATUS",
+      "at": "2026-10-31T23:59:28.813Z",
+      "elapsedMs": 616704,
+      "sincePreviousMs": 1
+    },
+    {
+      "stage": "SECURITY_PREPARATION_COMPLETED",
+      "at": "2026-10-31T23:59:28.189Z",
+      "eventAt": "2026-10-31T23:59:28.189Z",
+      "timingKind": "MEASURED_DURATION",
+      "elapsedMs": 616703,
+      "sincePreviousMs": 89,
+      "workerId": "A",
+      "attemptId": "core-A-official-1",
+      "durationMs": 2980,
+      "securitySource": "FRESH_ACQUISITION",
+      "challengeFrame": "none"
+    },
+    {
+      "stage": "SECURITY_PREWARM_STARTED",
+      "at": "2026-10-31T23:59:28.833Z",
+      "elapsedMs": 616724,
+      "sincePreviousMs": 20,
+      "workerId": "C",
+      "attemptId": "core-C-official-8",
+      "candidateId": "42a1bf5c65c7c42f243f5ffff881c98bb0872011773c63b15765436219208d5c",
+      "fanOutIndex": 1,
+      "fanOutCount": 2,
+      "shotIndex": 1,
+      "shotCount": 2
+    },
+    {
+      "stage": "SECURITY_PREPARATION_STARTED",
+      "at": "2026-10-31T23:59:28.210Z",
+      "eventAt": "2026-10-31T23:59:28.210Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 616724,
+      "sincePreviousMs": 21,
+      "workerId": "C",
+      "attemptId": "core-C-official-8",
+      "securitySource": "FRESH_ACQUISITION"
+    },
+    {
+      "stage": "SECURITY_PREWARM_STARTED",
+      "at": "2026-10-31T23:59:28.835Z",
+      "elapsedMs": 616726,
+      "sincePreviousMs": 2,
+      "workerId": "B",
+      "attemptId": "core-B-official-5",
+      "candidateId": "437b7cf44a2b18fa8b97b4389058a92c806d313abed32a5002c978b1352c253d",
+      "fanOutIndex": 1,
+      "fanOutCount": 3,
+      "shotIndex": 1,
+      "shotCount": 3
+    },
+    {
+      "stage": "SECURITY_PREPARATION_STARTED",
+      "at": "2026-10-31T23:59:28.212Z",
+      "eventAt": "2026-10-31T23:59:28.212Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 616726,
+      "sincePreviousMs": 2,
+      "workerId": "B",
+      "attemptId": "core-B-official-5",
+      "securitySource": "FRESH_ACQUISITION"
+    },
+    {
+      "stage": "SECURITY_PREWARM_STARTED",
+      "at": "2026-10-31T23:59:28.837Z",
+      "elapsedMs": 616728,
+      "sincePreviousMs": 2,
+      "workerId": "A",
+      "attemptId": "core-A-official-2",
+      "candidateId": "70275370668d147e1aed2258abf100c86a4b3397d7d699f7a06fd421d7d42276",
+      "fanOutIndex": 1,
+      "fanOutCount": 3,
+      "shotIndex": 1,
+      "shotCount": 3
+    },
+    {
+      "stage": "SECURITY_PREPARATION_STARTED",
+      "at": "2026-10-31T23:59:28.214Z",
+      "eventAt": "2026-10-31T23:59:28.214Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 616728,
+      "sincePreviousMs": 2,
+      "workerId": "A",
+      "attemptId": "core-A-official-2",
+      "securitySource": "FRESH_ACQUISITION"
+    },
+    {
+      "stage": "NETWORK_CLOCK_CONSENSUS",
+      "at": "2026-10-31T23:59:30.170Z",
+      "elapsedMs": 618062,
+      "sincePreviousMs": 1334,
+      "sampleCount": 10,
+      "offsetMs": 622.3,
+      "roundTripMs": 41,
+      "spreadMs": 1,
+      "uncertaintyMs": 20.6,
+      "checkpoint": "T-30S",
+      "deltaMs": -1.2
+    },
+    {
+      "stage": "SECURITY_PREWARM_READY",
+      "at": "2026-10-31T23:59:30.612Z",
+      "elapsedMs": 618504,
+      "sincePreviousMs": 442,
+      "workerId": "C",
+      "attemptId": "core-C-official-8",
+      "candidateId": "42a1bf5c65c7c42f243f5ffff881c98bb0872011773c63b15765436219208d5c",
+      "fanOutIndex": 1,
+      "fanOutCount": 2,
+      "shotIndex": 1,
+      "shotCount": 2,
+      "predictedReadyOffsetMs": -26609.343505859375,
+      "actualReadyOffsetMs": -29387.34814453125,
+      "predictionErrorMs": -2778.004638671875,
+      "queueDelayMs": 2996.656494140625,
+      "prepDurationMs": 1805.995361328125
+    },
+    {
+      "stage": "PREWARM_TIER_STATUS",
+      "at": "2026-10-31T23:59:30.613Z",
+      "elapsedMs": 618505,
+      "sincePreviousMs": 1
+    },
+    {
+      "stage": "SECURITY_PREPARATION_COMPLETED",
+      "at": "2026-10-31T23:59:29.990Z",
+      "eventAt": "2026-10-31T23:59:29.990Z",
+      "timingKind": "MEASURED_DURATION",
+      "elapsedMs": 618504,
+      "sincePreviousMs": 1776,
+      "workerId": "C",
+      "attemptId": "core-C-official-8",
+      "durationMs": 1780,
+      "securitySource": "FRESH_ACQUISITION",
+      "challengeFrame": "none"
+    },
+    {
+      "stage": "SECURITY_PREWARM_READY",
+      "at": "2026-10-31T23:59:30.947Z",
+      "elapsedMs": 618839,
+      "sincePreviousMs": 334,
+      "workerId": "B",
+      "attemptId": "core-B-official-5",
+      "candidateId": "437b7cf44a2b18fa8b97b4389058a92c806d313abed32a5002c978b1352c253d",
+      "fanOutIndex": 1,
+      "fanOutCount": 3,
+      "shotIndex": 1,
+      "shotCount": 3,
+      "predictedReadyOffsetMs": -26609.44580078125,
+      "actualReadyOffsetMs": -29052.447509765625,
+      "predictionErrorMs": -2443.001708984375,
+      "queueDelayMs": 2996.55419921875,
+      "prepDurationMs": 2140.998291015625
+    },
+    {
+      "stage": "PREWARM_TIER_STATUS",
+      "at": "2026-10-31T23:59:30.947Z",
+      "elapsedMs": 618839,
+      "sincePreviousMs": 0
+    },
+    {
+      "stage": "SECURITY_PREPARATION_COMPLETED",
+      "at": "2026-10-31T23:59:30.325Z",
+      "eventAt": "2026-10-31T23:59:30.325Z",
+      "timingKind": "MEASURED_DURATION",
+      "elapsedMs": 618839,
+      "sincePreviousMs": 335,
+      "workerId": "B",
+      "attemptId": "core-B-official-5",
+      "durationMs": 2112,
+      "securitySource": "FRESH_ACQUISITION",
+      "challengeFrame": "none"
+    },
+    {
+      "stage": "SECURITY_PREWARM_READY",
+      "at": "2026-10-31T23:59:31.836Z",
+      "elapsedMs": 619728,
+      "sincePreviousMs": 889,
+      "workerId": "A",
+      "attemptId": "core-A-official-2",
+      "candidateId": "70275370668d147e1aed2258abf100c86a4b3397d7d699f7a06fd421d7d42276",
+      "fanOutIndex": 1,
+      "fanOutCount": 3,
+      "shotIndex": 1,
+      "shotCount": 3,
+      "predictedReadyOffsetMs": -26609.683349609375,
+      "actualReadyOffsetMs": -28163.084716796875,
+      "predictionErrorMs": -1553.4013671875,
+      "queueDelayMs": 2996.316650390625,
+      "prepDurationMs": 3030.5986328125
+    },
+    {
+      "stage": "PREWARM_TIER_STATUS",
+      "at": "2026-10-31T23:59:31.837Z",
+      "elapsedMs": 619729,
+      "sincePreviousMs": 1
+    },
+    {
+      "stage": "SECURITY_PREPARATION_COMPLETED",
+      "at": "2026-10-31T23:59:31.214Z",
+      "eventAt": "2026-10-31T23:59:31.214Z",
+      "timingKind": "MEASURED_DURATION",
+      "elapsedMs": 619728,
+      "sincePreviousMs": 889,
+      "workerId": "A",
+      "attemptId": "core-A-official-2",
+      "durationMs": 3000,
+      "securitySource": "FRESH_ACQUISITION",
+      "challengeFrame": "none"
+    },
+    {
+      "stage": "SECURITY_PREWARM_STARTED",
+      "at": "2026-10-31T23:59:31.858Z",
+      "elapsedMs": 619749,
+      "sincePreviousMs": 20,
+      "workerId": "B",
+      "attemptId": "core-B-official-6",
+      "candidateId": "437b7cf44a2b18fa8b97b4389058a92c806d313abed32a5002c978b1352c253d",
+      "fanOutIndex": 2,
+      "fanOutCount": 3,
+      "shotIndex": 2,
+      "shotCount": 3
+    },
+    {
+      "stage": "SECURITY_PREPARATION_STARTED",
+      "at": "2026-10-31T23:59:31.236Z",
+      "eventAt": "2026-10-31T23:59:31.236Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 619750,
+      "sincePreviousMs": 22,
+      "workerId": "B",
+      "attemptId": "core-B-official-6",
+      "securitySource": "FRESH_ACQUISITION"
+    },
+    {
+      "stage": "SECURITY_PREWARM_STARTED",
+      "at": "2026-10-31T23:59:31.859Z",
+      "elapsedMs": 619751,
+      "sincePreviousMs": 2,
+      "workerId": "A",
+      "attemptId": "core-A-official-3",
+      "candidateId": "70275370668d147e1aed2258abf100c86a4b3397d7d699f7a06fd421d7d42276",
+      "fanOutIndex": 2,
+      "fanOutCount": 3,
+      "shotIndex": 2,
+      "shotCount": 3
+    },
+    {
+      "stage": "SECURITY_PREPARATION_STARTED",
+      "at": "2026-10-31T23:59:31.237Z",
+      "eventAt": "2026-10-31T23:59:31.237Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 619751,
+      "sincePreviousMs": 1,
+      "workerId": "A",
+      "attemptId": "core-A-official-3",
+      "securitySource": "FRESH_ACQUISITION"
+    },
+    {
+      "stage": "SECURITY_PREWARM_READY",
+      "at": "2026-10-31T23:59:34.294Z",
+      "elapsedMs": 622185,
+      "sincePreviousMs": 2434,
+      "workerId": "B",
+      "attemptId": "core-B-official-6",
+      "candidateId": "437b7cf44a2b18fa8b97b4389058a92c806d313abed32a5002c978b1352c253d",
+      "fanOutIndex": 2,
+      "fanOutCount": 3,
+      "shotIndex": 2,
+      "shotCount": 3,
+      "predictedReadyOffsetMs": -23578.636962890625,
+      "actualReadyOffsetMs": -25705.969970703125,
+      "predictionErrorMs": -2127.3330078125,
+      "queueDelayMs": 6027.363037109375,
+      "prepDurationMs": 2456.6669921875
+    },
+    {
+      "stage": "PREWARM_TIER_STATUS",
+      "at": "2026-10-31T23:59:34.294Z",
+      "elapsedMs": 622186,
+      "sincePreviousMs": 1
+    },
+    {
+      "stage": "SECURITY_PREPARATION_COMPLETED",
+      "at": "2026-10-31T23:59:33.672Z",
+      "eventAt": "2026-10-31T23:59:33.672Z",
+      "timingKind": "MEASURED_DURATION",
+      "elapsedMs": 622185,
+      "sincePreviousMs": 2434,
+      "workerId": "B",
+      "attemptId": "core-B-official-6",
+      "durationMs": 2436,
+      "securitySource": "FRESH_ACQUISITION",
+      "challengeFrame": "none"
+    },
+    {
+      "stage": "SECURITY_PREWARM_READY",
+      "at": "2026-10-31T23:59:34.852Z",
+      "elapsedMs": 622744,
+      "sincePreviousMs": 558,
+      "workerId": "A",
+      "attemptId": "core-A-official-3",
+      "candidateId": "70275370668d147e1aed2258abf100c86a4b3397d7d699f7a06fd421d7d42276",
+      "fanOutIndex": 2,
+      "fanOutCount": 3,
+      "shotIndex": 2,
+      "shotCount": 3,
+      "predictedReadyOffsetMs": -23578.87939453125,
+      "actualReadyOffsetMs": -25147.647216796875,
+      "predictionErrorMs": -1568.767822265625,
+      "queueDelayMs": 6027.12060546875,
+      "prepDurationMs": 3015.232177734375
+    },
+    {
+      "stage": "PREWARM_TIER_STATUS",
+      "at": "2026-10-31T23:59:34.852Z",
+      "elapsedMs": 622744,
+      "sincePreviousMs": 0
+    },
+    {
+      "stage": "SECURITY_PREPARATION_COMPLETED",
+      "at": "2026-10-31T23:59:34.230Z",
+      "eventAt": "2026-10-31T23:59:34.230Z",
+      "timingKind": "MEASURED_DURATION",
+      "elapsedMs": 622744,
+      "sincePreviousMs": 559,
+      "workerId": "A",
+      "attemptId": "core-A-official-3",
+      "durationMs": 2992,
+      "securitySource": "FRESH_ACQUISITION",
+      "challengeFrame": "none"
+    },
+    {
+      "stage": "CHECKOUT_FUNCTION_ENTERED",
+      "at": "2026-10-31T23:59:57.378Z",
+      "eventAt": "2026-10-31T23:59:57.378Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 645892,
+      "sincePreviousMs": 23148,
+      "workerId": "A",
+      "attemptId": "core-A-official-1",
+      "securitySource": "PREPARED_CONTEXT",
+      "preparedContextAgeMs": 29189
+    },
+    {
+      "stage": "CHECKOUT_PRE_POST",
+      "at": "2026-10-31T23:59:57.378Z",
+      "eventAt": "2026-10-31T23:59:57.378Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 645892,
+      "sincePreviousMs": 0,
+      "workerId": "A",
+      "attemptId": "core-A-official-1",
+      "securitySource": "PREPARED_CONTEXT",
+      "preparedContextAgeMs": 29189
+    },
+    {
+      "stage": "CHECKOUT_FUNCTION_ENTERED",
+      "at": "2026-10-31T23:59:57.664Z",
+      "eventAt": "2026-10-31T23:59:57.664Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 646178,
+      "sincePreviousMs": 286,
+      "workerId": "B",
+      "attemptId": "core-B-official-4",
+      "securitySource": "PREPARED_CONTEXT",
+      "preparedContextAgeMs": 29667
+    },
+    {
+      "stage": "CHECKOUT_PRE_POST",
+      "at": "2026-10-31T23:59:57.664Z",
+      "eventAt": "2026-10-31T23:59:57.664Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 646178,
+      "sincePreviousMs": 0,
+      "workerId": "B",
+      "attemptId": "core-B-official-4",
+      "securitySource": "PREPARED_CONTEXT",
+      "preparedContextAgeMs": 29667
+    },
+    {
+      "stage": "CHECKOUT_FUNCTION_ENTERED",
+      "at": "2026-10-31T23:59:57.949Z",
+      "eventAt": "2026-10-31T23:59:57.949Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 646463,
+      "sincePreviousMs": 285,
+      "workerId": "C",
+      "attemptId": "core-C-official-7",
+      "securitySource": "PREPARED_CONTEXT",
+      "preparedContextAgeMs": 29849
+    },
+    {
+      "stage": "CHECKOUT_PRE_POST",
+      "at": "2026-10-31T23:59:57.949Z",
+      "eventAt": "2026-10-31T23:59:57.949Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 646463,
+      "sincePreviousMs": 0,
+      "workerId": "C",
+      "attemptId": "core-C-official-7",
+      "securitySource": "PREPARED_CONTEXT",
+      "preparedContextAgeMs": 29849
+    },
+    {
+      "stage": "CHECKOUT_FUNCTION_ENTERED",
+      "at": "2026-10-31T23:59:58.235Z",
+      "eventAt": "2026-10-31T23:59:58.235Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 646748,
+      "sincePreviousMs": 285,
+      "workerId": "A",
+      "attemptId": "core-A-official-2",
+      "securitySource": "PREPARED_CONTEXT",
+      "preparedContextAgeMs": 27021
+    },
+    {
+      "stage": "CHECKOUT_PRE_POST",
+      "at": "2026-10-31T23:59:58.235Z",
+      "eventAt": "2026-10-31T23:59:58.235Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 646749,
+      "sincePreviousMs": 1,
+      "workerId": "A",
+      "attemptId": "core-A-official-2",
+      "securitySource": "PREPARED_CONTEXT",
+      "preparedContextAgeMs": 27021
+    },
+    {
+      "stage": "CHECKOUT_FUNCTION_ENTERED",
+      "at": "2026-10-31T23:59:58.521Z",
+      "eventAt": "2026-10-31T23:59:58.521Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 647035,
+      "sincePreviousMs": 286,
+      "workerId": "B",
+      "attemptId": "core-B-official-5",
+      "securitySource": "PREPARED_CONTEXT",
+      "preparedContextAgeMs": 28196
+    },
+    {
+      "stage": "CHECKOUT_PRE_POST",
+      "at": "2026-10-31T23:59:58.521Z",
+      "eventAt": "2026-10-31T23:59:58.521Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 647035,
+      "sincePreviousMs": 0,
+      "workerId": "B",
+      "attemptId": "core-B-official-5",
+      "securitySource": "PREPARED_CONTEXT",
+      "preparedContextAgeMs": 28196
+    },
+    {
+      "stage": "CHECKOUT_FUNCTION_ENTERED",
+      "at": "2026-10-31T23:59:58.807Z",
+      "eventAt": "2026-10-31T23:59:58.807Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 647321,
+      "sincePreviousMs": 286,
+      "workerId": "C",
+      "attemptId": "core-C-official-8",
+      "securitySource": "PREPARED_CONTEXT",
+      "preparedContextAgeMs": 28817
+    },
+    {
+      "stage": "CHECKOUT_PRE_POST",
+      "at": "2026-10-31T23:59:58.807Z",
+      "eventAt": "2026-10-31T23:59:58.807Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 647321,
+      "sincePreviousMs": 0,
+      "workerId": "C",
+      "attemptId": "core-C-official-8",
+      "securitySource": "PREPARED_CONTEXT",
+      "preparedContextAgeMs": 28817
+    },
+    {
+      "stage": "CHECKOUT_FUNCTION_ENTERED",
+      "at": "2026-10-31T23:59:59.092Z",
+      "eventAt": "2026-10-31T23:59:59.092Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 647606,
+      "sincePreviousMs": 285,
+      "workerId": "A",
+      "attemptId": "core-A-official-3",
+      "securitySource": "PREPARED_CONTEXT",
+      "preparedContextAgeMs": 24862
+    },
+    {
+      "stage": "CHECKOUT_PRE_POST",
+      "at": "2026-10-31T23:59:59.092Z",
+      "eventAt": "2026-10-31T23:59:59.092Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 647606,
+      "sincePreviousMs": 0,
+      "workerId": "A",
+      "attemptId": "core-A-official-3",
+      "securitySource": "PREPARED_CONTEXT",
+      "preparedContextAgeMs": 24862
+    },
+    {
+      "stage": "POSSIBLE_HOLD_DETECTED",
+      "at": "2026-11-01T00:00:01.000Z",
+      "elapsedMs": 648892,
+      "sincePreviousMs": 26148,
+      "workerId": "C",
+      "court": 5,
+      "startTime": "19:00",
+      "code": "CHECKOUT_RESPONSE_NOT_YET_VERIFIED"
+    },
+    {
+      "stage": "POSSIBLE_HOLD_DETECTED",
+      "at": "2026-11-01T00:00:01.004Z",
+      "elapsedMs": 648896,
+      "sincePreviousMs": 4,
+      "workerId": "B",
+      "court": 6,
+      "startTime": "19:00",
+      "code": "CHECKOUT_RESPONSE_NOT_YET_VERIFIED"
+    },
+    {
+      "stage": "POSSIBLE_HOLD_DETECTED",
+      "at": "2026-11-01T00:00:01.005Z",
+      "elapsedMs": 648897,
+      "sincePreviousMs": 1,
+      "workerId": "A",
+      "court": 7,
+      "startTime": "19:00",
+      "code": "CHECKOUT_RESPONSE_NOT_YET_VERIFIED"
+    },
+    {
+      "stage": "POSSIBLE_HOLD_DETECTED",
+      "at": "2026-11-01T00:00:01.005Z",
+      "elapsedMs": 648897,
+      "sincePreviousMs": 0,
+      "workerId": "A",
+      "court": 7,
+      "startTime": "19:00",
+      "code": "CHECKOUT_RESPONSE_NOT_YET_VERIFIED"
+    },
+    {
+      "stage": "POSSIBLE_HOLD_DETECTED",
+      "at": "2026-11-01T00:00:01.005Z",
+      "elapsedMs": 648897,
+      "sincePreviousMs": 0,
+      "workerId": "A",
+      "court": 7,
+      "startTime": "19:00",
+      "code": "CHECKOUT_RESPONSE_NOT_YET_VERIFIED"
+    },
+    {
+      "stage": "PHASE3_WAVE1_STARTED",
+      "at": "2026-11-01T00:00:01.006Z",
+      "elapsedMs": 648898,
+      "sincePreviousMs": 1,
+      "workerId": "A",
+      "attemptId": "core-A-official-1",
+      "candidateId": "70275370668d147e1aed2258abf100c86a4b3397d7d699f7a06fd421d7d42276",
+      "wave": "WAVE_1",
+      "court": 7,
+      "startTime": "19:00",
+      "endTime": "22:00",
+      "amount": 2100,
+      "fanOutIndex": 0,
+      "fanOutCount": 3,
+      "shotIndex": 0,
+      "shotCount": 3
+    },
+    {
+      "stage": "PHASE3_WAVE1_STARTED",
+      "at": "2026-11-01T00:00:01.006Z",
+      "elapsedMs": 648898,
+      "sincePreviousMs": 0,
+      "workerId": "A",
+      "attemptId": "core-A-official-2",
+      "candidateId": "70275370668d147e1aed2258abf100c86a4b3397d7d699f7a06fd421d7d42276",
+      "wave": "WAVE_1",
+      "court": 7,
+      "startTime": "19:00",
+      "endTime": "22:00",
+      "amount": 2100,
+      "fanOutIndex": 1,
+      "fanOutCount": 3,
+      "shotIndex": 1,
+      "shotCount": 3
+    },
+    {
+      "stage": "PHASE3_WAVE1_STARTED",
+      "at": "2026-11-01T00:00:01.006Z",
+      "elapsedMs": 648898,
+      "sincePreviousMs": 0,
+      "workerId": "A",
+      "attemptId": "core-A-official-3",
+      "candidateId": "70275370668d147e1aed2258abf100c86a4b3397d7d699f7a06fd421d7d42276",
+      "wave": "WAVE_1",
+      "court": 7,
+      "startTime": "19:00",
+      "endTime": "22:00",
+      "amount": 2100,
+      "fanOutIndex": 2,
+      "fanOutCount": 3,
+      "shotIndex": 2,
+      "shotCount": 3
+    },
+    {
+      "stage": "PHASE3_WAVE1_STARTED",
+      "at": "2026-11-01T00:00:01.006Z",
+      "elapsedMs": 648898,
+      "sincePreviousMs": 0,
+      "workerId": "B",
+      "attemptId": "core-B-official-4",
+      "candidateId": "437b7cf44a2b18fa8b97b4389058a92c806d313abed32a5002c978b1352c253d",
+      "wave": "WAVE_1",
+      "court": 6,
+      "startTime": "19:00",
+      "endTime": "22:00",
+      "amount": 2100,
+      "fanOutIndex": 0,
+      "fanOutCount": 3,
+      "shotIndex": 0,
+      "shotCount": 3
+    },
+    {
+      "stage": "PHASE3_WAVE1_STARTED",
+      "at": "2026-11-01T00:00:01.006Z",
+      "elapsedMs": 648898,
+      "sincePreviousMs": 0,
+      "workerId": "B",
+      "attemptId": "core-B-official-5",
+      "candidateId": "437b7cf44a2b18fa8b97b4389058a92c806d313abed32a5002c978b1352c253d",
+      "wave": "WAVE_1",
+      "court": 6,
+      "startTime": "19:00",
+      "endTime": "22:00",
+      "amount": 2100,
+      "fanOutIndex": 1,
+      "fanOutCount": 3,
+      "shotIndex": 1,
+      "shotCount": 3
+    },
+    {
+      "stage": "PHASE3_WAVE1_STARTED",
+      "at": "2026-11-01T00:00:01.007Z",
+      "elapsedMs": 648898,
+      "sincePreviousMs": 0,
+      "workerId": "C",
+      "attemptId": "core-C-official-7",
+      "candidateId": "42a1bf5c65c7c42f243f5ffff881c98bb0872011773c63b15765436219208d5c",
+      "wave": "WAVE_1",
+      "court": 5,
+      "startTime": "19:00",
+      "endTime": "22:00",
+      "amount": 2100,
+      "fanOutIndex": 0,
+      "fanOutCount": 2,
+      "shotIndex": 0,
+      "shotCount": 2
+    },
+    {
+      "stage": "PHASE3_WAVE1_STARTED",
+      "at": "2026-11-01T00:00:01.007Z",
+      "elapsedMs": 648899,
+      "sincePreviousMs": 1,
+      "workerId": "C",
+      "attemptId": "core-C-official-8",
+      "candidateId": "42a1bf5c65c7c42f243f5ffff881c98bb0872011773c63b15765436219208d5c",
+      "wave": "WAVE_1",
+      "court": 5,
+      "startTime": "19:00",
+      "endTime": "22:00",
+      "amount": 2100,
+      "fanOutIndex": 1,
+      "fanOutCount": 2,
+      "shotIndex": 1,
+      "shotCount": 2
+    },
+    {
+      "stage": "PHASE3_DISPATCH",
+      "at": "2026-11-01T00:00:01.007Z",
+      "elapsedMs": 648899,
+      "sincePreviousMs": 0,
+      "workerId": "A",
+      "attemptId": "core-A-official-1",
+      "candidateId": "70275370668d147e1aed2258abf100c86a4b3397d7d699f7a06fd421d7d42276",
+      "wave": "WAVE_1"
+    },
+    {
+      "stage": "PHASE3_DISPATCH",
+      "at": "2026-11-01T00:00:01.007Z",
+      "elapsedMs": 648899,
+      "sincePreviousMs": 0,
+      "workerId": "B",
+      "attemptId": "core-B-official-4",
+      "candidateId": "437b7cf44a2b18fa8b97b4389058a92c806d313abed32a5002c978b1352c253d",
+      "wave": "WAVE_1"
+    },
+    {
+      "stage": "PHASE3_DISPATCH",
+      "at": "2026-11-01T00:00:01.008Z",
+      "elapsedMs": 648899,
+      "sincePreviousMs": 0,
+      "workerId": "C",
+      "attemptId": "core-C-official-7",
+      "candidateId": "42a1bf5c65c7c42f243f5ffff881c98bb0872011773c63b15765436219208d5c",
+      "wave": "WAVE_1"
+    },
+    {
+      "stage": "PHASE3_DISPATCH",
+      "at": "2026-11-01T00:00:01.008Z",
+      "elapsedMs": 648899,
+      "sincePreviousMs": 0,
+      "workerId": "A",
+      "attemptId": "core-A-official-2",
+      "candidateId": "70275370668d147e1aed2258abf100c86a4b3397d7d699f7a06fd421d7d42276",
+      "wave": "WAVE_1"
+    },
+    {
+      "stage": "PHASE3_DISPATCH",
+      "at": "2026-11-01T00:00:01.008Z",
+      "elapsedMs": 648899,
+      "sincePreviousMs": 0,
+      "workerId": "B",
+      "attemptId": "core-B-official-5",
+      "candidateId": "437b7cf44a2b18fa8b97b4389058a92c806d313abed32a5002c978b1352c253d",
+      "wave": "WAVE_1"
+    },
+    {
+      "stage": "PHASE3_DISPATCH",
+      "at": "2026-11-01T00:00:01.008Z",
+      "elapsedMs": 648899,
+      "sincePreviousMs": 0,
+      "workerId": "C",
+      "attemptId": "core-C-official-8",
+      "candidateId": "42a1bf5c65c7c42f243f5ffff881c98bb0872011773c63b15765436219208d5c",
+      "wave": "WAVE_1"
+    },
+    {
+      "stage": "PHASE3_DISPATCH",
+      "at": "2026-11-01T00:00:01.008Z",
+      "elapsedMs": 648899,
+      "sincePreviousMs": 0,
+      "workerId": "A",
+      "attemptId": "core-A-official-3",
+      "candidateId": "70275370668d147e1aed2258abf100c86a4b3397d7d699f7a06fd421d7d42276",
+      "wave": "WAVE_1"
+    },
+    {
+      "stage": "RELEASE_LOCKDOWN_COMPLETE",
+      "at": "2026-11-01T00:00:01.008Z",
+      "elapsedMs": 648900,
+      "sincePreviousMs": 1
+    },
+    {
+      "stage": "CHECKOUT_RESPONSE_COMPLETED",
+      "at": "2026-11-01T00:00:00.378Z",
+      "eventAt": "2026-11-01T00:00:00.378Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 648892,
+      "sincePreviousMs": 1286,
+      "workerId": "C",
+      "attemptId": "core-C-official-7",
+      "statusCode": 200,
+      "dispatchState": "RESPONSE_CAPTURED",
+      "networkDurationMs": 2220,
+      "responseBytes": 4139
+    },
+    {
+      "stage": "CHECKOUT_RESPONSE_COMPLETED",
+      "at": "2026-11-01T00:00:00.382Z",
+      "eventAt": "2026-11-01T00:00:00.382Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 648896,
+      "sincePreviousMs": 4,
+      "workerId": "B",
+      "attemptId": "core-B-official-4",
+      "statusCode": 200,
+      "dispatchState": "RESPONSE_CAPTURED",
+      "networkDurationMs": 2008,
+      "responseBytes": 4139
+    },
+    {
+      "stage": "CHECKOUT_RESPONSE_COMPLETED",
+      "at": "2026-11-01T00:00:00.383Z",
+      "eventAt": "2026-11-01T00:00:00.383Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 648896,
+      "sincePreviousMs": 0,
+      "workerId": "A",
+      "attemptId": "core-A-official-1",
+      "statusCode": 200,
+      "dispatchState": "RESPONSE_CAPTURED",
+      "networkDurationMs": 1876,
+      "responseBytes": 4139
+    },
+    {
+      "stage": "CHECKOUT_RESPONSE_COMPLETED",
+      "at": "2026-11-01T00:00:00.383Z",
+      "eventAt": "2026-11-01T00:00:00.383Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 648897,
+      "sincePreviousMs": 1,
+      "workerId": "A",
+      "attemptId": "core-A-official-3",
+      "statusCode": 200,
+      "dispatchState": "RESPONSE_CAPTURED",
+      "networkDurationMs": 379,
+      "responseBytes": 4139
+    },
+    {
+      "stage": "CHECKOUT_RESPONSE_COMPLETED",
+      "at": "2026-11-01T00:00:00.383Z",
+      "eventAt": "2026-11-01T00:00:00.383Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 648897,
+      "sincePreviousMs": 0,
+      "workerId": "A",
+      "attemptId": "core-A-official-2",
+      "statusCode": 200,
+      "dispatchState": "RESPONSE_CAPTURED",
+      "networkDurationMs": 1809,
+      "responseBytes": 4139
+    },
+    {
+      "stage": "POSSIBLE_HOLD_DETECTED",
+      "at": "2026-11-01T00:00:01.010Z",
+      "elapsedMs": 648902,
+      "sincePreviousMs": 2,
+      "workerId": "B",
+      "court": 6,
+      "startTime": "19:00",
+      "code": "CHECKOUT_RESPONSE_NOT_YET_VERIFIED"
+    },
+    {
+      "stage": "CHECKOUT_HTTP_POST_INITIATED",
+      "at": "2026-11-01T00:00:00.385Z",
+      "eventAt": "2026-11-01T00:00:00.385Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 648899,
+      "sincePreviousMs": 2,
+      "workerId": "A",
+      "attemptId": "core-A-official-1"
+    },
+    {
+      "stage": "CHECKOUT_HTTP_POST_INITIATED",
+      "at": "2026-11-01T00:00:00.385Z",
+      "eventAt": "2026-11-01T00:00:00.385Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 648899,
+      "sincePreviousMs": 0,
+      "workerId": "B",
+      "attemptId": "core-B-official-4"
+    },
+    {
+      "stage": "CHECKOUT_HTTP_POST_INITIATED",
+      "at": "2026-11-01T00:00:00.386Z",
+      "eventAt": "2026-11-01T00:00:00.386Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 648899,
+      "sincePreviousMs": 0,
+      "workerId": "C",
+      "attemptId": "core-C-official-7"
+    },
+    {
+      "stage": "CHECKOUT_HTTP_POST_INITIATED",
+      "at": "2026-11-01T00:00:00.386Z",
+      "eventAt": "2026-11-01T00:00:00.386Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 648899,
+      "sincePreviousMs": 0,
+      "workerId": "A",
+      "attemptId": "core-A-official-2"
+    },
+    {
+      "stage": "CHECKOUT_HTTP_POST_INITIATED",
+      "at": "2026-11-01T00:00:00.386Z",
+      "eventAt": "2026-11-01T00:00:00.386Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 648899,
+      "sincePreviousMs": 0,
+      "workerId": "B",
+      "attemptId": "core-B-official-5"
+    },
+    {
+      "stage": "CHECKOUT_HTTP_POST_INITIATED",
+      "at": "2026-11-01T00:00:00.386Z",
+      "eventAt": "2026-11-01T00:00:00.386Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 648899,
+      "sincePreviousMs": 0,
+      "workerId": "C",
+      "attemptId": "core-C-official-8"
+    },
+    {
+      "stage": "CHECKOUT_HTTP_POST_INITIATED",
+      "at": "2026-11-01T00:00:00.386Z",
+      "eventAt": "2026-11-01T00:00:00.386Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 648899,
+      "sincePreviousMs": 0,
+      "workerId": "A",
+      "attemptId": "core-A-official-3"
+    },
+    {
+      "stage": "PHASE3_SETTLED",
+      "at": "2026-11-01T00:00:01.049Z",
+      "elapsedMs": 648941,
+      "sincePreviousMs": 39,
+      "workerId": "B",
+      "attemptId": "core-B-official-6",
+      "candidateId": "437b7cf44a2b18fa8b97b4389058a92c806d313abed32a5002c978b1352c253d",
+      "wave": "WAVE_1",
+      "fanOutIndex": 2,
+      "fanOutCount": 3,
+      "shotIndex": 2,
+      "shotCount": 3,
+      "state": "NOT_DISPATCHED",
+      "code": "SHOTGUN_TARGET_OUTCOME_UNKNOWN"
+    },
+    {
+      "stage": "CHECKOUT_RESPONSE_COMPLETED",
+      "at": "2026-11-01T00:00:00.388Z",
+      "eventAt": "2026-11-01T00:00:00.388Z",
+      "timingKind": "MEASURED_DURATION",
+      "elapsedMs": 648902,
+      "sincePreviousMs": 3,
+      "workerId": "B",
+      "attemptId": "core-B-official-5",
+      "statusCode": 200,
+      "dispatchState": "RESPONSE_CAPTURED",
+      "durationMs": 2,
+      "networkDurationMs": 1867,
+      "responseBytes": 4139
+    },
+    {
+      "stage": "PHASE3_SETTLED",
+      "at": "2026-11-01T00:00:01.062Z",
+      "elapsedMs": 648954,
+      "sincePreviousMs": 13,
+      "workerId": "A",
+      "attemptId": "core-A-official-2",
+      "candidateId": "70275370668d147e1aed2258abf100c86a4b3397d7d699f7a06fd421d7d42276",
+      "wave": "WAVE_1",
+      "fanOutIndex": 1,
+      "fanOutCount": 3,
+      "shotIndex": 1,
+      "shotCount": 3,
+      "state": "UNKNOWN",
+      "code": "SUBMISSION_OUTCOME_UNKNOWN_RECONCILIATION_REQUIRED"
+    },
+    {
+      "stage": "PHASE3_SETTLED",
+      "at": "2026-11-01T00:00:01.063Z",
+      "elapsedMs": 648955,
+      "sincePreviousMs": 1,
+      "workerId": "C",
+      "attemptId": "core-C-official-7",
+      "candidateId": "42a1bf5c65c7c42f243f5ffff881c98bb0872011773c63b15765436219208d5c",
+      "wave": "WAVE_1",
+      "fanOutIndex": 0,
+      "fanOutCount": 2,
+      "shotIndex": 0,
+      "shotCount": 2,
+      "state": "UNKNOWN",
+      "code": "SUBMISSION_OUTCOME_UNKNOWN_RECONCILIATION_REQUIRED"
+    },
+    {
+      "stage": "PHASE3_SETTLED",
+      "at": "2026-11-01T00:00:01.063Z",
+      "elapsedMs": 648955,
+      "sincePreviousMs": 0,
+      "workerId": "B",
+      "attemptId": "core-B-official-4",
+      "candidateId": "437b7cf44a2b18fa8b97b4389058a92c806d313abed32a5002c978b1352c253d",
+      "wave": "WAVE_1",
+      "fanOutIndex": 0,
+      "fanOutCount": 3,
+      "shotIndex": 0,
+      "shotCount": 3,
+      "state": "UNKNOWN",
+      "code": "SUBMISSION_OUTCOME_UNKNOWN_RECONCILIATION_REQUIRED"
+    },
+    {
+      "stage": "PHASE3_SETTLED",
+      "at": "2026-11-01T00:00:01.063Z",
+      "elapsedMs": 648955,
+      "sincePreviousMs": 0,
+      "workerId": "A",
+      "attemptId": "core-A-official-1",
+      "candidateId": "70275370668d147e1aed2258abf100c86a4b3397d7d699f7a06fd421d7d42276",
+      "wave": "WAVE_1",
+      "fanOutIndex": 0,
+      "fanOutCount": 3,
+      "shotIndex": 0,
+      "shotCount": 3,
+      "state": "UNKNOWN",
+      "code": "SUBMISSION_OUTCOME_UNKNOWN_RECONCILIATION_REQUIRED"
+    },
+    {
+      "stage": "PHASE3_SETTLED",
+      "at": "2026-11-01T00:00:01.063Z",
+      "elapsedMs": 648955,
+      "sincePreviousMs": 0,
+      "workerId": "A",
+      "attemptId": "core-A-official-3",
+      "candidateId": "70275370668d147e1aed2258abf100c86a4b3397d7d699f7a06fd421d7d42276",
+      "wave": "WAVE_1",
+      "fanOutIndex": 2,
+      "fanOutCount": 3,
+      "shotIndex": 2,
+      "shotCount": 3,
+      "state": "UNKNOWN",
+      "code": "SUBMISSION_OUTCOME_UNKNOWN_RECONCILIATION_REQUIRED"
+    },
+    {
+      "stage": "PHASE3_SETTLED",
+      "at": "2026-11-01T00:00:01.072Z",
+      "elapsedMs": 648964,
+      "sincePreviousMs": 9,
+      "workerId": "B",
+      "attemptId": "core-B-official-5",
+      "candidateId": "437b7cf44a2b18fa8b97b4389058a92c806d313abed32a5002c978b1352c253d",
+      "wave": "WAVE_1",
+      "fanOutIndex": 1,
+      "fanOutCount": 3,
+      "shotIndex": 1,
+      "shotCount": 3,
+      "state": "UNKNOWN",
+      "code": "SUBMISSION_OUTCOME_UNKNOWN_RECONCILIATION_REQUIRED"
+    },
+    {
+      "stage": "POSSIBLE_HOLD_DETECTED",
+      "at": "2026-11-01T00:00:01.560Z",
+      "elapsedMs": 649452,
+      "sincePreviousMs": 488,
+      "workerId": "C",
+      "court": 5,
+      "startTime": "19:00",
+      "code": "CHECKOUT_RESPONSE_NOT_YET_VERIFIED"
+    },
+    {
+      "stage": "CHECKOUT_RESPONSE_COMPLETED",
+      "at": "2026-11-01T00:00:00.938Z",
+      "eventAt": "2026-11-01T00:00:00.938Z",
+      "timingKind": "MEASURED_DURATION",
+      "elapsedMs": 649452,
+      "sincePreviousMs": 550,
+      "workerId": "C",
+      "attemptId": "core-C-official-8",
+      "statusCode": 200,
+      "dispatchState": "RESPONSE_CAPTURED",
+      "durationMs": 552,
+      "networkDurationMs": 2131,
+      "responseBytes": 4139
+    },
+    {
+      "stage": "PHASE3_SETTLED",
+      "at": "2026-11-01T00:00:01.564Z",
+      "elapsedMs": 649456,
+      "sincePreviousMs": 4,
+      "workerId": "C",
+      "attemptId": "core-C-official-8",
+      "candidateId": "42a1bf5c65c7c42f243f5ffff881c98bb0872011773c63b15765436219208d5c",
+      "wave": "WAVE_1",
+      "fanOutIndex": 1,
+      "fanOutCount": 2,
+      "shotIndex": 1,
+      "shotCount": 2,
+      "state": "UNKNOWN",
+      "code": "SUBMISSION_OUTCOME_UNKNOWN_RECONCILIATION_REQUIRED"
+    },
+    {
+      "stage": "PHASE3_WAVE1_COMPLETE",
+      "at": "2026-11-01T00:00:01.569Z",
+      "elapsedMs": 649460,
+      "sincePreviousMs": 4
+    },
+    {
+      "stage": "PHASE3_WAVE1_UNSENT",
+      "at": "2026-11-01T00:00:01.569Z",
+      "elapsedMs": 649461,
+      "sincePreviousMs": 1,
+      "workerId": "B",
+      "attemptId": "core-B-official-6",
+      "candidateId": "437b7cf44a2b18fa8b97b4389058a92c806d313abed32a5002c978b1352c253d",
+      "fanOutIndex": 2,
+      "fanOutCount": 3,
+      "shotIndex": 2,
+      "shotCount": 3,
+      "state": "NOT_DISPATCHED",
+      "code": "SHOTGUN_TARGET_OUTCOME_UNKNOWN"
+    },
+    {
+      "stage": "CRITICAL_PATH_SAVED",
+      "at": "2026-11-01T00:00:01.630Z",
+      "elapsedMs": 649522,
+      "sincePreviousMs": 61,
+      "workerCount": 8
+    },
+    {
+      "stage": "PHASE3_OUTCOME",
+      "at": "2026-11-01T00:00:01.638Z",
+      "elapsedMs": 649530,
+      "sincePreviousMs": 8
+    },
+    {
+      "stage": "FAILED",
+      "at": "2026-11-01T00:00:01.638Z",
+      "elapsedMs": 649530,
+      "sincePreviousMs": 0,
+      "code": "MANUAL_RECONCILIATION_REQUIRED"
+    },
+    {
+      "stage": "PROVIDER_TRACE_SAVED",
+      "at": "2026-11-01T00:00:01.638Z",
+      "elapsedMs": 649530,
+      "sincePreviousMs": 78,
+      "status": "SUCCESS"
+    },
+    {
+      "stage": "PROCESS_EXIT",
+      "at": "2026-11-01T00:00:01.650Z",
+      "elapsedMs": 649542,
+      "sincePreviousMs": 12,
+      "exitCode": 1
+    },
+    {
+      "stage": "RUN_DIAGNOSTIC_SUMMARY",
+      "at": "2026-11-01T00:00:01.028Z",
+      "eventAt": "2026-11-01T00:00:01.028Z",
+      "timingKind": "EVENT_TIMESTAMP",
+      "elapsedMs": 649542,
+      "sincePreviousMs": 12
+    }
+  ],
+  "parents": [
+    {
+      "path": ".local/api-booking/api-first-journals/34c14a23cfdbd7f92d0cf0bb08bb891dafb37351d788104b0553f0a3aefc4836/34c14a23cfdbd7f92d0cf0bb08bb891dafb37351d788104b0553f0a3aefc4836.json",
+      "court": 7,
+      "key": "34c14a23cfdbd7f92d0cf0bb08bb891dafb37351d788104b0553f0a3aefc4836",
+      "state": "unknown",
+      "createdAt": "2026-10-31T23:58:00.366Z",
+      "updatedAt": "2026-11-01T00:00:01.564Z",
+      "attempt": {
+        "attemptId": "34c14a23cfdbd7f92d0cf0bb08bb891dafb37351d788104b0553f0a3aefc4836",
+        "planFingerprint": "b1d3cc5cfdec30da272af5711043fca46c062d34b95e30e17fc2db6c7d904f05",
+        "targetDate": "2026-11-03",
+        "courtIds": [
+          7
+        ],
+        "hourlyBoundaries": [
+          {
+            "startTime": "19:00",
+            "endTime": "20:00"
+          },
+          {
+            "startTime": "20:00",
+            "endTime": "21:00"
+          },
+          {
+            "startTime": "21:00",
+            "endTime": "22:00"
+          }
+        ],
+        "expectedBookingCount": 3,
+        "maximumAmount": 2100,
+        "stage": "armed",
+        "releaseMs": 1793491200000,
+        "dispatchDeadlineMs": 1793491201000
+      }
+    },
+    {
+      "path": ".local/api-booking/api-first-journals/34b4196e8209b03effb87f8c925e7ecc1d4497c2a063857a9b24a77383abcf39/34b4196e8209b03effb87f8c925e7ecc1d4497c2a063857a9b24a77383abcf39.json",
+      "court": 6,
+      "key": "34b4196e8209b03effb87f8c925e7ecc1d4497c2a063857a9b24a77383abcf39",
+      "state": "unknown",
+      "createdAt": "2026-10-31T23:58:00.383Z",
+      "updatedAt": "2026-11-01T00:00:01.565Z",
+      "attempt": {
+        "attemptId": "34b4196e8209b03effb87f8c925e7ecc1d4497c2a063857a9b24a77383abcf39",
+        "planFingerprint": "b1d3cc5cfdec30da272af5711043fca46c062d34b95e30e17fc2db6c7d904f05",
+        "targetDate": "2026-11-03",
+        "courtIds": [
+          6
+        ],
+        "hourlyBoundaries": [
+          {
+            "startTime": "19:00",
+            "endTime": "20:00"
+          },
+          {
+            "startTime": "20:00",
+            "endTime": "21:00"
+          },
+          {
+            "startTime": "21:00",
+            "endTime": "22:00"
+          }
+        ],
+        "expectedBookingCount": 3,
+        "maximumAmount": 2100,
+        "stage": "armed",
+        "releaseMs": 1793491200000,
+        "dispatchDeadlineMs": 1793491201000
+      }
+    },
+    {
+      "path": ".local/api-booking/api-first-journals/cbccdd70162f48145b529da0e4ffc192d8ec37dfc2aab2ede0b983c7485acf3f/cbccdd70162f48145b529da0e4ffc192d8ec37dfc2aab2ede0b983c7485acf3f.json",
+      "court": 5,
+      "key": "cbccdd70162f48145b529da0e4ffc192d8ec37dfc2aab2ede0b983c7485acf3f",
+      "state": "unknown",
+      "createdAt": "2026-10-31T23:58:00.395Z",
+      "updatedAt": "2026-11-01T00:00:01.567Z",
+      "attempt": {
+        "attemptId": "cbccdd70162f48145b529da0e4ffc192d8ec37dfc2aab2ede0b983c7485acf3f",
+        "planFingerprint": "b1d3cc5cfdec30da272af5711043fca46c062d34b95e30e17fc2db6c7d904f05",
+        "targetDate": "2026-11-03",
+        "courtIds": [
+          5
+        ],
+        "hourlyBoundaries": [
+          {
+            "startTime": "19:00",
+            "endTime": "20:00"
+          },
+          {
+            "startTime": "20:00",
+            "endTime": "21:00"
+          },
+          {
+            "startTime": "21:00",
+            "endTime": "22:00"
+          }
+        ],
+        "expectedBookingCount": 3,
+        "maximumAmount": 2100,
+        "stage": "armed",
+        "releaseMs": 1793491200000,
+        "dispatchDeadlineMs": 1793491201000
+      }
+    }
+  ],
+  "children": [
+    {
+      "path": ".local/api-booking/api-first-journals/34c14a23cfdbd7f92d0cf0bb08bb891dafb37351d788104b0553f0a3aefc4836/fan-out/b1d3cc5cfdec30da272af5711043fca46c062d34b95e30e17fc2db6c7d904f05/5583b90303af6baa243454bd0289d840029bd628ff16e63e7173c40d0c9935d7/34c14a23cfdbd7f92d0cf0bb08bb891dafb37351d788104b0553f0a3aefc4836.json",
+      "court": 7,
+      "key": "34c14a23cfdbd7f92d0cf0bb08bb891dafb37351d788104b0553f0a3aefc4836",
+      "state": "unknown",
+      "createdAt": "2026-10-31T23:58:00.405Z",
+      "updatedAt": "2026-11-01T00:00:01.054Z",
+      "failureCode": "CHECKOUT_SESSION_INVALID",
+      "attempt": {
+        "attemptId": "5583b90303af6baa243454bd0289d840029bd628ff16e63e7173c40d0c9935d7",
+        "planFingerprint": "69c139f7983551ba16c224be06ca5c2cbe6daa9d4da36739578ab75169da2303",
+        "targetDate": "2026-11-03",
+        "courtIds": [
+          7
+        ],
+        "hourlyBoundaries": [
+          {
+            "startTime": "19:00",
+            "endTime": "20:00"
+          },
+          {
+            "startTime": "20:00",
+            "endTime": "21:00"
+          },
+          {
+            "startTime": "21:00",
+            "endTime": "22:00"
+          }
+        ],
+        "expectedBookingCount": 3,
+        "maximumAmount": 2100,
+        "stage": "armed",
+        "releaseMs": 1793491200000,
+        "dispatchDeadlineMs": 1793491201000,
+        "dispatchTimingPolicy": "SHOTGUN_STRICT",
+        "triggerMs": 1793491198000,
+        "shotDeadlineMs": 1793491198050
+      },
+      "diagnosticAttemptId": "core-A-official-1",
+      "worker": "A",
+      "configuredOffsetMs": -2000,
+      "criticalPath": {
+        "schedulerFiredMs": -1999.91,
+        "workerInvokedMs": -1999.64,
+        "transportEnteredMs": -1999.35,
+        "prePostMs": -1999.23,
+        "rendererArmSentMs": null,
+        "rendererArmedMs": null,
+        "evaluateEnteredMs": {
+          "ms": -1996.31,
+          "lowMs": -1996.71,
+          "highMs": -1995.91
+        },
+        "fetchInvokedMs": {
+          "ms": -1996.31,
+          "lowMs": -1996.71,
+          "highMs": -1995.91
+        },
+        "browserRequestStartMs": -1778.56,
+        "requestObservedMs": -1778.45,
+        "responseHeadersMs": {
+          "ms": -125.01,
+          "lowMs": -125.41,
+          "highMs": -124.61
+        },
+        "responseCompleteMs": {
+          "ms": -124.51,
+          "lowMs": -124.91,
+          "highMs": -124.11
+        },
+        "responseObservedMs": 1005.02,
+        "meta": {
+          "fanOutIndex": 0,
+          "fanOutCount": 3,
+          "shotIndex": 0,
+          "shotCount": 3,
+          "prewarmReadyMs": -31194,
+          "httpStatus": 200,
+          "finalState": "UNKNOWN",
+          "finalCode": "SUBMISSION_OUTCOME_UNKNOWN_RECONCILIATION_REQUIRED"
+        },
+        "calibration": {
+          "samples": 8,
+          "uncertaintyMs": 0.4,
+          "minRoundTripMs": 0.67,
+          "consistent": true
+        },
+        "segments": {
+          "nodeToRendererMs": 2.92,
+          "rendererToFetchMs": 0,
+          "fetchToRequestStartMs": 217.75,
+          "requestEventLagMs": 0.11
+        },
+        "resourceTiming": {
+          "startMs": {
+            "ms": -246.91,
+            "lowMs": -247.31,
+            "highMs": -246.51
+          },
+          "fetchMs": {
+            "ms": -246.91,
+            "lowMs": -247.31,
+            "highMs": -246.51
+          },
+          "requestMs": {
+            "ms": -245.71,
+            "lowMs": -246.11,
+            "highMs": -245.31
+          },
+          "headersMs": {
+            "ms": -126.41,
+            "lowMs": -126.81,
+            "highMs": -126.01
+          },
+          "completeMs": {
+            "ms": -126.11,
+            "lowMs": -126.51,
+            "highMs": -125.71
+          },
+          "workerMs": null,
+          "source": "PERFORMANCE_RESOURCE_TIMING",
+          "protocol": "h2"
+        }
+      },
+      "observedResponse": {
+        "success": true,
+        "validationCode": "CHECKOUT_SESSION_INVALID",
+        "trustedTotalAmount": 2100,
+        "transactionAmount": 2100,
+        "structure": {
+          "bookingCount": 3,
+          "sessionCount": 3,
+          "missingSessionLinks": 0,
+          "shapeFingerprint": "bfab622d4c046d13178d348354382b9f1d31b65644bb75041560e6d619e77f75"
+        },
+        "bookingIdCount": 3,
+        "uniqueBookingIds": 3,
+        "sessionIdCount": 3,
+        "holdExpiresAt": [
+          "2026-11-01T00:09:59.845Z",
+          "2026-11-01T00:09:59.845Z",
+          "2026-11-01T00:09:59.845Z"
+        ]
+      },
+      "savedResponse": {
+        "capturedAt": "2026-11-01T00:00:01.005Z",
+        "worker": "A",
+        "bookings": [
+          {
+            "date": "2026-11-03",
+            "start_time": "19:00",
+            "end_time": "20:00",
+            "duration": 60,
+            "rate": 700,
+            "booking_status": "pending",
+            "payment_status": "pending",
+            "hold_expires_at": "2026-11-01T00:09:59.845Z"
+          },
+          {
+            "date": "2026-11-03",
+            "start_time": "20:00",
+            "end_time": "21:00",
+            "duration": 60,
+            "rate": 700,
+            "booking_status": "pending",
+            "payment_status": "pending",
+            "hold_expires_at": "2026-11-01T00:09:59.845Z"
+          },
+          {
+            "date": "2026-11-03",
+            "start_time": "21:00",
+            "end_time": "22:00",
+            "duration": 60,
+            "rate": 700,
+            "booking_status": "pending",
+            "payment_status": "pending",
+            "hold_expires_at": "2026-11-01T00:09:59.845Z"
+          }
+        ],
+        "sessions": [
+          {
+            "startTime": "19:00",
+            "endTime": "20:00",
+            "durationHours": 1,
+            "bookingCount": 1
+          },
+          {
+            "startTime": "20:00",
+            "endTime": "21:00",
+            "durationHours": 1,
+            "bookingCount": 1
+          },
+          {
+            "startTime": "21:00",
+            "endTime": "22:00",
+            "durationHours": 1,
+            "bookingCount": 1
+          }
+        ],
+        "transaction": {
+          "amount": 2100,
+          "status": "pending"
+        },
+        "trustedTotalAmount": 2100
+      }
+    },
+    {
+      "path": ".local/api-booking/api-first-journals/34b4196e8209b03effb87f8c925e7ecc1d4497c2a063857a9b24a77383abcf39/fan-out/b1d3cc5cfdec30da272af5711043fca46c062d34b95e30e17fc2db6c7d904f05/39da859e721fd8504ba0069684c777465c59653e7d9872775ed7af5e2d7795c0/34b4196e8209b03effb87f8c925e7ecc1d4497c2a063857a9b24a77383abcf39.json",
+      "court": 6,
+      "key": "34b4196e8209b03effb87f8c925e7ecc1d4497c2a063857a9b24a77383abcf39",
+      "state": "unknown",
+      "createdAt": "2026-10-31T23:58:00.405Z",
+      "updatedAt": "2026-11-01T00:00:01.055Z",
+      "failureCode": "CHECKOUT_SESSION_INVALID",
+      "attempt": {
+        "attemptId": "39da859e721fd8504ba0069684c777465c59653e7d9872775ed7af5e2d7795c0",
+        "planFingerprint": "de164d57e28bd9daf6bb524dcff3eccad2d55af9bb93814b7f06ad884591c786",
+        "targetDate": "2026-11-03",
+        "courtIds": [
+          6
+        ],
+        "hourlyBoundaries": [
+          {
+            "startTime": "19:00",
+            "endTime": "20:00"
+          },
+          {
+            "startTime": "20:00",
+            "endTime": "21:00"
+          },
+          {
+            "startTime": "21:00",
+            "endTime": "22:00"
+          }
+        ],
+        "expectedBookingCount": 3,
+        "maximumAmount": 2100,
+        "stage": "armed",
+        "releaseMs": 1793491200000,
+        "dispatchDeadlineMs": 1793491201000,
+        "dispatchTimingPolicy": "SHOTGUN_STRICT",
+        "triggerMs": 1793491198286,
+        "shotDeadlineMs": 1793491198336
+      },
+      "diagnosticAttemptId": "core-B-official-4",
+      "worker": "B",
+      "configuredOffsetMs": -1714,
+      "criticalPath": {
+        "schedulerFiredMs": -1713.98,
+        "workerInvokedMs": -1713.92,
+        "transportEnteredMs": -1713.86,
+        "prePostMs": -1713.83,
+        "rendererArmSentMs": null,
+        "rendererArmedMs": null,
+        "evaluateEnteredMs": {
+          "ms": -1711.84,
+          "lowMs": -1712.25,
+          "highMs": -1711.43
+        },
+        "fetchInvokedMs": {
+          "ms": -1711.74,
+          "lowMs": -1712.15,
+          "highMs": -1711.33
+        },
+        "browserRequestStartMs": -1390.51,
+        "requestObservedMs": -1390.69,
+        "responseHeadersMs": {
+          "ms": 292.36,
+          "lowMs": 291.95,
+          "highMs": 292.77
+        },
+        "responseCompleteMs": {
+          "ms": 292.66,
+          "lowMs": 292.25,
+          "highMs": 293.07
+        },
+        "responseObservedMs": 1004.47,
+        "meta": {
+          "fanOutIndex": 0,
+          "fanOutCount": 3,
+          "shotIndex": 0,
+          "shotCount": 3,
+          "prewarmReadyMs": -31386,
+          "httpStatus": 200,
+          "finalState": "UNKNOWN",
+          "finalCode": "SUBMISSION_OUTCOME_UNKNOWN_RECONCILIATION_REQUIRED"
+        },
+        "calibration": {
+          "samples": 8,
+          "uncertaintyMs": 0.41,
+          "minRoundTripMs": 0.72,
+          "consistent": true
+        },
+        "segments": {
+          "nodeToRendererMs": 1.99,
+          "rendererToFetchMs": 0.1,
+          "fetchToRequestStartMs": 321.23,
+          "requestEventLagMs": -0.18
+        },
+        "resourceTiming": {
+          "startMs": {
+            "ms": 162.96,
+            "lowMs": 162.55,
+            "highMs": 163.37
+          },
+          "fetchMs": {
+            "ms": 162.96,
+            "lowMs": 162.55,
+            "highMs": 163.37
+          },
+          "requestMs": {
+            "ms": 163.76,
+            "lowMs": 163.35,
+            "highMs": 164.17
+          },
+          "headersMs": {
+            "ms": 290.86,
+            "lowMs": 290.45,
+            "highMs": 291.27
+          },
+          "completeMs": {
+            "ms": 291.26,
+            "lowMs": 290.85,
+            "highMs": 291.67
+          },
+          "workerMs": null,
+          "source": "PERFORMANCE_RESOURCE_TIMING",
+          "protocol": "h2"
+        }
+      },
+      "observedResponse": {
+        "success": true,
+        "validationCode": "CHECKOUT_SESSION_INVALID",
+        "trustedTotalAmount": 2100,
+        "transactionAmount": 2100,
+        "structure": {
+          "bookingCount": 3,
+          "sessionCount": 3,
+          "missingSessionLinks": 0,
+          "shapeFingerprint": "bfab622d4c046d13178d348354382b9f1d31b65644bb75041560e6d619e77f75"
+        },
+        "bookingIdCount": 3,
+        "uniqueBookingIds": 3,
+        "sessionIdCount": 3,
+        "holdExpiresAt": [
+          "2026-11-01T00:10:00.263Z",
+          "2026-11-01T00:10:00.263Z",
+          "2026-11-01T00:10:00.263Z"
+        ]
+      },
+      "savedResponse": {
+        "capturedAt": "2026-11-01T00:00:01.004Z",
+        "worker": "B",
+        "bookings": [
+          {
+            "date": "2026-11-03",
+            "start_time": "19:00",
+            "end_time": "20:00",
+            "duration": 60,
+            "rate": 700,
+            "booking_status": "pending",
+            "payment_status": "pending",
+            "hold_expires_at": "2026-11-01T00:10:00.263Z"
+          },
+          {
+            "date": "2026-11-03",
+            "start_time": "20:00",
+            "end_time": "21:00",
+            "duration": 60,
+            "rate": 700,
+            "booking_status": "pending",
+            "payment_status": "pending",
+            "hold_expires_at": "2026-11-01T00:10:00.263Z"
+          },
+          {
+            "date": "2026-11-03",
+            "start_time": "21:00",
+            "end_time": "22:00",
+            "duration": 60,
+            "rate": 700,
+            "booking_status": "pending",
+            "payment_status": "pending",
+            "hold_expires_at": "2026-11-01T00:10:00.263Z"
+          }
+        ],
+        "sessions": [
+          {
+            "startTime": "19:00",
+            "endTime": "20:00",
+            "durationHours": 1,
+            "bookingCount": 1
+          },
+          {
+            "startTime": "20:00",
+            "endTime": "21:00",
+            "durationHours": 1,
+            "bookingCount": 1
+          },
+          {
+            "startTime": "21:00",
+            "endTime": "22:00",
+            "durationHours": 1,
+            "bookingCount": 1
+          }
+        ],
+        "transaction": {
+          "amount": 2100,
+          "status": "pending"
+        },
+        "trustedTotalAmount": 2100
+      }
+    },
+    {
+      "path": ".local/api-booking/api-first-journals/cbccdd70162f48145b529da0e4ffc192d8ec37dfc2aab2ede0b983c7485acf3f/fan-out/b1d3cc5cfdec30da272af5711043fca46c062d34b95e30e17fc2db6c7d904f05/9d3dec761fafb139d53ab0c77d637e287f2aa9f13174bc4331a33799ba3cbda4/cbccdd70162f48145b529da0e4ffc192d8ec37dfc2aab2ede0b983c7485acf3f.json",
+      "court": 5,
+      "key": "cbccdd70162f48145b529da0e4ffc192d8ec37dfc2aab2ede0b983c7485acf3f",
+      "state": "unknown",
+      "createdAt": "2026-10-31T23:58:00.405Z",
+      "updatedAt": "2026-11-01T00:00:01.052Z",
+      "failureCode": "CHECKOUT_SESSION_INVALID",
+      "attempt": {
+        "attemptId": "9d3dec761fafb139d53ab0c77d637e287f2aa9f13174bc4331a33799ba3cbda4",
+        "planFingerprint": "5c2773737cb36ad5b4ab60c2e34dbbc13c3b81c497605f39ef89c3b8a932a472",
+        "targetDate": "2026-11-03",
+        "courtIds": [
+          5
+        ],
+        "hourlyBoundaries": [
+          {
+            "startTime": "19:00",
+            "endTime": "20:00"
+          },
+          {
+            "startTime": "20:00",
+            "endTime": "21:00"
+          },
+          {
+            "startTime": "21:00",
+            "endTime": "22:00"
+          }
+        ],
+        "expectedBookingCount": 3,
+        "maximumAmount": 2100,
+        "stage": "armed",
+        "releaseMs": 1793491200000,
+        "dispatchDeadlineMs": 1793491201000,
+        "dispatchTimingPolicy": "SHOTGUN_STRICT",
+        "triggerMs": 1793491198571,
+        "shotDeadlineMs": 1793491198621
+      },
+      "diagnosticAttemptId": "core-C-official-7",
+      "worker": "C",
+      "configuredOffsetMs": -1429,
+      "criticalPath": {
+        "schedulerFiredMs": -1428.97,
+        "workerInvokedMs": -1428.91,
+        "transportEnteredMs": -1428.86,
+        "prePostMs": -1428.83,
+        "rendererArmSentMs": null,
+        "rendererArmedMs": null,
+        "evaluateEnteredMs": {
+          "ms": -1426.84,
+          "lowMs": -1427.29,
+          "highMs": -1426.39
+        },
+        "fetchInvokedMs": {
+          "ms": -1426.84,
+          "lowMs": -1427.29,
+          "highMs": -1426.39
+        },
+        "browserRequestStartMs": -1105.94,
+        "requestObservedMs": -1106.05,
+        "responseHeadersMs": {
+          "ms": 787.76,
+          "lowMs": 787.31,
+          "highMs": 788.21
+        },
+        "responseCompleteMs": {
+          "ms": 788.56,
+          "lowMs": 788.11,
+          "highMs": 789.01
+        },
+        "responseObservedMs": 1000.16,
+        "meta": {
+          "fanOutIndex": 0,
+          "fanOutCount": 2,
+          "shotIndex": 0,
+          "shotCount": 2,
+          "prewarmReadyMs": -31284,
+          "httpStatus": 200,
+          "finalState": "UNKNOWN",
+          "finalCode": "SUBMISSION_OUTCOME_UNKNOWN_RECONCILIATION_REQUIRED"
+        },
+        "calibration": {
+          "samples": 8,
+          "uncertaintyMs": 0.45,
+          "minRoundTripMs": 0.8,
+          "consistent": true
+        },
+        "segments": {
+          "nodeToRendererMs": 1.99,
+          "rendererToFetchMs": 0,
+          "fetchToRequestStartMs": 320.9,
+          "requestEventLagMs": -0.11
+        },
+        "resourceTiming": {
+          "startMs": {
+            "ms": 483.46,
+            "lowMs": 483.01,
+            "highMs": 483.91
+          },
+          "fetchMs": {
+            "ms": 483.46,
+            "lowMs": 483.01,
+            "highMs": 483.91
+          },
+          "requestMs": {
+            "ms": 484.06,
+            "lowMs": 483.61,
+            "highMs": 484.51
+          },
+          "headersMs": {
+            "ms": 784.06,
+            "lowMs": 783.61,
+            "highMs": 784.51
+          },
+          "completeMs": {
+            "ms": 785.76,
+            "lowMs": 785.31,
+            "highMs": 786.21
+          },
+          "workerMs": null,
+          "source": "PERFORMANCE_RESOURCE_TIMING",
+          "protocol": "h2"
+        }
+      },
+      "observedResponse": {
+        "success": true,
+        "validationCode": "CHECKOUT_SESSION_INVALID",
+        "trustedTotalAmount": 2100,
+        "transactionAmount": 2100,
+        "structure": {
+          "bookingCount": 3,
+          "sessionCount": 3,
+          "missingSessionLinks": 0,
+          "shapeFingerprint": "bfab622d4c046d13178d348354382b9f1d31b65644bb75041560e6d619e77f75"
+        },
+        "bookingIdCount": 3,
+        "uniqueBookingIds": 3,
+        "sessionIdCount": 3,
+        "holdExpiresAt": [
+          "2026-11-01T00:10:00.755Z",
+          "2026-11-01T00:10:00.755Z",
+          "2026-11-01T00:10:00.755Z"
+        ]
+      },
+      "savedResponse": {
+        "capturedAt": "2026-11-01T00:00:01.001Z",
+        "worker": "C",
+        "bookings": [
+          {
+            "date": "2026-11-03",
+            "start_time": "19:00",
+            "end_time": "20:00",
+            "duration": 60,
+            "rate": 700,
+            "booking_status": "pending",
+            "payment_status": "pending",
+            "hold_expires_at": "2026-11-01T00:10:00.755Z"
+          },
+          {
+            "date": "2026-11-03",
+            "start_time": "20:00",
+            "end_time": "21:00",
+            "duration": 60,
+            "rate": 700,
+            "booking_status": "pending",
+            "payment_status": "pending",
+            "hold_expires_at": "2026-11-01T00:10:00.755Z"
+          },
+          {
+            "date": "2026-11-03",
+            "start_time": "21:00",
+            "end_time": "22:00",
+            "duration": 60,
+            "rate": 700,
+            "booking_status": "pending",
+            "payment_status": "pending",
+            "hold_expires_at": "2026-11-01T00:10:00.755Z"
+          }
+        ],
+        "sessions": [
+          {
+            "startTime": "19:00",
+            "endTime": "20:00",
+            "durationHours": 1,
+            "bookingCount": 1
+          },
+          {
+            "startTime": "20:00",
+            "endTime": "21:00",
+            "durationHours": 1,
+            "bookingCount": 1
+          },
+          {
+            "startTime": "21:00",
+            "endTime": "22:00",
+            "durationHours": 1,
+            "bookingCount": 1
+          }
+        ],
+        "transaction": {
+          "amount": 2100,
+          "status": "pending"
+        },
+        "trustedTotalAmount": 2100
+      }
+    },
+    {
+      "path": ".local/api-booking/api-first-journals/34c14a23cfdbd7f92d0cf0bb08bb891dafb37351d788104b0553f0a3aefc4836/fan-out/b1d3cc5cfdec30da272af5711043fca46c062d34b95e30e17fc2db6c7d904f05/1ee7899ccdd4dd69c68bacb642d741eb1b383ba3351f05d6921594939c3e0ea0/34c14a23cfdbd7f92d0cf0bb08bb891dafb37351d788104b0553f0a3aefc4836.json",
+      "court": 7,
+      "key": "34c14a23cfdbd7f92d0cf0bb08bb891dafb37351d788104b0553f0a3aefc4836",
+      "state": "unknown",
+      "createdAt": "2026-10-31T23:58:00.405Z",
+      "updatedAt": "2026-11-01T00:00:01.052Z",
+      "failureCode": "CHECKOUT_SESSION_INVALID",
+      "attempt": {
+        "attemptId": "1ee7899ccdd4dd69c68bacb642d741eb1b383ba3351f05d6921594939c3e0ea0",
+        "planFingerprint": "69c139f7983551ba16c224be06ca5c2cbe6daa9d4da36739578ab75169da2303",
+        "targetDate": "2026-11-03",
+        "courtIds": [
+          7
+        ],
+        "hourlyBoundaries": [
+          {
+            "startTime": "19:00",
+            "endTime": "20:00"
+          },
+          {
+            "startTime": "20:00",
+            "endTime": "21:00"
+          },
+          {
+            "startTime": "21:00",
+            "endTime": "22:00"
+          }
+        ],
+        "expectedBookingCount": 3,
+        "maximumAmount": 2100,
+        "stage": "armed",
+        "releaseMs": 1793491200000,
+        "dispatchDeadlineMs": 1793491201000,
+        "dispatchTimingPolicy": "SHOTGUN_STRICT",
+        "triggerMs": 1793491198857,
+        "shotDeadlineMs": 1793491198907
+      },
+      "diagnosticAttemptId": "core-A-official-2",
+      "worker": "A",
+      "configuredOffsetMs": -1143,
+      "criticalPath": {
+        "schedulerFiredMs": -1142.99,
+        "workerInvokedMs": -1142.95,
+        "transportEnteredMs": -1142.9,
+        "prePostMs": -1142.87,
+        "rendererArmSentMs": null,
+        "rendererArmedMs": null,
+        "evaluateEnteredMs": {
+          "ms": -1141.35,
+          "lowMs": -1141.73,
+          "highMs": -1140.97
+        },
+        "fetchInvokedMs": {
+          "ms": -1141.35,
+          "lowMs": -1141.73,
+          "highMs": -1140.97
+        },
+        "browserRequestStartMs": -880.22,
+        "requestObservedMs": -880.5,
+        "responseHeadersMs": {
+          "ms": 662.45,
+          "lowMs": 662.07,
+          "highMs": 662.83
+        },
+        "responseCompleteMs": {
+          "ms": 663.25,
+          "lowMs": 662.87,
+          "highMs": 663.63
+        },
+        "responseObservedMs": 1005.56,
+        "meta": {
+          "fanOutIndex": 1,
+          "fanOutCount": 3,
+          "shotIndex": 1,
+          "shotCount": 3,
+          "prewarmReadyMs": -28163,
+          "httpStatus": 200,
+          "finalState": "UNKNOWN",
+          "finalCode": "SUBMISSION_OUTCOME_UNKNOWN_RECONCILIATION_REQUIRED"
+        },
+        "calibration": {
+          "samples": 8,
+          "uncertaintyMs": 0.38,
+          "minRoundTripMs": 0.56,
+          "consistent": true
+        },
+        "segments": {
+          "nodeToRendererMs": 1.52,
+          "rendererToFetchMs": 0,
+          "fetchToRequestStartMs": 261.13,
+          "requestEventLagMs": -0.28
+        },
+        "resourceTiming": {
+          "startMs": {
+            "ms": 535.25,
+            "lowMs": 534.87,
+            "highMs": 535.63
+          },
+          "fetchMs": {
+            "ms": 535.25,
+            "lowMs": 534.87,
+            "highMs": 535.63
+          },
+          "requestMs": {
+            "ms": 536.25,
+            "lowMs": 535.87,
+            "highMs": 536.63
+          },
+          "headersMs": {
+            "ms": 660.65,
+            "lowMs": 660.27,
+            "highMs": 661.03
+          },
+          "completeMs": {
+            "ms": 661.05,
+            "lowMs": 660.67,
+            "highMs": 661.43
+          },
+          "workerMs": null,
+          "source": "PERFORMANCE_RESOURCE_TIMING",
+          "protocol": "h2"
+        }
+      },
+      "observedResponse": {
+        "success": true,
+        "validationCode": "CHECKOUT_SESSION_INVALID",
+        "trustedTotalAmount": 2100,
+        "transactionAmount": 2100,
+        "structure": {
+          "bookingCount": 3,
+          "sessionCount": 3,
+          "missingSessionLinks": 0,
+          "shapeFingerprint": "bfab622d4c046d13178d348354382b9f1d31b65644bb75041560e6d619e77f75"
+        },
+        "bookingIdCount": 3,
+        "uniqueBookingIds": 3,
+        "sessionIdCount": 3,
+        "holdExpiresAt": [
+          "2026-11-01T00:10:00.632Z",
+          "2026-11-01T00:10:00.632Z",
+          "2026-11-01T00:10:00.632Z"
+        ]
+      },
+      "savedResponse": {
+        "capturedAt": "2026-11-01T00:00:01.005Z",
+        "worker": "A",
+        "bookings": [
+          {
+            "date": "2026-11-03",
+            "start_time": "19:00",
+            "end_time": "20:00",
+            "duration": 60,
+            "rate": 700,
+            "booking_status": "pending",
+            "payment_status": "pending",
+            "hold_expires_at": "2026-11-01T00:10:00.632Z"
+          },
+          {
+            "date": "2026-11-03",
+            "start_time": "20:00",
+            "end_time": "21:00",
+            "duration": 60,
+            "rate": 700,
+            "booking_status": "pending",
+            "payment_status": "pending",
+            "hold_expires_at": "2026-11-01T00:10:00.632Z"
+          },
+          {
+            "date": "2026-11-03",
+            "start_time": "21:00",
+            "end_time": "22:00",
+            "duration": 60,
+            "rate": 700,
+            "booking_status": "pending",
+            "payment_status": "pending",
+            "hold_expires_at": "2026-11-01T00:10:00.632Z"
+          }
+        ],
+        "sessions": [
+          {
+            "startTime": "19:00",
+            "endTime": "20:00",
+            "durationHours": 1,
+            "bookingCount": 1
+          },
+          {
+            "startTime": "20:00",
+            "endTime": "21:00",
+            "durationHours": 1,
+            "bookingCount": 1
+          },
+          {
+            "startTime": "21:00",
+            "endTime": "22:00",
+            "durationHours": 1,
+            "bookingCount": 1
+          }
+        ],
+        "transaction": {
+          "amount": 2100,
+          "status": "pending"
+        },
+        "trustedTotalAmount": 2100
+      }
+    },
+    {
+      "path": ".local/api-booking/api-first-journals/34b4196e8209b03effb87f8c925e7ecc1d4497c2a063857a9b24a77383abcf39/fan-out/b1d3cc5cfdec30da272af5711043fca46c062d34b95e30e17fc2db6c7d904f05/7437c3ed92e7371e20f6accd3578921346b17808551dad550e21895ab0184c57/34b4196e8209b03effb87f8c925e7ecc1d4497c2a063857a9b24a77383abcf39.json",
+      "court": 6,
+      "key": "34b4196e8209b03effb87f8c925e7ecc1d4497c2a063857a9b24a77383abcf39",
+      "state": "unknown",
+      "createdAt": "2026-10-31T23:58:00.405Z",
+      "updatedAt": "2026-11-01T00:00:01.062Z",
+      "failureCode": "CHECKOUT_SESSION_INVALID",
+      "attempt": {
+        "attemptId": "7437c3ed92e7371e20f6accd3578921346b17808551dad550e21895ab0184c57",
+        "planFingerprint": "de164d57e28bd9daf6bb524dcff3eccad2d55af9bb93814b7f06ad884591c786",
+        "targetDate": "2026-11-03",
+        "courtIds": [
+          6
+        ],
+        "hourlyBoundaries": [
+          {
+            "startTime": "19:00",
+            "endTime": "20:00"
+          },
+          {
+            "startTime": "20:00",
+            "endTime": "21:00"
+          },
+          {
+            "startTime": "21:00",
+            "endTime": "22:00"
+          }
+        ],
+        "expectedBookingCount": 3,
+        "maximumAmount": 2100,
+        "stage": "armed",
+        "releaseMs": 1793491200000,
+        "dispatchDeadlineMs": 1793491201000,
+        "dispatchTimingPolicy": "SHOTGUN_STRICT",
+        "triggerMs": 1793491199143,
+        "shotDeadlineMs": 1793491199193
+      },
+      "diagnosticAttemptId": "core-B-official-5",
+      "worker": "B",
+      "configuredOffsetMs": -857,
+      "criticalPath": {
+        "schedulerFiredMs": -856.99,
+        "workerInvokedMs": -856.93,
+        "transportEnteredMs": -856.88,
+        "prePostMs": -856.85,
+        "rendererArmSentMs": null,
+        "rendererArmedMs": null,
+        "evaluateEnteredMs": {
+          "ms": -855.4,
+          "lowMs": -855.87,
+          "highMs": -854.93
+        },
+        "fetchInvokedMs": {
+          "ms": -855.4,
+          "lowMs": -855.87,
+          "highMs": -854.93
+        },
+        "browserRequestStartMs": -619.15,
+        "requestObservedMs": -619.04,
+        "responseHeadersMs": {
+          "ms": 1002.5,
+          "lowMs": 1002.03,
+          "highMs": 1002.97
+        },
+        "responseCompleteMs": {
+          "ms": 1002.9,
+          "lowMs": 1002.43,
+          "highMs": 1003.37
+        },
+        "responseObservedMs": 1010.24,
+        "meta": {
+          "fanOutIndex": 1,
+          "fanOutCount": 3,
+          "shotIndex": 1,
+          "shotCount": 3,
+          "prewarmReadyMs": -29052,
+          "httpStatus": 200,
+          "finalState": "UNKNOWN",
+          "finalCode": "SUBMISSION_OUTCOME_UNKNOWN_RECONCILIATION_REQUIRED"
+        },
+        "calibration": {
+          "samples": 8,
+          "uncertaintyMs": 0.47,
+          "minRoundTripMs": 0.84,
+          "consistent": true
+        },
+        "segments": {
+          "nodeToRendererMs": 1.45,
+          "rendererToFetchMs": 0,
+          "fetchToRequestStartMs": 236.25,
+          "requestEventLagMs": 0.11
+        },
+        "resourceTiming": {
+          "startMs": {
+            "ms": 851.1,
+            "lowMs": 850.63,
+            "highMs": 851.57
+          },
+          "fetchMs": {
+            "ms": 851.1,
+            "lowMs": 850.63,
+            "highMs": 851.57
+          },
+          "requestMs": {
+            "ms": 852.5,
+            "lowMs": 852.03,
+            "highMs": 852.97
+          },
+          "headersMs": {
+            "ms": 1000.2,
+            "lowMs": 999.73,
+            "highMs": 1000.67
+          },
+          "completeMs": {
+            "ms": 1000.7,
+            "lowMs": 1000.23,
+            "highMs": 1001.17
+          },
+          "workerMs": null,
+          "source": "PERFORMANCE_RESOURCE_TIMING",
+          "protocol": "h2"
+        }
+      },
+      "observedResponse": {
+        "success": true,
+        "validationCode": "CHECKOUT_SESSION_INVALID",
+        "trustedTotalAmount": 2100,
+        "transactionAmount": 2100,
+        "structure": {
+          "bookingCount": 3,
+          "sessionCount": 3,
+          "missingSessionLinks": 0,
+          "shapeFingerprint": "bfab622d4c046d13178d348354382b9f1d31b65644bb75041560e6d619e77f75"
+        },
+        "bookingIdCount": 3,
+        "uniqueBookingIds": 3,
+        "sessionIdCount": 3,
+        "holdExpiresAt": [
+          "2026-11-01T00:10:00.970Z",
+          "2026-11-01T00:10:00.970Z",
+          "2026-11-01T00:10:00.970Z"
+        ]
+      },
+      "savedResponse": {
+        "capturedAt": "2026-11-01T00:00:01.046Z",
+        "worker": "B",
+        "bookings": [
+          {
+            "date": "2026-11-03",
+            "start_time": "19:00",
+            "end_time": "20:00",
+            "duration": 60,
+            "rate": 700,
+            "booking_status": "pending",
+            "payment_status": "pending",
+            "hold_expires_at": "2026-11-01T00:10:00.970Z"
+          },
+          {
+            "date": "2026-11-03",
+            "start_time": "20:00",
+            "end_time": "21:00",
+            "duration": 60,
+            "rate": 700,
+            "booking_status": "pending",
+            "payment_status": "pending",
+            "hold_expires_at": "2026-11-01T00:10:00.970Z"
+          },
+          {
+            "date": "2026-11-03",
+            "start_time": "21:00",
+            "end_time": "22:00",
+            "duration": 60,
+            "rate": 700,
+            "booking_status": "pending",
+            "payment_status": "pending",
+            "hold_expires_at": "2026-11-01T00:10:00.970Z"
+          }
+        ],
+        "sessions": [
+          {
+            "startTime": "19:00",
+            "endTime": "20:00",
+            "durationHours": 1,
+            "bookingCount": 1
+          },
+          {
+            "startTime": "20:00",
+            "endTime": "21:00",
+            "durationHours": 1,
+            "bookingCount": 1
+          },
+          {
+            "startTime": "21:00",
+            "endTime": "22:00",
+            "durationHours": 1,
+            "bookingCount": 1
+          }
+        ],
+        "transaction": {
+          "amount": 2100,
+          "status": "pending"
+        },
+        "trustedTotalAmount": 2100
+      }
+    },
+    {
+      "path": ".local/api-booking/api-first-journals/cbccdd70162f48145b529da0e4ffc192d8ec37dfc2aab2ede0b983c7485acf3f/fan-out/b1d3cc5cfdec30da272af5711043fca46c062d34b95e30e17fc2db6c7d904f05/cc5c12cc669ed72d5d872503d86b3fdd540b1321b77a8314017260ca7798bacb/cbccdd70162f48145b529da0e4ffc192d8ec37dfc2aab2ede0b983c7485acf3f.json",
+      "court": 5,
+      "key": "cbccdd70162f48145b529da0e4ffc192d8ec37dfc2aab2ede0b983c7485acf3f",
+      "state": "unknown",
+      "createdAt": "2026-10-31T23:58:00.405Z",
+      "updatedAt": "2026-11-01T00:00:01.563Z",
+      "failureCode": "CHECKOUT_SESSION_INVALID",
+      "attempt": {
+        "attemptId": "cc5c12cc669ed72d5d872503d86b3fdd540b1321b77a8314017260ca7798bacb",
+        "planFingerprint": "5c2773737cb36ad5b4ab60c2e34dbbc13c3b81c497605f39ef89c3b8a932a472",
+        "targetDate": "2026-11-03",
+        "courtIds": [
+          5
+        ],
+        "hourlyBoundaries": [
+          {
+            "startTime": "19:00",
+            "endTime": "20:00"
+          },
+          {
+            "startTime": "20:00",
+            "endTime": "21:00"
+          },
+          {
+            "startTime": "21:00",
+            "endTime": "22:00"
+          }
+        ],
+        "expectedBookingCount": 3,
+        "maximumAmount": 2100,
+        "stage": "armed",
+        "releaseMs": 1793491200000,
+        "dispatchDeadlineMs": 1793491201000,
+        "dispatchTimingPolicy": "SHOTGUN_STRICT",
+        "triggerMs": 1793491199429,
+        "shotDeadlineMs": 1793491199479
+      },
+      "diagnosticAttemptId": "core-C-official-8",
+      "worker": "C",
+      "configuredOffsetMs": -571,
+      "criticalPath": {
+        "schedulerFiredMs": -570.97,
+        "workerInvokedMs": -570.89,
+        "transportEnteredMs": -570.81,
+        "prePostMs": -570.77,
+        "rendererArmSentMs": null,
+        "rendererArmedMs": null,
+        "evaluateEnteredMs": {
+          "ms": -568.89,
+          "lowMs": -569.28,
+          "highMs": -568.49
+        },
+        "fetchInvokedMs": {
+          "ms": -568.89,
+          "lowMs": -569.28,
+          "highMs": -568.49
+        },
+        "browserRequestStartMs": -345.8,
+        "requestObservedMs": -346,
+        "responseHeadersMs": {
+          "ms": 1557.51,
+          "lowMs": 1557.12,
+          "highMs": 1557.91
+        },
+        "responseCompleteMs": {
+          "ms": 1558.01,
+          "lowMs": 1557.62,
+          "highMs": 1558.41
+        },
+        "responseObservedMs": 1560.19,
+        "meta": {
+          "fanOutIndex": 1,
+          "fanOutCount": 2,
+          "shotIndex": 1,
+          "shotCount": 2,
+          "prewarmReadyMs": -29387,
+          "httpStatus": 200,
+          "finalState": "UNKNOWN",
+          "finalCode": "SUBMISSION_OUTCOME_UNKNOWN_RECONCILIATION_REQUIRED"
+        },
+        "calibration": {
+          "samples": 8,
+          "uncertaintyMs": 0.4,
+          "minRoundTripMs": 0.61,
+          "consistent": true
+        },
+        "segments": {
+          "nodeToRendererMs": 1.88,
+          "rendererToFetchMs": 0,
+          "fetchToRequestStartMs": 223.09,
+          "requestEventLagMs": -0.2
+        },
+        "resourceTiming": {
+          "startMs": {
+            "ms": 1110.91,
+            "lowMs": 1110.52,
+            "highMs": 1111.31
+          },
+          "fetchMs": {
+            "ms": 1110.91,
+            "lowMs": 1110.52,
+            "highMs": 1111.31
+          },
+          "requestMs": {
+            "ms": 1112.11,
+            "lowMs": 1111.72,
+            "highMs": 1112.51
+          },
+          "headersMs": {
+            "ms": 1556.21,
+            "lowMs": 1555.82,
+            "highMs": 1556.61
+          },
+          "completeMs": {
+            "ms": 1556.61,
+            "lowMs": 1556.22,
+            "highMs": 1557.01
+          },
+          "workerMs": null,
+          "source": "PERFORMANCE_RESOURCE_TIMING",
+          "protocol": "h2"
+        }
+      },
+      "observedResponse": {
+        "success": true,
+        "validationCode": "CHECKOUT_SESSION_INVALID",
+        "trustedTotalAmount": 2100,
+        "transactionAmount": 2100,
+        "structure": {
+          "bookingCount": 3,
+          "sessionCount": 3,
+          "missingSessionLinks": 0,
+          "shapeFingerprint": "bfab622d4c046d13178d348354382b9f1d31b65644bb75041560e6d619e77f75"
+        },
+        "bookingIdCount": 3,
+        "uniqueBookingIds": 3,
+        "sessionIdCount": 3,
+        "holdExpiresAt": [
+          "2026-11-01T00:10:01.528Z",
+          "2026-11-01T00:10:01.528Z",
+          "2026-11-01T00:10:01.528Z"
+        ]
+      },
+      "savedResponse": {
+        "capturedAt": "2026-11-01T00:00:01.560Z",
+        "worker": "C",
+        "bookings": [
+          {
+            "date": "2026-11-03",
+            "start_time": "19:00",
+            "end_time": "20:00",
+            "duration": 60,
+            "rate": 700,
+            "booking_status": "pending",
+            "payment_status": "pending",
+            "hold_expires_at": "2026-11-01T00:10:01.528Z"
+          },
+          {
+            "date": "2026-11-03",
+            "start_time": "20:00",
+            "end_time": "21:00",
+            "duration": 60,
+            "rate": 700,
+            "booking_status": "pending",
+            "payment_status": "pending",
+            "hold_expires_at": "2026-11-01T00:10:01.528Z"
+          },
+          {
+            "date": "2026-11-03",
+            "start_time": "21:00",
+            "end_time": "22:00",
+            "duration": 60,
+            "rate": 700,
+            "booking_status": "pending",
+            "payment_status": "pending",
+            "hold_expires_at": "2026-11-01T00:10:01.528Z"
+          }
+        ],
+        "sessions": [
+          {
+            "startTime": "19:00",
+            "endTime": "20:00",
+            "durationHours": 1,
+            "bookingCount": 1
+          },
+          {
+            "startTime": "20:00",
+            "endTime": "21:00",
+            "durationHours": 1,
+            "bookingCount": 1
+          },
+          {
+            "startTime": "21:00",
+            "endTime": "22:00",
+            "durationHours": 1,
+            "bookingCount": 1
+          }
+        ],
+        "transaction": {
+          "amount": 2100,
+          "status": "pending"
+        },
+        "trustedTotalAmount": 2100
+      }
+    },
+    {
+      "path": ".local/api-booking/api-first-journals/34c14a23cfdbd7f92d0cf0bb08bb891dafb37351d788104b0553f0a3aefc4836/fan-out/b1d3cc5cfdec30da272af5711043fca46c062d34b95e30e17fc2db6c7d904f05/5f5b71cb39688c825329806e1c0c9ba1c57304e585ce423f7ec1073c8107a63f/34c14a23cfdbd7f92d0cf0bb08bb891dafb37351d788104b0553f0a3aefc4836.json",
+      "court": 7,
+      "key": "34c14a23cfdbd7f92d0cf0bb08bb891dafb37351d788104b0553f0a3aefc4836",
+      "state": "unknown",
+      "createdAt": "2026-10-31T23:58:00.405Z",
+      "updatedAt": "2026-11-01T00:00:01.053Z",
+      "failureCode": "CHECKOUT_SESSION_INVALID",
+      "attempt": {
+        "attemptId": "5f5b71cb39688c825329806e1c0c9ba1c57304e585ce423f7ec1073c8107a63f",
+        "planFingerprint": "69c139f7983551ba16c224be06ca5c2cbe6daa9d4da36739578ab75169da2303",
+        "targetDate": "2026-11-03",
+        "courtIds": [
+          7
+        ],
+        "hourlyBoundaries": [
+          {
+            "startTime": "19:00",
+            "endTime": "20:00"
+          },
+          {
+            "startTime": "20:00",
+            "endTime": "21:00"
+          },
+          {
+            "startTime": "21:00",
+            "endTime": "22:00"
+          }
+        ],
+        "expectedBookingCount": 3,
+        "maximumAmount": 2100,
+        "stage": "armed",
+        "releaseMs": 1793491200000,
+        "dispatchDeadlineMs": 1793491201000,
+        "dispatchTimingPolicy": "SHOTGUN_STRICT",
+        "triggerMs": 1793491199714,
+        "shotDeadlineMs": 1793491199764
+      },
+      "diagnosticAttemptId": "core-A-official-3",
+      "worker": "A",
+      "configuredOffsetMs": -286,
+      "criticalPath": {
+        "schedulerFiredMs": -285.98,
+        "workerInvokedMs": -285.94,
+        "transportEnteredMs": -285.86,
+        "prePostMs": -285.83,
+        "rendererArmSentMs": null,
+        "rendererArmedMs": null,
+        "evaluateEnteredMs": {
+          "ms": -283.48,
+          "lowMs": -283.98,
+          "highMs": -282.99
+        },
+        "fetchInvokedMs": {
+          "ms": -283.48,
+          "lowMs": -283.98,
+          "highMs": -282.99
+        },
+        "browserRequestStartMs": -27.46,
+        "requestObservedMs": -27.43,
+        "responseHeadersMs": {
+          "ms": 91.32,
+          "lowMs": 90.82,
+          "highMs": 91.81
+        },
+        "responseCompleteMs": {
+          "ms": 92.12,
+          "lowMs": 91.62,
+          "highMs": 92.61
+        },
+        "responseObservedMs": 1005.32,
+        "meta": {
+          "fanOutIndex": 2,
+          "fanOutCount": 3,
+          "shotIndex": 2,
+          "shotCount": 3,
+          "prewarmReadyMs": -25148,
+          "httpStatus": 200,
+          "finalState": "UNKNOWN",
+          "finalCode": "SUBMISSION_OUTCOME_UNKNOWN_RECONCILIATION_REQUIRED"
+        },
+        "calibration": {
+          "samples": 8,
+          "uncertaintyMs": 0.49,
+          "minRoundTripMs": 0.79,
+          "consistent": true
+        },
+        "segments": {
+          "nodeToRendererMs": 2.35,
+          "rendererToFetchMs": 0,
+          "fetchToRequestStartMs": 256.02,
+          "requestEventLagMs": 0.03
+        },
+        "resourceTiming": {
+          "startMs": {
+            "ms": -28.78,
+            "lowMs": -29.28,
+            "highMs": -28.29
+          },
+          "fetchMs": {
+            "ms": -28.78,
+            "lowMs": -29.28,
+            "highMs": -28.29
+          },
+          "requestMs": {
+            "ms": -27.58,
+            "lowMs": -28.08,
+            "highMs": -27.09
+          },
+          "headersMs": {
+            "ms": 89.82,
+            "lowMs": 89.32,
+            "highMs": 90.31
+          },
+          "completeMs": {
+            "ms": 90.22,
+            "lowMs": 89.72,
+            "highMs": 90.71
+          },
+          "workerMs": null,
+          "source": "PERFORMANCE_RESOURCE_TIMING",
+          "protocol": "h2"
+        }
+      },
+      "observedResponse": {
+        "success": true,
+        "validationCode": "CHECKOUT_SESSION_INVALID",
+        "trustedTotalAmount": 2100,
+        "transactionAmount": 2100,
+        "structure": {
+          "bookingCount": 3,
+          "sessionCount": 3,
+          "missingSessionLinks": 0,
+          "shapeFingerprint": "bfab622d4c046d13178d348354382b9f1d31b65644bb75041560e6d619e77f75"
+        },
+        "bookingIdCount": 3,
+        "uniqueBookingIds": 3,
+        "sessionIdCount": 3,
+        "holdExpiresAt": [
+          "2026-11-01T00:10:00.061Z",
+          "2026-11-01T00:10:00.061Z",
+          "2026-11-01T00:10:00.061Z"
+        ]
+      },
+      "savedResponse": {
+        "capturedAt": "2026-11-01T00:00:01.005Z",
+        "worker": "A",
+        "bookings": [
+          {
+            "date": "2026-11-03",
+            "start_time": "19:00",
+            "end_time": "20:00",
+            "duration": 60,
+            "rate": 700,
+            "booking_status": "pending",
+            "payment_status": "pending",
+            "hold_expires_at": "2026-11-01T00:10:00.061Z"
+          },
+          {
+            "date": "2026-11-03",
+            "start_time": "20:00",
+            "end_time": "21:00",
+            "duration": 60,
+            "rate": 700,
+            "booking_status": "pending",
+            "payment_status": "pending",
+            "hold_expires_at": "2026-11-01T00:10:00.061Z"
+          },
+          {
+            "date": "2026-11-03",
+            "start_time": "21:00",
+            "end_time": "22:00",
+            "duration": 60,
+            "rate": 700,
+            "booking_status": "pending",
+            "payment_status": "pending",
+            "hold_expires_at": "2026-11-01T00:10:00.061Z"
+          }
+        ],
+        "sessions": [
+          {
+            "startTime": "19:00",
+            "endTime": "20:00",
+            "durationHours": 1,
+            "bookingCount": 1
+          },
+          {
+            "startTime": "20:00",
+            "endTime": "21:00",
+            "durationHours": 1,
+            "bookingCount": 1
+          },
+          {
+            "startTime": "21:00",
+            "endTime": "22:00",
+            "durationHours": 1,
+            "bookingCount": 1
+          }
+        ],
+        "transaction": {
+          "amount": 2100,
+          "status": "pending"
+        },
+        "trustedTotalAmount": 2100
+      }
+    },
+    {
+      "path": ".local/api-booking/api-first-journals/34b4196e8209b03effb87f8c925e7ecc1d4497c2a063857a9b24a77383abcf39/fan-out/b1d3cc5cfdec30da272af5711043fca46c062d34b95e30e17fc2db6c7d904f05/9372680af18848da411b85844ec79aa836d1598568d5d279bf1687eb79e4e905/34b4196e8209b03effb87f8c925e7ecc1d4497c2a063857a9b24a77383abcf39.json",
+      "court": 6,
+      "key": "34b4196e8209b03effb87f8c925e7ecc1d4497c2a063857a9b24a77383abcf39",
+      "state": "rejected",
+      "createdAt": "2026-10-31T23:58:00.405Z",
+      "updatedAt": "2026-11-01T00:00:01.006Z",
+      "failureCode": "SHOTGUN_TARGET_OUTCOME_UNKNOWN",
+      "attempt": {
+        "attemptId": "9372680af18848da411b85844ec79aa836d1598568d5d279bf1687eb79e4e905",
+        "planFingerprint": "de164d57e28bd9daf6bb524dcff3eccad2d55af9bb93814b7f06ad884591c786",
+        "targetDate": "2026-11-03",
+        "courtIds": [
+          6
+        ],
+        "hourlyBoundaries": [
+          {
+            "startTime": "19:00",
+            "endTime": "20:00"
+          },
+          {
+            "startTime": "20:00",
+            "endTime": "21:00"
+          },
+          {
+            "startTime": "21:00",
+            "endTime": "22:00"
+          }
+        ],
+        "expectedBookingCount": 3,
+        "maximumAmount": 2100,
+        "stage": "armed",
+        "releaseMs": 1793491200000,
+        "dispatchDeadlineMs": 1793491201000,
+        "dispatchTimingPolicy": "SHOTGUN_STRICT",
+        "triggerMs": 1793491200000,
+        "shotDeadlineMs": 1793491200050
+      },
+      "diagnosticAttemptId": "core-B-official-6",
+      "worker": "B",
+      "configuredOffsetMs": 0,
+      "criticalPath": {
+        "schedulerFiredMs": 0.01,
+        "workerInvokedMs": null,
+        "transportEnteredMs": null,
+        "prePostMs": null,
+        "rendererArmSentMs": null,
+        "rendererArmedMs": null,
+        "evaluateEnteredMs": null,
+        "fetchInvokedMs": null,
+        "browserRequestStartMs": null,
+        "requestObservedMs": null,
+        "responseHeadersMs": null,
+        "responseCompleteMs": null,
+        "responseObservedMs": null,
+        "meta": {
+          "fanOutIndex": 2,
+          "fanOutCount": 3,
+          "shotIndex": 2,
+          "shotCount": 3,
+          "prewarmReadyMs": -25706,
+          "finalState": "NOT_DISPATCHED",
+          "finalCode": "SHOTGUN_TARGET_OUTCOME_UNKNOWN"
+        },
+        "calibration": {
+          "samples": 8,
+          "uncertaintyMs": 0.4,
+          "minRoundTripMs": 0.65,
+          "consistent": true
+        },
+        "segments": {
+          "nodeToRendererMs": null,
+          "rendererToFetchMs": null,
+          "fetchToRequestStartMs": null,
+          "requestEventLagMs": null
+        },
+        "resourceTiming": {
+          "source": null,
+          "protocol": null
+        }
+      }
+    }
+  ],
+  "observer": {
+    "source": ".local/slot-watch/2026-11-03_311dea90-dbb3-4284-9520-be292e2673a3.ndjson",
+    "types": {
+      "header": 1,
+      "clock": 1,
+      "not-launched": 195,
+      "bookings": 65,
+      "summary": 1
+    },
+    "notLaunchedReasons": {
+      "availability:AVAILABILITY_SITE_HELPER_UNAVAILABLE": 1,
+      "availability:AVAILABILITY_MANUAL_RECHECK_REQUIRED": 194
+    },
+    "legacySummary": {
+      "reads": {
+        "launched": 195,
+        "answered": 0,
+        "failed": 0,
+        "notLaunched": 195,
+        "maxInFlight": 6,
+        "earlyOffsetsMs": [
+          0,
+          250,
+          500,
+          1000,
+          2000,
+          5000
+        ]
+      },
+      "bookingReads": {
+        "answered": 65,
+        "failed": 0,
+        "failedCourtQueries": 0,
+        "itemized": true
+      },
+      "publication": {
+        "lastUnpublished": null,
+        "firstPublished": null,
+        "firstPublishedResponse": null
+      },
+      "firstPublishedCounts": null,
+      "openToUnavailable": 0,
+      "reopened": 0
+    },
+    "warning": "Legacy reads.launched includes locally refused attempts; original observer records prove zero availability network launches. Public booking queries are supplemental."
+  },
+  "providerTrace": [
+    {
+      "type": "provider-trace",
+      "workerId": "C:1",
+      "attemptId": "core-C-official-8",
+      "method": "POST",
+      "path": "/api/bookings/public-checkout",
+      "complete": true,
+      "nodeObserved": {
+        "enabledOffsetMs": 1060.1,
+        "headersOffsetMs": 1559,
+        "finishedOffsetMs": 1559.6
+      },
+      "browser": {
+        "requestTimeSeconds": 4074.52572,
+        "dnsMs": null,
+        "connectMs": null,
+        "tlsMs": null,
+        "sendMs": 0.3,
+        "waitMs": 443.8,
+        "headersStartMs": 444.8,
+        "headersEndMs": 444.8,
+        "bodyCompleteMs": 445.1,
+        "failedMs": null
+      },
+      "response": {
+        "status": 200,
+        "cfRay": null,
+        "cfMitigated": null,
+        "requestId": null,
+        "ageS": null,
+        "serverTiming": null,
+        "encodedBytes": 1423
+      }
+    },
+    {
+      "type": "response-fallback",
+      "workerId": "C",
+      "attemptId": "core-C-official-7",
+      "wave": "WAVE_1",
+      "status": 200,
+      "contentType": "application/json",
+      "server": "Vercel",
+      "responseReceivedMs": 2214.6,
+      "responseCompletedMs": 2215.4,
+      "nodeObserved": {},
+      "browser": {},
+      "response": {}
+    },
+    {
+      "type": "response-fallback",
+      "workerId": "B",
+      "attemptId": "core-B-official-4",
+      "wave": "WAVE_1",
+      "status": 200,
+      "contentType": "application/json",
+      "server": "Vercel",
+      "responseReceivedMs": 2004.1,
+      "responseCompletedMs": 2004.4,
+      "nodeObserved": {},
+      "browser": {},
+      "response": {}
+    },
+    {
+      "type": "response-fallback",
+      "workerId": "A",
+      "attemptId": "core-A-official-1",
+      "wave": "WAVE_1",
+      "status": 200,
+      "contentType": "application/json",
+      "server": "Vercel",
+      "responseReceivedMs": 1871.3,
+      "responseCompletedMs": 1871.8,
+      "nodeObserved": {},
+      "browser": {},
+      "response": {}
+    },
+    {
+      "type": "response-fallback",
+      "workerId": "A:2",
+      "attemptId": "core-A-official-3",
+      "wave": "WAVE_1",
+      "status": 200,
+      "contentType": "application/json",
+      "server": "Vercel",
+      "responseReceivedMs": 374.8,
+      "responseCompletedMs": 375.6,
+      "nodeObserved": {},
+      "browser": {},
+      "response": {}
+    },
+    {
+      "type": "response-fallback",
+      "workerId": "A:1",
+      "attemptId": "core-A-official-2",
+      "wave": "WAVE_1",
+      "status": 200,
+      "contentType": "application/json",
+      "server": "Vercel",
+      "responseReceivedMs": 1803.8,
+      "responseCompletedMs": 1804.6,
+      "nodeObserved": {},
+      "browser": {},
+      "response": {}
+    },
+    {
+      "type": "response-fallback",
+      "workerId": "B:1",
+      "attemptId": "core-B-official-5",
+      "wave": "WAVE_1",
+      "status": 200,
+      "contentType": "application/json",
+      "server": "Vercel",
+      "responseReceivedMs": 1857.9,
+      "responseCompletedMs": 1858.3,
+      "nodeObserved": {},
+      "browser": {},
+      "response": {}
+    },
+    {
+      "type": "response-fallback",
+      "workerId": "C:1",
+      "attemptId": "core-C-official-8",
+      "wave": "WAVE_1",
+      "status": 200,
+      "contentType": "application/json",
+      "server": "Vercel",
+      "responseReceivedMs": 2126.4,
+      "responseCompletedMs": 2126.9,
+      "nodeObserved": {},
+      "browser": {},
+      "response": {}
+    }
+  ],
+  "recoveryStatus": {
+    "at": "2026-11-01T00:03:49.883Z",
+    "results": [
+      {
+        "worker": "B",
+        "court": 6,
+        "capturedAt": "2026-11-01T00:00:01.004Z",
+        "httpStatus": 404,
+        "success": false,
+        "error": "Booking not found",
+        "canResume": null
+      },
+      {
+        "worker": "A",
+        "court": 7,
+        "capturedAt": "2026-11-01T00:00:01.005Z",
+        "httpStatus": 404,
+        "success": false,
+        "error": "Booking not found",
+        "canResume": null
+      },
+      {
+        "worker": "C",
+        "court": 5,
+        "capturedAt": "2026-11-01T00:00:01.001Z",
+        "httpStatus": 404,
+        "success": false,
+        "error": "Booking not found",
+        "canResume": null
+      },
+      {
+        "worker": "B",
+        "court": 6,
+        "capturedAt": "2026-11-01T00:00:01.046Z",
+        "httpStatus": 404,
+        "success": false,
+        "error": "Booking not found",
+        "canResume": null
+      },
+      {
+        "worker": "A",
+        "court": 7,
+        "capturedAt": "2026-11-01T00:00:01.005Z",
+        "httpStatus": 404,
+        "success": false,
+        "error": "Booking not found",
+        "canResume": null
+      },
+      {
+        "worker": "C",
+        "court": 5,
+        "capturedAt": "2026-11-01T00:00:01.560Z",
+        "httpStatus": 404,
+        "success": false,
+        "error": "Booking not found",
+        "canResume": null
+      },
+      {
+        "worker": "A",
+        "court": 7,
+        "capturedAt": "2026-11-01T00:00:01.005Z",
+        "httpStatus": 404,
+        "success": false,
+        "error": "Booking not found",
+        "canResume": null
+      }
+    ]
+  },
+  "replay": {
+    "at": "2026-11-01T00:11:18.016Z",
+    "mode": "OFFLINE_HISTORICAL_REPLAY",
+    "results": [
+      {
+        "worker": "B",
+        "court": 6,
+        "responseValidated": true,
+        "wrongAmountRejected": true,
+        "wrongCourtRejected": true,
+        "nonzeroSecondsRejected": true,
+        "expiredRejected": true,
+        "captureUnchanged": true
+      },
+      {
+        "worker": "B",
+        "court": 6,
+        "responseValidated": true,
+        "wrongAmountRejected": true,
+        "wrongCourtRejected": true,
+        "nonzeroSecondsRejected": true,
+        "expiredRejected": true,
+        "captureUnchanged": true
+      },
+      {
+        "worker": "A",
+        "court": 7,
+        "responseValidated": true,
+        "wrongAmountRejected": true,
+        "wrongCourtRejected": true,
+        "nonzeroSecondsRejected": true,
+        "expiredRejected": true,
+        "captureUnchanged": true
+      },
+      {
+        "worker": "A",
+        "court": 7,
+        "responseValidated": true,
+        "wrongAmountRejected": true,
+        "wrongCourtRejected": true,
+        "nonzeroSecondsRejected": true,
+        "expiredRejected": true,
+        "captureUnchanged": true
+      },
+      {
+        "worker": "A",
+        "court": 7,
+        "responseValidated": true,
+        "wrongAmountRejected": true,
+        "wrongCourtRejected": true,
+        "nonzeroSecondsRejected": true,
+        "expiredRejected": true,
+        "captureUnchanged": true
+      },
+      {
+        "worker": "C",
+        "court": 5,
+        "responseValidated": true,
+        "wrongAmountRejected": true,
+        "wrongCourtRejected": true,
+        "nonzeroSecondsRejected": true,
+        "expiredRejected": true,
+        "captureUnchanged": true
+      },
+      {
+        "worker": "C",
+        "court": 5,
+        "responseValidated": true,
+        "wrongAmountRejected": true,
+        "wrongCourtRejected": true,
+        "nonzeroSecondsRejected": true,
+        "expiredRejected": true,
+        "captureUnchanged": true
+      }
+    ]
+  },
+  "hotfixes": [
+    {
+      "manifest": "DiagnosticsLocal/security-helper-nov1/hotfix-manifest.json",
+      "at": "2026-10-31T23:44:27.766Z",
+      "baseBuild": "314f024-a0271d6795",
+      "changes": [
+        {
+          "path": "src/api-booking/calendar-free-security-context-browser.js",
+          "before": "18046ceb0d6f486ae706ce1e6f1c15b783cb33df62310a85b063e19538621647",
+          "after": "1b39d52c5e770b9fcfbc14972cb9e52178b40b1a975050d1e80c672921b0a853"
+        },
+        {
+          "path": "dist/src/api-booking/calendar-free-security-context-browser.js",
+          "before": "18046ceb0d6f486ae706ce1e6f1c15b783cb33df62310a85b063e19538621647",
+          "after": "1b39d52c5e770b9fcfbc14972cb9e52178b40b1a975050d1e80c672921b0a853"
+        }
+      ]
+    },
+    {
+      "manifest": "DiagnosticsLocal/installed-repair-nov1/hotfix-manifest.json",
+      "at": "2026-11-01T00:11:07.751Z",
+      "baseBuild": "314f024-a0271d6795",
+      "changes": [
+        {
+          "path": "src/api-booking/public-checkout.ts",
+          "before": "1259c72e69204b8b28aeb00fcde0da66fd811e7df8b4bb25a9ac6a0ed215467b",
+          "after": "9d8d3d42b3a6552ecf21177bc4da86aec105544f78712abcb88fa1a26b5cd5be"
+        },
+        {
+          "path": "dist/src/api-booking/public-checkout.js",
+          "before": "c512ac51054288d2006fd69c749990a9b917ca101a9af7b4b3040fa34a1148fb",
+          "after": "70d5f88ef6f5eb54ea9be93b1fdaa7ba778ae62ac8c78b0c0be01eda9fb1cf34"
+        },
+        {
+          "path": "dist/src/api-booking/public-checkout.js.map",
+          "before": "6b7e2b4c152699b53dd46bb3a3e21a2c522b75e51c423e4eb587807b28d603fc",
+          "after": "d1ce4f74a485f0f9045e44f37afcf6b24fde96395ea8e52e1c24ac745dbc0ca0"
+        }
+      ]
+    },
+    {
+      "manifest": "DiagnosticsLocal/shotgun-court6-rehearsal/summary-hotfix-manifest.json",
+      "at": "2026-11-01T04:19:16.664Z",
+      "changes": [
+        {
+          "path": "src/api-booking/qr-order-summary.ts",
+          "before": "e2a8abc7bf55c50c7d8b0e3dd559bf0365bab36c37a4a6cbc32a375e8c08fa57",
+          "after": "3ec6dfd42b86003e1a86b8e6ac9b3914bc2eb80338c2fe2c08a1b7291f992cbd"
+        },
+        {
+          "path": "dist/src/api-booking/qr-order-summary.js",
+          "before": "36aaf129a6fab98450b99ef7ffdf14a7b9d6605ee88785061ec6e9159dd14a1e",
+          "after": "a5a00a3f2528a056a681c95c7ff244bf2be41d6d061d8e8e027e1064b59cdd4e"
+        },
+        {
+          "path": "dist/src/api-booking/qr-order-summary.js.map",
+          "before": "01dba20a26831a1fd8d8c217c708960aee91617b5b7bf05e5cd6d7d4c9ee5148",
+          "after": "a9954eaf77fecd64f0df9bbb335b007c85498b2531c3f9808e0f63127008241c"
+        }
+      ]
+    }
+  ],
+  "later": {
+    "normalQr": {
+      "path": "DiagnosticsLocal/nov3-extended-live-test/read-only-qr-review.json",
+      "at": "2026-11-01T04:06:14.224Z",
+      "paymentAutomated": false,
+      "results": [
+        {
+          "worker": "A"
+        },
+        {
+          "worker": "B"
+        }
+      ]
+    },
+    "court6": {
+      "path": ".local/shotgun-rehearsal/2026-11-01-court6-browser-b/result.json",
+      "at": "2026-11-01T04:20:28.058Z",
+      "kind": "SHOTGUN_LIVE_REHEARSAL",
+      "firstHandoff": false,
+      "recoveredInFreshTab": false,
+      "paymentAutomated": false,
+      "amount": 1800,
+      "results": [
+        {
+          "state": "NOT_DISPATCHED",
+          "code": "SHOTGUN_TRIGGER_MISSED",
+          "worker": "B",
+          "strict": true
+        }
+      ]
+    },
+    "court7": {
+      "path": ".local/shotgun-rehearsal/2026-11-01T07-29-38-183Z-court7-b/result.json",
+      "at": "2026-11-01T07:30:27.702Z",
+      "kind": "SHOTGUN_LIVE_REHEARSAL",
+      "firstHandoff": false,
+      "recoveredInFreshTab": false,
+      "paymentAutomated": false,
+      "amount": 1800,
+      "results": [
+        {
+          "state": "HOLD_VERIFIED_QR_ATTENTION",
+          "code": "PRECISION_DISPATCH_FAILED",
+          "worker": "B",
+          "strict": true
+        }
+      ]
+    },
+    "court7Recovery": {
+      "path": ".local/shotgun-rehearsal/2026-11-01T07-29-38-183Z-court7-b/fresh-tab-recovery.json",
+      "at": "2026-11-01T07:31:34.990Z",
+      "paymentAutomated": false,
+      "freshTabRecovery": true,
+      "exactOrderSummaryValidated": true,
+      "qrImageVisibleAndLoaded": true,
+      "journalUnchanged": true,
+      "amount": 1800,
+      "court": 7,
+      "date": "2026-11-03",
+      "start": "08:00",
+      "end": "11:00",
+      "holdExpiresAt": "2026-11-01T07:40:07.16+00:00"
+    },
+    "securityFailure": {
+      "path": "DiagnosticsLocal/security-readiness-repair-nov1/security-failure-before-refresh.json",
+      "at": "2026-11-01T07:21:24.047Z"
+    },
+    "securityReady": {
+      "path": "DiagnosticsLocal/security-readiness-repair-nov1/repaired-security-check.json",
+      "at": "2026-11-01T07:23:36.804Z"
+    }
+  },
+  "sourceManifest": [
+    {
+      "path": ".local/api-booking/api-first-journals/34b4196e8209b03effb87f8c925e7ecc1d4497c2a063857a9b24a77383abcf39/34b4196e8209b03effb87f8c925e7ecc1d4497c2a063857a9b24a77383abcf39.json",
+      "bytes": 651,
+      "sha256": "2c7d96cc23e5aac82d18d7e06c24f8f5256fc325b837fe3fb06812580fb8c1cb"
+    },
+    {
+      "path": ".local/api-booking/api-first-journals/34b4196e8209b03effb87f8c925e7ecc1d4497c2a063857a9b24a77383abcf39/fan-out/b1d3cc5cfdec30da272af5711043fca46c062d34b95e30e17fc2db6c7d904f05/39da859e721fd8504ba0069684c777465c59653e7d9872775ed7af5e2d7795c0/34b4196e8209b03effb87f8c925e7ecc1d4497c2a063857a9b24a77383abcf39.json",
+      "bytes": 2200,
+      "sha256": "300e9980c11665ab71c2709f4dc626f5340e83fa76d5d3552d755659a16c1352"
+    },
+    {
+      "path": ".local/api-booking/api-first-journals/34b4196e8209b03effb87f8c925e7ecc1d4497c2a063857a9b24a77383abcf39/fan-out/b1d3cc5cfdec30da272af5711043fca46c062d34b95e30e17fc2db6c7d904f05/39da859e721fd8504ba0069684c777465c59653e7d9872775ed7af5e2d7795c0/checkout-recovery-private.json",
+      "bytes": 5134,
+      "sha256": "c26b9fac9f9741963fc768afbd7ed96364b0ca7664698edf20e59b4af180ed31"
+    },
+    {
+      "path": ".local/api-booking/api-first-journals/34b4196e8209b03effb87f8c925e7ecc1d4497c2a063857a9b24a77383abcf39/fan-out/b1d3cc5cfdec30da272af5711043fca46c062d34b95e30e17fc2db6c7d904f05/7437c3ed92e7371e20f6accd3578921346b17808551dad550e21895ab0184c57/34b4196e8209b03effb87f8c925e7ecc1d4497c2a063857a9b24a77383abcf39.json",
+      "bytes": 2200,
+      "sha256": "8404c37f5615b7f5e53e6f69612a80a880c792b8f992a7809e92e66b01456939"
+    },
+    {
+      "path": ".local/api-booking/api-first-journals/34b4196e8209b03effb87f8c925e7ecc1d4497c2a063857a9b24a77383abcf39/fan-out/b1d3cc5cfdec30da272af5711043fca46c062d34b95e30e17fc2db6c7d904f05/7437c3ed92e7371e20f6accd3578921346b17808551dad550e21895ab0184c57/checkout-recovery-private.json",
+      "bytes": 5134,
+      "sha256": "ca2090352b6cbfa7cc16dc0387c94f63aa90de77fc8a30350027a77c3f4c6f8f"
+    },
+    {
+      "path": ".local/api-booking/api-first-journals/34b4196e8209b03effb87f8c925e7ecc1d4497c2a063857a9b24a77383abcf39/fan-out/b1d3cc5cfdec30da272af5711043fca46c062d34b95e30e17fc2db6c7d904f05/9372680af18848da411b85844ec79aa836d1598568d5d279bf1687eb79e4e905/34b4196e8209b03effb87f8c925e7ecc1d4497c2a063857a9b24a77383abcf39.json",
+      "bytes": 796,
+      "sha256": "654fed78e04ed308ccb132de569fefaef8f2696989bf02b6d33713ef3bee11f1"
+    },
+    {
+      "path": ".local/api-booking/api-first-journals/34c14a23cfdbd7f92d0cf0bb08bb891dafb37351d788104b0553f0a3aefc4836/34c14a23cfdbd7f92d0cf0bb08bb891dafb37351d788104b0553f0a3aefc4836.json",
+      "bytes": 651,
+      "sha256": "2e175709671e28037fc3626fe2a19ca965801072fbcb501a6d01730c5f1bef61"
+    },
+    {
+      "path": ".local/api-booking/api-first-journals/34c14a23cfdbd7f92d0cf0bb08bb891dafb37351d788104b0553f0a3aefc4836/fan-out/b1d3cc5cfdec30da272af5711043fca46c062d34b95e30e17fc2db6c7d904f05/1ee7899ccdd4dd69c68bacb642d741eb1b383ba3351f05d6921594939c3e0ea0/34c14a23cfdbd7f92d0cf0bb08bb891dafb37351d788104b0553f0a3aefc4836.json",
+      "bytes": 2200,
+      "sha256": "73e06afe07bdd269cdea5df2415097b9c72f5c5a528f97c472939594e323002c"
+    },
+    {
+      "path": ".local/api-booking/api-first-journals/34c14a23cfdbd7f92d0cf0bb08bb891dafb37351d788104b0553f0a3aefc4836/fan-out/b1d3cc5cfdec30da272af5711043fca46c062d34b95e30e17fc2db6c7d904f05/1ee7899ccdd4dd69c68bacb642d741eb1b383ba3351f05d6921594939c3e0ea0/checkout-recovery-private.json",
+      "bytes": 5134,
+      "sha256": "8ca0115c598183a3f9e0e86ade59b250439c13cbf513329a96f7f7dd11c08ad2"
+    },
+    {
+      "path": ".local/api-booking/api-first-journals/34c14a23cfdbd7f92d0cf0bb08bb891dafb37351d788104b0553f0a3aefc4836/fan-out/b1d3cc5cfdec30da272af5711043fca46c062d34b95e30e17fc2db6c7d904f05/5583b90303af6baa243454bd0289d840029bd628ff16e63e7173c40d0c9935d7/34c14a23cfdbd7f92d0cf0bb08bb891dafb37351d788104b0553f0a3aefc4836.json",
+      "bytes": 2200,
+      "sha256": "0f61ceabe9120679568de3b3821a90f7181d7209a8a681db55b91163e19cb756"
+    },
+    {
+      "path": ".local/api-booking/api-first-journals/34c14a23cfdbd7f92d0cf0bb08bb891dafb37351d788104b0553f0a3aefc4836/fan-out/b1d3cc5cfdec30da272af5711043fca46c062d34b95e30e17fc2db6c7d904f05/5583b90303af6baa243454bd0289d840029bd628ff16e63e7173c40d0c9935d7/checkout-recovery-private.json",
+      "bytes": 5134,
+      "sha256": "391da0dbeff51d871e66d578b787d33ff25d16a37b7e98a3034e1f616d5fd3f8"
+    },
+    {
+      "path": ".local/api-booking/api-first-journals/34c14a23cfdbd7f92d0cf0bb08bb891dafb37351d788104b0553f0a3aefc4836/fan-out/b1d3cc5cfdec30da272af5711043fca46c062d34b95e30e17fc2db6c7d904f05/5f5b71cb39688c825329806e1c0c9ba1c57304e585ce423f7ec1073c8107a63f/34c14a23cfdbd7f92d0cf0bb08bb891dafb37351d788104b0553f0a3aefc4836.json",
+      "bytes": 2200,
+      "sha256": "0b6eeaada25113270a78f99d4a7ebe55dc364ef7a0f28b4e63aa7c70163a38bc"
+    },
+    {
+      "path": ".local/api-booking/api-first-journals/34c14a23cfdbd7f92d0cf0bb08bb891dafb37351d788104b0553f0a3aefc4836/fan-out/b1d3cc5cfdec30da272af5711043fca46c062d34b95e30e17fc2db6c7d904f05/5f5b71cb39688c825329806e1c0c9ba1c57304e585ce423f7ec1073c8107a63f/checkout-recovery-private.json",
+      "bytes": 5134,
+      "sha256": "5886b6a5ccaa40aab34de9623df30b304b56f3e8855f14fd32e5edca8f65ef31"
+    },
+    {
+      "path": ".local/api-booking/api-first-journals/cbccdd70162f48145b529da0e4ffc192d8ec37dfc2aab2ede0b983c7485acf3f/cbccdd70162f48145b529da0e4ffc192d8ec37dfc2aab2ede0b983c7485acf3f.json",
+      "bytes": 651,
+      "sha256": "1662408782687958b04cf8c9129d9d57274bd8ab35da984e31f083cf130bd2ac"
+    },
+    {
+      "path": ".local/api-booking/api-first-journals/cbccdd70162f48145b529da0e4ffc192d8ec37dfc2aab2ede0b983c7485acf3f/fan-out/b1d3cc5cfdec30da272af5711043fca46c062d34b95e30e17fc2db6c7d904f05/9d3dec761fafb139d53ab0c77d637e287f2aa9f13174bc4331a33799ba3cbda4/cbccdd70162f48145b529da0e4ffc192d8ec37dfc2aab2ede0b983c7485acf3f.json",
+      "bytes": 2200,
+      "sha256": "9e90b7dfb406e51ef431c2ccae36ee9a9c50963897b612dc57f248d5620be9d8"
+    },
+    {
+      "path": ".local/api-booking/api-first-journals/cbccdd70162f48145b529da0e4ffc192d8ec37dfc2aab2ede0b983c7485acf3f/fan-out/b1d3cc5cfdec30da272af5711043fca46c062d34b95e30e17fc2db6c7d904f05/9d3dec761fafb139d53ab0c77d637e287f2aa9f13174bc4331a33799ba3cbda4/checkout-recovery-private.json",
+      "bytes": 5134,
+      "sha256": "d57389b46756175bf0020f504325c0c9bd853b3c0ac895d810362680ac457a52"
+    },
+    {
+      "path": ".local/api-booking/api-first-journals/cbccdd70162f48145b529da0e4ffc192d8ec37dfc2aab2ede0b983c7485acf3f/fan-out/b1d3cc5cfdec30da272af5711043fca46c062d34b95e30e17fc2db6c7d904f05/cc5c12cc669ed72d5d872503d86b3fdd540b1321b77a8314017260ca7798bacb/cbccdd70162f48145b529da0e4ffc192d8ec37dfc2aab2ede0b983c7485acf3f.json",
+      "bytes": 2200,
+      "sha256": "17bee85f01337d107d8795ce47f77c50d400f2210e13dac6a411dd7a8faf4ddd"
+    },
+    {
+      "path": ".local/api-booking/api-first-journals/cbccdd70162f48145b529da0e4ffc192d8ec37dfc2aab2ede0b983c7485acf3f/fan-out/b1d3cc5cfdec30da272af5711043fca46c062d34b95e30e17fc2db6c7d904f05/cc5c12cc669ed72d5d872503d86b3fdd540b1321b77a8314017260ca7798bacb/checkout-recovery-private.json",
+      "bytes": 5134,
+      "sha256": "cd1897007918750a894555dd97411765a26f8423bf2cf0de8805356d9261d707"
+    },
+    {
+      "path": ".local/api-booking/precision-races/63a216a2-cc04-42bc-b982-df174537634d-phase3-freeze.json",
+      "bytes": 3459,
+      "sha256": "778019dd43ae6dd3c95822136b19fa3ce37c4847816e24b04ac3e8c21fb2b3ee"
+    },
+    {
+      "path": ".local/api-booking/run-progress/63a216a2-cc04-42bc-b982-df174537634d.ndjson",
+      "bytes": 72787,
+      "sha256": "4014ae8e66219bf9eaf8f850d9e7efc9c0bae3029cb8caf8b5f73749c5c9b4c3"
+    },
+    {
+      "path": ".local/release-forensics/63a216a2-cc04-42bc-b982-df174537634d/critical-path.ndjson",
+      "bytes": 13060,
+      "sha256": "05dafc5304c78b5b016444b7aac1e6eaf5e470059c19703d40bb6557f3855793"
+    },
+    {
+      "path": ".local/release-forensics/63a216a2-cc04-42bc-b982-df174537634d/provider-trace.ndjson",
+      "bytes": 4313,
+      "sha256": "afa3805635d12f5f9ebdee69911c28974838a0ca3af422f95d780e92a7c9eaba"
+    },
+    {
+      "path": ".local/release-forensics/63a216a2-cc04-42bc-b982-df174537634d/summary.json",
+      "bytes": 10634,
+      "sha256": "e7ac69c327cd66262c224b25be93d15ff333e894631a20973c6f4b62d6a1d519"
+    },
+    {
+      "path": ".local/shotgun-rehearsal/2026-11-01-court6-browser-b/result.json",
+      "bytes": 1642,
+      "sha256": "5f42a8bdc3381089420ec8cd01849b61af352467a442f1feaac1c42183e9139d"
+    },
+    {
+      "path": ".local/shotgun-rehearsal/2026-11-01T07-29-38-183Z-court7-b/fresh-tab-recovery.json",
+      "bytes": 503,
+      "sha256": "ea795a0393bbec633a85bc9b64e06458aaae55df725e1cf328072d4c0b2ad10c"
+    },
+    {
+      "path": ".local/shotgun-rehearsal/2026-11-01T07-29-38-183Z-court7-b/result.json",
+      "bytes": 3664,
+      "sha256": "e5db4f381ba2074c98ccf5b71124b4468dcd62e952b784503051f978d0e9fed1"
+    },
+    {
+      "path": ".local/slot-watch/2026-11-03_311dea90-dbb3-4284-9520-be292e2673a3.ndjson",
+      "bytes": 156278,
+      "sha256": "67d07d8834ea6ab7bb45abdbe80d94ee6b1ecfb5fa248bba8bef854b405c60f9"
+    },
+    {
+      "path": "DiagnosticsLocal/installed-repair-nov1/hotfix-manifest.json",
+      "bytes": 1572,
+      "sha256": "e4fddfb7bf9847a7c3aa0b7df64a9d5872042001e8e0cf5cf2334de69e9b5508"
+    },
+    {
+      "path": "DiagnosticsLocal/installed-repair-nov1/installed-offline-replay.json",
+      "bytes": 2020,
+      "sha256": "f5b6cb9d639972ea9f12fc14c3924390b0e13d523f3dad4590eb2bd80cfd4212"
+    },
+    {
+      "path": "DiagnosticsLocal/nov3-extended-live-test/read-only-qr-review.json",
+      "bytes": 1327,
+      "sha256": "0ec5dc398a445faa1d34d06fd635e096bc6b2b2cf3b0523b50f52a68c52da911"
+    },
+    {
+      "path": "DiagnosticsLocal/recovery-nov1/provider-status.json",
+      "bytes": 1520,
+      "sha256": "59609bcb5bd67965281199519cdd4ee5e7a046b9e92d59f7c04fa711f6d40fb8"
+    },
+    {
+      "path": "DiagnosticsLocal/security-helper-nov1/hotfix-manifest.json",
+      "bytes": 1438,
+      "sha256": "a09fbb1e66f3e535216379810e9513a25c077f07a2845387398030e7212dfc99"
+    },
+    {
+      "path": "DiagnosticsLocal/security-readiness-repair-nov1/repaired-security-check.json",
+      "bytes": 955,
+      "sha256": "3bc69e84db9baa75807efceeb44c74628741bbdc7785fa20cd9453acab664cb6"
+    },
+    {
+      "path": "DiagnosticsLocal/security-readiness-repair-nov1/security-failure-before-refresh.json",
+      "bytes": 698,
+      "sha256": "9fa621866236ac60ebd31e529b4b35f3a13ce881c7756f197a0399609a453ffa"
+    },
+    {
+      "path": "DiagnosticsLocal/shotgun-court6-rehearsal/summary-hotfix-manifest.json",
+      "bytes": 1255,
+      "sha256": "1e22aec01d6a63e48e69e84a0824675d94efc43d339ddf0a0d11acd447944d03"
+    }
+  ]
+}
