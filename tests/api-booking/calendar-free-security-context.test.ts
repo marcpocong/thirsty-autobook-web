@@ -4,11 +4,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { CalendarFreeSecurityError, calendarFreeSecurityContext } from '../../src/api-booking/calendar-free-security-context.js';
 
 /** Runs the real page script against a simulated Onda runtime whose two helpers the test controls. */
-function simulatedPage(helpers: { challenge: () => Promise<string | null>; fingerprint: () => Promise<string | null> }) {
+function simulatedPage(helpers: { challenge: () => Promise<string | null>; fingerprint: () => Promise<string | null>; minified?: boolean }) {
   const evaluate = vi.fn(async (source: string) => {
     const window = { TURBOPACK: { push: (entry: unknown[]) => {
       if (typeof entry[2] === 'function') (entry[2] as (module: unknown) => void)({ i: (id: number) =>
-        id === 709892 ? { getPublicBookingTurnstileToken: helpers.challenge } : id === 139691 ? { getPublicFingerprintId: helpers.fingerprint } : {} });
+        id === 709892 ? { [helpers.minified ? "u" : "getPublicBookingTurnstileToken"]: helpers.challenge } : id === 139691 ? { [helpers.minified ? "f" : "getPublicFingerprintId"]: helpers.fingerprint } : {} });
     } } };
     return runInNewContext(source, { window, setTimeout, clearTimeout, Promise, Math });
   });
@@ -17,6 +17,11 @@ function simulatedPage(helpers: { challenge: () => Promise<string | null>; finge
 }
 
 describe('calendar-free checkout verification preparation', () => {
+  it('accepts the current Onda minified exports while invoking both genuine helpers', async () => {
+    const challenge = vi.fn(async () => 'fresh-token'), fingerprint = vi.fn(async () => 'visitor');
+    await expect(calendarFreeSecurityContext(simulatedPage({ challenge, fingerprint, minified: true }))()).resolves.toEqual({ turnstileToken: 'fresh-token', publicFingerprint: 'visitor' });
+    expect(challenge).toHaveBeenCalledOnce(); expect(fingerprint).toHaveBeenCalledOnce();
+  });
   it('invokes Onda loaded helpers without injecting a custom challenge', async () => {
     const evaluate = vi.fn(async (_source: string) =>
       ({ turnstileToken: 'synthetic-fresh-token', publicFingerprint: 'synthetic-visitor' }));
@@ -26,8 +31,8 @@ describe('calendar-free checkout verification preparation', () => {
       ] }), evaluate } as unknown as Page;
     const provider = calendarFreeSecurityContext(page);
     await expect(provider()).resolves.toEqual({ turnstileToken: 'synthetic-fresh-token', publicFingerprint: 'synthetic-visitor' });
-    expect(evaluate).toHaveBeenCalledWith(expect.stringContaining('module.i(709892).getPublicBookingTurnstileToken'));
-    expect(evaluate.mock.calls[0]![0]).toContain('module.i(139691).getPublicFingerprintId');
+    expect(evaluate).toHaveBeenCalledWith(expect.stringContaining('challengeModule.getPublicBookingTurnstileToken ?? challengeModule.u'));
+    expect(evaluate.mock.calls[0]![0]).toContain('fingerprintModule.getPublicFingerprintId ?? fingerprintModule.f');
     await expect(provider()).rejects.toThrow('SECURITY_CONTEXT_ALREADY_USED');
   });
 

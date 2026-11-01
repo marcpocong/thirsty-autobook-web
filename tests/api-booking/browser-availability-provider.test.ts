@@ -12,6 +12,21 @@ beforeEach(async()=>{page=await browser.newPage();await installAvailabilityHelpe
   ?r.fulfill({contentType:'text/html',body:'<h1>Offline intercepted Onda</h1>'}):r.abort());await page.goto('https://app.onda.fit/book/thirsty-pickle');});
 afterEach(async()=>{await page.close();});afterAll(async()=>{await browser.close();});
 describe('normal browser-session availability',()=>{
+  it('uses the current minified fingerprint export for a single availability GET',async()=>{
+    await page.evaluate(()=>{
+      const scope=window as unknown as {TURBOPACK:{push:(chunk:unknown[])=>void};availabilityHelperCalls:number};
+      scope.TURBOPACK={push(chunk){if(typeof chunk[2]==='function')chunk[2]({i:()=>({f:async()=>{scope.availabilityHelperCalls++;return 'synthetic-current-fingerprint';}})});}};
+    });
+    const requests:string[]=[];
+    await page.route('**/date-availability?*',async route=>{
+      requests.push(route.request().method());
+      expect(route.request().headers()['x-onda-public-fingerprint']).toBe('synthetic-current-fingerprint');
+      await route.fulfill({json:availabilityFixture(date)});
+    });
+    await expect(new OndaBrowserAvailabilityProvider(page).getAvailability({startDate:date,endDate:date})).resolves.toMatchObject({fixtureKind:'live'});
+    expect(requests).toEqual(['GET']);
+    expect(await page.evaluate(()=>(window as unknown as {availabilityHelperCalls:number}).availabilityHelperCalls)).toBe(1);
+  });
   it('makes one same-origin GET, without security header replay or checkout calls',async()=>{
     const requests:Array<{method:string;path:string;headers:string[]}>=[];
     await page.route('**/date-availability?*',async r=>{requests.push({method:r.request().method(),path:new URL(r.request().url()).pathname,headers:Object.keys(r.request().headers())});await r.fulfill({json:availabilityFixture(date)});});
