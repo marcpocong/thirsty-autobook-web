@@ -658,7 +658,7 @@ try {
       await session.page.getByText('QRPH', { exact: true }).first().waitFor({ state: 'visible', timeout: 20_000 });
       const body = await session.page.locator('body').innerText();
       assertQrOrderSummary(body, chunkPlan);
-      await session.page.locator('canvas').first().waitFor({state:'visible',timeout:20_000});
+      await session.page.locator('canvas, img[alt="Payment QR code"]').first().waitFor({state:'visible',timeout:20_000});
       await showWorkerPage(session.page,workerId);
       stage('OFFICIAL_QRPH_HANDOFF', { ...workerTiming(), ...bookingTarget, bookingId: hold.bookingIds[0]!, bookingNo,
         holdExpiresAt: hold.holdExpiresAt, price: chunkPlan.totalPrice });
@@ -735,7 +735,7 @@ try {
       await session.page.getByText('QRPH',{exact:true}).first().waitFor({state:'visible',timeout:20_000});
       const body=await session.page.locator('body').innerText();
       assertQrOrderSummary(body,plan);
-      await session.page.locator('canvas').first().waitFor({state:'visible',timeout:20_000});
+      await session.page.locator('canvas, img[alt="Payment QR code"]').first().waitFor({state:'visible',timeout:20_000});
       await showWorkerPage(session.page,workerId);
       stage('OFFICIAL_QRPH_HANDOFF',{...workerTiming(),...bookingTarget,bookingId:hold.bookingIds[0]!,bookingNo,
         holdExpiresAt:hold.holdExpiresAt,price:plan.totalPrice});

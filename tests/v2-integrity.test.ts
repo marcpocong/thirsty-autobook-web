@@ -10,6 +10,7 @@ import { compileObjective,defaultObjective,withStrategy } from '../src/booking-o
 import { readPossibleHolds } from '../src/api-booking/possible-hold.js';
 import { buildReleaseForensics } from '../src/release-forensics.js';
 import { buildReleaseLabSummary } from '../src/release-lab-analysis.js';
+import { VirtualClock } from './helpers/virtual-clock.js';
 
 describe('V2 availability and settlement integrity',()=>{
   it('retries transient failures only after bounded backoff, recovers on success, and respects refusal',()=>{
@@ -42,10 +43,11 @@ describe('V2 availability and settlement integrity',()=>{
   it('counts a sent HTTP failure once and locally blocked reads as NOT SENT',async()=>{
     const directory=await mkdtemp(join(tmpdir(),'v2-watch-'));
     try{
-      const policy=new AvailabilityReadPolicy();let sent=0;
-      const watch=new SlotWatch({date:'2026-10-24',releaseMs:Date.now()+10,directory,schedule:{availability:[0,15,30],bookings:[]},
+      const clock=new VirtualClock(Date.parse('2026-10-22T00:00:00Z'));
+      const policy=new AvailabilityReadPolicy(clock.nowFn);let sent=0;
+      const watch=new SlotWatch({date:'2026-10-24',releaseMs:clock.now+10,directory,now:clock.nowFn,sleep:clock.sleep,schedule:{availability:[0,15,30],bookings:[]},
         readAvailability:async()=>{policy.beforeRead();sent++;const error=new LiveAvailabilityError('AVAILABILITY_HTTP_FAILED',403,true);policy.failure(error);throw error;}});
-      const summary=await watch.done;
+      const summary=await clock.runUntil(watch.done);
       expect(sent).toBe(1);expect(summary.availability).toMatchObject({launched:1,failed:1,notLaunched:2,answered:0});
       const log=await readFile(summary.logPath,'utf8');expect(log).toContain('AVAILABILITY_PROVIDER_REFUSED');expect(log).toContain('"httpStatus":403');
     }finally{await rm(directory,{recursive:true,force:true});}
