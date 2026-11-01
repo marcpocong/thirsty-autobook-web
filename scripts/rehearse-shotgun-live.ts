@@ -6,7 +6,9 @@ import { pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 import { chromium } from 'playwright';
 import { z } from 'zod';
-import { ShotgunRehearsalSchema, runShotgunLiveRehearsal, type productionRehearsalEngine } from '../src/shotgun-live-rehearsal.js';
+import { ShotgunRehearsalSchema, runShotgunLiveRehearsal, prepareRehearsalSecurity,
+  assertRehearsalSecurityReady, type productionRehearsalEngine } from '../src/shotgun-live-rehearsal.js';
+import { reuseRehearsalSecurity } from '../src/shotgun-rehearsal-readiness.js';
 import { OndaBrowserAvailabilityProvider } from '../src/api-booking/browser-availability-provider.js';
 import { queryGoogleClockConsensus } from '../src/network-clock.js';
 
@@ -34,10 +36,11 @@ async function main() {
   const plannerModule = await installed('api-booking/booking-planner.js'), parserModule = await installed('api-booking/availability-parser.js');
   const customerModule = await installed('api-booking/local-customer.js'), lockModule = await installed('api-booking/api-automation-lock.js');
   const clockModule = await installed('release-clock.js'), reviewModule = await installed('lock-browser.js');
+  const windowModule = await installed('browser-window.js');
   const identity = browserModule.browserIdentity(auth.request.worker);
   await browserModule.verifyDedicatedChromeAsync(identity);
   const browser = await chromium.connectOverCDP(identity.cdpUrl, { timeout: 10_000 });
-  let lock: any, outcome: any, held = false, dispatched = false;
+  let lock: any, outcome: any, held = false, dispatched = false, armingStarted = false;
   const events: unknown[] = [], observations: unknown[] = [];
   let firstHandoff = false, recoveredInFreshTab = false;
   const abort = new AbortController();
@@ -51,40 +54,65 @@ async function main() {
     const schedules = pages.filter(p => p.url() === 'https://app.onda.fit/book/thirsty-pickle');
     if (schedules.length !== 1) throw Error('ONDA_TAB_AMBIGUOUS_OR_MISSING');
     const page = schedules[0]!, r = auth.request, query = { startDate: r.date, endDate: r.date };
+    const show = () => windowModule.showWorkerPage(page,r.worker);
+    // Production preparation loads a fresh venue page. Do not reuse helper/widget
+    // state left behind by an earlier acquisition in the same page runtime.
+    await page.reload({waitUntil:'domcontentloaded',timeout:30_000});
+    await page.getByTestId('public-booking-hero-title').waitFor({state:'visible',timeout:30_000});
     const customer = customerModule.loadLocalCheckoutCustomer(r.worker);
     const envelope = await new OndaBrowserAvailabilityProvider(page, { wing: 'MANGO' }).getAvailability(query);
     const snapshot = parserModule.parseAvailability(envelope.raw, { ...query, wing: 'MANGO', capturedAt: envelope.capturedAt,
       fixtureKind: 'live', label: envelope.label, now: new Date(), maximumAgeMs: 15_000 });
-    const plan = plannerModule.planBooking(snapshot, { wing: 'MANGO', mode: 'standard', targetDate: r.date, durationHours: r.duration,
+    const preferences = { wing: 'MANGO', mode: 'standard', targetDate: r.date, durationHours: r.duration,
       preferredStartTimes: [r.start], fallbackStartTimes: [], courtPriority: [r.court], fallbackCourts: [],
-      courtCount: 1, exactCourts: [[r.court]], maximumTotalPrice: r.maximum, currency: 'PHP' });
+      courtCount: 1, exactCourts: [[r.court]], maximumTotalPrice: r.maximum, currency: 'PHP' };
+    const plan = plannerModule.planBooking(snapshot, preferences);
     const key = journalModule.DurableSubmissionJournal.key('5f8786bd-dc61-4509-b893-74cda8f783f7', plan.courts[0].spaceId, r.date, r.start, plan.endTime);
     const journalRoot = resolve('.local/api-booking/api-first-journals'), journalDirectory = join(journalRoot, key);
     if (existsSync(join(journalDirectory, key + '.json'))) throw Error('DUPLICATE_LOGICAL_BOOKING_BLOCKED');
-    const consensus = await queryGoogleClockConsensus();
-    if (consensus.quality !== 'GOOD' || consensus.uncertaintyMs > 50) throw Error('REHEARSAL_CLOCK_NOT_VERIFIED');
-    const clock = clockModule.TrustedReleaseClock.fromOffset(consensus.offsetMs, { method: consensus.method,
-      sampleCount: consensus.sampleCount, uncertaintyMs: consensus.uncertaintyMs, quality: consensus.quality });
+    let observeNow = Date.now, observeClock = 'HOST_WALL';
     await writeFile(join(directory, 'execution-claimed.json'), JSON.stringify({ at: new Date().toISOString(), request: r,
       engineHashes: auth.engineHashes, purpose: 'REHEARSAL_NOT_OFFICIAL_08AM_RELEASE', checkoutBudget: 1 }), { flag: 'wx' });
     lock = await lockModule.ApiAutomationLock.acquire('standard', [r.worker]);
-    const transport = new transportModule.OndaBrowserSessionTransport(page, securityModule.calendarFreeSecurityContext(page),
-      async (response: any) => recoveryModule.saveCheckoutRecovery(journalDirectory, response, plan, r.worker, new Date(clock.nowMs())), {},
+    const transport = new transportModule.OndaBrowserSessionTransport(page, () => securityModule.calendarFreeSecurityContext(page)(),
+      async (response: any) => recoveryModule.saveCheckoutRecovery(journalDirectory, response, plan, r.worker, new Date(observeNow())),
+      { onHumanVerificationRequired: async () => { events.push({kind:'human-verification-required',worker:r.worker}); await show(); },
+        onHumanVerificationCompleted: async () => { events.push({kind:'human-verification-completed',worker:r.worker}); } },
       (event: any) => {
         if (event.event === 'CHECKOUT_HTTP_POST_INITIATED') dispatched = true;
-        observations.push({ event: event.event, at: clock.nowMs(), ...(typeof event.status === 'number' ? { status: event.status } : {}) });
+        const details = Object.fromEntries(['securitySource','durationMs','failureCategory','challengeFrame','failedHelper','statusCode','preparedContextAgeMs']
+          .filter(key => event[key] !== undefined).map(key => [key,event[key]]));
+        observations.push({ event: event.event, at: observeNow(), clockDomain:observeClock, ...details });
       });
     process.env.ONDA_CALENDAR_FREE_CHECKOUT = 'APPROVED_ONE_SHOT';
     process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT = 'SUPERVISED_ONE_SHOT';
-    const triggerMs = Math.ceil(clock.nowMs() + 30_000);
+    await prepareRehearsalSecurity(transport, show, state => events.push({kind:'readiness',state}));
+    // A rehearsal may choose its anchor after readiness; the actual 08:00 release never moves.
+    // Recheck published cells/rates after any long acquisition, before freezing/arming.
+    const fresh = await new OndaBrowserAvailabilityProvider(page, { wing:'MANGO' }).getAvailability(query);
+    const freshSnapshot = parserModule.parseAvailability(fresh.raw, { ...query,wing:'MANGO',capturedAt:fresh.capturedAt,
+      fixtureKind:'live',label:fresh.label,now:new Date(),maximumAgeMs:15_000 });
+    const freshPlan = plannerModule.planBooking(freshSnapshot, preferences);
+    if (JSON.stringify(freshPlan.chunks) !== JSON.stringify(plan.chunks) || freshPlan.totalPrice !== plan.totalPrice)
+      throw Error('REHEARSAL_PLAN_CHANGED_DURING_PREPARATION');
+    const consensus = await queryGoogleClockConsensus();
+    if (consensus.quality !== 'GOOD' || consensus.uncertaintyMs > 50) throw Error('REHEARSAL_CLOCK_NOT_VERIFIED');
+    const clock = clockModule.TrustedReleaseClock.fromOffset(consensus.offsetMs, { method: consensus.method,
+      sampleCount: consensus.sampleCount,uncertaintyMs:consensus.uncertaintyMs,quality:consensus.quality });
+    observeNow = () => clock.nowMs();
+    observeClock = 'NETWORK_MONOTONIC_ANCHOR';
+    assertRehearsalSecurityReady(transport);
+    const triggerMs = Math.ceil(clock.nowMs() + 8_000);
     await writeFile(join(directory, 'prepared-plan.json'), JSON.stringify({ request: r, amount: plan.totalPrice,
       triggerMs, triggerKind: 'REHEARSAL_ANCHOR', key, clockEvidence: clock.evidence }, null, 2));
+    armingStarted = true;
     outcome = await runShotgunLiveRehearsal(r, plan, {
+      security: transport,
       engine: { freezePrecisionRace: precision.freezePrecisionRace, armPrecisionRace: armedModule.armPrecisionRace,
         dispatchArmedPrecisionRace: armedModule.dispatchArmedPrecisionRace, disarmUnfired: armedModule.disarmUnfired } as typeof productionRehearsalEngine,
       arm: { lock, releaseMs: triggerMs, journalRoot, now: () => clock.nowMs(), customerFor: () => customer },
-      dispatch: { clock, prewarmLeadMs: 25_000, isAborted: () => abort.signal.aborted,
-        transportFor: () => transport, prewarm: async () => transport.prepareCheckoutContext(),
+      dispatch: { clock, prewarmLeadMs: 5_000, isAborted: () => abort.signal.aborted,
+        transportFor: () => transport, prewarm: async () => reuseRehearsalSecurity(transport),
         afterFire: async () => lock.dispatching(), onEvent: e => events.push(e),
         onVerifiedHold: async (_attempt, verified) => {
           held = true; await lock.held(verified.holdExpiresAt);
@@ -104,7 +132,7 @@ async function main() {
     console.log(JSON.stringify({ results: safe.results, firstHandoff, recoveredInFreshTab, paymentAutomated: false }));
     if (!recoveredInFreshTab) process.exitCode = 1;
   } finally {
-    if (lock && !held && outcome && outcome.results.every((x: any) => ['NOT_DISPATCHED','REJECTED','WINDOW_MISSED'].includes(x.state))) await lock.release();
+    if (lock && !held && (!armingStarted || outcome && outcome.results.every((x: any) => ['NOT_DISPATCHED','REJECTED','WINDOW_MISSED'].includes(x.state)))) await lock.release();
     await writeFile(join(directory, 'exit-evidence.json'), JSON.stringify({ at: new Date().toISOString(), held, dispatched,
       firstHandoff, recoveredInFreshTab, paymentAutomated: false, events, observations }, null, 2));
     await browser.close();

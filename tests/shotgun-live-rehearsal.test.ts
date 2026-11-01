@@ -2,11 +2,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ShotgunRehearsalSchema, runShotgunLiveRehearsal, productionRehearsalEngine } from '../src/shotgun-live-rehearsal.js';
+import { ShotgunRehearsalSchema, runShotgunLiveRehearsal, productionRehearsalEngine,
+  prepareRehearsalSecurity, assertRehearsalSecurityReady } from '../src/shotgun-live-rehearsal.js';
 import { prooflessReleasePlan } from '../src/api-booking/proofless-checkout.js';
 import { consumeSubmissionPermit } from '../src/api-booking/durable-submission-journal.js';
 import { TrustedReleaseClock } from '../src/release-clock.js';
 import { assertQrOrderSummary } from '../src/api-booking/qr-order-summary.js';
+import { reuseRehearsalSecurity } from '../src/shotgun-rehearsal-readiness.js';
 
 const request = { kind: 'SHOTGUN_LIVE_REHEARSAL', date: '2026-11-03', wing: 'MANGO', court: 6, worker: 'B',
   start: '08:00', duration: 3, maximum: 1800, attempts: 1, payment: false } as const;
@@ -32,6 +34,7 @@ describe('bounded production Shotgun rehearsal', () => {
       const releaseMs = Math.ceil(clock.nowMs()+5100), calls:string[]=[];
       const customer={clientId:'offline-client',customerId:'offline-customer',customerEmail:'offline@example.invalid',customerPhone:'0000000000',customerFirstName:'Offline',customerLastName:'Test'};
       const result = await runShotgunLiveRehearsal(request,plan,{
+        security:{preparedContextAgeMs:()=>0},
         arm:{journalRoot:directory,releaseMs,now:()=>clock.nowMs(),customerFor:worker=>{expect(worker).toBe('B');return customer;}},
         dispatch:{clock,prewarmLeadMs:5000,isAborted:()=>false,prewarm:async()=>{calls.push('prepare');},
           transportFor:worker=>({publicCheckoutProofless:async(body,permit,options)=>{
@@ -49,6 +52,49 @@ describe('bounded production Shotgun rehearsal', () => {
       expect(result.results[0]?.attempt.dispatchTimingPolicy).toBe('SHOTGUN_STRICT');
     } finally {await rm(directory,{recursive:true,force:true});}
   },15000);
+});
+
+describe('rehearsal readiness before arming',()=>{
+  it('refuses stale prewarm context without starting a second acquisition',async()=>{
+    const prepare=vi.fn();
+    await expect(reuseRehearsalSecurity({preparedContextAgeMs:()=>15001,prepareCheckoutContext:prepare})).rejects.toThrow('REHEARSAL_SECURITY_NOT_READY');
+    expect(prepare).not.toHaveBeenCalled();
+  });
+  it('reuses fresh prepared context with a conservative freshness guard',async()=>{
+    const prepare=vi.fn(async()=>{});
+    await reuseRehearsalSecurity({preparedContextAgeMs:()=>1000,prepareCheckoutContext:prepare});
+    expect(prepare).toHaveBeenCalledExactlyOnceWith(false,20000);
+  });
+  it('waits for genuine preparation, surfaces the browser first, and never treats pending as ready',async()=>{
+    const calls:string[]=[], states:string[]=[];
+    let finish!:()=>void, age:number|undefined;
+    const pending=new Promise<void>(resolve=>{finish=resolve;});
+    const transport={preparedContextAgeMs:()=>age,prepareCheckoutContext:async()=>{calls.push('prepare');await pending;age=0;}};
+    const ready=prepareRehearsalSecurity(transport,async()=>{calls.push('show');},state=>states.push(state));
+    await Promise.resolve();await Promise.resolve();
+    expect(calls).toEqual(['show','prepare']);expect(states).toEqual(['PREPARING']);
+    expect(()=>assertRehearsalSecurityReady(transport)).toThrow('REHEARSAL_SECURITY_NOT_READY');
+    finish();await ready;expect(states).toEqual(['PREPARING','READY']);
+  });
+  it('propagates verification failure without declaring readiness',async()=>{
+    const states:string[]=[];
+    await expect(prepareRehearsalSecurity({preparedContextAgeMs:()=>undefined,prepareCheckoutContext:async()=>{throw Error('ONDA_SECURITY_HELPER_TIMEOUT');}},async()=>{},state=>states.push(state)))
+      .rejects.toThrow('ONDA_SECURITY_HELPER_TIMEOUT');
+    expect(states).toEqual(['PREPARING','FAILED']);
+  });
+  it.each([undefined,NaN,-1,15001])('refuses an absent, invalid or stale context before freezing: %s',async age=>{
+    const freeze=vi.fn(),engine={...productionRehearsalEngine,freezePrecisionRace:freeze};
+    const deps={engine,security:{preparedContextAgeMs:()=>age},arm:{releaseMs:Date.now()+8000,now:Date.now},dispatch:{}} as unknown as Parameters<typeof runShotgunLiveRehearsal>[2];
+    await expect(runShotgunLiveRehearsal(request,plan,deps)).rejects.toThrow('REHEARSAL_SECURITY_NOT_READY');
+    expect(freeze).not.toHaveBeenCalled();
+  });
+  it('checks freshness again between freezing and durable arming',async()=>{
+    const arm=vi.fn();let reads=0;
+    const deps={engine:{...productionRehearsalEngine,armPrecisionRace:arm},security:{preparedContextAgeMs:()=>++reads===1?0:15001},
+      arm:{releaseMs:Date.now()+8000,now:Date.now},dispatch:{}} as unknown as Parameters<typeof runShotgunLiveRehearsal>[2];
+    await expect(runShotgunLiveRehearsal(request,plan,deps)).rejects.toThrow('REHEARSAL_SECURITY_NOT_READY');
+    expect(arm).not.toHaveBeenCalled();
+  });
 });
 
 describe('exact hourly official QR summary',()=>{

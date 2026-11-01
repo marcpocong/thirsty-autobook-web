@@ -10,4 +10,12 @@ The rehearsal accepts exactly one Mango target, one assigned worker, 1-3 hours, 
 
 The source wrapper calls the canonical installed freezePrecisionRace, armPrecisionRace and dispatchArmedPrecisionRace functions with SHOTGUN_STRICT. A future trigger is labelled as a rehearsal anchor, never as the official release. The result includes installed module hashes, strict dispatch state and safe observations. A validated hold retains the production lock and must pass both the initial official QR handoff and restoration from the saved private response in a fresh tab. Tokens and private responses are not printed.
 
+Genuine security preparation completes before the rehearsal anchor is chosen and before any target journal is armed. The clean venue page is loaded fresh, matching production preparation; selected/held pages are not discarded. The browser is surfaced first; a visible human-verification prompt is surfaced again without being solved automatically. Preparation failure stops before arming. Published cells/rates and the trusted clock are checked again after preparation. The context must be at most 15 seconds old before freezing, arming and the dispatcher prewarm callback. Prewarm reuses that same context instead of starting another challenge against a countdown. The test anchor is eight seconds ahead after these checks; the actual scheduled 08:00 release deadline is never moved or relaxed.
+
+For genuine security preparation alone, with both booking routes blocked and no reservation permit, authorization claim, armer or dispatcher invoked:
+
+    .local/runtime/node.exe --import tsx Source/scripts/check-shotgun-rehearsal-security.ts B
+
+This discards the acquired context when the check process ends. A successful security-only check is not a live booking, recovery test or release-readiness guarantee.
+
 A rehearsal is not a complete recreation of 08:00 contention, multi-attempt fan-out, priority/observer topology or the saved production preparation lead. One successful attempt does not establish full release readiness. An unsent failure is not automatically retried. Pending/unknown submissions retain their authoritative journal status.

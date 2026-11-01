@@ -4,6 +4,8 @@ import { armPrecisionRace, dispatchArmedPrecisionRace, disarmUnfired, type ArmDe
 import type { BookingPlan } from './api-booking/types.js';
 import { DurableSubmissionJournal } from './api-booking/durable-submission-journal.js';
 import { FACILITY_ID } from './court-registry.js';
+import { assertRehearsalSecurityReady, type RehearsalSecurityTransport } from './shotgun-rehearsal-readiness.js';
+export { prepareRehearsalSecurity, assertRehearsalSecurityReady } from './shotgun-rehearsal-readiness.js';
 
 /** Separate opt-in rehearsal; never changes the production live-now refusal. */
 export const ShotgunRehearsalSchema = z.object({
@@ -18,6 +20,7 @@ export const productionRehearsalEngine = { freezePrecisionRace, armPrecisionRace
 /** Injecting an installed engine binds the rehearsal to those exact runtime modules. */
 export async function runShotgunLiveRehearsal(input: unknown, plan: BookingPlan, deps: {
   engine?: typeof productionRehearsalEngine; arm: ArmDeps; dispatch: ArmedDispatchDeps;
+  security: Pick<RehearsalSecurityTransport,'preparedContextAgeMs'>;
 }) {
   const r = ShotgunRehearsalSchema.parse(input), court = plan.courts[0];
   if (plan.mode !== 'standard' || plan.targetDate !== r.date || plan.startTime !== r.start ||
@@ -28,6 +31,7 @@ export async function runShotgunLiveRehearsal(input: unknown, plan: BookingPlan,
       !court.slots.every(s => s.isAvailable && s.price > 0) ||
       deps.arm.releaseMs - deps.arm.now() < 5_000 || deps.arm.releaseMs - deps.arm.now() > 90_000)
     throw Error('SHOTGUN_REHEARSAL_PLAN_REFUSED');
+  assertRehearsalSecurityReady(deps.security);
   const engine = deps.engine ?? productionRehearsalEngine;
   const race = engine.freezePrecisionRace(r.date, deps.arm.releaseMs, [{
     target: { court: r.court, start: r.start, durationHours: r.duration, workerId: r.worker,
@@ -35,6 +39,7 @@ export async function runShotgunLiveRehearsal(input: unknown, plan: BookingPlan,
       targetKey: DurableSubmissionJournal.key(FACILITY_ID, court.spaceId, r.date, r.start, plan.endTime) },
     plan, dispatchTimingPolicy: 'SHOTGUN_STRICT',
   }]);
+  assertRehearsalSecurityReady(deps.security);
   const armed = await engine.armPrecisionRace(race, deps.arm);
   try {
     if (armed.attempts.length !== 1 || armed.unarmed.length) throw Error('SHOTGUN_REHEARSAL_ARM_REFUSED');
