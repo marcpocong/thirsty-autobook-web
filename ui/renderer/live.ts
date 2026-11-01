@@ -1,5 +1,6 @@
 import { operationalState } from './operational-state.js';
 import { pendingHoldRows } from './pending-holds.js';
+import { summarizeRunOutcome } from '../../src/run-outcome.js';
 import type { Dashboard, LiveParentView } from '../types.js';
 import { courtObjective, liveOutcome, offsetText, runReport, workerProgress } from './operator-status.js';
 import { byId, el, empty } from './dom.js';
@@ -25,17 +26,17 @@ export function renderLive(state: Dashboard): void {
   const children=live?.parents.flatMap(value=>value.children)??[],unreportedTest=state.workflow==='test'&&state.operation!=='idle'&&!children.length,
     planned=unreportedTest?0:state.booking?.setup.PRECISION_PHASE3?.wave1.reduce((count,group)=>count+(group.fanOutOffsetsMs?.length??1),0)??state.booking?.setup.STRATEGY_V2?.shotgun?.exactSchedule.length??children.length;
   (byId('live-planned').closest('.live-overview') as HTMLElement).hidden=unreportedTest;
-  const releaseChildren=live?.parents.filter(parent=>parent.wave==='WAVE_1').flatMap(parent=>parent.children)??[];
-  const ready=releaseChildren.filter(value=>['READY','IN_FLIGHT','REJECTED','UNKNOWN','QR_READY','VERIFIED','HOLD_VERIFIED','HOLD_VERIFIED_QR_ATTENTION'].includes(value.state)).length,dispatched=releaseChildren.filter(value=>['IN_FLIGHT','REJECTED','UNKNOWN','QR_READY','VERIFIED','HOLD_VERIFIED','HOLD_VERIFIED_QR_ATTENTION'].includes(value.state)).length;
-  const pending=releaseChildren.filter(value=>value.state==='IN_FLIGHT').length,first=live?.parents.find(value=>value.wave==='WAVE_1')??live?.parents[0];
+  const accounting=state.runSummary??summarizeRunOutcome(children,planned);
+  const ready=accounting.prepared,dispatched=accounting.initiated;
+  const pending=children.filter(value=>['IN_FLIGHT','RESERVED'].includes(value.state)).length,first=live?.parents.find(value=>value.wave==='WAVE_1')??live?.parents[0];
   byId('live-primary-target').textContent=first?`${first.court?`Court ${first.court}`:'Target'} · ${hour(first.startTime)}–${hour(first.endTime)}`:'Attempt progress';
-  byId('live-planned').textContent=String(planned);byId('live-ready').textContent=String(ready);byId('live-dispatched').textContent=String(dispatched);byId('live-pending').textContent=String(pending);
+  byId('live-planned').textContent=String(accounting.planned);byId('live-ready').textContent=String(ready);byId('live-dispatched').textContent=String(dispatched);byId('live-pending').textContent=String(pending);
   const paymentInProgress=children.some(value=>value.code==='SHOTGUN_PAYMENT_IN_PROGRESS_STOP');
   const unknown=children.some(value=>value.state==='UNKNOWN'),hold=children.some(value=>['QR_READY','VERIFIED','HOLD_VERIFIED','HOLD_VERIFIED_QR_ATTENTION'].includes(value.state)),throttle=children.some(value=>value.code?.includes('429')||value.code?.includes('THROTTLE')),
     allRejected=children.length>0&&children.every(value=>['REJECTED','NOT_DISPATCHED','FAILED','PREWARM_FAILED','WINDOW_MISSED'].includes(value.state));
   const result=liveOutcome(state).replace('RESCUE HOLD VERIFIED','RESCUE LOCAL RESULT VALID').replace('HOLD VERIFIED','LOCAL RESULT VALID');
   // The controller's accounting is authoritative: unsent, rejected and unknown are never merged.
-  byId('live-attempt-counts').textContent=state.runSummary?state.runSummary.detail.replace(/verified holds?/g,text=>text.endsWith('holds')?'local checkout results':'local checkout result'):`${planned} planned · ${ready} prepared · ${dispatched} dispatched · ${pending} still in flight · ${releaseChildren.filter(child=>child.state==='REJECTED').length} rejected`;
+  byId('live-attempt-counts').textContent=accounting.detail.replace(/verified holds?/g,text=>text.endsWith('holds')?'local checkout results':'local checkout result');
   if(unreportedTest)byId('live-attempt-counts').textContent='Per-attempt accounting has not been published for this Available Now run. Follow its current target, recorded events and checkout evidence.';
   const tone=hold?'ok':unknown||throttle||paymentInProgress?'danger':allRejected?'warn':dispatched||ready?'running':'muted';
   byId('live-result').textContent=result;byId('live-result').dataset.tone=tone;

@@ -31,7 +31,7 @@ for (const width of [1060, 1280, 1440, 1920]) it(`qualifies operational scenario
       ['saved', { ready: true }, 'home'],
       ['armed-five-minutes', { operation: 'full', activeApiRelease }, 'live'],
       ['armed-seconds', { operation: 'full', activeApiRelease, clock: { ...clock, remainingMs: 8000 } }, 'live'],
-      ['dispatching', { operation: 'full', activeApiRelease: { ...activeApiRelease, phase: 'RUNNING' }, live: live(['ARMED', 'IN_FLIGHT', 'NOT_DISPATCHED']) }, 'live'],
+      ['dispatching', { operation: 'full', activeApiRelease: { ...activeApiRelease, phase: 'RUNNING' }, live: live(['ARMED', 'RESERVED', 'NOT_DISPATCHED']) }, 'live'],
       ['mixed', { operation: 'idle', live: live(['HOLD_VERIFIED', 'UNKNOWN', 'REJECTED', 'NOT_DISPATCHED']) }, 'live'],
       ['expired', { possibleHolds: [possible(0)] }, 'records'],
       ['stale-plan', { planDate: { status: 'STALE', planDate: '2025-01-01', targetDate: booking.targetDate } }, 'setup'],
@@ -48,6 +48,7 @@ for (const width of [1060, 1280, 1440, 1920]) it(`qualifies operational scenario
         expect(await page.locator('#monitor-stop').isVisible()).toBe(true);
         expect(await page.locator('#monitor-plan').innerText()).toContain(booking.fingerprint);
       }
+      if(name==='dispatching'){expect(await page.locator('#live-dispatched').innerText()).toBe('1');expect(await page.locator('#live-pending').innerText()).toBe('1');}
       if (name === 'idle-history') { expect(await page.locator('#possible-hold-alert').innerText()).toContain('17 unresolved'); expect(await page.locator('#possible-hold-alert').innerText()).not.toContain('PRIVATE-'); expect(await page.locator('#possible-hold-alert').evaluate(e => e.getBoundingClientRect().height)).toBeLessThan(150); }
       await page.screenshot({ path: `${shots}/${width}-${name}.png`, fullPage: true });
     }
