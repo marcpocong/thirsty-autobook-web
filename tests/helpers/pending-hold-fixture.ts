@@ -10,7 +10,7 @@ import type {RecoveryPage,RecoveryIdentity} from '../../src/api-booking/pending-
 
 export const fixtureNow=new Date('2026-11-01T01:00:00Z');
 export const fixtureCustomer={clientId:'client',customerId:'configured-customer',customerEmail:'fixture@example.invalid',customerPhone:'09123456789',customerFirstName:'Synthetic',customerLastName:'Guest'};
-export async function pendingFixture(root:string,worker:WorkerId='A',court=7,legacy=false,tokenMode?:'missing'|'invalid'){
+export async function pendingFixture(root:string,worker:WorkerId='A',court=7,legacy=false,tokenMode?:'missing'|'invalid',omitHourlyFacility=false){
   const plan=prooflessReleasePlan({mode:'standard',targetDate:'2026-11-03',durationHours:3,preferredStartTimes:['08:00'],fallbackStartTimes:[],
     courtPriority:[court],fallbackCourts:[],courtCount:1,maximumTotalPrice:1800,currency:'PHP'});
   const request=prooflessRequest(plan,fixtureCustomer),expiry=new Date(fixtureNow.getTime()+600_000).toISOString();
@@ -21,6 +21,7 @@ export async function pendingFixture(root:string,worker:WorkerId='A',court=7,leg
       date:item.date,startTime:item.startTime,endTime:item.endTime,durationHours:1,bookingIds:[`booking-${court}-${index}`]})),
     transaction:{id:`transaction-${worker}`,reference:`number-${court}-0`,amount:1800,status:'pending'},trustedTotalAmount:1800};
   if(tokenMode)for(const b of raw.bookings)b.checkoutToken=tokenMode==='missing'?'':'unsafe\ntoken';
+  if(omitHourlyFacility)for(const b of raw.bookings)delete (b as {facility_id?:string}).facility_id;
   const key=DurableSubmissionJournal.key(request.facilityId,plan.courts[0]!.spaceId,plan.targetDate,plan.startTime,plan.endTime);
   const directory=join(root,'.local/api-booking/api-first-journals',key);await mkdir(directory,{recursive:true});
   const identity:RecoveryIdentity={workerId:worker,customer:fixtureCustomer,profile:`dedicated-${worker}`,assertContext:vi.fn(async()=>{})};

@@ -1,6 +1,7 @@
 import type {BookingPlan} from './types.js';
 import type {CheckoutCustomer} from './two-hour-reservation.js';
 import {canonicalCheckoutTime,ondaCheckoutBoundary} from './public-checkout.js';
+import {courtBySpace} from '../court-registry.js';
 
 const obj=(v:unknown):Record<string,unknown>=>v!==null&&typeof v==='object'&&!Array.isArray(v)?v as Record<string,unknown>:{};
 const equalMoney=(v:unknown,n:number)=>
@@ -32,8 +33,13 @@ export function validateProviderHold(raw:unknown,expected:ProviderExpectation,no
   for(const b of rows){
     const original=bookings.find(v=>v.id===b.id);if(!original)fail('PROVIDER_IDENTITY_MISMATCH');
     const o=original!;
+    // The checkout contract permits facility_id to be absent on hourly rows;
+    // its session already passed local facility validation. Independently require
+    // the lookup facility to match the registered original court, never undefined.
+    const facility=courtBySpace(String(o.space_id))?.facilityId;
+    if(!facility||(o.facility_id!==undefined&&o.facility_id!==facility))fail('PROVIDER_IDENTITY_MISMATCH');
     if(b.bookingNo!==o.booking_no||(b.customerId??d.customerId)!==o.customer_id||
-      (b.facilityId??d.facilityId)!==o.facility_id||b.spaceId!==o.space_id||
+      (b.facilityId??d.facilityId)!==facility||b.spaceId!==o.space_id||
       serviceDate(b.date)!==o.date||(b.bookingDate!==undefined&&serviceDate(b.bookingDate)!==o.date)||canonicalCheckoutTime(b.startTime)!==canonicalCheckoutTime(o.start_time)||
       canonicalCheckoutTime(b.endTime)!==canonicalCheckoutTime(ondaCheckoutBoundary(String(o.end_time)))||
       !equalMoney(b.rate,Number(o.rate))||

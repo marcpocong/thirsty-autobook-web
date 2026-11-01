@@ -8,11 +8,24 @@ import {readHoldVerification} from '../../src/api-booking/pending-hold-state.js'
 import {PendingHoldService,eligibleRecoveryTestWorkers} from '../../src/api-booking/pending-hold-service.js';
 import {handlePendingRecovery} from '../../ui/pending-hold-actions.js';
 
-async function fixture(work:(f:Awaited<ReturnType<typeof pendingFixture>>)=>Promise<void>,legacy=false){
-  const root=await mkdtemp(join(tmpdir(),'pending-hold-'));try{await work(await pendingFixture(root,'A',7,legacy));}finally{await rm(root,{recursive:true,force:true});}
+async function fixture(work:(f:Awaited<ReturnType<typeof pendingFixture>>)=>Promise<void>,legacy=false,omitHourlyFacility=false){
+  const root=await mkdtemp(join(tmpdir(),'pending-hold-'));try{await work(await pendingFixture(root,'A',7,legacy,undefined,omitHourlyFacility));}finally{await rm(root,{recursive:true,force:true});}
 }
 const opts=(f:Awaited<ReturnType<typeof pendingFixture>>)=>({identity:f.identity,now:()=>fixtureNow,claimRoot:join(f.root,'claims'),sleep:vi.fn(async()=>{})});
 describe('independent provider hold verification and existing-only recovery',()=>{
+  it('validates registered facility identity when checkout hourly rows omit optional facility_id',()=>fixture(async f=>{
+    const {page,mocks}=fakeRecoveryPage(f);
+    expect((await recoverPendingHold(page,f.directory,opts(f))).qr).toBe('QR_READY');
+    expect(mocks.evaluate.mock.calls.map(c=>c[1].kind)).toEqual(['LOOKUP','ACCESS']);
+    expect(f.submissions()).toBe(1);expect(await readFile(f.journalPath,'utf8')).toBe(f.journalBefore);
+  },false,true));
+  it.each(['foreign','missing'])('rejects %s lookup facility even when checkout hourly facility_id is absent',kind=>fixture(async f=>{
+    for(const row of f.provider.data.groupBookings){if(kind==='missing')delete (row as Record<string,unknown>).facilityId;else row.facilityId='foreign';}
+    if(kind==='missing')delete (f.provider.data as Record<string,unknown>).facilityId;else f.provider.data.facilityId='foreign';
+    const {page,mocks}=fakeRecoveryPage(f);
+    expect((await recoverPendingHold(page,f.directory,opts(f))).code).toBe('PROVIDER_IDENTITY_MISMATCH');
+    expect(mocks.goto).not.toHaveBeenCalled();expect(mocks.evaluate.mock.calls.map(c=>c[1].kind)).toEqual(['LOOKUP']);
+  },false,true));
   it('accepts equivalent provider date/time wire formats without shifting the service date',()=>fixture(async f=>{
     for(const row of f.provider.data.groupBookings){row.date+='T00:00:00.000Z';row.startTime+=':00';row.endTime+=':00';}
     expect((await recoverPendingHold(fakeRecoveryPage(f).page,f.directory,opts(f))).qr).toBe('QR_READY');
