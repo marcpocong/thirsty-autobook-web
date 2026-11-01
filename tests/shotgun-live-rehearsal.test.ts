@@ -42,8 +42,9 @@ describe('bounded production Shotgun rehearsal', () => {
             const key = (await import('../src/api-booking/durable-submission-journal.js')).DurableSubmissionJournal.key(body.facilityId,body.items[0]!.spaceId,request.date,'08:00','11:00');
             consumeSubmissionPermit(permit,key);options?.beforePost?.();calls.push('send');
             const ids=body.items.map((_,i)=>`offline-booking-${i}`);
+            const holdExpiresAt=new Date(Date.now()+600000).toISOString();
             return {success:true,bookings:body.items.map((item,i)=>({id:ids[i],booking_no:`offline-number-${i}`,customer_id:body.customerId,space_id:item.spaceId,facility_id:item.facilityId,date:item.date,
-              start_time:item.startTime,end_time:item.endTime,duration:60,rate:item.rate,guest_count:1,booking_status:'pending',payment_status:'pending',booking_session_id:'offline-session',hold_expires_at:new Date(Date.now()+600000).toISOString()})),
+              start_time:item.startTime,end_time:item.endTime,duration:60,rate:item.rate,guest_count:1,booking_status:'pending',payment_status:'pending',booking_session_id:'offline-session',hold_expires_at:holdExpiresAt})),
               bookingSessions:[{bookingSessionId:'offline-session',requestSessionRef:'session_1',facilityId:body.facilityId,spaceId:body.items[0]!.spaceId,date:request.date,startTime:'08:00',endTime:'11:00',durationHours:3,bookingIds:ids}],
               transaction:{id:'offline-transaction',reference:'offline-number-0',amount:1800,status:'pending'},trustedTotalAmount:1800};
           }}),onVerifiedHold:async()=>{calls.push('hold');return{state:'QR_READY'};}}});
