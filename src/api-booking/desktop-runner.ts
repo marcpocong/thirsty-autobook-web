@@ -37,7 +37,7 @@ import { loadLocalCheckoutCustomer } from './local-customer.js';
 import { assertActiveCustomersValid, resolveActiveCustomers } from './customer-identity.js';
 import { submitCalendarFreeTwoHourCheckout } from './calendar-free-checkout.js';
 import { officialCheckoutUrl } from './checkout-restoration.js';
-import { saveCheckoutRecovery } from './checkout-recovery.js';
+import { saveCheckoutRecovery,openCheckoutRecovery } from './checkout-recovery.js';
 import { possibleHoldFields } from './possible-hold.js';
 import { LiveAvailabilityError } from './live-availability-provider.js';
 import type { AvailabilitySnapshot, BookingPlan, BookingPreferences } from './types.js';
@@ -607,7 +607,7 @@ try {
       let token: string | undefined, bookingNo: string | undefined;
       const capture = async (response: CheckoutHttpResponse) => {
         const possible=possibleHoldFields(response,chunkPlan);if(possible)stage('POSSIBLE_HOLD_DETECTED',{...possible,workerId});
-        await saveCheckoutRecovery(directory,response,chunkPlan,workerId,new Date(nowMs()));
+        await saveCheckoutRecovery(directory,response,chunkPlan,workerId,new Date(nowMs()),{customer,profile:browserIdentity(workerId).expectedProfile,clockDomain:'TRUSTED_NETWORK'});
         await saveOnce(directory, 'checkout-response-private.json', sanitizedCheckoutCapture(response));
         try {
           const value = JSON.parse(response.body) as { success?: boolean; bookings?: Array<{ id?: string; booking_no?: string; checkoutToken?: string }> };
@@ -647,18 +647,8 @@ try {
       stage('PENDING_HOLD', { ...workerTiming(), ...bookingTarget, bookingId: hold.bookingIds[0]!, bookingNo: bookingNo ?? '',
         holdExpiresAt: hold.holdExpiresAt, price: chunkPlan.totalPrice });
       diagnostics.observe('DIAGNOSTIC_VERIFIED_HOLD',attempt,{...bookingTarget,price:chunkPlan.totalPrice});
-      if (!token || !bookingNo) throw Error('OFFICIAL_CHECKOUT_TOKEN_MISSING');
-      const grant = await session.page.evaluate(async ({ bookingNo, token }) => {
-        const url = new URL(`/api/public/bookings/booking-no/${encodeURIComponent(bookingNo)}`, location.origin);
-        url.searchParams.set('checkoutToken', token); url.searchParams.set('grantCheckoutAccess', '1');
-        const response = await fetch(url, { credentials: 'include', cache: 'no-store' }); return response.status;
-      }, { bookingNo, token });
-      if (grant !== 200) throw Error('OFFICIAL_CHECKOUT_ACCESS_FAILED');
-      await session.page.goto(officialCheckoutUrl(hold.bookingIds[0]!), { waitUntil: 'domcontentloaded', timeout: 45_000 });
-      await session.page.getByText('QRPH', { exact: true }).first().waitFor({ state: 'visible', timeout: 20_000 });
-      const body = await session.page.locator('body').innerText();
-      assertQrOrderSummary(body, chunkPlan);
-      await session.page.locator('canvas, img[alt="Payment QR code"]').first().waitFor({state:'visible',timeout:20_000});
+      await openCheckoutRecovery(session.page,directory,()=>new Date(nowMs()),{clockDomain:'TRUSTED_NETWORK'});
+      stage('PROVIDER_HOLD_CONFIRMED',{...workerTiming(),...bookingTarget,price:chunkPlan.totalPrice});
       await showWorkerPage(session.page,workerId);
       stage('OFFICIAL_QRPH_HANDOFF', { ...workerTiming(), ...bookingTarget, bookingId: hold.bookingIds[0]!, bookingNo,
         holdExpiresAt: hold.holdExpiresAt, price: chunkPlan.totalPrice });
@@ -691,7 +681,7 @@ try {
         journals:directories.map(directory=>new DurableSubmissionJournal(directory))};
     });
     type ProoflessAttempt=ReturnType<typeof makeProoflessAttempts>[number];
-    type ProoflessBinding={correlation:DiagnosticCorrelation&{workerId:WorkerId;attemptId:string};transportKey:string;started:number;workerTiming:()=>{workerId:WorkerId;workerElapsedMs:number};captured:{token?:string;bookingNo?:string}};
+    type ProoflessBinding={directory:string;correlation:DiagnosticCorrelation&{workerId:WorkerId;attemptId:string};transportKey:string;started:number;workerTiming:()=>{workerId:WorkerId;workerElapsedMs:number};captured:{token?:string;bookingNo?:string}};
     /** Before any send: binds the attempt's diagnostics correlation and its private response capture. */
     const bindProoflessAttempt=(value:{plan:BookingPlan;workerId:WorkerId;lane:ReturnType<typeof diagnosticLaneForWorker>;attemptType:DiagnosticAttemptType;attemptId:string;directory:string;transportKey?:string},
       startedStage='DIAGNOSTIC_ATTEMPT_STARTED'):ProoflessBinding=>{
@@ -702,19 +692,20 @@ try {
       responseCaptures.set(transportKey,async response=>{
         const possible=possibleHoldFields(response,plan);if(possible)stage('POSSIBLE_HOLD_DETECTED',{...possible,workerId});
         providerTraces?.captureFallback({workerId:transportKey,attemptId:value.attemptId,...activeWaveContexts.get(workerId)},response);
-        await saveCheckoutRecovery(value.directory,response,plan,workerId,new Date(nowMs()));
+        await saveCheckoutRecovery(value.directory,response,plan,workerId,new Date(nowMs()),{customer:customers![workerId]!,profile:browserIdentity(workerId).expectedProfile,clockDomain:'TRUSTED_NETWORK'});
         await saveOnce(value.directory,'checkout-response-private.json',sanitizedCheckoutCapture(response));
         try{const parsed=JSON.parse(response.body) as {bookings?:Array<{booking_no?:string;checkoutToken?:string}>};
           captured.bookingNo=parsed.bookings?.[0]?.booking_no;captured.token=parsed.bookings?.[0]?.checkoutToken;}catch{}
       });
-      const binding:ProoflessBinding={correlation,transportKey,started:performance.now(),captured,
+      const binding:ProoflessBinding={directory:value.directory,correlation,transportKey,started:performance.now(),captured,
         workerTiming:()=>({workerId,workerElapsedMs:Math.round(performance.now()-binding.started)})};
       return binding;
     };
     const unbindProoflessAttempt=(binding:ProoflessBinding)=>{
       if(activeAttemptContexts.get(binding.transportKey)?.attemptId===binding.correlation.attemptId)activeAttemptContexts.delete(binding.transportKey);
     };
-    /** A validated pending booking: record it, then open the official QR page. A QR failure never reads as "no hold". */
+    /** A locally valid response retains the existing lock/journal semantics. Independent
+     * provider verification and QR recovery are recorded separately after the critical interval. */
     const completeVerifiedProoflessHold=async(binding:ProoflessBinding,session:WorkerSession,plan:BookingPlan,hold:Awaited<ReturnType<typeof submitDirectCheckout>>)=>{
       const {correlation,workerTiming}=binding,{workerId}=correlation,bookingNo=binding.captured.bookingNo,token=binding.captured.token;
       verifiedHold=true;retainLiveLock=true;
@@ -724,18 +715,11 @@ try {
       stage('PENDING_HOLD',{...workerTiming(),...bookingTarget,bookingId:hold.bookingIds[0]!,bookingNo:bookingNo??'',
         holdExpiresAt:hold.holdExpiresAt,price:plan.totalPrice});
       diagnostics.observe('DIAGNOSTIC_VERIFIED_HOLD',correlation,{...bookingTarget,price:plan.totalPrice});
-      // From here the booking is real and validated; a QR page failure must never read as "no hold".
+      // Local validation is not provider persistence. Retain the possible hold on any verification/QR failure.
       try{
-      if(!token||!bookingNo)throw Error('OFFICIAL_CHECKOUT_TOKEN_MISSING');
-      const grant=await session.page.evaluate(async({bookingNo,token})=>{const url=new URL(`/api/public/bookings/booking-no/${encodeURIComponent(bookingNo)}`,location.origin);
-        url.searchParams.set('checkoutToken',token);url.searchParams.set('grantCheckoutAccess','1');
-        return (await fetch(url,{credentials:'include',cache:'no-store'})).status;},{bookingNo,token});
-      if(grant!==200)throw Error('OFFICIAL_CHECKOUT_ACCESS_FAILED');
-      await session.page.goto(officialCheckoutUrl(hold.bookingIds[0]!),{waitUntil:'domcontentloaded',timeout:45_000});
-      await session.page.getByText('QRPH',{exact:true}).first().waitFor({state:'visible',timeout:20_000});
-      const body=await session.page.locator('body').innerText();
-      assertQrOrderSummary(body,plan);
-      await session.page.locator('canvas, img[alt="Payment QR code"]').first().waitFor({state:'visible',timeout:20_000});
+      // Fan-out children have their own private response directory, retained by the binding.
+      await openCheckoutRecovery(session.page,binding.directory,()=>new Date(nowMs()),{clockDomain:'TRUSTED_NETWORK'});
+      stage('PROVIDER_HOLD_CONFIRMED',{...workerTiming(),...bookingTarget,price:plan.totalPrice});
       await showWorkerPage(session.page,workerId);
       stage('OFFICIAL_QRPH_HANDOFF',{...workerTiming(),...bookingTarget,bookingId:hold.bookingIds[0]!,bookingNo,
         holdExpiresAt:hold.holdExpiresAt,price:plan.totalPrice});

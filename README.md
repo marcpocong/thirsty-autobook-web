@@ -13,6 +13,8 @@ The source candidate adds a daily release assistant on Home: recurring preferenc
 
 ## Operator flow
 
+**Pending Holds & Recovery** is in Activity → Records & archive. It independently checks the original booking with Onda before reopening the exact checkout, without another booking submission or payment. See the [recovery guide](docs/PENDING_HOLD_RECOVERY.md) and [source versus installed/live qualification](docs/PENDING_HOLD_RECOVERY_IMPLEMENTATION.md).
+
 The [November 1 release forensic review](docs/incidents/2026-11-01-release/README.md) documents the 08:00 incident, current repairs, installed/source differences, later live rehearsals and unresolved recovery 404s. The [sanitized evidence package](docs/incidents/2026-11-01-release/evidence.json) supports independent human and AI review without private checkout data.
 
 The app has four destinations — **Home**, **Booking Setup**, **Activity**, **Settings**. Everything from goal to QR happens in Booking Setup: **1 Goal** (Available Now or Next Release; per-wing dates, minimum/ideal courts, acceptable courts and times, one-click read-only availability for both wings) → **2 Strategy** (Shotgun default for releases, Normal for open dates; checkout method separate, with per-wing capability) → **3 Customize** (full Shotgun editor, Precision, legacy saved-plan editor in a drawer) → **4 Browsers** → **5 Review & Run** (Strategy Inspector, one state-dependent action: Save release plan → Prepare → Authorize and Arm / Authorize and Book to QR → Emergency Stop, and the Booking Test Lab). Payment always remains manual; the bot stops at QR. See [Booking Setup v3](docs/BOOKING_SETUP_V3.md) for the guide, the capability matrix and remaining limitations, and [wing compatibility](docs/WING_COMPATIBILITY.md).

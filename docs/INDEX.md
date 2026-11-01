@@ -7,6 +7,7 @@ The historical reports stay at the repository root so that existing links keep w
 
 ## Current
 
+- **[Provider-verified Pending Holds & Recovery](PENDING_HOLD_RECOVERY.md)** — independent provider confirmation, restart-safe existing-checkout recovery, operator actions, browser rotation and [implementation/qualification status](PENDING_HOLD_RECOVERY_IMPLEMENTATION.md)
 - **[Release day preflight](RELEASE_DAY_PREFLIGHT.md)** — verdicts, every check (plan date, browsers, security check, timing calibration, forecast, locks) and the shortest workflow for the next authorized release
 - **[Booking Setup v3](BOOKING_SETUP_V3.md)** — four destinations, unified objective, capability matrix, Booking Test Lab, availability observer, UNKNOWN archive
 - [Build and release](BUILD_AND_RELEASE.md) — the one installed app, `npm run app:update`, staged update and rollback

@@ -1,4 +1,5 @@
-import { mkdir, open, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
+import {createHash} from 'node:crypto';
 import { join } from 'node:path';
 import { z } from 'zod';
 import type { CheckoutHttpResponse } from './browser-session-transport.js';
@@ -11,11 +12,14 @@ import { DurableSubmissionJournal } from './durable-submission-journal.js';
 import { standardPlanJournalKeys } from './two-hour-reservation.js';
 import { THIRSTY_PICKLE_FACILITY_ID } from './live-availability-provider.js';
 import type { Page } from 'playwright';
-import { assertQrOrderSummary } from './qr-order-summary.js';
+import {publishPrivateJson} from './private-persistence.js';
+import {appendHoldVerification} from './pending-hold-state.js';
+import type {CheckoutCustomer} from './two-hour-reservation.js';
 
 // A secret-bearing local recovery record, deliberately separate from sanitized
 // diagnostics and durable submission journals. Never export or log its contents.
 export const CHECKOUT_RECOVERY_FILE = 'checkout-recovery-private.json';
+export const RECOVERY_VERIFICATION_VERSION=2;
 const MAX_BYTES = 256 * 1024;
 const slotSchema = z.object({ court:z.number().int(), spaceId:z.string(), date:z.string(), bookingDate:z.string(),
   startTime:z.string(), endTime:z.string(), isAvailable:z.boolean(), isNightRate:z.boolean(), isNextDay:z.boolean(), currency:z.string(), price:z.number() });
@@ -25,7 +29,13 @@ const planSchema = z.object({ wing:z.enum(['MANGO','BUKO']).optional(), mode:z.l
   startTime:z.string(), endTime:z.string(), durationHours:z.number().int().min(1).max(3), courts:z.array(courtSchema).min(1).max(2),
   chunks:z.array(z.object({ startTime:z.string(), endTime:z.string(), durationHours:z.number(), courts:z.array(courtSchema).min(1).max(2), totalPrice:z.number() })).length(1),
   totalPrice:z.number(), currency:z.literal('PHP') });
-const recordSchema = z.object({ version:z.literal(1), workerId:z.enum(WORKER_IDS), capturedAt:z.string().datetime(), plan:planSchema, response:z.unknown() });
+const recordSchema = z.object({ version:z.union([z.literal(1),z.literal(2)]), workerId:z.enum(WORKER_IDS), capturedAt:z.string().datetime(), plan:planSchema, response:z.unknown(),
+  bodyHash:z.string().optional(),payloadHash:z.string().optional(),planHash:z.string().optional(),identityBinding:z.string().optional() });
+export const recoveryHash=(value:string|Uint8Array)=>createHash('sha256').update(value).digest('hex');
+export function recoveryIdentityBinding(customer:CheckoutCustomer,profile:string):string{
+  return recoveryHash(JSON.stringify([customer.clientId,customer.customerId,customer.customerEmail.trim().toLowerCase(),
+    customer.customerPhone.replace(/\D/g,'').slice(-10),customer.customerFirstName.trim(),customer.customerLastName.trim(),profile]));
+}
 const object = (v:unknown):Record<string,unknown> => v!==null && typeof v==='object' && !Array.isArray(v) ? v as Record<string,unknown> : {};
 const scalar=(v:unknown)=>v===null||['string','number','boolean'].includes(typeof v)?v:null;
 const fields = (v:unknown, keys:string[]) => Object.fromEntries(keys.filter(k=>k in object(v)).map(k=>[k,
@@ -36,39 +46,60 @@ const sessionFields = ['requestSessionRef','bookingSessionId','facilityId','spac
 
 /** Persist before response validation, including an unsupported/malformed success shape.
  * No cookies, request headers, fingerprints, proofs, email, phone, or unrelated fields. */
-export async function saveCheckoutRecovery(directory:string, response:CheckoutHttpResponse, plan:BookingPlan, workerId:WorkerId, now=new Date()):Promise<void> {
+export async function saveCheckoutRecovery(directory:string, response:CheckoutHttpResponse, plan:BookingPlan, workerId:WorkerId, now=new Date(),
+  identity?:{customer:CheckoutCustomer;profile:string;clockDomain?:'NODE_WALL'|'TRUSTED_NETWORK'}):Promise<void> {
   if(response.status!==200)return;
   if(Buffer.byteLength(response.body,'utf8')>MAX_BYTES)throw Error('CHECKOUT_RECOVERY_RESPONSE_TOO_LARGE');
   let raw:Record<string,unknown>;
-  try{raw=object(JSON.parse(response.body));}catch{return;}
-  if(raw.success!==true)return;
+  try{raw=object(JSON.parse(response.body));}catch{raw={};}
   const projectArray=(value:unknown, keys:string[])=>Array.isArray(value)&&value.length<=12?value.map(v=>fields(v,keys)):null;
-  const record={version:1,workerId,capturedAt:now.toISOString(),plan:planSchema.parse(plan),response:{success:raw.success,
+  const savedPlan=planSchema.parse(plan);
+  const projected={success:raw.success,
     bookings:projectArray(raw.bookings,bookingFields),bookingSessions:projectArray(raw.bookingSessions,sessionFields),
-    transaction:fields(raw.transaction,['id','reference','amount','status']),trustedTotalAmount:raw.trustedTotalAmount}};
+    transaction:fields(raw.transaction,['id','reference','amount','status']),trustedTotalAmount:raw.trustedTotalAmount};
+  const record={version:2,workerId,capturedAt:now.toISOString(),plan:savedPlan,bodyHash:recoveryHash(response.body),
+    payloadHash:recoveryHash(JSON.stringify(projected)),planHash:recoveryHash(JSON.stringify(savedPlan)),
+    ...(identity?{identityBinding:recoveryIdentityBinding(identity.customer,identity.profile)}:{}),response:projected};
   const text=JSON.stringify(record);
   if(Buffer.byteLength(text,'utf8')>MAX_BYTES)throw Error('CHECKOUT_RECOVERY_RESPONSE_TOO_LARGE');
-  await mkdir(directory,{recursive:true,mode:0o700});
-  const file=await open(join(directory,CHECKOUT_RECOVERY_FILE),'wx',0o600);
-  try{await file.writeFile(text);await file.sync();}finally{await file.close();}
+  await publishPrivateJson(join(directory,CHECKOUT_RECOVERY_FILE),record);
+  await appendHoldVerification(directory,{at:now.toISOString(),responseHash:recoveryHash(text),local:'RESPONSE_CAPTURED',provider:'NOT_CHECKED',qr:'NOT_CHECKED',
+    code:'RESPONSE_PERSISTED',contradiction:false,milestones:[{event:'RESPONSE_PERSISTED',at:now.toISOString(),clockDomain:identity?.clockDomain??'NODE_WALL',httpStatus:200}]});
+}
+
+/** Private loader; never return its contents through IPC, diagnostics or a CLI. */
+export async function readCheckoutRecoveryRecord(directory:string){
+  const text=await readFile(join(directory,CHECKOUT_RECOVERY_FILE),'utf8');
+  if(Buffer.byteLength(text,'utf8')>MAX_BYTES)throw Error('CHECKOUT_RECOVERY_RESPONSE_TOO_LARGE');
+  const record=recordSchema.parse(JSON.parse(text));
+  if(record.version===2&&(!/^[a-f0-9]{64}$/.test(record.bodyHash??'')||record.payloadHash!==recoveryHash(JSON.stringify(record.response))||record.planHash!==recoveryHash(JSON.stringify(record.plan))))
+    throw Error('CHECKOUT_RECOVERY_INTEGRITY_FAILED');
+  return {record,responseHash:recoveryHash(text)};
 }
 
 /** Revalidate locally before any restoration request. Does not alter journals or send checkout. */
-export async function prepareCheckoutRecovery(directory:string, now=new Date()) {
-  const text=await readFile(join(directory,CHECKOUT_RECOVERY_FILE),'utf8');
-  if(Buffer.byteLength(text,'utf8')>MAX_BYTES)throw Error('CHECKOUT_RECOVERY_RESPONSE_TOO_LARGE');
-  const record=recordSchema.parse(JSON.parse(text)),plan:BookingPlan=record.plan;
+function validateSavedResponse(record:Awaited<ReturnType<typeof readCheckoutRecoveryRecord>>['record'],now:Date){
+  const plan:BookingPlan=record.plan;
   // Validation needs request item identities, not contact data or availability proofs.
   const request=prooflessRequest(plan,{clientId:'recovery',customerId:'recovery',customerEmail:'recovery@example.invalid',customerPhone:'recovery',
     customerFirstName:'Recovery',customerLastName:'Validation'},'OFFLINE_INTERCEPTED');
   const hold=validatePublicCheckoutResponse(record.response,request as unknown as PublicCheckoutRequest,plan,now,plan.totalPrice);
+  return {workerId:record.workerId,plan,hold};
+}
+export async function validateCapturedCheckoutResponse(directory:string,now:Date){
+  return validateSavedResponse((await readCheckoutRecoveryRecord(directory)).record,now);
+}
+export async function prepareCheckoutRecovery(directory:string, now=new Date(),options:{allowMissingToken?:boolean}={}) {
+  const {record}=await readCheckoutRecoveryRecord(directory),{plan,hold}=validateSavedResponse(record,now);
   const raw=object(record.response),booking=object((raw.bookings as unknown[])[0]);
-  if(typeof booking.checkoutToken!=='string'||!/^[\x21-\x7e]{1,8192}$/.test(booking.checkoutToken))throw Error('CHECKOUT_RECOVERY_TOKEN_MISSING');
-  return {workerId:record.workerId,plan,hold,bookingNo:hold.bookingNumbers[0]!,token:booking.checkoutToken,url:officialCheckoutUrl(hold.bookingIds[0]!)};
+  const token=booking.checkoutToken;
+  if(!(options.allowMissingToken&&(token===undefined||token===null||token===''))&&(typeof token!=='string'||!/^[\x21-\x7e]{1,8192}$/.test(token)))throw Error('CHECKOUT_RECOVERY_TOKEN_MISSING');
+  return {workerId:record.workerId,plan,hold,bookingNo:hold.bookingNumbers[0]!,token:typeof token==='string'&&token?token:undefined,url:officialCheckoutUrl(hold.bookingIds[0]!)};
 }
 
 /** Require the original durable attempt; recovery never marks it rejected/verified or recycles it. */
-export async function assertRecoveryJournal(directory:string, recovery:Awaited<ReturnType<typeof prepareCheckoutRecovery>>):Promise<void> {
+export async function assertRecoveryJournal(directory:string, recovery:Pick<Awaited<ReturnType<typeof prepareCheckoutRecovery>>,'plan'|'hold'>,
+  options:{allowUnobservedResponse?:boolean}={}):Promise<void> {
   const {plan}=recovery;
   const key=standardPlanJournalKeys(plan,THIRSTY_PICKLE_FACILITY_ID)[0]!;
   const record=await new DurableSubmissionJournal(directory).read(key);
@@ -78,31 +109,31 @@ export async function assertRecoveryJournal(directory:string, recovery:Awaited<R
     JSON.stringify(record.attempt.hourlyBoundaries)!==JSON.stringify(expectedHours)||record.attempt.expectedBookingCount!==recovery.hold.bookingIds.length||
     record.attempt.maximumAmount!==plan.totalPrice)throw Error('CHECKOUT_RECOVERY_JOURNAL_MISMATCH');
   const ids=record.observedResponse?.bookingIds;
+  // A capture may have been flushed before browser loss or a later receipt/journal
+  // write failed. Read-only provider verification may use that immutable capture
+  // against this exact UNKNOWN intent. No IDs are backfilled and no permit is reused.
+  if(ids===undefined&&record.state==='unknown'&&options.allowUnobservedResponse)return;
   if(!ids||ids.length!==recovery.hold.bookingIds.length||recovery.hold.bookingIds.some(id=>!ids.includes(id)))throw Error('CHECKOUT_RECOVERY_JOURNAL_MISMATCH');
 }
 
 /** Opens the existing checkout only after full local revalidation. No new reservation
  * is allowed; an incomplete/wrong QR summary fails instead of reporting success. */
-export async function openCheckoutRecovery(page:Pick<Page,'evaluate'|'goto'|'getByText'|'locator'|'route'|'unroute'|'bringToFront'>,
-  directory:string, now:()=>Date=()=>new Date()) {
-  const recovery=await prepareCheckoutRecovery(directory,now());
-  await assertRecoveryJournal(directory,recovery);
-  const pattern='**/api/bookings/public-checkout**';
-  await page.route(pattern,route=>route.abort());
-  try {
-    const status=await page.evaluate(async({bookingNo,token})=>{
-      const url=new URL(`/api/public/bookings/booking-no/${encodeURIComponent(bookingNo)}`,location.origin);
-      url.searchParams.set('checkoutToken',token);url.searchParams.set('grantCheckoutAccess','1');
-      return (await fetch(url,{credentials:'include',cache:'no-store'})).status;
-    },{bookingNo:recovery.bookingNo,token:recovery.token});
-    if(status!==200)throw Error('OFFICIAL_CHECKOUT_ACCESS_FAILED');
-    await page.goto(recovery.url,{waitUntil:'domcontentloaded',timeout:45_000});
-    await page.getByText('QRPH',{exact:true}).first().waitFor({state:'visible',timeout:20_000});
-    assertQrOrderSummary(await page.locator('body').innerText(),recovery.plan);
-    await page.locator('canvas, img[alt="Payment QR code"]').first().waitFor({state:'visible',timeout:20_000});
-    await prepareCheckoutRecovery(directory,now());
-    await page.bringToFront();
-    // Callers receive only the safe result, never the checkout access token.
-    return {workerId:recovery.workerId,plan:recovery.plan,hold:recovery.hold};
-  } finally {await page.unroute(pattern);}
+export async function openCheckoutRecovery(page:Pick<Page,'url'|'evaluate'|'goto'|'getByText'|'locator'|'route'|'unroute'|'bringToFront'>,
+  directory:string, now:()=>Date=()=>new Date(),options?:Omit<import('./pending-hold-recovery.js').RecoveryOptions,'now'|'identity'>&{identity?:import('./pending-hold-recovery.js').RecoveryIdentity}) {
+  const {record}=await readCheckoutRecoveryRecord(directory);
+  if(!options?.identity){
+    const {assertCanonicalRecoveryRuntime}=await import('./recovery-runtime.js');await assertCanonicalRecoveryRuntime(process.cwd());
+    const {browserIdentity,verifyDedicatedChromeAsync}=await import('../browser.js');
+    const {loadLocalCheckoutCustomer}=await import('./local-customer.js');
+    const browser=browserIdentity(record.workerId),customer=loadLocalCheckoutCustomer(record.workerId);
+    options={...options,identity:{workerId:record.workerId,customer,profile:browser.expectedProfile,assertContext:async()=>{
+      await verifyDedicatedChromeAsync(browser);
+      if(recoveryIdentityBinding(loadLocalCheckoutCustomer(record.workerId),browser.expectedProfile)!==recoveryIdentityBinding(customer,browser.expectedProfile))throw Error('RECOVERY_CUSTOMER_CHANGED');
+    }}};
+  }
+  const {recoverPendingHold}=await import('./pending-hold-recovery.js');
+  const state=await recoverPendingHold(page,directory,{...options,identity:options.identity!,now});
+  if(state.provider!=='PROVIDER_HOLD_CONFIRMED'||state.qr!=='QR_READY')throw Error(state.code);
+  const recovery=await prepareCheckoutRecovery(directory,now(),{allowMissingToken:true});
+  return {workerId:recovery.workerId,plan:recovery.plan,hold:recovery.hold};
 }

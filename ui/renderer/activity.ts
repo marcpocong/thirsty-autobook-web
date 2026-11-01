@@ -1,4 +1,5 @@
 import { el, fill, dateText, manilaTime, onPane, wingName } from './navigation.js';
+import {initPendingHolds} from './pending-holds.js';
 
 /**
  * Activity → Records & archive. Historical UNKNOWN records can be archived out of active screens. Archiving never
@@ -24,7 +25,7 @@ async function act(action: 'archive' | 'restore' | 'verify', keys: string[] = []
   } catch (e) { message = e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']*':\s*(Error:\s*)?/, '') : String(e); }
   busy = false; await refresh();
 }
-export function initActivity() { onPane(pane => { if (pane === 'records') void refresh(); }); }
+export function initActivity() { initPendingHolds();onPane(pane => { if (pane === 'records') void refresh(); }); }
 function render() {
   const host = byId('records-panel');
   if (!overview) { fill(host, el('h2', { text: 'Records & archive' }), el('p', { class: 'small', text: message || 'Loading submission records…' })); return; }

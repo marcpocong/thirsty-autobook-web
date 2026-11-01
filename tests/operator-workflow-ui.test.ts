@@ -134,7 +134,8 @@ describe('operator workflow (renderer)', () => {
       runSummary: summarizeRunOutcome([{ state: 'QR_READY' }, { state: 'NOT_DISPATCHED' }, { state: 'NOT_DISPATCHED' }], 3),
       qrHandoffs: [{ status: 'qr-ready', wing: 'MANGO', checkout: 'A', courts: [7], date: o.wings.MANGO.bookingDate,
         startTime: '19:00', endTime: '22:00', amount: 2100, verifiedAt: new Date().toISOString(), holdExpiresAt: new Date(Date.now() + 300_000).toISOString() }] });
-    await expect.poll(() => page.locator('#run-summary').innerText()).toContain('HOLD VERIFIED');
+    await expect.poll(() => page.locator('#run-summary').innerText()).toContain('LOCAL RESPONSE VALIDATED');
+    expect(await page.locator('#run-summary').innerText()).toContain('Independent provider');
     expect(await page.locator('#run-summary').innerText()).toContain('pay manually');
     expect(await page.locator('#strategy-inspector .outcome').innerText()).toContain('1 payment pending (manual)');
     expect(await noOverflow(page)).toBe(true);

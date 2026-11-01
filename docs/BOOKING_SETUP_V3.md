@@ -70,6 +70,6 @@ The lab runs the exact compiled Booking Setup objective — no second editor. **
 ## Remaining provider limitations
 
 - Buko scheduled release: PROVISIONAL (08:00 / +6 days). The +6 date rule was observed on consecutive days (banner Oct 14 → Oct 20; Oct 15 → Oct 21, confirmed read-only with Oct 22 unreleased); the 08:00 instant has not been observed; Buko proofless checkout unverified and refused by the builder and journal.
-- No live Shotgun has reached a provider hold; provider acceptance of a proofless checkout exactly at 08:00 is unproven.
+- A November 1 bounded one-attempt Shotgun rehearsal reached a locally validated hold and recovered its official QR. The new independent-provider recovery system is separately qualified; multi-shot acceptance exactly at 08:00 remains unproven. See [Pending Holds & Recovery](PENDING_HOLD_RECOVERY.md) and its installed/live status.
 - Multi-checkout Available Now sequences (e.g. Mango 2 + Buko 1) run each checkout through the verified one-checkout path but the sequence itself has not been run live.
 - Provider request-volume limits are not documented; 429 stops all unsent attempts and nothing is retried.

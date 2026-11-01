@@ -798,7 +798,7 @@ export class Controller {
         this.state.possibleHolds=[...(this.state.possibleHolds??[]).filter(v=>!v.bookingIds.includes(event.bookingId!)),hold];
         this.state.headline='POSSIBLE HOLD DETECTED — VERIFY BEFORE EXPIRY';
       }
-      if(['PENDING_HOLD','OFFICIAL_QRPH_HANDOFF'].includes(event.stage)&&event.bookingId)this.state.possibleHolds=(this.state.possibleHolds??[]).filter(v=>!v.bookingIds.includes(event.bookingId!));
+      if(['PROVIDER_HOLD_CONFIRMED','OFFICIAL_QRPH_HANDOFF'].includes(event.stage)&&event.bookingId)this.state.possibleHolds=(this.state.possibleHolds??[]).filter(v=>!v.bookingIds.includes(event.bookingId!));
       this.trackPrecision(event);
       this.trackPhase3(event);
       this.trackLive(event);
@@ -806,9 +806,9 @@ export class Controller {
       const labels:Record<string,string>={RUN_STARTED:'API run started',EXPIRED_HOLD_REUSABLE:'Expired verified hold released for a new test',FINISHED_ATTEMPT_REUSABLE:'Finished attempt archived for a new test',PREPARING_BROWSER:'Preparing isolated Chrome',BROWSER_READY:'API browser ready',
         WAITING_FOR_BLOCK_AUDIT:'Waiting for 7:30 block audit',PRIMARY_PROOFLESS_PLAN_READY:'Proofless court plan resolved',PRIMARY_PROOFLESS_DISPATCHING:'Dispatching proofless checkout',PRIMARY_PROOFLESS_OUTCOME:'Proofless checkout outcome recorded',WAITING_FOR_RELEASE:'Waiting for release',SECURITY_PREWARM_STARTED:'Preparing checkout security before release',SECURITY_PREWARM_READY:'Checkout security ready for release',RELEASE_TRIGGERED:'Release reached',FETCHING_AVAILABILITY:'Fetching live API availability',
         WORKER_OUTCOME:'Checkout outcome recorded',CANDIDATE_READY:'API candidate ready',DRY_RUN_COMPLETE:'API dry run complete',FRESH_VERIFICATION_AND_PROOFS:'Fresh verification and slot proofs',
-        PENDING_HOLD:'Pending reservation captured',OFFICIAL_QRPH_HANDOFF:'Official QRPH checkout open',FAILED:'API run needs attention',
+        PENDING_HOLD:'Response locally valid · provider confirmation pending',PROVIDER_HOLD_CONFIRMED:'Onda independently confirmed the pending hold',OFFICIAL_QRPH_HANDOFF:'Official QRPH checkout open',FAILED:'API run needs attention',
         PRE_RELEASE_AUDIT_READ:'Pre-release read',PRE_RELEASE_AUDIT_RESULT:'Pre-release audit recorded',PROOFLESS_TARGET_EVIDENCE:'Target evidence recorded',
-        NETWORK_CLOCK_REFRESHED:'Network clock refreshed',NETWORK_CLOCK_REFRESH_FAILED:'Network clock refresh failed',QR_HANDOFF_NEEDS_ATTENTION:'HOLD VERIFIED · QR handoff needs attention',
+        NETWORK_CLOCK_REFRESHED:'Network clock refreshed',NETWORK_CLOCK_REFRESH_FAILED:'Network clock refresh failed',QR_HANDOFF_NEEDS_ATTENTION:'Locally valid response · provider/QR recovery needs attention',
         PRECISION_RACE_CONFIGURED:'Precision race configured',PRECISION_TARGET:'Precision target authorized',PRECISION_EVIDENCE_READ:'Precision evidence read',
         PRECISION_TARGET_EVIDENCE:'Precision target evidence',PRECISION_ATTEMPT_STATE:'Precision attempt updated',PRECISION_DRY_COMPLETE:'Precision targets checked',
         PRECISION_FROZEN:'Precision targets frozen',PRECISION_ARMED:'Precision attempts armed for release',PRECISION_DISPATCHING:'Dispatching Precision attempts',NETWORK_CLOCK_CONSENSUS:'Release clock consensus',NETWORK_CLOCK_CONSENSUS_REJECTED:'Release clock round not trusted',NETWORK_CLOCK_CONSENSUS_FAILED:'Release clock round failed',PRECISION_LOCK_DISPATCHING_FAILED:'Dispatch record update failed',SECURITY_PREWARM_FAILED:'Checkout security failed for one worker',

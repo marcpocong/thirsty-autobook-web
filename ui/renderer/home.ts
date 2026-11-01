@@ -56,6 +56,7 @@ export function renderHome(state: Dashboard) {
   if (state.runSummary?.settled && state.runSummary.planned && !state.runSummary.holds) warnings.push([state.runSummary.unknown ? 'bad' : 'warn', `Last release run · ${state.runSummary.headline}: ${state.runSummary.detail}. ${state.runSummary.nextStep}`]);
   if (state.lock && !state.canPrepareOverHold) warnings.push(['bad', 'An automation safety lock is active. Review it in Booking Setup → Review & Run before another run.']);
   for (const h of holds) { const left = Date.parse(h.holdExpiresAt!) - now; if (left < 180_000) warnings.push(['warn', `A temporary hold expires in ${Math.max(0, Math.round(left / 1000))} s. Pay on Onda now if you want it; the bot never pays.`]); }
+  if (state.runSummary?.holds) warnings.push(['warn','Run hold counts describe locally validated responses. Check Activity → Records & archive → Pending Holds & Recovery for independent provider confirmation and current QR readiness.']);
   if (journals?.activeUnknown) warnings.push(['warn', `${journals.activeUnknown} submission record(s) have an UNKNOWN outcome and keep their targets blocked. Review or archive them in Activity → Records & archive.`]);
   if (!state.clock?.networkSynced && mango.releaseMs - now < 30 * 60_000) warnings.push(['warn', 'The network clock is not synchronized. Arming synchronizes it automatically.']);
   for (const w of enabledWings(o)) { const c = compiled.capability[w]; if (c && !c.live) warnings.push(['muted', `${wingName(w)}: ${c.status.replace('_', ' ')} for live use — ${c.reasons[0]}`]); }

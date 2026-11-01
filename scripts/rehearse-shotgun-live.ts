@@ -11,6 +11,7 @@ import { ShotgunRehearsalSchema, runShotgunLiveRehearsal, prepareRehearsalSecuri
 import { reuseRehearsalSecurity } from '../src/shotgun-rehearsal-readiness.js';
 import { OndaBrowserAvailabilityProvider } from '../src/api-booking/browser-availability-provider.js';
 import { queryGoogleClockConsensus } from '../src/network-clock.js';
+import {assertCanonicalRecoveryRuntime} from '../src/api-booking/recovery-runtime.js';
 
 const sha = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 const authSchema = z.object({ request: ShotgunRehearsalSchema, approvedBy: z.literal('OWNER_CONVERSATION'),
@@ -26,9 +27,11 @@ async function main() {
     'api-booking/public-checkout.js','api-booking/calendar-free-security-context-browser.js','api-booking/qr-order-summary.js'];
   for (const name of required) if (sha(await readFile(resolve('dist/src', name))) !== auth.engineHashes[name]) throw Error('REHEARSAL_ENGINE_CHANGED');
   if (existsSync('.local/automation.lock')) throw Error('AUTOMATION_LOCK_EXISTS');
+  await assertCanonicalRecoveryRuntime(root);
   process.env.THIRSTY_API_INSTALLATION = '1';
   const installed = async (name: string) => import(pathToFileURL(resolve('dist/src', name)).href);
   const browserModule = await installed('browser.js'), recoveryModule = await installed('api-booking/checkout-recovery.js');
+  if(recoveryModule.RECOVERY_VERIFICATION_VERSION!==2)throw Error('REHEARSAL_PROVIDER_VERIFICATION_NOT_INSTALLED');
   const precision = await installed('api-booking/precision-race.js'), armedModule = await installed('api-booking/armed-dispatch.js');
   const transportModule = await installed('api-booking/browser-session-transport.js');
   const securityModule = await installed('api-booking/calendar-free-security-context.js');
@@ -75,7 +78,8 @@ async function main() {
       engineHashes: auth.engineHashes, purpose: 'REHEARSAL_NOT_OFFICIAL_08AM_RELEASE', checkoutBudget: 1 }), { flag: 'wx' });
     lock = await lockModule.ApiAutomationLock.acquire('standard', [r.worker]);
     const transport = new transportModule.OndaBrowserSessionTransport(page, () => securityModule.calendarFreeSecurityContext(page)(),
-      async (response: any) => recoveryModule.saveCheckoutRecovery(journalDirectory, response, plan, r.worker, new Date(observeNow())),
+      async (response: any) => recoveryModule.saveCheckoutRecovery(journalDirectory, response, plan, r.worker, new Date(observeNow()),
+        {customer,profile:identity.expectedProfile,clockDomain:'TRUSTED_NETWORK'}),
       { onHumanVerificationRequired: async () => { events.push({kind:'human-verification-required',worker:r.worker}); await show(); },
         onHumanVerificationCompleted: async () => { events.push({kind:'human-verification-completed',worker:r.worker}); } },
       (event: any) => {

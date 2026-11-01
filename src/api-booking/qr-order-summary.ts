@@ -31,8 +31,16 @@ export function assertQrOrderSummary(body: string, plan: BookingPlan): void {
   const timesMatch = rows.length > 0
     ? JSON.stringify(rows) === JSON.stringify(hourly) || JSON.stringify(rows) === JSON.stringify(aggregate)
     : body.includes(`${displayTime(plan.startTime)} - ${displayTime(plan.endTime)}`);
+  const money=(text:string)=>{const match=text.match(/^(?:₱|PHP\s*)?\s*((?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2})$/i);return match?Number(match[1]!.replaceAll(',','')):null;};
+  const labelledTotals=lines.flatMap((line,i)=>{
+    if(/^(?:Grand\s+)?Total\s*:?$/i.test(line))return [money(lines[i+1]??'')];
+    const inline=line.match(/^(?:Grand\s+)?Total\s*:?\s+(.+)$/i);return inline?[money(inline[1]!)]:[];
+  });
+  const moneyTokens=[...body.matchAll(/(?<![\d.,])(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2}(?!\d)/g)].map(m=>Number(m[0].replaceAll(',','')));
+  const amountMatches=labelledTotals.length?labelledTotals.every(n=>n!==null&&Math.round(n*100)===Math.round(plan.totalPrice*100)):
+    moneyTokens.some(n=>Math.round(n*100)===Math.round(plan.totalPrice*100));
   if (JSON.stringify(shown) !== JSON.stringify(expected) || !body.includes(displayDate) ||
       !timesMatch ||
       !body.includes('Pending') || !body.includes('QRPH') ||
-      !body.replaceAll(',', '').includes(plan.totalPrice.toFixed(2))) throw Error('OFFICIAL_CHECKOUT_STATE_MISMATCH');
+      !amountMatches) throw Error('OFFICIAL_CHECKOUT_STATE_MISMATCH');
 }

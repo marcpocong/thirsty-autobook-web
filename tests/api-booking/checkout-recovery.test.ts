@@ -36,15 +36,24 @@ describe('private checkout recovery',()=>{
       const key=DurableSubmissionJournal.key(request.facilityId,plan.courts[0]!.spaceId,plan.targetDate,plan.startTime,plan.endTime);
       const before=await readFile(join(dir,`${key}.json`),'utf8');
       const body=`Court 7: Mango Wing October 24, 2026 ${kind==='wrong hours'?'7:00 PM - 8:00 PM':'7:00 PM - 10:00 PM'} Pending QRPH ${kind==='wrong amount'?'700.00':'2,100.00'}`;
-      const page={route:vi.fn(),unroute:vi.fn(),evaluate:vi.fn(async()=>kind==='access denied'?403:200),goto:vi.fn(),
-        getByText:vi.fn(()=>({first:()=>({waitFor:vi.fn()})})),locator:vi.fn((selector:string)=>({innerText:async()=>body,first:()=>({waitFor:vi.fn(async()=>{
+      let currentUrl='https://app.onda.fit/book/thirsty-pickle';
+      const provider={success:true,data:{id:raw.bookings[0]!.id,bookingNo:raw.bookings[0]!.booking_no,customerId:'resolved-customer',facilityId:request.facilityId,
+        checkoutTotal:2100,canResumeCheckout:true,bookingStatus:'pending',paymentStatus:'pending',holdExpiresAt:raw.bookings[0]!.hold_expires_at,
+        customerEmail:customer.customerEmail,customerPhone:customer.customerPhone,customerFirstName:customer.customerFirstName,customerLastName:customer.customerLastName,
+        groupBookings:raw.bookings.map(b=>({id:b.id,bookingNo:b.booking_no,customerId:b.customer_id,facilityId:b.facility_id,spaceId:b.space_id,date:b.date,
+          startTime:b.start_time,endTime:b.end_time,rate:b.rate,holdExpiresAt:b.hold_expires_at,bookingStatus:b.booking_status,paymentStatus:b.payment_status}))}};
+      const element=(selector:string)=>({waitFor:vi.fn(async()=>{
           if(selector==='body')return;
           const required=kind==='image QR'?'img[alt="Payment QR code"]':'canvas';
           if(kind==='missing QR'||!selector.includes(required))throw Error('QR_NOT_VISIBLE');
-        })})})),bringToFront:vi.fn()};
+        }),evaluate:vi.fn(async()=>true)});
+      const page={url:()=>currentUrl,route:vi.fn(),unroute:vi.fn(),evaluate:vi.fn(async(_code:unknown,args:{kind:string})=>({status:kind==='access denied'?403:200,body:args.kind==='LOOKUP'?provider:{},retryAfterMs:null})),
+        goto:vi.fn(async(u:string)=>{currentUrl=u;}),getByText:vi.fn(()=>({first:()=>({waitFor:vi.fn()})})),
+        locator:vi.fn((selector:string)=>({innerText:async()=>body,filter:()=>({first:()=>element(selector)})})),bringToFront:vi.fn()};
       let clockReads=0;
       const opened=openCheckoutRecovery(page as unknown as Parameters<typeof openCheckoutRecovery>[0],dir,
-        ()=>kind==='expired during navigation'&&++clockReads>1?new Date('2026-10-22T00:11:00Z'):now);
+        ()=>kind==='expired during navigation'&&++clockReads>1?new Date('2026-10-22T00:11:00Z'):now,
+        {identity:{workerId:'A',customer,profile:'synthetic-profile',assertContext:async()=>{}},claimRoot:join(dir,'claims')});
       if(kind==='complete'||kind==='image QR') {
         const result=await opened;
         expect(result).toMatchObject({hold:{trustedTotalAmount:2100}});
@@ -52,9 +61,10 @@ describe('private checkout recovery',()=>{
         expect(page.goto).toHaveBeenCalledWith(expect.stringContaining('bookingId=booking-0'),expect.anything());
       } else {await expect(opened).rejects.toThrow();expect(page.bringToFront).not.toHaveBeenCalled();}
       if(kind==='access denied')expect(page.goto).not.toHaveBeenCalled();
-      expect(page.route).toHaveBeenCalledWith('**/api/bookings/public-checkout**',expect.any(Function));
-      const route={abort:vi.fn()};await page.route.mock.calls[0]![1](route);expect(route.abort).toHaveBeenCalledOnce();
-      expect(page.unroute).toHaveBeenCalledWith('**/api/bookings/public-checkout**');
+      expect(page.route).toHaveBeenCalledWith('**/api/**',expect.any(Function));
+      const route={abort:vi.fn(),request:()=>({url:()=> 'https://app.onda.fit/api/bookings/public-checkout',method:()=> 'POST'})};
+      await page.route.mock.calls[0]![1](route);expect(route.abort).toHaveBeenCalledOnce();
+      expect(page.unroute).toHaveBeenCalledWith('**/api/**',expect.any(Function));
       expect(await readFile(join(dir,`${key}.json`),'utf8')).toBe(before);
     }finally{await rm(dir,{recursive:true,force:true});}
   });

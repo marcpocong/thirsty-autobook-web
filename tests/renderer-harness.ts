@@ -75,6 +75,9 @@ export async function openRenderer(browser: Browser, extra: Record<string, unkno
           const saved = w.fixtureState.booking?.setup, matches = !!saved && canon(saved) === canon(request.value);
           // The real comparison the controller uses (src/plan-diff.ts), evaluated in Node through an exposed function.
           return { ok: true, problems: [], matchesSaved: matches, differences: saved ? await w.nodeSetupDifferences(saved, request.value) : null }; } },
+      pendingHolds:async(request:any)=>{(request.action==='list'?(w.fixtureReads??=[]):w.fixtureCalls).push(`pendingHolds:${request.action}`);
+        if(request.action==='recover'){w.fixturePendingRecoveryRequest=request;return w.fixturePendingRecoveryResult??{rows:w.fixturePendingHolds??[],error:'PROVIDER_NOT_CHECKED'};}
+        return {rows:w.fixturePendingHolds??[]};},
       journalArchive: async (request: any) => { (['overview', 'verify'].includes(request.action) ? (w.fixtureReads ??= []) : w.fixtureCalls).push(`journalArchive:${request.action}`);
         const result=w.fixtureJournals?.[request.action] ?? { counts: {}, activeUnknown: [], archived: [], eligible: [], checkedAt: new Date().toISOString() };
         if(['archive','restore'].includes(request.action)&&!result.cancelled&&!result.refused?.length){

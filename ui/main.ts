@@ -40,6 +40,8 @@ import {createMachineHealthSampler,readLastReleaseBuild} from '../src/release-re
 import {readSourceStatus,readUpdatePreflight,readUpdateHistory} from '../src/source-status.js';
 import {readDispatcherMachineKey} from './runner-runtime.js';
 import {readSecurityCheck} from '../src/security-check.js';
+import {PendingHoldService} from '../src/api-booking/pending-hold-service.js';
+import {handlePendingRecovery} from './pending-hold-actions.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 process.chdir(root);
@@ -51,6 +53,8 @@ if (!node) throw new Error('Launch the panel with npm run ui.');
 const lab = new BookingTestLabService(root,node,phase=>{if(window&&!window.isDestroyed())window.webContents.send('thirsty:labPhase',phase);});
 const objectives = new ObjectiveStore(root);
 const daily = new DailyPlanning(root);
+const recoverySession=randomUUID();process.env.THIRSTY_RECOVERY_SESSION=recoverySession;
+const pendingRecovery=new PendingHoldService(root,undefined,undefined,recoverySession);
 const index = resolve(root, 'dist/ui/renderer/index.html');
 const indexUrl = pathToFileURL(index).href;
 let window: BrowserWindow;
@@ -73,7 +77,7 @@ const controller = new Controller({
   confirmShotgunLive:async plan=>{const shotgun=plan.setup.STRATEGY_V2!.shotgun!,offsets=shotgun.exactSchedule.map(s=>s.configuredOffsetMs).sort((a,b)=>a-b);
     return confirmModal({tone:'warning',title:'LIVE SHOTGUN PILOT · OWNER ATTESTATION',message:`Arm ${shotgun.exactSchedule.length} live Shotgun attempts for Mango ${plan.targetDate}?`,
       detail:`Attempts: ${shotgun.exactSchedule.length} across ${Object.keys(shotgun.counts).length} target(s) · offsets ${offsets[0]} … ${offsets.at(-1)} ms before release.\n`+
-        'Capability: LIVE PILOT. The same armed Precision dispatch path has run at Mango releases, and Mango proofless checkout reached genuine holds off-peak. No live Shotgun has reached a hold yet, and provider acceptance exactly at 08:00 is unproven.\n'+
+        'Capability: LIVE PILOT. One bounded off-peak Shotgun attempt reached a locally validated hold and recovered QR on November 1. Independent provider confirmation and multi-shot acceptance exactly at 08:00 remain separate qualifications.\n'+
         'HTTP 429, payment-in-progress or an unknown result stops every unsent attempt. Attempts already sent may create extra temporary holds; each is reconciled separately. Nothing is paid or cancelled automatically.\n\n'+
         'By confirming you attest that Onda Fit and Thirsty Pickle management authorize this multi-attempt live run for this exact plan. The attestation is recorded locally with the plan fingerprint.',
       confirmLabel:'Attest and arm live Shotgun',cancelLabel:'Do not arm'});},
@@ -188,6 +192,7 @@ else {
     const request=args[0] as {action?:string;value?:unknown;id?:string};
     if(!request||JSON.stringify(request).length>200_000)throw Error('DAILY_REQUEST_INVALID');
     if(request.action==='status'){controller.state.daily=await daily.tick(controller.state,deliverNotice);return controller.state.daily;}
+    if(pendingRecovery.busy)throw Error('RECOVERY_ALREADY_RUNNING');
     if(planningMutationBlocked(controller.state))throw Error('PLAN_ACTIVE');
     if(request.action==='saveProfile'){controller.state.daily=await daily.saveProfile(request.value,controller.state);return controller.state.daily;}
     if(request.action==='generate'){controller.state.daily=await daily.tick(controller.state,deliverNotice,Date.now(),true);return controller.state.daily;}
@@ -220,6 +225,7 @@ else {
     if(request.action==='stop'){lab.stop();return;}
     if(request.action==='defaults')return lab.defaults();
     if(request.action==='load')return lab.load();
+    if(pendingRecovery.busy)throw Error('RECOVERY_ALREADY_RUNNING');
     if(lab.busy)throw Error('LAB_RUNNING_STOP_FIRST');
     if(controller.state.operation!=='idle')throw Error('LAB_REQUIRES_IDLE_APPLICATION');
     if(request.action==='preview')return lab.preview(request.value as import('../src/dual-wing-plan.js').DualWingPlan);
@@ -234,6 +240,7 @@ else {
     const request=args[0] as {action?:string;value?:unknown;binding?:unknown};
     if(!request||JSON.stringify(request).length>300_000)throw Error('OBJECTIVE_REQUEST_INVALID');
     if(request.action==='load'){let legacy=null;try{legacy=readBooking().setup;}catch{legacy=null;}return objectives.load(legacy);}
+    if(pendingRecovery.busy)throw Error('RECOVERY_ALREADY_RUNNING');
     if(request.action==='save'){const b=request.binding as {objectiveFingerprint?:unknown;configFingerprint?:unknown}|null|undefined;
       const binding=b===undefined?undefined:b===null?null:typeof b.objectiveFingerprint==='string'&&/^[a-f0-9]{64}$/.test(b.objectiveFingerprint)&&typeof b.configFingerprint==='string'&&/^[a-f0-9]{64}$/.test(b.configFingerprint)
         ?{objectiveFingerprint:b.objectiveFingerprint,configFingerprint:b.configFingerprint,savedAt:new Date().toISOString()}:(()=>{throw Error('OBJECTIVE_BINDING_INVALID');})();
@@ -249,6 +256,10 @@ else {
     throw Error('OBJECTIVE_ACTION_INVALID');
   });
   // Historical UNKNOWN archive: index + audit only; journals are never moved, rewritten or reclassified.
+  ipcMain.handle('thirsty:pendingHolds',async(event,...args:unknown[])=>{
+    if(event.sender!==window.webContents||event.senderFrame!==window.webContents.mainFrame||event.senderFrame?.url!==indexUrl||args.length!==1)throw Error('IPC_NOT_ALLOWED');
+    return handlePendingRecovery(pendingRecovery,controller.state,args[0],lab.busy);
+  });
   ipcMain.handle('thirsty:journalArchive',async(event,...args:unknown[])=>{
     if(event.sender!==window.webContents||event.senderFrame!==window.webContents.mainFrame||event.senderFrame?.url!==indexUrl||args.length!==1)throw Error('IPC_NOT_ALLOWED');
     const request=args[0] as {action?:string;keys?:unknown;note?:unknown};
@@ -257,7 +268,7 @@ else {
     const note=typeof request?.note==='string'?request.note.slice(0,200):'';
     if(request?.action==='overview')return journalOverview(root);
     if(request?.action==='verify')return verifyArchive(root);
-    if(controller.state.operation!=='idle')throw Error('ARCHIVE_REQUIRES_IDLE_APPLICATION');
+    if(controller.state.operation!=='idle'||pendingRecovery.busy)throw Error('ARCHIVE_REQUIRES_IDLE_APPLICATION');
     if(request?.action==='archive'){
       if(!keys.length)throw Error('ARCHIVE_KEYS_REQUIRED');
       const ok=await confirmModal({tone:'question',title:'Archive historical UNKNOWN records?',message:`Archive ${keys.length} historical UNKNOWN record${keys.length===1?'':'s'}?`,
@@ -272,11 +283,13 @@ else {
   for (const [name, action] of Object.entries(actions)) ipcMain.handle(`thirsty:${name}`, (event, ...args: unknown[]) => {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== indexUrl || args.length) throw new Error('IPC_NOT_ALLOWED');
     if(lab.busy&&!['abortAutomation','getStatus'].includes(name))throw Error('LAB_RUNNING_STOP_FIRST');
+    if(pendingRecovery.busy&&!['abortAutomation','getStatus'].includes(name))throw Error('RECOVERY_ALREADY_RUNNING');
     return action();
   });
   for (const [name,action] of Object.entries({browseCourts:(input:unknown)=>controller.browseCourts(input),checkReleaseBlocks:(input:unknown)=>controller.checkReleaseBlocks(input),apiPreview:(input:unknown)=>controller.apiPreview(input),resetPrepare:(input:unknown)=>controller.resetPrepare(input),testBooking:(input:unknown)=>controller.testBooking(input),setWorkflow:(input:unknown)=>controller.setWorkflow(input),runDualPractice:(input:unknown)=>controller.runDualPractice(input),runFullPractice:(input:unknown)=>controller.runFullPractice(input),saveBooking:(input:unknown)=>controller.saveBooking(input),runPractice:(input:unknown)=>controller.runPractice(input),setMode:(input:unknown)=>controller.setMode(input),authorizeTerms:(input:unknown)=>controller.authorizeTerms(input),replayPlan:(input:unknown)=>controller.replayPlan(input),adviseFromHistory:(input:unknown)=>controller.adviseFromHistory(input),strategyEvidence:(input:unknown)=>controller.strategyEvidence(input)})) ipcMain.handle(`thirsty:${name}`,(event,...args:unknown[])=>{
     if(event.sender!==window.webContents||event.senderFrame!==window.webContents.mainFrame||event.senderFrame.url!==indexUrl||args.length!==1)throw new Error('IPC_NOT_ALLOWED');
     if(lab.busy)throw Error('LAB_RUNNING_STOP_FIRST');
+    if(pendingRecovery.busy)throw Error('RECOVERY_ALREADY_RUNNING');
     return action(args[0]);
   });
   ipcMain.handle('thirsty:focusBrowser',async(event,...args:unknown[])=>{

@@ -144,6 +144,7 @@ export interface Dashboard {
   mode:'selection'|'full'; handoff:Extract<UiEvent,{type:'handoff'}>|null;
 }
 export interface Bridge {
+  pendingHolds(request:import('./pending-hold-actions.js').PendingRecoveryInput):Promise<import('./pending-hold-actions.js').PendingRecoveryResponse>;
   daily(request:{action:'status'|'saveProfile'|'generate'|'snapshot'|'restorePreview'|'restore';value?:unknown;id?:string}):Promise<any>;
   onDestination(callback:(destination:'home'|'release'|'live')=>void):()=>void;
   onLabPhase?(callback:(phase:string)=>void):()=>void;
