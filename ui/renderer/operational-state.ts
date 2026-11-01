@@ -93,6 +93,7 @@ export function operatorEventText(value: string, s: Dashboard): string {
   for(const privateValue of known)text=text.split(privateValue).join('[private]');
   return text.replace(/https?:\/\/\S+/gi,'[provider link]')
     .replace(/\b(?:Bearer\s+\S+|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,})/gi,'[private]')
+    .replace(/\b(?:Booking(?:\s+(?:reference|number))?|ID)\s+(?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]{3,}/gi,'[private reference]')
     .replace(/\b(?:token|cookie|capability|authorization|bookingId|bookingNo|sessionId|transactionId)["']?\s*[:=]\s*["']?[^\s,}"']+/gi,'[private]')
     .slice(0,500);
 }

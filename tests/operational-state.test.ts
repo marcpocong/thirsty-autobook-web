@@ -45,8 +45,8 @@ it('does not reuse the previous finished run as an active release',()=>{
 });
 it('excludes profile contact values and checkout capabilities from the primary timeline',()=>{
   const s=state({playerStatus:{primaryDetails:{fullName:'Synthetic Customer',phone:'09123456789',email:'fixture@example.invalid'}}});
-  const message=operatorEventText('Synthetic Customer 09123456789 fixture@example.invalid token=private-cookie bookingId=private-id https://onda.invalid/?capability=secret',s);
-  expect(message).not.toMatch(/Synthetic Customer|09123456789|fixture@|private-cookie|private-id|capability=secret/);
+  const message=operatorEventText('Synthetic Customer 09123456789 fixture@example.invalid token=private-cookie bookingId=private-id https://onda.invalid/?capability=secret · Booking BK-123 · ID 12345678-abcd-1234-abcd-123456789abc',s);
+  expect(message).not.toMatch(/Synthetic Customer|09123456789|fixture@|private-cookie|private-id|capability=secret|BK-123|12345678-abcd/);
 });
 it('accepts only explicit fresh current-run official QR handoffs and preserves contradictory provider evidence',()=>{
   const now=Date.now(),at=new Date(now-1000).toISOString();
