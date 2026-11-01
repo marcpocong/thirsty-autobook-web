@@ -4,6 +4,11 @@ import { planWorkerIds } from '../../src/workers.js';
 import { UNSENT_STATES } from '../../src/run-outcome.js';
 import { planDateArmable } from '../../src/release-plan-date.js';
 
+/** The saved candidate date can differ from the next publishable date. Never silently re-date its presentation. */
+export function savedBookingDate(s: Dashboard): string | undefined {
+  return s.planDate?.status === 'MIXED' ? 'Multiple saved dates · review Setup' : s.planDate?.planDate ?? s.booking?.targetDate;
+}
+
 /** Presentation only. No bridge, storage, provider or scheduling side effects. */
 export function operationalState(s: Dashboard, holds: readonly PendingHoldRow[] = [], now = Date.now()) {
   const release = s.scheduledRelease ?? s.activeApiRelease;
@@ -34,7 +39,7 @@ export function operationalState(s: Dashboard, holds: readonly PendingHoldRow[] 
   const confirmed=presentedHolds(s,holds,now).filter(row=>holdPresentation(row,now).confirmed);
   if(s.operation==='idle'&&confirmed.length) {label=confirmed.some(row=>holdPresentation(row,now).qrReady)?'QR READY':'HOLD CONFIRMED';detail='Existing reservation confirmed. Review its expiry and complete payment manually in its original browser.';tone='ok';}
   return { label, detail, tone, active, availableNow, currentTarget, releaseMs: release?.releaseMs,
-    targetDate: availableNow?currentTarget?.date??testContext?.date:release?.targetDate ?? s.booking?.targetDate,
+    targetDate: availableNow?currentTarget?.date??testContext?.date:release?.targetDate ?? savedBookingDate(s),
     fingerprint: availableNow?testContext?.configFingerprint:s.scheduledRelease?.configFingerprint ?? s.booking?.fingerprint,
     workers: availableNow?[...new Set([...(testContext?.requiredBrowsers??[]),...(currentTarget?.workerId?[currentTarget.workerId]:[])])]:s.scheduledRelease?.requiredBrowsers ?? (s.booking ? planWorkerIds(s.booking.setup) : []) };
 }

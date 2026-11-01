@@ -4,7 +4,14 @@ import type { PendingHoldRow } from '../src/api-booking/pending-hold-service.js'
 import { operationalState, releaseCountdown, holdPresentation, attemptCounters, operatorEventText, presentedHolds } from '../ui/renderer/operational-state.js';
 
 const state = (extra: Record<string, unknown> = {}) => ({ operation: 'idle', lock: false, ready: false, ...extra }) as Dashboard;
-const release = { releaseMs: 100000, targetDate: '2026-11-04', phase: 'WAITING' };
+const release = { releaseMs: 100000, targetDate: '2026-11-04', phase: 'WAITING' as const };
+it('preserves the saved candidate date instead of substituting the next publishable date',()=>{
+  const s=state({booking:{targetDate:'2026-11-04',setup:{}},planDate:{status:'STALE',planDate:'2026-11-03',targetDate:'2026-11-04'}});
+  expect(operationalState(s).targetDate).toBe('2026-11-03');
+  expect(operationalState({...s,activeApiRelease:release}).targetDate).toBe('2026-11-04');
+  s.planDate={status:'MIXED',planDate:null,targetDate:'2026-11-04',detail:'Mixed'};
+  expect(operationalState(s).targetDate).toBe('Multiple saved dates · review Setup');
+});
 it.each([
   [{}, 'IDLE'], [{ lock: true }, 'SAFETY LOCK'], [{ ready: true }, 'PREPARED'],
   [{ ready: true, planDate: { status: 'STALE' } }, 'IDLE'],

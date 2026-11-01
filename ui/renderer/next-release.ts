@@ -8,6 +8,7 @@ import { readinessLayers, readinessSummary } from '../../src/execution-state.js'
 import { planWorkerIds } from '../../src/workers.js';
 import { releaseBlockers } from './operator-status.js';
 import { planForecast, preflightInput, releasePreflight, renderPreflight } from './preflight.js';
+import { savedBookingDate } from './operational-state.js';
 
 /**
  * NEXT RELEASE summary, generated only from the SAVED authorization (never from the editor draft), so it always states
@@ -29,7 +30,7 @@ export function renderNextRelease(state: Dashboard): void {
   const setup = state.booking?.setup, name = byId('next-strategy-name'), target = byId('next-strategy-facts'), technical=byId('next-strategy-technical'), note = byId('next-strategy-note');
   const build = state.build ? `${state.build.gitSha.slice(0, 7)}${state.build.dirty ? ' + uncommitted' : ''}` : 'unknown';
   if (!setup) { name.textContent = 'Not configured'; facts(target, [['Status','No saved strategy']]); facts(technical,[['Build', build]]); note.textContent = 'Save a strategy before preparing a release.'; return; }
-  const targetDate = state.booking?.targetDate ?? '—';
+  const targetDate = savedBookingDate(state) ?? '—';
   if (setup.RELEASE_STRATEGY === 'precision' && setup.PRECISION_PHASE3) {
     const plan = setup.PRECISION_PHASE3 as SmartPhase3, meta = setup.STRATEGY_V2;
     const workers = [...plan.wave1.map(value => value.workerId), ...plan.standby];

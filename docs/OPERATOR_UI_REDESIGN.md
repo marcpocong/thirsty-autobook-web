@@ -22,6 +22,8 @@ Legacy `live` links now resolve to the primary monitor. `history` and `records` 
 
 Available Now monitoring uses the current prepared request and current-run target evidence, rather than substituting the separate saved release's booking date, fingerprint or worker allocation. Old events predating the current run are excluded. Where that engine has not published per-attempt accounting, the UI says so and omits unsupported counters.
 
+Saved plan facts use the controller's captured candidate date, including a stale date, rather than the next publishable date calculated by the booking view. Mixed dates require review. An armed authorization's explicit date takes precedence. The installed native review exposed and corrected this distinction before final acceptance.
+
 ## Operational state and evidence
 
 `operational-state.ts` is a side-effect-free renderer selector. Scheduled/active releases take precedence over retained historical warnings. An armed release requires no child records to appear ARMED. Sent requests, provider waiting, preparation, stopping, retained locks, stale plans and completed accounting are distinct. An old completed run does not establish an active session.
