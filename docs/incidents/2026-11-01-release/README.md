@@ -1,10 +1,15 @@
 # November 1, 2026, 08:00 release: forensic review and repair record
 
-**Incident:** `63a216a2-cc04-42bc-b982-df174537634d`  
-**Release:** November 1, 2026, 08:00 Manila / `2026-11-01T00:00:00.000Z`  
-**Requested booking date:** November 3, 2026  
-**Targets:** Mango Courts 7, 6 and 5, each 19:00–22:00, PHP 2,100 per three-hour target  
-**Original outcome:** `MANUAL_RECONCILIATION_REQUIRED`, process exit 1  
+**Incident:** `63a216a2-cc04-42bc-b982-df174537634d`
+
+**Release:** November 1, 2026, 08:00 Manila / `2026-11-01T00:00:00.000Z`
+
+**Requested booking date:** November 3, 2026
+
+**Targets:** Mango Courts 7, 6 and 5, each 19:00–22:00, PHP 2,100 per three-hour target
+
+**Original outcome:** `MANUAL_RECONCILIATION_REQUIRED`, process exit 1
+
 **Review status:** multiple local defects identified and repaired; original provider-side noncreation/404 cause remains unresolved.
 
 This report is intended for independent human and AI review. It distinguishes original durable evidence, derived timing measurements, historical offline revalidation, subsequent live experiments, installed changes, and source-only changes. Publishing it does not authorize another reservation, replay of a request, payment, deletion of evidence, or retry of an UNKNOWN target.
