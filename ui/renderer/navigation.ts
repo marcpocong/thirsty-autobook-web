@@ -1,13 +1,13 @@
 import type { Dashboard } from '../types.js';
 
 /**
- * Four destinations (Home, Booking Setup, Activity, Settings) over the existing panes. app.ts keeps owning pane
+ * Five destinations (Home, Booking Setup, Live Monitor, Activity, Settings) over the existing panes. app.ts keeps owning pane
  * switching and every booking action; the new modules call these hooks instead of duplicating that logic.
  */
-export type Destination = 'home' | 'setup' | 'activity' | 'settings';
+export type Destination = 'home' | 'setup' | 'monitor' | 'activity' | 'settings';
 export type Pane = 'home' | 'setup' | 'release' | 'strategy' | 'tests' | 'live' | 'history' | 'records' | 'tools';
 export const PANE_DESTINATION: Readonly<Record<Pane, Destination>> = Object.freeze({
-  home: 'home', setup: 'setup', release: 'setup', strategy: 'setup', tests: 'setup', live: 'activity', history: 'activity', records: 'activity', tools: 'settings' });
+  home: 'home', setup: 'setup', release: 'setup', strategy: 'setup', tests: 'setup', live: 'monitor', history: 'activity', records: 'activity', tools: 'settings' });
 export interface TestRequestOverride { method: 'browser' | 'hybrid' | 'api-first' | 'proofless'; request: Record<string, unknown> }
 export const hooks: {
   showView: (pane: Pane) => void;

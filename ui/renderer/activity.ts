@@ -9,6 +9,7 @@ interface RecordRow { key: string; path: string; targetDate: string; wing?: stri
 interface ArchivedRow { key: string; path: string; targetDate: string; wing?: string; courtIds: number[]; archivedAt: string; sha256: string; note: string }
 let overview: { counts: Record<string, number>; activeUnknown: RecordRow[]; archived: ArchivedRow[]; eligible: string[]; checkedAt: string } | null = null;
 let verify: Map<string, string> | null = null, busy = false, message = '';
+let query='';
 const byId = (id: string) => document.getElementById(id)!;
 async function refresh() {
   try { overview = await window.thirsty.journalArchive({ action: 'overview' }); message = ''; } catch (e) { message = `Records could not be read: ${e instanceof Error ? e.message : e}`; }
@@ -25,7 +26,13 @@ async function act(action: 'archive' | 'restore' | 'verify', keys: string[] = []
   } catch (e) { message = e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']*':\s*(Error:\s*)?/, '') : String(e); }
   busy = false; await refresh();
 }
-export function initActivity() { initPendingHolds();onPane(pane => { if (pane === 'records') void refresh(); }); }
+export function initActivity() {
+  initPendingHolds();
+  const search=el('input',{id:'record-search',type:'search',placeholder:'Date, wing, court or outcome code','aria-label':'Filter historical records'});
+  search.oninput=()=>{query=search.value.trim().toLowerCase();render();};
+  byId('records-panel').before(el('section',{class:'panel records-search'},el('label',{'for':'record-search',text:'Find historical evidence'}),search));
+  onPane(pane => { if (pane === 'records') void refresh(); });
+}
 function render() {
   const host = byId('records-panel');
   if (!overview) { fill(host, el('h2', { text: 'Records & archive' }), el('p', { class: 'small', text: message || 'Loading submission records…' })); return; }
@@ -34,13 +41,17 @@ function render() {
   archiveAll.disabled = busy || !eligible.length; archiveAll.onclick = () => void act('archive', eligible);
   const verifyButton = el('button', { type: 'button', class: 'secondary', id: 'verify-archive', text: 'Verify archive' }) as HTMLButtonElement;
   verifyButton.disabled = busy || !overview.archived.length; verifyButton.onclick = () => void act('verify');
-  const byDate = new Map<string, RecordRow[]>(); for (const r of overview.activeUnknown) byDate.set(r.targetDate, [...(byDate.get(r.targetDate) ?? []), r]);
-  const active = overview.activeUnknown.length ? el('div', { class: 'records-groups' }, ...[...byDate.entries()].map(([date, rows]) => el('details', { class: 'tool-details' },
+  const matches=(r:RecordRow|ArchivedRow)=>!query||`${r.targetDate} ${r.wing??'MANGO'} Court ${r.courtIds.join(' ')} ${'failureCode' in r?r.failureCode??'':''} UNKNOWN`.toLowerCase().includes(query);
+  const byDate = new Map<string, RecordRow[]>(); for (const r of overview.activeUnknown.filter(matches)) byDate.set(r.targetDate, [...(byDate.get(r.targetDate) ?? []), r]);
+  const active = byDate.size ? el('div', { class: 'records-groups' }, ...[...byDate.entries()].map(([date, rows]) => el('details', { class: 'tool-details' },
     el('summary', { text: `${dateText(date)} · ${rows.length} UNKNOWN record(s)${rows.every(r => r.eligible) ? ' · all historical' : ''}` }),
-    el('ul', { class: 'plain-list small' }, ...rows.map(r => el('li', { 'data-eligible': String(r.eligible), text: `${wingName(r.wing ?? 'MANGO')} Court ${r.courtIds.join('+') || '?'} · last write ${manilaTime(Date.parse(r.lastWriteAt))}${r.httpStatus ? ` · HTTP ${r.httpStatus}` : ''}${r.failureCode ? ` · ${r.failureCode}` : ''} · ${r.eligible ? 'historical (eligible to archive)' : `not eligible: ${r.reason}`}` }))))))
-    : el('p', { class: 'small good-text', text: '✓ No active UNKNOWN records.' });
+    el('ul', { class: 'plain-list small' }, ...rows.map(r => {
+      const archive=el('button',{type:'button',class:'secondary compact',text:'Archive this notice'});archive.disabled=busy||!r.eligible;archive.onclick=()=>void act('archive',[r.path]);
+      return el('li', { 'data-eligible': String(r.eligible) },el('span',{text: `${wingName(r.wing ?? 'MANGO')} Court ${r.courtIds.join('+') || '?'} · last write ${manilaTime(Date.parse(r.lastWriteAt))}${r.httpStatus ? ` · HTTP ${r.httpStatus}` : ''}${r.failureCode ? ` · ${r.failureCode}` : ''} · ${r.eligible ? 'historical (eligible to archive)' : `not eligible: ${r.reason}`}`}),archive);
+    })))))
+    : el('p', { class: 'small', text: query?'No records match this filter.':'No unarchived UNKNOWN records. Original targets remain protected.' });
   const archived = overview.archived.length ? el('div', { class: 'table-scroll' }, el('table', { class: 'attempt-table', id: 'archived-records' }, el('thead', {}, el('tr', {}, ...['Target date', 'Wing · court', 'Archived', 'Original SHA-256', 'Verify', ''].map(h => el('th', { text: h })))),
-    el('tbody', {}, ...overview.archived.map(a => { const restore = el('button', { type: 'button', class: 'secondary compact', text: 'Restore' }) as HTMLButtonElement; restore.disabled = busy; restore.onclick = () => void act('restore', [a.path]);
+    el('tbody', {}, ...overview.archived.filter(matches).map(a => { const restore = el('button', { type: 'button', class: 'secondary compact', text: 'Restore' }) as HTMLButtonElement; restore.disabled = busy; restore.onclick = () => void act('restore', [a.path]);
       return el('tr', {}, el('td', { text: dateText(a.targetDate) }), el('td', { text: `${wingName(a.wing ?? 'MANGO')} ${a.courtIds.join('+')}` }), el('td', { text: manilaTime(Date.parse(a.archivedAt)) }), el('td', { class: 'small mono', text: `${a.sha256.slice(0, 16)}…` }),
         el('td', { 'data-tone': verify?.get(a.path) === 'MATCH' ? 'good' : verify?.has(a.path) ? 'bad' : 'muted', text: verify?.get(a.path) ?? '—' }), el('td', {}, restore)); }))))
     : el('p', { class: 'small', text: 'No archived records.' });

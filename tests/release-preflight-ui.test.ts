@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { chromium, type Browser, type Page } from 'playwright';
 import { mkdir } from 'node:fs/promises';
-import { openRenderer } from './renderer-harness.js';
+import { openRenderer, showRendererView } from './renderer-harness.js';
 import { bookingView } from '../ui/booking.js';
 import { BookingSetupSchema, ConfigSchema } from '../src/config.js';
 import { compileObjective, defaultObjective, enumerateTargets, savedMangoReleaseSetup, withStrategy, type BookingObjective } from '../src/booking-objective.js';
@@ -57,10 +57,13 @@ describe('Release Day Preflight (renderer)', () => {
       await step5(page);
       const setup=page.locator('#readiness-layers [data-row="locks"]'),consoleRow=page.locator('#next-preflight [data-row="locks"]');
       expect(await setup.getAttribute('data-status')).toBe('BLOCKED');
-      await page.getByRole('button',{name:'Dismiss old warning'}).click();
+      await page.evaluate(old=>{const w=window as any;w.fixtureJournals={overview:{counts:{unknown:1},activeUnknown:[{key:old.key,path:old.archivePath,targetDate:old.date,courtIds:old.courts,lastWriteAt:old.holdExpiresAt,eligible:true}],archived:[],eligible:[old.archivePath],checkedAt:new Date().toISOString()},archive:{archived:[{}],refused:[]}};},old);
+      await showRendererView(page,'records');await page.locator('#records-panel details summary').first().click();
+      await page.getByRole('button',{name:'Archive this notice'}).click();
+      await step5(page);
       await expect.poll(()=>setup.getAttribute('data-status')).toBe('VERIFIED');
       expect(await consoleRow.getAttribute('data-status')).toBe('VERIFIED');
-      expect(await page.locator('#dismissed-hold-notices').innerText()).toContain('records remain UNKNOWN');
+      expect(await page.evaluate(()=>(window as any).fixtureState.possibleHolds[0].archived)).toBe(true);
       await publish(page,{possibleHolds:[{...old,archived:true},{...old,key:'live',archivePath:undefined,dismissible:false,holdExpiresAt:iso(Date.now()+300_000)}]});
       await expect.poll(()=>setup.getAttribute('data-status')).toBe('BLOCKED');
       await publish(page,{possibleHolds:[{...old,archived:true,dismissible:false}]});
@@ -120,10 +123,10 @@ describe('Release Day Preflight (renderer)', () => {
       predictions: [], notes: [] },
       runSummary: { planned: 2, prepared: 2, initiated: 2, holds: 1, rejected: 1, unsent: 0, unknown: 0, pending: 0, internalFailures: 0, unsentReasons: {}, settled: true, headline: 'HOLD VERIFIED', detail: '2 planned · 2 sent · 1 hold · 1 rejected', nextStep: 'Pay the verified hold manually before it expires.' } }, 'live', { width: 1440, height: 1000 });
     await expect.poll(() => page.locator('#live-workers').innerText()).toContain('Browser A');
-    expect(await page.locator('#live-workers li[data-tone="ok"]').innerText()).toContain('verified hold');
-    expect(await page.locator('#live-objective').innerText()).toContain('Courts held: 1 of 2 required');
+    expect(await page.locator('#live-workers li[data-tone="ok"]').innerText()).toContain('local checkout result');
+    expect(await page.locator('#live-objective').innerText()).toContain('Courts with local checkout results: 1 of 2 required');
     const report = await page.locator('#live-report').innerText();
-    expect(report).toContain('NOT ACHIEVED · 1 of 2'); expect(report).toContain('Court 7'); expect(report).toContain('Pay the verified hold manually');
+    expect(report).toContain('NOT ACHIEVED · 1 of 2'); expect(report).toContain('Court 7'); expect(report).toContain('provider confirmation and QR details before manual payment');
     await page.screenshot({ path: '.local/release-preflight-ui/live-1440.png', fullPage: true });
     await page.close();
   });

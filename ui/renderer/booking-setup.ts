@@ -1,3 +1,4 @@
+import { operationalState } from './operational-state.js';
 import type { Dashboard } from '../types.js';
 import type { Wing } from '../../src/court-registry.js';
 import { compileObjective, rebaseReleasedDates, courtLabel, defaultObjective, enabledWings, evaluateObjectiveOutcome, objectiveFromLegacySetup, parseStoredObjective, savedMangoReleaseSetup, withMode, withStrategy, WINGS,
@@ -299,6 +300,7 @@ function renderAll(force: boolean) {
   if (!loaded) return;
   const v = view();
   renderHead(v);
+  if(state){const op=operationalState(state);if(op.active){byId('setup-state').textContent=op.label;byId('setup-state').dataset.tone=op.tone;}}
   renderStaleBanner(v);
   for (let i = 1; i <= 5; i++) byId(`setup-step-${i}`).hidden = i !== step;
   (byId('setup-back') as HTMLButtonElement).disabled = step === 1; const next = byId('setup-next') as HTMLButtonElement; next.hidden = step === 5;
@@ -317,41 +319,19 @@ function renderAll(force: boolean) {
   if (step === 5) renderReview(v);
 }
 
-let holdNoticeBusy=false,holdNoticeError='',showDismissedHolds=false;
-async function changeHoldNotice(action:'archive'|'restore',path:string){
-  if(holdNoticeBusy)return;
-  holdNoticeBusy=true;holdNoticeError='';renderPossibleHolds();
-  try {
-    const result=await window.thirsty.journalArchive({action,keys:[path],note:'Historical warning dismissed from Booking Setup'});
-    if(result.refused?.length)holdNoticeError='This warning could not be dismissed. Review the record in Activity.';
-  }catch{holdNoticeError='The warning could not be updated. Try again or review the record in Activity.';}
-  finally{holdNoticeBusy=false;renderPossibleHolds();}
-}
+/** Historical evidence is summarized without writing journals or the archival index. */
 function renderPossibleHolds(){
   const parent=document.getElementById('dest-setup');if(!parent)return;
   let host=document.getElementById('possible-hold-alert');
-  if(!host){host=el('section',{id:'possible-hold-alert',class:'card possible-hold',role:'alert'});parent.prepend(host);}
-  let history=document.getElementById('dismissed-hold-notices');
-  if(!history){history=el('section',{id:'dismissed-hold-notices',class:'card dismissed-holds'});host.after(history);}
-  const holds=state?.possibleHolds??[],active=holds.filter(h=>!h.archived),dismissed=holds.filter(h=>h.archived);
-  host.hidden=!active.length&&!holdNoticeError;history.hidden=!dismissed.length;
-  const now=Date.now()+(state?.clock?.clockOffsetMs??0);
-  const row=(hold:typeof holds[number])=>{
-    const remaining=Math.ceil((Date.parse(hold.holdExpiresAt)-now)/1000);
-    const button=hold.archivePath&&(hold.archived||hold.dismissible)?el('button',{type:'button',class:'hold-notice-action',text:hold.archived?'Show warning again':'Dismiss old warning'}):null;
-    if(button){button.disabled=holdNoticeBusy||state?.operation!=='idle'||hooks.labRunning;
-      button.addEventListener('click',()=>void changeHoldNotice(hold.archived?'restore':'archive',hold.archivePath!));}
-    return el('div',{class:'hold-notice'},el('strong',{text:remaining>0?'POSSIBLE HOLD DETECTED — VERIFY BEFORE EXPIRY':'PAST HOLD WARNING — PROVIDER STATUS UNKNOWN'}),
-      el('p',{text:`Court ${hold.courts.join(' / ')} · ${hold.date} · ${hold.startTime}–${hold.endTime} · ${hold.amount===null?'Amount unverified':peso(hold.amount)}`}),
-      el('p',{text:`Recorded hold deadline ${manilaTime(Date.parse(hold.holdExpiresAt))} · ${remaining>0?`${Math.floor(remaining/60)}:${String(remaining%60).padStart(2,'0')} remaining`:'Deadline passed; provider status remains UNKNOWN'}`}),
-      el('p',{text:'Response contains creation evidence, but the booking is not verified or paid. Do not submit again. Use the saved private recovery record to verify the existing reservation.'}),
-      el('details',{},el('summary',{text:'Private recovery identifiers'}),el('p',{text:`Bookings: ${hold.bookingNumbers.join(', ')||hold.bookingIds.join(', ')} · ${hold.code}`})),
-      button,button&&!hold.archived?el('p',{class:'muted',text:'Dismisses this notice only. The UNKNOWN record and duplicate-submission protection stay in place.'}):null);
-  };
-  fill(host,...active.map(row),holdNoticeError?el('p',{role:'status',text:holdNoticeError}):null);
-  const details=el('details',{},el('summary',{text:`Dismissed hold warnings (${dismissed.length}) — records remain UNKNOWN`}),...dismissed.map(row));
-  details.open=showDismissedHolds;details.addEventListener('toggle',()=>{showDismissedHolds=details.open;});
-  fill(history,details);
+  if(!host){host=el('section',{id:'possible-hold-alert',class:'panel historical-summary','aria-label':'Historical booking records'});parent.prepend(host);}
+  const holds=state?.possibleHolds??[], visible=holds.filter(h=>!h.archived);
+  const overlaps=holds.filter(h=>enabledWings(objective).some(w=>{const g=objective.wings[w];return h.date===g.bookingDate&&g.courts.some(c=>h.courts.includes(c.court))&&g.startTimes.some(start=>start<h.endTime&&`${String(Number(start.slice(0,2))+g.durationHours).padStart(2,'0')}:00`>h.startTime);}));
+  host.hidden=!visible.length&&!overlaps.length;
+  const unexpired=holds.filter(h=>Date.parse(h.holdExpiresAt)>Date.now()+(state?.clock?.clockOffsetMs??0));
+  const monitor=el('button',{type:'button',class:'secondary compact',text:`${unexpired.length} possible unexpired checkout(s) · View Live Monitor`});monitor.onclick=()=>hooks.showView('live');
+  const review=el('button',{type:'button',class:'secondary compact',text:'Review in Activity → Records & archive'});review.onclick=()=>hooks.showView('records');
+  fill(host,el('div',{},el('strong',{text:'Historical booking records'}),el('p',{class:'small',text:`${visible.length} unresolved records retained. Original booking targets remain protected.`})),review,unexpired.length?monitor:null,
+    overlaps.length?el('p',{class:'target-conflict',role:'status',text:`${overlaps.length} retained UNKNOWN record(s) overlap this draft: ${overlaps.slice(0,3).map(h=>`Court ${h.courts.join(' / ')} · ${h.date} · ${h.startTime}–${h.endTime}`).join('; ')}. Do not submit these targets again. Archiving a notice never removes duplicate protection.`}):null);
 }
 /** Enabled wings whose draft date has already been released (Next Release only). */
 function releasedDraftDates(now = Date.now()) {

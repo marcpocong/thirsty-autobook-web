@@ -149,7 +149,7 @@ it('mirrors the existing arm gate on Next Release and puts Live waiting first',a
   // One readiness verdict for the saved plan: the earliest incomplete stage, never a button-derived READY claim.
   expect(await page.locator('#next-preflight').innerText()).toContain('Saved plan is valid · not prepared yet');
   expect(await page.locator('#next-preflight').innerText()).not.toContain('READY FOR RELEASE');
-  await showRendererView(page,'live');expect(await page.locator('#live-result').innerText()).toBe('WAITING FOR RELEASE');
+  await showRendererView(page,'live');expect(await page.locator('#live-result').innerText()).toBe('SAVED');
   await page.close();
 });
 it('shows partial preparation from the engine forecast and prevents saving that release plan',async()=>{
@@ -177,7 +177,7 @@ it('shows the ready preflight from fixture engine state, without calling Terms o
 });
 it('renders verified, rejected, throttle and unknown Live outcomes from fixture events',async()=>{
   const page=await openRenderer(browser,{booking:booking(false),playerStatus:players},'live');
-  for(const [state,code,title] of [['ARMED','','WAITING FOR RELEASE'],['HOLD_VERIFIED','','HOLD VERIFIED'],['REJECTED','','ALL RELEASE ATTEMPTS REJECTED'],['REJECTED','HTTP_429','PROVIDER THROTTLED'],['UNKNOWN','','OUTCOME UNKNOWN']]){
+  for(const [state,code,title] of [['ARMED','','WAITING FOR RELEASE'],['HOLD_VERIFIED','','LOCAL RESULT VALID'],['REJECTED','','ALL RELEASE ATTEMPTS REJECTED'],['REJECTED','HTTP_429','PROVIDER THROTTLED'],['UNKNOWN','','OUTCOME UNKNOWN']]){
     await page.evaluate(({state,code})=>{const w=window as any;w.fixtureState.live={parents:[{key:'fixture',wave:'WAVE_1',court:7,startTime:'19:00',endTime:'22:00',children:[{attemptId:'fixture',label:'A',fanOutIndex:0,fanOutCount:1,state,code}]}],predictions:[],notes:[]};w.fixturePublish(w.fixtureState);},{state,code});
     expect(await page.locator('#live-result').innerText()).toBe(title);
     if(state==='ARMED')expect(await page.locator('#live-ready').innerText()).toBe('0');
@@ -329,6 +329,7 @@ it('clears schedule loading, reports HTTP 403, and preserves confirmed bookings 
 it('Available Now separates the wing goal from the saved Mango release authorization',async()=>{
  const saved=booking();const page=await openRenderer(browser,{booking:saved,playerStatus:players},'home');
  expect(await page.locator('#view-home').isVisible()).toBe(true);await page.locator('#home-start-setup').click();
+ await page.locator('#setup-steps [data-step="1"]').click();
  await page.locator('input[name="setup-mode"][value="AVAILABLE_NOW"]').check();
  await page.locator('#goal-MANGO-enabled').uncheck();await page.locator('#goal-BUKO-enabled').check();
  for(const court of ['7','6','5','3','2','1'])await page.locator('[data-wing="BUKO"] .court-chip[data-court="'+court+'"]').click();

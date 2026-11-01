@@ -21,6 +21,7 @@ function fixture(){
 }
 for(const width of [390,1060])it(`connects daily planning and shared readiness at ${width}px without false readiness or overflow`,async()=>{
   const page=await openRenderer(browser,fixture(),'home',{width,height:1000}),errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.locator('.daily-disclosure > summary').click();
   await expect.poll(()=>page.locator('#daily-dashboard').innerText()).toContain('8');
   expect(await page.locator('#daily-dashboard').innerText()).toContain('DRAFT · NOT AUTHORIZED');
   expect(await page.locator('#daily-dashboard').innerText()).toContain('Executable now');
@@ -38,6 +39,7 @@ for(const width of [390,1060])it(`connects daily planning and shared readiness a
 
 it('accepts a capacity proposal only into the draft, preserves the saved release, and routes notification clicks',async()=>{
   const value=fixture(),page=await openRenderer(browser,value,'home');
+  await page.locator('.daily-disclosure > summary').click();
   await page.locator('#daily-capacity-proposal summary').click();await page.locator('#daily-accept-capacity').click();
   expect(await page.locator('#setup-step-5').isVisible()).toBe(true);
   expect(await page.evaluate(()=>(window as any).fixtureCalls.filter((c:string)=>/saveBooking|armFullBooking|resetPrepare/.test(c)))).toEqual([]);
@@ -50,6 +52,7 @@ it('does not overwrite an unsaved manual draft when proposal replacement is decl
   const page=await openRenderer(browser,fixture(),'setup');
   await page.locator('#goal-MANGO-duration').selectOption('2');
   await page.locator('nav [data-dest="home"]').click();
+  await page.locator('.daily-disclosure > summary').click();
   let prompt='';page.once('dialog',async dialog=>{prompt=dialog.message();await dialog.dismiss();});
   await page.locator('#daily-accept').click();expect(prompt).toContain('unsaved draft');
   await page.locator('nav [data-dest="setup"]').click();await page.locator('#setup-steps [data-step="1"]').click();

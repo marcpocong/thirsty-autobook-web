@@ -1,3 +1,5 @@
+import { operationalState } from './operational-state.js';
+import { initMonitor, renderMonitor } from './monitor.js';
 import { hooks, PANE_DESTINATION, type Destination, type Pane } from './navigation.js';
 import { initBookingSetup } from './booking-setup.js';
 import { initHome } from './home.js';
@@ -35,7 +37,7 @@ let dirty=false, loadedPlan='';
 let courtOrder=[7,6,5,4,3,2,1], fallbackTimes:string[]=[];
 const input=(id:string)=>byId(id) as HTMLInputElement;
 let workflow:'test'|'release'='release';
-/** Panes inside the four destinations (Home, Booking Setup, Activity, Settings). */
+/** Panes inside the five destinations (Home, Booking Setup, Live Monitor, Activity, Settings). */
 type View = Pane;
 let currentView:View='home';
 const browserFocusMessages:Partial<Record<WorkerId,string>>={};
@@ -78,19 +80,23 @@ function runDetail(run:RunHistoryEntry){
   detail.append(Object.assign(document.createElement('h3'),{textContent:'Activity timeline'}),timeline);
   return detail;
 }
+let modalReturnFocus:HTMLElement|null=null;
 function showRunDetail(run:RunHistoryEntry){
+  modalReturnFocus=document.activeElement as HTMLElement|null;
   selectedRunId=run.runId;byId('run-detail-title').textContent=run.label.replaceAll('·',' / ').toUpperCase();
   byId('run-detail-content').replaceChildren(runDetail(run));byId('run-detail-modal').hidden=false;(byId('run-detail-close') as HTMLButtonElement).focus();
 }
-function closeRunDetail(){selectedRunId=undefined;byId('run-detail-modal').hidden=true;byId('run-detail-content').replaceChildren();}
+function closeRunDetail(){selectedRunId=undefined;byId('run-detail-modal').hidden=true;byId('run-detail-content').replaceChildren();modalReturnFocus?.focus();}
 let confirmActiveId:string|undefined;
 function settleConfirm(confirmed:boolean){
   if(!confirmActiveId)return;
   const id=confirmActiveId;confirmActiveId=undefined;
   byId('confirm-modal').hidden=true;
+  modalReturnFocus?.focus();
   void window.thirsty.confirmResponse(id,confirmed);
 }
 window.thirsty.onConfirmRequest(request=>{
+  modalReturnFocus=document.activeElement as HTMLElement|null;
   confirmActiveId=request.id;
   byId('confirm-dialog').dataset.tone=request.tone;
   byId('confirm-badge').textContent=request.tone==='warning'?'CAUTION':'CONFIRM';
@@ -123,7 +129,7 @@ const OBSERVER_VIEWS:readonly View[]=['live','history','tools','records'];
 // its mutating controls in the running/disabled state. Strategy remains blocked
 // so an in-flight plan cannot be edited accidentally.
 const RUN_ACCESSIBLE_VIEWS:readonly View[]=['home','setup','release',...OBSERVER_VIEWS];
-const DESTINATION_ELEMENTS:Record<Destination,string>={home:'view-home',setup:'dest-setup',activity:'dest-activity',settings:'view-tools'};
+const DESTINATION_ELEMENTS:Record<Destination,string>={home:'view-home',setup:'dest-setup',monitor:'view-live',activity:'dest-activity',settings:'view-tools'};
 function showView(view:View){
   if(hooks.labRunning&&!['setup','live','history','records'].includes(view))return;
   if(latest&&latest.operation!=='idle'&&latest.operation!=='scheduled'&&!RUN_ACCESSIBLE_VIEWS.includes(view)&&!(view==='tests'&&workflow==='test'))return;
@@ -143,9 +149,10 @@ function showView(view:View){
   for(const listener of hooks.paneListeners)listener(view);
 }
 /** A destination opens its current pane; Booking Setup chooses the pane for its active section. */
-let lastActivityPane:View='live';
+let lastActivityPane:View='history';
 function showDestination(destination:Destination){
   if(destination==='home')showView('home');
+  else if(destination==='monitor')showView('live');
   else if(destination==='settings')showView('tools');
   else if(destination==='activity')showView(lastActivityPane);
   else showView((document.querySelector<HTMLElement>('#setup-steps [aria-current="step"]')?.dataset.step==='5')?(hooks.desiredWorkflow?.()==='test'?'tests':'release'):'setup');
@@ -765,7 +772,17 @@ function renderBuild(state: Dashboard) {
 /** Legacy panes render first; the destination modules (Booking Setup, Home, Activity) render from the same state. */
 /** The legacy form's unsaved-edit flag applies only while that form owns the release plan. */
 const formDirty=()=>workflow==='release'&&!!hooks.useSavedRelease?.()?false:dirty;
-function render(state: Dashboard) { renderPanes(state); for (const renderer of hooks.renderers) renderer(state); }
+let lastReleaseKey: string | undefined;
+function render(state: Dashboard) {
+  const op = operationalState(state), key = state.scheduledRelease?.generation ?? (state.activeApiRelease ? String(state.activeApiRelease.releaseMs) : undefined);
+  const sampledNow=state.clock&&state.clock.remainingMs>0?state.clock.releaseMs-state.clock.remainingMs:undefined;
+  const beforeCritical=sampledNow===undefined||op.releaseMs===undefined||op.releaseMs-sampledNow>1000;
+  const newlyArmed = !!key && key !== lastReleaseKey && beforeCritical && ['ARMED', 'SECURITY PREPARATION'].includes(op.label);
+  lastReleaseKey = key;
+  renderPanes(state); for (const renderer of hooks.renderers) renderer(state);
+  renderMonitor(state);
+  if (newlyArmed && currentView !== 'live') showView('live');
+}
 function renderPanes(state: Dashboard) {
   latest = state;
   renderBuild(state);
@@ -784,7 +801,7 @@ function renderPanes(state: Dashboard) {
   const armed=!!state.scheduledRelease;
   const busy = state.operation !== 'idle'&&state.operation!=='scheduled';
   for(const id of ['test-wing','test-buko-court','test-date','book-now-start','book-now-duration','book-now-objective','book-now-exact','browse-courts'])input(id).disabled=busy;
-  byId('stop').hidden=!(busy||hooks.labRunning);byId('inline-stop').hidden=!(busy||hooks.labRunning||armed||!!apiRelease);
+  byId('stop').hidden=!(busy||hooks.labRunning||armed||!!state.activeApiRelease);byId('inline-stop').hidden=!(busy||hooks.labRunning||armed||!!apiRelease);
   const playerStatus=state.playerStatus??{primary:!!state.booking?.playerConfigured,extended:!!state.booking?.extendedPlayerConfigured,third:!!state.booking?.thirdPlayerConfigured,fourth:!!state.booking?.fourthPlayerConfigured,fifth:!!state.booking?.fifthPlayerConfigured,sixth:!!state.booking?.sixthPlayerConfigured,seventh:!!state.booking?.seventhPlayerConfigured,eighth:!!state.booking?.eighthPlayerConfigured};
   const dual=state.booking?.setup.BOOKING_TYPE==='standard'&&state.booking.setup.COURT_COUNT===2;
   // Keep the dual practice entry point visible in the safe single-court
@@ -1299,6 +1316,15 @@ byId('run-detail-close').addEventListener('click',closeRunDetail);
 byId('run-detail-modal').addEventListener('click',event=>{if(event.target===byId('run-detail-modal'))closeRunDetail();});
 byId('confirm-cancel').addEventListener('click',()=>settleConfirm(false));
 byId('confirm-ok').addEventListener('click',()=>settleConfirm(true));
+document.addEventListener('keydown',event=>{
+  if(event.key!=='Tab')return;
+  const modal=!byId('confirm-modal').hidden?byId('confirm-modal'):!byId('run-detail-modal').hidden?byId('run-detail-modal'):null;
+  if(!modal)return;
+  const nodes=[...modal.querySelectorAll<HTMLElement>('button:not(:disabled),a[href],input:not(:disabled),select:not(:disabled),summary,[tabindex="0"]')].filter(n=>n.getClientRects().length>0);
+  const first=nodes[0],last=nodes.at(-1);if(!first||!last)return;
+  if(event.shiftKey&&(document.activeElement===first||!modal.contains(document.activeElement))){event.preventDefault();last.focus();}
+  else if(!event.shiftKey&&(document.activeElement===last||!modal.contains(document.activeElement))){event.preventDefault();first.focus();}
+});
 document.addEventListener('keydown',event=>{if(event.key!=='Escape')return;if(!byId('confirm-modal').hidden)settleConfirm(false);else if(!byId('run-detail-modal').hidden)closeRunDetail();else if(activity.classList.contains('expanded'))setActivityExpanded(false);});
 
 const PRECISION_EVIDENCE_TEXT:Record<string,string>={PUBLIC_BOOKING_PRESENT:'PUBLIC BOOKING PRESENT',UNAVAILABLE_WITH_PUBLIC_BOOKING:'UNAVAILABLE WITH PUBLIC BOOKING',
@@ -1390,6 +1416,6 @@ input('book-now-start').value='18:00';
 // The both-wing availability grid is rendered by Booking Setup (booking-setup.ts).
 
 hooks.prepare=async()=>{byId('prepare').click();};
-initBookingSetup();initHome();initActivity();initDailyDashboard();
+initBookingSetup();initHome();initActivity();initDailyDashboard();initMonitor();
 // Buko or both wings are planned in Booking Setup (the saved legacy plan stays Mango).
 input('strategy-wing').onchange=()=>{const value=input('strategy-wing').value;if(value!=='MANGO'){input('strategy-wing').value='MANGO';document.dispatchEvent(new CustomEvent('booking-setup:wing',{detail:value}));}};

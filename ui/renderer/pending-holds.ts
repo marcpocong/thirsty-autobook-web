@@ -1,18 +1,21 @@
 import {el,fill,onPane,onRender,manilaTime,peso,hooks} from './navigation.js';
 import type {PendingHoldRow} from '../../src/api-booking/pending-hold-service.js';
 let rows:PendingHoldRow[]=[],busy=false,message='';
+export const pendingHoldRows = (): readonly PendingHoldRow[] => rows;
+export const pendingHoldBusy = () => busy;
 async function refresh(){
   if(busy)return;busy=true;render();
   try{const result=await window.thirsty.pendingHolds({action:'list'});rows=result.rows??rows;message=result.error??'';}
   catch{message='PENDING_HOLD_LIST_UNAVAILABLE';}finally{busy=false;render();}
 }
-async function recover(id:string,mode:'original'|'fresh'){
+export async function recover(id:string,mode:'original'|'fresh'){
   if(busy)return;busy=true;message='Verifying the existing reservation with Onda…';render();
   try{const result=await window.thirsty.pendingHolds({action:'recover',id,mode});rows=result.rows??rows;
     message=result.error??result.outcome?.code??'RECOVERY_OUTCOME_UNAVAILABLE';}
   catch{message='PENDING_HOLD_RECOVERY_FAILED';}finally{busy=false;render();}
 }
 function render(){
+  document.dispatchEvent(new Event('pending-holds:updated'));
   const host=document.getElementById('pending-holds-panel');if(!host)return;
   const disabled=busy||hooks.labRunning||!!hooks.latest()&&hooks.latest()!.operation!=='idle';
   const button=el('button',{type:'button',class:'secondary',text:'Refresh saved holds'});button.disabled=disabled;button.onclick=()=>void refresh();
@@ -34,7 +37,8 @@ function render(){
 }
 export function initPendingHolds(){
   let timer:ReturnType<typeof setInterval>|undefined,lastOperation='';
-  onPane(pane=>{if(timer)clearInterval(timer);timer=undefined;if(pane==='records'){
+  onPane(pane=>{if(timer)clearInterval(timer);timer=undefined;if(pane==='records'||pane==='live'){
+    if(pane==='live'&&hooks.latest()?.operation!=='idle')return;
     void refresh();timer=setInterval(()=>{if(!busy&&hooks.latest()?.operation==='idle')void refresh();},10_000);
   }});
   onRender(state=>{if(state.operation!==lastOperation){lastOperation=state.operation;render();}});render();

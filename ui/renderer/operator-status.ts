@@ -65,18 +65,18 @@ export function courtObjective(state: Dashboard): { held: number[]; required: nu
 }
 /** One line per browser for the current run: what its release attempts are doing now. No identifiers or security values. */
 export function workerProgress(state: Dashboard): Array<{ worker: string; target: string; status: string; tone: 'ok' | 'running' | 'warn' | 'danger' | 'muted' }> {
-  const parents = (state.live?.parents ?? []).filter(p => p.wave === 'WAVE_1' && p.workerId);
+  const parents = (state.live?.parents ?? []).filter(p => p.workerId);
   const workers = [...new Set(parents.map(p => p.workerId!))].sort();
   return workers.map(worker => {
     const mine = parents.filter(p => p.workerId === worker), children = mine.flatMap(p => p.children);
     const count = (test: (s: string) => boolean) => children.filter(c => test(c.state)).length;
     const holds = count(s => HOLD_STATES.has(s)), unknown = count(s => s === 'UNKNOWN'), rejected = count(s => s === 'REJECTED'), flying = count(s => s === 'IN_FLIGHT' || s === 'RESERVED');
-    const unsent = children.filter(c => UNSENT_STATES.has(c.state)), ready = count(s => s === 'READY'), preparing = children.length - holds - unknown - rejected - flying - unsent.length - ready;
-    const status = holds ? `verified hold${holds > 1 ? ` ×${holds}` : ''}` : unknown ? 'outcome UNKNOWN — review, never retried' : flying ? 'request sent · waiting for the provider'
-      : rejected ? `rejected${rejected > 1 ? ` ×${rejected}` : ''}` : unsent.length === children.length && children.length ? `not sent · ${(unsent[0]!.code ?? unsent[0]!.state).replaceAll('_', ' ').toLowerCase()}`
-        : ready ? `ready · waiting for release${preparing > 0 ? ` (${preparing} preparing)` : ''}` : 'preparing security';
-    const target = mine.map(p => `${p.court ? `Court ${p.court}` : 'target'}`).join(' + ');
-    return { worker, target, status, tone: holds ? 'ok' : unknown ? 'danger' : flying || ready || preparing > 0 ? 'running' : rejected || unsent.length ? 'warn' : 'muted' };
+    const unsent = children.filter(c => UNSENT_STATES.has(c.state)), ready = count(s => s === 'READY'), armed=count(s=>s==='ARMED'), preparing=count(s=>s==='PREPARING');
+    const status = holds ? `local checkout result${holds > 1 ? ` ×${holds}` : ''}${unknown?` · ${unknown} UNKNOWN, review before retry`:''}` : unknown ? 'outcome UNKNOWN — review, never retried' : flying ? 'request sent · waiting for the provider'
+      : armed ? `armed · ${armed} waiting for trigger` : ready ? `ready · waiting for release${preparing > 0 ? ` (${preparing} preparing)` : ''}` : preparing ? 'preparing security'
+      : rejected ? `rejected${rejected > 1 ? ` ×${rejected}` : ''}` : unsent.length === children.length && children.length ? `not sent · ${(unsent[0]!.code ?? unsent[0]!.state).replaceAll('_', ' ').toLowerCase()}` : 'internal result needs review';
+    const target = mine.map(p => `${p.court ? `Court ${p.court}` : 'target'}${p.startTime&&p.endTime?` · ${p.startTime}–${p.endTime}`:''}${p.wave==='WAVE_2'?' · backup':p.wave==='RESCUE'?' · rescue':''}`).join(' + ');
+    return { worker, target, status, tone: unknown ? 'danger' : holds ? 'ok' : flying || armed || ready || preparing > 0 ? 'running' : rejected || unsent.length ? 'warn' : 'muted' };
   });
 }
 /** Settled run report from the controller's durable accounting (src/run-outcome.ts) and the saved plan. */
@@ -89,7 +89,7 @@ export function runReport(state: Dashboard): Array<[string, string]> {
   return [['Target date', state.activeApiRelease?.targetDate ?? state.booking?.targetDate ?? '—'],
     ['Strategy', setup?.STRATEGY_V2?.shotgun?.enabled ? 'Shotgun' : setup?.RELEASE_STRATEGY === 'precision' ? 'Precision' : 'General'],
     ['Planned', String(r.planned)], ['Initiated', String(r.initiated)], ['Omitted / unsent', String(r.unsent)], ['Deadline misses', String(misses)],
-    ['Security preparation failures', String(security)], ['Verified holds', String(r.holds)], ['Rejected', String(r.rejected)], ['UNKNOWN', String(r.unknown)],
+    ['Security preparation failures', String(security)], ['Local checkout results', String(r.holds)], ['Rejected', String(r.rejected)], ['UNKNOWN', String(r.unknown)],
     ['Distinct courts held', o.held.length ? o.held.map(c => `Court ${c}`).join(', ') : 'none'], ['Required quota', `${o.met ? 'ACHIEVED' : 'NOT ACHIEVED'} · ${o.held.length} of ${o.required}`],
-    ['Next action', r.nextStep]];
+    ['Next action', r.holds?'Review existing-checkout provider confirmation and QR details before manual payment.':r.nextStep]];
 }

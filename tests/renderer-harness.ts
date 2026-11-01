@@ -95,7 +95,7 @@ export async function openRenderer(browser: Browser, extra: Record<string, unkno
 }
 
 /**
- * Opens a pane by its current or legacy name, the way an operator would, through the four destinations:
+ * Opens a pane by its current or legacy name, the way an operator would, through the five destinations:
  * release/tests → Booking Setup step 5 (Next Release / Available Now), strategy → step 3 legacy editor,
  * live/history/records → Activity tabs, tools → Settings.
  */
@@ -103,7 +103,8 @@ export async function showRendererView(page: Page, view: string): Promise<void> 
   const target = LEGACY_VIEWS[view] ?? view;
   if (target === 'home') { await page.locator('nav [data-dest="home"]').click(); return; }
   if (target === 'tools') { await page.locator('nav [data-dest="settings"]').click(); return; }
-  if (['live', 'history', 'records'].includes(target)) { await page.locator('nav [data-dest="activity"]').click(); await page.locator(`.activity-tabs [data-pane="${target}"]`).click(); return; }
+  if (target === 'live') { await page.locator('nav [data-dest="monitor"]').click(); return; }
+  if (['history', 'records'].includes(target)) { await page.locator('nav [data-dest="activity"]').click(); await page.locator(`.activity-tabs [data-pane="${target}"]`).click(); return; }
   await page.locator('nav [data-dest="setup"]').click();
   if (target === 'tests' || target === 'release' || target === 'lab') {
     // During a run the mode is locked; the current mode is kept.

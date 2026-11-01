@@ -19,8 +19,8 @@ async function renderer(extra:Record<string,unknown>={}){
 
 it('shows the operator views including the offline Test Lab with a wide grid and stacked narrow layout',async()=>{
   const page=await renderer();
-  expect(await page.locator('nav [data-dest]').allTextContents()).toEqual(['Home','Booking Setup','Activity','Settings']);
-  expect(await page.locator('#release-schedule').isVisible()).toBe(true);
+  expect(await page.locator('nav [data-dest]').allTextContents()).toEqual(['Home','Booking Setup','Live Monitor','Activity','Settings']);
+  expect(await page.locator('#release-schedule').isVisible()).toBe(false); // Operational clock moved to Live Monitor.
   expect(await page.locator('#next-strategy').isVisible()).toBe(true);
   expect(await page.locator('#booking-method').isVisible()).toBe(false);
   await mkdir('.local',{recursive:true});await page.screenshot({path:'.local/ui-redesign-release.png'});
@@ -238,6 +238,7 @@ it('never claims a browser is in front when the window did not take the foregrou
   const page=await renderer({qrHandoffs,playerStatus:{primary:true,extended:true,third:false,fourth:false,
     primaryDetails:{fullName:'Fixture Player',phone:'09123456789',email:'fixture@example.invalid'}}});
   await page.evaluate(()=>{(window as any).fixtureFocusResult='unconfirmed';});
+  await showRendererView(page,'records');await page.locator('#local-handoff-evidence > summary').click();
   const result=page.locator('#qr-summary-release .show-browser-result').first();
 
   await page.locator('#qr-summary-release .show-browser').first().click();
@@ -275,6 +276,7 @@ it('shows verified QR handoffs with the corresponding players in release and tes
     primaryDetails:{fullName:'Primary Fixture',email:'primary@example.invalid',phone:'09123456789'},
     extendedDetails:{fullName:'Second Fixture',email:'second@example.invalid',phone:'09987654321'}};
   const page=await renderer({headline:'Official QRPH checkout open',detail:'Automation stopped at the QR page.',qrHandoffs,playerStatus});
+  await showRendererView(page,'records');await page.locator('#local-handoff-evidence > summary').click();
   const release=await page.locator('#qr-summary-release').innerText();
   expect(release).toContain('All QR pages reached · 2 checkouts');
   expect(release).toContain('Browser A · Primary Fixture');

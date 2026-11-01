@@ -1,3 +1,5 @@
+import { operationalState } from './operational-state.js';
+import { pendingHoldRows } from './pending-holds.js';
 import type { Dashboard, LiveParentView } from '../types.js';
 import { courtObjective, liveOutcome, offsetText, runReport, workerProgress } from './operator-status.js';
 import { byId, el, empty } from './dom.js';
@@ -17,24 +19,27 @@ function parentSummary(parent: LiveParentView): string {
   return [...counts].map(([state, count]) => `${count} ${stateText(state)}`).join(', ');
 }
 
+let lastAttempts='',lastWorkers='';
 export function renderLive(state: Dashboard): void {
   const live = state.live, host = byId('live-attempts');
   const children=live?.parents.flatMap(value=>value.children)??[],planned=state.booking?.setup.PRECISION_PHASE3?.wave1.reduce((count,group)=>count+(group.fanOutOffsetsMs?.length??1),0)??state.booking?.setup.STRATEGY_V2?.shotgun?.exactSchedule.length??children.length;
   const releaseChildren=live?.parents.filter(parent=>parent.wave==='WAVE_1').flatMap(parent=>parent.children)??[];
   const ready=releaseChildren.filter(value=>['READY','IN_FLIGHT','REJECTED','UNKNOWN','QR_READY','VERIFIED','HOLD_VERIFIED','HOLD_VERIFIED_QR_ATTENTION'].includes(value.state)).length,dispatched=releaseChildren.filter(value=>['IN_FLIGHT','REJECTED','UNKNOWN','QR_READY','VERIFIED','HOLD_VERIFIED','HOLD_VERIFIED_QR_ATTENTION'].includes(value.state)).length;
   const pending=releaseChildren.filter(value=>value.state==='IN_FLIGHT').length,first=live?.parents.find(value=>value.wave==='WAVE_1')??live?.parents[0];
-  byId('live-primary-target').textContent=first?`${first.court?`Court ${first.court}`:'Target'} · ${hour(first.startTime)}–${hour(first.endTime)}`:'Waiting for a release';
+  byId('live-primary-target').textContent=first?`${first.court?`Court ${first.court}`:'Target'} · ${hour(first.startTime)}–${hour(first.endTime)}`:'Attempt progress';
   byId('live-planned').textContent=String(planned);byId('live-ready').textContent=String(ready);byId('live-dispatched').textContent=String(dispatched);byId('live-pending').textContent=String(pending);
   const paymentInProgress=children.some(value=>value.code==='SHOTGUN_PAYMENT_IN_PROGRESS_STOP');
   const unknown=children.some(value=>value.state==='UNKNOWN'),hold=children.some(value=>['QR_READY','VERIFIED','HOLD_VERIFIED','HOLD_VERIFIED_QR_ATTENTION'].includes(value.state)),throttle=children.some(value=>value.code?.includes('429')||value.code?.includes('THROTTLE')),
     allRejected=children.length>0&&children.every(value=>['REJECTED','NOT_DISPATCHED','FAILED','PREWARM_FAILED','WINDOW_MISSED'].includes(value.state));
-  const result=liveOutcome(state);
+  const result=liveOutcome(state).replace('RESCUE HOLD VERIFIED','RESCUE LOCAL RESULT VALID').replace('HOLD VERIFIED','LOCAL RESULT VALID');
   // The controller's accounting is authoritative: unsent, rejected and unknown are never merged.
-  byId('live-attempt-counts').textContent=state.runSummary?state.runSummary.detail:`${planned} planned · ${ready} prepared · ${dispatched} dispatched · ${pending} still in flight · ${releaseChildren.filter(child=>child.state==='REJECTED').length} rejected`;
+  byId('live-attempt-counts').textContent=state.runSummary?state.runSummary.detail.replace(/verified holds?/g,text=>text.endsWith('holds')?'local checkout results':'local checkout result'):`${planned} planned · ${ready} prepared · ${dispatched} dispatched · ${pending} still in flight · ${releaseChildren.filter(child=>child.state==='REJECTED').length} rejected`;
   const tone=hold?'ok':unknown||throttle||paymentInProgress?'danger':allRejected?'warn':dispatched||ready?'running':'muted';
   byId('live-result').textContent=result;byId('live-result').dataset.tone=tone;
-  byId('live-guidance').textContent=state.runSummary?.settled&&!hold&&!throttle&&!paymentInProgress?state.runSummary.nextStep:hold?'Review the verified QR browser and booking details. Payment remains manual.':paymentInProgress?'An existing payment checkout is in progress. Remaining objective attempts stopped; review that checkout before preparing again.':throttle?'Remaining objective attempts, backups and Rescue were stopped. Do not manually retry.':unknown?'Reconcile the provider state before any retry. The safety lock remains authoritative.':allRejected?'No hold was verified. Review details after the run completes.':dispatched?'Requests have left; wait for provider outcomes.':ready?'Attempts are prepared. Keep the PC awake and do not change the saved plan.':'Prepare and arm from Next Release. No action is needed here.';
-  byId('live-run-state').textContent = hold?'✓ HOLD':unknown||throttle||paymentInProgress?'✕ ATTENTION':state.operation !== 'idle' && state.operation !== 'scheduled'?'● RUNNING':live?.parents.length?'✓ FINISHED':'○ IDLE';
+  byId('live-guidance').textContent=state.runSummary?.settled&&!hold&&!throttle&&!paymentInProgress?state.runSummary.nextStep:hold?'Local checkout result recorded. Review existing checkout recovery for independent provider confirmation; payment remains manual.':paymentInProgress?'An existing payment checkout is in progress. Remaining objective attempts stopped; review that checkout before preparing again.':throttle?'Remaining objective attempts, backups and Rescue were stopped. Do not manually retry.':unknown?'Reconcile the provider state before any retry. The safety lock remains authoritative.':allRejected?'No hold was verified. Review details after the run completes.':dispatched?'Requests have left; wait for provider outcomes.':ready?'Attempts are prepared. Keep the PC awake and do not change the saved plan.':'Prepare and arm from Next Release. No action is needed here.';
+  const operational=operationalState(state,pendingHoldRows(),Date.now()+(state.clock?.clockOffsetMs??0));
+  byId('live-run-state').textContent=operational.label;
+  if(!children.length){byId('live-result').textContent=operational.label;byId('live-guidance').textContent=operational.detail;}
   const observer=state.slotWatch&&['waiting','watching'].includes(state.slotWatch.status)
     ? `Observer ONLINE${state.slotWatch.lastLatencyMs!==undefined?` · ${Math.round(state.slotWatch.lastLatencyMs)} ms`:''}`:'Observer OFFLINE / DEGRADED';
   const lockdown=state.operation==='full'&&state.clock&&state.clock.remainingMs<=1_000?'RELEASE CRITICAL LOCKDOWN active':'';
@@ -47,17 +52,22 @@ export function renderLive(state: Dashboard): void {
   // Per-browser state, the court objective (verified holds only) and, once settled, the run report.
   const workers = workerProgress(state), objective = courtObjective(state), workersHost = byId('live-workers'), report = runReport(state), reportHost = byId('live-report');
   workersHost.hidden = !workers.length;
+  const workersKey=JSON.stringify(workers);if(workersKey!==lastWorkers){lastWorkers=workersKey;
   workersHost.replaceChildren(...workers.map(w => { const item = el('li', '', ''); item.dataset.tone = w.tone;
-    item.append(el('strong', '', `Browser ${w.worker}`), el('span', '', w.target), el('span', 'live-worker-status', w.status)); return item; }));
+    item.append(el('strong', '', `Browser ${w.worker}`), el('span', '', w.target), el('span', 'live-worker-status', w.status)); return item; }));}
   const objectiveHost = byId('live-objective'); objectiveHost.hidden = !live?.parents.length;
-  objectiveHost.textContent = `Courts held: ${objective.held.length} of ${objective.required} required${objective.held.length ? ` (${objective.held.map(c => `Court ${c}`).join(', ')})` : ''} · ${objective.met ? 'objective met' : 'objective not met yet'} · a sent request is not a booking`;
+  objectiveHost.textContent = `Courts with local checkout results: ${objective.held.length} of ${objective.required} required${objective.held.length ? ` (${objective.held.map(c => `Court ${c}`).join(', ')})` : ''} · ${objective.met ? 'objective met' : 'objective not met yet'} · a sent request is not a booking`;
   objectiveHost.dataset.tone = objective.met ? 'ok' : 'muted';
   reportHost.hidden = !report.length || !state.runSummary?.settled;
   reportHost.replaceChildren(...(reportHost.hidden ? [] : report.map(([k, v]) => { const row = el('div', '', ''); row.dataset.fact = k; row.append(el('dt', '', k), el('dd', '', v)); return row; })));
+  const attemptsKey=JSON.stringify(live?.parents);
+  if(attemptsKey!==lastAttempts){lastAttempts=attemptsKey;
+  const opened=new Map([...host.querySelectorAll<HTMLDetailsElement>('details[data-key]')].map(d=>[d.dataset.key,d.open]));
   if (!live?.parents.length) host.replaceChildren(empty('Attempts appear here when a release run starts.'));
   else host.replaceChildren(...live.parents.map(parent => {
     const details = el('details', 'live-parent');
-    details.open = parent.children.length === 1 || parent.children.some(child=>['UNKNOWN','QR_READY','VERIFIED','HOLD_VERIFIED','HOLD_VERIFIED_QR_ATTENTION'].includes(child.state));
+    details.dataset.key=parent.key;
+    details.open = opened.get(parent.key) ?? (parent.children.length === 1 || parent.children.some(child=>['UNKNOWN','QR_READY','VERIFIED','HOLD_VERIFIED','HOLD_VERIFIED_QR_ATTENTION'].includes(child.state)));
     const shotgun=parent.wave==='WAVE_1'&&parent.children.some(child=>child.shotIndex!==undefined);
     const title = `${parent.court ? `Court ${parent.court}` : 'Target'} · ${hour(parent.startTime)}–${hour(parent.endTime)} · ${shotgun?`Shotgun · ${Math.max(...parent.children.map(child=>child.shotCount??parent.children.length))} attempts`:`${parent.workerId ? `Worker ${parent.workerId} · ` : ''}${waveLabel[parent.wave]}`}`;
     details.append(el('summary', '', `${title} — ${parentSummary(parent)}`));
@@ -70,6 +80,7 @@ export function renderLive(state: Dashboard): void {
     details.append(chips);
     return details;
   }));
+  }
   const rescue = byId('live-rescue');
   if (!live) { rescue.replaceChildren(); return; }
   const parts: HTMLElement[] = [el('strong', '', live.rescueEnabled ? `Reopened-slot rescue: ready · up to ${live.rescueMax ?? '?'}` : live.rescueEnabled === false ? 'Reopened-slot rescue: off' : '')];

@@ -388,6 +388,7 @@ describe('Next Release, Live and History & Insights', () => {
         children: [0, 1, 2, 3].map(child => ({ attemptId: `${worker}${child}`, label: `${worker}${child}`, fanOutIndex: child, fanOutCount: 4,
           state: child === 3 ? 'NOT_DISPATCHED' : child === 2 && index === 0 ? 'IN_FLIGHT' : 'REJECTED' })) })) };
     const page = await openRenderer(browser, { live }, 'live');
+    await page.locator('#monitor-attempt-details > summary').click();
     expect(await page.locator('#live-attempts .live-parent').count()).toBe(7);
     expect(await page.locator('#live-attempts .live-child').count()).toBe(28);
     expect(await page.locator('#live-attempts .live-parent').first().locator('summary').innerText()).toBe('Court 7 · 7 PM–10 PM · Worker A · Release attempts — 2 rejected, 1 in flight, 1 not dispatched');

@@ -1,10 +1,12 @@
+import { pendingHoldRows } from './pending-holds.js';
+import { operationalState, presentedHolds, holdPresentation } from './operational-state.js';
 import type { Dashboard } from '../types.js';
 import { enabledWings } from '../../src/booking-objective.js';
 import { capabilityMatrix, METHOD_LABEL, STRATEGY_LABEL } from '../../src/capability-matrix.js';
 import { nextReleaseFor, WING_RELEASE_POLICIES } from '../../src/wing-release-data.js';
 import { bookingSetupState, dashboardPreflight } from './booking-setup.js';
 import { planWorkerIds } from '../../src/workers.js';
-import { el, fill, manilaTime, dateText, wingName, onRender, peso } from './navigation.js';
+import { hooks, el, fill, manilaTime, dateText, wingName, onRender, peso } from './navigation.js';
 
 /** Home: what happens next, what is saved, what is ready and what needs a person. Read-only. */
 let journals: { activeUnknown: number; archived: number; checkedAt: number } | null = null;
@@ -46,22 +48,30 @@ export function renderHome(state: Dashboard) {
   fill(byId('home-browsers-body'), el('div', { class: 'browser-dots' }, ...(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'] as const).map(w => el('span', { class: 'browser-dot', 'data-open': String(!!health[w]), 'data-needed': String(needed.has(w)), title: `Browser ${w}${needed.has(w) ? ' · needed by this plan' : ''} · ${health[w] ? 'open' : 'not running'}`, text: w }))),
     el('p', { class: 'small', text: `${[...needed].filter(w => health[w]).length}/${needed.size} needed browsers open · ${state.ready ? 'prepared' : 'not prepared'} · availability uses its own read-only observer` }));
   const holds = (state.qrHandoffs ?? []).filter(h => h.holdExpiresAt && Date.parse(h.holdExpiresAt) > now);
-  fill(byId('home-holds-body'), holds.length ? el('ul', { class: 'plain-list' }, ...holds.map(h => el('li', { text: `${wingName(h.wing ?? 'MANGO')} Court ${h.courts.join(' + ')} · ${dateText(h.date)} ${h.startTime}–${h.endTime} · ${peso(h.amount)} · temporary hold until ${manilaTime(Date.parse(h.holdExpiresAt!), { hour: '2-digit', minute: '2-digit' })} · PAYMENT PENDING (manual)${h.checkout ? ` · Browser ${h.checkout}` : ''}` })))
-    : el('p', { class: 'small', text: `No current verified hold.${state.previousHolds?.length ? ` ${state.previousHolds.length} retained hold record(s) in History.` : ''} A hold is never a paid booking until you pay on Onda.` }));
+  const currentHolds=presentedHolds(state,pendingHoldRows(),now).filter(r=>r.outstanding&&r.advertisedExpiry&&Date.parse(r.advertisedExpiry)>now);
+  fill(byId('home-holds-body'), currentHolds.length ? el('ul', { class: 'plain-list' }, ...currentHolds.map(h => el('li', { text: `${wingName(h.wing)} Court ${h.courts.join(' + ')} · ${dateText(h.date)} ${h.start}–${h.end} · ${h.amount===null?'Amount unknown':peso(h.amount)} · ${holdPresentation(h,now).label} · advertised expiry ${manilaTime(Date.parse(h.advertisedExpiry!), { hour: '2-digit', minute: '2-digit' })} Manila · payment manual${h.worker ? ` · Browser ${h.worker}` : ''}` })))
+    : el('p', { class: 'small', text: 'No freshly confirmed active checkout in this view. Local captures and unresolved records remain in Activity. Payment is always manual.' }));
   const warnings: Array<[string, string]> = [];
   const preflight=dashboardPreflight();
   if(o.mode==='NEXT_RELEASE'&&preflight&&['NEEDS_ACTION','BLOCKED'].includes(preflight.verdict))warnings.push(['warn',`Release readiness: ${preflight.summary}`]);
   // The same typed failure and run accounting Booking Setup shows, first.
   if (state.attention) warnings.push(['bad', `${state.attention.title}: ${state.attention.detail} → ${state.attention.recovery.label} in Booking Setup → Review & Run.`]);
-  if (state.runSummary?.settled && state.runSummary.planned && !state.runSummary.holds) warnings.push([state.runSummary.unknown ? 'bad' : 'warn', `Last release run · ${state.runSummary.headline}: ${state.runSummary.detail}. ${state.runSummary.nextStep}`]);
-  if (state.lock && !state.canPrepareOverHold) warnings.push(['bad', 'An automation safety lock is active. Review it in Booking Setup → Review & Run before another run.']);
-  for (const h of holds) { const left = Date.parse(h.holdExpiresAt!) - now; if (left < 180_000) warnings.push(['warn', `A temporary hold expires in ${Math.max(0, Math.round(left / 1000))} s. Pay on Onda now if you want it; the bot never pays.`]); }
+  for (const h of holds) { const left = Date.parse(h.holdExpiresAt!) - now; if (left < 180_000) warnings.push(['warn', `A recorded checkout deadline is in ${Math.max(0, Math.round(left / 1000))} s. Verify the existing reservation and correct QR before paying manually.`]); }
   if (state.runSummary?.holds) warnings.push(['warn','Run hold counts describe locally validated responses. Check Activity → Records & archive → Pending Holds & Recovery for independent provider confirmation and current QR readiness.']);
-  if (journals?.activeUnknown) warnings.push(['warn', `${journals.activeUnknown} submission record(s) have an UNKNOWN outcome and keep their targets blocked. Review or archive them in Activity → Records & archive.`]);
+  if (journals?.activeUnknown) warnings.push(['muted', `${journals.activeUnknown} submission record(s) have an UNKNOWN outcome and keep their targets blocked. Review or archive them in Activity → Records & archive.`]);
   if (!state.clock?.networkSynced && mango.releaseMs - now < 30 * 60_000) warnings.push(['warn', 'The network clock is not synchronized. Arming synchronizes it automatically.']);
   for (const w of enabledWings(o)) { const c = compiled.capability[w]; if (c && !c.live) warnings.push(['muted', `${wingName(w)}: ${c.status.replace('_', ' ')} for live use — ${c.reasons[0]}`]); }
   if (compiled.problems.length) warnings.push(['warn', `Booking Setup has ${compiled.problems.length} item(s) to fix.`]);
-  fill(byId('home-warnings-body'), warnings.length ? el('ul', { class: 'strategy-warnings' }, ...warnings.map(([tone, text]) => el('li', { 'data-tone': tone, text })))
-    : el('p', { class: 'small', text: `No additional alerts. Use the shared readiness above for release eligibility.${journals ? ` ${journals.archived} historical record(s) archived.` : ''}` }));
-  byId('home-title').textContent = v?.state === 'ARMED' ? 'Armed and waiting for release' : v?.state === 'RUNNING' ? 'Release running' : v?.state === 'PREPARED' ? 'Prepared — authorize and arm next' : holds.length ? 'You have a temporary hold' : state.attention ? 'Needs attention' : v?.state === 'DRAFT' ? 'Draft — save the release plan next' : v?.state === 'SAVED' ? 'Saved — prepare next' : 'Ready when you are';
+  const list=(items:Array<[string,string]>)=>el('ul',{class:'strategy-warnings'},...items.map(([tone,text])=>el('li',{'data-tone':tone,text})));
+  fill(byId('home-warnings-body'),warnings.length?list(warnings.slice(0,3)):el('p',{class:'small',text:'No additional alerts. Review the saved plan before preparation.'}),
+    warnings.length>3?el('details',{class:'technical-drawer'},el('summary',{text:`Additional context (${warnings.length-3})`}),list(warnings.slice(3))):null);
+  const op=operationalState(state,pendingHoldRows(),now);
+  const draftNeedsReview=v?.state==='DRAFT'&&!op.active&&['IDLE','SAVED','PREPARED'].includes(op.label);
+  byId('home-title').textContent=draftNeedsReview?'Draft changes need review':op.active?op.label:op.label==='SAVED'?'Saved plan needs preparation':op.label==='IDLE'?'Nothing currently running':op.label;
+  byId('home-subtitle').textContent=draftNeedsReview?`${v.detail} The saved authorization remains unchanged.`:op.detail;
+  fill(byId('home-state-body'),el('span',{class:'state-badge','data-tone':op.tone,text:op.label}),el('p',{class:'small',text:op.detail}));
+  const primary=byId('home-start-setup') as HTMLButtonElement;
+  primary.dataset.dest=op.active||['QR READY','HOLD CONFIRMED'].includes(op.label)?'monitor':'setup';
+  primary.textContent=draftNeedsReview?'Review booking draft':op.active||['QR READY','HOLD CONFIRMED'].includes(op.label)?'Open Live Monitor':op.label==='SAFETY LOCK'||op.label==='NEEDS ATTENTION'?'Review required action':op.label==='PREPARED'?'Review readiness':op.label==='SAVED'?'Prepare saved plan':'Continue Booking Setup';
+  primary.onclick=()=>hooks.showView(draftNeedsReview?'setup':op.active||['QR READY','HOLD CONFIRMED'].includes(op.label)?'live':state.attention||op.label==='PREPARED'?'release':op.label==='SAVED'&&o.mode==='NEXT_RELEASE'?'release':op.label==='SAFETY LOCK'||op.label==='NEEDS ATTENTION'?'records':'setup');
 }

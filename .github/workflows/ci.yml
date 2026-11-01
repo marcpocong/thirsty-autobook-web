@@ -39,7 +39,7 @@ jobs:
         run: npx vitest run tests/normal-test-lab.test.ts
       # Full-page screenshots of every destination and step at two widths; sequential so it never loads the
       # real-time dispatcher deadline tests above.
-      - name: Four destinations at desktop and narrow widths
+      - name: Five destinations at desktop and narrow widths
         run: npx vitest run tests/ui-destinations.test.ts
       - name: Complete operator strategy flow and viewport checks
         run: npx vitest run tests/strategy-flow.test.ts
