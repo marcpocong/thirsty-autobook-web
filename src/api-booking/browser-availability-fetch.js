@@ -13,7 +13,8 @@ async ({path,timeoutMs,maximum}) => {
     try {
       runtime.push([chunk,id,module=>{
         try {
-          const helper=module.i(139691).getPublicFingerprintId;
+          const fingerprintModule=module.i(139691);
+          const helper=fingerprintModule.getPublicFingerprintId??fingerprintModule.f;
           if(typeof helper!=='function'){finish({failure:'AVAILABILITY_SITE_HELPER_UNAVAILABLE'});return;}
           Promise.resolve(helper()).then(value=>finish(typeof value==='string'&&/^[\x21-\x7e]{1,1024}$/.test(value)
             ?{value}:{failure:'AVAILABILITY_SITE_HELPER_FAILED'}),()=>finish({failure:'AVAILABILITY_SITE_HELPER_FAILED'}));

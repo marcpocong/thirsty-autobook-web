@@ -15,8 +15,10 @@ async () => {
     try {
       runtime.push([path, id, module => {
         try {
-          const challenge = module.i(709892).getPublicBookingTurnstileToken;
-          const fingerprint = module.i(139691).getPublicFingerprintId;
+          // Onda production minifies these exports; both names call the same genuine site helpers.
+          const challengeModule = module.i(709892), fingerprintModule = module.i(139691);
+          const challenge = challengeModule.getPublicBookingTurnstileToken ?? challengeModule.u;
+          const fingerprint = fingerprintModule.getPublicFingerprintId ?? fingerprintModule.f;
           if (typeof challenge !== 'function' || typeof fingerprint !== 'function') {
             finish({ code: 'ONDA_SECURITY_HELPER_UNAVAILABLE' });
             return;
