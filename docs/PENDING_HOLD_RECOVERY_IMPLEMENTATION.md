@@ -1,5 +1,7 @@
 # Pending hold recovery implementation report
 
+This report is the initial implementation snapshot. The subsequent owner-authorized canonical installation and authentication-flow repair are described in [PENDING_HOLD_AUTH_RECOVERY.md](PENDING_HOLD_AUTH_RECOVERY.md); the installation-blocked observations below remain historical evidence.
+
 ## Overall status
 
 **Source implemented; canonical installation and new live qualification blocked.** This report records the source implementation and its actual test boundaries. Final source commit/push and GitHub CI are reported with the task completion response and retained in the `main` history/[workflow results](https://github.com/marcpocong/thirsty-autobook-web/actions/workflows/ci.yml?query=branch%3Amain). No PR is used for this task.

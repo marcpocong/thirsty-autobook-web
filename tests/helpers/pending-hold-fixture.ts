@@ -41,7 +41,7 @@ export function fakeRecoveryPage(f:Awaited<ReturnType<typeof pendingFixture>>){
   let url='https://app.onda.fit/book/thirsty-pickle';
   const element={waitFor:vi.fn(async()=>{}),evaluate:vi.fn(async()=>true)};
   const page={url:()=>url,route:vi.fn(async()=>{}),unroute:vi.fn(async()=>{}),bringToFront:vi.fn(async()=>{}),
-    evaluate:vi.fn(async(_code:unknown,args:{kind:string}):Promise<{status:number;body:unknown;retryAfterMs:number|null}>=>({status:200,body:args.kind==='ACCESS'?{success:true}:structuredClone(f.provider),retryAfterMs:null})),
+    evaluate:vi.fn(async(_code:unknown,args:{kind:string;token?:string}):Promise<{status:number;body:unknown;retryAfterMs:number|null}>=>({status:200,body:args.kind==='ACCESS'?{success:true}:structuredClone(f.provider),retryAfterMs:null})),
     goto:vi.fn(async(u:string):Promise<void>=>{url=u;}),getByText:vi.fn(()=>({first:()=>element})),
     locator:vi.fn(()=>({innerText:vi.fn(async()=>f.body),filter:()=>({first:()=>element})}))};
   return {page:page as unknown as RecoveryPage,mocks:page,element,setUrl:(u:string)=>url=u};

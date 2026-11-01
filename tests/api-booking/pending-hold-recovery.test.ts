@@ -17,10 +17,10 @@ describe('independent provider hold verification and existing-only recovery',()=
     for(const row of f.provider.data.groupBookings){row.date+='T00:00:00.000Z';row.startTime+=':00';row.endTime+=':00';}
     expect((await recoverPendingHold(fakeRecoveryPage(f).page,f.directory,opts(f))).qr).toBe('QR_READY');
   }));
-  it('requires lookup evidence after a grant, durably records independent states, and never rewrites the journal',()=>fixture(async f=>{
+  it('validates the official lookup before granting access, durably records states, and never rewrites the journal',()=>fixture(async f=>{
     const {page,mocks}=fakeRecoveryPage(f),result=await recoverPendingHold(page,f.directory,opts(f));
     expect(result).toMatchObject({local:'LOCAL_RESPONSE_VALID',provider:'PROVIDER_HOLD_CONFIRMED',qr:'QR_READY'});
-    expect(mocks.evaluate.mock.calls.map(c=>c[1].kind)).toEqual(['ACCESS','LOOKUP']);
+    expect(mocks.evaluate.mock.calls.map(c=>c[1].kind)).toEqual(['LOOKUP','ACCESS']);
     expect(await readFile(f.journalPath,'utf8')).toBe(f.journalBefore);expect(f.submissions()).toBe(1);
     const text=JSON.stringify(result);expect(text).not.toContain('PRIVATE-');expect(text).not.toContain('fixture@example.invalid');expect(text).not.toContain('booking-7-0');
     const records=await readdir(join(f.directory,'hold-verification'));expect(records.length).toBeGreaterThanOrEqual(4);
@@ -30,8 +30,52 @@ describe('independent provider hold verification and existing-only recovery',()=
     const options=opts(f),result=await recoverPendingHold(page,f.directory,options);
     const codes:Record<number,string>={401:'PROVIDER_AUTHENTICATION_REQUIRED',403:'PROVIDER_ACCESS_DENIED',404:'PROVIDER_404_BEFORE_ADVERTISED_EXPIRY',410:'PROVIDER_CHECKOUT_UNAVAILABLE',429:'PROVIDER_RATE_LIMITED',500:'PROVIDER_SERVER_ERROR'};
     expect(result.code).toBe(codes[status]);expect(result.qr).not.toBe('QR_READY');expect(mocks.goto).not.toHaveBeenCalled();
-    expect(result.contradiction).toBe(status===404);expect(mocks.evaluate).toHaveBeenCalledTimes(status===500?3:2);
+    expect(result.contradiction).toBe(status===404);expect(mocks.evaluate).toHaveBeenCalledTimes([401,403].includes(status)?3:status===500?2:1);
     expect(await readFile(f.journalPath,'utf8')).toBe(f.journalBefore);
+  }));
+  it('uses only a fully matched lookup capability when the captured token is stale',()=>fixture(async f=>{
+    Object.assign(f.provider.data,{checkoutToken:'FRESH-PROVIDER-CAPABILITY'});
+    const {page,mocks}=fakeRecoveryPage(f);
+    mocks.evaluate.mockImplementation(async(_code,args)=>args.kind==='LOOKUP'?{status:200,body:f.provider,retryAfterMs:null}:
+      {status:args.token==='FRESH-PROVIDER-CAPABILITY'?200:401,body:{},retryAfterMs:null});
+    const result=await recoverPendingHold(page,f.directory,opts(f));
+    expect(result).toMatchObject({provider:'PROVIDER_HOLD_CONFIRMED',qr:'QR_READY'});
+    expect(mocks.evaluate.mock.calls.map(c=>c[1].kind)).toEqual(['LOOKUP','ACCESS']);
+    expect(JSON.stringify(result)).not.toContain('FRESH-PROVIDER-CAPABILITY');
+    expect(await readFile(f.journalPath,'utf8')).toBe(f.journalBefore);expect(f.submissions()).toBe(1);
+  }));
+  it.each([401,403])('uses the original grant only when the initial lookup requires access (%s)',status=>fixture(async f=>{
+    const {page,mocks}=fakeRecoveryPage(f);let lookups=0;
+    mocks.evaluate.mockImplementation(async(_code,args)=>args.kind==='ACCESS'?{status:200,body:{},retryAfterMs:null}:
+      ++lookups===1?{status,body:null,retryAfterMs:null}:{status:200,body:f.provider,retryAfterMs:null});
+    expect((await recoverPendingHold(page,f.directory,opts(f))).qr).toBe('QR_READY');
+    expect(mocks.evaluate.mock.calls.map(c=>c[1].kind)).toEqual(['LOOKUP','ACCESS','LOOKUP']);
+  }));
+  it('stops when both the original lookup and captured grant require authentication',()=>fixture(async f=>{
+    const {page,mocks}=fakeRecoveryPage(f);mocks.evaluate.mockResolvedValue({status:401,body:null,retryAfterMs:null});
+    const result=await recoverPendingHold(page,f.directory,opts(f));
+    expect(result).toMatchObject({provider:'UNKNOWN',qr:'NOT_CHECKED',code:'PROVIDER_AUTHENTICATION_REQUIRED'});
+    expect(mocks.evaluate.mock.calls.map(c=>c[1].kind)).toEqual(['LOOKUP','ACCESS']);expect(mocks.goto).not.toHaveBeenCalled();
+  }));
+  it('never uses a replacement capability from a foreign booking',()=>fixture(async f=>{
+    Object.assign(f.provider.data,{id:'foreign',checkoutToken:'FOREIGN-CAPABILITY'});
+    const {page,mocks}=fakeRecoveryPage(f);
+    expect((await recoverPendingHold(page,f.directory,opts(f))).code).toBe('PROVIDER_IDENTITY_MISMATCH');
+    expect(mocks.evaluate.mock.calls.map(c=>c[1].kind)).toEqual(['LOOKUP']);expect(mocks.goto).not.toHaveBeenCalled();
+  }));
+  it('keeps independent hold proof when checkout access is denied after the lookup',()=>fixture(async f=>{
+    const {page,mocks}=fakeRecoveryPage(f);
+    mocks.evaluate.mockImplementation(async(_code,args)=>args.kind==='LOOKUP'?{status:200,body:f.provider,retryAfterMs:null}:{status:401,body:null,retryAfterMs:null});
+    expect(await recoverPendingHold(page,f.directory,opts(f))).toMatchObject({provider:'PROVIDER_HOLD_CONFIRMED',qr:'FAILED',code:'PROVIDER_AUTHENTICATION_REQUIRED'});
+    expect(mocks.goto).not.toHaveBeenCalled();
+  }));
+  it('verifies without granting access or navigating, and rejects malformed replacement tokens',()=>fixture(async f=>{
+    const {page,mocks}=fakeRecoveryPage(f);
+    expect((await recoverPendingHold(page,f.directory,{...opts(f),verifyOnly:true})).provider).toBe('PROVIDER_HOLD_CONFIRMED');
+    expect(mocks.evaluate.mock.calls.map(c=>c[1].kind)).toEqual(['LOOKUP']);
+    mocks.evaluate.mockClear();Object.assign(f.provider.data,{checkoutToken:'invalid\ntoken'});
+    expect((await recoverPendingHold(page,f.directory,opts(f))).code).toBe('PROVIDER_CHECKOUT_TOKEN_INVALID');
+    expect(mocks.evaluate.mock.calls.map(c=>c[1].kind)).toEqual(['LOOKUP']);expect(mocks.goto).not.toHaveBeenCalled();
   }));
   it('honors bounded Retry-After without shortening an excessive provider delay',()=>fixture(async f=>{
     const {page,mocks}=fakeRecoveryPage(f);let reads=0;

@@ -55,6 +55,7 @@ export async function recoverPendingHold(page:RecoveryPage,directory:string,opti
     };
     local='LOCAL_RESPONSE_VALID';code='LOCAL_RESPONSE_VALID';mark('LOCAL_VALIDATED');await persist();
     const recovery=await prepareCheckoutRecovery(directory,new Date(record.capturedAt),{allowMissingToken:true});
+    let accessToken=recovery.token;
     await id.assertContext();
     if(record.identityBinding&&record.identityBinding!==recoveryIdentityBinding(id.customer,id.profile))throw Error('RECOVERY_CUSTOMER_OR_PROFILE_CHANGED');
     const url=new URL(page.url());if(url.origin!=='https://app.onda.fit'||url.pathname!=='/book/thirsty-pickle')throw Error('RECOVERY_BROWSER_ORIGIN_INVALID');
@@ -79,7 +80,7 @@ export async function recoverPendingHold(page:RecoveryPage,directory:string,opti
             const delay=/^\d+$/.test(header)?Number(header)*1000:serverDate?Date.parse(header)-Date.parse(serverDate)+1000:NaN;
             if(Number.isFinite(delay)&&delay>=0)retryAfterMs=delay;}
           return {status:response.status,body,retryAfterMs};
-        },{kind,bookingNo:recovery.bookingNo,bookingId:recovery.hold.bookingIds[0]!,token:recovery.token});}
+        },{kind,bookingNo:recovery.bookingNo,bookingId:recovery.hold.bookingIds[0]!,token:accessToken});}
         catch{mark('PROVIDER_RESULT',{operation:kind,failure:'TRANSPORT'});await persist();
           if(attempt===0){await sleep(250);continue;}throw Error('PROVIDER_READ_TIMEOUT_OR_TRANSPORT_FAILED');}
         httpStatus=result.status>=100?result.status:undefined;
@@ -99,23 +100,41 @@ export async function recoverPendingHold(page:RecoveryPage,directory:string,opti
     };
     const checkStatus=(result:Read,access:boolean)=>{
       if(result.status===200)return;
+      const failure=result.status===401?'PROVIDER_AUTHENTICATION_REQUIRED':result.status===403?'PROVIDER_ACCESS_DENIED':result.status===429?'PROVIDER_RATE_LIMITED':result.status>=500?'PROVIDER_SERVER_ERROR':access?'OFFICIAL_CHECKOUT_ACCESS_FAILED':'PROVIDER_LOOKUP_FAILED';
+      // A failed access grant does not erase a separately validated active lookup.
+      if(access&&provider==='PROVIDER_HOLD_CONFIRMED')throw Error(failure);
       provider='UNKNOWN';
       if(result.status===404){contradiction=Date.parse(recovery.hold.holdExpiresAt)>now().getTime();
         if(!contradiction)provider='EXPIRED_OR_UNAVAILABLE';throw Error(contradiction?'PROVIDER_404_BEFORE_ADVERTISED_EXPIRY':'PROVIDER_NOT_FOUND_AFTER_ADVERTISED_EXPIRY');}
       if(result.status===410){provider='EXPIRED_OR_UNAVAILABLE';throw Error('PROVIDER_CHECKOUT_UNAVAILABLE');}
-      throw Error(result.status===401?'PROVIDER_AUTHENTICATION_REQUIRED':result.status===403?'PROVIDER_ACCESS_DENIED':result.status===429?'PROVIDER_RATE_LIMITED':result.status>=500?'PROVIDER_SERVER_ERROR':access?'OFFICIAL_CHECKOUT_ACCESS_FAILED':'PROVIDER_LOOKUP_FAILED');
+      throw Error(failure);
     };
     // A missing captured token does not authorize a replacement identity. The
     // existing authenticated profile may still expose the original booking via
     // the same GET used by Onda on page load. Otherwise authentication fails closed.
-    if(recovery.token)checkStatus(await read('ACCESS'),true);
-    const lookup=await read('LOOKUP');checkStatus(lookup,false);await assertImmutable();
+    // Onda's court-v2 resume flow looks up the original booking first. A stale
+    // saved token must not prevent that independent, same-profile read.
+    let lookup=await read('LOOKUP'),accessGranted=false;
+    if([401,403].includes(lookup.status)&&accessToken){
+      checkStatus(await read('ACCESS'),true);accessGranted=true;lookup=await read('LOOKUP');
+    }
+    checkStatus(lookup,false);await assertImmutable();
     const state=validateProviderHold(lookup.body,{plan:recovery.plan,bookings:(record.response as {bookings:Record<string,unknown>[]}).bookings,
       customer:id.customer,legacyIdentity:!record.identityBinding},now());
     if(state==='PAID'){provider='PAYMENT_CONFIRMED';code='AUTHORITATIVE_PAYMENT_CONFIRMED';return await persist();}
     if(state==='EXPIRED'){provider='EXPIRED_OR_UNAVAILABLE';code='PROVIDER_HOLD_EXPIRED';return await persist();}
     provider='PROVIDER_HOLD_CONFIRMED';code='PROVIDER_HOLD_CONFIRMED';await persist();
     if(options.verifyOnly)return await persist();
+    if(!accessGranted){
+      // Accept a provider-issued replacement capability only after the entire
+      // lookup passed original booking/group/customer/amount/expiry validation.
+      const freshToken=(lookup.body as {data?:{checkoutToken?:unknown}}).data?.checkoutToken;
+      if(freshToken!==undefined&&freshToken!==null&&freshToken!==''){
+        if(typeof freshToken!=='string'||!/^[\x21-\x7e]{1,8192}$/.test(freshToken))throw Error('PROVIDER_CHECKOUT_TOKEN_INVALID');
+        accessToken=freshToken;
+      }
+      if(accessToken)checkStatus(await read('ACCESS'),true);
+    }
     await id.assertContext();
     if(Date.parse(recovery.hold.holdExpiresAt)<=now().getTime())throw Error('HOLD_EXPIRED_DURING_RECOVERY');
     await page.goto(recovery.url,{waitUntil:'domcontentloaded',timeout:45_000});
