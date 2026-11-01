@@ -53,6 +53,7 @@ it('accepts only explicit fresh current-run official QR handoffs and preserves c
   const h={status:'qr-ready',checkout:'A',wing:'MANGO',courts:[7],date:'2026-11-04',startTime:'19:00',endTime:'20:00',amount:700,verifiedAt:at,holdExpiresAt:new Date(now+60000).toISOString()};
   const s=state({runTiming:{startedAt:new Date(now-2000).toISOString()},apiStage:{runId:'fixture'},qrHandoffs:[h]});
   expect(presentedHolds(s,[],now)).toHaveLength(1);expect(operationalState(s,[],now).label).toBe('QR READY');
+  expect(presentedHolds(s,[],now+31_000)).toEqual([expect.objectContaining({provider:'UNKNOWN',freshConfirmationRequired:true,outstanding:true})]);
   expect(presentedHolds(state({...s,qrHandoffs:[{...h,status:'hold-created'}]}),[],now)).toHaveLength(0);
   expect(presentedHolds(state({...s,apiStage:null}),[],now)).toHaveLength(0);
   expect(presentedHolds(state({...s,runTiming:{startedAt:new Date(now).toISOString()}}),[],now)).toHaveLength(0);

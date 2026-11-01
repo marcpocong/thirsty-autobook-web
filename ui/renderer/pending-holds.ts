@@ -41,5 +41,7 @@ export function initPendingHolds(){
     if(pane==='live'&&hooks.latest()?.operation!=='idle')return;
     void refresh();timer=setInterval(()=>{if(!busy&&hooks.latest()?.operation==='idle')void refresh();},10_000);
   }});
-  onRender(state=>{if(state.operation!==lastOperation){lastOperation=state.operation;render();}});render();
+  onRender(state=>{if(state.operation!==lastOperation){lastOperation=state.operation;render();
+    if(state.operation==='idle'&&document.getElementById('view-live')?.hidden===false)void refresh();
+  }});render();
 }

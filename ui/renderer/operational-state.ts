@@ -65,13 +65,14 @@ export function presentedHolds(s:Dashboard, rows:readonly PendingHoldRow[],now:n
   if(!s.runTiming?.startedAt||!s.apiStage?.runId)return result;
   for(const [index,h] of (s.qrHandoffs??[]).entries()){
     const at=Date.parse(h.verifiedAt),age=now-at;
-    if(h.status!=='qr-ready'||!h.checkout||!h.holdExpiresAt||Date.parse(h.holdExpiresAt)<=now||at<Date.parse(s.runTiming.startedAt)||age<0||age>30_000)continue;
+    if(h.status!=='qr-ready'||!h.checkout||!h.holdExpiresAt||Date.parse(h.holdExpiresAt)<=now||at<Date.parse(s.runTiming.startedAt)||age<0)continue;
+    const fresh=age<=30_000;
     const sameTarget=result.filter(r=>!r.currentHandoff&&r.worker===h.checkout&&r.wing===(h.wing??'MANGO')&&r.date===h.date&&r.start===h.startTime&&r.end===h.endTime&&r.amount===h.amount&&JSON.stringify(r.courts)===JSON.stringify(h.courts));
     if(sameTarget.some(r=>['EXPIRED_OR_UNAVAILABLE','PAYMENT_CONFIRMED'].includes(r.provider)||r.contradiction||r.lastCheckedAt&&Date.parse(r.lastCheckedAt)>=at))continue;
     const id=`current-handoff-${index}`;if(result.some(r=>r.currentHandoff&&r.id===id))continue;
     // Different evidence sources cannot be joined by target alone. Keep separate, never upgrade a saved row.
     result.push({id,worker:h.checkout,wing:h.wing??'MANGO',courts:h.courts,date:h.date,start:h.startTime,end:h.endTime,amount:h.amount,advertisedExpiry:h.holdExpiresAt,
-      local:'LOCAL_RESPONSE_VALID',provider:'PROVIDER_HOLD_CONFIRMED',qr:'QR_READY',outstanding:true,freshConfirmationRequired:false,lastCheckedAt:h.verifiedAt,diagnostic:'CURRENT_OFFICIAL_QR_HANDOFF',contradiction:false,currentHandoff:true});
+      local:'LOCAL_RESPONSE_VALID',provider:fresh?'PROVIDER_HOLD_CONFIRMED':'UNKNOWN',qr:fresh?'QR_READY':'NOT_CHECKED',outstanding:true,freshConfirmationRequired:!fresh,lastCheckedAt:h.verifiedAt,diagnostic:fresh?'CURRENT_OFFICIAL_QR_HANDOFF':'FRESH_PROVIDER_CONFIRMATION_REQUIRED',contradiction:false,currentHandoff:true});
   }
   return result;
 }
