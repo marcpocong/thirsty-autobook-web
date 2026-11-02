@@ -17,7 +17,7 @@ import type { CheckoutDispatchOptions,OndaBrowserSessionTransport } from './brow
 import type { RendererClockCalibration } from './renderer-clock.js';
 import { DEFAULT_RENDERER_DISPATCH_OPTIONS, planRendererFire, type RendererDispatchOptions, type RendererFirePlan } from './renderer-dispatch.js';
 import { schedulePrewarm, UNBOUNDED_PREWARM, type PrewarmPolicy, type PrewarmSchedule, type TierStatus } from './prewarm-scheduler.js';
-import { SHOTGUN_MAX_TRIGGER_LATENESS_MS, shotgunStopReason, shotgunTriggerMs, type ShotgunSuppressionReason } from '../shotgun.js';
+import { assertShotgunReleasePolicy, SHOTGUN_MAX_TRIGGER_LATENESS_MS, shotgunStopReason, shotgunTriggerMs, type ShotgunSuppressionReason } from '../shotgun.js';
 
 /**
  * Durable pre-armed Precision dispatch.
@@ -93,6 +93,8 @@ export async function armPrecisionRace(race: FrozenPrecisionRace, deps: ArmDeps)
   assertPrecisionFreezeIntact(race);
   if (race.releaseMs !== deps.releaseMs || !Number.isSafeInteger(deps.releaseMs)) throw Error('PRECISION_ARM_RELEASE_MISMATCH');
   if (!race.attempts.length) throw Error('PRECISION_NOTHING_TO_ARM');
+  for(const attempt of race.attempts)assertShotgunReleasePolicy(attempt.releaseTimingPolicy,
+    race.attempts.map(a=>a.target.releaseOffsetMs??0),attempt.dispatchTimingPolicy==='SHOTGUN_STRICT');
   // Validated before anything durable: an out-of-range offset refuses the whole arm.
   const triggers = race.attempts.map(attempt => shotgunTriggerMs(deps.releaseMs, attempt.target.releaseOffsetMs ?? 0));
   if (!(deps.now() < Math.min(...triggers))) throw Error('PRECISION_ARM_TOO_LATE');

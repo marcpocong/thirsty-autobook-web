@@ -2,6 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { checkoutDiagnostic } from '../../src/api-booking/checkout-diagnostics.js';
 
 describe('checkout rejection diagnostics', () => {
+  it('identifies explicit date publication rejection without retaining free text or changing payment/security precedence',()=>{
+    const hint=(error:string)=>checkoutDiagnostic({status:400,contentType:'application/json',body:JSON.stringify({error})}).errorHint;
+    expect(hint('This booking date is not available yet.')).toBe('date-unavailable');
+    expect(hint('Slot unavailable')).toBe('availability');
+    expect(hint('Booking date is not available yet; payment already in progress')).toBe('payment-in-progress');
+    expect(hint('Booking date is not available yet; verification required')).toBe('verification');
+  });
   it('retains only bounded categories and an allowlisted application code', () => {
     const diagnostic = checkoutDiagnostic({ status: 403, contentType: 'application/json',
       body: JSON.stringify({ success: false, code: 'VERIFICATION_REQUIRED',

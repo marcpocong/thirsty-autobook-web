@@ -104,10 +104,15 @@ export function renderShotgunEditor(host: HTMLElement, ctx: ShotgunEditorContext
   const limit = el('label', { class: 'terms-choice' }, el('input', { type: 'checkbox', id: 'shotgun-limit-ideal' }), ' Limit dispatched courts to the ideal goal; keep other acceptable courts as draft alternatives');
   (limit.firstChild as HTMLInputElement).checked = s.limitToIdeal===true; (limit.firstChild as HTMLInputElement).disabled = disabled;
   (limit.firstChild as HTMLInputElement).onchange = event => set({ limitToIdeal: (event.target as HTMLInputElement).checked });
+  const releasePolicy = el('select', { id: 'shotgun-release-policy' }) as HTMLSelectElement;
+  releasePolicy.replaceChildren(new Option('Literal legacy schedule (unqualified at release)', 'LEGACY'),new Option('Release boundary V1: one attempt at 0 ms', 'ZERO_BOUNDARY_V1'));
+  releasePolicy.value=s.releaseTimingPolicy??'LEGACY';releasePolicy.disabled=disabled;
+  releasePolicy.onchange=()=>{const {releaseTimingPolicy:_p,customAssignments:_a,customOffsetsMs:_o,customCounts:_c,...rest}=s;
+    ctx.onChange(releasePolicy.value==='ZERO_BOUNDARY_V1'?{...rest,releaseTimingPolicy:'ZERO_BOUNDARY_V1',budget:1,windowStartMs:0,windowEndMs:0,timingMode:'AUTO',allocationMode:'PRIORITY_WEIGHTED',limitToIdeal:true,presetId:'FULLY_CUSTOM',source:'CUSTOM'}:{...rest,presetId:'FULLY_CUSTOM',source:'CUSTOM'});};
   const manual = el('section', { class: 'shotgun-card', id: 'shotgun-manual' }, el('p', { class: 'eyebrow', text: 'Manual timing' }),
     el('div', { class: 'setup-grid' },
       numberField('Total attempts', custom ? rows.length || (s.customOffsetsMs?.length ?? 0) : s.budget, { id: 'shotgun-budget', min: '1', max: String(PRECISION_MAX_SENDS) }, value => set({ budget: value }), disabled || custom),
-      el('label', {}, 'Allocation', allocation), el('label', {}, 'Timing', timingMode),
+      el('label', {}, 'Release policy', releasePolicy), el('label', {}, 'Allocation', allocation), el('label', {}, 'Timing', timingMode),
       numberField('First attempt (ms before release)', s.windowStartMs, { id: 'shotgun-window-start', min: '-2000', max: '0' }, value => set({ windowStartMs: value }), disabled || custom || s.timingMode === 'DENSE_CORE'),
       numberField('Last attempt (ms)', s.windowEndMs, { id: 'shotgun-window-end', min: '-2000', max: '0' }, value => set({ windowEndMs: value }), disabled || custom || s.timingMode === 'DENSE_CORE')),
     counts, limit, override, standby,

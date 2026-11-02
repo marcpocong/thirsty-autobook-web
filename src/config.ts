@@ -67,6 +67,7 @@ export const StrategyV2Schema=z.object({version:z.literal(1),preset:z.enum(['BAL
   quickShotgun:z.object({version:z.literal(1),settingsKey:z.string().max(4000),normalized:z.array(z.enum(['total','wave2','rescue','standby'])).max(4).optional()}).strict().optional(),
   lineage:z.object({immediate:z.array(z.string().regex(/^I\d+$/).nullable()).max(7),backups:z.array(z.string().regex(/^B\d+$/).nullable()).max(21)}).strict().optional(),
   shotgun:z.object({version:z.literal(1),enabled:z.boolean(),budget:z.number().int().min(1).max(PRECISION_MAX_SENDS),
+    releaseTimingPolicy:z.literal('ZERO_BOUNDARY_V1').optional(),
     allocationMode:z.enum(['EQUAL','PRIORITY_WEIGHTED','CUSTOM']),selectedTargetIds:z.array(z.string().min(1).max(100)).min(1).max(7),
     customCounts:z.record(z.string(),z.number().int().nonnegative()).optional(),windowStartMs:z.number().int().min(-2000).max(0),
     windowEndMs:z.number().int().min(-2000).max(0),timingMode:z.enum(['AUTO','DENSE_CORE','TIGHT','BALANCED','WIDE','CUSTOM']),
@@ -98,6 +99,9 @@ function checkPrecision(c:{RELEASE_STRATEGY:'general'|'precision';BOOKING_METHOD
     const p=c.PRECISION_PHASE3,workers=[...p.wave1.map(value=>value.workerId),...p.standby];
     const shotgun=c.STRATEGY_V2?.shotgun;
     if(shotgun){const selected=new Set(shotgun.selectedTargetIds),candidateIds=new Set(p.wave1.map(value=>logicalTargetId(p.candidates[value.candidateIndex]!)));
+      if(shotgun.releaseTimingPolicy && (!shotgun.enabled||shotgun.budget!==1||shotgun.windowStartMs!==0||shotgun.windowEndMs!==0||shotgun.capacity.groupAnchorMs!==0||
+        shotgun.exactSchedule.length!==1||shotgun.exactSchedule[0]?.configuredOffsetMs!==0||p.wave1.length!==1||p.budgets.wave2!==0||p.budgets.rescue!==0||p.budgets.total!==1||p.rescueEnabled))
+        ctx.addIssue({code:'custom',message:'ZERO_BOUNDARY_V1 requires exactly one strict zero-offset attempt and no Wave 2 or Rescue.',path:['STRATEGY_V2','shotgun','releaseTimingPolicy']});
       if(shotgun.windowStartMs>shotgun.windowEndMs||selected.size!==shotgun.selectedTargetIds.length||[...selected].some(value=>!candidateIds.has(value)))
         ctx.addIssue({code:'custom',message:'Shotgun target selection or timing window is inconsistent.',path:['STRATEGY_V2','shotgun']});
       const countSum=Object.values(shotgun.counts).reduce((sum,value)=>sum+value,0),scheduleCounts=new Map<string,number>();
@@ -338,6 +342,7 @@ export function planFingerprint(c: Config) {
     // Present only for Precision, so a General plan keeps exactly its previous fingerprint.
     ...(c.RELEASE_STRATEGY==='precision'?{releaseStrategy:'precision',precisionTargets:c.PRECISION_TARGETS,precisionFanOut:c.PRECISION_FAN_OUT,precisionPhase3:c.PRECISION_PHASE3,
       ...(c.RELEASE_LAB?{releaseLab:c.RELEASE_LAB}:{}),
+      ...(c.STRATEGY_V2?.shotgun?.releaseTimingPolicy?{releaseTimingPolicy:c.STRATEGY_V2.shotgun.releaseTimingPolicy}:{}),
       ...(c.STRATEGY_V2?.objective?{objective:{scope:c.STRATEGY_V2.objective.scope,wings:c.STRATEGY_V2.objective.wings,overall:c.STRATEGY_V2.objective.overall}}:{})}:{}),
     // Likewise present only when non-zero; a changed offset after arming is a changed plan.
     ...(c.RELEASE_OFFSET_MS?{releaseOffsetMs:c.RELEASE_OFFSET_MS}:{}) })).digest('hex');

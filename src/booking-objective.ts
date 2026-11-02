@@ -39,6 +39,7 @@ export interface WingGoal {
   dayRate?: { perHour: number; confirmedAt: string; date: string } | null;
 }
 export interface ObjectiveShotgun {
+  releaseTimingPolicy?: 'ZERO_BOUNDARY_V1';
   budget: number; allocationMode: ShotgunAllocationMode; customCounts?: Record<string, number>;
   windowStartMs: number; windowEndMs: number; timingMode: ShotgunTimingMode;
   /** Literal signed offsets. With customAssignments, index-aligned (offset i goes to target customAssignments[i]). */
@@ -237,7 +238,7 @@ export function toShotgunSettings(s: ObjectiveShotgun, immediateIds: readonly st
     if (!Number.isSafeInteger(value) || (value as number) < 0)
       problems.push(`${labelOf?.(id) ?? 'A Shotgun target'}: the attempt count must be a whole number of 0 or more (found ${value === null || value === undefined || value === '' ? 'blank' : String(value)}). It was not changed; correct it.`);
   }
-  const base: ShotgunSettings = { enabled: true, budget: s.budget, allocationMode: s.allocationMode, selectedTargetIds: [...immediateIds],
+  const base: ShotgunSettings = { enabled: true, ...(s.releaseTimingPolicy?{releaseTimingPolicy:s.releaseTimingPolicy}:{}), budget: s.budget, allocationMode: s.allocationMode, selectedTargetIds: [...immediateIds],
     windowStartMs: s.windowStartMs, windowEndMs: s.windowEndMs, timingMode: s.timingMode, timingCapacityOverride: !!s.timingCapacityOverride,
     allowStandbyConsumption: !!s.allowStandbyConsumption, ...(s.allocationMode === 'CUSTOM' ? { customCounts: Object.fromEntries(immediateIds.map(id => [id, hasCount(s.customCounts, id) ? s.customCounts![id]! : 0])) } : {}),
     ...(s.customOffsetsMs ? { customOffsetsMs: [...s.customOffsetsMs] } : {}) };
@@ -420,7 +421,7 @@ export function compileObjective(o: BookingObjective, ctx: CompileContext): Comp
   const expectedIdealTotal = perHoldMax === null ? null : perHoldMax * idealTotal;
   if (o.price.maxTotal !== null && expectedIdealTotal !== null && expectedIdealTotal > o.price.maxTotal) problems.push(`The ideal ${idealTotal} court${idealTotal === 1 ? '' : 's'} may cost up to ₱${expectedIdealTotal.toLocaleString('en-US')}, above the maximum total of ₱${o.price.maxTotal.toLocaleString('en-US')}.`);
   if (o.mode === 'NEXT_RELEASE' && o.strategy !== 'NORMAL' && maximumPossible > idealTotal) warnings.push(`Up to ${maximumPossible} attempts can be in flight; already-sent attempts may create extra temporary holds beyond the ideal ${idealTotal}. Each hold is reconciled separately; none is paid automatically.`);
-  const fingerprintSource = { v: OBJECTIVE_VERSION, mode: o.mode, strategy: o.strategy, method: o.checkoutMethod, quota, price: o.price,
+  const fingerprintSource = { ...(o.strategy==='SHOTGUN'&&o.shotgun.releaseTimingPolicy?{releaseTimingPolicy:o.shotgun.releaseTimingPolicy}:{}), v: OBJECTIVE_VERSION, mode: o.mode, strategy: o.strategy, method: o.checkoutMethod, quota, price: o.price,
     cohorts: cohorts.map(c => ({ releaseMs: c.releaseMs, phase3: c.smart?.phase3 ?? null, shotgun: c.smart?.shotgun?.shots ?? null })), normalSteps, generalRelease };
   return { objective: o, mode: o.mode, strategy: o.strategy, method: o.checkoutMethod, quota, targets, cohorts, normalSteps, generalRelease, capability, liveStatus,
     price: { perHoldMax, expectedIdealTotal, worstCaseTotal: perHoldMax === null ? null : perHoldMax * Math.max(maximumPossible, idealTotal) },
@@ -485,7 +486,7 @@ export function savedMangoReleaseSetup(compiled: CompiledObjective, nextMangoBoo
   const strategyV2 = { version: 1, preset: 'CUSTOM', goal: { primeFrom: `${String(Math.min(...hours)).padStart(2, '0')}:00`, primeUntil: `${String(Math.min(24, Math.max(...cohort.immediate.map(t => hourOf(t.start) + t.durationHours)))).padStart(2, '0')}:00`,
       durations: [g.durationHours], courts: ordered },
     fanOut: { width: 1, source: 'OPERATOR_OVERRIDE', recommendedWidth: null, timing: 'BALANCED', profileCreatedAt: null },
-    ...(smart.shotgun && shotgun ? { shotgun: { version: 1, enabled: true, budget: shotgun.budget, allocationMode: shotgun.allocationMode, selectedTargetIds: shotgun.selectedTargetIds.filter(id => activeShotgunIds.has(id)),
+    ...(smart.shotgun && shotgun ? { shotgun: { version: 1, enabled: true, ...(shotgun.releaseTimingPolicy?{releaseTimingPolicy:shotgun.releaseTimingPolicy}:{}), budget: shotgun.budget, allocationMode: shotgun.allocationMode, selectedTargetIds: shotgun.selectedTargetIds.filter(id => activeShotgunIds.has(id)),
       ...(shotgun.customCounts ? { customCounts: activeCounts(shotgun.customCounts) } : {}), windowStartMs: shotgun.windowStartMs, windowEndMs: shotgun.windowEndMs, timingMode: shotgun.timingMode,
       ...(shotgun.customOffsetsMs ? { customOffsetsMs: smart.shotgun.shots.map(s => s.configuredOffsetMs) } : {}), timingCapacityOverride: !!shotgun.timingCapacityOverride, allowStandbyConsumption: !!shotgun.allowStandbyConsumption,
       counts: activeCounts(smart.shotgun.counts), exactSchedule: smart.shotgun.shots.map(({ logicalTargetId, shotIndex, configuredOffsetMs }) => ({ logicalTargetId, shotIndex, configuredOffsetMs })),
@@ -548,7 +549,7 @@ interface LegacySetupLike {
   BOOKING_METHOD: string; BOOKING_TYPE: string; RELEASE_STRATEGY?: string; COURT_COUNT: number; START_TIME: string; DURATION_HOURS: number;
   PREFERRED_COURTS: number[]; FALLBACK_TIMES: string[];
   PRECISION_PHASE3?: { candidates: Array<{ court: number; start: string; durationHours: number; wing?: Wing; bookingDate?: string; priority: number }>; wave1: Array<{ candidateIndex: number; releaseOffsetMs?: number; fanOutOffsetsMs?: number[] }> };
-  STRATEGY_V2?: { shotgun?: { enabled: boolean; budget: number; allocationMode: ShotgunAllocationMode; customCounts?: Record<string, number>; windowStartMs: number; windowEndMs: number;
+  STRATEGY_V2?: { shotgun?: { releaseTimingPolicy?: 'ZERO_BOUNDARY_V1'; enabled: boolean; budget: number; allocationMode: ShotgunAllocationMode; customCounts?: Record<string, number>; windowStartMs: number; windowEndMs: number;
     timingMode: ShotgunTimingMode; customOffsetsMs?: number[]; timingCapacityOverride?: boolean; allowStandbyConsumption?: boolean } };
 }
 /**
@@ -576,7 +577,7 @@ export function objectiveFromLegacySetup(setup: LegacySetupLike, nowMs: number):
         offsetsMs[canonicalReleaseTargetId(t)] = [...(offsetsMs[canonicalReleaseTargetId(t)] ?? []), ...(assignment.fanOutOffsetsMs ?? [assignment.releaseOffsetMs ?? 0])]; } catch { /* reported by compile */ } }
     const objective: BookingObjective = { ...base, wings: { ...base.wings, MANGO: mango }, strategy, checkoutMethod: 'PROOFLESS',
       precision: { ...base.precision, offsetsMs },
-      shotgun: shotgun ? { budget: shotgun.budget, allocationMode: shotgun.allocationMode, windowStartMs: shotgun.windowStartMs, windowEndMs: shotgun.windowEndMs, timingMode: shotgun.timingMode,
+      shotgun: shotgun ? { ...(shotgun.releaseTimingPolicy?{releaseTimingPolicy:shotgun.releaseTimingPolicy}:{}), budget: shotgun.budget, allocationMode: shotgun.allocationMode, windowStartMs: shotgun.windowStartMs, windowEndMs: shotgun.windowEndMs, timingMode: shotgun.timingMode,
         ...(shotgun.timingMode === 'CUSTOM' && shotgun.customOffsetsMs ? { customOffsetsMs: [...shotgun.customOffsetsMs] } : {}),
         timingCapacityOverride: !!shotgun.timingCapacityOverride, allowStandbyConsumption: !!shotgun.allowStandbyConsumption, presetId: shotgun.timingMode === 'DENSE_CORE' ? 'DENSE_CORE' : 'FULLY_CUSTOM', source: 'CUSTOM' } : base.shotgun };
     if (shotgun?.allocationMode === 'CUSTOM' && shotgun.customCounts) {
@@ -602,7 +603,7 @@ export function objectiveFromLegacySetup(setup: LegacySetupLike, nowMs: number):
 }
 /** The previous dual-wing planning wrapper: ANY_ONE → any wing 1/1, ONE_PER_WING → each wing 1/1. */
 export function objectiveFromDualWingPlan(plan: { objective: 'ANY_ONE' | 'ONE_PER_WING'; targets: Array<{ wing: Wing; court: number; start: string; durationHours: number; bookingDate: string; priority: number }>;
-  shotgun: { budget: number; allocationMode: ShotgunAllocationMode; customCounts?: Record<string, number>; windowStartMs: number; windowEndMs: number; timingMode: ShotgunTimingMode; customOffsetsMs?: number[]; timingCapacityOverride?: boolean; allowStandbyConsumption?: boolean } }, nowMs: number): BookingObjective {
+  shotgun: { releaseTimingPolicy?: 'ZERO_BOUNDARY_V1'; budget: number; allocationMode: ShotgunAllocationMode; customCounts?: Record<string, number>; windowStartMs: number; windowEndMs: number; timingMode: ShotgunTimingMode; customOffsetsMs?: number[]; timingCapacityOverride?: boolean; allowStandbyConsumption?: boolean } }, nowMs: number): BookingObjective {
   const base = defaultObjective(nowMs, 'NEXT_RELEASE'), wings = { ...base.wings };
   for (const wing of WINGS) {
     const own = plan.targets.filter(t => t.wing === wing).sort((a, b) => a.priority - b.priority);

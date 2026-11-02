@@ -49,6 +49,7 @@ export function savedPlanFacts(state: Dashboard, stateLabel: string): Array<[str
   const date = state.planDate?.planDate ?? b.targetDate;
   const required = objective?.minimum ? `${objective.minimum}${objective.ideal && objective.ideal !== objective.minimum ? `–${objective.ideal}` : ''} distinct court${objective.minimum === 1 && (objective.ideal ?? 1) === 1 ? '' : 's'}` : '1 court';
   return [['Wing · date', `Mango · ${dateText(date)}`], ['Courts', s.courts], ['Time', s.time], ['Required', required], ['Attempts', s.attempts], ['Browsers', s.browsers],
+    ...(b.setup.STRATEGY_V2?.shotgun?.enabled?[["Release policy",b.setup.STRATEGY_V2.shotgun.releaseTimingPolicy??'LEGACY_PRE_RELEASE'] as [string,string]]:[]),
     ['Release', `${manilaTime(b.releaseMs)}${countdown(b.releaseMs - Date.now())}`], ['Plan', `${stateLabel} · ${b.fingerprint.slice(0, 12)}`]];
 }
 export function renderPlanSummary(host: HTMLElement, state: Dashboard, stateLabel: string, tone = 'info') {

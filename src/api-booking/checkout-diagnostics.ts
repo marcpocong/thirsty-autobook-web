@@ -5,7 +5,7 @@ export interface CheckoutDiagnostic {
   contentKind: 'json' | 'html' | 'text' | 'empty' | 'other';
   responseSource: 'cloudflare' | 'application' | 'unknown';
   /** 'payload': Onda refused the request's shape (e.g. "Invalid booking session time"), never an availability answer. */
-  errorHint: 'payment-in-progress' | 'verification' | 'availability' | 'customer' | 'rate-limit' | 'access' | 'payload' | 'other' | 'none';
+  errorHint: 'payment-in-progress' | 'verification' | 'date-unavailable' | 'availability' | 'customer' | 'rate-limit' | 'access' | 'payload' | 'other' | 'none';
   applicationCode?: string;
   cloudflareRay?: string;
 }
@@ -30,6 +30,7 @@ export function checkoutDiagnostic(input: { status: number; contentType: string;
   const errorHint = /(?:payment|checkout).*(?:already|in progress)|(?:already|existing).*(?:payment|checkout)/i.test(text)?'payment-in-progress':
     /invalid booking session time/i.test(text) ? 'payload' :
     /turnstile|captcha|challenge|fingerprint|verification|verify/i.test(text) ? 'verification' :
+    /\b(?:this\s+)?booking date is not available yet\b/i.test(text) ? 'date-unavailable' :
     /slot|availability|unavailable|booked|proof|conflict/i.test(text) ? 'availability' :
       /customer|member|client/i.test(text) ? 'customer' :
         /rate.?limit|too many requests/i.test(text) ? 'rate-limit' :

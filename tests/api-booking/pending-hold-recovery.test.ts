@@ -13,6 +13,21 @@ async function fixture(work:(f:Awaited<ReturnType<typeof pendingFixture>>)=>Prom
 }
 const opts=(f:Awaited<ReturnType<typeof pendingFixture>>)=>({identity:f.identity,now:()=>fixtureNow,claimRoot:join(f.root,'claims'),sleep:vi.fn(async()=>{})});
 describe('independent provider hold verification and existing-only recovery',()=>{
+  it('traces independent confirmation before navigation and QR; observer exceptions do not change recovery',()=>fixture(async f=>{
+    const {page}=fakeRecoveryPage(f),events:string[]=[];
+    const result=await recoverPendingHold(page,f.directory,{...opts(f),onTrace:trace=>{events.push(trace.event);throw Error('OBSERVER_FAILED');}});
+    expect(result.provider).toBe('PROVIDER_HOLD_CONFIRMED');expect(result.qr).toBe('QR_READY');
+    expect(events.indexOf('PROVIDER_LOOKUP')).toBeLessThan(events.indexOf('PROVIDER_CONFIRMED'));
+    expect(events.indexOf('PROVIDER_CONFIRMED')).toBeLessThan(events.indexOf('CHECKOUT_NAVIGATION'));
+    expect(events.indexOf('CHECKOUT_NAVIGATION')).toBeLessThan(events.indexOf('QR_PRESENTED'));
+    expect(await readFile(f.journalPath,'utf8')).toBe(f.journalBefore);expect(f.submissions()).toBe(1);
+  }));
+  it('never traces a confirmation, navigation or QR for a before-expiry 404',()=>fixture(async f=>{
+    const {page,mocks}=fakeRecoveryPage(f),events:string[]=[];mocks.evaluate.mockResolvedValue({status:404,body:null,retryAfterMs:null});
+    const result=await recoverPendingHold(page,f.directory,{...opts(f),onTrace:trace=>{events.push(trace.event);}});
+    expect(result.provider).toBe('UNKNOWN');expect(events).toContain('PROVIDER_LOOKUP');
+    expect(events).not.toContain('PROVIDER_CONFIRMED');expect(events).not.toContain('CHECKOUT_NAVIGATION');expect(events).not.toContain('QR_PRESENTED');
+  }));
   const collapsedHour=(f:Awaited<ReturnType<typeof pendingFixture>>,index:number)=>({success:true,data:{...f.provider.data,...f.provider.data.groupBookings[index],
     groupBookings:undefined,bookingGroupId:'expired-original-group',bookingSessions:[],bookingStatus:'expired',paymentStatus:'expired',canResumeCheckout:false}});
   it('reconciles a collapsed expired group only after independently matching every original hourly GET',()=>fixture(async f=>{

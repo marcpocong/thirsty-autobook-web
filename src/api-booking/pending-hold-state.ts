@@ -12,7 +12,7 @@ export const VerificationStateSchema=z.object({
   qr:z.enum(['NOT_CHECKED','QR_READY','FAILED']),
   code:z.string().regex(/^[A-Z][A-Z0-9_]{0,99}$/),
   contradiction:z.boolean(),httpStatus:z.number().int().min(100).max(599).optional(),
-  milestones:z.array(z.object({event:z.enum(['RESPONSE_PERSISTED','LOCAL_VALIDATED','IDENTITY_BOUND','PROVIDER_LOOKUP','PROVIDER_RESULT','CHECKOUT_ACCESS','ORDER_VERIFIED','QR_PRESENTED']),
+  milestones:z.array(z.object({event:z.enum(['RESPONSE_PERSISTED','LOCAL_VALIDATED','IDENTITY_BOUND','PROVIDER_LOOKUP','PROVIDER_RESULT','PROVIDER_CONFIRMED','CHECKOUT_ACCESS','CHECKOUT_NAVIGATION','ORDER_VERIFIED','QR_PRESENTED']),
     at:z.iso.datetime(),clockDomain:z.enum(['NODE_WALL','TRUSTED_NETWORK']),durationMs:z.number().nonnegative().optional(),durationDomain:z.literal('NODE_MONOTONIC').optional(),
     httpStatus:z.number().int().min(100).max(599).optional(),operation:z.enum(['ACCESS','LOOKUP']).optional(),failure:z.enum(['TIMEOUT','NETWORK','TOO_LARGE','TRANSPORT']).optional()})).max(50),
 }).strict();

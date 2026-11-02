@@ -199,7 +199,7 @@ const persistCriticalPath=async()=>{
     const machine=currentMachineIdentity(),machineKey=JSON.stringify({cpuModel:machine.cpuModel,logicalCores:machine.logicalCores,totalMemGb:machine.totalMemGb,platform:machine.platform,osRelease:machine.osRelease});
     const browserVersion=[...criticalPathPages.values()].find(page=>!page.isClosed())?.context().browser()?.version(),runtimeKey=browserVersion?(browserVersion.startsWith('Chrome/')?browserVersion:`Chrome/${browserVersion}`):null;
     await writeFile(join(directory,'critical-path.ndjson'),recorder.toNdjson({runId:progressLog.runId,targetDate:command.date,mode:command.mode,generatedAt:new Date().toISOString(),machineKey,
-      runtimeKey}),{mode:0o600,flag:'wx'});
+      runtimeKey,clock:{source:releaseClock?.evidence.method??'UNKNOWN',uncertaintyMs:releaseClock?.evidence.uncertaintyMs??null},providerReceiptTime:'UNOBSERVED'}),{mode:0o600,flag:'wx'});
     const rows=recorder.rows(),worst=(pick:(row:CriticalPathRow)=>number|null)=>{const values=rows.map(pick).filter((value):value is number=>value!==null);return values.length?Math.max(...values):-1;};
     stage('CRITICAL_PATH_SAVED',{workerCount:rows.length,maxPrePostMs:worst(row=>row.prePostMs),maxFetchInvokedMs:worst(row=>row.fetchInvokedMs?.ms??null),
       maxBrowserRequestStartMs:worst(row=>row.browserRequestStartMs),maxRequestObservedMs:worst(row=>row.requestObservedMs)});
@@ -714,6 +714,8 @@ try {
      * provider verification and QR recovery are recorded separately after the critical interval. */
     const completeVerifiedProoflessHold=async(binding:ProoflessBinding,session:WorkerSession,plan:BookingPlan,hold:Awaited<ReturnType<typeof submitDirectCheckout>>)=>{
       const {correlation,workerTiming}=binding,{workerId}=correlation,bookingNo=binding.captured.bookingNo,token=binding.captured.token;
+      criticalPath?.mark(binding.transportKey,'localResponseHandled');
+      criticalPath?.describe(binding.transportKey,{releaseTimingPolicy:config.STRATEGY_V2?.shotgun?.releaseTimingPolicy??'LEGACY_PRE_RELEASE'});
       verifiedHold=true;retainLiveLock=true;
       if(!latestVerifiedHoldExpiry||Date.parse(hold.holdExpiresAt)>Date.parse(latestVerifiedHoldExpiry))latestVerifiedHoldExpiry=hold.holdExpiresAt;
       const bookingTarget={date:command.date,court:plan.courts[0]!.court,...(plan.courts[1]?{courtB:plan.courts[1].court}:{}),
@@ -723,7 +725,11 @@ try {
       // Local validation is not provider persistence. Retain the possible hold on any verification/QR failure.
       try{
       // Fan-out children have their own private response directory, retained by the binding.
-      await recoveryQueue.run(workerId,()=>openCheckoutRecovery(session.page,binding.directory,()=>new Date(nowMs()),{clockDomain:'TRUSTED_NETWORK'}));
+      await recoveryQueue.run(workerId,()=>openCheckoutRecovery(session.page,binding.directory,()=>new Date(nowMs()),{clockDomain:'TRUSTED_NETWORK',
+        onTrace:trace=>{const names={PROVIDER_LOOKUP:'providerLookup',PROVIDER_CONFIRMED:'providerConfirmed',CHECKOUT_NAVIGATION:'checkoutNavigation',QR_PRESENTED:'qrReady'} as const;
+          const name=names[trace.event as keyof typeof names];if(name)criticalPath?.mark(binding.transportKey,name);
+          if(trace.event==='QR_PRESENTED')criticalPath?.describe(binding.transportKey,{holdRemainingMs:Math.max(0,Date.parse(hold.holdExpiresAt)-nowMs())});},
+        onMilestone:state=>criticalPath?.describe(binding.transportKey,{responseHash:state.responseHash,providerResult:state.provider,recoveryCode:state.code})}));
       diagnostics.observe('DIAGNOSTIC_VERIFIED_HOLD',correlation,{...bookingTarget,price:plan.totalPrice});
       stage('PROVIDER_HOLD_CONFIRMED',{...workerTiming(),...bookingTarget,attemptId:correlation.attemptId,price:plan.totalPrice});
       await showWorkerPage(session.page,workerId);
@@ -1041,7 +1047,7 @@ try {
           stage('PHASE3_WAVE1_EXCLUDED',{workerId:assignment.workerId,candidateId:candidate.id,evidence:result.evidence,code:'PUBLIC_BOOKING_CONFLICT_AT_FREEZE'});}
         else if(result.evidence==='UNKNOWN')stage('PHASE3_EVIDENCE_UNKNOWN',{workerId:assignment.workerId,candidateId:candidate.id,evidence:result.evidence});
       }
-      const wave1:Array<Pick<PrecisionAttempt,'target'|'plan'|'dispatchTimingPolicy'>>=[];
+      const wave1:Array<Pick<PrecisionAttempt,'target'|'plan'|'dispatchTimingPolicy'|'releaseTimingPolicy'>>=[];
       // Each immediate target's Release Offset(s) come from the saved plan (covered by the plan and authorization fingerprints).
       // A fan-out target becomes one independently tracked child per offset (fan-out index = offset order), each on its own tab.
       const wave1Offsets=new Map<WorkerId,number>(authorization.wave1.map(value=>[value.workerId,value.fanOutOffsetsMs?.[0]??value.releaseOffsetMs??0]));
@@ -1062,7 +1068,7 @@ try {
           if(!releaseTransports.has(transportKeyOf(assignment.workerId,child))){
             stage('PHASE3_WORKER_EXCLUDED',{workerId:assignment.workerId,candidateId:candidate.id,fanOutIndex:child,code:'FAN_OUT_TAB_MISSING'});continue;
           }
-          wave1.push({...(config.STRATEGY_V2?.shotgun?.enabled && config.STRATEGY_V2.shotgun.exactSchedule.some(s=>s.logicalTargetId===logicalTargetId(candidate)&&s.configuredOffsetMs===offset)?{dispatchTimingPolicy:'SHOTGUN_STRICT' as const}:{}),target:{court:candidate.court,start:candidate.start,durationHours:candidate.durationHours,
+          wave1.push({...(config.STRATEGY_V2?.shotgun?.releaseTimingPolicy?{releaseTimingPolicy:config.STRATEGY_V2.shotgun.releaseTimingPolicy}:{}),...(config.STRATEGY_V2?.shotgun?.enabled && config.STRATEGY_V2.shotgun.exactSchedule.some(s=>s.logicalTargetId===logicalTargetId(candidate)&&s.configuredOffsetMs===offset)?{dispatchTimingPolicy:'SHOTGUN_STRICT' as const}:{}),target:{court:candidate.court,start:candidate.start,durationHours:candidate.durationHours,
             end:candidate.end,workerId:assignment.workerId,targetKey:candidate.logicalKey,assumedAmount:candidate.expectedAmount,
             ...(offset?{releaseOffsetMs:offset}:{})},plan});
         }
@@ -1086,7 +1092,7 @@ try {
       const fanOutWidth=Math.max(1,...frozen.attempts.map(attempt=>attempt.fanOutCount));
       await saveOnce(resolve('.local/api-booking/precision-races'),`${progressLog.runId}-phase3-freeze.json`,
         {runId:progressLog.runId,frozenAt:new Date(nowMs()).toISOString(),authorization,wave1Freeze:frozen.fingerprint,
-          shotgun:config.STRATEGY_V2?.shotgun?{enabled:config.STRATEGY_V2.shotgun.enabled,budget:config.STRATEGY_V2.shotgun.budget,
+          shotgun:config.STRATEGY_V2?.shotgun?{releaseTimingPolicy:config.STRATEGY_V2.shotgun.releaseTimingPolicy??'LEGACY_PRE_RELEASE',enabled:config.STRATEGY_V2.shotgun.enabled,budget:config.STRATEGY_V2.shotgun.budget,
             selectedLogicalTargets:config.STRATEGY_V2.shotgun.selectedTargetIds,allocationMode:config.STRATEGY_V2.shotgun.allocationMode,
             counts:config.STRATEGY_V2.shotgun.counts,windowStartMs:config.STRATEGY_V2.shotgun.windowStartMs,windowEndMs:config.STRATEGY_V2.shotgun.windowEndMs,
             timingMode:config.STRATEGY_V2.shotgun.timingMode,customOffsetsMs:config.STRATEGY_V2.shotgun.customOffsetsMs,

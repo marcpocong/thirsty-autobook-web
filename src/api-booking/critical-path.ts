@@ -17,7 +17,7 @@ import { rendererToNode, type RendererClockCalibration } from './renderer-clock.
  * every POST has settled.
  */
 export type CriticalMarkName = 'schedulerFired' | 'workerInvoked' | 'transportEntered' | 'prePost' | 'requestObserved' | 'responseObserved'
-  | 'rendererArmSent' | 'rendererArmReturned';
+  | 'rendererArmSent' | 'rendererArmReturned' | 'localResponseHandled' | 'providerLookup' | 'providerConfirmed' | 'checkoutNavigation' | 'qrReady';
 export type DispatchMode = 'node' | 'renderer-experimental';
 interface WorkerRecord {
   node: Partial<Record<CriticalMarkName, number>>;
@@ -30,7 +30,7 @@ interface WorkerRecord {
 /** Per-attempt identity and outcome (Phase 13): parent goal, worker, fan-out position, configured offset, wave and final state. Never private data. */
 export type CriticalPathMeta = Partial<{ attemptId:string; parentGoalId: string; workerId: string; fanOutIndex: number; fanOutCount: number; configuredOffsetMs: number;
   shotIndex:number;shotCount:number;workerGroupIndex:number;timingBucket:string;wave: string; finalState: string; finalCode: string; prewarmReadyMs: number;
-  httpStatus:number;providerThrottleSignal:boolean }>;
+  httpStatus:number;providerThrottleSignal:boolean;holdRemainingMs:number;releaseTimingPolicy:string;responseHash:string;providerResult:string;recoveryCode:string }>;
 
 export interface CriticalPathRow {
   schema: 'critical-path/v1';
@@ -50,6 +50,8 @@ export interface CriticalPathRow {
   responseHeadersMs: Bounded | null;
   responseCompleteMs: Bounded | null;
   responseObservedMs: number | null;
+  /** Same Node monotonic anchor; these never imply provider receipt time. */
+  lifecycle?: {localResponseHandledMs:number|null;providerLookupMs:number|null;providerConfirmedMs:number|null;checkoutNavigationMs:number|null;qrReadyMs:number|null};
   resourceTiming?:{source:'PERFORMANCE_RESOURCE_TIMING';startMs:Bounded|null;fetchMs:Bounded|null;requestMs:Bounded|null;headersMs:Bounded|null;completeMs:Bounded|null;workerMs:Bounded|null;protocol:string};
   segments: {
     /** Node's last gate → renderer entry (CDP command transit + renderer scheduling). */
@@ -174,6 +176,7 @@ export class CriticalPathRecorder {
         rendererArmSentMs: rel(node.rendererArmSent), rendererArmedMs: mapped(record.renderer?.armedAt),
         evaluateEnteredMs: evaluateEntered, fetchInvokedMs: fetchInvoked, browserRequestStartMs: browserRequestStart, requestObservedMs: requestObserved,
         responseHeadersMs: mapped(record.renderer?.headersAt), responseCompleteMs: mapped(record.renderer?.completedAt), responseObservedMs: rel(node.responseObserved),
+        lifecycle:{localResponseHandledMs:rel(node.localResponseHandled),providerLookupMs:rel(node.providerLookup),providerConfirmedMs:rel(node.providerConfirmed),checkoutNavigationMs:rel(node.checkoutNavigation),qrReadyMs:rel(node.qrReady)},
         ...(record.renderer?.resource?{resourceTiming:{source:'PERFORMANCE_RESOURCE_TIMING' as const,startMs:mapped(record.renderer.resource.startTime),
           fetchMs:mapped(record.renderer.resource.fetchStart),requestMs:record.renderer.resource.requestStart>0?mapped(record.renderer.resource.requestStart):null,
           headersMs:record.renderer.resource.responseStart>0?mapped(record.renderer.resource.responseStart):null,completeMs:mapped(record.renderer.resource.responseEnd),

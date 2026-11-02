@@ -76,8 +76,8 @@ const controller = new Controller({
   securityCheck:()=>readSecurityCheck(root),
   confirmShotgunLive:async plan=>{const shotgun=plan.setup.STRATEGY_V2!.shotgun!,offsets=shotgun.exactSchedule.map(s=>s.configuredOffsetMs).sort((a,b)=>a-b);
     return confirmModal({tone:'warning',title:'LIVE SHOTGUN PILOT · OWNER ATTESTATION',message:`Arm ${shotgun.exactSchedule.length} live Shotgun attempts for Mango ${plan.targetDate}?`,
-      detail:`Attempts: ${shotgun.exactSchedule.length} across ${Object.keys(shotgun.counts).length} target(s) · offsets ${offsets[0]} … ${offsets.at(-1)} ms before release.\n`+
-        'Capability: LIVE PILOT. One bounded off-peak Shotgun attempt reached a locally validated hold and recovered QR on November 1. Independent provider confirmation and multi-shot acceptance exactly at 08:00 remain separate qualifications.\n'+
+      detail:`Release policy: ${shotgun.releaseTimingPolicy??'LEGACY_PRE_RELEASE'} · strict 50 ms local deadline.\nAttempts: ${shotgun.exactSchedule.length} across ${Object.keys(shotgun.counts).length} target(s) · offsets ${offsets[0]} … ${offsets.at(-1)} ms before release.\n`+
+        'Capability: LIVE PILOT. Published-slot Lab evidence does not qualify newly published 08:00 slots. Independent provider confirmation and exact official QR are required.\n'+
         'HTTP 429, payment-in-progress or an unknown result stops every unsent attempt. Attempts already sent may create extra temporary holds; each is reconciled separately. Nothing is paid or cancelled automatically.\n\n'+
         'By confirming you attest that Onda Fit and Thirsty Pickle management authorize this multi-attempt live run for this exact plan. The attestation is recorded locally with the plan fingerprint.',
       confirmLabel:'Attest and arm live Shotgun',cancelLabel:'Do not arm'});},

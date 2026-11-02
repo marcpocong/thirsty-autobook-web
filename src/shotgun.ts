@@ -24,6 +24,8 @@ export interface ShotgunTarget {
 
 export interface ShotgunSettings {
   enabled: boolean;
+  /** Opt-in conservative release pilot. Absence retains the literal legacy schedule. */
+  releaseTimingPolicy?: 'ZERO_BOUNDARY_V1';
   budget: number;
   allocationMode: ShotgunAllocationMode;
   selectedTargetIds: string[];
@@ -37,6 +39,13 @@ export interface ShotgunSettings {
   allowStandbyConsumption?: boolean;
   /** Legacy read compatibility. Migrated conservatively by the editor. */
   capacityOverride?: boolean;
+}
+
+/** Validate, never rewrite, the owner-reviewed release policy before durable arming. */
+export function assertShotgunReleasePolicy(policy: unknown, offsets: readonly number[], strict = true): void {
+  if (policy === undefined) return;
+  if (policy !== 'ZERO_BOUNDARY_V1' || !strict || offsets.length !== 1 || offsets[0] !== 0)
+    throw Error('SHOTGUN_RELEASE_POLICY_MISMATCH');
 }
 
 export interface ShotgunCapacityInput {
@@ -160,6 +169,11 @@ export function planShotgun(settings: ShotgunSettings, targets: readonly Shotgun
   const offsets=custom?[...(settings.customOffsetsMs??[])]:dense?denseCoreOffsets(allocatedCount):shotgunOffsets(allocatedCount,scheduleStart,settings.windowEndMs).map(value=>value+groupAnchorMs);
   if(offsets.some(value=>!isShotgunOffsetMs(value)))problems.push(`The ${groupAnchorMs>=0?'+':''}${groupAnchorMs} ms group anchor moves a Shotgun trigger outside -2000 through 0 ms.`);
   const chronological=[...offsets].sort((a,b)=>a-b);
+  if(settings.releaseTimingPolicy!==undefined){
+    try{assertShotgunReleasePolicy(settings.releaseTimingPolicy,offsets);
+      if(settings.budget!==1||settings.windowStartMs!==0||settings.windowEndMs!==0||groupAnchorMs!==0)throw Error('SHOTGUN_RELEASE_POLICY_MISMATCH');
+    }catch{problems.push('ZERO_BOUNDARY_V1 requires one attempt, a 0 to 0 ms window and no group shift. Review the exact plan; values were not changed.');}
+  }
   const requestedSpacingMs = chronological.length>1?Math.min(...chronological.slice(1).map((value,index)=>value-chronological[index]!)):null;
   const coincident=[...new Map(offsets.map(offset=>[offset,offsets.filter(value=>value===offset).length])).entries()].filter(([,count])=>count>1).sort((a,b)=>b[1]-a[1]||a[0]-b[0]);
   const coincidentWarning=coincident.length?coincident.map(([offset,count])=>`${custom?'CUSTOM timing':'Timing'} contains ${count} attempts at ${offset>=0?'+':''}${offset} ms.`).join(' '):null;

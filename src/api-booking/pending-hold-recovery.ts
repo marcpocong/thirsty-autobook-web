@@ -13,6 +13,8 @@ import {acquireRecoveryClaim} from './recovery-claim.js';
 
 export interface RecoveryIdentity {workerId:WorkerId;customer:CheckoutCustomer;profile:string;assertContext:()=>Promise<void>}
 export interface RecoveryOptions {identity:RecoveryIdentity;now?:()=>Date;sleep?:(ms:number)=>Promise<void>;claimRoot?:string;
+  /** Immediate sanitized trace; observer errors cannot affect recovery. */
+  onTrace?:(event:HoldVerification['milestones'][number])=>void;
   onMilestone?:(state:HoldVerification)=>void;verifyOnly?:boolean;clockDomain?:'NODE_WALL'|'TRUSTED_NETWORK';sessionId?:string}
 export type RecoveryPage=Pick<Page,'url'|'evaluate'|'goto'|'getByText'|'locator'|'route'|'unroute'|'bringToFront'>;
 const safeCode=(e:unknown)=>e instanceof Error&&/^[A-Z][A-Z0-9_]{0,99}$/.test(e.message)?e.message:'RECOVERY_FAILED';
@@ -31,8 +33,10 @@ export async function recoverPendingHold(page:RecoveryPage,directory:string,opti
   let local:HoldVerification['local']='RESPONSE_CAPTURED',provider:HoldVerification['provider']='NOT_CHECKED',qr:HoldVerification['qr']='NOT_CHECKED';
   let code='RESPONSE_PERSISTED',contradiction=false,httpStatus:number|undefined,journalHash:string|undefined,guarded=false;
   const started=performance.now();
-  const mark=(event:HoldVerification['milestones'][number]['event'],details:Pick<HoldVerification['milestones'][number],'httpStatus'|'operation'|'failure'>={})=>
-    milestones.push({event,at:now().toISOString(),clockDomain:options.clockDomain??'NODE_WALL',durationMs:Math.max(0,performance.now()-started),durationDomain:'NODE_MONOTONIC',...details});
+  const mark=(event:HoldVerification['milestones'][number]['event'],details:Pick<HoldVerification['milestones'][number],'httpStatus'|'operation'|'failure'>={})=>{
+    const trace:HoldVerification['milestones'][number]={event,at:now().toISOString(),clockDomain:options.clockDomain??'NODE_WALL',durationMs:Math.max(0,performance.now()-started),durationDomain:'NODE_MONOTONIC',...details};
+    milestones.push(trace);try{options.onTrace?.({...trace});}catch{/* telemetry only */}
+  };
   const persist=async()=>{
     const sessionId=options.sessionId??process.env.THIRSTY_RECOVERY_SESSION;
     const state=await appendHoldVerification(directory,{at:now().toISOString(),responseHash,...(journalHash?{journalHash}:{}),
@@ -141,7 +145,7 @@ export async function recoverPendingHold(page:RecoveryPage,directory:string,opti
     }
     if(state==='PAID'){provider='PAYMENT_CONFIRMED';code='AUTHORITATIVE_PAYMENT_CONFIRMED';return await persist();}
     if(state==='EXPIRED'){provider='EXPIRED_OR_UNAVAILABLE';code=hourlyExpiry?'PROVIDER_HOURLY_GROUP_EXPIRED':'PROVIDER_HOLD_EXPIRED';return await persist();}
-    provider='PROVIDER_HOLD_CONFIRMED';code='PROVIDER_HOLD_CONFIRMED';await persist();
+    provider='PROVIDER_HOLD_CONFIRMED';code='PROVIDER_HOLD_CONFIRMED';mark('PROVIDER_CONFIRMED');await persist();
     if(options.verifyOnly)return await persist();
     if(!accessGranted){
       // Accept a provider-issued replacement capability only after the entire
@@ -155,7 +159,7 @@ export async function recoverPendingHold(page:RecoveryPage,directory:string,opti
     }
     await id.assertContext();
     if(Date.parse(recovery.hold.holdExpiresAt)<=now().getTime())throw Error('HOLD_EXPIRED_DURING_RECOVERY');
-    await page.goto(recovery.url,{waitUntil:'domcontentloaded',timeout:45_000});
+    mark('CHECKOUT_NAVIGATION');await page.goto(recovery.url,{waitUntil:'domcontentloaded',timeout:45_000});
     const current=new URL(page.url());if(current.origin!=='https://app.onda.fit'||current.pathname!=='/book/thirsty-pickle'||current.searchParams.get('bookingId')!==recovery.hold.bookingIds[0])throw Error('CHECKOUT_BOOKING_ID_MISMATCH');
     await page.getByText('QRPH',{exact:true}).first().waitFor({state:'visible',timeout:20_000});
     assertQrOrderSummary(await page.locator('body').innerText(),recovery.plan);mark('ORDER_VERIFIED');

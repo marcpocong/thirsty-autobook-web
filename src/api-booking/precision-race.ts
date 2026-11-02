@@ -180,6 +180,7 @@ export interface PrecisionAttempt {
   /** Stable child identity, distinct even when fan-out children share one logical target key. */
   id: string;
   dispatchTimingPolicy?: 'SHOTGUN_STRICT';
+  releaseTimingPolicy?: 'ZERO_BOUNDARY_V1';
   target: PrecisionTarget;
   plan: BookingPlan;
   fanOutIndex: number;
@@ -240,16 +241,17 @@ export function freezePrecisionRace(date: string, releaseMs: number,
     const key=groupKey(attempt),fanOutIndex = seen.get(key) ?? 0; seen.set(key, fanOutIndex + 1);
     return Object.freeze({ id: attempt.id ?? precisionAttemptId(date, releaseMs, attempt.target, index),
       ...(attempt.dispatchTimingPolicy ? {dispatchTimingPolicy:attempt.dispatchTimingPolicy} : {}),
+      ...(attempt.releaseTimingPolicy ? {releaseTimingPolicy:attempt.releaseTimingPolicy} : {}),
       target: Object.freeze({ ...attempt.target }), plan: attempt.plan, fanOutIndex, fanOutCount: counts.get(key)! });
   }));
   const logicalCounts=new Map<string,number>();for(const attempt of attempts)logicalCounts.set(attempt.target.targetKey,(logicalCounts.get(attempt.target.targetKey)??0)+1);
   const fanOut = [...logicalCounts.values()].some(count => count > 1);
   return Object.freeze({ date, releaseMs, attempts: copy, fanOut, ...(options ?? {}),
-    fingerprint: options ? createHash('sha256').update(JSON.stringify([precisionFingerprint(date, releaseMs, copy.map(attempt => attempt.target), fanOut, copy.map(attempt=>attempt.dispatchTimingPolicy)), options, copy.map(a=>a.plan)])).digest('hex') : precisionFingerprint(date, releaseMs, copy.map(attempt => attempt.target), fanOut, copy.map(attempt=>attempt.dispatchTimingPolicy)) });
+    fingerprint: options ? createHash('sha256').update(JSON.stringify([precisionFingerprint(date, releaseMs, copy.map(attempt => attempt.target), fanOut, copy.map(attempt=>attempt.releaseTimingPolicy?`${attempt.dispatchTimingPolicy??'NONE'}/${attempt.releaseTimingPolicy}`:attempt.dispatchTimingPolicy)), options, copy.map(a=>a.plan)])).digest('hex') : precisionFingerprint(date, releaseMs, copy.map(attempt => attempt.target), fanOut, copy.map(attempt=>attempt.releaseTimingPolicy?`${attempt.dispatchTimingPolicy??'NONE'}/${attempt.releaseTimingPolicy}`:attempt.dispatchTimingPolicy)) });
 }
 
 export function assertPrecisionFreezeIntact(race: FrozenPrecisionRace): void {
-  const legacy=precisionFingerprint(race.date, race.releaseMs, race.attempts.map(attempt => attempt.target), race.fanOut, race.attempts.map(attempt=>attempt.dispatchTimingPolicy));
+  const legacy=precisionFingerprint(race.date, race.releaseMs, race.attempts.map(attempt => attempt.target), race.fanOut, race.attempts.map(attempt=>attempt.releaseTimingPolicy?`${attempt.dispatchTimingPolicy??'NONE'}/${attempt.releaseTimingPolicy}`:attempt.dispatchTimingPolicy));
   const expected=race.executionMode||race.objective!==undefined ? createHash('sha256').update(JSON.stringify([legacy,{executionMode:race.executionMode,objective:race.objective,...(race.authorizationFingerprint?{authorizationFingerprint:race.authorizationFingerprint}:{})},race.attempts.map(a=>a.plan)])).digest('hex') : legacy;
   if (expected !== race.fingerprint)
     throw Error('PRECISION_FROZEN_SET_CHANGED');
