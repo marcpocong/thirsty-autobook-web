@@ -9,6 +9,8 @@ import { hooks, el, fill, wingName } from './navigation.js';
  */
 const BROWSER_SCENARIOS: Array<[string, string]> = [['ALL_REJECTED', 'Every attempt rejected · timing comparison'], ['FIRST_SUCCESS', 'First attempt holds · partial completion'], ['LATER_SUCCESS', 'A later attempt holds'],
   ['SECOND_TARGET_SUCCESS', 'Only the second target holds · first target rejected'],
+  ['DATE_UNAVAILABLE', 'HTTP 400 date unavailable'], ['ACCESS_DENIED', 'HTTP 403 access denied · stop later sends'],
+  ['NO_PROVIDER_PERSISTENCE', 'HTTP 200 groups absent at provider · zero confirmed holds'],
   ['BOTH_SUCCESS', 'Every response succeeds · quota fill and extra holds'], ['MANGO_SUCCESS', 'Only Mango succeeds · per-wing quota'], ['BUKO_SUCCESS', 'Only Buko succeeds · per-wing quota'],
   ['TWO_IN_FLIGHT_SUCCESS', 'Two concurrent holds while in flight'], ['WRONG_WING', 'Wrong wing/court in the response'], ['UNKNOWN', 'Unknown POST outcome'], ['PAYMENT_IN_PROGRESS', 'HTTP 409 payment already in progress'],
   ['THROTTLE', 'HTTP 429 throttling'], ['PREPARE_FAILED', 'Browser preparation failure'], ['WORKER_UNAVAILABLE', 'Worker unavailable'], ['MISSED_TRIGGER', 'Delayed attempt · missed deadline'],

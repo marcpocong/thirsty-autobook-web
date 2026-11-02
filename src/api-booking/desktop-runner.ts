@@ -1274,7 +1274,7 @@ try {
         const preparedChildren=new Set<string>();
         const outcome=await dispatchPhase3Wave1(armed,()=>dispatchArmedPrecisionRace(armed,{clock:releaseClock!,spinTailMs:DEFAULT_SPIN_TAIL_MS,isAborted:()=>abort.signal.aborted,sleep:pause,
           refreshClock:()=>prepareReleaseClock(releaseMs,releaseClock!),onClockRefreshed:clock=>reanchorArmedTiming(clock,releaseMs),onPrewarmWindow:prewarmWindowStage,
-          onObjectiveStop:reason=>{if(reason==='SHOTGUN_PROVIDER_THROTTLE_STOP'||reason==='SHOTGUN_PAYMENT_IN_PROGRESS_STOP')providerStopCode=reason;},
+          onObjectiveStop:reason=>{if(reason==='SHOTGUN_PROVIDER_ACCESS_STOP'||reason==='SHOTGUN_PROVIDER_THROTTLE_STOP'||reason==='SHOTGUN_PAYMENT_IN_PROGRESS_STOP')providerStopCode=reason;},
           ...fanOutPrewarm(armed.attempts),
           onWake:triggerMs=>{for(const attempt of armed.attempts)if(attempt.triggerMs===triggerMs)recorder.mark(attempt.attempt.id,'schedulerFired');releaseLockdown?.mark('scheduler-wake');},onMark:(_worker,name,attempt)=>{if(name==='transportCall'){recorder.mark(attempt.attempt.id,'workerInvoked');releaseLockdown?.mark(`transport:${attempt.attempt.id}`);}
             else if(name==='rendererArm')recorder.mark(attempt.attempt.id,'rendererArmSent');},

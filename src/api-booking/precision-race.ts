@@ -162,6 +162,7 @@ export async function classifyPrecisionDispatchError(error: unknown,
   if (error instanceof ProviderHoldUnconfirmedError) return { state: 'UNKNOWN', code };
   if(error instanceof SubmissionDispatchError&&error.diagnostic?.errorHint==='payment-in-progress')return {state:'REJECTED',code:'SHOTGUN_PAYMENT_IN_PROGRESS_STOP'};
   if(error instanceof SubmissionDispatchError&&error.diagnostic?.status===429)return {state:'REJECTED',code:'SHOTGUN_PROVIDER_THROTTLE_STOP'};
+  if(error instanceof SubmissionDispatchError&&error.dispatched&&(error.diagnostic?.status===401||error.diagnostic?.status===403))return {state:error.confirmedRejected?'REJECTED':'UNKNOWN',code:'SHOTGUN_PROVIDER_ACCESS_STOP'};
   if (error instanceof SubmissionDispatchError && !error.dispatched)
     return { state: code === 'DIRECT_RELEASE_WINDOW_MISSED' ? 'WINDOW_MISSED' : 'NOT_DISPATCHED', code };
   if (PRE_DISPATCH_CODES.has(code)) return { state: 'NOT_DISPATCHED', code };

@@ -25,15 +25,20 @@ import { CriticalPathRecorder } from './api-booking/critical-path.js';
 import { FACILITY_ID, courtBySpace, type Wing } from './court-registry.js';
 import type { BookingPlan } from './api-booking/types.js';
 import type { WorkerId } from './workers.js';
+import { validateProviderHold } from './api-booking/provider-hold-verification.js';
 
 export const LAB_SCENARIOS = ['ALL_REJECTED','FIRST_SUCCESS','SECOND_TARGET_SUCCESS','LATER_SUCCESS','MANGO_SUCCESS','BUKO_SUCCESS','BOTH_SUCCESS','UNKNOWN','PAYMENT_IN_PROGRESS','THROTTLE','PREPARE_FAILED','WORKER_UNAVAILABLE','MISSED_TRIGGER','TWO_IN_FLIGHT_SUCCESS','PREVIOUS_HOLD','DUPLICATE_TARGET','WRONG_WING','STALE_AVAILABILITY','MISSING_AVAILABILITY',
-  'BROWSER_CLOSED','APP_RESTART_RETAINED_UNKNOWN','UNSUPPORTED_RELEASE_POLICY','SLOW_SECURITY','SECURITY_STALL','STOP_BEFORE_DISPATCH'] as const;
+  'BROWSER_CLOSED','APP_RESTART_RETAINED_UNKNOWN','UNSUPPORTED_RELEASE_POLICY','SLOW_SECURITY','SECURITY_STALL','STOP_BEFORE_DISPATCH',
+  'DATE_UNAVAILABLE','ACCESS_DENIED','NO_PROVIDER_PERSISTENCE'] as const;
 export type LabScenario = typeof LAB_SCENARIOS[number];
 /** Legacy dual-wing planning wrapper, or the exact Booking Setup objective (preferred). */
 export type LabRequest = {plan:DualWingPlan;scenario:LabScenario;countdownSeconds:number} | {objective:BookingObjective;cohortIndex?:number;scenario:LabScenario;countdownSeconds:number;nowMs?:number};
 export interface LabResult {
   label:'OFFLINE / INTERCEPTED'; environment:'OFFLINE_SIMULATION'; strategy:'SHOTGUN'|'PRECISION'; runId:string; scenario:LabScenario; objective:string;
   planned:number;initiated:number;omitted:number;missedDeadlines:number;compressedPairs:number;
+  authorized:number;suppressed:number;providerConfirmed:number;
+  httpResponses:Array<{worker:string;offsetMs:number;status:number}>;
+  maximumInFlight:number;inFlightAtConfirmation:number[];
   /** Configured trigger → local Chrome request initiation. Never provider receipt. */ timing:{p50:number|null;p95:number|null;max:number|null}; cpuBusyPercent:number|null; memoryUsedPercent:number;
   preparation:Array<{attemptId:string;ready:boolean;durationMs?:number;code?:string}>;
   wings:Array<{wing:string;planned:number;initiated:number;holds:number;distinctCourts:number;ideal:number|null;complete:boolean}>;
@@ -116,6 +121,11 @@ export async function runShotgunLab(input:LabRequest, options:{directory:string;
   const prepared:LabResult['preparation']=[];
   const observed:Array<{wing:string;at:number;offset:number;targetId:string}>=[];
   const outcomes:LabResult['outcomes']=[];
+  const lookupFixtures=new Map<string,ReturnType<typeof simulatedPending>>();
+  let authorized=0;
+  const httpResponses:LabResult['httpResponses']=[];
+  let inFlight=0,maximumInFlight=0;
+  const inFlightAtConfirmation:number[]=[];
   const waves=Object.keys(topology.tabsPerWorker);
   const endOf=(t:LabTarget|undefined)=>t?`${String(Number(t.start.slice(0,2))+t.durationHours).padStart(2,'0')}:00`:'';
   const summary=(triggerMs:number,fingerprint:string,cpu:number|null=null):LabResult=>{
@@ -124,6 +134,9 @@ export async function runShotgunLab(input:LabRequest, options:{directory:string;
       return {wing:o.wing as Wing,court:o.court,date:o.date,start:t?.start??'',end:endOf(t),state:o.state,...(o.code?{code:o.code}:{}),payment:'PENDING' as const};}));
     return {label:'OFFLINE / INTERCEPTED',environment:'OFFLINE_SIMULATION',strategy:prepared_.strategy,runId:options.runId,scenario:input.scenario,objective:prepared_.objectiveLabel,
       planned:topology.shots.length,initiated:observed.length,omitted:topology.shots.length-observed.length,
+      authorized,suppressed:outcomes.filter(o=>o.state==='NOT_DISPATCHED'&&!!o.code&&/^SHOTGUN_(?:PROVIDER_|TARGET_|PROVISIONAL_|PAYMENT_)/.test(o.code)).length,
+      providerConfirmed:outcomes.filter(o=>o.state==='HOLD_VERIFIED_QR_ATTENTION').length,httpResponses,
+      maximumInFlight,inFlightAtConfirmation,
       missedDeadlines:outcomes.filter(o=>o.code==='SHOTGUN_TRIGGER_MISSED').length,
       compressedPairs:ordered.slice(1).filter((o,i)=>o.at-ordered[i]!.at<Math.max(1,(o.offset-ordered[i]!.offset)/2)).length,
       timing:{p50:percentile(lag,.5),p95:percentile(lag,.95),max:lag.length?Math.max(...lag):null},cpuBusyPercent:cpu,memoryUsedPercent:Math.round((1-freemem()/totalmem())*1000)/10,
@@ -181,14 +194,21 @@ export async function runShotgunLab(input:LabRequest, options:{directory:string;
           if(request.items.some(item=>item.spaceId!==target.spaceId||item.date!==target.bookingDate)||courtBySpace(request.items[0]!.spaceId)?.wing!==target.wing)throw Error('LAB_PAYLOAD_IDENTITY_MISMATCH');
           const ordinal=observed.length+1;
           observed.push({wing:target.wing,at:req.timing().startTime,offset:shot.configuredOffsetMs,targetId:target.id});
-          if(input.scenario==='TWO_IN_FLIGHT_SUCCESS')await new Promise(done=>setTimeout(done,800));
+          maximumInFlight=Math.max(maximumInFlight,++inFlight);
+          // Keep later requests in flight beyond the first child's post-critical confirmation.
+          if(input.scenario==='TWO_IN_FLIGHT_SUCCESS')await new Promise(done=>setTimeout(done,ordinal===1?800:2000));
           let status=409,body:unknown={success:false,error:'Slot unavailable (offline fixture)'};
           const success=input.scenario==='FIRST_SUCCESS'&&ordinal===1||input.scenario==='SECOND_TARGET_SUCCESS'&&target.id===labTargets[1]?.id||input.scenario==='LATER_SUCCESS'&&ordinal===3||input.scenario==='MANGO_SUCCESS'&&target.wing==='MANGO'||input.scenario==='BUKO_SUCCESS'&&target.wing==='BUKO'||input.scenario==='BOTH_SUCCESS'||input.scenario==='TWO_IN_FLIGHT_SUCCESS'&&ordinal<=2||input.scenario==='WRONG_WING'&&ordinal===1;
-          if(success){status=200;body=simulatedPending(request,ordinal);if(input.scenario==='WRONG_WING')(body as ReturnType<typeof simulatedPending>).bookings[0]!.space_id='wrong-wing-space';}
+          if(success||input.scenario==='NO_PROVIDER_PERSISTENCE'){status=200;body=simulatedPending(request,ordinal);if(input.scenario==='WRONG_WING')(body as ReturnType<typeof simulatedPending>).bookings[0]!.space_id='wrong-wing-space';}
+          if(input.scenario==='DATE_UNAVAILABLE'){status=400;body={success:false,error:'This booking date is not available yet.'};}
+          if(input.scenario==='ACCESS_DENIED'&&ordinal===1){status=403;body={success:false,error:'Access denied'};}
           if(ordinal===1&&input.scenario==='UNKNOWN'){status=200;body={success:true};}
           if(ordinal===1&&input.scenario==='THROTTLE'){status=429;body={success:false,error:'Too many requests'};}
           if(ordinal===1&&input.scenario==='PAYMENT_IN_PROGRESS')body={success:false,error:'Payment already in progress'};
+          if(status===200&&body&&typeof body==='object'&&'bookings' in body)lookupFixtures.set(`${worker}:${tab}`,structuredClone(body) as ReturnType<typeof simulatedPending>);
+          httpResponses.push({worker,offsetMs:shot.configuredOffsetMs,status});
           await route.fulfill({status,contentType:'application/json',body:JSON.stringify(body)});
+          inFlight--;
         });
       }
     }
@@ -211,6 +231,7 @@ export async function runShotgunLab(input:LabRequest, options:{directory:string;
     const armed=await armPrecisionRace(race,{lock,journalRoot:join(options.directory,'journals'),releaseMs:triggerMs,now:()=>clock.nowMs(),customerFor:worker=>({
       clientId:`00000000-0000-4000-8000-${String(worker.charCodeAt(0)).padStart(12,'0')}`,customerId:`00000000-0000-4000-9000-${String(worker.charCodeAt(0)).padStart(12,'0')}`,
       customerEmail:`offline-${worker}@example.invalid`,customerPhone:'09000000000',customerFirstName:'Offline',customerLastName:'Fixture'})});
+    authorized=armed.attempts.length;
     const before=cpuSnapshot();
     options.onPhase?.(`OFFLINE countdown: ${input.countdownSeconds}s to test trigger; ${armed.attempts.length} frozen attempts`);
     // Accelerated release-boundary rehearsal (6 s lead instead of the measured production lead):
@@ -230,7 +251,21 @@ export async function runShotgunLab(input:LabRequest, options:{directory:string;
           if(a.target.workerId===waves[0]&&input.scenario==='MISSED_TRIGGER')await pageOf(a.attempt).evaluate(when=>{setTimeout(()=>{const end=performance.now()+200;while(performance.now()<end){}},Math.max(0,when-Date.now()-25));},a.triggerMs);
           prepared.push({attemptId:a.attempt.id,ready:true,durationMs:performance.now()-started});
         } catch(error){prepared.push({attemptId:a.attempt.id,ready:false,code:(error as Error).message});throw error;}
-      },afterFire:()=>lock!.dispatching(),onVerifiedHold:async(_attempt,verified)=>{await lock!.held(verified.holdExpiresAt);return {state:'HOLD_VERIFIED_QR_ATTENTION'};}});
+      },afterFire:()=>lock!.dispatching(),onVerifiedHold:async(attempt,verified)=>{
+        // A separate synthetic lookup fixture exercises the production provider validator.
+        // It is never a live lookup or proof of a real hold. A valid creation body alone cannot count.
+        if(input.scenario==='NO_PROVIDER_PERSISTENCE')return {state:'UNKNOWN',code:'PROVIDER_NOT_FOUND'};
+        const raw=lookupFixtures.get(`${attempt.target.workerId}:${attempt.attempt.fanOutIndex}`);
+        if(!raw||JSON.stringify(raw.bookings.map(b=>b.id))!==JSON.stringify(verified.bookingIds))return {state:'UNKNOWN',code:'PROVIDER_IDENTITY_MISMATCH'};
+        const bookings=raw.bookings;
+        const provider={success:true,data:{id:bookings[0]!.id,bookingNo:bookings[0]!.booking_no,customerId:bookings[0]!.customer_id,
+          checkoutTotal:attempt.plan.totalPrice,bookingStatus:'pending',paymentStatus:'pending',canResumeCheckout:true,
+          groupBookings:bookings.map(b=>({id:b.id,bookingNo:b.booking_no,customerId:b.customer_id,facilityId:b.facility_id,spaceId:b.space_id,date:b.date,
+            startTime:b.start_time,endTime:b.end_time,rate:b.rate,holdExpiresAt:b.hold_expires_at,bookingStatus:b.booking_status,paymentStatus:b.payment_status,bookingSessionId:b.booking_session_id}))}};
+        validateProviderHold(provider,{plan:attempt.plan,bookings,customer:{...attempt.request,customerFirstName:'Offline',customerLastName:'Fixture'},legacyIdentity:false},new Date());
+        inFlightAtConfirmation.push(inFlight);
+        await lock!.held(verified.holdExpiresAt);return {state:'HOLD_VERIFIED_QR_ATTENTION'};
+      }});
     // The production dispatcher rejects with USER_ABORT when stopped before anything was committed. In the Stop
     // rehearsal that is the expected result: every planned attempt is definitively unsent (never UNKNOWN or rejected).
     const result=await dispatched.catch((error:unknown)=>{

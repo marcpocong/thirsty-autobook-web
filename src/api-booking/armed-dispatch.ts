@@ -390,7 +390,7 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
   // ideal while other incomplete wings continue. The achieved court itself never needs another hold.
   let objectiveStop:ShotgunSuppressionReason|undefined;
   let safetyStop:ShotgunSuppressionReason|undefined;
-  const stopPriority=(reason:ShotgunSuppressionReason)=>reason==='SHOTGUN_PROVIDER_THROTTLE_STOP'?4:
+  const stopPriority=(reason:ShotgunSuppressionReason)=>reason==='SHOTGUN_PROVIDER_ACCESS_STOP'?5:reason==='SHOTGUN_PROVIDER_THROTTLE_STOP'?4:
     reason==='SHOTGUN_PAYMENT_IN_PROGRESS_STOP'?3:reason==='SHOTGUN_TARGET_OUTCOME_UNKNOWN'?2:1;
   const wingStops = new Map<string,ShotgunSuppressionReason>(), courtStops = new Map<string,ShotgunSuppressionReason>();
   const quota = raceQuota(armed.race.objective), achieved = new Map<string,Set<string>>();
@@ -430,7 +430,7 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
   const afterCritical=()=>strictRace?waitFor(criticalEndMs,()=>false,timerSleep):Promise.resolve();
   const safety=(attempt:ArmedAttempt,raw:unknown,error?:SubmissionDispatchError)=>{
     let reason:ShotgunSuppressionReason|undefined;
-    if(error){if(!error.dispatched)return;reason=error.diagnostic?.errorHint==='payment-in-progress'?'SHOTGUN_PAYMENT_IN_PROGRESS_STOP':error.diagnostic?.status===429?'SHOTGUN_PROVIDER_THROTTLE_STOP':error.confirmedRejected?undefined:'SHOTGUN_TARGET_OUTCOME_UNKNOWN';}
+    if(error){if(!error.dispatched)return;reason=error.diagnostic?.status===401||error.diagnostic?.status===403?'SHOTGUN_PROVIDER_ACCESS_STOP':error.diagnostic?.errorHint==='payment-in-progress'?'SHOTGUN_PAYMENT_IN_PROGRESS_STOP':error.diagnostic?.status===429?'SHOTGUN_PROVIDER_THROTTLE_STOP':error.confirmedRejected?undefined:'SHOTGUN_TARGET_OUTCOME_UNKNOWN';}
     else {try{validatePublicCheckoutResponse(raw,attempt.request as unknown as PublicCheckoutRequest,attempt.plan,new Date(now()),attempt.plan.totalPrice);reason='SHOTGUN_PROVISIONAL_RESPONSE_STOP';}
       catch{reason='SHOTGUN_TARGET_OUTCOME_UNKNOWN';}}
     if(reason){recordStop(attempt,reason);
@@ -457,7 +457,7 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
         const verified=await settleArmedAttempt(attempt,gated,now);return deps.onVerifiedHold?await deps.onVerifiedHold(attempt,verified):{state:'UNKNOWN',code:'PROVIDER_CONFIRMATION_REQUIRED'}; }
       catch(error){return classifyPrecisionDispatchError(error,async()=>{try{return (await attempt.journal.read(attempt.key)).state;}catch(readError){if((readError as NodeJS.ErrnoException).code==='ENOENT')return undefined;throw readError;}});}
     })().catch(():PrecisionDispatchResult=>({state:'UNKNOWN',code:'PRECISION_DISPATCH_UNCLASSIFIED'})).then(async result=>{
-      const reason=shotgunStopReason({state:result.state,throttle:!!result.code&&/(?:429|THROTTL|RATE_LIMIT)/.test(result.code)});
+      const reason=result.code==='SHOTGUN_PROVIDER_ACCESS_STOP'?result.code:shotgunStopReason({state:result.state,throttle:!!result.code&&/(?:429|THROTTL|RATE_LIMIT)/.test(result.code)});
       if(reason){recordStop(attempt,reason);
         // A renderer child can already be armed for a later trigger. Disarm it as soon as this
         // one-court objective becomes conclusive/unknown/throttled, and retain the exact reason.
