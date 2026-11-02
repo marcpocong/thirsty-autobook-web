@@ -25,6 +25,13 @@ export const UNRELEASED_OBSERVATION_MARGIN_MS = 1_000;
 export function targetDateState(snapshot: AvailabilitySnapshot | undefined, date: string,
   context: ReleaseObservationContext = {}): TargetDateState {
   const flag = snapshot?.returnedDates[date];
+  // Onda can return dates:true and a complete closed template before publication.
+  // A verified Mango release context may classify that template UNRELEASED, never OPEN.
+  if(snapshot&&(snapshot.wing??'MANGO')==='MANGO'&&Number.isFinite(context.releaseMs)&&Number.isFinite(context.observedAtMs)&&
+    context.observedAtMs! < context.releaseMs!-UNRELEASED_OBSERVATION_MARGIN_MS){
+    const cells=snapshot.slots.filter(slot=>slot.date===date);
+    if(cells.length===112&&new Set(cells.map(slot=>`${slot.court}/${slot.startTime}`)).size===112&&cells.every(slot=>!slot.isAvailable))return 'UNRELEASED';
+  }
   if (flag === true) return 'RELEASED';
   if (flag === false) return 'UNRELEASED';
   const { releaseMs, observedAtMs } = context;
@@ -47,7 +54,7 @@ export function courtHourStates(snapshot: AvailabilitySnapshot | undefined, date
     states[court] = {};
     for (const hour of MATRIX_HOURS) {
       const slot = snapshot?.slots.find(value => value.date === date && value.court === court && value.startTime === hour);
-      states[court]![hour] = slot ? (slot.isAvailable ? 'OPEN' : 'TAKEN') : released === false ? 'UNRELEASED' : 'UNKNOWN';
+      states[court]![hour] = slot ? (slot.isAvailable ? 'OPEN' : released===false?'UNRELEASED':'TAKEN') : released === false ? 'UNRELEASED' : 'UNKNOWN';
     }
   }
   return states;

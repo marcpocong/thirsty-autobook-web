@@ -21,13 +21,16 @@ describe('V2 availability and settlement integrity',()=>{
     expect(()=>p.beforeRead()).toThrow('AVAILABILITY_PROVIDER_REFUSED');
     try{p.beforeRead();}catch(error){expect(error).toMatchObject({requestSent:false});}
   });
-  it('honors Retry-After and exhausts the finite retry budget',()=>{
+  it('stops on the first 429 even after Retry-After; only ordinary transport failures use the finite retry budget',()=>{
     let now=0;const p=new AvailabilityReadPolicy(()=>now);
-    p.failure(new LiveAvailabilityError('AVAILABILITY_RATE_LIMITED',429,true,120_000));now=30_000;
-    expect(()=>p.beforeRead()).toThrow('AVAILABILITY_BACKOFF');now=120_000;p.beforeRead();
-    p.failure(new LiveAvailabilityError('AVAILABILITY_READ_TIMEOUT'));now+=2000;p.beforeRead();
-    p.failure(new LiveAvailabilityError('AVAILABILITY_TRANSPORT_FAILED'));
-    expect(()=>p.beforeRead()).toThrow('AVAILABILITY_RETRY_BUDGET_EXHAUSTED');
+    p.failure(new LiveAvailabilityError('AVAILABILITY_RATE_LIMITED',429,true,120_000));now=1_000_000;
+    expect(()=>p.beforeRead()).toThrow('AVAILABILITY_RATE_LIMITED');
+    try{p.beforeRead();}catch(e){expect(e).toMatchObject({httpStatus:429,requestSent:false,retryAfterMs:120_000});}
+    const transient=new AvailabilityReadPolicy(()=>now);
+    transient.failure(new LiveAvailabilityError('AVAILABILITY_READ_TIMEOUT'));now+=1000;transient.beforeRead();
+    transient.failure(new LiveAvailabilityError('AVAILABILITY_READ_TIMEOUT'));now+=2000;transient.beforeRead();
+    transient.failure(new LiveAvailabilityError('AVAILABILITY_TRANSPORT_FAILED'));
+    expect(()=>transient.beforeRead()).toThrow('AVAILABILITY_RETRY_BUDGET_EXHAUSTED');
   });
   it('preserves an HTTP-date Retry-After deadline',async()=>{
     const provider=new OndaLiveAvailabilityProvider({clock:()=>new Date('2026-10-22T00:00:00Z'),

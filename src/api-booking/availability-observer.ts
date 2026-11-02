@@ -4,6 +4,7 @@ import { launchObserverChrome } from '../observer-chrome.js';
 import { OndaBrowserAvailabilityProvider } from './browser-availability-provider.js';
 import { parseAvailability } from './availability-parser.js';
 import { COURT_REGISTRY, type Wing } from '../court-registry.js';
+import {availabilityFailureStatus,type AvailabilityStatus} from './availability-contract.js';
 import { LiveAvailabilityError } from './live-availability-provider.js';
 import { releaseInstantFor, WING_RELEASE_POLICIES } from '../wing-release-data.js';
 
@@ -15,7 +16,7 @@ import { releaseInstantFor, WING_RELEASE_POLICIES } from '../wing-release-data.j
  */
 export type CellState = 'OPEN' | 'BLOCKED' | 'UNRELEASED' | 'UNKNOWN';
 export interface ObservedCell { wing: Wing; court: number; start: string; state: CellState; available: boolean; price: number | null }
-export interface WingRead { wing: Wing; status: 'OK' | 'UNRELEASED' | 'ERROR'; capturedAt?: string; code?: string; cells: number; httpStatus?:number; requestSent?:boolean }
+export interface WingRead { classification?:AvailabilityStatus; wing: Wing; status: 'OK' | 'UNRELEASED' | 'ERROR'; capturedAt?: string; code?: string; cells: number; httpStatus?:number; requestSent?:boolean }
 export interface AvailabilityCheck { date: string; capturedAt: string; observer: 'headless' | 'window'; cells: ObservedCell[]; wings: WingRead[] }
 const HOURS = Array.from({ length: 16 }, (_, index) => `${String(8 + index).padStart(2, '0')}:00`);
 const safeCode = (error: unknown) => error instanceof Error && /^[A-Z][A-Z0-9_]{2,80}$/.test(error.message) ? error.message : 'AVAILABILITY_READ_FAILED';
@@ -66,12 +67,12 @@ export async function checkAvailability(date: string, options: { directory: stri
         const read = await readWing(session.page, wing, date);
         const observed=applyReleaseWindow(cellsFromSnapshot(wing,date,read.snapshot),wing,date,read.capturedAt);
         const unreleased=observed.every(c=>c.state==='UNRELEASED');
-        wings.push({ wing, status: unreleased ? 'UNRELEASED' : 'OK', capturedAt: read.capturedAt, cells: read.snapshot.slots.length,
+        wings.push({ wing, classification:unreleased?'AVAILABILITY_UNRELEASED':'AVAILABILITY_CONFIRMED', status: unreleased ? 'UNRELEASED' : 'OK', capturedAt: read.capturedAt, cells: read.snapshot.slots.length,
           ...(unreleased&&!read.snapshot.emptyUnreleasedResponse?{code:'VERIFIED_RELEASE_NOT_REACHED'}:{}) });
         cells.push(...observed);
       } catch (error) {
         if(error instanceof LiveAvailabilityError&&[401,403,429].includes(error.httpStatus??0))refusal=error;
-        wings.push({ wing, status: 'ERROR', code: safeCode(error), cells: 0,
+        wings.push({ wing, classification:availabilityFailureStatus(error),status: 'ERROR', code: safeCode(error), cells: 0,
           ...(error instanceof LiveAvailabilityError?{httpStatus:error.httpStatus,requestSent:error.requestSent}:{}) });
         cells.push(...cellsFromSnapshot(wing, date, null));
       }

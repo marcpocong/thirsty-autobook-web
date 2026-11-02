@@ -82,6 +82,11 @@ export function parseAvailability(raw: unknown, options: ParseAvailabilityOption
   if (!parsed.success) fail('AVAILABILITY_RESPONSE_INVALID');
   if (parsed.data.data.facilityId !== undefined && parsed.data.data.facilityId !== FACILITY_ID) fail('AVAILABILITY_FACILITY_MISMATCH');
   const requestedDates = dateRange(options.startDate, options.endDate);
+  // The official UI now requests memberOnlyAccessBySlot. Its nonempty semantics have not
+  // been qualified for this guest adapter: never silently treat restricted cells as OPEN.
+  const memberAccess=parsed.data.data.memberOnlyAccessBySlot;
+  if(memberAccess!==undefined&&(memberAccess===null||typeof memberAccess!=='object'||Array.isArray(memberAccess)||Object.keys(memberAccess).length>0))
+    fail('AVAILABILITY_MEMBERSHIP_UNVERIFIED');
   const capturedAt = new Date(options.capturedAt);
   if (!Number.isFinite(capturedAt.getTime())) fail('AVAILABILITY_CAPTURE_TIME_INVALID');
   if (!Number.isFinite(options.now.getTime()) || !Number.isFinite(options.maximumAgeMs) || options.maximumAgeMs < 0) fail('AVAILABILITY_FRESHNESS_OPTIONS_INVALID');

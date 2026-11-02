@@ -13,7 +13,7 @@ export const REHEARSAL_MODULES = [
   'api-booking/hold-confirmation-errors.js','shotgun.js',
   'browser.js','lock-browser.js','browser-window.js','release-clock.js','court-registry.js',
   'api-booking/booking-planner.js','api-booking/availability-parser.js','api-booking/browser-availability-provider.js',
-  'api-booking/browser-availability-fetch.js','api-booking/live-availability-provider.js',
+  'api-booking/browser-availability-fetch.js','api-booking/live-availability-provider.js','api-booking/availability-contract.js',
   'api-booking/local-customer.js','api-booking/api-automation-lock.js',
 ] as const;
 const digest = z.string().regex(/^[a-f0-9]{64}$/);

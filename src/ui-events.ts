@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import {AVAILABILITY_STATUSES} from './api-booking/availability-contract.js';
 import { PRECISION_MAX_FAN_OUT } from './workers.js';
 import {PreparationResultSchema} from './booking-plan.js';
 import {WORKER_IDS} from './workers.js';
@@ -19,7 +20,7 @@ export const ReleasePerformanceSchema=z.object({workers:z.object({A:workerPerfor
 export const UiEventSchema = z.discriminatedUnion('type', [
   z.object({type:z.literal('courtBrowser'),date:z.iso.date(),capturedAt:z.iso.datetime(),observer:z.enum(['headless','window']).optional(),
     cells:z.array(z.object({wing:z.enum(['MANGO','BUKO']),court:z.number().int().min(1).max(7),start:z.string(),state:z.enum(['OPEN','BLOCKED','UNRELEASED','UNKNOWN']).optional(),available:z.boolean(),price:z.number().finite().nonnegative().nullable()}).strict()).max(224),
-    wings:z.array(z.object({wing:z.enum(['MANGO','BUKO']),status:z.enum(['OK','UNRELEASED','ERROR']),capturedAt:z.iso.datetime().optional(),code:z.string().regex(/^[A-Z][A-Z0-9_]{2,80}$/).optional(),cells:z.number().int().min(0),httpStatus:z.number().int().min(100).max(599).optional(),requestSent:z.boolean().optional()}).strict()).max(2).optional()}).strict(),
+    wings:z.array(z.object({wing:z.enum(['MANGO','BUKO']),classification:z.enum(AVAILABILITY_STATUSES).optional(),status:z.enum(['OK','UNRELEASED','ERROR']),capturedAt:z.iso.datetime().optional(),code:z.string().regex(/^[A-Z][A-Z0-9_]{2,80}$/).optional(),cells:z.number().int().min(0),httpStatus:z.number().int().min(100).max(599).optional(),requestSent:z.boolean().optional()}).strict()).max(2).optional()}).strict(),
   z.object({type:z.literal('apiStage'),stage:z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/),elapsedMs:z.number().int().nonnegative(),
     at:z.iso.datetime().optional(),sincePreviousMs:z.number().int().nonnegative().optional(),runId:z.uuid().optional(),
     code:z.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/).optional(),workerId:WorkerIdSchema.optional(),workerElapsedMs:z.number().int().nonnegative().optional(),port:z.number().int().optional(),releaseMs:z.number().int().optional(),

@@ -1,3 +1,4 @@
+import {availabilityStatusLabel} from '../../src/api-booking/availability-contract.js';
 import { operationalState } from './operational-state.js';
 import type { Dashboard } from '../types.js';
 import type { Wing } from '../../src/court-registry.js';
@@ -453,7 +454,7 @@ function renderAvailability(editable: boolean) {
     const read = evidence?.wings?.find(w => w.wing === wing);
     const table = el('div', { class: 'availability-wing', 'data-wing': wing }, el('div', { class: 'availability-head' }, el('strong', { text: `${wingName(wing)} Wing` }),
       el('span', { class: 'small', 'data-tone': !fresh ? 'muted' : read?.status === 'ERROR' ? 'bad' : read?.status === 'UNRELEASED' ? 'warn' : 'good',
-        text: !evidence || evidence.date !== date!.value ? 'UNKNOWN · not checked' : !fresh ? 'UNKNOWN · evidence older than 15 s' : read?.status === 'ERROR' ? `UNKNOWN · ${read.code ?? 'read failed'}${read.httpStatus?` · HTTP ${read.httpStatus}`:''}${read.requestSent===false?' · NOT SENT':''}` : read?.status === 'UNRELEASED' ? 'UNRELEASED · not published yet' : 'Fresh' })));
+        text: !evidence || evidence.date !== date!.value ? 'UNKNOWN · not checked' : !fresh ? 'UNKNOWN · evidence older than 15 s' : read?.status === 'ERROR' ? `UNKNOWN · ${read.classification?availabilityStatusLabel(read.classification):read.code ?? 'read failed'}${read.httpStatus?` · HTTP ${read.httpStatus}`:''}${read.requestSent===false?' · NOT SENT':''}` : read?.status === 'UNRELEASED' ? 'UNRELEASED · not published yet' : 'Fresh' })));
     table.append(el('div', { class: 'court-browser-row hour-header', 'aria-hidden': 'true' }, el('span', { text: '' }), ...HOURS.map(h => el('span', { text: String(Number(h.slice(0, 2)) % 12 || 12) + (Number(h.slice(0, 2)) < 12 ? 'a' : 'p') }))));
     for (let court = 1; court <= 7; court++) {
       const row = el('div', { class: 'court-browser-row' }, el('strong', { text: `Court ${court}` }));

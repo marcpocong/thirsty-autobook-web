@@ -23,28 +23,41 @@ export function findChromeExecutable(): string {
 const freePort = () => new Promise<number>((done, fail) => { const server = createServer(); server.once('error', fail);
   server.listen(0, '127.0.0.1', () => { const port = (server.address() as { port: number }).port; server.close(() => done(port)); }); });
 
+/** An exit may precede Browser.close's reply. Never wait on an event that already happened. */
+export async function waitForObserverExit(child:ChildProcess,exited:()=>boolean,timeoutMs=5_000):Promise<void>{
+  if(exited())return;
+  let timer:ReturnType<typeof setTimeout>|undefined,done=()=>{};
+  try{await new Promise<void>(resolve=>{done=resolve;child.once('exit',done);timer=setTimeout(done,timeoutMs);if(exited())done();});}
+  finally{clearTimeout(timer);child.off('exit',done);}
+}
+
 export async function launchObserverChrome(profileDirectory: string, options: { width?: number; height?: number; timeoutMs?: number; executable?: string } = {}): Promise<ObserverBrowser> {
   const profile = resolve(profileDirectory); mkdirSync(profile, { recursive: true });
   const port = await freePort(), executable = options.executable ?? findChromeExecutable();
   const child: ChildProcess = spawn(executable, [`--remote-debugging-port=${port}`, '--remote-debugging-address=127.0.0.1', `--user-data-dir=${profile}`,
     '--no-first-run', '--no-default-browser-check', `--window-size=${options.width ?? 640},${options.height ?? 480}`, '--window-position=24,24', ONDA_URL],
     { stdio: 'ignore', windowsHide: false });
-  let exited = false; child.once('exit', () => { exited = true; });
-  const kill = () => { try { if (!exited) child.kill(); } catch { /* already gone */ } };
+  let exited = false,spawnFailed=false; child.once('exit', () => { exited = true; });
+  child.once('error',()=>{spawnFailed=true;exited=true;});
+  const kill = () => { if(!exited&&!child.kill())throw Error('OBSERVER_PROCESS_CLOSE_FAILED'); };
   let browser: Browser | undefined;
   const deadline = Date.now() + (options.timeoutMs ?? 20_000);
   while (!browser && Date.now() < deadline) {
     // A second Chrome on a profile that is already open hands off and exits without listening.
+    if(spawnFailed)throw Error('OBSERVER_START_FAILED');
     if (exited) throw Error('OBSERVER_PROFILE_BUSY');
     await new Promise(done => setTimeout(done, 200));
     try { browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`, { timeout: 2_000 }); } catch { /* not listening yet */ }
   }
   if (!browser) { kill(); throw Error('OBSERVER_START_TIMEOUT'); }
-  const close = async () => {
+  let closing:Promise<void>|undefined;
+  const close = () => closing??=(async () => {
     try { const cdp = await browser!.newBrowserCDPSession(); await cdp.send('Browser.close'); } catch { /* fall back to process exit */ }
-    await Promise.race([new Promise(done => child.once('exit', done)), new Promise(done => setTimeout(done, 5_000))]);
-    kill(); await browser!.close().catch(() => undefined);
-  };
+    await waitForObserverExit(child,()=>exited);
+    kill();await waitForObserverExit(child,()=>exited);
+    if(!exited)throw Error('OBSERVER_PROCESS_CLOSE_TIMEOUT');
+    await browser!.close().catch(() => undefined); // Native owner is proved exited; a disconnected CDP handle is harmless.
+  })();
   try {
     const context = browser.contexts()[0]!;
     // Observer sessions are read-only: every non-GET request and service worker is refused.

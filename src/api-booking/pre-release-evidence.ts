@@ -3,6 +3,7 @@ import type { PublicBookingRecords } from './public-bookings.js';
 import type { PublicBookingBlock } from './proofless-checkout.js';
 import { targetDateState, type TargetDateState } from './court-hour-matrix.js';
 import { LiveAvailabilityError } from './live-availability-provider.js';
+import {availabilityFailureStatus,type AvailabilityStatus} from './availability-contract.js';
 
 /** Bounded, rate-respectful retries: the first read plus at most two more. */
 export const PRE_RELEASE_RETRY_DELAYS_MS = [5_000, 15_000] as const;
@@ -16,6 +17,7 @@ export interface PreReleaseEvidence {
   failedCourts: number[];
   bookingAttempts: number;
   dateState: TargetDateState;
+  availabilityFailure?:{code:string;httpStatus?:number;classification:AvailabilityStatus};
 }
 
 export interface PreReleaseEvidenceOptions {
@@ -51,7 +53,9 @@ export async function readPreReleaseEvidence(options: PreReleaseEvidenceOptions)
       options.onRead?.({ source: 'availability', attempt, ok: !!snapshot,
         ...(error instanceof LiveAvailabilityError?{code:error.code,httpStatus:error.httpStatus,requestSent:error.requestSent}:{}) });
       const refused=error instanceof LiveAvailabilityError&&([401,403,429].includes(error.httpStatus??0)||error.requestSent===false);
-      if (snapshot || refused || attempt > delays.length) return { snapshot, observedAtMs, attempts: attempt };
+      if (snapshot || refused || attempt > delays.length) return { snapshot, observedAtMs, attempts: attempt,
+        ...(error?{failure:{code:error instanceof Error&&/^[A-Z][A-Z0-9_]{0,79}$/.test(error.message)?error.message:'AVAILABILITY_READ_FAILED',
+          ...(error instanceof LiveAvailabilityError?{httpStatus:error.httpStatus}:{}),classification:availabilityFailureStatus(error)}}:{}) };
       await options.sleep(delays[attempt - 1]!);
     }
   })();
@@ -67,8 +71,16 @@ export async function readPreReleaseEvidence(options: PreReleaseEvidenceOptions)
   })();
   const [a, b] = await Promise.all([availability, bookings]);
   return { ...(a.snapshot ? { snapshot: a.snapshot, observedAtMs: a.observedAtMs } : {}), availabilityAttempts: a.attempts,
+    ...(a.failure?{availabilityFailure:a.failure}:{}),
     blocks: b.records.blocks, failedCourts: b.records.failedCourts, bookingAttempts: b.attempts,
     dateState: targetDateState(a.snapshot, options.date, { releaseMs: options.releaseMs, observedAtMs: a.observedAtMs }) };
+}
+
+/** Slot-open evidence is not required before release; an actual access denial is never optional. */
+export function assertScheduledAvailabilityAccess(evidence:Pick<PreReleaseEvidence,'availabilityFailure'>):void{
+  const failure=evidence.availabilityFailure;
+  if(failure&&['AVAILABILITY_AUTH_REQUIRED','AVAILABILITY_ACCESS_DENIED','AVAILABILITY_RATE_LIMITED','AVAILABILITY_ENDPOINT_UNSUPPORTED','AVAILABILITY_RESPONSE_INCOMPATIBLE'].includes(failure.classification))
+    throw Error(failure.classification);
 }
 
 /** Current, factual evidence for one exact court/time target. It never claims a

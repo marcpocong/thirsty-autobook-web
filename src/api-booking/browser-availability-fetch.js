@@ -34,7 +34,10 @@ async ({path,timeoutMs,maximum}) => {
   const metadata=Object.fromEntries(['x-vercel-cache','age','date','x-matched-path','x-vercel-id','retry-after'].flatMap(key=>{
     const value=response.headers.get(key);return value&&value.length<=240&&/^[\x20-\x7e]+$/.test(value)?[[key,value]]:[];
   }));
-  if(!response.ok||!contentType.toLowerCase().includes('application/json'))return {status:response.status,contentType,body:'',metadata};
+  if(!response.ok||!contentType.toLowerCase().includes('application/json')){
+    try{await response.body?.cancel();}catch{return {status:response.status,contentType,body:'',metadata,failure:'AVAILABILITY_RESPONSE_CLOSE_FAILED',requestSent:true};}
+    return {status:response.status,contentType,body:'',metadata};
+  }
   const reader=response.body?.getReader();
   if(!reader)return {status:0,contentType:'',body:'',failure:'AVAILABILITY_BODY_FAILED',requestSent:true};
   try {

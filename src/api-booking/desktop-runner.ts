@@ -12,7 +12,8 @@ import { adoptConsensus, DEFAULT_SPIN_TAIL_MS, RELEASE_CLOCK_ROUNDS, TrustedRele
 import { releaseTriggerMs } from '../release-offset.js';
 import { armedNothingFired, armPrecisionRace, disarmUnfired, dispatchArmedPrecisionRace, type ArmedAttempt, type ArmedPrecisionRace } from './armed-dispatch.js';
 import { dispatchPhase3Wave1, reconcileWave1Attempts, phase3AttemptCounts } from './phase3-wave1-reporting.js';
-import { classifyTargetEvidence, readPreReleaseEvidence, type PreReleaseEvidence } from './pre-release-evidence.js';
+import { assertScheduledAvailabilityAccess, classifyTargetEvidence, readPreReleaseEvidence, type PreReleaseEvidence } from './pre-release-evidence.js';
+import {availabilityFailureStatus} from './availability-contract.js';
 import {readBeforePreparation} from './prewarm-deadline.js';
 import { freezePrecisionRace, precisionAttemptSet, precisionTargetPlan, reducePrecisionOutcome, PRECISION_UNSENT_STATES,
   validatePrecisionTargets, VerifiedHoldQrError, classifyPrecisionDispatchError,
@@ -114,7 +115,8 @@ const stage = (name: string, extra: ApiStageFields = {}) => {
 const trace = (name: string, extra: Record<string, string | number | boolean> = {}) =>
   progressLog.recordDiagnostic(name, new Date(nowMs()).toISOString(), stamp(), extra);
 stage('RUN_STARTED');
-const ensureActive = () => { if (abort.signal.aborted) throw Error('USER_ABORT'); };
+let availabilityAccessFailure:PreReleaseEvidence['availabilityFailure'];
+const ensureActive = () => { assertScheduledAvailabilityAccess({availabilityFailure:availabilityAccessFailure});if (abort.signal.aborted) throw Error('USER_ABORT'); };
 // Windows' default timer resolution (~15.6ms) makes setTimeout overshoot short
 // waits by up to that much, which matters right at the release trigger instant.
 // Below this threshold, spin on setImmediate (sub-ms scheduling) instead.
@@ -318,6 +320,8 @@ async function readAvailabilitySnapshot(date:string,propagate=false):Promise<Ava
     const code=error instanceof Error&&/^[A-Z][A-Z0-9_]{0,79}$/.test(error.message)
       ?error.message:'AVAILABILITY_READ_FAILED';
     const diagnostic=error instanceof LiveAvailabilityError?{...(error.httpStatus?{statusCode:error.httpStatus}:{}),...(error.requestSent!==undefined?{requestSent:error.requestSent}:{})}:{};
+    const failure={code,...(error instanceof LiveAvailabilityError?{httpStatus:error.httpStatus}:{}),classification:availabilityFailureStatus(error)};
+    try{assertScheduledAvailabilityAccess({availabilityFailure:failure});}catch{availabilityAccessFailure=failure;stage('AVAILABILITY_ACCESS_STOP',{code:failure.classification,...diagnostic});abort.abort();}
     trace('AVAILABILITY_SAMPLE_FAILED',{durationMs:Math.round(performance.now()-requestedAt),code,...diagnostic});
     finish('AVAILABILITY_REQUEST_COMPLETED',{status:'FAILED',failureCategory:code,targetDatePresent:false,
       responseComplete:false,slotCount:0,availableCount:0,...diagnostic});
@@ -332,7 +336,7 @@ const readEvidence=(date:string,releaseMs:number,checkpoint:string,retry=true)=>
   readAvailability:()=>readAvailabilitySnapshot(date,true),readBookings:()=>readKnownCourtHourBlocks(date),now:nowMs,sleep:pause,
   ...(retry?{}:{retryDelaysMs:[]}),
   onRead:read=>stage('PRE_RELEASE_AUDIT_READ',{checkpoint,readSource:read.source,attemptNo:read.attempt,ok:read.ok,
-    ...(read.failedCourts?.length?{failedCourts:read.failedCourts.join(',')}:{})})});
+    ...(read.failedCourts?.length?{failedCourts:read.failedCourts.join(',')}:{})})}).then(evidence=>{assertScheduledAvailabilityAccess(evidence);return evidence;});
 const sleepUntil=async(at:number)=>{while(nowMs()<at){ensureActive();await pause(Math.min(30_000,Math.max(1,at-nowMs())));}};
 const tenth=(value:number)=>Math.round(value*10)/10;
 async function refreshNetworkClock(checkpoint:string):Promise<boolean>{

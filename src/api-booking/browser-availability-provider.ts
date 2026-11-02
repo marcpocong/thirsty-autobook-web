@@ -1,9 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import type { Page } from 'playwright';
 import { OndaLiveAvailabilityProvider, LiveAvailabilityError, THIRSTY_PICKLE_FACILITY_ID, type LiveAvailabilityOptions } from './live-availability-provider.js';
+import {AVAILABILITY_ORIGIN as ORIGIN,AVAILABILITY_PATH as PATH} from './availability-contract.js';
 
-const ORIGIN = 'https://app.onda.fit';
-const PATH = `/api/public/facilities/${THIRSTY_PICKLE_FACILITY_ID}/date-availability`;
 const MAX_BYTES = 4_000_000;
 
 /** Normal same-origin GET in the operator's verified browser. No copied cookies,
@@ -25,7 +24,7 @@ export class OndaBrowserAvailabilityProvider extends OndaLiveAvailabilityProvide
       const source=await readFile(new URL('./browser-availability-fetch.js',import.meta.url),'utf8');
       const result=await page.evaluate<{status:number;contentType:string;body:string;metadata?:Record<string,string>;failure?:string;requestSent?:boolean}>(
         `(${source})(${JSON.stringify({path:url.pathname+url.search,timeoutMs,maximum:MAX_BYTES})})`);
-      if(result.failure)throw new LiveAvailabilityError(result.failure,undefined,result.requestSent===true);
+      if(result.failure)throw new LiveAvailabilityError(result.failure,result.status>=100?result.status:undefined,result.requestSent===true);
       const response=new Response(result.body, { status: result.status, headers: { 'content-type': result.contentType, ...(result.metadata??{}) } });
       options.onHeaders?.(response.headers);return response;
     };

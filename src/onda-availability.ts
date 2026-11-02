@@ -3,6 +3,7 @@ import { DateTime } from 'luxon';
 import { expandHours, type Preference } from './config.js';
 import { resolvePreference, type Cell } from './grid.js';
 import { MANGO_SPACE_IDS, FACILITY_ID as REGISTRY_FACILITY_ID } from './court-registry.js';
+import {availabilityRequestPath} from './api-booking/availability-contract.js';
 
 export const FACILITY_ID = REGISTRY_FACILITY_ID;
 export const COURT_TO_SPACE_ID = MANGO_SPACE_IDS;
@@ -18,7 +19,7 @@ export function assertAvailabilityDate(date: string) {
 }
 export function availabilityPath(targetDate: string) {
   assertAvailabilityDate(targetDate);
-  return `/api/public/facilities/${FACILITY_ID}/date-availability?startDate=${targetDate}&endDate=${targetDate}&duration=60&includeSchedule=true&slotDateMode=web-operating-day`;
+  return availabilityRequestPath(targetDate);
 }
 const SlotSchema = z.object({
   date: z.string(), bookingDate: z.string(), startTime: z.string().regex(/^(0[89]|1\d|2[0-3]):00$/),
@@ -41,6 +42,8 @@ export function parseAvailability(raw: unknown, targetDate: string): Availabilit
   const parsed = ResponseSchema.safeParse(raw);
   if (!parsed.success) throw Error('AVAILABILITY_SCHEMA_INVALID');
   const { dates, slotsBySpace } = parsed.data.data;
+  const memberAccess=(raw as {data?:{memberOnlyAccessBySlot?:unknown}}).data?.memberOnlyAccessBySlot;
+  if(memberAccess!==undefined&&(memberAccess===null||typeof memberAccess!=='object'||Array.isArray(memberAccess)||Object.keys(memberAccess).length>0))throw Error('AVAILABILITY_MEMBERSHIP_UNVERIFIED');
   if (!Object.hasOwn(dates, targetDate) || Object.keys(dates).some(date => date !== targetDate)) throw Error('AVAILABILITY_DATE_MISMATCH');
   const slots: AvailabilitySlot[] = [], seen = new Set<string>();
   let unknownSpaces = 0, knownCourts = 0;

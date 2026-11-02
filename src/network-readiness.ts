@@ -6,6 +6,7 @@ import { networkInterfaces } from 'node:os';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { parseAvailability } from './api-booking/availability-parser.js';
+import {availabilityFailureStatus,type AvailabilityStatus} from './api-booking/availability-contract.js';
 import { OndaLiveAvailabilityProvider } from './api-booking/live-availability-provider.js';
 import { queryGoogleClockConsensus } from './network-clock.js';
 import type { ClockConsensus } from './release-clock.js';
@@ -25,10 +26,10 @@ export const NETWORK_READINESS_DIRECTORY = '.local/network-readiness';
 /** Verdict rules (see verdictOf). */
 export const READINESS_RULES = Object.freeze({ minSuccesses: 3, minClockSamples: 3, medianMs: 1_500, maxMs: 5_000 });
 
-export interface ReadinessSample { index: number; ok: boolean; code: string | null; durationMs: number; complete: boolean | null; cache: string | null; newConnection: boolean; connectMs: number | null }
+export interface ReadinessSample { classification?:AvailabilityStatus;httpStatus?:number; index: number; ok: boolean; code: string | null; durationMs: number; complete: boolean | null; cache: string | null; newConnection: boolean; connectMs: number | null }
 export interface ReadinessResult {
   version: 1; measuredAt: string; target: 'Onda public availability (read-only GET)';
-  requests: number; succeeded: number; failed: number; complete: number;
+  requestedRequests?:number;requests: number; succeeded: number; failed: number; complete: number;
   medianMs: number | null; p90Ms: number | null; p95Ms: number | null; maxMs: number | null;
   protocol: string; newConnections: number|null; reusedRequests: number|null; connectMs: number[]; dnsMs: number | null;
   samples: ReadinessSample[];
@@ -102,7 +103,9 @@ export async function runNetworkReadiness(options: ReadinessOptions = {}): Promi
           newConnection: connectedDuring.length > 0, connectMs: connectedDuring[0] ?? null });
       } catch (error) {
         const code = error instanceof Error && /^[A-Z][A-Z0-9_]{0,79}$/.test(error.message) ? error.message : 'READ_FAILED';
-        samples.push({ index, ok: false, code, durationMs: round(performance.now() - started), complete: null, cache: fetcherCache, newConnection: connectedDuring.length > 0, connectMs: connectedDuring[0] ?? null });
+        const classification=availabilityFailureStatus(error),httpStatus=(error as {httpStatus?:number})?.httpStatus;
+        samples.push({classification,...(httpStatus?{httpStatus}:{}), index, ok: false, code, durationMs: round(performance.now() - started), complete: null, cache: fetcherCache, newConnection: connectedDuring.length > 0, connectMs: connectedDuring[0] ?? null });
+        if(['AVAILABILITY_AUTH_REQUIRED','AVAILABILITY_ACCESS_DENIED','AVAILABILITY_RATE_LIMITED'].includes(classification))break;
       }
     }
     }finally{await session?.close();}
@@ -118,7 +121,7 @@ export async function runNetworkReadiness(options: ReadinessOptions = {}): Promi
   const history = options.history ?? [];
   const previousMedians = history.map(value => value.medianMs).filter((value): value is number => value !== null).sort((a, b) => a - b);
   const base: Omit<ReadinessResult, 'verdict' | 'reasons'> = { version: 1, measuredAt: new Date(now()).toISOString(), target: 'Onda public availability (read-only GET)',
-    requests, succeeded: durations.length, failed: samples.length - durations.length, complete: samples.filter(sample => sample.complete).length,
+    requestedRequests:requests,requests:samples.length, succeeded: durations.length, failed: samples.length - durations.length, complete: samples.filter(sample => sample.complete).length,
     medianMs: percentile(durations, 50), p90Ms: durations.length >= 10 ? percentile(durations, 90) : null, p95Ms: durations.length >= 20 ? percentile(durations, 95) : null,
     maxMs: durations.at(-1) ?? null, protocol: options.fetcher?'Injected legacy HTTP path':'Verified Chrome session (connection reuse unmeasured)',
     newConnections: options.fetcher?samples.filter(sample => sample.newConnection).length:null, reusedRequests: options.fetcher?samples.filter(sample => !sample.newConnection).length:null,

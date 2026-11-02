@@ -1,5 +1,7 @@
 # Availability dependency audit — October 14, 2026
 
+November 2 follow-up: the same endpoint and the installed browser adapter still work. The V2.2 ad hoc 403 probes omitted the existing genuine page-fingerprint integration and did not establish production denial. See [V2.2.1 compatibility findings](AVAILABILITY_COMPATIBILITY_V2_2_1.md) for the observed query/schema, release-template interpretation, first-429 stopping and scoped failure classification. The original caller audit below is retained as historical evidence.
+
 Production availability requires a legitimate browser session. `OndaLiveAvailabilityProvider` remains the strict parser/HTTP adapter base and an explicitly injected offline comparison tool. Inheritance by `OndaBrowserAvailabilityProvider` does not send Node HTTP requests: it installs a bounded same-origin browser fetcher. No failure falls back to default Node fetch.
 
 | Caller | Role and current disposition |
