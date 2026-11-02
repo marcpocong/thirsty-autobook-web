@@ -1,7 +1,7 @@
 import type { Dashboard } from '../types.js';
 import { el, fill, hooks, manilaTime, peso, onPane } from './navigation.js';
 import { operationalState, releaseCountdown, attemptCounters, holdPresentation, operatorEventText, presentedHolds } from './operational-state.js';
-import { pendingHoldRows, pendingHoldBusy, recover } from './pending-holds.js';
+import { pendingHoldRows, pendingHoldBusy, pendingHoldMessage, recover } from './pending-holds.js';
 
 let latest: Dashboard | undefined, sampledAt = 0, clockSample='', signature = '', eventSignature = '', fallbackSignature='';
 const byId = (id: string) => document.getElementById(id)!;
@@ -31,16 +31,17 @@ function renderHolds(s: Dashboard) {
   const host = byId('monitor-holds'), now = Date.now() + (s.clock?.clockOffsetMs ?? 0);
   const rows = presentedHolds(s,pendingHoldRows(),now).filter(r => r.outstanding && (!r.advertisedExpiry || Date.parse(r.advertisedExpiry) > now));
   const possible=(s.possibleHolds??[]).filter(h=>Date.parse(h.holdExpiresAt)>now);
-  const key = JSON.stringify([rows, rows.map(r=>holdPresentation(r,now).label), possible, s.operation,pendingHoldBusy()]);
+  const key = JSON.stringify([rows, rows.map(r=>holdPresentation(r,now).label), possible, s.operation,pendingHoldBusy(),pendingHoldMessage()]);
   if (key === holdsSignature) return; holdsSignature = key;
   const review = el('button', { type: 'button', class: 'secondary compact', text: 'Review existing checkouts' });
   review.onclick = () => hooks.showView('records');
   fill(host, el('div', { class: 'section-title' }, el('h2', { text: 'Pending checkouts' }), review),
+    pendingHoldMessage()?el('p',{class:'notice',role:'status',text:pendingHoldMessage()}):null,
     ...rows.map(row => { const h = holdPresentation(row, now);
       const action=el('button',{type:'button',class:'secondary compact',text:'Recover Existing Checkout'});
       action.disabled=(!row.currentHandoff&&(s.operation!=='idle'||hooks.labRunning||pendingHoldBusy()))||!row.worker;
       action.textContent=row.currentHandoff?`Focus Browser ${row.worker}`:'Recover Existing Checkout';
-      action.onclick=()=>{if(row.currentHandoff&&row.worker){void window.thirsty.focusBrowser({workerId:row.worker}).catch(()=>{action.textContent='Browser unavailable';});}else void recover(row.id,'original');};
+      action.onclick=()=>{if(row.currentHandoff&&row.worker){void window.thirsty.focusBrowser({workerId:row.worker}).catch(()=>{action.textContent='Browser unavailable';});}else void recover(row.id,'fresh');};
       return el('article', { class: 'monitor-hold', 'data-tone': h.confirmed ? 'ok' : 'warn' },
         el('strong', { text: `Browser ${row.worker ?? '?'} · ${row.wing} Court ${row.courts.join(' + ')} · ${h.label}` }),
         el('p',{class:'small',text:row.currentHandoff?'Source: current official QR handoff':'Source: saved recovery evidence'}),

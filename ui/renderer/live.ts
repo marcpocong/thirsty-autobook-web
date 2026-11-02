@@ -54,13 +54,13 @@ export function renderLive(state: Dashboard): void {
     live?.prewarm?.actualLeadMs!==undefined?`Preparation started ${Math.round(live.prewarm.actualLeadMs/1000)} s before the earliest trigger (planned ${Math.round(live.prewarm.leadMs/1000)} s)${(live.prewarm.lateByMs??0)>1_000?' · LATE START':''}`:'',
     shotgunTotal?`Shotgun: ${sent}/${shotgunTotal} sent · ${suppressed} suppressed`:'',live?.tiers ?? ''].filter(Boolean).join(' · ');
   // Per-browser state, the court objective (verified holds only) and, once settled, the run report.
-  const workers = workerProgress(state), objective = courtObjective(state), workersHost = byId('live-workers'), report = runReport(state), reportHost = byId('live-report');
+  const workers = workerProgress(state), objective = courtObjective(state,pendingHoldRows()), workersHost = byId('live-workers'), report = runReport(state,pendingHoldRows()), reportHost = byId('live-report');
   workersHost.hidden = !workers.length;
   const workersKey=JSON.stringify(workers);if(workersKey!==lastWorkers){lastWorkers=workersKey;
   workersHost.replaceChildren(...workers.map(w => { const item = el('li', '', ''); item.dataset.tone = w.tone;
     item.append(el('strong', '', `Browser ${w.worker}`), el('span', '', w.target), el('span', 'live-worker-status', w.status)); return item; }));}
   const objectiveHost = byId('live-objective'); objectiveHost.hidden = !live?.parents.length;
-  objectiveHost.textContent = `Courts with local checkout results: ${objective.held.length} of ${objective.required} required${objective.held.length ? ` (${objective.held.map(c => `Court ${c}`).join(', ')})` : ''} · ${objective.met ? 'objective met' : 'objective not met yet'} · a sent request is not a booking`;
+  objectiveHost.textContent = `Provider-confirmed courts: ${objective.held.length} of ${objective.required} required${objective.held.length ? ` (${objective.held.map(c => `Court ${c}`).join(', ')})` : ''} · ${objective.met ? 'objective met' : 'objective not confirmed'} · a locally valid response is not provider confirmation`;
   objectiveHost.dataset.tone = objective.met ? 'ok' : 'muted';
   reportHost.hidden = !report.length || !state.runSummary?.settled;
   reportHost.replaceChildren(...(reportHost.hidden ? [] : report.map(([k, v]) => { const row = el('div', '', ''); row.dataset.fact = k; row.append(el('dt', '', k), el('dd', '', v)); return row; })));

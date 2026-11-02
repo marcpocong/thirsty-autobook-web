@@ -193,12 +193,35 @@ describe('post-run release forensics', () => {
         {...base,stage:'CHECKOUT_HTTP_POST_INITIATED',workerId:'E',attemptId,releaseLatenessMs:608313},
         {...base,stage:'CHECKOUT_RESPONSE_COMPLETED',workerId:'E',attemptId,statusCode:200,networkDurationMs:746},
         {...base,stage:'DIAGNOSTIC_VERIFIED_HOLD',workerId:'E',attemptId},
+        {...base,stage:'PROVIDER_HOLD_CONFIRMED',workerId:'E',attemptId},
         {...base,stage:'DIAGNOSTIC_QR_HANDOFF',workerId:'E',attemptId},
       ]));
       const summary=buildReleaseForensics({runProgressPath:progress,outputDirectory:join(root,'out'),status:'final'});
       expect(summary.phase3?.attempts[0]?.state).toBe('VERIFIED_PENDING_HOLD_QR_HANDOFF');
       expect(await readFile(summary.reportPath,'utf8')).toContain('VERIFIED_PENDING_HOLD_QR_HANDOFF · HTTP 200');
     } finally {await cleanup(root);}
+  });
+
+  it('retains a legacy success as recorded evidence but refuses its unconfirmed hold and objective claims',async()=>{
+    const root=await mkdtemp(join(tmpdir(),'forensics-unconfirmed-'));
+    try{
+      const progress=join(root,'run.ndjson'),attemptId='core-A-official-1',candidateId='a'.repeat(64);
+      await writeFile(progress,ndjson([
+        {...base,stage:'RUN_CONFIGURATION',bookingMethod:'proofless',releaseMs},
+        {...base,stage:'PHASE3_AUTHORIZATION',fingerprint:'f'.repeat(64),candidateCount:1,maxWave2:0,maxRescue:0,maxTotal:1},
+        {...base,stage:'PHASE3_CANDIDATE',candidateId,court:7,startTime:'19:00',endTime:'22:00'},
+        {...base,stage:'PHASE3_ATTEMPT_RESERVED',workerId:'A',candidateId,wave:'WAVE_1',attemptId},
+        {...base,stage:'DIAGNOSTIC_VERIFIED_HOLD',workerId:'A',attemptId},
+        {...base,stage:'PHASE3_SETTLED',workerId:'A',candidateId,wave:'WAVE_1',attemptId,state:'HOLD_VERIFIED_QR_ATTENTION',code:'RECOVERY_WORKER_BUSY'},
+        {...base,stage:'PHASE3_OUTCOME',outcome:'OBJECTIVE_ACHIEVED'},
+      ]));
+      const original=await readFile(progress,'utf8');
+      const summary=buildReleaseForensics({runProgressPath:progress,outputDirectory:join(root,'out'),status:'final'});
+      expect(summary).toMatchObject({outcome:'MANUAL_RECONCILIATION_REQUIRED',recordedOutcome:'OBJECTIVE_ACHIEVED'});
+      expect(summary.phase3?.attempts[0]?.state).toBe('UNKNOWN');
+      expect(summary.limitations.join(' ')).toContain('without matching per-attempt provider confirmation');
+      expect(await readFile(progress,'utf8')).toBe(original);
+    }finally{await cleanup(root);}
   });
 
   it('picks the watch with the most reads for the release and ignores other releases', async () => {

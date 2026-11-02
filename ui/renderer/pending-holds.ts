@@ -3,6 +3,7 @@ import type {PendingHoldRow} from '../../src/api-booking/pending-hold-service.js
 let rows:PendingHoldRow[]=[],busy=false,message='';
 export const pendingHoldRows = (): readonly PendingHoldRow[] => rows;
 export const pendingHoldBusy = () => busy;
+export const pendingHoldMessage = () => message;
 async function refresh(){
   if(busy)return;busy=true;render();
   try{const result=await window.thirsty.pendingHolds({action:'list'});rows=result.rows??rows;message=result.error??'';}

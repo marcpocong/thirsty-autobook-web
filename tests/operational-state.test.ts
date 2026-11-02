@@ -1,10 +1,19 @@
 import { expect, it } from 'vitest';
 import type { Dashboard } from '../ui/types.js';
 import type { PendingHoldRow } from '../src/api-booking/pending-hold-service.js';
-import { operationalState, releaseCountdown, holdPresentation, attemptCounters, operatorEventText, presentedHolds } from '../ui/renderer/operational-state.js';
+import { operationalState, releaseCountdown, holdPresentation, attemptCounters, operatorEventText, presentedHolds,confirmedCourtHours } from '../ui/renderer/operational-state.js';
+import {courtObjective} from '../ui/renderer/operator-status.js';
 
 const state = (extra: Record<string, unknown> = {}) => ({ operation: 'idle', lock: false, ready: false, ...extra }) as Dashboard;
 const release = { releaseMs: 100000, targetDate: '2026-11-04', phase: 'WAITING' as const };
+it('never paints grid ownership or satisfies the court quota from a local hold-created response',()=>{
+ const now=Date.now(),date='2026-11-04',s=state({booking:{targetDate:date,setup:{}},qrHandoffs:[{status:'hold-created',checkout:'A',wing:'MANGO',courts:[7],date,startTime:'19:00',endTime:'22:00',amount:2100,verifiedAt:new Date(now).toISOString(),holdExpiresAt:new Date(now+60000).toISOString()}],live:{parents:[{court:7,children:[{state:'HOLD_VERIFIED_QR_ATTENTION'}]}]}});
+ expect([...confirmedCourtHours(s,[],date,now)]).toEqual([]);expect(courtObjective(s,[],now)).toMatchObject({held:[],met:false});
+ const row={id:'a'.repeat(64),worker:'A',wing:'MANGO',courts:[7],date,start:'19:00',end:'22:00',amount:2100,advertisedExpiry:new Date(now+60000).toISOString(),local:'LOCAL_RESPONSE_VALID',provider:'PROVIDER_HOLD_CONFIRMED',qr:'NOT_CHECKED',outstanding:true,freshConfirmationRequired:false,lastCheckedAt:new Date(now).toISOString(),diagnostic:'PROVIDER_HOLD_CONFIRMED',contradiction:false} as PendingHoldRow;
+ expect([...confirmedCourtHours(s,[row],date,now)]).toEqual(['7/19:00','7/20:00','7/21:00']);expect(courtObjective(s,[row],now).met).toBe(true);
+ expect([...confirmedCourtHours(s,[{...row,provider:'UNKNOWN',contradiction:true}],date,now)]).toEqual([]);
+ expect(courtObjective(s,[row],now+31000).met).toBe(false);expect([...confirmedCourtHours(s,[row],'2026-11-05',now)]).toEqual([]);
+});
 it('preserves the saved candidate date instead of substituting the next publishable date',()=>{
   const s=state({booking:{targetDate:'2026-11-04',setup:{}},planDate:{status:'STALE',planDate:'2026-11-03',targetDate:'2026-11-04'}});
   expect(operationalState(s).targetDate).toBe('2026-11-03');

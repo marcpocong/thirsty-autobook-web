@@ -432,7 +432,7 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
     const attempt=armed.attempts[index]!;
     const outcome=(async():Promise<PrecisionDispatchResult>=>{
       try { const gated=attempt.shotDeadlineMs===undefined?sent:sent.then(async raw=>{safety(attempt,raw);await afterCritical();return raw;},async error=>{if(error instanceof SubmissionDispatchError)safety(attempt,undefined,error);await afterCritical();throw error;});
-        const verified=await settleArmedAttempt(attempt,gated,now);return deps.onVerifiedHold?await deps.onVerifiedHold(attempt,verified):{state:'QR_READY'}; }
+        const verified=await settleArmedAttempt(attempt,gated,now);return deps.onVerifiedHold?await deps.onVerifiedHold(attempt,verified):{state:'UNKNOWN',code:'PROVIDER_CONFIRMATION_REQUIRED'}; }
       catch(error){return classifyPrecisionDispatchError(error,async()=>{try{return (await attempt.journal.read(attempt.key)).state;}catch(readError){if((readError as NodeJS.ErrnoException).code==='ENOENT')return undefined;throw readError;}});}
     })().catch(():PrecisionDispatchResult=>({state:'UNKNOWN',code:'PRECISION_DISPATCH_UNCLASSIFIED'})).then(async result=>{
       const reason=shotgunStopReason({state:result.state,throttle:!!result.code&&/(?:429|THROTTL|RATE_LIMIT)/.test(result.code)});

@@ -24,7 +24,8 @@ it('separates fresh provider confirmation, QR readiness, local results and elaps
     await page.evaluate(async () => { await new Promise(resolve => setTimeout(resolve, 1100)); });
     expect(await action.evaluate(e => e === document.activeElement)).toBe(true);
     await action.click();
-    expect(await page.evaluate(() => (window as any).fixturePendingRecoveryRequest)).toEqual({ action: 'recover', id: 'a'.repeat(64), mode: 'original' });
+    expect(await page.evaluate(() => (window as any).fixturePendingRecoveryRequest)).toEqual({ action: 'recover', id: 'a'.repeat(64), mode: 'fresh' });
+    await expect.poll(()=>page.locator('#monitor-holds [role="status"]').innerText()).toBe('PROVIDER_NOT_CHECKED');
     await page.evaluate(() => { const w = window as any; w.fixturePendingHolds[0].freshConfirmationRequired = true; w.fixturePendingHolds[0].provider = 'UNKNOWN'; });
     await showRendererView(page, 'records'); await showRendererView(page, 'live');
     await expect.poll(() => page.locator('#monitor-title').innerText()).not.toBe('QR READY');

@@ -8,6 +8,8 @@ import { DIRECT_ASSUMED_DAY_RATE, DIRECT_ASSUMED_EVENING_RATE, DIRECT_MAX_DISPAT
 import type { BookingPlan } from './types.js';
 import { isReleaseOffsetMs } from '../release-offset.js';
 import { isShotgunOffsetMs } from '../shotgun.js';
+import { VerifiedHoldQrError, ProviderHoldUnconfirmedError } from './hold-confirmation-errors.js';
+export { VerifiedHoldQrError, ProviderHoldUnconfirmedError } from './hold-confirmation-errors.js';
 
 /**
  * Precision Release v1: the operator wants ONE court and authorizes 1-7 exact,
@@ -146,13 +148,6 @@ export function reducePrecisionOutcome(states: readonly PrecisionAttemptState[])
       states.every(state => state === 'REJECTED' || PRECISION_UNSENT_STATES.has(state)) };
 }
 
-/** A real, validated pending booking whose official QR page could not be opened afterwards. */
-export class VerifiedHoldQrError extends Error {
-  constructor(readonly code: string, readonly hold: { bookingId: string; bookingNo?: string; holdExpiresAt: string; amount: number }) {
-    super(code); this.name = 'VerifiedHoldQrError';
-  }
-}
-
 const PRE_DISPATCH_CODES = new Set(['DUPLICATE_LOGICAL_BOOKING_BLOCKED', 'SUPERVISED_ONE_SHOT_ALREADY_USED']);
 
 /**
@@ -164,6 +159,7 @@ export async function classifyPrecisionDispatchError(error: unknown,
   journalState: () => Promise<SubmissionState | undefined>): Promise<PrecisionDispatchResult> {
   const code = error instanceof Error && /^[A-Z][A-Z0-9_]{0,79}$/.test(error.message) ? error.message : 'PRECISION_DISPATCH_FAILED';
   if (error instanceof VerifiedHoldQrError) return { state: 'HOLD_VERIFIED_QR_ATTENTION', code };
+  if (error instanceof ProviderHoldUnconfirmedError) return { state: 'UNKNOWN', code };
   if(error instanceof SubmissionDispatchError&&error.diagnostic?.errorHint==='payment-in-progress')return {state:'REJECTED',code:'SHOTGUN_PAYMENT_IN_PROGRESS_STOP'};
   if(error instanceof SubmissionDispatchError&&error.diagnostic?.status===429)return {state:'REJECTED',code:'SHOTGUN_PROVIDER_THROTTLE_STOP'};
   if (error instanceof SubmissionDispatchError && !error.dispatched)
@@ -174,7 +170,9 @@ export async function classifyPrecisionDispatchError(error: unknown,
   try { state = await journalState(); } catch { return { state: 'UNKNOWN', code }; }
   if (state === undefined) return { state: 'NOT_DISPATCHED', code };
   if (state === 'rejected') return { state: 'REJECTED', code };
-  if (state === 'verified') return { state: 'HOLD_VERIFIED_QR_ATTENTION', code };
+  // The durable journal's legacy "verified" means local response validation,
+  // not an independent provider lookup. Only the explicit confirmed-QR error above proves a hold.
+  if (state === 'verified') return { state: 'UNKNOWN', code };
   return { state: 'UNKNOWN', code };
 }
 

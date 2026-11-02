@@ -2,6 +2,8 @@ import type { PrewarmFeasibilityResult } from '../../src/api-booking/prewarm-fea
 import type { Dashboard } from '../types.js';
 import { HOLD_STATES, UNSENT_STATES, summarizeRunOutcome } from '../../src/run-outcome.js';
 import type { Recovery } from '../../src/execution-state.js';
+import type {PendingHoldRow} from '../../src/api-booking/pending-hold-service.js';
+import {presentedHolds,holdPresentation,savedBookingDate} from './operational-state.js';
 
 /** Preserve the controller's reasons; this adapter changes presentation only. */
 export function releaseBlockers(state: Dashboard): Array<{ reason: string; recovery: Recovery }> {
@@ -56,9 +58,9 @@ export function liveOutcome(state: Dashboard): string {
 
 const SENT = new Set(['IN_FLIGHT', 'RESERVED', 'REJECTED', 'UNKNOWN', ...HOLD_STATES]);
 /** Distinct courts with a verified hold against the saved plan's required minimum (never counting an initiated request). */
-export function courtObjective(state: Dashboard): { held: number[]; required: number; met: boolean } {
-  const parents = state.live?.parents ?? [];
-  const held = [...new Set(parents.filter(p => p.court !== undefined && p.children.some(c => HOLD_STATES.has(c.state))).map(p => p.court!))].sort((a, b) => b - a);
+export function courtObjective(state: Dashboard,rows:readonly PendingHoldRow[]=[],now=Date.now()+(state.clock?.clockOffsetMs??0)): { held: number[]; required: number; met: boolean } {
+  const date=state.scheduledRelease?.targetDate??state.activeApiRelease?.targetDate??savedBookingDate(state);
+  const held = [...new Set(presentedHolds(state,rows,now).filter(r=>r.date===date&&r.wing==='MANGO'&&holdPresentation(r,now).confirmed).flatMap(r=>r.courts))].sort((a,b)=>b-a);
   const objective = state.booking?.setup.STRATEGY_V2?.objective?.wings?.MANGO as { minimum?: number } | undefined;
   const required = Math.max(1, objective?.minimum ?? 1);
   return { held, required, met: held.length >= required };
@@ -80,9 +82,9 @@ export function workerProgress(state: Dashboard): Array<{ worker: string; target
   });
 }
 /** Settled run report from the controller's durable accounting (src/run-outcome.ts) and the saved plan. */
-export function runReport(state: Dashboard): Array<[string, string]> {
+export function runReport(state: Dashboard,rows:readonly PendingHoldRow[]=[]): Array<[string, string]> {
   const r = state.runSummary; if (!r || !r.planned) return [];
-  const setup = state.booking?.setup, o = courtObjective(state);
+  const setup = state.booking?.setup, o = courtObjective(state,rows);
   const reasons = r.unsentReasons ?? {};
   const misses = (reasons.SHOTGUN_TRIGGER_MISSED ?? 0) + (reasons.DIRECT_RELEASE_WINDOW_MISSED ?? 0) + (reasons.WINDOW_MISSED ?? 0);
   const security = Object.entries(reasons).filter(([code]) => /SECURITY|PREWARM/.test(code)).reduce((n, [, v]) => n + v, 0);

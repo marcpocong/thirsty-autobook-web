@@ -116,7 +116,7 @@ describe('Release Day Preflight (renderer)', () => {
     expect(recorded).not.toContain('saveBooking'); expect(recorded).not.toContain('armFullBooking'); expect(recorded).not.toContain('authorizeTerms');
     await page.close();
   });
-  it('reports per-browser progress, verified courts against the quota and the settled run summary', async () => {
+  it('reports local browser results without satisfying the provider-confirmed quota', async () => {
     const page = await openRenderer(browser, { ...readyState(), live: { parents: [
       { key: 'a', wave: 'WAVE_1', workerId: 'A', court: 7, startTime: '19:00', endTime: '22:00', children: [{ attemptId: 'a0', label: 'A0', fanOutIndex: 0, fanOutCount: 1, shotIndex: 0, state: 'HOLD_VERIFIED_QR_ATTENTION' }] },
       { key: 'b', wave: 'WAVE_1', workerId: 'B', court: 6, startTime: '19:00', endTime: '22:00', children: [{ attemptId: 'b0', label: 'B0', fanOutIndex: 0, fanOutCount: 1, shotIndex: 0, state: 'REJECTED', code: 'ONDA_HTTP_STATUS_INVALID' }] }],
@@ -124,9 +124,9 @@ describe('Release Day Preflight (renderer)', () => {
       runSummary: { planned: 2, prepared: 2, initiated: 2, holds: 1, rejected: 1, unsent: 0, unknown: 0, pending: 0, internalFailures: 0, unsentReasons: {}, settled: true, headline: 'HOLD VERIFIED', detail: '2 planned · 2 sent · 1 hold · 1 rejected', nextStep: 'Pay the verified hold manually before it expires.' } }, 'live', { width: 1440, height: 1000 });
     await expect.poll(() => page.locator('#live-workers').innerText()).toContain('Browser A');
     expect(await page.locator('#live-workers li[data-tone="ok"]').innerText()).toContain('local checkout result');
-    expect(await page.locator('#live-objective').innerText()).toContain('Courts with local checkout results: 1 of 2 required');
+    expect(await page.locator('#live-objective').innerText()).toContain('Provider-confirmed courts: 0 of 2 required');
     const report = await page.locator('#live-report').innerText();
-    expect(report).toContain('NOT ACHIEVED · 1 of 2'); expect(report).toContain('Court 7'); expect(report).toContain('provider confirmation and QR details before manual payment');
+    expect(report).toContain('NOT ACHIEVED · 0 of 2'); expect(report).not.toContain('Court 7'); expect(report).toContain('provider confirmation and QR details before manual payment');
     await page.screenshot({ path: '.local/release-preflight-ui/live-1440.png', fullPage: true });
     await page.close();
   });

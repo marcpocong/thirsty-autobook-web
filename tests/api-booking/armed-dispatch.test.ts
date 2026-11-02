@@ -341,6 +341,18 @@ describe('release instant', () => {
     expect(outcome.results.map(result => result.state)).toEqual(Array(count).fill('REJECTED'));
   });
 
+  it('keeps a locally validated response UNKNOWN without a provider-confirmation callback',async()=>{
+    const {armed,clock}=await arm(1,1500),attempt=armed.attempts[0]!;
+    const {transport,calls}=fakeTransport(async request=>pendingResponse(request,attempt.plan));
+    const outcome=await dispatchArmedPrecisionRace(armed,{clock,prewarmLeadMs:200,spinTailMs:30,isAborted:()=>false,
+      prewarm:async()=>undefined,transportFor:()=>transport});
+    expect(calls).toHaveLength(1);
+    expect(outcome.results[0]).toMatchObject({state:'UNKNOWN',code:'PROVIDER_CONFIRMATION_REQUIRED'});
+    expect(reducePrecisionOutcome(outcome.results.map(r=>r.state))).toMatchObject({achieved:false,verifiedCount:0,lockReleasable:false});
+    expect(await attempt.journal.read(attempt.key)).toMatchObject({state:'verified'});
+    expect(isSubmissionPermitUnspent(attempt.permit)).toBe(false);
+  });
+
   it('abort before release fires nothing and records every attempt as provably unsent', async () => {
     const { armed, clock } = await arm(3, 1_500);
     let aborted = false;

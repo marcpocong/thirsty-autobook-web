@@ -68,6 +68,13 @@ export function holdPresentation(row: PendingHoldRow, now: number) {
 }
 
 export type PresentedHold=PendingHoldRow&{currentHandoff?:boolean};
+/** Grid ownership is independent provider evidence, never a local hold-created handoff. */
+export function confirmedCourtHours(s:Dashboard,rows:readonly PendingHoldRow[],date:string,now:number):Set<string>{
+  const result=new Set<string>();
+  for(const row of presentedHolds(s,rows,now))if(row.date===date&&holdPresentation(row,now).confirmed)
+    for(const court of row.courts)for(let hour=Number(row.start.slice(0,2));hour<Number(row.end.slice(0,2));hour++)result.add(`${court}/${String(hour).padStart(2,'0')}:00`);
+  return result;
+}
 /** Explicit current API QR handoffs follow provider confirmation in desktop-runner. Never upgrade hold-created,
  * legacy missing-status handoffs, previous-process history or a newer contradictory provider observation. */
 export function presentedHolds(s:Dashboard, rows:readonly PendingHoldRow[],now:number):PresentedHold[]{

@@ -83,6 +83,7 @@ export function findObserverLog(directory: string, date: string, releaseMs: numb
 export interface ForensicTarget {
   workerId: string; attemptId: string | null; court: number; startTime: string; endTime: string;
   finalState: string | null; finalCode: string | null;
+  recordedFinalState?: string | null;
   post: { offsetMs: number | null; source: 'run-trace' | null };
   response: { statusCode: number | null; errorHint: string | null; responseSource: string | null; completedOffsetMs: number | null; networkDurationMs: number | null;bookkeepingOffsetMs?:number|null };
   grid: TargetEvidence | null;
@@ -102,6 +103,8 @@ export interface ReleaseForensicsSummary {
   clock: { rounds: ClockRound[]; dispatchOffsetMs: number | null; observerOffsetMs: number | null; observerMinusDispatchMs: number | null };
   dispatch: { posts: number; firstPostOffsetMs: number | null; lastPostOffsetMs: number | null; spreadMs: number | null };
   outcome: string | null;
+  /** Preserved when the recorded success is unsupported by per-attempt provider confirmation. */
+  recordedOutcome?: string | null;
   observer: null | {
     publication: PublicationEvidence; firstPublishedMatrix: string | null; firstPublishedCounts: Record<EvidenceState, number> | null;
     reads: { launched: number; answered: number; failed: number; notLaunched: number; maxInFlight: number | null; earlyOffsetsMs: number[] };
@@ -224,14 +227,15 @@ export function buildReleaseForensics(input: ForensicInputs): ReleaseForensicsSu
       if(!attemptId||!candidateId||!workerId||!wave)return [];
       const candidate=p3Candidates.get(candidateId),posted=stages('CHECKOUT_HTTP_POST_INITIATED').find(value=>value.attemptId===attemptId),
         settled=stages('PHASE3_SETTLED').find(value=>value.attemptId===attemptId)??stages('PHASE3_WAVE1_UNSENT').find(value=>value.attemptId===attemptId),answered=stages('CHECKOUT_RESPONSE_COMPLETED').find(value=>value.attemptId===attemptId),
-        verifiedHold=stages('DIAGNOSTIC_VERIFIED_HOLD').some(value=>value.attemptId===attemptId),
+        verifiedHold=stages('PROVIDER_HOLD_CONFIRMED').some(value=>value.attemptId===attemptId),
         qrHandoff=verifiedHold&&stages('DIAGNOSTIC_QR_HANDOFF').some(value=>value.attemptId===attemptId),
         dispatched=stages('PHASE3_DISPATCH').find(value=>value.attemptId===attemptId);
       // The dispatch record carries the evidence that authorized the POST itself (it can be newer than the reservation's).
       const evidenceSeq=num(dispatched?.evidenceSeq)??num(line.evidenceSeq)??null,selectedEvidenceSeq=num(line.selectedEvidenceSeq)??null;
       return [{attemptId,candidateId,workerId,wave,court:num(candidate?.court)??null,startTime:str(candidate?.startTime)??null,
         endTime:str(candidate?.endTime)??null,evidenceSeq,selectedEvidenceSeq:selectedEvidenceSeq!==evidenceSeq?selectedEvidenceSeq:null,
-        postOffsetMs:num(posted?.releaseLatenessMs)??null,state:qrHandoff?'VERIFIED_PENDING_HOLD_QR_HANDOFF':verifiedHold?'VERIFIED_PENDING_HOLD':str(settled?.state)??null,
+        postOffsetMs:num(posted?.releaseLatenessMs)??null,state:qrHandoff?'VERIFIED_PENDING_HOLD_QR_HANDOFF':verifiedHold?'VERIFIED_PENDING_HOLD':
+          ['VERIFIED','QR_READY','HOLD_VERIFIED','HOLD_VERIFIED_QR_ATTENTION'].includes(str(settled?.state)??'')?'UNKNOWN':str(settled?.state)??null,
         statusCode:num(answered?.statusCode)??null,providerTrace:traces.some(value=>value.attemptId===attemptId),
         fallback:fallbacks.find(value=>value.attemptId===attemptId)??null}];
     }).sort((a,b)=>(a.postOffsetMs??Infinity)-(b.postOffsetMs??Infinity))}:undefined;
@@ -243,13 +247,21 @@ export function buildReleaseForensics(input: ForensicInputs): ReleaseForensicsSu
   const unavailableAtFirst = evidence?.cells.filter(cell => cell.firstPublished?.state === 'UNAVAILABLE') ?? [];
   const summaryPath = join(input.outputDirectory, 'summary.json'), reportPath = join(input.outputDirectory, 'report.txt');
   const traceStatuses = (traceHeader?.traces as Array<{ workerId: string; status: string; code?: string }> | undefined) ?? [];
+  const recordedOutcome=str(stages('PHASE3_OUTCOME').at(-1)?.outcome) ?? str(stages('PRECISION_OUTCOME').at(-1)?.outcome) ?? str(stages('FAILED').at(-1)?.code) ?? null;
+  const holdStates=new Set(['VERIFIED','QR_READY','HOLD_VERIFIED','HOLD_VERIFIED_QR_ATTENTION']);
+  const reportedTargets=targets.map(t=>holdStates.has(t.finalState??'')&&(!t.attemptId||!stages('PROVIDER_HOLD_CONFIRMED').some(p=>p.attemptId===t.attemptId))
+    ?{...t,finalState:'UNKNOWN',recordedFinalState:t.finalState}:t);
+  const unsupportedHold=stages('PHASE3_SETTLED').some(e=>holdStates.has(str(e.state)??'')&&
+    (!str(e.attemptId)||!stages('PROVIDER_HOLD_CONFIRMED').some(p=>p.attemptId===e.attemptId)))||reportedTargets.some(t=>'recordedFinalState' in t);
+  const confirmedAny=phase3?.attempts.some(a=>a.state?.startsWith('VERIFIED_PENDING_HOLD'))??false;
   const summary: ReleaseForensicsSummary = {
     version: 1, runId, mode, date, reference, referenceMs, status: input.status, generatedAt: new Date((input.now ?? Date.now)()).toISOString(),
     sources: { runProgress: input.runProgressPath, observer: observer?.path ?? null, observerVersion: observer?.version ?? null, providerTrace: traceLines.length ? input.providerTracePath! : null },
     clock: { rounds, dispatchOffsetMs, observerOffsetMs, observerMinusDispatchMs: dispatchOffsetMs !== null && observerOffsetMs !== null ? tenth(observerOffsetMs - dispatchOffsetMs) : null },
     dispatch: { posts: posts.length, firstPostOffsetMs: posts.length ? Math.min(...posts) : null, lastPostOffsetMs: posts.length ? Math.max(...posts) : null,
       spreadMs: posts.length ? tenth(Math.max(...posts) - Math.min(...posts)) : null },
-    outcome: str(stages('PHASE3_OUTCOME').at(-1)?.outcome) ?? str(stages('PRECISION_OUTCOME').at(-1)?.outcome) ?? str(stages('FAILED').at(-1)?.code) ?? null,
+    outcome:unsupportedHold?confirmedAny?'OBJECTIVE_ACHIEVED_UNRESOLVED_EXTRA_ATTEMPT':'MANUAL_RECONCILIATION_REQUIRED':recordedOutcome,
+    ...(unsupportedHold?{recordedOutcome}:{}),
     observer: observer && evidence ? { publication: evidence.publication, firstPublishedMatrix: evidence.firstPublishedMatrix, firstPublishedCounts: firstCounts,
       reads: { launched: observer.availability.length + observer.notLaunched, answered: observer.availability.filter(value => value.outcome === 'ok').length,
         failed: observer.availability.filter(value => value.outcome === 'failed').length, notLaunched: observer.notLaunched, maxInFlight: observer.maxInFlight, earlyOffsetsMs: observer.earlyOffsetsMs },
@@ -260,8 +272,9 @@ export function buildReleaseForensics(input: ForensicInputs): ReleaseForensicsSu
     trace: { available: traces.length > 0, records: traces.length, complete: traces.filter(value => value.complete).length,
       unavailableWorkers: traceStatuses.filter(value => value.status === 'unavailable').map(value => value.workerId) },
     ...(phase3?{phase3}:{}),
-    targets, limitations: [], reportPath, summaryPath };
+    targets:reportedTargets, limitations: [], reportPath, summaryPath };
   summary.limitations = limitations(summary, observer);
+  if(unsupportedHold)summary.limitations.push(`The runner recorded ${recordedOutcome??'a hold result'} without matching per-attempt provider confirmation. Local response validation and legacy verified-hold diagnostics do not establish an active provider reservation.`);
   mkdirSync(input.outputDirectory, { recursive: true, mode: 0o700 });
   const write = (path: string, content: string) => { const temporary = `${path}.tmp`; writeFileSync(temporary, content, { encoding: 'utf8', mode: 0o600 }); renameSync(temporary, path); };
   write(reportPath, releaseForensicsReport(summary));

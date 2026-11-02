@@ -45,7 +45,14 @@ describe('Precision Release UI boundary', () => {
             checkpoint: 'FREEZE', evidence: 'NO_PUBLIC_BOOKING_DATE_UNRELEASED', eligible: true }));
           stage('PRECISION_FROZEN', { targetCount: 3, frozenCount: 3 });
           const hold = { workerId: 'A', date: view.targetDate, court: 7, startTime: '17:00', durationHours: 3, price: 2100, bookingId: 'b-1', bookingNo: 'BK-1', holdExpiresAt: new Date(Date.now() + 600_000).toISOString() };
-          stage('PENDING_HOLD', hold); stage('OFFICIAL_QRPH_HANDOFF', hold);
+          stage('PENDING_HOLD', hold);
+          expect(controller.state.precision?.targets[0]?.state).toBe('IN_FLIGHT');
+          stage('QR_HANDOFF_NEEDS_ATTENTION',{...hold,code:'PROVIDER_404_BEFORE_ADVERTISED_EXPIRY'});
+          expect(controller.state.precision?.targets[0]?.state).toBe('UNKNOWN');
+          stage('PROVIDER_HOLD_CONFIRMED',hold);
+          stage('QR_HANDOFF_NEEDS_ATTENTION',{...hold,code:'QR_NOT_VISIBLE'});
+          expect(controller.state.precision?.targets[0]?.state).toBe('HOLD_VERIFIED_QR_ATTENTION');
+          stage('OFFICIAL_QRPH_HANDOFF', hold);
           stage('PRECISION_ATTEMPT_STATE', { workerId: 'A', court: 7, startTime: '17:00', endTime: '20:00', attemptState: 'QR_READY' });
           stage('PRECISION_ATTEMPT_STATE', { workerId: 'B', court: 5, startTime: '17:00', endTime: '20:00', attemptState: 'REJECTED', code: 'ONDA_HTTP_STATUS_INVALID' });
           stage('PRECISION_ATTEMPT_STATE', { workerId: 'C', court: 3, startTime: '17:00', endTime: '20:00', attemptState: 'UNKNOWN', code: 'SUBMISSION_OUTCOME_UNKNOWN_RECONCILIATION_REQUIRED' });

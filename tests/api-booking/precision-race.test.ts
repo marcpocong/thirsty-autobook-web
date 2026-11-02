@@ -161,7 +161,7 @@ describe('Precision dispatch classification (journal evidence, never worker orde
     await expect(classifyPrecisionDispatchError(new SubmissionDispatchError('ONDA_HTTP_STATUS_INVALID', true, undefined, true), state('rejected')))
       .resolves.toMatchObject({ state: 'REJECTED' });
     await expect(classifyPrecisionDispatchError(Error('SOMETHING_AFTER_POST'), state('dispatching'))).resolves.toMatchObject({ state: 'UNKNOWN' });
-    await expect(classifyPrecisionDispatchError(Error('SOMETHING_AFTER_POST'), state('verified'))).resolves.toMatchObject({ state: 'HOLD_VERIFIED_QR_ATTENTION' });
+    await expect(classifyPrecisionDispatchError(Error('SOMETHING_AFTER_POST'), state('verified'))).resolves.toMatchObject({ state: 'UNKNOWN' });
     await expect(classifyPrecisionDispatchError(Error('SOMETHING'), async () => { throw Error('EIO'); })).resolves.toMatchObject({ state: 'UNKNOWN' });
     await expect(classifyPrecisionDispatchError(Error('DUPLICATE_LOGICAL_BOOKING_BLOCKED'), state('unknown'))).resolves.toMatchObject({ state: 'NOT_DISPATCHED' });
     await expect(classifyPrecisionDispatchError(Error('BEFORE_JOURNAL'), state(undefined))).resolves.toMatchObject({ state: 'NOT_DISPATCHED' });

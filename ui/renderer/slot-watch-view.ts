@@ -1,6 +1,8 @@
 import type { Dashboard } from '../types.js';
 import { byId, el, inputById as input } from './dom.js';
 import { dateLabel, evidenceLabel, evidenceSlot, friendly, hourlySlots, hours, manilaMs, readText, relative, slotStateInfo } from './format.js';
+import {confirmedCourtHours} from './operational-state.js';
+import {pendingHoldRows} from './pending-holds.js';
 
 /**
  * LIVE view: the release Slot Watch (read-only court/hour observation), moved out of app.ts. Rendering only; the
@@ -60,9 +62,7 @@ function slotTimeline(entries:SlotView['timeline']){
   });
 }
 function oursFor(state:Dashboard,date:string){
-  const ours=new Set<string>();
-  for(const hold of state.qrHandoffs??[])if(hold.date===date)for(const court of hold.courts)for(const slot of hourlySlots(hold.startTime,hold.endTime))ours.add(`${court}/${slot.slice(0,5)}`);
-  return ours;
+  return confirmedCourtHours(state,pendingHoldRows(),date,Date.now()+(state.clock?.clockOffsetMs??0));
 }
 function summaryCells(summary:SlotSummary,mode:'current'|'first'):SlotView['cells']{
   const matrix=mode==='first'?summary.firstPublishedMatrix??'':summary.finalMatrix;
@@ -73,7 +73,7 @@ function summaryCells(summary:SlotSummary,mode:'current'|'first'):SlotView['cell
 export function renderSlotWatch(state:Dashboard){
   const live=state.slotWatch??null,history=state.slotWatchHistory??[];
   const selected=selectedWatchId?history.find(entry=>entry.id===selectedWatchId):undefined;
-  const signature=JSON.stringify({live,selected:selected?.id,history:history.map(entry=>entry.id),ours:state.qrHandoffs,slotMatrixMode});
+  const signature=JSON.stringify({live,selected:selected?.id,history:history.map(entry=>entry.id),ours:[...oursFor(state,selected?.date??live?.date??'')],slotMatrixMode});
   const active=!!live&&(live.status==='waiting'||live.status==='watching');
   input('watch-next-release').hidden=active;input('stop-slot-watch').hidden=!active;
   if(signature===renderedSlotWatch)return;

@@ -15,6 +15,7 @@ import type { Page } from 'playwright';
 import {publishPrivateJson} from './private-persistence.js';
 import {appendHoldVerification} from './pending-hold-state.js';
 import type {CheckoutCustomer} from './two-hour-reservation.js';
+import {ProviderHoldUnconfirmedError,VerifiedHoldQrError} from './hold-confirmation-errors.js';
 
 // A secret-bearing local recovery record, deliberately separate from sanitized
 // diagnostics and durable submission journals. Never export or log its contents.
@@ -120,6 +121,7 @@ export async function assertRecoveryJournal(directory:string, recovery:Pick<Awai
  * is allowed; an incomplete/wrong QR summary fails instead of reporting success. */
 export async function openCheckoutRecovery(page:Pick<Page,'url'|'evaluate'|'goto'|'getByText'|'locator'|'route'|'unroute'|'bringToFront'>,
   directory:string, now:()=>Date=()=>new Date(),options?:Omit<import('./pending-hold-recovery.js').RecoveryOptions,'now'|'identity'>&{identity?:import('./pending-hold-recovery.js').RecoveryIdentity}) {
+  try {
   const {record}=await readCheckoutRecoveryRecord(directory);
   if(!options?.identity){
     const {assertCanonicalRecoveryRuntime}=await import('./recovery-runtime.js');await assertCanonicalRecoveryRuntime(process.cwd());
@@ -133,7 +135,19 @@ export async function openCheckoutRecovery(page:Pick<Page,'url'|'evaluate'|'goto
   }
   const {recoverPendingHold}=await import('./pending-hold-recovery.js');
   const state=await recoverPendingHold(page,directory,{...options,identity:options.identity!,now});
-  if(state.provider!=='PROVIDER_HOLD_CONFIRMED'||state.qr!=='QR_READY')throw Error(state.code);
+  if(state.provider!=='PROVIDER_HOLD_CONFIRMED')throw new ProviderHoldUnconfirmedError(state.code);
+  if(state.qr!=='QR_READY'){
+    const recovery=await prepareCheckoutRecovery(directory,new Date(record.capturedAt),{allowMissingToken:true});
+    const lookup=state.milestones.filter(m=>m.event==='PROVIDER_RESULT'&&m.operation==='LOOKUP'&&m.httpStatus===200).at(-1);
+    const age=lookup?now().getTime()-Date.parse(lookup.at):Infinity;
+    if(age<0||age>30_000||Date.parse(recovery.hold.holdExpiresAt)<=now().getTime())throw new ProviderHoldUnconfirmedError(state.code);
+    throw new VerifiedHoldQrError(state.code,{bookingId:recovery.hold.bookingIds[0]!,bookingNo:recovery.bookingNo,holdExpiresAt:recovery.hold.holdExpiresAt,amount:recovery.plan.totalPrice});
+  }
   const recovery=await prepareCheckoutRecovery(directory,now(),{allowMissingToken:true});
   return {workerId:recovery.workerId,plan:recovery.plan,hold:recovery.hold};
+  }catch(error){
+    if(error instanceof VerifiedHoldQrError||error instanceof ProviderHoldUnconfirmedError)throw error;
+    const code=error instanceof Error&&/^[A-Z][A-Z0-9_]{0,99}$/.test(error.message)?error.message:'CHECKOUT_PROVIDER_CONFIRMATION_FAILED';
+    throw new ProviderHoldUnconfirmedError(code);
+  }
 }

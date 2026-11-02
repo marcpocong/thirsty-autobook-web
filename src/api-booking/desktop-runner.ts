@@ -38,6 +38,7 @@ import { assertActiveCustomersValid, resolveActiveCustomers } from './customer-i
 import { submitCalendarFreeTwoHourCheckout } from './calendar-free-checkout.js';
 import { officialCheckoutUrl } from './checkout-restoration.js';
 import { saveCheckoutRecovery,openCheckoutRecovery } from './checkout-recovery.js';
+import { CheckoutRecoveryQueue } from './checkout-recovery-queue.js';
 import { possibleHoldFields } from './possible-hold.js';
 import { LiveAvailabilityError } from './live-availability-provider.js';
 import type { AvailabilitySnapshot, BookingPlan, BookingPreferences } from './types.js';
@@ -101,6 +102,7 @@ const nowMs=()=>Date.now()+clockOffsetMs;
 const stamp = () => Math.round(performance.now() - started);
 const progressLog = new ApiRunProgressLog(command.mode, command.date);
 const diagnostics = new RunDiagnostics(progressLog, started);
+const recoveryQueue = new CheckoutRecoveryQueue();
 // Typed from the UI schema: a field the UI would reject does not compile (October 18: workerGroupIndex was dropped).
 const stage = (name: string, extra: ApiStageFields = {}) => {
   const entry = progressLog.record(name, new Date(nowMs()).toISOString(), stamp(), extra as Record<string, string | number | boolean>);
@@ -646,9 +648,13 @@ try {
         startTime:chunkPlan.startTime,durationHours:chunkPlan.durationHours};
       stage('PENDING_HOLD', { ...workerTiming(), ...bookingTarget, bookingId: hold.bookingIds[0]!, bookingNo: bookingNo ?? '',
         holdExpiresAt: hold.holdExpiresAt, price: chunkPlan.totalPrice });
+      try{await recoveryQueue.run(workerId,()=>openCheckoutRecovery(session.page,directory,()=>new Date(nowMs()),{clockDomain:'TRUSTED_NETWORK'}));}
+      catch(error){if(error instanceof VerifiedHoldQrError){
+        diagnostics.observe('DIAGNOSTIC_VERIFIED_HOLD',attempt,{...bookingTarget,price:chunkPlan.totalPrice});
+        stage('PROVIDER_HOLD_CONFIRMED',{...workerTiming(),...bookingTarget,attemptId:attempt.attemptId,price:chunkPlan.totalPrice});
+      }throw error;}
       diagnostics.observe('DIAGNOSTIC_VERIFIED_HOLD',attempt,{...bookingTarget,price:chunkPlan.totalPrice});
-      await openCheckoutRecovery(session.page,directory,()=>new Date(nowMs()),{clockDomain:'TRUSTED_NETWORK'});
-      stage('PROVIDER_HOLD_CONFIRMED',{...workerTiming(),...bookingTarget,price:chunkPlan.totalPrice});
+      stage('PROVIDER_HOLD_CONFIRMED',{...workerTiming(),...bookingTarget,attemptId:attempt.attemptId,price:chunkPlan.totalPrice});
       await showWorkerPage(session.page,workerId);
       stage('OFFICIAL_QRPH_HANDOFF', { ...workerTiming(), ...bookingTarget, bookingId: hold.bookingIds[0]!, bookingNo,
         holdExpiresAt: hold.holdExpiresAt, price: chunkPlan.totalPrice });
@@ -714,22 +720,28 @@ try {
         startTime:plan.startTime,durationHours:plan.durationHours};
       stage('PENDING_HOLD',{...workerTiming(),...bookingTarget,bookingId:hold.bookingIds[0]!,bookingNo:bookingNo??'',
         holdExpiresAt:hold.holdExpiresAt,price:plan.totalPrice});
-      diagnostics.observe('DIAGNOSTIC_VERIFIED_HOLD',correlation,{...bookingTarget,price:plan.totalPrice});
       // Local validation is not provider persistence. Retain the possible hold on any verification/QR failure.
       try{
       // Fan-out children have their own private response directory, retained by the binding.
-      await openCheckoutRecovery(session.page,binding.directory,()=>new Date(nowMs()),{clockDomain:'TRUSTED_NETWORK'});
-      stage('PROVIDER_HOLD_CONFIRMED',{...workerTiming(),...bookingTarget,price:plan.totalPrice});
+      await recoveryQueue.run(workerId,()=>openCheckoutRecovery(session.page,binding.directory,()=>new Date(nowMs()),{clockDomain:'TRUSTED_NETWORK'}));
+      diagnostics.observe('DIAGNOSTIC_VERIFIED_HOLD',correlation,{...bookingTarget,price:plan.totalPrice});
+      stage('PROVIDER_HOLD_CONFIRMED',{...workerTiming(),...bookingTarget,attemptId:correlation.attemptId,price:plan.totalPrice});
       await showWorkerPage(session.page,workerId);
       stage('OFFICIAL_QRPH_HANDOFF',{...workerTiming(),...bookingTarget,bookingId:hold.bookingIds[0]!,bookingNo,
         holdExpiresAt:hold.holdExpiresAt,price:plan.totalPrice});
       diagnostics.observe('DIAGNOSTIC_QR_HANDOFF',correlation,{...bookingTarget,price:plan.totalPrice});
       }catch(error){
         const code=safeApiFailureCode(error,'OFFICIAL_QR_HANDOFF_FAILED');
+        if(error instanceof VerifiedHoldQrError){
+          diagnostics.observe('DIAGNOSTIC_VERIFIED_HOLD',correlation,{...bookingTarget,price:plan.totalPrice});
+          stage('PROVIDER_HOLD_CONFIRMED',{...workerTiming(),...bookingTarget,attemptId:correlation.attemptId,price:plan.totalPrice});
+        }
         stage('QR_HANDOFF_NEEDS_ATTENTION',{...workerTiming(),...bookingTarget,code,bookingId:hold.bookingIds[0]!,bookingNo:bookingNo??'',
           holdExpiresAt:hold.holdExpiresAt,price:plan.totalPrice});
         await showWorkerPage(session.page,workerId).catch(()=>undefined);
-        throw new VerifiedHoldQrError(code,{bookingId:hold.bookingIds[0]!,...(bookingNo?{bookingNo}:{}),holdExpiresAt:hold.holdExpiresAt,amount:plan.totalPrice});
+        // Preserve the recovery engine's distinction: a failed lookup/busy claim
+        // is UNKNOWN; only independent confirmation can prove a QR-only failure.
+        throw error;
       }
       diagnostics.observe('DIAGNOSTIC_ATTEMPT_COMPLETED',correlation,{workerOutcome:'VERIFIED_HOLD'});
       return hold;

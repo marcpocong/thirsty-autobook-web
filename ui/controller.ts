@@ -535,7 +535,7 @@ export class Controller {
   }
   private trackPrecision(event:Extract<UiEvent,{type:'apiStage'}>){
     if(event.stage==='RUN_STARTED'){this.state.precision=null;this.state.phase3=undefined;return;}
-    const perAttempt=['SECURITY_PREWARM_READY','SECURITY_PREWARM_FAILED','PENDING_HOLD','OFFICIAL_QRPH_HANDOFF','QR_HANDOFF_NEEDS_ATTENTION'];
+    const perAttempt=['SECURITY_PREWARM_READY','SECURITY_PREWARM_FAILED','PENDING_HOLD','PROVIDER_HOLD_CONFIRMED','OFFICIAL_QRPH_HANDOFF','QR_HANDOFF_NEEDS_ATTENTION'];
     if(!event.stage.startsWith('PRECISION_')&&!(this.state.precision&&perAttempt.includes(event.stage)))return;
     const view:PrecisionView=this.state.precision?structuredClone(this.state.precision):{targets:[],frozen:false};
     const entry=()=>{if(!event.workerId)return undefined;let found=view.targets.find(target=>target.workerId===event.workerId);
@@ -546,9 +546,10 @@ export class Controller {
     if(event.stage==='PRECISION_ATTEMPT_STATE'&&target){target.state=event.attemptState;target.code=event.code;if(event.duplicateOf)target.duplicateOf=event.duplicateOf;}
     if(event.stage==='SECURITY_PREWARM_READY'&&target)target.security='ready';
     if(event.stage==='SECURITY_PREWARM_FAILED'&&target)target.security='failed';
-    if(event.stage==='PENDING_HOLD'&&target){target.state=target.state==='QR_READY'?'QR_READY':'HOLD_VERIFIED';target.bookingNo=event.bookingNo;target.holdExpiresAt=event.holdExpiresAt;}
+    if(event.stage==='PENDING_HOLD'&&target){if(!['QR_READY','HOLD_VERIFIED','HOLD_VERIFIED_QR_ATTENTION'].includes(target.state??''))target.state='IN_FLIGHT';target.bookingNo=event.bookingNo;target.holdExpiresAt=event.holdExpiresAt;}
+    if(event.stage==='PROVIDER_HOLD_CONFIRMED'&&target)target.state=target.state==='QR_READY'?'QR_READY':'HOLD_VERIFIED';
     if(event.stage==='OFFICIAL_QRPH_HANDOFF'&&target)target.state='QR_READY';
-    if(event.stage==='QR_HANDOFF_NEEDS_ATTENTION'&&target)target.state='HOLD_VERIFIED_QR_ATTENTION';
+    if(event.stage==='QR_HANDOFF_NEEDS_ATTENTION'&&target)target.state=['HOLD_VERIFIED','QR_READY','HOLD_VERIFIED_QR_ATTENTION'].includes(target.state??'')?'HOLD_VERIFIED_QR_ATTENTION':'UNKNOWN';
     if(event.stage==='PRECISION_FROZEN'){view.frozen=true;view.frozenCount=event.frozenCount;view.frozenAt=event.at;}
     if(event.stage==='PRECISION_OUTCOME')view.outcome=event.outcome;
     this.state.precision=view;
