@@ -957,6 +957,8 @@ footer > div { display: flex; align-items: center; gap: 8px; font-size: 11px; co
 .execution-console > .view-grid, .legacy-drawer > .view-grid { margin-top: 12px; }
 .manual-book-now > summary { cursor: pointer; font-weight: 650; }
 .test-lab .env-choice { display: flex; flex-wrap: wrap; gap: 6px; }
+.test-lab .setup-grid > label { min-width: 0; }
+.test-lab .setup-grid select { width: 100%; max-width: 100%; box-sizing: border-box; }
 .test-lab .env-choice label { display: flex; align-items: center; gap: 6px; padding: 7px 10px; font-size: 11px; border: 1px solid var(--line); border-radius: var(--radius-sm); }
 .env-banner { margin: 10px 0; padding: 12px 14px; font-size: 12px; line-height: 1.5; border-radius: var(--radius-sm); border: 1px solid #2e5f7c; background: #10263a; color: #cfeaff; }
 .env-banner[data-env=AUTHORIZED_LIVE_TEST] { border-color: #c99a32; background: #3a2c10; color: #ffe5a8; }
