@@ -88,10 +88,13 @@ export async function recoverPendingHold(page:RecoveryPage,directory:string,opti
         code=kind==='ACCESS'?'CHECKOUT_ACCESS_RESULT':'PROVIDER_LOOKUP_RESULT';await persist();
         if(result.failure){if(result.failure!=='TOO_LARGE'&&attempt===0){await sleep(250);continue;}
           throw Error(result.failure==='TIMEOUT'?'PROVIDER_READ_TIMEOUT':result.failure==='TOO_LARGE'?'PROVIDER_RESPONSE_TOO_LARGE':'PROVIDER_READ_TRANSPORT_FAILED');}
-        if(attempt===0&&(result.status===429||result.status>=500)){
+        // A provider restriction ends this operator action. Do not poll through a 429,
+        // even when Retry-After is short; the original reservation remains protected.
+        if(result.status===429)return result;
+        if(attempt===0&&result.status>=500){
           // Never shorten Retry-After. A longer/unparseable throttle stays visible;
           // no timer schedules a hidden retry after the operator action ends.
-          if(result.retryAfterMs!==null&&result.retryAfterMs>2000||result.status===429&&result.retryAfterMs===null)return result;
+          if(result.retryAfterMs!==null&&result.retryAfterMs>2000)return result;
           await sleep(Math.max(result.retryAfterMs??250,250));continue;
         }
         return result;

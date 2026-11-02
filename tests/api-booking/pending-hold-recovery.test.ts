@@ -90,12 +90,12 @@ describe('independent provider hold verification and existing-only recovery',()=
     expect((await recoverPendingHold(page,f.directory,opts(f))).code).toBe('PROVIDER_CHECKOUT_TOKEN_INVALID');
     expect(mocks.evaluate.mock.calls.map(c=>c[1].kind)).toEqual(['LOOKUP']);expect(mocks.goto).not.toHaveBeenCalled();
   }));
-  it('honors bounded Retry-After without shortening an excessive provider delay',()=>fixture(async f=>{
-    const {page,mocks}=fakeRecoveryPage(f);let reads=0;
-    mocks.evaluate.mockImplementation(async(_code,args)=>args.kind==='ACCESS'?{status:200,body:{},retryAfterMs:null}:++reads===1?{status:429,body:{},retryAfterMs:1500}:{status:200,body:f.provider,retryAfterMs:null});
-    const o=opts(f);expect((await recoverPendingHold(page,f.directory,o)).qr).toBe('QR_READY');expect(o.sleep).toHaveBeenCalledWith(1500);
-    mocks.evaluate.mockImplementation(async()=>({status:429,body:{},retryAfterMs:120_000}));o.sleep.mockClear();
-    expect((await recoverPendingHold(page,f.directory,o)).code).toBe('PROVIDER_RATE_LIMITED');expect(o.sleep).not.toHaveBeenCalled();
+  it.each([null,0,1500,120_000])('stops at the first 429 with Retry-After %s without polling through a restriction',retryAfterMs=>fixture(async f=>{
+    const {page,mocks}=fakeRecoveryPage(f);
+    mocks.evaluate.mockResolvedValueOnce({status:429,body:{},retryAfterMs}).mockResolvedValue({status:200,body:f.provider,retryAfterMs:null});
+    const o=opts(f),result=await recoverPendingHold(page,f.directory,o);
+    expect(result).toMatchObject({provider:'UNKNOWN',code:'PROVIDER_RATE_LIMITED'});
+    expect(mocks.evaluate).toHaveBeenCalledTimes(1);expect(mocks.goto).not.toHaveBeenCalled();expect(o.sleep).not.toHaveBeenCalled();
   }));
   it('bounds timeout reads and safely classifies exceptions containing private URLs',()=>fixture(async f=>{
     const {page,mocks}=fakeRecoveryPage(f);mocks.evaluate.mockRejectedValue(Error('https://app.onda.fit/?checkoutToken=PRIVATE-A-0'));

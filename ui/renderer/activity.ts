@@ -56,7 +56,7 @@ function render() {
         el('td', { 'data-tone': verify?.get(a.path) === 'MATCH' ? 'good' : verify?.has(a.path) ? 'bad' : 'muted', text: verify?.get(a.path) ?? '—' }), el('td', {}, restore)); }))))
     : el('p', { class: 'small', text: 'No archived records.' });
   fill(host, el('div', { class: 'section-title' }, el('div', {}, el('p', { class: 'eyebrow', text: 'Durable submission evidence' }), el('h2', { text: 'Records & archive' })), el('div', { class: 'button-row' }, archiveAll, verifyButton)),
-    el('p', { class: 'small', text: `${c.journals ?? 0} submission journals: ${c.verified ?? 0} verified, ${c.rejected ?? 0} rejected, ${c.unknown ?? 0} UNKNOWN (${c.archived ?? 0} archived), ${c.armedOrDispatching ?? 0} armed or dispatching.` }),
+    el('p', { class: 'small', text: `${c.journals ?? 0} submission journals: ${c.verified ?? 0} locally validated responses (provider confirmation required), ${c.rejected ?? 0} rejected, ${c.unknown ?? 0} UNKNOWN (${c.archived ?? 0} archived), ${c.armedOrDispatching ?? 0} armed or dispatching.` }),
     el('p', { class: 'small', text: 'Archiving keeps each original journal file exactly where it is, byte for byte and still UNKNOWN, so its target stays blocked against duplicate submission. The archive is a separate SHA-256 index with an append-only audit log. Nothing is deleted, retried, reclassified or cancelled. Armed, dispatching and recent records, and anything with a possibly active hold, cannot be archived.' }),
     message ? el('p', { class: 'notice', role: 'status', text: message }) : null,
     el('h3', { text: 'Active UNKNOWN records' }), active, el('h3', { text: 'Archived historical records' }), archived);

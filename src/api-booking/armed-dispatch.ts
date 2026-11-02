@@ -283,8 +283,9 @@ export interface ArmedDispatchDeps {
   prewarm: (attempt: ArmedAttempt) => Promise<void>;
   transportFor: (worker: WorkerId, attempt: ArmedAttempt) => DirectTransport | undefined;
   isAborted: () => boolean;
-  /** A validated pending hold: record it and hand off to the official QR page. Returns the final state or throws VerifiedHoldQrError. */
   onObjectiveStop?:(reason:ShotgunSuppressionReason)=>void;
+  /** Local response validation only. Must independently confirm the exact active provider group
+   * before returning QR_READY/HOLD_VERIFIED_QR_ATTENTION or throwing VerifiedHoldQrError. */
   onVerifiedHold?: (attempt: ArmedAttempt, verified: VerifiedPublicCheckout) => Promise<PrecisionDispatchResult>;
   onEvent?: (event: { kind: 'prewarm-ready' | 'prewarm-failed' | 'prewarm-retry' | 'dispatch-start' | 'settled'; workerId: WorkerId; attemptId: string; state?: PrecisionAttemptState; code?: string;
     predictedReadyOffsetMs?:number;actualReadyOffsetMs?:number;predictionErrorMs?:number;queueDelayMs?:number;prepDurationMs?:number }) => void;
@@ -331,6 +332,8 @@ export interface ArmedDispatchDeps {
   };
 }
 export const FINAL_APPROACH_MS = 1_000;
+/** Live Lab requires the provisional-stop / independently confirmed quota lifecycle. */
+export const SHOTGUN_LIVE_LAB_ENGINE_VERSION = 2;
 /** When the experimental renderer path calibrates page clocks. */
 export const RENDERER_CALIBRATION_LEAD_MS = 3_000;
 /**
@@ -384,8 +387,14 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
   // With a quota, verified holds are counted as DISTINCT courts per wing (or across wings); a wing stops at its
   // ideal while other incomplete wings continue. The achieved court itself never needs another hold.
   let objectiveStop:ShotgunSuppressionReason|undefined;
+  let safetyStop:ShotgunSuppressionReason|undefined;
+  const stopPriority=(reason:ShotgunSuppressionReason)=>reason==='SHOTGUN_PROVIDER_THROTTLE_STOP'?4:
+    reason==='SHOTGUN_PAYMENT_IN_PROGRESS_STOP'?3:reason==='SHOTGUN_TARGET_OUTCOME_UNKNOWN'?2:1;
   const wingStops = new Map<string,ShotgunSuppressionReason>(), courtStops = new Map<string,ShotgunSuppressionReason>();
   const quota = raceQuota(armed.race.objective), achieved = new Map<string,Set<string>>();
+  // Provisional reservations consume safety capacity, never confirmed achievement.
+  // Independent courts/wings may continue only inside the exact authorized quota.
+  const provisional = new Map<string,Set<string>>();
   const wingOf = (attempt:ArmedAttempt) => attempt.plan.wing ?? 'MANGO';
   const courtsOf = (attempt:ArmedAttempt) => attempt.plan.courts.map(court=>`${wingOf(attempt)}:${court.spaceId}`);
   const recordStop = (attempt:ArmedAttempt, reason:ShotgunSuppressionReason) => {
@@ -395,13 +404,24 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
       achieved.set(wing,own);
       if (quota.scope === 'PER_WING') { if (own.size >= (quota.wings[wing] ?? 1)) wingStops.set(wing,reason); }
       else if ([...achieved.values()].reduce((sum,set)=>sum+set.size,0) >= (quota.overall ?? 1)) objectiveStop=reason;
+    } else if(reason==='SHOTGUN_PROVISIONAL_RESPONSE_STOP'&&quota){
+      const wing=wingOf(attempt),own=provisional.get(wing)??new Set<string>();
+      for(const court of courtsOf(attempt)){own.add(court);courtStops.set(court,reason);}
+      provisional.set(wing,own);
+      const reserved=(w:string)=>new Set([...(provisional.get(w)??[]),...(achieved.get(w)??[])]).size;
+      if(quota.scope==='PER_WING'){
+        if(reserved(wing)>=(quota.wings[wing]??1))wingStops.set(wing,reason);
+      }else if([...new Set([...provisional.keys(),...achieved.keys()])].reduce((sum,w)=>sum+reserved(w),0)>=(quota.overall??1)){
+        if(!safetyStop)safetyStop=reason;
+      }
     // Ambiguity/throttle/payment remain race-wide, including PER_WING quotas: an unknown
     // reservation can consume the shared objective or overlap another target. Only a
-    // validated hold supports the narrower distinct-court/wing quota calculation above.
-    } else objectiveStop=reason;
+    // independently confirmed hold supports the narrower distinct-court/wing quota calculation above.
+    } else if(reason==='SHOTGUN_TARGET_ALREADY_ACHIEVED')objectiveStop=reason;
+    else if(!safetyStop||stopPriority(reason)>stopPriority(safetyStop))safetyStop=reason;
     deps.onObjectiveStop?.(reason); targetStops.set(attempt.target.targetKey,reason);
   };
-  const stopFor=(attempt:ArmedAttempt)=>objectiveStop??wingStops.get(wingOf(attempt))??courtsOf(attempt).map(court=>courtStops.get(court)).find(Boolean)??targetStops.get(attempt.target.targetKey);
+  const stopFor=(attempt:ArmedAttempt)=>safetyStop??objectiveStop??wingStops.get(wingOf(attempt))??courtsOf(attempt).map(court=>courtStops.get(court)).find(Boolean)??targetStops.get(attempt.target.targetKey);
   const strictRace=strictDispatch;
   // Preserve cheap safety signals immediately; defer journals, diagnostics and QR navigation until T+1 s.
   const criticalEndMs=armed.releaseMs+FINAL_APPROACH_MS;
@@ -409,7 +429,7 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
   const safety=(attempt:ArmedAttempt,raw:unknown,error?:SubmissionDispatchError)=>{
     let reason:ShotgunSuppressionReason|undefined;
     if(error){if(!error.dispatched)return;reason=error.diagnostic?.errorHint==='payment-in-progress'?'SHOTGUN_PAYMENT_IN_PROGRESS_STOP':error.diagnostic?.status===429?'SHOTGUN_PROVIDER_THROTTLE_STOP':error.confirmedRejected?undefined:'SHOTGUN_TARGET_OUTCOME_UNKNOWN';}
-    else {try{validatePublicCheckoutResponse(raw,attempt.request as unknown as PublicCheckoutRequest,attempt.plan,new Date(now()),attempt.plan.totalPrice);reason='SHOTGUN_TARGET_ALREADY_ACHIEVED';}
+    else {try{validatePublicCheckoutResponse(raw,attempt.request as unknown as PublicCheckoutRequest,attempt.plan,new Date(now()),attempt.plan.totalPrice);reason='SHOTGUN_PROVISIONAL_RESPONSE_STOP';}
       catch{reason='SHOTGUN_TARGET_OUTCOME_UNKNOWN';}}
     if(reason){recordStop(attempt,reason);
       for(const otherIndex of rendererArmed){const other=armed.attempts[otherIndex]!;if(other.triggerMs>now() && stopFor(other)){suppressed[otherIndex]=reason;void renderer?.transportFor(other.target.workerId,other)?.disarmRendererCheckout(other.key).catch(()=>undefined);}}}
@@ -652,8 +672,8 @@ export async function dispatchArmedPrecisionRace(armed: ArmedPrecisionRace, deps
     : Promise.resolve(undefined);
   const settleInner = async (index: number): Promise<PrecisionDispatchResult> => {
     const attempt = armed.attempts[index]!, ready = readiness[index]!;
-    if(!sends[index]&&stopFor(attempt))suppressed[index]=stopFor(attempt);
-    if(suppressed[index]){
+    if(!sends[index]&&stopFor(attempt))suppressed[index]??=stopFor(attempt);
+    if(suppressed[index]&&!sends[index]){
       // Expiry already revoked a never-sent permit; persist its suppression reason off the trigger path.
       if(attempt.state==='refused'&&!sends[index])await attempt.journal.mark(attempt.key,'rejected',new Date(now()),undefined,undefined,suppressed[index]).catch(()=>undefined);
       else await disarmAttempt(attempt,suppressed[index]!,now).catch(()=>undefined);

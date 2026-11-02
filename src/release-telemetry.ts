@@ -52,8 +52,11 @@ export function summarizeRun(runId: string, rows: Array<Record<string, unknown>>
   for (const line of progress.filter(line => line.stage === 'RELEASE_OFFSET_SCHEDULED' && str(line.workerId) && num(line.releaseOffsetMs) !== null)) {
     const worker = str(line.workerId)!; scheduled.set(worker, [...(scheduled.get(worker) ?? []), num(line.releaseOffsetMs)!]);
   }
-  const dispatched = new Set(progress.filter(line => line.stage === 'PHASE3_DISPATCH' || line.stage === 'PHASE3_WAVE1_STARTED')
-    .flatMap(line => [str(line.attemptId), str(line.workerId)].filter((value): value is string => !!value)));
+  // Wave-start/worker-invocation records describe scheduler intent, not a booking POST.
+  // A worker-level record must never fan out into proof for all of its child attempts.
+  const bookingPosts = progress.filter(line => line.stage === 'PHASE3_DISPATCH' || line.stage === 'CHECKOUT_HTTP_POST_INITIATED');
+  const dispatched = new Set(bookingPosts.map(line => str(line.attemptId)).filter((value): value is string => !!value));
+  const legacyWorkers = new Set(bookingPosts.filter(line => !str(line.attemptId)).map(line => str(line.workerId)));
   const fanOut = new Map(progress.filter(line => line.stage === 'PHASE3_FAN_OUT_CHILD' && str(line.attemptId)).map(line => [str(line.attemptId)!, {
     index: num(line.fanOutIndex) ?? 0, count: num(line.fanOutCount) ?? 1 }] as const));
   const children: TelemetryChild[] = rows.filter(row => row.schema === 'critical-path/v1' && row.type !== 'header' && row.workerId !== '*').map(row => {
@@ -63,8 +66,12 @@ export function summarizeRun(runId: string, rows: Array<Record<string, unknown>>
     // Pre-fan-out live rows did not copy the configured offset into critical-path metadata. In those rows an explicit
     // RELEASE_OFFSET_SCHEDULED value wins; a dispatched single attempt without that event is the documented normal 0.
     const legacyIndex = legacyChild ? Number(legacyChild[2]) : null, scheduledOffsets = scheduled.get(workerId);
-    const observedDispatch = num(row.browserRequestStartMs) !== null && (num(row.prePostMs) !== null || num(row.requestObservedMs) !== null || num(row.responseObservedMs) !== null);
-    const didDispatch = dispatched.has(String(row.workerId)) || dispatched.has(workerId) || observedDispatch;
+    // responseObserved also records evaluate/transport failures; alone it cannot prove a POST.
+    const observedDispatch = num(row.requestObservedMs) !== null ||
+      num(row.browserRequestStartMs) !== null && (num(row.prePostMs) !== null || num(row.responseObservedMs) !== null);
+    const legacySingle = String(row.workerId) === workerId && (num(meta.fanOutCount) ?? 1) === 1;
+    const didDispatch = dispatched.has(String(row.workerId)) || !!str(meta.attemptId) && dispatched.has(str(meta.attemptId)!) ||
+      legacySingle && legacyWorkers.has(workerId) || observedDispatch;
     const configured = num(meta.configuredOffsetMs) ?? (legacyIndex !== null ? scheduledOffsets?.[legacyIndex] ?? null : scheduledOffsets?.[0] ?? (didDispatch ? 0 : null));
     const chrome = num(row.browserRequestStartMs), index = num(meta.fanOutIndex) ?? childTopology?.index ?? legacyIndex ?? 0;
     const count = num(meta.fanOutCount) ?? childTopology?.count ?? (legacyIndex !== null ? scheduledOffsets?.length ?? 1 : 1);

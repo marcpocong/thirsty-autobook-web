@@ -13,6 +13,7 @@ import type { DirectTransport, ProoflessCheckoutRequest } from '../../src/api-bo
 import { TrustedReleaseClock } from '../../src/release-clock.js';
 import type { BookingPlan } from '../../src/api-booking/types.js';
 import { summarizeRunOutcome } from '../../src/run-outcome.js';
+import { ProviderHoldUnconfirmedError } from '../../src/api-booking/hold-confirmation-errors.js';
 
 
 const hotPathAudit=vi.hoisted(()=>({deny:false,calls:[] as string[]}));
@@ -608,6 +609,91 @@ describe('strict Shotgun deadlines',()=>{
 
 
 describe('diversified one-court objective coordination',()=>{
+  it('reserves provisional safety capacity for independent courts without claiming either hold or exceeding the quota',async()=>{
+    const releaseMs=Date.now()+4000;
+    const targets=validatePrecisionTargets([{court:7,start:'17:00',durationHours:3,releaseOffsetMs:-500},
+      {court:6,start:'17:00',durationHours:3,releaseOffsetMs:-250},{court:5,start:'17:00',durationHours:3}],date);
+    const race=freezePrecisionRace(date,releaseMs,targets.map(target=>({target,plan:precisionTargetPlan(target,date),dispatchTimingPolicy:'SHOTGUN_STRICT' as const})),{objective:{scope:'PER_WING',wings:{MANGO:2}}});
+    const clock=TrustedReleaseClock.fromOffset(0,{method:'offline-provisional-capacity',sampleCount:5});
+    const armed=await armPrecisionRace(race,{customerFor:()=>customer,journalRoot:root,releaseMs,now:()=>clock.nowMs()});
+    const posts:number[]=[],stops:string[]=[];
+    const outcome=await dispatchArmedPrecisionRace(armed,{clock,prewarmLeadMs:2000,spinTailMs:0,isAborted:()=>false,prewarm:async()=>{},
+      transportFor:(_worker,a)=>({publicCheckoutProofless:async(request,permit,options)=>{
+        consumeSubmissionPermit(permit,requestKey(request));options?.beforePost?.();posts.push(a.target.court);return pendingResponse(request,a.plan);
+      }}),onObjectiveStop:reason=>stops.push(reason),onVerifiedHold:async()=>{throw new ProviderHoldUnconfirmedError('PROVIDER_404_BEFORE_ADVERTISED_EXPIRY');}});
+    expect(posts).toEqual([7,6]);expect(stops).not.toContain('SHOTGUN_TARGET_ALREADY_ACHIEVED');
+    expect(outcome.results.map(r=>r.state)).toEqual(['UNKNOWN','UNKNOWN','NOT_DISPATCHED']);
+    expect(outcome.results[2]!.code).toBe('SHOTGUN_PROVISIONAL_RESPONSE_STOP');
+    expect(reducePrecisionOutcome(outcome.results.map(r=>r.state))).toMatchObject({verifiedCount:0,unknownCount:2,unsentCount:1,achieved:false,lockReleasable:false});
+  });
+  it('retains a provider restriction when an already-dispatched sibling later returns a plausible response',async()=>{
+    const releaseMs=Date.now()+4000;
+    const targets=validatePrecisionTargets([{court:7,start:'17:00',durationHours:3,releaseOffsetMs:-500},
+      {court:6,start:'17:00',durationHours:3,releaseOffsetMs:-400},{court:5,start:'17:00',durationHours:3}],date);
+    const race=freezePrecisionRace(date,releaseMs,targets.map(target=>({target,plan:precisionTargetPlan(target,date),dispatchTimingPolicy:'SHOTGUN_STRICT' as const})),{objective:{scope:'PER_WING',wings:{MANGO:2}}});
+    const clock=TrustedReleaseClock.fromOffset(0,{method:'offline-restriction-priority',sampleCount:5});
+    const armed=await armPrecisionRace(race,{customerFor:()=>customer,journalRoot:root,releaseMs,now:()=>clock.nowMs()});
+    let posts=0;
+    const outcome=await dispatchArmedPrecisionRace(armed,{clock,prewarmLeadMs:2000,spinTailMs:0,isAborted:()=>false,prewarm:async()=>{},
+      transportFor:(_worker,a)=>({publicCheckoutProofless:async(request,permit,options)=>{
+        consumeSubmissionPermit(permit,requestKey(request));options?.beforePost?.();posts++;
+        await new Promise(done=>setTimeout(done,Math.max(0,releaseMs-(a.target.court===7?200:100)-clock.nowMs())));
+        if(a.target.court===7)throw new BrowserSessionTransportError('ONDA_HTTP_STATUS_INVALID',true,{status:429,category:'http-rejection',contentKind:'json',responseSource:'application',errorHint:'rate-limit'},true);
+        return pendingResponse(request,a.plan);
+      }}),onVerifiedHold:async()=>{throw new ProviderHoldUnconfirmedError('PROVIDER_404_BEFORE_ADVERTISED_EXPIRY');}});
+    expect(posts).toBe(2);expect(outcome.results.map(r=>r.state)).toEqual(['REJECTED','UNKNOWN','NOT_DISPATCHED']);
+    expect(outcome.results[2]!.code).toBe('SHOTGUN_PROVIDER_THROTTLE_STOP');
+  });
+  it('replays the November 2 eight-child topology: seven POSTs, five unconfirmed groups, two rejections, one unsent',async()=>{
+    const releaseMs=Date.now()+5000;
+    const targets=validatePrecisionTargets([{court:7,start:'17:00',durationHours:3,fanOutReleaseOffsetsMs:[-2000,-1143,-286]},
+      {court:6,start:'17:00',durationHours:3,fanOutReleaseOffsetsMs:[-1714,-857,0]},
+      {court:5,start:'17:00',durationHours:3,fanOutReleaseOffsetsMs:[-1429,-571]}],date,true);
+    const race=freezePrecisionRace(date,releaseMs,precisionAttemptSet(targets,date,true).map(row=>({...row,dispatchTimingPolicy:'SHOTGUN_STRICT' as const})),{objective:{scope:'PER_WING',wings:{MANGO:1}}});
+    const clock=TrustedReleaseClock.fromOffset(0,{method:'offline-nov2-topology',sampleCount:5});
+    const armed=await armPrecisionRace(race,{customerFor:()=>customer,journalRoot:root,releaseMs,now:()=>clock.nowMs()});
+    let confirmations=0;const stops:string[]=[],posts:string[]=[];
+    const outcome=await dispatchArmedPrecisionRace(armed,{clock,prewarmLeadMs:2500,spinTailMs:0,isAborted:()=>false,prewarm:async()=>{},
+      transportFor:(_worker,a)=>({publicCheckoutProofless:async(request,permit,options)=>{
+        consumeSubmissionPermit(permit,requestKey(request));options?.beforePost?.();posts.push(a.attempt.id);
+        if(a.target.court===5)throw new BrowserSessionTransportError('ONDA_HTTP_STATUS_INVALID',true,{status:400,category:'http-rejection',contentKind:'json',responseSource:'application',errorHint:'availability'},true);
+        // All seven browser requests have left before the first provisional result suppresses B2.
+        await new Promise(done=>setTimeout(done,Math.max(0,releaseMs-100-clock.nowMs())));
+        return pendingResponse(request,a.plan);
+      }}),onObjectiveStop:reason=>stops.push(reason),onVerifiedHold:async()=>{confirmations++;throw new ProviderHoldUnconfirmedError('PROVIDER_404_BEFORE_ADVERTISED_EXPIRY');}});
+    expect(race.attempts).toHaveLength(8);expect(posts).toHaveLength(7);expect(confirmations).toBe(5);
+    expect(outcome.results.filter(r=>r.state==='UNKNOWN')).toHaveLength(5);
+    expect(outcome.results.filter(r=>r.state==='REJECTED')).toHaveLength(2);
+    expect(outcome.results.filter(r=>r.state==='NOT_DISPATCHED')).toHaveLength(1);
+    const unsent=outcome.results.find(r=>r.state==='NOT_DISPATCHED')!;
+    expect(unsent).toMatchObject({attempt:{target:{workerId:'B'}},code:'SHOTGUN_PROVISIONAL_RESPONSE_STOP'});
+    expect(unsent.attempt.target.releaseOffsetMs??0).toBe(0);
+    expect(stops).not.toContain('SHOTGUN_TARGET_ALREADY_ACHIEVED');
+    expect(reducePrecisionOutcome(outcome.results.map(r=>r.state))).toMatchObject({achieved:false,verifiedCount:0,unknownCount:5,rejectedCount:2,unsentCount:1,lockReleasable:false});
+  },12000);
+  it.each(['confirmed','404'] as const)('separates a provisional stop from provider %s evidence',async confirmation=>{
+    const releaseMs=Date.now()+4000;
+    const targets=validatePrecisionTargets([{court:7,start:'17:00',durationHours:3,releaseOffsetMs:-500},{court:6,start:'17:00',durationHours:3}],date);
+    const race=freezePrecisionRace(date,releaseMs,targets.map(target=>({target,plan:precisionTargetPlan(target,date),dispatchTimingPolicy:'SHOTGUN_STRICT' as const})),{objective:{scope:'PER_WING',wings:{MANGO:1}}});
+    const clock=TrustedReleaseClock.fromOffset(0,{method:'test',sampleCount:5});
+    const armed=await armPrecisionRace(race,{customerFor:()=>customer,journalRoot:root,releaseMs,now:()=>clock.nowMs()});
+    const stops:string[]=[],{transport,calls}=fakeTransport(async request=>pendingResponse(request,armed.attempts[0]!.plan));
+    const outcome=await dispatchArmedPrecisionRace(armed,{clock,prewarmLeadMs:1300,spinTailMs:0,isAborted:()=>false,prewarm:async()=>{},transportFor:()=>transport,
+      onObjectiveStop:reason=>stops.push(reason),onVerifiedHold:async()=>{
+        expect(stops).toContain('SHOTGUN_PROVISIONAL_RESPONSE_STOP');
+        expect(stops).not.toContain('SHOTGUN_TARGET_ALREADY_ACHIEVED');
+        if(confirmation==='404')throw new ProviderHoldUnconfirmedError('PROVIDER_BOOKING_NOT_FOUND');
+        return {state:'QR_READY'};
+      }});
+    expect(calls).toHaveLength(1);
+    expect(outcome.results[1]).toMatchObject({state:'NOT_DISPATCHED',code:'SHOTGUN_PROVISIONAL_RESPONSE_STOP'});
+    const summary=reducePrecisionOutcome(outcome.results.map(r=>r.state));
+    expect(summary.verifiedCount).toBe(confirmation==='confirmed'?1:0);
+    expect(summary.unknownCount).toBe(confirmation==='404'?1:0);
+    expect(stops.includes('SHOTGUN_TARGET_ALREADY_ACHIEVED')).toBe(confirmation==='confirmed');
+    expect((await armed.attempts[0]!.journal.read(armed.attempts[0]!.key)).state).toBe('verified');
+    expect(isSubmissionPermitUnspent(armed.attempts[1]!.permit)).toBe(false);
+  });
   it.each(['hold','minute-hold','invalid-success','unknown','timeout','throttle','payment','rejection'] as const)('coordinates different courts under PER_WING quota on %s',async kind=>{
     // Allow durable arming to finish before the strict no-new-preparation interval begins.
     const releaseMs=Date.now()+4000;
@@ -639,7 +725,7 @@ describe('diversified one-court objective coordination',()=>{
     expect(calls).toHaveLength(kind==='rejection'?2:1);
     if(kind!=='rejection'){
       expect(outcome.results[1]!.state).toBe('NOT_DISPATCHED');
-      expect(outcome.results[1]!.code).toBe(valid?'SHOTGUN_TARGET_ALREADY_ACHIEVED':ambiguous?'SHOTGUN_TARGET_OUTCOME_UNKNOWN':kind==='throttle'?'SHOTGUN_PROVIDER_THROTTLE_STOP':'SHOTGUN_PAYMENT_IN_PROGRESS_STOP');
+      expect(outcome.results[1]!.code).toBe(valid?'SHOTGUN_PROVISIONAL_RESPONSE_STOP':ambiguous?'SHOTGUN_TARGET_OUTCOME_UNKNOWN':kind==='throttle'?'SHOTGUN_PROVIDER_THROTTLE_STOP':'SHOTGUN_PAYMENT_IN_PROGRESS_STOP');
       expect(isSubmissionPermitUnspent(armed.attempts[1]!.permit)).toBe(false);
       // A suppressed shot can expire with its permit revoked before off-path settlement; its journal must still settle.
       expect(await armed.attempts[1]!.journal.read(armed.attempts[1]!.key)).toMatchObject({state:'rejected',failureCode:outcome.results[1]!.code});
