@@ -56,6 +56,7 @@ describe('owner-authorized maintenance preserves reservation integrity',()=>{
     await writeFile(join(dir,'lifecycle-before.json'),JSON.stringify({digest:auth.lifecycleDigest,files:[]}));
     await expect(archiveOwnerGlobalLock(root,dir,sourceSha,{processes:[],now})).rejects.toThrow('JOURNAL_CHANGED');
     expect(await readFile(join(root,'.local/automation.lock'))).toEqual(original);
+    expect(JSON.parse(await readFile(join(dir,'rolled-back.json'),'utf8'))).toMatchObject({rolledBack:true,originalGlobalLockRestored:true,authorizationConsumed:true});
     expect(JSON.parse(await readFile(join(dir,'claimed.json'),'utf8')).authorizationSha256).toHaveLength(64);
   });
 });

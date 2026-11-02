@@ -112,7 +112,9 @@ export async function archiveOwnerGlobalLock(root,directory,sourceSha,options={}
       return {id:auth.id,archived:true,journalsUnchanged:true};
     }catch(error){
       if(hash(await readFile(original))!==hash(sentinel))throw Error('MAINTENANCE_ROLLBACK_REQUIRES_REVIEW');
-      await exclusive(temporary,await readFile(archive));await rename(temporary,original);throw error;
+      await exclusive(temporary,await readFile(archive));await rename(temporary,original);
+      await exclusive(join(directory,'rolled-back.json'),JSON.stringify({at:new Date().toISOString(),id:auth.id,rolledBack:true,originalGlobalLockRestored:true,authorizationConsumed:true}));
+      throw error;
     }
   }finally{await mutex.close();await unlink(mutexPath);}
 }

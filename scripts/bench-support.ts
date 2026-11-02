@@ -32,8 +32,8 @@ export async function closeOfflineChrome(session:OfflineChrome):Promise<void> {
 }
 /**
  * Waits for a spawned Chrome to exit, killing it after `graceMs`, and then waits (bounded) for the kill to complete.
- * On Windows, letting Node exit while a just-killed child or its CDP socket is still closing can abort the Node
- * process natively (exit 0xC0000409, no message), which also loses the child's reported result or error.
+ * Await teardown to bound possible process/socket overlap. Native 0xC0000409 exits have been observed in offline
+ * runs, including browser startup; their cause is unproven. This wait is containment, not evidence of a crash repair.
  */
 export async function stopChromeProcess(child:ChildProcess,graceMs:number):Promise<void>{
   if(child.exitCode!==null||child.signalCode!==null)return;
