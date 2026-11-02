@@ -16,6 +16,8 @@ The runner emits the verified diagnostic and correlated `PROVIDER_HOLD_CONFIRMED
 
 Live Monitor's quota and Slot Watch's ownership overlay use fresh provider evidence rather than local handoff or child-state labels. Its primary recovery action uses the supported fresh-tab mode, and recovery results are visible directly in the monitor. Original-tab recovery remains available in Activity.
 
+Activity's timing-history card retains legacy successes as "Recorded success labels" with an explicit notice that they are not provider proof. Per-child timing tables identify their states as recorded outcomes. The browser manager describes an unexpired local handoff as a retained checkout requiring fresh provider confirmation, while continuing to block profile reuse. These presentation rules never rewrite historical telemetry or upgrade it to provider evidence.
+
 Forensic reconstruction requires matching per-attempt provider confirmation. When an older trace claims success without it, the derived report preserves `recordedOutcome`/`recordedFinalState`, reports the unsupported result as UNKNOWN/manual reconciliation and states the limitation. Original traces, captures and historical journals are not rewritten by this classification change.
 
 Regression coverage includes pre-expiry 404, busy worker claims, identity/group failures, confirmed QR failure/success, missing journal evidence, serial same-profile recovery with independent other profiles, missing confirmation callback, controller intermediate states, legacy forensic false success, grid ownership and provider-confirmed quotas. All tests use synthetic fixtures or read-only offline reconstruction. They do not establish a live booking or scheduled-release timing result.

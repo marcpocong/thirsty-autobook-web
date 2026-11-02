@@ -3,9 +3,33 @@ import { chromium, type Browser } from 'playwright';
 import { mkdir } from 'node:fs/promises';
 import { openRenderer, showRendererView } from './renderer-harness.js';
 import { defaultObjective } from '../src/booking-objective.js';
+import { summarizeRun } from '../src/release-telemetry.js';
 let browser: Browser;
 beforeAll(async () => { browser = await chromium.launch({ headless: true, ...(process.platform === 'win32' ? { channel: 'chrome' } : {}) }); await mkdir('.local/ui-overhaul/shots', { recursive: true }); });
 afterAll(async () => { await browser.close(); });
+it('preserves legacy timing outcomes in Activity without claiming provider-confirmed holds',async()=>{
+  const states=['QR_READY','VERIFIED','HOLD_VERIFIED','HOLD_VERIFIED_QR_ATTENTION'];
+  const run=summarizeRun('legacy-outcome-fixture',states.map((finalState,index)=>({schema:'critical-path/v1',workerId:`A:${index}`,meta:{finalState}})),[]);
+  const page=await openRenderer(browser,{telemetry:[run]},'history');
+  try{
+    const text=await page.locator('#history-summary').innerText();
+    expect(text).toMatch(/recorded success labels/i);expect(text).toContain('4 · not provider proof');
+    expect(text).toContain('do not independently confirm a provider hold');expect(text).not.toMatch(/verified hold/i);expect(text).not.toContain('Yes ·');
+    expect(await page.evaluate(()=>(window as any).fixtureState.telemetry)).toEqual([run]);
+    expect(await page.evaluate(()=>(window as any).fixtureCalls)).toEqual([]);
+    await page.screenshot({path:'.local/ui-overhaul/shots/1280-history-local-results.png',fullPage:true});
+  }finally{await page.close();}
+});
+it('keeps a local checkout protective in the browser manager without labeling it a verified hold',async()=>{
+  const page=await openRenderer(browser,{qrHandoffs:[{checkout:'A',status:'hold-created',courts:[7],date:'2026-11-04',startTime:'19:00',endTime:'22:00',amount:2100,holdExpiresAt:new Date(Date.now()+60000).toISOString(),verifiedAt:new Date().toISOString()}]},'setup');
+  try{
+    await page.locator('#setup-steps [data-step="4"]').click();
+    const text=await page.locator('#browser-manager tr[data-worker="A"]').innerText();
+    expect(text).toContain('Retained checkout');expect(text).toContain('fresh provider confirmation required');expect(text).not.toContain('Verified hold');
+    expect(text).toContain('No · pending checkout in this customer context');
+    expect(await page.evaluate(()=>(window as any).fixtureCalls)).toEqual([]);
+  }finally{await page.close();}
+});
 it('separates fresh provider confirmation, QR readiness, local results and elapsed deadlines', async () => {
   const page = await openRenderer(browser, {}, 'home', { width: 1280, height: 900 });
   try {

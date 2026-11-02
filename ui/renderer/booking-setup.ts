@@ -644,7 +644,7 @@ function renderBrowsers() {
     return el('tr', { 'data-worker': worker }, el('td', { text: worker }), el('td', { text: configured[worker] ? `${details[worker]?.fullName?.split(' ')[0] ?? 'Configured'} · ${mask(details[worker]?.email)}` : configured[worker] === false ? 'Not configured' : 'Unknown' }),
       el('td', { 'data-tone': open ? 'good' : 'muted', text: open ? (s?.ready ? 'Open · prepared' : 'Open') : 'Not running' }), el('td', { class: 'small', text: `Dedicated profile ${worker} · localhost debugging` }),
       el('td', { class: 'small', text: (assigned.get(worker) ?? []).join(' · ') || '—' }),
-      el('td', { 'data-tone': hold ? 'warn' : 'muted', text: hold ? `Verified hold · ${hold.courts.map(c => `Court ${c}`).join('+')} · until ${manilaTime(Date.parse(hold.holdExpiresAt!), { hour: '2-digit', minute: '2-digit' })} · payment pending` : issue ? issue.replace(`Worker ${worker} `, '') : 'None' }),
+      el('td', { 'data-tone': hold ? 'warn' : 'muted', text: hold ? `Retained checkout · ${hold.courts.map(c => `Court ${c}`).join('+')} · until ${manilaTime(Date.parse(hold.holdExpiresAt!), { hour: '2-digit', minute: '2-digit' })} advertised · fresh provider confirmation required` : issue ? issue.replace(`Worker ${worker} `, '') : 'None' }),
       el('td', { 'data-tone': reuse ? 'good' : 'bad', text: reuse ? 'Yes' : hold ? 'No · pending checkout in this customer context' : 'No' }), el('td', {}, show));
   });
   const close = el('button', { type: 'button', class: 'danger-button', id: 'manager-close-browsers', text: 'Close all bot browsers' }) as HTMLButtonElement;
