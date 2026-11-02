@@ -5,11 +5,12 @@ async () => {
     const id = 900000000 + Math.floor(Math.random() * 10000000);
     const path = `/_next/static/immutable/chunks/booking-context-${id}.js`;
     let done = false;
+    const started = Date.now(), stages = {};
     const finish = result => {
       if (done) return;
       done = true;
       clearTimeout(timer);
-      resolve(result);
+      resolve({ ...result, helperStages: stages });
     };
     const timer = setTimeout(() => finish({ code: 'ONDA_SECURITY_HELPER_TIMEOUT' }), 90_000);
     try {
@@ -25,7 +26,14 @@ async () => {
           }
           // Same concurrent invocation and settlement as Promise.all: the first rejection fails, success needs both.
           // Diagnostics only: which helper rejected (never its reason or any value).
-          const pending = [[challenge(), 'challenge'], [fingerprint(), 'fingerprint']], values = [];
+          const invoke = (helper, name) => {
+            stages[name] = { state: 'PENDING', durationMs: 0 };
+            try { return Promise.resolve(helper()).then(value => {
+              stages[name] = { state: value ? 'READY' : 'EMPTY', durationMs: Date.now() - started }; return value;
+            }, error => { stages[name] = { state: 'REJECTED', durationMs: Date.now() - started }; throw error; }); }
+            catch (error) { stages[name] = { state: 'REJECTED', durationMs: Date.now() - started }; return Promise.reject(error); }
+          };
+          const pending = [[invoke(challenge, 'challenge'), 'challenge'], [invoke(fingerprint, 'fingerprint'), 'fingerprint']], values = [];
           let remaining = pending.length;
           pending.forEach(([value, failedHelper], index) => Promise.resolve(value).then(result => {
             values[index] = result;

@@ -6,8 +6,10 @@ import { join, resolve } from 'node:path';
 import { compile, copyAssets, verifyDist, writeBuildInfo, sourceRoot, gitInfo, distContentId } from './build-support.mjs';
 import { detectInstallation, assertSafeUpdate, inspectUpdateSafety, describeUpdateSafety, protectedStateManifest, assertProtectedStateUnchanged, applyUpdate, hashFile, treeDigest } from './app-installation.mjs';
 import { brandElectronRuntime, verifyRuntimeBranding } from './brand-electron-runtime.mjs';
+import {claimOwnerMaintenance,assertOwnerInstallSafety} from './owner-lock-maintenance.mjs';
 if(process.platform!=='win32')throw Error('WINDOWS_BUILD_REQUIRED');
-if(process.argv.length>2)throw Error('APP_UPDATE_OPTIONS_REFUSED (only the canonical installation may be updated)');
+const args=process.argv.slice(2);
+if(args.length&&!(args.length===2&&args[0]==='--owner-maintenance'))throw Error('APP_UPDATE_OPTIONS_REFUSED (only the canonical installation may be updated)');
 const root=sourceRoot,git=gitInfo();
 if(git.dirty!==false||git.branch!=='main')throw Error('APP_UPDATE_COMMITTED_MAIN_REQUIRED');
 const remote=execFileSync('git',['ls-remote','origin','refs/heads/main'],{cwd:root,encoding:'utf8'}).trim().split(/\s/)[0];
@@ -15,9 +17,11 @@ if(remote!==git.gitSha)throw Error('APP_UPDATE_REMOTE_SOURCE_MISMATCH');
 const ci=JSON.parse(execFileSync('gh',['run','list','--commit',git.gitSha,'--workflow','ci.yml','--limit','1','--json','headSha,status,conclusion,url'],{cwd:root,encoding:'utf8'}));
 if(ci.length!==1||ci[0].headSha!==git.gitSha||ci[0].status!=='completed'||ci[0].conclusion!=='success')throw Error('APP_UPDATE_FINAL_CI_REQUIRED');
 const installation=await detectInstallation(root),output=installation.root;
+const maintenance=args.length?await claimOwnerMaintenance(output,resolve(args[1]),git.gitSha):null;
+const checkSafety=()=>maintenance?assertOwnerInstallSafety(output,maintenance):inspectUpdateSafety(output);
 const home=join(output,'.local/build'),stage=join(home,'staging');
 // Installation safety only. Historical UNKNOWN journals are reported and preserved; they stay UNKNOWN and keep blocking their targets.
-const safety=await inspectUpdateSafety(output);
+const safety=await checkSafety();
 for(const line of describeUpdateSafety(safety))console.log(line);
 await mkdir(home,{recursive:true});
 await writeFile(join(home,'update-preflight.json'),JSON.stringify({gitSha:git.gitSha,...safety},null,2)+'\n');
@@ -71,9 +75,10 @@ async function validate(path) {
   // Any added, removed or changed lifecycle byte fails validation; an installed failure rolls back.
   await assertProtectedStateUnchanged(output,protectedState);
 }
-const result=await applyUpdate(output,stage,{validate,beforeApply:async()=>{if(gitInfo().gitSha!==git.gitSha||gitInfo().dirty)throw Error('APP_UPDATE_SOURCE_CHANGED');await assertSafeUpdate(output);await assertProtectedStateUnchanged(output,protectedState);}});
+const result=await applyUpdate(output,stage,{validate,beforeApply:async()=>{if(gitInfo().gitSha!==git.gitSha||gitInfo().dirty)throw Error('APP_UPDATE_SOURCE_CHANGED');if(maintenance)await checkSafety();else await assertSafeUpdate(output);await assertProtectedStateUnchanged(output,protectedState);}});
 await rm(stage,{recursive:true});
 const protectedAfter=await assertProtectedStateUnchanged(output,protectedState);
+if(maintenance)await writeFile(join(resolve(args[1]),'completed.json'),JSON.stringify({at:new Date().toISOString(),id:maintenance.id,installedSha:git.gitSha,protectedLifecycleUnchanged:true}),{flag:'wx'});
 await writeFile(join(home,'installed-update.json'),JSON.stringify({finishedAt:new Date().toISOString(),output,exe:join(output,'Thirsty Pickle Bot.exe'),previous:installation.info,current:buildInfo,sha256:appHash,preserved,runtimeBranding,
   protectedState:{path:protectedPath,count:protectedAfter.count,digest:protectedAfter.digest,unchangedAfterInstall:true},historicalUnknownPreserved:safety.historicalUnknown.length,ci:ci[0],...result},null,2));
 console.log(JSON.stringify({output,exe:join(output,'Thirsty Pickle Bot.exe'),buildId:buildInfo.buildId,gitSha:buildInfo.gitSha,version:buildInfo.packageVersion,privateStatePreserved:true,

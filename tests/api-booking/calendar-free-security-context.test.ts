@@ -10,13 +10,22 @@ function simulatedPage(helpers: { challenge: () => Promise<string | null>; finge
       if (typeof entry[2] === 'function') (entry[2] as (module: unknown) => void)({ i: (id: number) =>
         id === 709892 ? { [helpers.minified ? "u" : "getPublicBookingTurnstileToken"]: helpers.challenge } : id === 139691 ? { [helpers.minified ? "f" : "getPublicFingerprintId"]: helpers.fingerprint } : {} });
     } } };
-    return runInNewContext(source, { window, setTimeout, clearTimeout, Promise, Math });
+    return runInNewContext(source, { window, setTimeout, clearTimeout, Promise, Math, Date });
   });
   return { isClosed: () => false, url: () => 'https://app.onda.fit/book/thirsty-pickle',
     locator: () => ({ evaluateAll: async () => ['https://app.onda.fit/_next/static/immutable/chunks/current.js'] }), evaluate } as unknown as Page;
 }
 
 describe('calendar-free checkout verification preparation', () => {
+  it('records only bounded helper stages on failure and keeps helper secrets out of diagnostics',async()=>{
+    const observe=vi.fn(),page=simulatedPage({challenge:async()=>{throw Error('secret provider reason');},fingerprint:async()=>'secret visitor'});
+    await expect(calendarFreeSecurityContext(page,observe)()).rejects.toThrow('ONDA_SECURITY_VERIFICATION_FAILED');
+    expect(observe).toHaveBeenCalledWith(expect.objectContaining({event:'SECURITY_HELPERS_SETTLED',helpers:expect.objectContaining({challenge:expect.objectContaining({state:'REJECTED'})})}));
+    expect(JSON.stringify(observe.mock.calls)).not.toContain('secret');
+  });
+  it('does not let a diagnostics callback prevent successful genuine helper acquisition',async()=>{
+    await expect(calendarFreeSecurityContext(simulatedPage({challenge:async()=>'token',fingerprint:async()=>'visitor'}),()=>{throw Error('observer');})()).resolves.toEqual({turnstileToken:'token',publicFingerprint:'visitor'});
+  });
   it('accepts the current Onda minified exports while invoking both genuine helpers', async () => {
     const challenge = vi.fn(async () => 'fresh-token'), fingerprint = vi.fn(async () => 'visitor');
     await expect(calendarFreeSecurityContext(simulatedPage({ challenge, fingerprint, minified: true }))()).resolves.toEqual({ turnstileToken: 'fresh-token', publicFingerprint: 'visitor' });

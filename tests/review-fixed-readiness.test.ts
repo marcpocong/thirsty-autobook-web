@@ -52,6 +52,13 @@ it('review: a schema-valid prepared Fixed Precision plan remains armable after a
 });
 
 describe('real controller readiness by applicable authorization',()=>{
+  it.each(['stale','degraded','missing'] as const)('does not announce a successful sync for %s clock evidence',async mode=>{
+    const h=harness(precision(one),()=>0,{syncClock:async()=>undefined,
+      clock:()=>({...clockStatus(ObservationSchema.parse({})),networkSynced:mode!=='stale',clockQuality:mode==='degraded'?'DEGRADED':mode==='missing'?null:'GOOD',clockUncertaintyMs:mode==='missing'?null:25})});
+    await expect(h.controller.syncClock()).rejects.toThrow('NETWORK_CLOCK_SYNC_FAILED');
+    expect(h.controller.state.headline).toBe('NETWORK CLOCK SYNC FAILED');
+    expect(h.calls).toEqual([]);expect(h.controller.state.scheduledRelease).toBeFalsy();
+  });
   it('refreshes readiness immediately after clock sync using consensus uncertainty and corrected clock age',async()=>{
     let synced=false;
     const h=harness(precision(one),()=>0,{

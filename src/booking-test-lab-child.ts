@@ -18,6 +18,7 @@ const trace = (text: string) => { try { appendFileSync(resolve(directory, 'child
 `); } catch { /* diagnostics only */ } };
 trace(`start ${kind}`);
 trace(`runtime ${process.version} ${process.platform}; rss ${process.memoryUsage().rss}; freeMem ${freemem()}; totalMem ${totalmem()}`);
+trace(`node executable ${process.execPath}; pid ${process.pid}; parent ${process.ppid}; arch ${process.arch}; uv ${process.versions.uv}; v8 ${process.versions.v8}`);
 process.on('exit', code => trace(`exit ${code}`));
 process.env.ONDA_EXPERIMENTAL_TWO_HOUR_SUBMIT = 'SUPERVISED_ONE_SHOT';
 let stopped = false;

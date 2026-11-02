@@ -74,10 +74,14 @@ export async function launchOfflineChrome(options: { chromium: typeof import('pl
   } else {
   trace('spawn');
   trace(`spawn resources rss=${process.memoryUsage().rss} freeMem=${freemem()}`);
+  trace(`spawn executable ${options.chromePath}; parent pid ${process.pid}; port ${port}`);
   child = spawn(options.chromePath, [...(options.headed ? [`--window-position=${40 + options.index * 30},${40 + options.index * 30}`, '--window-size=900,700'] : ['--headless=new']),
     `--remote-debugging-port=${port}`, '--remote-debugging-address=127.0.0.1', `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check',
     '--disable-background-networking', '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1', '--proxy-server=http://127.0.0.1:9',
     'about:blank'], { stdio: 'ignore', windowsHide: !options.headed });
+  child.once('spawn',()=>trace(`chrome spawned pid=${child?.pid}`));
+  child.once('error',error=>trace(`chrome spawn error code=${(error as NodeJS.ErrnoException).code??'UNKNOWN'}`));
+  child.once('exit',(code,signal)=>trace(`chrome exit pid=${child?.pid} code=${code} signal=${signal}`));
 
   for (const deadline = Date.now() + 20_000; ;) {
     try { const response = await fetch(`http://127.0.0.1:${port}/json/version`); if (response.ok) { version = String((await response.json() as { Browser?: string }).Browser ?? '') || null; break; } } catch { /* starting */ }

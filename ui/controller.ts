@@ -765,7 +765,11 @@ export class Controller {
   async syncClock(){
     if(this.state.operation!=='idle')throw Error('OPERATION_ALREADY_RUNNING');
     this.state.headline='SYNCING NETWORK CLOCK';this.state.detail='Contacting Google Public NTP. The Windows clock will not be changed.';this.publish();
-    try{await this.deps.syncClock?.();this.state.clock=this.deps.clock();await this.refresh();this.state.headline='NETWORK CLOCK SYNCHRONIZED';this.state.detail=`Source: ${this.state.clock.clockSource} · offset ${this.state.clock.clockOffsetMs.toFixed(1)} ms · round trip ${this.state.clock.clockRoundTripMs?.toFixed(1)??'unknown'} ms`;}
+    try{await this.deps.syncClock?.();this.state.clock=this.deps.clock();await this.refresh();
+      const clock=this.state.clock;
+      const age=clock?.clockSynchronizedAt?Date.now()+clock.clockOffsetMs-Date.parse(clock.clockSynchronizedAt):NaN;
+      if(!clock?.networkSynced||clock.clockQuality!=='GOOD'||clock.clockUncertaintyMs===null||!Number.isFinite(clock.clockUncertaintyMs)||clock.clockUncertaintyMs<0||!Number.isFinite(age)||age<0||age>15*60_000)throw Error('NETWORK_CLOCK_NOT_READY');
+      this.state.headline='NETWORK CLOCK SYNCHRONIZED';this.state.detail=`Source: ${clock.clockSource} · offset ${clock.clockOffsetMs.toFixed(1)} ms · uncertainty ${clock.clockUncertaintyMs.toFixed(1)} ms · round trip ${clock.clockRoundTripMs?.toFixed(1)??'unknown'} ms`;}
     catch{this.state.headline='NETWORK CLOCK SYNC FAILED';this.state.detail='Google Public NTP could not be verified. Release arming remains blocked.';throw Error('NETWORK_CLOCK_SYNC_FAILED');}
     finally{this.publish();}
   }
