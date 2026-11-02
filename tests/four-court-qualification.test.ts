@@ -10,6 +10,7 @@ import {validateProviderHold} from '../src/api-booking/provider-hold-verificatio
 import {DurableSubmissionJournal} from '../src/api-booking/durable-submission-journal.js';
 import {classifyPrecisionDispatchError} from '../src/api-booking/precision-race.js';
 import {SubmissionDispatchError} from '../src/api-booking/submission-errors.js';
+import {classifyFailure} from '../src/preparation-failure.js';
 
 const nowMs=Date.parse('2026-11-02T17:00:00Z'),root=resolve('.');
 function objective(courts=[5,6,7,4]){
@@ -35,6 +36,9 @@ async function lab(scenario:LabScenario,courts?:number[]){
   return JSON.parse(await readFile(join(directory,'result.json'),'utf8')) as LabResult;
 }
 describe('four-court exact eight-child production fixture qualification',()=>{
+  it('never offers a blind retry after an access stop, including when no lock remains',()=>{
+    for(const lockPresent of [false,true])expect(classifyFailure('SHOTGUN_PROVIDER_ACCESS_STOP',{operation:'run',lockPresent})).toMatchObject({category:'PROVIDER_ACCESS_DENIED',retrySafe:false,recovery:{action:'OPEN_ACTIVITY'}});
+  });
   it('preserves exact release, priorities, worker assignments, prices and 120 ms literal spacing',()=>{
     const o=objective(),c=compileObjective(o,{nowMs});expect(c.problems).toEqual([]);
     expect(c.cohorts[0]!.releaseAt).toBe('2026-11-03T00:00:00.000Z');

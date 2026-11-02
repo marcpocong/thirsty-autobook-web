@@ -8,7 +8,7 @@ import type { Recovery } from './execution-state.js';
  * when the category is conclusively safe to retry: anything involving a retained lock, a verified hold or an unknown
  * submission is review-first and is never retried, cleared or reclassified automatically.
  */
-export type FailureCategory = 'BROWSER_DISCONNECTED' | 'WRONG_PROFILE' | 'INVALID_VENUE_OR_TAB' | 'SECURITY_VERIFICATION_FAILED' | 'PROVIDER_THROTTLED'
+export type FailureCategory = 'BROWSER_DISCONNECTED' | 'WRONG_PROFILE' | 'INVALID_VENUE_OR_TAB' | 'SECURITY_VERIFICATION_FAILED' | 'PROVIDER_THROTTLED' | 'PROVIDER_ACCESS_DENIED'
   | 'STALE_PREPARATION' | 'PLAN_FINGERPRINT_MISMATCH' | 'INVALID_PREPARATION_EVIDENCE' | 'INVALID_PLAN' | 'PLAYER_CONFIGURATION'
   | 'CLOCK_UNTRUSTED' | 'TIMING_UNCALIBRATED' | 'CAPACITY_LIMITED' | 'RUN_NOT_ACHIEVED' | 'RETAINED_LOCK' | 'VERIFIED_HOLD' | 'UNKNOWN_SUBMISSION' | 'OPERATOR_CANCELLED' | 'INTERNAL_ERROR';
 export interface FailureContext { operation: 'prepare' | 'arm' | 'run'; step?: string | null; workerId?: string | null; lockPresent?: boolean }
@@ -27,6 +27,7 @@ const CODES: Record<Exclude<FailureCategory, 'INTERNAL_ERROR'>, readonly string[
   SECURITY_VERIFICATION_FAILED: ['SECURITY_CHALLENGE', 'ONDA_SECURITY_VERIFICATION_FAILED', 'SECURITY_PREWARM_FAILED', 'SECURITY_PREWARM_RETRY_FAILED', 'HUMAN_VERIFICATION_REQUIRED',
     'CLOUDFLARE_CHALLENGE', 'SECURITY_CONTEXT_STALE', 'SECURITY_CHECK_FAILED', 'SECURITY_CHECK_REQUIRED', 'SECURITY_CHECK_NEEDS_PREPARATION'],
   PROVIDER_THROTTLED: ['RATE_LIMITED', 'SHOTGUN_PROVIDER_THROTTLE_STOP', 'PROVIDER_THROTTLED'],
+  PROVIDER_ACCESS_DENIED: ['SHOTGUN_PROVIDER_ACCESS_STOP'],
   STALE_PREPARATION: ['RESET_REQUIRED', 'TODAYS_RELEASE_PASSED', 'TOO_LATE_FOR_PREFLIGHT', 'RELEASE_MISSED', 'PRECISION_TOO_LATE_TO_ARM', 'PREPARATION_STALE'],
   PLAN_FINGERPRINT_MISMATCH: ['PREPARATION_RESULT_MISMATCH', 'PREPARED_FINGERPRINT_MISMATCH', 'BOOKING_PLAN_CHANGED', 'SCHEDULE_CONTEXT_MISMATCH', 'PREPARED_PLAN_CHANGED'],
   INVALID_PREPARATION_EVIDENCE: ['PREPARATION_RESULT_INVALID', 'PREPARATION_RESULT_MISSING'],
@@ -52,6 +53,7 @@ const TEXT: Record<FailureCategory, { title: string; detail: string; recovery: R
   INVALID_VENUE_OR_TAB: { title: 'Onda page not ready', detail: 'The expected Thirsty Pickle booking page or tab could not be verified in a dedicated browser. Nothing was submitted.', recovery: { label: 'Recheck browsers', action: 'RECHECK_BROWSERS' }, retrySafe: true },
   SECURITY_VERIFICATION_FAILED: { title: 'Security verification not completed', detail: 'Onda security verification did not complete. The bot never solves challenges: if a THIRSTY BOT window says VERIFY HERE, complete the check Onda shows there. Otherwise keep the bot windows open and Prepare again; the run log records which helper failed and whether a challenge frame appeared (shown or not). These logs establish the failure, not the provider-side reason.', recovery: { label: 'Review readiness', action: 'REVIEW_READINESS' }, retrySafe: true },
   PROVIDER_THROTTLED: { title: 'Provider is limiting requests', detail: 'Onda reported rate limiting. Every unsent attempt stops and nothing is retried automatically. Wait before trying again.', recovery: { label: 'Open Activity', action: 'OPEN_ACTIVITY' }, retrySafe: false },
+  PROVIDER_ACCESS_DENIED: { title: 'Provider denied access', detail: 'Onda returned an access denial. Later unsent attempts stop. Review the restriction and reconcile every in-flight result before any separately authorized run.', recovery: { label: 'Open Activity', action: 'OPEN_ACTIVITY' }, retrySafe: false },
   STALE_PREPARATION: { title: 'Preparation is too late or stale', detail: 'The release window for this preparation has passed or is too close. Nothing was sent late.', recovery: { label: 'Prepare again', action: 'PREPARE' }, retrySafe: true },
   PLAN_FINGERPRINT_MISMATCH: { title: 'Saved plan changed', detail: 'The saved release plan no longer matches the plan that was prepared or armed. Nothing was armed with the changed plan.', recovery: { label: 'Review changes', action: 'REVIEW_CHANGES' }, retrySafe: true },
   INVALID_PREPARATION_EVIDENCE: { title: 'Preparation evidence invalid', detail: 'Preparation reached its final check but its evidence did not validate (field paths are in Activity). Nothing was submitted.', recovery: { label: 'Prepare again', action: 'PREPARE' }, retrySafe: true },
