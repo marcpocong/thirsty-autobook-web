@@ -36,7 +36,7 @@ import {ensureExperimentManifest} from '../src/arbitration/experiment-manifest.j
 import {readBuildInfo} from '../src/build-info.js';
 import {currentMachineIdentity,fanOutDigest} from '../src/fanout-capacity.js';
 import {readReleaseTelemetry} from '../src/release-telemetry.js';
-import {createMachineHealthSampler,readLastReleaseBuild} from '../src/release-readiness-gate.js';
+import {createMachineHealthSampler,readLastReleaseBuild,readInstallationValidation} from '../src/release-readiness-gate.js';
 import {readSourceStatus,readUpdatePreflight,readUpdateHistory} from '../src/source-status.js';
 import {readDispatcherMachineKey} from './runner-runtime.js';
 import {readSecurityCheck} from '../src/security-check.js';
@@ -137,7 +137,7 @@ const controller = new Controller({
   sourceStatus:()=>readSourceStatus([resolve(root,'Source'),root]),
   updatePreflight:()=>readUpdatePreflight(root),
   machineHealth:()=>machineHealth.sample(),// release:build records under the source tree; an installation runs from its parent folder.
-  testedBuild:()=>readLastReleaseBuild(root)??readLastReleaseBuild(resolve(root,'Source')),
+  testedBuild:()=>readInstallationValidation(root)??readLastReleaseBuild(root)??readLastReleaseBuild(resolve(root,'Source')),
   // Profiles are measured offline by scripts/benchmark-fanout-capacity.ts on this machine (source tree or installation).
   releaseTelemetry:()=>readReleaseTelemetry(root),
   fanOutDigest:()=>fanOutDigest([root,resolve(root,'Source')],{machine:currentMachineIdentity(),gitSha:readBuildInfo(resolve(root,'dist/build-info.json'))?.gitSha??'unknown',dispatcher:'central'}),

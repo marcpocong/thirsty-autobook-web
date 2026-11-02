@@ -2,7 +2,7 @@ import {mkdtempSync,mkdirSync,rmSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {describe,expect,it} from 'vitest';
-import {evaluateReleaseReadiness,readLastReleaseBuild} from '../src/release-readiness-gate.js';
+import {evaluateReleaseReadiness,readLastReleaseBuild,readInstallationValidation} from '../src/release-readiness-gate.js';
 import {savedPlanDate} from '../src/release-plan-date.js';
 
 describe('tested release build record',()=>{
@@ -25,6 +25,26 @@ const base=():Input=>({build:{schema:'thirsty-build-info/v1' as const,kind:'inst
   clock:{synced:true,ageMs:1000,uncertaintyMs:2,offsetMs:1},machine:{measuredAt:'2026-09-30T00:00:00Z',cpuCount:8,memoryUsedPct:50,eventLoopP95Ms:2,processRssMb:200},
   workers:Object.fromEntries('ABCDEFG'.split('').map(id=>[id,worker()])),observer:{online:true,lastReadAgeMs:100,availabilityLatencyMs:20},fanOut:{compatible:true,stale:false,width:2},prewarm:true});
 const check=(input:Input,id:string)=>evaluateReleaseReadiness(input).checks.find(value=>value.id===id)!;
+
+describe('completed canonical installation and exact-commit CI evidence',()=>{
+  it('recognizes the actual installer record without editing the older packaged-test record',()=>{
+    const root=mkdtempSync(join(tmpdir(),'installation-proof-'));
+    try{
+      mkdirSync(join(root,'.local/build'),{recursive:true});mkdirSync(join(root,'dist'));
+      const build=base().build!,record={output:root,finishedAt:'2026-09-30T01:00:00Z',current:build,protectedState:{unchangedAfterInstall:true},
+        ci:{headSha:build.gitSha,status:'completed',conclusion:'success',url:'https://github.com/example/repository/actions/runs/123'}};
+      writeFileSync(join(root,'dist/build-info.json'),JSON.stringify(build));
+      const path=join(root,'.local/build/installed-update.json');writeFileSync(path,JSON.stringify(record));
+      const evidence=readInstallationValidation(root);expect(evidence).toMatchObject({gitSha:build.gitSha,contentId:build.contentId,buildId:build.buildId,evidence:'CANONICAL_INSTALLATION_CI'});
+      expect(check({...base(),testedBuild:evidence},'build')).toMatchObject({level:'GOOD',detail:expect.stringContaining('Exact-commit CI and canonical installation verified')});
+      const bad=[{...record,ci:{...record.ci,headSha:'c'.repeat(40)}},{...record,ci:{...record.ci,conclusion:'failure'}},
+        {...record,ci:{...record.ci,status:'in_progress'}},{...record,current:{...build,contentId:'d'.repeat(64)}},
+        {...record,current:{...build,dirty:true}},{...record,protectedState:{unchangedAfterInstall:false}},{...record,output:join(root,'another-install')}];
+      for(const value of bad){writeFileSync(path,JSON.stringify(value));expect(readInstallationValidation(root)).toBeNull();}
+      expect(check({...base(),testedBuild:{...evidence!,contentId:'d'.repeat(64)}},'build').level).toBe('DEGRADED');
+    }finally{rmSync(root,{recursive:true,force:true});}
+  });
+});
 
 describe('release readiness gate',()=>{
   it('reports READY only when every check is good',()=>{
@@ -86,7 +106,7 @@ describe('release readiness gate',()=>{
 
   it('flags a running build that is not the tested packaged build, a dirty build, or no record',()=>{
     const wrong=base();wrong.testedBuild!.gitSha='c'.repeat(40);
-    expect(check(wrong,'build')).toMatchObject({level:'DEGRADED',detail:'Running SHA does not match the last tested packaged build'});
+    expect(check(wrong,'build')).toMatchObject({level:'DEGRADED',detail:'Running build does not match verified test and installation evidence'});
     const unpackaged=base();unpackaged.testedBuild!.packaged=false;expect(check(unpackaged,'build').level).toBe('DEGRADED');
     const dirty=base();dirty.build!.dirty=true;expect(check(dirty,'build').detail).toContain('dirty');
     const none=base();none.testedBuild=null;expect(check(none,'build')).toMatchObject({level:'UNAVAILABLE',hardBlock:false});

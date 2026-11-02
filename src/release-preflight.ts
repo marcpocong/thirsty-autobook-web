@@ -39,6 +39,7 @@ export interface PreflightInput {
   lock: { present: boolean; unresolvedSubmission: boolean; canPrepareOver: boolean };
   unknownResults: number;
   possibleHolds?:number;
+  historicalPossibleHolds?:number;resolvedPossibleHolds?:number;
   journalEvidence?:{unknown:number;armedOrDispatching:number;checkedAt:string}|null;
   termsAuthorized: boolean;
 }
@@ -173,6 +174,11 @@ export function releasePreflight(i: PreflightInput): Preflight {
   // 9. Any other controller hard block is shown, never dropped.
   const other = i.checks.filter(c => !covered.has(c.id) && c.hardBlock && c.level !== 'GOOD');
   if (other.length) rows.push({ id: 'other', label: 'Other release checks', status: 'BLOCKED', detail: other.map(c => `${c.label}: ${c.detail}`).join(' · '), recovery: { label: 'Review readiness', action: 'REVIEW_READINESS' } });
+  const locksRow=rows.find(r=>r.id==='locks');
+  if(locksRow?.status==='VERIFIED'&&((i.historicalPossibleHolds??0)>0||(i.resolvedPossibleHolds??0)>0)){
+    locksRow.detail='No current lock or unresolved hold affecting this saved plan.';
+    locksRow.caution=`${i.historicalPossibleHolds??0} historical UNKNOWN record(s) have elapsed advertised deadlines; provider outcome remains unconfirmed. ${i.resolvedPossibleHolds??0} record(s) have bound provider terminal evidence. Original targets remain duplicate-blocked; records are unchanged.`;
+  }
   // 10. The operator's own decision, last.
   rows.push(live ? { id: 'authorization', layer: 'ARMED', label: 'Owner authorization', status: 'VERIFIED', detail: 'AUTHORIZED FOR THIS RUN · Terms and owner attestation recorded for this exact plan.' }
     : { id: 'authorization', layer: 'ARMED', label: 'Owner authorization', status: 'NEEDS_ACTION', detail: `Your final step${i.termsAuthorized ? ' · Terms authorized' : ''}: ${i.termsAuthorized ? '' : 'tick Terms, then '}press Authorize and Arm${i.shotgun ? ' and attest as owner for this exact plan' : ''}. Nothing is authorized automatically.` });

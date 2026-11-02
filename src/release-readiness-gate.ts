@@ -3,7 +3,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { cpus, freemem, totalmem } from 'node:os';
 import { join } from 'node:path';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
-import type { BuildInfo } from './build-info.js';
+import {BuildInfoSchema,type BuildInfo} from './build-info.js';
+import {resolve} from 'node:path';
 import type {PrewarmFeasibilityResult} from './api-booking/prewarm-feasibility.js';
 import type {SecurityCheckVerdict} from './security-check.js';
 import {planDateArmable,type SavedPlanDate} from './release-plan-date.js';
@@ -20,19 +21,33 @@ export function createMachineHealthSampler(){
     const eventLoopP95Ms=Math.round(delay.percentile(95)/1e5)/10;delay.reset();
     return {measuredAt:new Date().toISOString(),cpuCount:cpus().length,memoryUsedPct,eventLoopP95Ms,processRssMb:Math.round(process.memoryUsage().rss/1024/1024)};},close:()=>delay.disable()};
 }
-export function readLastReleaseBuild(root:string):{gitSha:string;dirty:boolean|null;finishedAt:string;packaged:boolean}|null{
+export interface TestedBuild {gitSha:string;dirty:boolean|null;finishedAt:string;packaged:boolean;contentId?:string;buildId?:string;evidence?:'CANONICAL_INSTALLATION_CI'}
+/** Completed installer evidence is written only after transaction, integrity and exact-commit CI validation. */
+export function readInstallationValidation(root:string):TestedBuild|null{
+  try{
+    const record=JSON.parse(readFileSync(join(root,'.local/build/installed-update.json'),'utf8'));
+    const installed=BuildInfoSchema.parse(record.current),running=BuildInfoSchema.parse(JSON.parse(readFileSync(join(root,'dist/build-info.json'),'utf8')));
+    if(installed.kind!=='installation'||installed.dirty!==false||installed.branch!=='main'||running.gitSha!==installed.gitSha||running.contentId!==installed.contentId||running.buildId!==installed.buildId||running.dirty!==false||
+      resolve(record.output)!==resolve(root)||!Number.isFinite(Date.parse(record.finishedAt))||record.protectedState?.unchangedAfterInstall!==true||
+      record.ci?.headSha!==installed.gitSha||record.ci.status!=='completed'||record.ci.conclusion!=='success'||
+      !/^https:\/\/github\.com\/[^/]+\/[^/]+\/actions\/runs\/\d+$/.test(record.ci.url))return null;
+    return {gitSha:installed.gitSha,dirty:false,finishedAt:record.finishedAt,packaged:true,contentId:installed.contentId,buildId:installed.buildId,evidence:'CANONICAL_INSTALLATION_CI'};
+  }catch{return null;}
+}
+export function readLastReleaseBuild(root:string):TestedBuild|null{
   try{const value=JSON.parse(readFileSync(join(root,'.local/build/last-release-build.json'),'utf8')) as Record<string,unknown>;
     return typeof value.gitSha==='string'&&typeof value.finishedAt==='string'&&typeof value.packaged==='boolean'?{gitSha:value.gitSha,dirty:typeof value.dirty==='boolean'?value.dirty:null,finishedAt:value.finishedAt,packaged:value.packaged}:null;}catch{return null;}
 }
-export function evaluateReleaseReadiness(input:{build:BuildInfo|null;testedBuild:{gitSha:string;dirty:boolean|null;finishedAt:string;packaged:boolean}|null;configValid:boolean;authorizationValid:boolean;
+export function evaluateReleaseReadiness(input:{build:BuildInfo|null;testedBuild:TestedBuild|null;configValid:boolean;authorizationValid:boolean;
   clock:{synced:boolean;ageMs:number|null;uncertaintyMs:number|null;offsetMs:number|null;quality?:'GOOD'|'DEGRADED'|null};machine:MachineHealth;workers:Record<string,{connected:boolean;identityValid:boolean;securityReady:boolean;targetReady?:boolean;tabCount?:number;latencyP95Ms?:number|null}>;
   observer:{online:boolean;lastReadAgeMs:number|null;availabilityLatencyMs:number|null};fanOut:{compatible:boolean;stale:boolean;width:number}|null;prewarm:boolean;
   shotgun?:{tabsPerWorker:Record<string,number>;shotCount:number;timingStatus?:string;timingReason?:string}|null;
   prewarmFeasibility?:PrewarmFeasibilityResult|null;securityCheck?:SecurityCheckVerdict|null;planDate?:SavedPlanDate|null}):ReleaseReadinessGate{
   const checks:ReadinessCheck[]=[];const add=(check:ReadinessCheck)=>checks.push(check);
-  const buildMatch=!!input.build&&!!input.testedBuild&&input.build.gitSha===input.testedBuild.gitSha&&input.testedBuild.packaged;
+  const buildMatch=!!input.build&&!!input.testedBuild&&input.build.gitSha===input.testedBuild.gitSha&&input.testedBuild.packaged&&input.testedBuild.dirty===false&&
+    (input.testedBuild.evidence!=='CANONICAL_INSTALLATION_CI'||input.testedBuild.contentId===input.build.contentId&&input.testedBuild.buildId===input.build.buildId);
   add({id:'build',label:'Build integrity',level:!input.build||!input.testedBuild?'UNAVAILABLE':buildMatch&&!input.build.dirty?'GOOD':'DEGRADED',hardBlock:false,
-    detail:!input.build?'Running build metadata unavailable':!input.testedBuild?'No verified release build record':buildMatch?input.build.dirty?'SHA matches tested build, but source was dirty':`running/tested/packaged ${input.build.gitSha.slice(0,7)}`:'Running SHA does not match the last tested packaged build'});
+    detail:!input.build?'Running build metadata unavailable':!input.testedBuild?'No verified release build record':buildMatch?input.build.dirty?'SHA matches tested build, but source was dirty':input.testedBuild.evidence==='CANONICAL_INSTALLATION_CI'?`Exact-commit CI and canonical installation verified · ${input.build.gitSha.slice(0,7)}`:`running/tested/packaged ${input.build.gitSha.slice(0,7)}`:'Running build does not match verified test and installation evidence'});
   // A plan saved for an earlier release is not this release's authorization, however valid its schema.
   const dated=planDateArmable(input.planDate);
   add({id:'config',label:'Configuration',level:input.configValid&&input.authorizationValid&&dated?'GOOD':'UNAVAILABLE',hardBlock:true,

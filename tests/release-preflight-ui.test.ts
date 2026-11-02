@@ -34,6 +34,7 @@ function readyState(view = saved()) {
   const now = Date.now(), good = (id: string, label: string, hardBlock = false) => ({ id, label, level: 'GOOD', hardBlock, detail: `${label} ok` });
   return { booking: view, playerStatus, objectiveDocument: { version: 1, objective: twoCourt(), savedAt: iso(now), binding: null }, ready: true, workflow: 'release', apiFirstReady: true,
     preparedPlanFingerprint: view.fingerprint, browserHealth: { A: true, B: true },
+    clock:{networkSynced:true,clockOffsetMs:0,releaseMs:view.releaseMs,targetDate:view.targetDate,releaseTime:'08:00:00',timezone:'Asia/Manila',manilaTime:'06:00:00',manilaDate:'Fixture',remainingMs:3600_000,canArmToday:true,canArmNext:true},
     prewarmFeasibility: { verdict: 'READY', projectedReady: 2, configuredWave1Attempts: 2, projectedAtRisk: 0, projectedOmitted: 0, p95Source: 'COMPATIBLE_MEASURED_HISTORY', preparationP95Ms: 30_492, sampleCount: 84, prewarmLeadMs: 53_115, limitingConstraints: [] },
     securityCheck: { status: 'PASSED', detail: 'A verified in 3.3 s · B verified in 3.1 s', checkedAt: iso(now - 240_000), expiresAt: iso(now + 3_360_000),
       workers: [{ id: 'A', outcome: 'READY', durationMs: 3301, challengeFrame: 'none', code: null }, { id: 'B', outcome: 'READY', durationMs: 3118, challengeFrame: 'none', code: null }] },
@@ -48,7 +49,7 @@ const publish = (page: Page, patch: Record<string, unknown>) => page.evaluate(va
 const calls = (page: Page) => page.evaluate(() => (window as any).fixtureCalls as string[]);
 
 describe('Release Day Preflight (renderer)', () => {
-  it('dismisses historical warnings in both preflight panels while active, restored and changed records still block',async()=>{
+  it('shows elapsed nonoverlapping history in both panels without requiring archive, while active and unqualified records block',async()=>{
     const old={key:'historical',date:'2026-09-21',courts:[6],startTime:'08:00',endTime:'11:00',amount:1800,
       holdExpiresAt:iso(Date.now()-3*86400_000),bookingIds:['old-booking'],bookingNumbers:['OLD-ONLY'],code:'UNKNOWN',
       archivePath:'.local/api-booking/api-first-journals/old.json',dismissible:true,archived:false};
@@ -56,7 +57,8 @@ describe('Release Day Preflight (renderer)', () => {
     try{
       await step5(page);
       const setup=page.locator('#readiness-layers [data-row="locks"]'),consoleRow=page.locator('#next-preflight [data-row="locks"]');
-      expect(await setup.getAttribute('data-status')).toBe('BLOCKED');
+      expect(await setup.getAttribute('data-status')).toBe('VERIFIED');
+      expect(await setup.innerText()).toContain('elapsed advertised deadlines');
       await page.evaluate(old=>{const w=window as any;w.fixtureJournals={overview:{counts:{unknown:1},activeUnknown:[{key:old.key,path:old.archivePath,targetDate:old.date,courtIds:old.courts,lastWriteAt:old.holdExpiresAt,eligible:true}],archived:[],eligible:[old.archivePath],checkedAt:new Date().toISOString()},archive:{archived:[{}],refused:[]}};},old);
       await showRendererView(page,'records');await page.locator('#records-panel details summary').first().click();
       await page.getByRole('button',{name:'Archive this notice'}).click();
@@ -69,7 +71,7 @@ describe('Release Day Preflight (renderer)', () => {
       await publish(page,{possibleHolds:[{...old,archived:true,dismissible:false}]});
       await expect.poll(()=>setup.getAttribute('data-status')).toBe('BLOCKED');
       await publish(page,{possibleHolds:[old]});
-      await expect.poll(()=>consoleRow.getAttribute('data-status')).toBe('BLOCKED');
+      await expect.poll(()=>consoleRow.getAttribute('data-status')).toBe('VERIFIED');
       expect(await page.evaluate(()=>(window as any).fixtureCalls)).toEqual(['journalArchive:archive']);
     }finally{await page.close();}
   });

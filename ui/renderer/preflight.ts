@@ -4,6 +4,7 @@ import { releasePreflight, type Preflight, type PreflightInput, type PreflightRo
 import { el, fill, dateText, manilaTime, rangeText } from './navigation.js';
 import { forecastPreparation } from '../../src/quick-shotgun.js';
 import type { SmartPhase3 } from '../../src/precision-simple.js';
+import {assessHoldNotices,type HoldTarget} from '../../src/hold-preflight.js';
 
 const PLAYER_KEYS = { A: 'primary', B: 'extended', C: 'third', D: 'fourth', E: 'fifth', F: 'sixth', G: 'seventh' } as const;
 /**
@@ -64,6 +65,10 @@ export function preflightInput(state: Dashboard, layers: readonly ReadinessLayer
   securityCheck: Dashboard['securityCheck'] | null; draft?: PreflightInput['savedPlan']['draft'] }): PreflightInput {
   const b = state.booking, setup = b?.setup, f = planForecast(state, extra.prepared || extra.armed || extra.running);
   const s = setup ? shape(setup) : null;
+  const date=state.planDate?.planDate??b?.targetDate??'';
+  const targets:HoldTarget[]=setup?.PRECISION_PHASE3?setup.PRECISION_PHASE3.candidates.map(c=>({date:c.bookingDate??date,court:c.court,wing:c.wing??'MANGO',startTime:c.start,endTime:`${String(Number(c.start.slice(0,2))+c.durationHours).padStart(2,'0')}:00`}))
+    :setup?setup.PREFERRED_COURTS.map(court=>({date,court,startTime:setup.START_TIME,endTime:`${String(Number(setup.START_TIME.slice(0,2))+setup.DURATION_HOURS).padStart(2,'0')}:00`})) :[];
+  const holdState=assessHoldNotices(state.possibleHolds??[],targets,state.clock?.networkSynced?Date.now()+(state.clock.clockOffsetMs??0):NaN);
   return { now: Date.now(), shotgun: !!setup?.STRATEGY_V2?.shotgun?.enabled && !!setup.PRECISION_PHASE3,
     savedPlan: { exists: !!b, fingerprint: b?.fingerprint ?? null, summary: s ? `${s.courts} · ${s.time} · ${s.attempts}` : '', ...(extra.draft !== undefined ? { draft: extra.draft } : {}) },
     planDate: state.planDate ?? null, releaseMs: b?.releaseMs ?? null, layers, checks: state.releaseReadiness?.checks ?? [],
@@ -75,7 +80,7 @@ export function preflightInput(state: Dashboard, layers: readonly ReadinessLayer
     lock: { present: !!state.lock, unresolvedSubmission: !!state.lock && !state.canPrepareOverHold && state.retainedLockStage === 'FINAL_ACTION_DISPATCHING', canPrepareOver: !!state.canPrepareOverHold },
     // Dismissal is presentation only. The reader validates age and archive digest, and
     // still returns all records to the controller/runner's independent safety checks.
-    unknownResults: state.runSummary?.unknown ?? 0,possibleHolds:state.possibleHolds?.filter(h=>!h.archived||!h.dismissible).length??0,journalEvidence:state.journalEvidence??null, termsAuthorized: !!state.termsAuthorized };
+    unknownResults: state.runSummary?.unknown ?? 0,possibleHolds:holdState.blocking,historicalPossibleHolds:holdState.historical,resolvedPossibleHolds:holdState.providerResolved,journalEvidence:state.journalEvidence??null, termsAuthorized: !!state.termsAuthorized };
 }
 
 export function renderPreflight(host: HTMLElement, preflight: Preflight, options: { summaryLine?: string; onRecover?: (action: RecoveryAction) => void; securityButtonId?: string; busy?: boolean; compact?: boolean }) {
