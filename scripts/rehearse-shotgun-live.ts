@@ -12,7 +12,7 @@ import { assertLiveRehearsalAuthorization, assertSingleShotLabQualification, REH
 import { reuseRehearsalSecurity } from '../src/shotgun-rehearsal-readiness.js';
 import { queryGoogleClockConsensus } from '../src/network-clock.js';
 import { assertCanonicalRecoveryRuntime } from '../src/api-booking/recovery-runtime.js';
-import { assertLiveLabJournalEligibility, liveLabPostRefusal } from '../src/shotgun-live-lab-safety.js';
+import { assertLiveLabJournalEligibility, liveLabPostRefusal, guardLiveLabTransport } from '../src/shotgun-live-lab-safety.js';
 
 const sha=(bytes:Uint8Array)=>createHash('sha256').update(bytes).digest('hex');
 const safeCode=(error:unknown)=>error instanceof Error&&/^[A-Z][A-Z0-9_]{0,99}$/.test(error.message)?error.message:'SHOTGUN_REHEARSAL_FAILED';
@@ -139,10 +139,11 @@ async function main(){
       arm:{lock,releaseMs:triggerMs,journalRoot,now:()=>clock.nowMs(),customerFor:worker=>runOf(worker).customer},
       dispatch:{clock,prewarmLeadMs:5000,isAborted:()=>abort.signal.aborted,
         prewarm:async a=>reuseRehearsalSecurity(runOf(a.target.workerId).transport),
-        transportFor:worker=>({publicCheckoutProofless:(body:any,permit:any,options:any)=>runOf(worker).transport.publicCheckoutProofless(body,permit,{
-          ...options,beforePost:()=>{const refusal=liveLabPostRefusal({nowMs:clock.nowMs(),expiresMs:Date.parse(auth.expiresAt),
+        transportFor:worker=>guardLiveLabTransport(runOf(worker).transport,()=>{
+          const refusal=liveLabPostRefusal({nowMs:clock.nowMs(),expiresMs:Date.parse(auth.expiresAt),
             aborted:abort.signal.aborted,availabilityAgeMs:performance.now()-runOf(worker).availabilityObservedMonoMs});
-            if(refusal)throw new errors.SubmissionDispatchError(refusal,false);options?.beforePost?.();}})}),
+          if(refusal)throw new errors.SubmissionDispatchError(refusal,false);
+        }),
         afterFire:async()=>lock.dispatching(),onEvent:e=>events.push(e),
         onVerifiedHold:async(attempt,verified)=>{const run=runOf(attempt.target.workerId);run.localResponseValid=true;
           const onMilestone=(state:any)=>events.push({kind:'recovery',worker:run.request.worker,provider:state.provider,qr:state.qr,code:state.code,

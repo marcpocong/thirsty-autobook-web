@@ -1,6 +1,17 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ShotgunRehearsal } from './shotgun-live-rehearsal.js';
+import type { DirectTransport } from './api-booking/proofless-checkout.js';
+
+/** Keep the production transport's calibration and receiver while adding the Lab's final authority gate. */
+export function guardLiveLabTransport(transport:DirectTransport,assertBeforePost:()=>void):DirectTransport{
+  return {
+    ...(transport.prepareStrictTiming?{prepareStrictTiming:()=>transport.prepareStrictTiming!()}:{}),
+    publicCheckoutProofless:(body,permit,options={})=>transport.publicCheckoutProofless(body,permit,{
+      ...options,beforePost:()=>{assertBeforePost();options.beforePost?.();},
+    }),
+  };
+}
 
 /** Pure, in-memory final gate. Availability age is elapsed monotonic time, not mixed epoch clocks. */
 export function liveLabPostRefusal(input:{nowMs:number;expiresMs:number;aborted:boolean;availabilityAgeMs:number}):string|null{

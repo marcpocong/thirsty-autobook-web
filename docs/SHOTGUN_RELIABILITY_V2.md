@@ -2,7 +2,7 @@
 
 ## Verdict and scope
 
-Implementation and offline qualification are distinct from live provider qualification. This change does not establish LAB QUALIFIED, RELEASE QUALIFIED or PRODUCTION READY. The canonical November 2 retained lock and unresolved parent records prevent new live execution and installation under the owner's constraints. No lock exception, journal rewrite, new reservation, payment or cancellation is part of this repair.
+Implementation and offline qualification are distinct from live provider qualification. This change does not establish LAB QUALIFIED, RELEASE QUALIFIED or PRODUCTION READY. The canonical November 2 retained lock and unresolved parent records initially blocked new live execution and installation. The owner subsequently explicitly authorized bypassing remaining locks. Any maintenance exception and lock handoff must be separately audited, retain the original bytes and UNKNOWN target protection, and still require exact-commit CI and installation integrity. No journal rewrite, payment or cancellation is authorized. Live qualification remains an evidence requirement.
 
 ## Confirmed defects and repairs
 
@@ -10,7 +10,8 @@ Implementation and offline qualification are distinct from live provider qualifi
 2. `release-telemetry.ts` treated `PHASE3_WAVE1_STARTED` as POST evidence and expanded worker-level records across children. Historical Activity could show eight dispatched instead of seven. It now uses child-specific POST events or actual browser request evidence, with worker-only fallback restricted to legacy single-attempt rows. A transport-failure completion timestamp alone is insufficient. Raw telemetry and legacy success-shaped outcomes remain unchanged; the UI labels those as recorded evidence rather than provider proof.
 3. Recovery could retry a 429 when Retry-After was short. The first 429 now ends the recovery action, retains uncertainty and avoids further reads/navigation. Bounded transport/5xx handling remains separate.
 4. The old rehearsal checked authorization expiry only at process entry and pinned an incomplete selection of lifecycle modules. Versioned authorization now binds the exact target/budget, actual owner directive hash, attestation, installed SHA and production lifecycle module hashes. Expiry, Stop and availability age are enforced at the final POST gate. Write-once execution claims and production permits remain required.
-5. Activity's journal aggregate called locally `verified` records simply “verified.” It now explicitly calls them locally validated responses requiring provider confirmation.
+5. The Lab authority wrapper must preserve the installed transport's `prepareStrictTiming` method and receiver. Its shared guarded adapter now delegates calibration as well as the final POST, with the actual A/B/C production-dispatch regression requiring calibration before every submission.
+6. Activity's journal aggregate called locally `verified` records simply “verified.” It now explicitly calls them locally validated responses requiring provider confirmation.
 
 ## Lifecycle and authority map
 

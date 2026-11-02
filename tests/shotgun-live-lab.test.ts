@@ -3,7 +3,7 @@ import { mkdtemp, readFile, writeFile, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ShotgunLiveLabSchema, runShotgunLiveLab, productionRehearsalEngine, type ShotgunRehearsal } from '../src/shotgun-live-rehearsal.js';
-import { assertLiveLabJournalEligibility, liveLabPostRefusal } from '../src/shotgun-live-lab-safety.js';
+import { assertLiveLabJournalEligibility, liveLabPostRefusal, guardLiveLabTransport } from '../src/shotgun-live-lab-safety.js';
 import { prooflessReleasePlan } from '../src/api-booking/proofless-checkout.js';
 import { TrustedReleaseClock } from '../src/release-clock.js';
 import { DurableSubmissionJournal, consumeSubmissionPermit } from '../src/api-booking/durable-submission-journal.js';
@@ -29,16 +29,19 @@ describe('independent-target production Shotgun Live Lab (offline)',()=>{
     try{
       const plans=requests.map(r=>prooflessReleasePlan({mode:'standard',targetDate:r.date,durationHours:1,preferredStartTimes:[r.start],fallbackStartTimes:[],
         courtPriority:[r.court],fallbackCourts:[],exactCourts:[[r.court]],courtCount:1,maximumTotalPrice:r.maximum,currency:'PHP'}));
-      const clock=TrustedReleaseClock.fromOffset(0,{method:'offline-live-lab',sampleCount:0}),releaseMs=Math.ceil(clock.nowMs()+5100),posts:string[]=[];
+      const clock=TrustedReleaseClock.fromOffset(0,{method:'offline-live-lab',sampleCount:0}),releaseMs=Math.ceil(clock.nowMs()+5100),posts:string[]=[],calibrated:string[]=[],gated:string[]=[];
       const outcome=await runShotgunLiveLab(lab,plans,{securityFor:()=>({preparedContextAgeMs:()=>0}),
         arm:{releaseMs,journalRoot:root,now:()=>clock.nowMs(),customerFor:worker=>({clientId:`offline-${worker}`,customerId:`offline-${worker}`,customerEmail:`${worker}@example.invalid`,customerPhone:'000000000',customerFirstName:'Offline',customerLastName:worker})},
-        dispatch:{clock,prewarmLeadMs:5000,isAborted:()=>false,prewarm:async()=>{},transportFor:worker=>({publicCheckoutProofless:async(body,permit,options)=>{
+        dispatch:{clock,prewarmLeadMs:5000,isAborted:()=>false,prewarm:async()=>{},transportFor:worker=>guardLiveLabTransport({
+          prepareStrictTiming:async()=>{calibrated.push(worker);},publicCheckoutProofless:async(body,permit,options)=>{
+          expect(calibrated).toContain(worker);
           const r=requests.find(r=>r.worker===worker)!;
           consumeSubmissionPermit(permit,DurableSubmissionJournal.key(body.facilityId,body.items[0]!.spaceId,r.date,r.start,'09:00'));
           options?.beforePost?.();posts.push(worker);
           throw new SubmissionDispatchError('ONDA_HTTP_STATUS_INVALID',true,{status:400,category:'http-rejection',contentKind:'json',responseSource:'application',errorHint:'availability'},true);
-        }})}});
+        }},()=>gated.push(worker))}});
       expect(posts.sort()).toEqual(['A','B','C']);expect(outcome.results.map(r=>r.state)).toEqual(['REJECTED','REJECTED','REJECTED']);
+      expect(calibrated.sort()).toEqual(['A','B','C']);expect(gated.sort()).toEqual(['A','B','C']);
       expect(outcome.results.every(r=>r.attempt.dispatchTimingPolicy==='SHOTGUN_STRICT')).toBe(true);
     }finally{await rm(root,{recursive:true,force:true});}
   },15000);
