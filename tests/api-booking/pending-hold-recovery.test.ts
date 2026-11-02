@@ -13,6 +13,39 @@ async function fixture(work:(f:Awaited<ReturnType<typeof pendingFixture>>)=>Prom
 }
 const opts=(f:Awaited<ReturnType<typeof pendingFixture>>)=>({identity:f.identity,now:()=>fixtureNow,claimRoot:join(f.root,'claims'),sleep:vi.fn(async()=>{})});
 describe('independent provider hold verification and existing-only recovery',()=>{
+  const collapsedHour=(f:Awaited<ReturnType<typeof pendingFixture>>,index:number)=>({success:true,data:{...f.provider.data,...f.provider.data.groupBookings[index],
+    groupBookings:undefined,bookingGroupId:'expired-original-group',bookingSessions:[],bookingStatus:'expired',paymentStatus:'expired',canResumeCheckout:false}});
+  it('reconciles a collapsed expired group only after independently matching every original hourly GET',()=>fixture(async f=>{
+    const {page,mocks}=fakeRecoveryPage(f);mocks.evaluate.mockImplementation(async(_source,args)=>({status:200,body:collapsedHour(f,f.raw.bookings.findIndex(b=>b.id===args.bookingId)),retryAfterMs:null}));
+    const result=await recoverPendingHold(page,f.directory,{...opts(f),now:()=>new Date(Date.parse(f.expiry)+60_000)});
+    expect(result).toMatchObject({provider:'EXPIRED_OR_UNAVAILABLE',code:'PROVIDER_HOURLY_GROUP_EXPIRED',qr:'NOT_CHECKED'});
+    expect(mocks.evaluate.mock.calls.map(c=>c[1].bookingId)).toEqual(f.raw.bookings.map(b=>b.id));
+    expect(mocks.evaluate.mock.calls.every(c=>c[1].kind==='LOOKUP')).toBe(true);expect(mocks.goto).not.toHaveBeenCalled();
+    expect(await readFile(f.journalPath,'utf8')).toBe(f.journalBefore);expect(f.submissions()).toBe(1);
+  }));
+  it.each(['pending','resumable','future','missing group'])('does not infer collapsed group expiry from %s evidence',kind=>fixture(async f=>{
+    const {page,mocks}=fakeRecoveryPage(f),body=collapsedHour(f,0);
+    if(kind==='pending'){body.data.bookingStatus='pending';body.data.paymentStatus='pending';}
+    if(kind==='resumable')body.data.canResumeCheckout=true;
+    if(kind==='missing group')body.data.bookingGroupId='';
+    mocks.evaluate.mockResolvedValue({status:200,body,retryAfterMs:null});
+    const result=await recoverPendingHold(page,f.directory,{...opts(f),now:()=>kind==='future'?fixtureNow:new Date(Date.parse(f.expiry)+60_000)});
+    expect(result.provider).toBe('UNKNOWN');expect(result.code).toBe('PROVIDER_PARTIAL_HOURLY_GROUP');expect(mocks.evaluate).toHaveBeenCalledTimes(1);expect(mocks.goto).not.toHaveBeenCalled();
+  }));
+  it.each(['foreign customer','wrong time','wrong group','pending sibling','duplicate sibling'])("retains UNKNOWN for a collapsed group's %s",kind=>fixture(async f=>{
+    const {page,mocks}=fakeRecoveryPage(f);mocks.evaluate.mockImplementation(async(_source,args)=>{
+      const index=f.raw.bookings.findIndex(b=>b.id===args.bookingId),body=collapsedHour(f,index);
+      if(index===1){if(kind==='foreign customer')body.data.customerId='foreign';if(kind==='wrong time')body.data.startTime='19:00';if(kind==='wrong group')body.data.bookingGroupId='different-group';if(kind==='pending sibling')body.data.bookingStatus='pending';if(kind==='duplicate sibling')body.data.id=f.raw.bookings[0]!.id;}
+      return {status:200,body,retryAfterMs:null};});
+    expect((await recoverPendingHold(page,f.directory,{...opts(f),now:()=>new Date(Date.parse(f.expiry)+60_000)})).provider).toBe('UNKNOWN');
+    expect(mocks.evaluate).toHaveBeenCalledTimes(2);expect(mocks.goto).not.toHaveBeenCalled();expect(await readFile(f.journalPath,'utf8')).toBe(f.journalBefore);
+  }));
+  it.each([404,410,429])('keeps the whole collapsed group UNKNOWN and stops after sibling HTTP %s',status=>fixture(async f=>{
+    const {page,mocks}=fakeRecoveryPage(f);mocks.evaluate.mockImplementation(async(_source,args)=>args.bookingId===f.raw.bookings[0]!.id?
+      {status:200,body:collapsedHour(f,0),retryAfterMs:null}:{status,body:null,retryAfterMs:100});
+    const result=await recoverPendingHold(page,f.directory,{...opts(f),now:()=>new Date(Date.parse(f.expiry)+60_000)});
+    expect(result.provider).toBe('UNKNOWN');expect(mocks.evaluate).toHaveBeenCalledTimes(2);expect(mocks.goto).not.toHaveBeenCalled();
+  }));
   it('validates registered facility identity when checkout hourly rows omit optional facility_id',()=>fixture(async f=>{
     const {page,mocks}=fakeRecoveryPage(f);
     expect((await recoverPendingHold(page,f.directory,opts(f))).qr).toBe('QR_READY');

@@ -12,6 +12,22 @@ const serviceDate=(v:unknown)=>typeof v==='string'&&/^\d{4}-\d{2}-\d{2}(?:T00:00
 export interface ProviderExpectation {
   plan:BookingPlan;bookings:Array<Record<string,unknown>>;customer:CheckoutCustomer;legacyIdentity:boolean;
 }
+/** Onda can remove aggregate/session rows after expiry. This is terminal-only eligibility, never active-hold proof. */
+export function expiredHourlyGroupId(raw:unknown,expected:ProviderExpectation,now:Date):string|null{
+  const d=obj(obj(raw).data);
+  if(expected.plan.courts.length!==1||expected.bookings.length<2||expected.bookings.length>3||
+    expected.bookings.some(b=>typeof b.hold_expires_at!=='string'||!Number.isFinite(Date.parse(b.hold_expires_at))||Date.parse(b.hold_expires_at)>now.getTime())||
+    d.bookingStatus!=='expired'||d.paymentStatus!=='expired'||d.canResumeCheckout!==false||
+    !Array.isArray(d.bookingSessions)||d.bookingSessions.length!==0||
+    d.groupBookings!==undefined&&(!Array.isArray(d.groupBookings)||d.groupBookings.length!==0)||
+    typeof d.bookingGroupId!=='string'||!/^[a-zA-Z0-9_-]{1,128}$/.test(d.bookingGroupId))return null;
+  return d.bookingGroupId;
+}
+/** Validate each actual hourly GET independently; never manufacture an aggregate provider response. */
+export function assertExpiredProviderHour(raw:unknown,expected:ProviderExpectation,original:Record<string,unknown>,groupId:string,now:Date):void{
+  if(expiredHourlyGroupId(raw,expected,now)!==groupId||
+    validateProviderHold(raw,{...expected,bookings:[original]},now)!=='EXPIRED')fail('PROVIDER_PARTIAL_HOURLY_GROUP');
+}
 /** Official GET /api/public/bookings/{id} shape observed in Onda's court-v2 frontend.
  * A grant status is never passed here as proof. No endpoint, token or contact is returned.
  */

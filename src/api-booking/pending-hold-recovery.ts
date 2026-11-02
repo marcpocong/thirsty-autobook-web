@@ -5,7 +5,7 @@ import type {WorkerId} from '../workers.js';
 import type {CheckoutCustomer} from './two-hour-reservation.js';
 import {CHECKOUT_RECOVERY_FILE,prepareCheckoutRecovery,validateCapturedCheckoutResponse,readCheckoutRecoveryRecord,assertRecoveryJournal,recoveryHash,recoveryIdentityBinding} from './checkout-recovery.js';
 import {appendHoldVerification,type HoldVerification} from './pending-hold-state.js';
-import {validateProviderHold} from './provider-hold-verification.js';
+import {validateProviderHold,expiredHourlyGroupId,assertExpiredProviderHour} from './provider-hold-verification.js';
 import {assertQrOrderSummary} from './qr-order-summary.js';
 import {standardPlanJournalKeys} from './two-hour-reservation.js';
 import {THIRSTY_PICKLE_FACILITY_ID} from './live-availability-provider.js';
@@ -62,7 +62,7 @@ export async function recoverPendingHold(page:RecoveryPage,directory:string,opti
     await assertImmutable();
     mark('IDENTITY_BOUND');await page.route(pattern,guard);guarded=true;
     type Read={status:number;body:unknown;retryAfterMs:number|null;failure?:'TIMEOUT'|'NETWORK'|'TOO_LARGE'};
-    const read=async(kind:'ACCESS'|'LOOKUP'):Promise<Read>=>{
+    const read=async(kind:'ACCESS'|'LOOKUP',bookingId=recovery.hold.bookingIds[0]!):Promise<Read>=>{
       for(let attempt=0;attempt<2;attempt++){
         mark(kind==='ACCESS'?'CHECKOUT_ACCESS':'PROVIDER_LOOKUP');
         code=kind==='ACCESS'?'CHECKOUT_ACCESS_REQUESTED':'PROVIDER_LOOKUP_REQUESTED';await persist();
@@ -80,7 +80,7 @@ export async function recoverPendingHold(page:RecoveryPage,directory:string,opti
             const delay=/^\d+$/.test(header)?Number(header)*1000:serverDate?Date.parse(header)-Date.parse(serverDate)+1000:NaN;
             if(Number.isFinite(delay)&&delay>=0)retryAfterMs=delay;}
           return {status:response.status,body,retryAfterMs};
-        },{kind,bookingNo:recovery.bookingNo,bookingId:recovery.hold.bookingIds[0]!,token:accessToken});}
+        },{kind,bookingNo:recovery.bookingNo,bookingId,token:accessToken});}
         catch{mark('PROVIDER_RESULT',{operation:kind,failure:'TRANSPORT'});await persist();
           if(attempt===0){await sleep(250);continue;}throw Error('PROVIDER_READ_TIMEOUT_OR_TRANSPORT_FAILED');}
         httpStatus=result.status>=100?result.status:undefined;
@@ -122,10 +122,25 @@ export async function recoverPendingHold(page:RecoveryPage,directory:string,opti
       checkStatus(await read('ACCESS'),true);accessGranted=true;lookup=await read('LOOKUP');
     }
     checkStatus(lookup,false);await assertImmutable();
-    const state=validateProviderHold(lookup.body,{plan:recovery.plan,bookings:(record.response as {bookings:Record<string,unknown>[]}).bookings,
-      customer:id.customer,legacyIdentity:!record.identityBinding},now());
+    const expected={plan:recovery.plan,bookings:(record.response as {bookings:Record<string,unknown>[]}).bookings,
+      customer:id.customer,legacyIdentity:!record.identityBinding};
+    let state:'ACTIVE'|'PAID'|'EXPIRED',hourlyExpiry=false;
+    try{state=validateProviderHold(lookup.body,expected,now());}
+    catch(error){
+      const groupId=error instanceof Error&&error.message==='PROVIDER_PARTIAL_HOURLY_GROUP'?expiredHourlyGroupId(lookup.body,expected,now()):null;
+      if(!groupId)throw error;
+      // The first exact hourly identity must pass before any additional GET is permitted.
+      try{
+        assertExpiredProviderHour(lookup.body,expected,expected.bookings[0]!,groupId,now());
+        for(const original of expected.bookings.slice(1)){
+          await id.assertContext();const hour=await read('LOOKUP',String(original.id));checkStatus(hour,false);await assertImmutable();
+          assertExpiredProviderHour(hour.body,expected,original,groupId,now());
+        }
+      }catch(error){provider='UNKNOWN';throw error;}
+      state='EXPIRED';hourlyExpiry=true;
+    }
     if(state==='PAID'){provider='PAYMENT_CONFIRMED';code='AUTHORITATIVE_PAYMENT_CONFIRMED';return await persist();}
-    if(state==='EXPIRED'){provider='EXPIRED_OR_UNAVAILABLE';code='PROVIDER_HOLD_EXPIRED';return await persist();}
+    if(state==='EXPIRED'){provider='EXPIRED_OR_UNAVAILABLE';code=hourlyExpiry?'PROVIDER_HOURLY_GROUP_EXPIRED':'PROVIDER_HOLD_EXPIRED';return await persist();}
     provider='PROVIDER_HOLD_CONFIRMED';code='PROVIDER_HOLD_CONFIRMED';await persist();
     if(options.verifyOnly)return await persist();
     if(!accessGranted){
