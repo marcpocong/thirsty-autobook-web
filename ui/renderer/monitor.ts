@@ -30,7 +30,7 @@ let holdsSignature = '';
 function renderHolds(s: Dashboard) {
   const host = byId('monitor-holds'), now = Date.now() + (s.clock?.clockOffsetMs ?? 0);
   const rows = presentedHolds(s,pendingHoldRows(),now).filter(r => r.outstanding && (!r.advertisedExpiry || Date.parse(r.advertisedExpiry) > now));
-  const possible=(s.possibleHolds??[]).filter(h=>Date.parse(h.holdExpiresAt)>now);
+  const possible=(s.possibleHolds??[]).filter(h=>h.providerResolution!=='EXPIRED'&&h.providerResolution!=='PAID'&&Date.parse(h.latestHoldExpiresAt??h.holdExpiresAt)>now);
   const key = JSON.stringify([rows, rows.map(r=>holdPresentation(r,now).label), possible, s.operation,pendingHoldBusy(),pendingHoldMessage()]);
   if (key === holdsSignature) return; holdsSignature = key;
   const review = el('button', { type: 'button', class: 'secondary compact', text: 'Review existing checkouts' });

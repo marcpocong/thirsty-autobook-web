@@ -27,7 +27,7 @@ export function readInstallationValidation(root:string):TestedBuild|null{
   try{
     const record=JSON.parse(readFileSync(join(root,'.local/build/installed-update.json'),'utf8'));
     const installed=BuildInfoSchema.parse(record.current),running=BuildInfoSchema.parse(JSON.parse(readFileSync(join(root,'dist/build-info.json'),'utf8')));
-    if(installed.kind!=='installation'||installed.dirty!==false||installed.branch!=='main'||running.gitSha!==installed.gitSha||running.contentId!==installed.contentId||running.buildId!==installed.buildId||running.dirty!==false||
+    if(installed.kind!=='installation'||!(/^[a-f0-9]{40}$/).test(installed.gitSha)||installed.dirty!==false||installed.branch!=='main'||running.kind!=='installation'||running.branch!=='main'||running.gitSha!==installed.gitSha||running.contentId!==installed.contentId||running.buildId!==installed.buildId||running.dirty!==false||
       resolve(record.output)!==resolve(root)||!Number.isFinite(Date.parse(record.finishedAt))||record.protectedState?.unchangedAfterInstall!==true||
       record.ci?.headSha!==installed.gitSha||record.ci.status!=='completed'||record.ci.conclusion!=='success'||
       !/^https:\/\/github\.com\/[^/]+\/[^/]+\/actions\/runs\/\d+$/.test(record.ci.url))return null;

@@ -56,10 +56,10 @@ export async function readPossibleHolds(root:string):Promise<PossibleHold[]> {
               JSON.stringify([...p.courts.map(c=>c.court)].sort())!==JSON.stringify([...a.courtIds].sort())||
               JSON.stringify([...ids].sort())!==JSON.stringify([...o.bookingIds].sort())||Date.parse(last.at)>Date.now()+60_000)verificationInvalid=true;
             else if(!last.contradiction&&last.local==='LOCAL_RESPONSE_VALID'&&last.journalHash===digest){
-              if(last.provider==='PAYMENT_CONFIRMED'&&last.code==='AUTHORITATIVE_PAYMENT_CONFIRMED')providerResolution='PAID';
+              if(last.provider==='PAYMENT_CONFIRMED'&&last.httpStatus===200&&last.code==='AUTHORITATIVE_PAYMENT_CONFIRMED')providerResolution='PAID';
               if(last.provider==='EXPIRED_OR_UNAVAILABLE'){
                 if(last.httpStatus===200&&['PROVIDER_HOLD_EXPIRED','PROVIDER_HOURLY_GROUP_EXPIRED'].includes(last.code))providerResolution='EXPIRED';
-                else if(['PROVIDER_NOT_FOUND_AFTER_ADVERTISED_EXPIRY','PROVIDER_CHECKOUT_UNAVAILABLE'].includes(last.code))providerResolution='UNAVAILABLE';
+                else if(last.httpStatus===404&&last.code==='PROVIDER_NOT_FOUND_AFTER_ADVERTISED_EXPIRY'||last.httpStatus===410&&last.code==='PROVIDER_CHECKOUT_UNAVAILABLE')providerResolution='UNAVAILABLE';
               }
             }
           }

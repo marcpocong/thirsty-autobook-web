@@ -328,11 +328,11 @@ function renderPossibleHolds(){
   const holds=state?.possibleHolds??[], visible=holds.filter(h=>!h.archived);
   const overlaps=holds.filter(h=>enabledWings(objective).some(w=>{const g=objective.wings[w];return h.date===g.bookingDate&&g.courts.some(c=>h.courts.includes(c.court))&&g.startTimes.some(start=>start<h.endTime&&`${String(Number(start.slice(0,2))+g.durationHours).padStart(2,'0')}:00`>h.startTime);}));
   host.hidden=!visible.length&&!overlaps.length;
-  const unexpired=holds.filter(h=>!h.providerResolution&&Date.parse(h.latestHoldExpiresAt??h.holdExpiresAt)>Date.now()+(state?.clock?.clockOffsetMs??0));
+  const unexpired=holds.filter(h=>h.providerResolution!=='EXPIRED'&&h.providerResolution!=='PAID'&&Date.parse(h.latestHoldExpiresAt??h.holdExpiresAt)>Date.now()+(state?.clock?.clockOffsetMs??0));
   const elapsed=visible.filter(h=>!h.providerResolution&&Date.parse(h.latestHoldExpiresAt??h.holdExpiresAt)<=Date.now()+(state?.clock?.clockOffsetMs??0));
   const monitor=el('button',{type:'button',class:'secondary compact',text:`${unexpired.length} possible unexpired checkout(s) · View Live Monitor`});monitor.onclick=()=>hooks.showView('live');
   const review=el('button',{type:'button',class:'secondary compact',text:'Review in Activity → Records & archive'});review.onclick=()=>hooks.showView('records');
-  fill(host,el('div',{},el('strong',{text:'Historical booking records'}),el('p',{class:'small',text:`${visible.length} retained records. ${elapsed.length} advertised deadline(s) passed; provider outcomes remain unconfirmed. Original booking targets remain protected.`})),review,unexpired.length?monitor:null,
+  fill(host,el('div',{},el('strong',{text:'Historical booking records'}),el('p',{class:'small',text:`${visible.length} unresolved records retained. ${elapsed.length} advertised deadline(s) passed; provider outcomes remain unconfirmed. Original booking targets remain protected.`})),review,unexpired.length?monitor:null,
     overlaps.length?el('p',{class:'target-conflict',role:'status',text:`${overlaps.length} retained UNKNOWN record(s) overlap this draft: ${overlaps.slice(0,3).map(h=>`Court ${h.courts.join(' / ')} · ${h.date} · ${h.startTime}–${h.endTime}`).join('; ')}. Do not submit these targets again. Archiving a notice never removes duplicate protection.`}):null);
 }
 /** Enabled wings whose draft date has already been released (Next Release only). */

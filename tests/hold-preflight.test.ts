@@ -49,6 +49,13 @@ describe('expired-advertisement history versus current-plan blockers',()=>{
     expect((await readPossibleHolds(root))[0]).toMatchObject({providerResolution:'EXPIRED',latestHoldExpiresAt:f.expiry});
     expect(await readFile(f.journalPath)).toEqual(bytes);
     await expect(new DurableSubmissionJournal(f.directory).begin(f.key)).rejects.toThrow('DUPLICATE_LOGICAL_BOOKING_BLOCKED');
+    for(const httpStatus of [403,404]){
+      await appendHoldVerification(f.directory,{at:new Date(fixtureNow.getTime()+700_000).toISOString(),responseHash:captured.responseHash,journalHash:recoveryHash(bytes),
+        local:'LOCAL_RESPONSE_VALID',provider:'EXPIRED_OR_UNAVAILABLE',qr:'NOT_CHECKED',code:'PROVIDER_HOLD_EXPIRED',contradiction:false,httpStatus,milestones:[]});
+      expect((await readPossibleHolds(root))[0]!.providerResolution).toBeUndefined();
+    }
+    await appendHoldVerification(f.directory,{at:new Date(fixtureNow.getTime()+700_000).toISOString(),responseHash:captured.responseHash,journalHash:recoveryHash(bytes),
+      local:'LOCAL_RESPONSE_VALID',provider:'EXPIRED_OR_UNAVAILABLE',qr:'NOT_CHECKED',code:'PROVIDER_HOLD_EXPIRED',contradiction:false,httpStatus:200,milestones:[]});
     await writeFile(f.journalPath,Buffer.concat([bytes,Buffer.from('\n')]));
     expect((await readPossibleHolds(root))[0]).toMatchObject({verificationInvalid:true});expect((await readPossibleHolds(root))[0]!.providerResolution).toBeUndefined();
   });
