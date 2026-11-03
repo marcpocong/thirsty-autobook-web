@@ -1,5 +1,7 @@
 # November 3 release: isolate public conflicts at freeze
 
+See the [detailed incident report and sanitized evidence](incidents/2026-11-03-release/README.md) for the full timeline, original versus replay accounting, root cause, implemented fix, exact-commit validation, canonical installation and preservation audit.
+
 The November 3 08:00 Manila run stopped at 07:58:00.971, before any checkout POST. All four browsers had prepared at 07:43:20. The freeze read identified a public booking conflict on Mango Court 7 for the saved November 5 19:00–22:00 target. Worker C was excluded correctly, but the Shotgun completeness check still required all eight original children. Six survivors therefore produced `SHOTGUN_TOPOLOGY_NOT_READY` and misleading browser recovery advice.
 
 The owner explicitly selected: **skip that court; continue remaining saved attempts**. Production now compares the frozen children with the original authorization minus only targets excluded by the existing public-conflict classifier. The original target, worker, child count and literal offsets must match exactly for every survivor. Missing transports, tabs, journals or modified offsets are not treated as public conflicts. No attempts are redistributed, added, moved later or sent against an excluded target. An existing explicit conflict override retains its existing meaning. If every target conflicts, the run ends with `PHASE3_PUBLIC_CONFLICT_ALL_TARGETS`; an unexpected survivor mismatch has the separate `SHOTGUN_FROZEN_PLAN_INCOMPLETE` code.

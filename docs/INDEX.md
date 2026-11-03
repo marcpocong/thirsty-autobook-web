@@ -25,6 +25,7 @@ The historical reports stay at the repository root so that existing links keep w
 
 ## Release run reports and incidents (newest first)
 
+- **[2026-11-03 08:00 release: freeze conflict abort and repair](incidents/2026-11-03-release/README.md)** — Court 7 exclusion, misleading browser error, zero live POSTs, surviving-attempt repair, separate D security timeout, installed provenance, regression results and sanitized evidence
 - **[2026-11-01 08:00 release: comprehensive forensic review and repairs](incidents/2026-11-01-release/README.md)** — eight-child reconstruction, seven pending responses/zero incident-time verified holds, official recovery 404s, observer blind spot, runtime provenance, later rehearsals, sanitized evidence and remaining hypotheses
 - [2026-10-18 incident](incidents/2026-10-18-release-failure.md) · [2026-09-29](../RELEASE_RUN_REPORT_2026-09-29.md) · [2026-09-28](../RELEASE_RUN_REPORT_2026-09-28.md) ([raw logs](../RELEASE_RUN_REPORT_2026-09-28_RAW_LOGS.md)) · [2026-09-26](../RELEASE_RUN_REPORT_2026-09-26.md) · [2026-09-25](../RELEASE_RUN_REPORT_2026-09-25.md) · [2026-09-24](../RELEASE_RUN_REPORT_2026-09-24.md) · [2026-09-23](../RELEASE_RUN_REPORT_2026-09-23.md) · [2026-09-12](../RELEASE_RUN_REPORT_2026-09-12.md)
 

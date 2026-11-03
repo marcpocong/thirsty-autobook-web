@@ -1,0 +1,253 @@
+{
+  "schema": "release-freeze-incident-public/v1",
+  "date": "2026-11-03",
+  "timezone": "Asia/Manila",
+  "purpose": "Sanitized historical evidence summary; not a live readiness certificate or submission authorization",
+  "incident": {
+    "runId": "bced8297-f70e-440c-949c-1a705ca75ead",
+    "releaseAt": "2026-11-03T00:00:00.000Z",
+    "serviceDate": "2026-11-05",
+    "wing": "MANGO",
+    "start": "19:00",
+    "end": "22:00",
+    "configuredMaximum": 8,
+    "bookingPosts": 0,
+    "confirmedHolds": 0,
+    "qrHandoffs": 0,
+    "stages": [
+      {
+        "runId": "bced8297-f70e-440c-949c-1a705ca75ead",
+        "mode": "live",
+        "targetDate": "2026-11-05",
+        "stage": "RUN_STARTED",
+        "at": "2026-11-02T23:43:17.077Z"
+      },
+      {
+        "runId": "bced8297-f70e-440c-949c-1a705ca75ead",
+        "mode": "live",
+        "targetDate": "2026-11-05",
+        "stage": "RUN_CONFIGURATION",
+        "at": "2026-11-02T23:43:17.105Z"
+      },
+      {
+        "runId": "bced8297-f70e-440c-949c-1a705ca75ead",
+        "mode": "live",
+        "targetDate": "2026-11-05",
+        "stage": "BROWSER_READY",
+        "at": "2026-11-02T23:43:19.998Z",
+        "workerId": "D"
+      },
+      {
+        "runId": "bced8297-f70e-440c-949c-1a705ca75ead",
+        "mode": "live",
+        "targetDate": "2026-11-05",
+        "stage": "BROWSER_READY",
+        "at": "2026-11-02T23:43:20.035Z",
+        "workerId": "B"
+      },
+      {
+        "runId": "bced8297-f70e-440c-949c-1a705ca75ead",
+        "mode": "live",
+        "targetDate": "2026-11-05",
+        "stage": "BROWSER_READY",
+        "at": "2026-11-02T23:43:20.046Z",
+        "workerId": "C"
+      },
+      {
+        "runId": "bced8297-f70e-440c-949c-1a705ca75ead",
+        "mode": "live",
+        "targetDate": "2026-11-05",
+        "stage": "BROWSER_READY",
+        "at": "2026-11-02T23:43:20.091Z",
+        "workerId": "A"
+      },
+      {
+        "runId": "bced8297-f70e-440c-949c-1a705ca75ead",
+        "mode": "live",
+        "targetDate": "2026-11-05",
+        "stage": "PHASE3_WAVE1_EXCLUDED",
+        "at": "2026-11-02T23:58:00.967Z",
+        "workerId": "C",
+        "code": "PUBLIC_BOOKING_CONFLICT_AT_FREEZE",
+        "evidence": "PUBLIC_BOOKING_PRESENT"
+      },
+      {
+        "runId": "bced8297-f70e-440c-949c-1a705ca75ead",
+        "mode": "live",
+        "targetDate": "2026-11-05",
+        "stage": "FAILED",
+        "at": "2026-11-02T23:58:00.971Z",
+        "code": "SHOTGUN_TOPOLOGY_NOT_READY"
+      },
+      {
+        "runId": "bced8297-f70e-440c-949c-1a705ca75ead",
+        "mode": "live",
+        "targetDate": "2026-11-05",
+        "stage": "RUN_DIAGNOSTIC_SUMMARY",
+        "at": "2026-11-02T23:58:00.643Z",
+        "finalCode": "SHOTGUN_TOPOLOGY_NOT_READY",
+        "verifiedHoldCount": 0,
+        "qrHandoffCount": 0
+      }
+    ]
+  },
+  "observerCorroboration": {
+    "requestedAt": "2026-11-02T23:59:00.009Z",
+    "respondedAt": "2026-11-02T23:59:00.566Z",
+    "cells": [
+      "7/19:00",
+      "7/20:00",
+      "7/21:00"
+    ],
+    "failedCourts": [],
+    "court7": [
+      {
+        "court": 7,
+        "status": 200,
+        "cacheStatus": "MISS",
+        "ageS": 0
+      }
+    ]
+  },
+  "secondarySecurity": {
+    "failedRun": "61ad3baf-0023-4bbf-bba5-bfd90b6d6d0d",
+    "worker": "D",
+    "code": "ONDA_SECURITY_VERIFICATION_FAILED",
+    "failedHelper": "challenge",
+    "durationMs": 60095,
+    "failureAt": "2026-11-02T23:59:38.559Z",
+    "laterPassingRun": "0b7a7949-1b93-49f1-bb0f-33c4c45eeb52",
+    "laterPassAt": "2026-11-02T23:59:50.054Z",
+    "providerCause": "UNPROVEN"
+  },
+  "repair": {
+    "gitSha": "68deab8caf1fe7446e23d5e8c0b540642735b66b",
+    "buildId": "68deab8-e91ec02c21",
+    "contentId": "e91ec02c21faf533e4aac8d1dfebfccc871c329d7cd22c890400a01d07665af0",
+    "ownerPolicy": "Skip that court; continue remaining saved attempts",
+    "ci": "https://github.com/marcpocong/thirsty-autobook-web/actions/runs/41550789606",
+    "installedReplay": {
+      "at": "2026-11-03T00:27:31.288Z",
+      "mode": "OFFLINE_POLICY_REPLAY",
+      "configured": 8,
+      "retained": 6,
+      "skipped": 2,
+      "surviving": [
+        {
+          "worker": "A",
+          "court": 5,
+          "offset": -840,
+          "tab": 0
+        },
+        {
+          "worker": "A",
+          "court": 5,
+          "offset": -360,
+          "tab": 1
+        },
+        {
+          "worker": "B",
+          "court": 6,
+          "offset": -720,
+          "tab": 0
+        },
+        {
+          "worker": "B",
+          "court": 6,
+          "offset": -240,
+          "tab": 1
+        },
+        {
+          "worker": "D",
+          "court": 4,
+          "offset": -480,
+          "tab": 0
+        },
+        {
+          "worker": "D",
+          "court": 4,
+          "offset": 0,
+          "tab": 1
+        }
+      ],
+      "excluded": [
+        {
+          "worker": "C",
+          "court": 7,
+          "evidence": "PUBLIC_BOOKING_PRESENT"
+        }
+      ],
+      "permitsIssued": 0,
+      "providerRequests": 0
+    }
+  },
+  "validation": {
+    "local": {
+      "files": 208,
+      "passed": 2437,
+      "failed": 0,
+      "skipped": 0
+    },
+    "ci": {
+      "passed": 2430,
+      "failed": 0,
+      "skipped": 7
+    },
+    "focused": {
+      "passed": 48,
+      "overlapsFullSuite": true
+    },
+    "sourceDistributionFiles": 549,
+    "installedDistributionFiles": 277
+  },
+  "preservation": {
+    "at": "2026-11-03T00:28:43.467Z",
+    "originalLifecycleFiles": 1400,
+    "changedOrMissing": 0,
+    "newLifecycleFiles": 0,
+    "savedPlanAndIdentitiesUnchanged": true,
+    "managedPathsMatched": 11,
+    "historicalUnknownPreserved": 63,
+    "legacyTestRecordUnchanged": true,
+    "globalLeaseAbsent": true
+  },
+  "historicalHandoff": {
+    "at": "2026-11-03T00:28:44.115Z",
+    "operation": "idle",
+    "ready": false,
+    "termsAuthorized": false,
+    "scheduledRelease": null,
+    "serviceDate": "2026-11-06",
+    "repairBookingPosts": 0,
+    "repairArmingActions": 0
+  },
+  "originalArtifactIntegrity": [
+    {
+      "file": "bced8297-f70e-440c-949c-1a705ca75ead.ndjson",
+      "sha256": "e98ed5056f3b0b2cbeb7c18e768b8ec7bd05d3c0b29d39f71e2d1dec0931a4ac",
+      "archivedCopyMatches": true
+    },
+    {
+      "file": "890f014e-83e4-4c9c-b07f-eb774f34751d.ndjson",
+      "sha256": "e3af948606e26fd0339d6c07dcff20f9d0be2f3359d6e57f66b37419cba58d44",
+      "archivedCopyMatches": true
+    },
+    {
+      "file": "61ad3baf-0023-4bbf-bba5-bfd90b6d6d0d.ndjson",
+      "sha256": "67a0fd29e78b7a28b54dc0f49c2768c423aade702aa5469be96fd108040ff2f5",
+      "archivedCopyMatches": true
+    },
+    {
+      "file": "0b7a7949-1b93-49f1-bb0f-33c4c45eeb52.ndjson",
+      "sha256": "f13a2b97345014149f08b278562cba0cb66f37042fda2c3e5f8314fad17a9b2b",
+      "archivedCopyMatches": true
+    }
+  ],
+  "limits": [
+    "Original freeze response bodies were not retained; later observer evidence does not reconstruct an earlier provider state.",
+    "Public booking records do not prove ownership, payment or provider-side publication rules.",
+    "Synthetic replay and green CI do not qualify a genuine 08:00 provider submission.",
+    "The later D challenge-helper timeout has no proven provider-internal cause and is not claimed fixed.",
+    "Private profiles, identities, cookies, tokens, checkout capabilities and raw runtime state are excluded."
+  ]
+}
