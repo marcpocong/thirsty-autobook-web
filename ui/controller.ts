@@ -84,6 +84,8 @@ const errors: Record<string, string> = {
   SHOTGUN_PLAN_INCOMPATIBLE_POSITIVE_OFFSET:'This saved Shotgun plan contains a post-release offset. It remains visible for review but cannot be armed. Edit it to -2000 through 0 ms and save a new exact schedule.',
   SHOTGUN_PREWARM_NOT_FULLY_READY:'The preparation forecast cannot ready every configured attempt before its deadline. Reduce the attempts per browser and prepare again. A READY forecast does not guarantee provider security verification will succeed.',
   SHOTGUN_TOPOLOGY_NOT_READY:'The exact Shotgun browser tabs are not ready. Reset & Prepare, then check every required browser group.',
+  SHOTGUN_FROZEN_PLAN_INCOMPLETE:'A non-conflicting saved attempt is missing or changed at freeze. Nothing was substituted. Review Activity for the affected worker or journal.',
+  PHASE3_PUBLIC_CONFLICT_ALL_TARGETS:'Every saved target has a public booking conflict. No attempts remain; nothing was submitted. Review the saved targets.',
   SHOTGUN_TIMING_NOT_READY:'The matching local Shotgun timing test failed or showed compression. Reduce the shot count, widen the schedule, or test again.',
   SHOTGUN_TIMING_REQUIRED:'Live Shotgun needs a READY local timing calibration for this exact plan, installed build, Chrome and machine from the last 24 hours. Run the timing calibration (local only; nothing reaches Onda).',
   SAVED_PLAN_DATE_STALE:'The saved release plan was authorized for a different booking date than the next release publishes. Review the plan and save it for the new date deliberately; nothing is re-dated automatically.',

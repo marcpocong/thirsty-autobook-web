@@ -49,7 +49,7 @@ describe('Live view model (parent goal → independently tracked children)', () 
       view = reduceLiveRun(view, stage('PRECISION_ATTEMPT_STATE', { workerId: 'B', court: 6, startTime: '21:00', endTime: '24:00', attemptState: state, attemptId: `f${index}`, fanOutIndex: index, fanOutCount: 2 }), new Map());
     view = reduceLiveRun(view, stage('PHASE3_WAVE1_EXCLUDED', { workerId: 'C', candidateId: candidate, code: 'PUBLIC_BOOKING_CONFLICT_AT_FREEZE' }), new Map());
     expect(view!.parents[0]!.children.map(child => child.state)).toEqual(['REJECTED', 'UNKNOWN']);
-    expect(view!.notes[0]).toBe('Worker C: left out at freeze (public booking conflict at freeze).');
+    expect(view!.notes[0]).toBe('Worker C: left out at freeze (public booking conflict at freeze). Remaining saved targets keep their original offsets.');
   });
 });
 

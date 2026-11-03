@@ -69,6 +69,7 @@ import { currentMachineIdentity } from '../fanout-capacity.js';
 import {deriveShotgunTopology,logicalTargetId,shotgunCriticalInterval} from '../shotgun.js';
 import { predictionError, predictReopenings, RESCUE_CONTEXT_REUSE_MS, RESCUE_PREWARM_MAX_PER_RELEASE, rescuePrewarmDue, type ReopenPrediction } from './reopen-prediction.js';
 import { readPublicBookingRecords } from './public-bookings.js';
+import { selectPhase3FreezeTargets, assertPhase3ShotgunSelection } from './phase3-freeze-selection.js';
 import {API_SECURITY_PREWARM_LEAD_MS,safeApiFailureCode} from './run-observability.js';
 import { availabilityObservation, diagnosticLaneForWorker, RunDiagnostics, safeDiagnosticCode,
   type DiagnosticAttemptType, type DiagnosticCorrelation, type DiagnosticOperation } from './run-diagnostics.js';
@@ -1041,15 +1042,19 @@ try {
       const freezeEvidence:PreReleaseEvidence=freezeAnswered??{availabilityAttempts:0,blocks:[],failedCourts:[1,2,3,4,5,6,7],bookingAttempts:0,dateState:'UNKNOWN'};
       stage('PHASE3_EVIDENCE_READ',{checkpoint:'FREEZE',availabilityState:freezeEvidence.snapshot?freezeEvidence.dateState:'READ_FAILED',
         ok:!!freezeEvidence.snapshot&&!freezeEvidence.failedCourts.length,...(freezeEvidence.failedCourts.length?{failedCourts:freezeEvidence.failedCourts.join(',')}:{}),...(freezeAnswered?{}:{code:'FREEZE_EVIDENCE_DEADLINE'})});
-      const conflictExcluded=new Set<string>();
-      for(const assignment of authorization.wave1){
-        const candidate=byId.get(assignment.candidateId)!,result=classifyTargetEvidence(candidate,freezeEvidence,date);
-        const conflict=result.evidence==='PUBLIC_BOOKING_PRESENT'||result.evidence==='UNAVAILABLE_WITH_PUBLIC_BOOKING';
-        if(conflict&&candidate.publicEvidence?.override==='OPERATOR_OVERRIDE_PUBLIC_CONFLICT')
-          stage('PHASE3_OVERRIDE_KEPT',{workerId:assignment.workerId,candidateId:candidate.id,evidence:result.evidence,code:'OPERATOR_OVERRIDE_PUBLIC_CONFLICT'});
-        else if(conflict){conflictExcluded.add(candidate.id);
-          stage('PHASE3_WAVE1_EXCLUDED',{workerId:assignment.workerId,candidateId:candidate.id,evidence:result.evidence,code:'PUBLIC_BOOKING_CONFLICT_AT_FREEZE'});}
-        else if(result.evidence==='UNKNOWN')stage('PHASE3_EVIDENCE_UNKNOWN',{workerId:assignment.workerId,candidateId:candidate.id,evidence:result.evidence});
+      const freezeSelection=selectPhase3FreezeTargets(authorization,freezeEvidence,date);
+      const conflictExcluded=new Set(freezeSelection.filter(value=>value.excluded).map(value=>value.candidate.id));
+      for(const {assignment,candidate,evidence,excluded,override} of freezeSelection){
+        if(override)
+          stage('PHASE3_OVERRIDE_KEPT',{workerId:assignment.workerId,candidateId:candidate.id,evidence,code:'OPERATOR_OVERRIDE_PUBLIC_CONFLICT'});
+        else if(excluded){
+          stage('PHASE3_WAVE1_EXCLUDED',{workerId:assignment.workerId,candidateId:candidate.id,court:candidate.court,evidence,code:'PUBLIC_BOOKING_CONFLICT_AT_FREEZE'});
+          const offsets=assignment.fanOutOffsetsMs??[assignment.releaseOffsetMs??0];
+          for(const [fanOutIndex,releaseOffsetMs] of offsets.entries())stage('PHASE3_WAVE1_UNSENT',{
+            workerId:assignment.workerId,candidateId:candidate.id,court:candidate.court,startTime:candidate.start,endTime:candidate.end,
+            fanOutIndex,fanOutCount:offsets.length,releaseOffsetMs,state:'NOT_DISPATCHED',code:'PUBLIC_BOOKING_CONFLICT_AT_FREEZE'});
+        }
+        else if(evidence==='UNKNOWN')stage('PHASE3_EVIDENCE_UNKNOWN',{workerId:assignment.workerId,candidateId:candidate.id,evidence});
       }
       const wave1:Array<Pick<PrecisionAttempt,'target'|'plan'|'dispatchTimingPolicy'|'releaseTimingPolicy'>>=[];
       // Each immediate target's Release Offset(s) come from the saved plan (covered by the plan and authorization fingerprints).
@@ -1081,10 +1086,11 @@ try {
           ...(offsets.length>1?{fanOutCount:offsets.length}:{})});
       }
       if(config.STRATEGY_V2?.shotgun?.enabled){
-        const required=authorization.wave1.reduce((n,a)=>n+(a.fanOutOffsetsMs?.length??1),0);
-        if(wave1.length!==required)throw Error('SHOTGUN_TOPOLOGY_NOT_READY');
-        for(const a of authorization.wave1){const browser=sessions.find(s=>s.workerId===a.workerId);
+        assertPhase3ShotgunSelection(freezeSelection,wave1);
+        for(const {assignment:a} of freezeSelection.filter(value=>!value.excluded)){const browser=sessions.find(s=>s.workerId===a.workerId);
           if(!browser || browser.pages.length<(a.fanOutOffsetsMs?.length??1) || browser.pages.some(p=>p.isClosed()||p.url()!==ONDA_URL))throw Error('SHOTGUN_TOPOLOGY_NOT_READY');}
+        stage('PHASE3_FREEZE_SELECTION',{authorizedCount:authorization.wave1.reduce((n,a)=>n+(a.fanOutOffsetsMs?.length??1),0),
+          attemptCount:wave1.length,unsentCount:freezeSelection.filter(value=>value.excluded).reduce((n,{assignment:a})=>n+(a.fanOutOffsetsMs?.length??1),0)});
       }
       const savedObjective=config.STRATEGY_V2?.objective;
       const frozen=savedObjective?freezePrecisionRace(date,releaseMs,wave1,{objective:savedObjective.scope==='ANY_WING'?{scope:'ANY_WING',wings:Object.fromEntries(Object.entries(savedObjective.wings).map(([wing,q])=>[wing,q!.ideal])),overall:savedObjective.overall!.ideal}

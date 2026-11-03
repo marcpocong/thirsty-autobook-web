@@ -29,10 +29,10 @@ const CODES: Record<Exclude<FailureCategory, 'INTERNAL_ERROR'>, readonly string[
   PROVIDER_THROTTLED: ['RATE_LIMITED', 'SHOTGUN_PROVIDER_THROTTLE_STOP', 'PROVIDER_THROTTLED'],
   PROVIDER_ACCESS_DENIED: ['SHOTGUN_PROVIDER_ACCESS_STOP'],
   STALE_PREPARATION: ['RESET_REQUIRED', 'TODAYS_RELEASE_PASSED', 'TOO_LATE_FOR_PREFLIGHT', 'RELEASE_MISSED', 'PRECISION_TOO_LATE_TO_ARM', 'PREPARATION_STALE'],
-  PLAN_FINGERPRINT_MISMATCH: ['PREPARATION_RESULT_MISMATCH', 'PREPARED_FINGERPRINT_MISMATCH', 'BOOKING_PLAN_CHANGED', 'SCHEDULE_CONTEXT_MISMATCH', 'PREPARED_PLAN_CHANGED'],
+  PLAN_FINGERPRINT_MISMATCH: ['PREPARATION_RESULT_MISMATCH', 'PREPARED_FINGERPRINT_MISMATCH', 'BOOKING_PLAN_CHANGED', 'SCHEDULE_CONTEXT_MISMATCH', 'PREPARED_PLAN_CHANGED', 'SHOTGUN_FROZEN_PLAN_INCOMPLETE'],
   INVALID_PREPARATION_EVIDENCE: ['PREPARATION_RESULT_INVALID', 'PREPARATION_RESULT_MISSING'],
   INVALID_PLAN: ['BOOKING_SETTINGS_INVALID', 'CONFIG_INVALID', 'PREPARATION_INPUT_INVALID', 'SHOTGUN_PLAN_INCOMPATIBLE_POSITIVE_OFFSET', 'PRECISION_REQUIRES_PROOFLESS_STANDARD',
-    'EXTENDED_DURATION_LIMIT', 'SAVED_PLAN_DATE_STALE', 'PRECISION_CANDIDATE_INVALID', 'BUKO_SCHEDULED_LIVE_BLOCKED', 'SHOTGUN_IMMEDIATE_BURST_BLOCKED', 'PRECISION_NO_ELIGIBLE_TARGET'],
+    'EXTENDED_DURATION_LIMIT', 'SAVED_PLAN_DATE_STALE', 'PRECISION_CANDIDATE_INVALID', 'BUKO_SCHEDULED_LIVE_BLOCKED', 'SHOTGUN_IMMEDIATE_BURST_BLOCKED', 'PRECISION_NO_ELIGIBLE_TARGET', 'PHASE3_PUBLIC_CONFLICT_ALL_TARGETS'],
   PLAYER_CONFIGURATION: ['PLAYER_INFO_MISSING', 'EXTENDED_PLAYER_INFO_MISSING', 'THIRD_PLAYER_INFO_MISSING', 'FOURTH_PLAYER_INFO_MISSING', 'DUPLICATE_ONDA_CUSTOMER_ID',
     'PRECISION_NO_VALID_CUSTOMER_IDENTITY'],
   CLOCK_UNTRUSTED: ['NETWORK_CLOCK_SYNC_REQUIRED', 'NETWORK_CLOCK_SYNC_FAILED', 'NETWORK_CLOCK_STALE', 'RELEASE_CLOCK_REFRESH_TIMEOUT', 'NETWORK_CLOCK_OFFSET_INVALID'],
@@ -75,7 +75,11 @@ export function failureCategory(code: string): FailureCategory {
 }
 export function classifyFailure(rawCode: string, context: FailureContext, at = new Date().toISOString()): ClassifiedFailure {
   const code = /^[A-Z][A-Z0-9_]{0,79}$/.test(rawCode) ? rawCode : 'OPERATION_FAILED';
-  const category = failureCategory(code), text = TEXT[category];
+  const category = failureCategory(code), text = code === 'PHASE3_PUBLIC_CONFLICT_ALL_TARGETS'
+    ? { ...TEXT[category], title: 'Every saved target has a public booking conflict', detail: 'No non-conflicting saved attempts remain. Nothing was submitted; review the saved targets.' }
+    : code === 'SHOTGUN_FROZEN_PLAN_INCOMPLETE'
+      ? { ...TEXT[category], title: 'Saved attempts incomplete at freeze', detail: 'A non-conflicting saved attempt is missing or changed. No worker, target or offset was substituted; review Activity.' }
+      : TEXT[category];
   // An unexplained failure is retry-safe only when no lock or submission record remains afterwards.
   const retrySafe = category === 'INTERNAL_ERROR' ? context.lockPresent === false : text.retrySafe && !(context.lockPresent && category !== 'RETAINED_LOCK');
   const recovery = category === 'INTERNAL_ERROR' && retrySafe ? { label: 'Prepare again', action: 'PREPARE' as const }

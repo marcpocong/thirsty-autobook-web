@@ -67,9 +67,11 @@ export function reduceLiveRun(previous: LiveRunView | null | undefined, event: S
     }
     case 'PHASE3_WAVE1_EXCLUDED': case 'PHASE3_OVERRIDE_KEPT': {
       if (event.stage === 'PHASE3_OVERRIDE_KEPT') { view.notes.push(`Worker ${event.workerId}: kept despite a known public booking (operator override).`); return view; }
-      if (event.stage === 'PHASE3_WAVE1_EXCLUDED') { view.notes.push(`Worker ${event.workerId}: left out at freeze (${(event.code ?? 'EXCLUDED').replaceAll('_', ' ').toLowerCase()}).`); return view; }
+      if (event.stage === 'PHASE3_WAVE1_EXCLUDED') { view.notes.push(`Worker ${event.workerId}${event.court ? ` · Court ${event.court}` : ''}: left out at freeze (${(event.code ?? 'EXCLUDED').replaceAll('_', ' ').toLowerCase()}). Remaining saved targets keep their original offsets.`); return view; }
       return view;
     }
+    case 'PHASE3_FREEZE_SELECTION':
+      view.notes.push(`${event.authorizedCount ?? 0} configured attempts: ${event.attemptCount ?? 0} retained, ${event.unsentCount ?? 0} skipped for public conflicts. No attempts reallocated.`); return view;
     case 'PRECISION_ATTEMPT_STATE': {
       if (!event.workerId) return previous ?? null;
       const parent = parentFor(view, `F/${event.workerId}`, { wave: 'WAVE_1', workerId: event.workerId, court: event.court, startTime: event.startTime, endTime: event.endTime });
